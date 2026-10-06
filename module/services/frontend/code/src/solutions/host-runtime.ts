@@ -63,6 +63,7 @@ export const HOST_SHARED_VERSIONS: Readonly<Record<string, string>> = {
 	"@codefly-dev/ui/skin": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/table": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/content": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/board": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/plugin-host": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/plugin-host/runtime": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/plugin-host/ui": CODEFLY_KIT_VERSION,

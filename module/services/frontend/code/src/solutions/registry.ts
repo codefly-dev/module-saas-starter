@@ -1,6 +1,7 @@
 import "server-only";
 
 import { assertDataGraph, type DataGraph } from "@codefly/saas-plugin-manifest";
+import type { DeclaredSource } from "@codefly-dev/saas-ui/solution";
 import { getEndpoints, getWorkspaceSecret } from "codefly";
 
 import { isStandingConditionMilestone } from "@/solutions/registration-log";
@@ -74,6 +75,24 @@ export interface SolutionManifest {
 	 * offers nothing outside the host.
 	 */
 	surfaces?: SolutionSurface[];
+	/**
+	 * The external sources this solution is built on, declared once at
+	 * registration instead of asked of every person who opens it.
+	 *
+	 * A solution built on one known repository already knows which repository;
+	 * putting that question to the tenant is how a shared source manager, or a
+	 * copied connect form, ends up inside a solution. The host validates the
+	 * declaration here, stores it with the registration, and hands it back to
+	 * the mounted remote as `SolutionBinding.declaredSources` — so the kit's
+	 * `<DeclaredSourceCard>` can ask only for the credential, and this issue
+	 * adds no RPC.
+	 *
+	 * It is a statement, not an authority: declaring a source connects
+	 * nothing, grants nothing, and gives the solution no read of its contents.
+	 * Whether the organization has connected it is answered by the host's own
+	 * `DatasourceService`, against the viewer's own permissions.
+	 */
+	sources?: DeclaredSource[];
 }
 
 /**
@@ -105,7 +124,10 @@ export interface SolutionSurface {
 export type SolutionNav = Pick<SolutionManifest, "id" | "nav">;
 
 /** The internal detail projection (see detailProjection). */
-export type SolutionDetail = Omit<SolutionManifest, "dashboard" | "surfaces">;
+export type SolutionDetail = Omit<
+	SolutionManifest,
+	"dashboard" | "surfaces" | "sources"
+>;
 
 /** The per-client surface projection (see surfacesProjection). */
 export interface SolutionClientSurfaces {
@@ -929,6 +951,111 @@ function parseSurfaces(value: unknown): SolutionSurface[] | null | undefined {
 	return surfaces;
 }
 
+/**
+ * The repository shape `AddGitHubSourceRequest.repo` enforces. Restated here,
+ * at the other end of the same journey, because this manifest is stored at
+ * registration and read by a card that submits it unedited: a repository the
+ * connect RPC would refuse must be refused when it is DECLARED, not when
+ * somebody finally presses Connect weeks later and the error names a field
+ * they cannot see.
+ */
+const DECLARED_REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+/**
+ * The declared sources, or null when any one of them is malformed — the whole
+ * registration then fails closed, as it does for a dashboard or a surface. A
+ * solution that meant to declare the repository it is built on should learn
+ * its declaration is invalid, not silently lose it and show its users a card
+ * asking them to pick a repository.
+ *
+ * Bounds mirror the connect RPC's (64 paths, 512 characters each, a 255-
+ * character ref) for the same reason the pattern does.
+ */
+function parseDeclaredSources(
+	value: unknown,
+): DeclaredSource[] | null | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (!Array.isArray(value)) {
+		return null;
+	}
+	const sources: DeclaredSource[] = [];
+	const seen = new Set<string>();
+	for (const entry of value) {
+		if (typeof entry !== "object" || entry === null) {
+			return null;
+		}
+		const candidate = entry as Record<string, unknown>;
+		if (
+			candidate.provider !== "github" ||
+			typeof candidate.repo !== "string" ||
+			candidate.repo.length > 255 ||
+			!DECLARED_REPO.test(candidate.repo)
+		) {
+			return null;
+		}
+		// Blank is refused rather than trimmed away, here and for the label and
+		// the paths below. A ref of " " satisfies the connect RPC's bounds (its
+		// branch has a maximum and no minimum), so it would be accepted at
+		// registration, submitted by the card, accepted by the host, and fail
+		// at GitHub against a branch of that name — the late failure this
+		// validation exists to prevent. A declaration that means "the default
+		// branch" omits the field; one that holds only spaces is a mistake, and
+		// a mistake in configuration is reported, not silently repaired.
+		if (
+			candidate.ref !== undefined &&
+			(typeof candidate.ref !== "string" ||
+				candidate.ref.trim() === "" ||
+				candidate.ref.length > 255)
+		) {
+			return null;
+		}
+		if (
+			candidate.label !== undefined &&
+			(typeof candidate.label !== "string" ||
+				candidate.label.trim() === "" ||
+				candidate.label.length > 255)
+		) {
+			return null;
+		}
+		let paths: string[] | undefined;
+		if (candidate.paths !== undefined) {
+			if (
+				!Array.isArray(candidate.paths) ||
+				candidate.paths.length > 64 ||
+				candidate.paths.some(
+					(path) =>
+						typeof path !== "string" ||
+						path.trim() === "" ||
+						path.length > 512,
+				)
+			) {
+				return null;
+			}
+			paths = [...(candidate.paths as string[])];
+		}
+		// Two declarations of the same repository would leave a card with no way
+		// to say which one it renders — the same ambiguity the card refuses to
+		// resolve when an ORGANIZATION has connected a repository twice, except
+		// that here the solution's own manifest is the thing contradicting
+		// itself, so it is refused rather than reported.
+		const key = candidate.repo.toLowerCase();
+		if (seen.has(key)) {
+			return null;
+		}
+		seen.add(key);
+		sources.push({
+			provider: "github",
+			repo: candidate.repo,
+			...(paths ? { paths } : {}),
+			...(candidate.ref ? { ref: candidate.ref as string } : {}),
+			...(candidate.label ? { label: candidate.label as string } : {}),
+		});
+	}
+	return sources;
+}
+
 /** Minimal structural validation of a self-registration payload. */
 export function parseManifest(value: unknown): SolutionManifest | null {
 	if (typeof value !== "object" || value === null) {
@@ -983,6 +1110,10 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 	if (surfaces === null) {
 		return null;
 	}
+	const sources = parseDeclaredSources(candidate.sources);
+	if (sources === null) {
+		return null;
+	}
 	// A declared major must be a real major; an ABSENT one means "built against
 	// the contract that existed when the field appeared", which is the only claim
 	// the host can act on.
@@ -1032,5 +1163,6 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 		},
 		dashboard,
 		surfaces,
+		sources,
 	};
 }

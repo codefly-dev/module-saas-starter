@@ -31,11 +31,16 @@ The chain is one direction, top to bottom — a skin is *data*, never CSS:
    descriptor onto that default. Only the tokens a skin declares are overridden;
    the rest inherit the default.
 3. **Custom properties** — the host projects the resolved appearance onto
-   `<html>` as `--appearance-{light,dark}-<token>` properties, and
-   `src/app/globals.css` binds the active mode's set to the public shadcn
-   variables (`--muted-foreground`, `--border`, …).
-4. **Utilities** — Tailwind maps those variables to utility classes
-   (`bg-background`, `text-muted-foreground`, `border-border`, …).
+   `<html>` as `--appearance-{light,dark}-<token>` properties
+   (`appearanceStyleProperties`, `@codefly-dev/ui/skin`), and the kit's
+   `theme.css` binds the active mode's set to the public shadcn variables
+   (`--muted-foreground`, `--border`, …).
+4. **Utilities** — `theme.css` maps those variables to Tailwind utility classes
+   (`bg-background`, `text-muted-foreground`, `border-border`, …). It is
+   Tailwind source the host imports into its one compiled stylesheet;
+   `preview.css` is the same layer compiled over the kit alone with the
+   default values, for a preview with no host
+   ([README](./README.md#previewing-a-solution-without-a-host)).
 5. **Components** — kit components, host pages, and solution remotes reference
    only those utilities / variables. None of them names a raw color.
 
@@ -67,6 +72,9 @@ variables read — it does not layer one over the other.
 | `accent` | `--accent` | Hover / accent surface | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
 | `accentForeground` | `--accent-foreground` | Text on the accent surface | `oklch(0.205 0 0)` | `oklch(0.985 0 0)` |
 | `destructive` | `--destructive` | Destructive action / error | `oklch(0.577 0.245 27.325)` | `oklch(0.704 0.191 22.216)` |
+| `success` | `--success` | Status: healthy, done. Read as text and as a tint of itself | `oklch(0.527 0.154 150.069)` | `oklch(0.792 0.209 151.711)` |
+| `warning` | `--warning` | Status: needs attention, not failed. Read as text and as a tint of itself | `oklch(0.555 0.163 48.998)` | `oklch(0.828 0.189 84.429)` |
+| `info` | `--info` | Status: informational. Read as text and as a tint of itself | `oklch(0.546 0.245 262.881)` | `oklch(0.707 0.165 254.624)` |
 | `border` | `--border` | Default hairline border | `oklch(0.922 0 0)` | `oklch(1 0 0 / 10%)` |
 | `input` | `--input` | Input control border | `oklch(0.922 0 0)` | `oklch(1 0 0 / 15%)` |
 | `ring` | `--ring` | Focus ring | `oklch(0.708 0 0)` | `oklch(0.556 0 0)` |
@@ -223,18 +231,19 @@ other are two slots, or two rungs that both set a height.
 | `surface-title-tight` | `dialog-title` |
 | `surface-title-compact` | `card-title-sm` |
 | `surface-title-plain` | `card-heading` |
-| `surface-description` | `card-description`, `dialog-description`, `sheet-description`, `alert-dialog-description`, `field-description`, `field-error` |
+| `surface-description` | `card-description`, `dialog-description`, `sheet-description`, `alert-dialog-description`, `list-item-description`, `field-description`, `field-error`, `empty-state-reference` |
 | `plain` | `metric-delta-label` |
 | `page-title` | `page-title` |
 | `section-title` | `section-title`, `empty-state-title-illustrated` |
-| `body` | `body`, `card`, `dialog-content`, `sheet-content`, `section-description`, `input`, `textarea`, `select-trigger`, `command-input`, `command-empty`, `banner`, `table`, `pagination-ellipsis`, `table-toolbar`, `table-empty-state`, `card-metadata`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `sidebar-menu-button`, `sidebar-menu-button-lg`, `sidebar-menu-sub-button`, `error-state`, `input-group-text`, `input-group-control`, `empty-state-description`, `metric-label`, `chat-message` |
+| `body` | `body`, `card`, `dialog-content`, `sheet-content`, `section-description`, `input`, `textarea`, `select-trigger`, `command-input`, `command-empty`, `banner`, `list-item`, `description-details`, `table`, `pagination-ellipsis`, `table-toolbar`, `table-empty-state`, `card-metadata`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `sidebar-menu-button`, `sidebar-menu-button-lg`, `sidebar-menu-sub-button`, `error-state`, `input-group-text`, `input-group-control`, `empty-state-description`, `metric-label`, `chat-message` |
 | `emphasis` | `emphasis`, `banner-title`, `table-head`, `table-footer`, `sidebar-menu-button-active`, `error-state-title` |
 | `control-label` | `label` |
 | `menu-item` | `select-item`, `dropdown-menu-item`, `dropdown-menu-checkbox-item`, `dropdown-menu-radio-item`, `dropdown-menu-sub-trigger`, `command-item` |
 | `group-label` | `dropdown-menu-label`, `command-group`, `badge`, `card-eyebrow`, `sidebar-group-label`, `sidebar-menu-badge` |
-| `group-label-plain` | `caption-plain`, `select-label`, `tooltip-content`, `avatar-fallback-sm`, `sidebar-menu-button-sm`, `sidebar-menu-sub-button-sm` |
+| `group-label-plain` | `caption-plain`, `select-label`, `chip-meta`, `description-term`, `tooltip-content`, `avatar-fallback-sm`, `sidebar-menu-button-sm`, `sidebar-menu-sub-button-sm` |
 | `shortcut` | `dropdown-menu-shortcut`, `command-shortcut` |
-| `control` | `segmented-control-segment`, `tabs-trigger`, `input-group-addon`, `empty-state-title`, `metric-heading` |
+| `control` | `badge-lg`, `segmented-control-segment`, `tabs-trigger`, `input-group-addon`, `empty-state-title`, `metric-heading` |
+| `control-sm` | `chip` |
 | `control-touch` | `input-touch`, `textarea-touch` |
 | `metric-value` | `metric-value` |
 | `metric-value-lg` | `metric-value-lg` |

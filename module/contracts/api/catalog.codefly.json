@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:91c5b2d9cc104f254ad5de886ebd1204323051d63e007c8992c64f97124f1086",
+      "digest": "sha256:a80e92b319dc442c93eb9604129192c86aaf491e635cb549cd7bcca5681b45ee",
       "services": [
         {
           "name": "APIKeyService",
@@ -329,6 +329,7 @@
             "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
             "/saas.accounts.v1.PlatformAdminService/ListJobs",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+            "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
@@ -476,7 +477,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:91c5b2d9cc104f254ad5de886ebd1204323051d63e007c8992c64f97124f1086",
+      "digest": "sha256:a80e92b319dc442c93eb9604129192c86aaf491e635cb549cd7bcca5681b45ee",
       "services": [
         {
           "name": "APIKeyService",
@@ -795,6 +796,7 @@
             "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
             "/saas.accounts.v1.PlatformAdminService/ListJobs",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+            "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
@@ -942,7 +944,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:5a866c4cf8868c46022cd46a68d2578a73618a01294e0b3f99651176b9f792fe",
+      "digest": "sha256:b18ae2e95b39482587abaed305395b2bca29e118710639fa1d0535acd018aaf1",
       "services": [
         {
           "name": "AuthGatewayService",

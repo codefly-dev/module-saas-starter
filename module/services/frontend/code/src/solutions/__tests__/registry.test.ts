@@ -15,6 +15,7 @@ vi.mock("codefly", () => ({ getEndpoints, getWorkspaceSecret }));
 
 import {
   browserManifestUrl,
+  detailProjection,
   findSolution,
   loadSolutions,
   parseManifest,
@@ -379,6 +380,126 @@ describe("parseManifest client surfaces", () => {
         }),
       ),
     ).not.toBeNull();
+  });
+});
+
+describe("parseManifest declared sources", () => {
+  function source(overrides: Record<string, unknown> = {}) {
+    return {
+      provider: "github",
+      repo: "example-org/handbook",
+      paths: ["proposals/"],
+      ref: "main",
+      label: "Proposals",
+      ...overrides,
+    };
+  }
+
+  it("keeps a well-formed declaration", () => {
+    const parsed = parseManifest(baseManifest({ sources: [source()] }));
+    expect(parsed?.sources).toEqual([
+      {
+        provider: "github",
+        repo: "example-org/handbook",
+        paths: ["proposals/"],
+        ref: "main",
+        label: "Proposals",
+      },
+    ]);
+  });
+
+  it("keeps a declaration that names only a repository", () => {
+    const parsed = parseManifest(
+      baseManifest({
+        sources: [{ provider: "github", repo: "example-org/handbook" }],
+      }),
+    );
+    expect(parsed?.sources).toEqual([
+      { provider: "github", repo: "example-org/handbook" },
+    ]);
+  });
+
+  it("adds no key to the stored bytes of a manifest that declares none", () => {
+    // Same reason as the surfaces slot: the registry recognises a
+    // re-registration as a lease renewal by byte identity, so a slot
+    // materialised as [] would turn every heartbeat into a content change.
+    const parsed = parseManifest(baseManifest());
+    expect(parsed).not.toBeNull();
+    expect(JSON.stringify(parsed)).not.toContain("sources");
+  });
+
+  it("refuses a repository the connect RPC would refuse", () => {
+    // The pattern is AddGitHubSourceRequest.repo's. Refusing it at
+    // registration is the whole value of declaring it: otherwise the error
+    // arrives weeks later, when somebody presses Connect, and names a field
+    // they cannot see.
+    for (const repo of [
+      "example-org",
+      "example-org/handbook/extra",
+      "example org/handbook",
+      "https://github.com/example-org/handbook",
+      "",
+    ]) {
+      expect(
+        parseManifest(baseManifest({ sources: [source({ repo })] })),
+        repo,
+      ).toBeNull();
+    }
+  });
+
+  it("refuses a malformed declaration whole rather than dropping it", () => {
+    // A solution that meant to declare the repository it is built on should
+    // learn its declaration is invalid, not silently lose it and show its
+    // users a card asking them to pick a repository.
+    const broken: Array<Record<string, unknown>> = [
+      { provider: "gitlab", repo: "example-org/handbook" },
+      source({ paths: "proposals/" }),
+      source({ paths: [""] }),
+      source({ paths: Array.from({ length: 65 }, (_, i) => `p${i}/`) }),
+      source({ paths: ["x".repeat(513)] }),
+      source({ ref: "" }),
+      source({ ref: "x".repeat(256) }),
+      source({ label: 7 }),
+      // Blank, not merely empty. A ref of " " clears the connect RPC's bounds
+      // (its branch has a maximum and no minimum), so accepting it here would
+      // move the failure to GitHub, against a branch of that name — which is
+      // the failure this validation exists to prevent. Same for a label that
+      // would silently fall back to the repository, and a path prefix that
+      // matches nothing.
+      source({ ref: " " }),
+      source({ label: "   " }),
+      source({ paths: ["proposals/", "  "] }),
+    ];
+    for (const entry of broken) {
+      expect(
+        parseManifest(baseManifest({ sources: [entry] })),
+        JSON.stringify(entry),
+      ).toBeNull();
+    }
+    expect(parseManifest(baseManifest({ sources: "proposals" }))).toBeNull();
+  });
+
+  it("refuses a manifest that declares one repository twice", () => {
+    // Nothing downstream could say which of the two a card renders, and the
+    // contradiction is the manifest's own — so it is refused here rather than
+    // reported to a reader who cannot fix it.
+    expect(
+      parseManifest(
+        baseManifest({
+          sources: [source(), source({ repo: "Example-Org/Handbook" })],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the declaration off the internal detail projection", () => {
+    // Like the dashboard graph: the solution page reads it in process and
+    // hands it to the remote it mounts, so no HTTP reader spends the bytes.
+    const parsed = parseManifest(baseManifest({ sources: [source()] }));
+    expect(parsed).not.toBeNull();
+    expect(JSON.stringify(detailProjection(parsed!))).not.toContain(
+      "handbook",
+    );
   });
 });
 

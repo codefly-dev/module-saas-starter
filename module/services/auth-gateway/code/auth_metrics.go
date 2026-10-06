@@ -24,6 +24,18 @@ const (
 	jwtRejectionRevoked               = "revoked"
 	jwtRejectionSessionRevoked        = "session_revoked"
 	jwtRejectionRevocationUnavailable = "revocation_unavailable"
+	// jwtRejectionWrongResource is a token whose RFC 8707 resource audience
+	// names a different resource than the one being requested — an MCP token
+	// for one solution presented at another.
+	jwtRejectionWrongResource = "wrong_resource"
+	// jwtRejectionGenericAudience is a token carrying only the host audience
+	// presented at a solution's tool endpoint, which admits only a token issued
+	// for its own resource (SP-SOL-07).
+	jwtRejectionGenericAudience = "generic_audience"
+	// jwtRejectionInvalidAudience is an audience set that names no single valid
+	// resource — two or more, or one that is not shaped like a resource
+	// identifier. Refused on every path.
+	jwtRejectionInvalidAudience = "invalid_audience"
 )
 
 // Instruments are created once against the global meter provider. main installs

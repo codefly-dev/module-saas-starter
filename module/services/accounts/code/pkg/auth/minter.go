@@ -65,17 +65,25 @@ type JWTMinter interface {
 	// ErrRefreshRevoked without being misclassified as an attacker replay.
 	VerifyRefresh(ctx context.Context, refreshToken string) (*TokenPair, error)
 
-	// VerifyClientRefresh rotates a refresh token that must belong to clientID.
-	// The owning client is read from the locked session row rather than from the
-	// caller, so one client presenting another's token is refused exactly as a
-	// token that never existed is.
-	VerifyClientRefresh(ctx context.Context, refreshToken, clientID string) (*TokenPair, error)
+	// VerifyClientRefresh rotates a refresh token that must belong to clientID
+	// and, when requiredResource is non-empty, to that resource. Both are read
+	// from the locked session row rather than from the caller, so one client
+	// presenting another's token is refused exactly as a token that never
+	// existed is — and a mismatch aborts BEFORE the token is consumed, so a
+	// client that names the wrong resource is told so without losing the session
+	// it legitimately holds.
+	VerifyClientRefresh(ctx context.Context, refreshToken, clientID, requiredResource string) (*TokenPair, error)
 
 	// MintForClient issues the first token pair for a registered client, from
 	// the host session that authorized it. The client's session is independent:
 	// its own family, its own refresh token, and an `azp` claim naming clientID
 	// so audit and downstream services read "this person, via this client".
-	MintForClient(ctx context.Context, userID, authorizingSessionID uuid.UUID, clientID string) (*TokenPair, error)
+	//
+	// resource is the RFC 8707 indicator the person consented to, or empty. It
+	// is persisted on the session and reissued on every rotation, so the
+	// audience a client holds is the one the authorization bound, not one the
+	// client can ask to change at refresh time.
+	MintForClient(ctx context.Context, userID, authorizingSessionID uuid.UUID, clientID, resource string) (*TokenPair, error)
 
 	// SwitchOrganization issues a fresh access token for a current membership
 	// while preserving the refresh token, session row, device family, and both

@@ -1,11 +1,18 @@
 "use client";
 
+import { Button, Input, Label, Textarea } from "@codefly-dev/ui/layout";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useId } from "react";
 import { useForm, useWatch } from "react-hook-form";
+import {
+	AccessTokenField,
+	AppInstallPrompt,
+	CredentialMethodField,
+	fieldErrorClass as errorClass,
+	WebhookSecretField,
+} from "./credential-mode.js";
 import { type ConnectGitHubValues, connectGitHubSchema } from "./schema.js";
 import type { CollectionAccessView, GitHubAppRepositoryView } from "./types.js";
-import { Button, Input, Label, Textarea } from "@codefly-dev/ui/layout";
 
 interface ConnectGitHubFormProps {
 	collections?: CollectionAccessView[];
@@ -27,8 +34,6 @@ interface ConnectGitHubFormProps {
 	isPending: boolean;
 	errorMessage?: string;
 }
-
-const errorClass = "text-sm text-destructive";
 
 export function ConnectGitHubForm({
 	onSubmit,
@@ -103,77 +108,37 @@ export function ConnectGitHubForm({
 					className="space-y-4"
 					noValidate
 				>
-					<div className="space-y-2">
-						<Label htmlFor={idFor("method")}>Authentication</Label>
-						<select
-							id={idFor("method")}
-							value={method}
-							onChange={(event) => {
-								const next =
-									event.target.value === "app" && onBeginAppSetup
-										? "app"
-										: event.target.value === "public"
-											? "public"
-											: "pat";
-								form.setValue("method", next);
-								// The App path can only connect what the installation
-								// grants, and the picker renders blank for anything else —
-								// leaving a repository typed on another path selected would
-								// submit a repository the reader cannot see chosen.
-								if (
-									next === "app" &&
-									!appRepositories?.some(
-										(candidate) => candidate.repo === form.getValues("repo"),
-									)
-								) {
-									form.setValue("repo", "");
-									// The branch was filled in from the repository, so it
-									// describes one that is no longer selected.
-									form.setValue("branch", "");
-								}
-							}}
-						>
-							{onBeginAppSetup && (
-								<option value="app">GitHub App (recommended)</option>
-							)}
-							<option value="public">Public repository (no token)</option>
-							<option value="pat">Fine-grained personal access token</option>
-						</select>
-						<p className="text-xs text-muted-foreground">
-							{method === "app"
-								? "Install the app on repositories you choose. Nothing to create, paste, or rotate."
-								: method === "public"
-									? "No token needed, but GitHub allows only 60 unauthenticated requests an hour, so large repositories sync slowly — use the App or a token for those."
-									: "For an existing connection, or for development. Restrict the token to this repository with Contents: Read-only."}
-						</p>
-					</div>
+					<CredentialMethodField
+						id={idFor("method")}
+						value={method}
+						appAvailable={!!onBeginAppSetup}
+						onChange={(next) => {
+							form.setValue("method", next);
+							// The App path can only connect what the installation
+							// grants, and the picker renders blank for anything else —
+							// leaving a repository typed on another path selected would
+							// submit a repository the reader cannot see chosen.
+							if (
+								next === "app" &&
+								!appRepositories?.some(
+									(candidate) => candidate.repo === form.getValues("repo"),
+								)
+							) {
+								form.setValue("repo", "");
+								// The branch was filled in from the repository, so it
+								// describes one that is no longer selected.
+								form.setValue("branch", "");
+							}
+						}}
+					/>
 
 					{method === "app" && !appRepositories ? (
-						<div className="space-y-2">
-							<p className="text-sm text-muted-foreground">
-								Installing sends you to GitHub to pick the repositories this
-								organization may read. You come back here to choose the branch
-								and paths.
-							</p>
-							<Button
-								type="button"
-								variant="outline"
-								onClick={onBeginAppSetup}
-								disabled={!!appSetupPhase}
-								aria-busy={!!appSetupPhase}
-							>
-								{appSetupPhase === "completing"
-									? "Completing setup…"
-									: appSetupPhase === "beginning"
-										? "Opening GitHub…"
-										: "Install or select repositories on GitHub"}
-							</Button>
-							{appSetupError && (
-								<p role="alert" className={errorClass}>
-									{appSetupError}
-								</p>
-							)}
-						</div>
+						<AppInstallPrompt
+							description="Installing sends you to GitHub to pick the repositories this organization may read. You come back here to choose the branch and paths."
+							onBeginAppSetup={onBeginAppSetup!}
+							{...(appSetupPhase ? { phase: appSetupPhase } : {})}
+							{...(appSetupError ? { error: appSetupError } : {})}
+						/>
 					) : method === "app" ? (
 						<div className="space-y-2">
 							<Label htmlFor={idFor("repo")}>Repository</Label>
@@ -384,58 +349,28 @@ export function ConnectGitHubForm({
 					</div>
 
 					{method === "pat" && (
-						<div className="space-y-2">
-							<Label htmlFor={idFor("token")}>Access token</Label>
-							<Input
-								id={idFor("token")}
-								aria-invalid={!!errors.accessToken}
-								aria-describedby={
-									errors.accessToken ? idFor("token-error") : undefined
-								}
-								type="password"
-								placeholder="PAT or GitHub App installation token"
-								{...form.register("accessToken")}
-							/>
-							<p className="text-xs text-muted-foreground">
-								Use a fine-grained PAT restricted to this repository with
-								Contents: Read-only. Your organization may require approval or
-								SSO authorization. Repository and branch access are verified
-								before saving.
-							</p>
-							{errors.accessToken && (
-								<p id={idFor("token-error")} className={errorClass}>
-									{errors.accessToken.message}
-								</p>
-							)}
-						</div>
+						<AccessTokenField
+							id={idFor("token")}
+							errorId={idFor("token-error")}
+							{...(errors.accessToken?.message
+								? { error: errors.accessToken.message }
+								: {})}
+							inputProps={form.register("accessToken")}
+						/>
 					)}
 
 					{/* A public repository is read with no credential, and a webhook
 					    needs administration of the repository — the host refuses a
 					    secret there and keeps the source current by periodic sync. */}
 					{method !== "public" && (
-						<div className="space-y-2">
-							<Label htmlFor={idFor("secret")}>Webhook secret (optional)</Label>
-							<Input
-								id={idFor("secret")}
-								aria-invalid={!!errors.webhookSecret}
-								aria-describedby={
-									errors.webhookSecret ? idFor("secret-error") : undefined
-								}
-								type="password"
-								placeholder="Shared secret GitHub signs push deliveries with"
-								{...form.register("webhookSecret")}
-							/>
-							<p className="text-xs text-muted-foreground">
-								Enables live webhook ingestion. Add it later if you don&apos;t
-								have it yet.
-							</p>
-							{errors.webhookSecret && (
-								<p id={idFor("secret-error")} className={errorClass}>
-									{errors.webhookSecret.message}
-								</p>
-							)}
-						</div>
+						<WebhookSecretField
+							id={idFor("secret")}
+							errorId={idFor("secret-error")}
+							{...(errors.webhookSecret?.message
+								? { error: errors.webhookSecret.message }
+								: {})}
+							inputProps={form.register("webhookSecret")}
+						/>
 					)}
 
 					{errorMessage && (

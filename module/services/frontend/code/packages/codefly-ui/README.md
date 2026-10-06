@@ -31,8 +31,9 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   data-in presentation. `layout` carries the page containers (`Card`, `Section`,
   `Tabs`) and the shadcn primitives promoted into the kit as their single sealed
   home (issue #451) — actions (`Button`), forms (`Input`, `Textarea`, `Label`,
-  `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Avatar`, `Table`,
-  `Skeleton`, `Separator`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
+  `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Chip`, `List`,
+  `DescriptionList`, `Avatar`, `Table`, `Skeleton`, `Separator`), feedback
+  (`Banner`, `EmptyState`, `ErrorState`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
   `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
   is `<Chat>`. React only: no plugin runtime, no host context.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
@@ -49,7 +50,51 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `TextBlock` — are exported too. Untrusted by default: no raw HTML, links only
   for http/https/mailto with `rel="noopener noreferrer"`, images off unless
   `allowImages`, and no `innerHTML` anywhere; colour only through the host's
-  token utilities.
+  token utilities. `<Markdown>` also marks what it rendered with the bytes it
+  came from (`sourceOffsets`) and lets the caller say where a link actually goes
+  (`resolveLink`) — see *A rendered document an annotation layer can read*.
+
+- **Board** (`@codefly-dev/ui/board`) — one collection in columns, one per value
+  of a field, whose cards a reader drags from one column to another or moves from
+  a menu. It commits nothing: a move is reported and the consumer confirms,
+  writes or refuses it. See *A board commits no move*.
+
+### Status, card headers, lists and empty states
+
+A solution page is built from kit components, never from hand-laid utilities:
+the kit is what makes such a page small. These exist because a consuming
+solution measured where it had to reach past the kit.
+
+- **Status tones.** `StatusTone` is `neutral | success | warning | danger |
+  info`, shared by `Badge`, `Chip` and `Banner` so a page's statuses agree.
+  `success`, `warning` and `info` are appearance tokens a skin may override
+  ([TOKENS.md](./TOKENS.md)); `danger` reads `destructive`. A tone is a tint of
+  its colour under text in it, and replaces a `variant`'s colours rather than
+  stacking on them. Set up / Connected / Error is `neutral` / `success` /
+  `danger`.
+- **`<Badge tone dot size>`.** `dot` prefixes a decorative, `aria-hidden` circle
+  in the badge's own colour, so a row of statuses is told apart by shape and
+  not by colour alone; the text is still what a screen reader gets. `size` is
+  `sm | default | lg`.
+- **`<Chip>` / `<ChipGroup>`.** A badge a person can act on: `href` makes it a
+  link, `onClick` a button, `render` swaps in a router link. `icon` leads,
+  `meta` trails after a separator (`meta="unread"` reads "· unread"),
+  `onRemove` + `removeLabel` add a remove control. The remove control sits
+  beside the link, never inside it: a button in a link is two targets announced
+  as one. `ChipGroup` is a named, wrapping list of them.
+- **`<Card description>`** puts the card's one-line purpose under its title in
+  the `card-description` slot, matching `Section`'s prop — not a muted
+  paragraph in the body, and not `CardRoot` mixed into a page of `Card`s.
+- **`<List>` / `<ListItem>` and `<DescriptionList>`** for the places a `Table` is
+  too heavy: a few rows with an icon, a description, quiet `meta` and
+  `actions` (`variant="divided"` rules lines between them), and term/value
+  pairs, `inline` in two aligned columns or `stacked`.
+- **`<Banner tone>`.** `neutral` (the default) is the product speaking and keeps
+  the original look; the status tones add a glyph each. `danger` is
+  `role="alert"`, the rest `role="status"`.
+- **`<EmptyState reference>`.** "The source card above says where this stands"
+  is a pointer, not an explanation (`description`) and not something to press
+  (`children`).
 
 ## Entry points
 
@@ -64,7 +109,10 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
+| `@codefly-dev/ui/board`           | `Board` (React-only)                                |
 | `@codefly-dev/ui/type-slots.css`  | The generated type-slot and control-rung utilities  |
+| `@codefly-dev/ui/theme.css`       | The token layer: token → utility, light/dark binding, custom variants (Tailwind source) |
+| `@codefly-dev/ui/preview.css`     | The kit compiled with the default skin, for previews only — see below |
 
 `react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
 **peer** dependencies — the host provides them so it and its Module-Federation
@@ -74,7 +122,7 @@ second copy would split that context and break `usePluginRuntime` in a remote.
 
 The two plugin peers are **optional** (`peerDependenciesMeta`): only `.`,
 `./plugin-host`, and `./skin` touch them, and the host supplies them. The
-`./layout`, `./dashboard`, `./chat` and `./content` subpaths reference neither, so a consumer
+`./layout`, `./dashboard`, `./chat`, `./content` and `./board` subpaths reference neither, so a consumer
 of just those subpaths installs the kit without pulling the host-internal plugin
 packages. `./layout` does pull the primitives' public runtime deps
 (`@base-ui/react`, `lucide-react`, `class-variance-authority`, `clsx`,
@@ -82,6 +130,13 @@ packages. `./layout` does pull the primitives' public runtime deps
 from the public registry with no extra config.
 
 ## Consuming from a solution
+
+**A remote's declared range has to admit the version that has what it uses.** The
+kit is versioned in 0.x and an additive release is a patch, so `^0.12.0` is
+satisfied by 0.12.0 — which carries neither `Markdown`'s `sourceOffsets` nor
+`@codefly-dev/ui/board`. A remote using either declares `^0.12.1`. (Registration
+checks the declared range against the version the host publishes, so a range that
+is too loose fails at runtime rather than at install.)
 
 A solution fe-remote imports `@codefly-dev/ui/layout` + `@codefly-dev/ui/dashboard` and
 shares them as Module-Federation singletons served by the host. Because the
@@ -100,10 +155,12 @@ plugin peers are optional, the solution only needs an `.npmrc` pointing the
 **Styling.** The kit's components name their type slots and control rungs as
 classes (`type-card-title`, `control-sm`) that the kit defines, not Tailwind. A
 consumer that compiles the kit's source with its own Tailwind build imports the
-generated stylesheet into its entry alongside its `@source` for the kit:
+token layer and the generated utilities into its entry alongside its `@source`
+for the kit, as the host's own `globals.css` does:
 
 ```css
 @import "tailwindcss";
+@import "@codefly-dev/ui/theme.css";
 @import "@codefly-dev/ui/type-slots.css";
 @source "../node_modules/@codefly-dev/ui/src";
 ```
@@ -174,8 +231,175 @@ const skin = await resolveSkin({
 The first source returning a valid descriptor wins; an invalid one is logged
 and skipped so the compiled default always renders.
 
-`Banner` from `@codefly-dev/ui/layout` renders persistent polite feedback with
-optional actions and dismissal. The caller owns data, authorization and read state.
+`Banner` from `@codefly-dev/ui/layout` renders persistent feedback with optional
+actions and dismissal. The caller owns data, authorization and read state.
+
+## Previewing a solution without a host
+
+Every class a kit component writes is defined only where something compiled the
+kit with its token layer, and every variable those classes read is set only
+where a host projected a skin onto `<html>`. A solution authors no CSS, so on
+its own it could not render its page at all. `@codefly-dev/ui/preview.css` is
+that compile done once, in this package: plain CSS, the kit's own source only,
+with the default skin's values at `:root`.
+
+It is generated (`npm run generate:preview-stylesheet`) and committed, not built
+at publish. Its bytes depend on inputs outside this folder — the contract's
+default skin and the Tailwind, Lightning CSS and tw-animate-css versions in the
+lockfile — which the kit-version gate cannot see. Committed, a change to any of
+them shows up as a changed file here, and the host's `preview-stylesheet` test
+fails until it is regenerated.
+
+```ts
+// The preview harness's entry — never a module the remote exposes.
+import "@codefly-dev/ui/preview.css";
+```
+
+**A preview build may use it** to render, review and screenshot a solution's
+pages and stories locally, and to run visual tests against them. Dark mode is
+`class="dark"` on an ancestor, as in the host.
+
+**A preview build may not use it for:**
+
+- **Anything a host loads.** Import it only from the preview harness's own
+  entry, never from a module the remote exposes or anything that module
+  imports. A remote renders inside the host's document, under the host's one
+  compiled stylesheet and the deployment's skin; bundled, this would ship a
+  second Tailwind preflight and the default skin's values into that document.
+- **Evidence of how a deployment looks.** It is the default skin. A
+  deployment's skin changes colour, type, radius and density, so a preview
+  screenshot shows structure and states, not the product's appearance.
+- **Styling anything but kit components.** Only classes the kit's own source
+  writes are compiled in. A utility a solution writes itself renders unstyled
+  in preview, and that is deliberate: it is the hand-laid markup the kit exists
+  to replace. `@codefly-dev/saas-ui`'s components are not covered either; they
+  render inside the host's stylesheet.
+
+The host's `src/lib/__tests__/preview-stylesheet.test.tsx` renders every story
+here and fails if any class one of them carries is missing from the file, so
+"built from kit components" and "painted in preview" stay the same claim.
+
+**Structure travels inline when the host does not compile you.** The host's
+stylesheet is compiled over this kit and `@codefly-dev/saas-ui` only (its
+`@source` lines); it compiles nothing a solution remote or another module's kit
+ships. A utility that exists only because one file wrote it — an arbitrary value
+such as `grid-cols-[…]` or `h-[var(--x)]` — is therefore defined for this kit
+and missing everywhere else. `DescriptionList`'s
+`grid-cols-[minmax(0,max-content)_minmax(0,1fr)]` is fine here for that reason. A
+kit element meant to render from a remote carries its structure inline (a
+`style` for layout) and takes only colour and type from the tokens.
+`src/__tests__/remote-safe-structure.test.ts` holds the components written
+against that rule to it, and names the ones it does not yet cover.
+
+## A rendered document an annotation layer can read
+
+A reader selects words in a rendered document and writes a comment about them.
+Mapping that selection back to the document is not a matter of counting
+characters on screen, because **rendered text is not its source**: markdown drops
+`**`, a heading loses its `#`, a list gains a bullet nobody wrote. So the
+renderer says which bytes it rendered, and the reading layer never has to guess.
+
+```tsx
+const front = version.indexOf("# ");          // the body, without its front matter
+<Markdown
+  headingLevel={2}
+  sourceOffsets                               // mark what was rendered
+  sourceStart={utf8Length(version.slice(0, front))}
+  resolveLink={(href) => resolve(href)}       // where a link in this corpus goes
+>
+  {version.slice(front)}
+</Markdown>
+```
+
+| Attribute | On | Means |
+| --- | --- | --- |
+| `data-source-start`, `data-source-end` | every block, and a `<span>` around every text run | the element's text was rendered from bytes `[start, end)` of the version |
+| `data-source-exact="false"` | anything markdown rewrote | the text is not those bytes verbatim, so a selection inside it widens to the whole element |
+| `data-source-ignore` | a code block's copy control | chrome the renderer added; it maps to nothing |
+
+This is the contract a composed module's annotation kit already reads through
+its text-range locator (its own `src/anchors/source-map.ts`); this kit matches it
+rather than inventing one.
+
+- **Offsets are UTF-8 bytes, half-open, counted in the version** — not string
+  indices. `é` is one index and two bytes, an emoji two indices and four, so a
+  document of plain ASCII passes a renderer that forgot the difference.
+  `sourceStart` is the byte offset of what you passed inside the whole version,
+  so a body rendered without its front matter still names the version's bytes.
+- **A plain run is byte-exact; everything else says so.** Exactness is *measured*
+  — each element's and each run's text is compared with the source it claims —
+  rather than listed, so a construct nobody anticipated is marked inexact instead
+  of lying. A fenced block is the shape in miniature: the `<pre>` carries the
+  whole fence and is never exact, while the `<code>` inside carries the body
+  alone and is, so a reader comments on the block as a whole and selects inside
+  it character for character.
+- **The two source-rewriting options are off.** `references` protects a `[n]`
+  marker by rewriting the source before it is parsed, which would move every
+  offset after it, so it is not applied under `sourceOffsets`. `lineBreaks` is
+  applied: it splits a run rather than the source, and each piece keeps its own
+  bytes.
+- **Chrome the source did not write** — a GFM footnote's generated heading, its
+  `↩` back-reference — has no range of its own and maps to its nearest marked
+  ancestor as a whole.
+
+`resolveLink` answers the other half. A link in a corpus is usually a path in a
+repository (`../decisions/x.md#why`), and only the caller knows where that goes:
+it returns `{ href, external }` for a destination it knows, `{ open }` to
+navigate inside the product with no URL at all, `{ unavailable }` for a target it
+cannot show, or `undefined` to leave the kit's own rule in place. **A resolved
+href is held to exactly the same allowlist as one the content wrote** — http,
+https or mailto, no credentials in the authority — so no resolver can turn
+`javascript:` into a link.
+
+That allowlist refuses a **relative** result too, so `{ href: "#p=guide" }` or
+`{ href: "/pages/guide" }` renders as inert text rather than a link: a resolver
+returning an in-product route must give `{ open }` (the kit navigates nowhere by
+itself) or an absolute URL. The one exception is `linkBase`, which resolves a
+relative result against the caller's own trusted location first and then applies
+the same rules.
+
+## A board commits no move
+
+```tsx
+import { Board } from "@codefly-dev/ui/board";
+
+<Board
+  items={requests}
+  columns={[{ id: "open", label: "Open", empty: "Nothing waiting" }, …]}
+  columnOf={(request) => request.stage}       // the field it groups by
+  idOf={(request) => request.ref}
+  labelOf={(request) => request.name}         // what to call one, in a sentence
+  renderCard={(request) => <RequestCard request={request} />}
+  onOpen={(request) => open(request)}
+  onMove={(request, column) => confirmThenWrite(request, column)}
+  canMove={(request, column) => mayMove(request, column)}  // optional
+  searchText={(request) => `${request.name} ${request.owner}`}
+/>
+```
+
+- **The board changes nothing.** A drop, or a choice in a card's Move menu, calls
+  `onMove(item, column)` and stops there. The consumer confirms it with the
+  reader, writes it, or refuses it, and passes `items` back with the new column. A
+  board that moved the card itself would be showing a state the server never
+  agreed to, and would have to take it back when the write failed.
+- **Dragging is never the only way.** A pointer drag is a gesture a keyboard
+  cannot make and a screen reader cannot see, so every card that may move carries
+  a **Move** menu listing the columns it may go to, beside the control that opens
+  it. (This is where `SortableGrid` asks its caller for the keyboard
+  alternative — a board knows what the alternative is, so it ships it.) The
+  screen-reader instructions name that menu rather than the arrow keys dnd-kit
+  assumes.
+- **It knows nothing about what a column means.** No status, no workflow, no
+  vocabulary: `columnOf` names the field and `columns` names its values, so two
+  columns or five cost the same. `canMove` narrows which moves exist at all — a
+  column it refuses accepts no drop and is absent from the Move menu, and a card
+  with nowhere to go does not drag.
+- **Search is the consumer's.** `searchText` says what a search matches an item
+  against; without it there is no box, because only the consumer knows which
+  fields are worth searching.
+- Structure is inline (see *Structure travels inline when the host does not
+  compile you*), which `src/__tests__/remote-safe-structure.test.ts` holds it to:
+  a board renders from a remote, where only what the host already compiled exists.
 
 ## A loading indicator never flashes
 

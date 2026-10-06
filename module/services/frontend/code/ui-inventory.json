@@ -4,6 +4,32 @@
   "status": "Implementation in progress; story coverage and closure evidence incomplete",
   "families": [
     {
+      "source": "packages/codefly-ui/src/board/board.tsx",
+      "imports": [
+        "@dnd-kit/core",
+        "react",
+        "../layout/badge.js",
+        "../layout/dropdown-menu.js",
+        "../layout/input.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui/board",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation: a collection in columns by a field, whose cards move between them. Replaces the board a consuming solution wrote for itself (module-saas-starter#1010).",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/board.stories.tsx",
+          "export": "RequestsByStage"
+        },
+        {
+          "file": "packages/codefly-ui/stories/board.stories.tsx",
+          "export": "ReadOnly"
+        }
+      ],
+      "coverage": "owner stories; the pointer drag is exercised against a stubbed layout, not a browser",
+      "remaining": "Verify the drag in a real browser under external skins, and the Move menu with a screen reader."
+    },
+    {
       "source": "packages/codefly-ui/src/chat/chat.tsx",
       "imports": [
         "react",
@@ -136,9 +162,13 @@
         "hast",
         "react",
         "react-markdown",
-        "remark-gfm",
+        "unified",
         "../layout/cn.js",
         "./code-block.js",
+        "./gfm.js",
+        "./links.js",
+        "./references.js",
+        "./source-offsets.js",
         "./url.js"
       ],
       "owner": "@codefly-dev/ui",
@@ -152,6 +182,10 @@
         {
           "file": "packages/codefly-ui/stories/content.stories.tsx",
           "export": "DocumentPreview"
+        },
+        {
+          "file": "packages/codefly-ui/stories/content.stories.tsx",
+          "export": "SourceMappedDocument"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -461,6 +495,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "BadgesAndAvatars"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "StatusBadges"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -471,6 +509,7 @@
       "imports": [
         "lucide-react",
         "react",
+        "./badge.js",
         "./button.js",
         "./cn.js"
       ],
@@ -481,6 +520,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "NotificationBanner"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "StatusBanners"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -545,6 +588,10 @@
         {
           "file": "packages/codefly-ui/stories/controls.stories.tsx",
           "export": "CompactCard"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "CardWithDescription"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -564,6 +611,27 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "CheckboxesAndSwitches"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/chip.tsx",
+      "imports": [
+        "@base-ui/react/use-render",
+        "lucide-react",
+        "react",
+        "./badge.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "An actionable badge (link, button, removable) for relation, scope, status and owner rows in solution pages.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Chips"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -689,6 +757,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "Empty"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "EmptyWithReference"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -819,6 +891,28 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/codefly-ui/src/layout/list.tsx",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Light list and term/value primitives for rows where a Table is too heavy.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Lists"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "DescriptionLists"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
       "source": "packages/codefly-ui/src/layout/notice.tsx",
       "imports": [
         "lucide-react",
@@ -906,7 +1000,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -1281,6 +1375,19 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/saas-ui/src/datasources/credential-mode.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "react"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "The three credential modes a GitHub source can be connected with, and the fields each needs. Shared so the full connect form and the declared-source card ask the same question in the same words; a second copy would teach two products.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Exercised today only through its two consumers' stories (ConnectionValidation, DeclaredSourceSetUp). Add a story per mode once the explorer can drive a controlled select, then verify under external skins."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/datasources-panel.tsx",
       "imports": [
         "@codefly-dev/ui/layout",
@@ -1325,6 +1432,42 @@
       ],
       "coverage": "owner stories; browser/skin verification pending",
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/datasources/declared-source-card.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@tanstack/react-query",
+        "react",
+        "../solution/viewer.js",
+        "./credential-mode.js",
+        "./declared-source.js",
+        "./errors.js",
+        "./gateway.js",
+        "./github-app-setup.js",
+        "./queries.js",
+        "./types.js",
+        "./util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "One source a solution declares it is built on, in one of three states: Set up, Connected, Error. The repository is the solution's statement, never a question put to the person, so the card renders it and submits it and offers no control that could change it.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "DeclaredSourceSetUp"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "DeclaredSourceConnected"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "DeclaredSourceError"
+        }
+      ],
+      "coverage": "owner stories and unit tests; browser/skin verification pending",
+      "remaining": "Verify explorer rendering and the three states under external skins, and the GitHub App return leg against a real installation."
     },
     {
       "source": "packages/saas-ui/src/datasources/directory.tsx",
@@ -1404,6 +1547,36 @@
         {
           "file": "packages/saas-ui/stories/no-readable-collection.stories.tsx",
           "export": "Chat"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/solution/principal-names.tsx",
+      "imports": [
+        "@codefly-dev/saas-sdk",
+        "@connectrpc/connect",
+        "react",
+        "./binding.js",
+        "./transport.js",
+        "./viewer.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Who did something, named from the viewer's own organization directory: one read per page, kept per viewer, so a solution or module kit showing a principal does not list the directory itself or show a bare id.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Named"
+        },
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Loading"
+        },
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Refused"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -1734,6 +1907,18 @@
       "source": "src/app/(dashboard)/notifications/page.tsx",
       "imports": [
         "@/features/notifications/ui/notifications-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/oauth2/consent/page.tsx",
+      "imports": [
+        "@/features/auth/ui/consent-page"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -2078,6 +2263,19 @@
       "source": "src/app/admin/platform/admins/page.tsx",
       "imports": [
         "@/features/platform/ui/admins-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/catalogue/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/platform-catalogue"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -3298,6 +3496,23 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/auth/ui/consent-page.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/components/brand-mark",
+        "@/features/auth/model/client-authorization",
+        "@/lib/appearance-provider",
+        "@/lib/auth"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the auth workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/auth/ui/login-page.tsx",
       "imports": [
         "lucide-react",
@@ -3506,6 +3721,27 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Owns the datasources workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform-catalogue/ui/platform-catalogue-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "lucide-react",
+        "react",
+        "@/gen/saas/accounts/v1/authorization_pb",
+        "@/gen/saas/accounts/v1/platform_admin_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../model/facts",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform Catalogue workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
@@ -4926,6 +5162,7 @@
     "@codefly-dev/ui/layout": "packages/codefly-ui/src/layout/index.ts",
     "@codefly-dev/ui/table": "packages/codefly-ui/src/table/index.ts",
     "@codefly-dev/ui/content": "packages/codefly-ui/src/content/index.ts",
-    "@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts"
+    "@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts",
+    "@codefly-dev/ui/board": "packages/codefly-ui/src/board/index.ts"
   }
 }

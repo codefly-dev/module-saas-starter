@@ -9,15 +9,20 @@ not evidence that all primitives, stories or production callers had migrated.
 
 | Tier | Contract |
 | --- | --- |
-| `layout` (rank 1) | Native and Base UI controls, compound CardRoot/TabsRoot, data-in Card/Tabs, SegmentedControl, Pagination, Field, table toolbar and empty state, page layout, feedback, responsive Sidebar and Toaster |
-| `content` (rank 2) | Markdown (GFM, no raw HTML, safe links, images opt-in), bounded collapsible JSON tree, code with lazily-loaded highlighting, whitespace-preserving text, and the `Content` switch over them with `auto` detection and an `inline` one-line variant |
+| `layout` (rank 1) | Native and Base UI controls, compound CardRoot/TabsRoot, data-in Card/Tabs, SegmentedControl, Pagination, Field, table toolbar and empty state, page layout, status tones (Badge, Chip/ChipGroup, Banner), List/ListItem and DescriptionList, feedback, responsive Sidebar and Toaster |
+| `content` (rank 2) | Markdown (GFM, no raw HTML, safe links including a caller-resolved one, images opt-in, optional source-byte offsets for an annotation layer), bounded collapsible JSON tree, code with lazily-loaded highlighting, whitespace-preserving text, and the `Content` switch over them with `auto` detection and an `inline` one-line variant |
 | `dashboard` (rank 3) | Declarative dashboard, point charts, multi-series metric charts, tiles, provenance and sparklines |
 | `chat` (rank 3) | Resolved messages and injected send action |
 | `table` (rank 3) | DataTable driven by an injected TanStack table instance |
+| `board` (rank 3) | Board: a collection in columns by a field, dragged or moved from a menu, committing nothing |
 
 Composite tiers compose layout; they do not import sibling composites. No tier
 fetches data, reads host authentication or imports private host aliases. Host CSS
-is authoritative; owner packages supply class names, not a second stylesheet.
+is authoritative: the kit supplies class names and the Tailwind source that
+defines them (`theme.css`, `type-slots.css`), which the host compiles into its one
+stylesheet. The kit's compiled `preview.css` is for a preview with no host and
+is never loaded beside the host's
+([README](./README.md#previewing-a-solution-without-a-host)).
 
 ## Stories and coverage
 

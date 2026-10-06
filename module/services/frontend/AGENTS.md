@@ -14,6 +14,20 @@ manifest — `id`, `nav`, `frontend.manifestUrl` + `exposedModule`, optional
 `src/solutions/registry.ts`, which then writes the frontend half **through the
 gateway** (`POST /solutions/_frontend`).
 
+`sources` is the optional declaration of what a solution is **built on**:
+`[{ provider: github, repo: owner/name, paths, ref, label }]`. `repo` is held
+to `AddGitHubSourceRequest`'s own pattern, and the paths and ref to its bounds,
+at the far end of the same journey — the declaration is submitted unedited by
+the kit's `<DeclaredSourceCard>`, so a repository the connect RPC would refuse
+is refused when it is *declared* rather than weeks later when somebody presses
+Connect. A malformed declaration fails the registration whole, as a dashboard
+or a surface does, and one repository declared twice is refused outright:
+nothing downstream could say which of the two a card renders. It is a
+statement, not an authority — declaring a source connects nothing and grants
+no read of its contents. The solution page reads it in process and hands it to
+the remote it mounts as `SolutionBinding.declaredSources`, so it is on neither
+the public nor the internal HTTP projection and no new RPC exists to serve it.
+
 The route **relays the registry's own answer**: `409` for a revision conflict,
 `403` when the id belongs to another publisher, `422` (`registration_rejected`)
 when the registry will not admit the manifest, `503` when the registry cannot be
@@ -61,6 +75,28 @@ activating a remote.
   token.
 - The dashboard graph is on none of them: the solution page reads it in-process
   through `findSolution`.
+- The platform Catalogue (`/admin/platform/catalogue`) is not one of them either:
+  it reads accounts' `PlatformAdminService.ListPlatformCatalogue`, super
+  administrators only, and that response carries each registration's status,
+  revisions, contract versions and leases with the manifest, upstream and service
+  alias withheld (`../accounts/AGENTS.md`). Each entry shows the registry's six
+  states — desired, authorized, applied, observed, withdrawing, retired — one
+  column each, and a fact the host has no record of is rendered as its gap
+  reason ("Not recorded", "Not observed"), never as an empty cell, a zero or a
+  match.
+- **"Running authorized" is shown only beside the evidence it rests on.** The
+  server judges the verdict and re-checks it at its read boundary, so a response
+  that still arrives claiming the approved execution runs with no approval, no
+  build incarnation, no observed execution or no time of observation is a defect —
+  and `features/platform-catalogue/model/facts.ts` renders it as **"Inconsistent"**
+  rather than a green cell. That label is deliberately not one of the server's gap
+  reasons: the server did not say it could not tell, it said something its own
+  response contradicts, and conflating the two would hide a defect among the facts
+  this host simply does not hold yet. A reader sees green and stops looking, which
+  is why that one cell is checked and the two that report trouble are not.
+  The browser checks only that each piece of evidence is *present*: how long an
+  observation speaks for the present is the host's to decide, and a copy of that
+  window here would drift from it.
 
 ## Loading a remote, and its CSP
 
@@ -101,6 +137,19 @@ refuses to republish a version whose contents moved, and that refusal fails the
 release. The package's `exports` map may not name a subpath into the generated
 tree: a consumer imports the SDK's own surface, never a stub path
 (`publish-frontend-kit.test.mjs` enforces it). See the `cut-a-release` skill.
+
+`@codefly-dev/ui` and `@codefly-dev/saas-ui` publish beside it. The kit owns its
+token layer (`packages/codefly-ui/src/skin/theme.css`: token → utility, the
+light/dark binding, the custom variants); `src/app/globals.css` only imports it,
+so a new appearance token is bound there, not here. The kit also ships
+`src/skin/preview.generated.css` (`@codefly-dev/ui/preview.css`) — the kit
+compiled with the default skin, so a solution can preview its pages with no
+host. It is committed and checked for staleness, because its bytes depend on the
+contract and the lockfile, which the kit-version gate does not see: after
+touching either, run `npm run generate:preview-stylesheet --workspace
+@codefly-dev/ui`. It is for previews only and never loaded by the
+host or a remote; what it may and may not be used for is in
+`packages/codefly-ui/README.md` § "Previewing a solution without a host".
 
 ## Two rules every admin surface owes its reader
 

@@ -47,6 +47,8 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Generated REST inventory: `module/services/accounts/generated/rest-surface.json`
 - REST/OpenAPI contract and extension boundary: `module/REST_SURFACE.md`
 - Resource follow subscriptions over events and notifications: `module/FOLLOWS.md`
+- The host as an OAuth 2.1 authorization server, its two client sources, and
+  resource indicators: [The host as an OAuth 2.1 authorization server](#the-host-as-an-oauth-21-authorization-server)
 
 ## Architecture
 
@@ -153,6 +155,209 @@ an organization bought or is allowed a product capability; Unleash answers
 which runtime behavior is rolled out. A flag may disable entitled behavior but
 must never grant an entitlement, raise a quota, or replace authorization. Each
 product path checks its entitlement independently from its flag evaluation.
+
+## The host as an OAuth 2.1 authorization server
+
+The host signs people in for its own public clients — an add-in, a CLI, a mobile
+app, an MCP client — and it is the **only** sign-in UI: a client never talks to
+an identity provider. Two spellings of the same authorization server exist, over
+one registry, one authorization-code table, one minter and one session kind.
+
+| Surface | Path | Owner |
+|---|---|---|
+| RFC 8414 authorization-server metadata | `GET /.well-known/oauth-authorization-server` | accounts (`pkg/business/oauth_authorization_server.go`), presented at the edge by the frontend proxy |
+| Authorization endpoint | `GET /oauth2/authorize` | frontend (`src/app/(auth)/oauth2/authorize/route.ts`) → the login page → the consent page |
+| Token endpoint (RFC 6749 form-encoded) | `POST /oauth2/token` | accounts (`pkg/adapters/oauth_http.go`) |
+| The first registered client's own RPCs | `/v1/auth/clients/validate`, `/v1/auth/clients/authorize`, `/v1/auth/token` | accounts (`pkg/business/client_authorization.go`) |
+| RFC 9728 protected-resource metadata for a solution's MCP endpoint | `GET /api/solutions/<id>/proxy/.well-known/oauth-protected-resource` | the solution's **runtime**, reached through the frontend's solution proxy (the gateway serves a solution's `.well-known` GET unauthenticated) |
+| The MCP endpoint itself | `POST /api/solutions/<id>/proxy/mcp` | the solution's runtime, same route |
+
+**The issuer is `APP_BASE_URL`.** RFC 8414 §2 requires an authorization
+server's issuer to be an https URL, and a client that discovers the metadata
+then verifies `iss` against it — so the published `issuer` and the `iss` of
+every minted token are **one configured value**, resolved once at startup, never
+from the request's `Host`. A deployment with no `APP_BASE_URL` publishes no
+metadata and keeps the pre-metadata literal issuer, so the two cannot disagree —
+and the registered-client browser handoff keeps working there, because issuing a
+code never depends on a published issuer. One that sets it mints the URL and
+keeps **accepting** the literal until tokens carrying it expire, so the change
+signs nobody out.
+
+**Registration credentials keep their own issuer.** The module- and
+solution-registration credentials are internal, with their own audiences and
+their own verifiers in the gateway and the frontend. They are not OAuth and
+publish nothing, so they stay on the fixed `saas-starter` issuer rather than
+following `APP_BASE_URL`: moving them would have refused a solution's frontend
+half while its gateway half registered, and an active registration needs both.
+
+**The resource is the path a client can reach, which is the solution proxy.**
+`/api/solutions/<id>/proxy/*` is the **only** public route to a solution's
+backend: it forwards the caller's bearer to the gateway and already serves the
+solution's `.well-known` anonymously. `/solutions/<id>/*` is the gateway's own
+internal surface — on the public origin that prefix is a page of the frontend
+that redirects to login — so the RFC 8707 resource is
+`<base>/api/solutions/<id>/proxy/mcp` and nothing else. An audience naming the
+internal path is one no client could ever present at the resource it describes.
+
+**A denied solution request carries the discovery challenge.** The gateway is
+where it is refused — it strips identity, runs ext_authz and answers itself,
+never proxying — so a challenge the runtime would have sent cannot reach anyone
+through it. Every protected `/solutions/<id>/*` answers 401 with
+`WWW-Authenticate: Bearer resource_metadata="<base>/api/solutions/<id>/proxy/.well-known/oauth-protected-resource"`,
+and the proxy route **passes that header through**: it is the only public way
+out, so a challenge it dropped was one nobody could read. The host serves no
+second copy of that document — two for one resource are two places to disagree,
+and a client follows whichever URL the challenge names.
+
+**Every `/.well-known/` path is public, served or not, matched as a path
+SEGMENT.** A well-known URI is a reserved metadata namespace (RFC 8615) and every
+discovery chain begins by fetching one with no credential, so the page
+middleware's login redirect must never reach them — including the ones this host
+does not answer, which must get the 404 that says so. A segment test rather than
+a root prefix, because these documents are not all at the root: a solution's
+protected-resource metadata sits beneath its own route, and `/solutions/<id>/` is
+a page of the frontend. A browser follows a 307 and looks fine; a non-browser
+client follows it, parses a login page as JSON, and concludes that this host is
+not an authorization server, which is a report pointing nowhere near the
+middleware that caused it. The predicate is `isPublic` in `frontend/src/proxy.ts`
+and it is tested directly for exactly that reason.
+
+**Consent is enforced by the host, not advertised to the page.** A grant request
+for a client whose authorization requires consent is refused unless it states
+that the person approved. That does not defend against a hostile browser — one
+holding the session can claim anything — but it is what stops a browser-side
+defect from issuing credentials nobody approved: the host does not rely on the
+page having read `requires_consent` correctly.
+
+**The wire names are the contract.** Accounts serialises OAuth snake_case and
+the frontend **decodes** it (`features/auth/model/oauth-authorization.ts`),
+failing closed on anything it cannot read. A cast would type-check while
+producing `undefined` for every field, and a unit test on either side cannot
+establish the agreement because each side's test fixes the shape that side
+expects — so the seam is held from both ends, each spelled against the other's
+own serialisation (`accounts/pkg/adapters/oauth_wire_contract_test.go` and
+`frontend/.../model/__tests__/wire-contract.test.ts`).
+
+The OAuth surface is **raw HTTP, not transcoded RPCs**, because its shape is the
+contract: RFC 6749 §3.2 requires a form-encoded token request and §5.2 a
+specific JSON error object, neither of which grpc-gateway produces. A client
+written against a standard OAuth library could not use a transcoded RPC.
+
+Two client sources, which cannot collide — a registry slug can never spell
+`https://`:
+
+- **Operator-registered.** `IDENTITY_REGISTERED_CLIENTS`, a JSON array in the
+  `identity` configuration group. Unset registers none, which refuses the flow.
+- **Client ID Metadata Documents.** A `client_id` that is an https URL is
+  fetched (bounded size and time, **no redirect at all** per CIMD draft-02 §5.1,
+  and guarded at the dial against every non-public destination — the IANA
+  special-purpose registries for both families, not just loopback and RFC 1918),
+  validated, and used as a public client for that one flow. Failures and invalid
+  documents are **not** cached (§5.2), so a publisher who fixes one is not made
+  to wait out a window; the abuse a negative cache would have bounded is bounded
+  by the authentication rate-limit class on the routes that reach it.
+  **Nothing durable is written.** Gated by
+  `IDENTITY_CLIENT_METADATA_DOCUMENTS`, unset meaning refused. There is **no**
+  dynamic client registration (RFC 7591) and no `registration_endpoint` in the
+  published metadata.
+
+**Resource indicators (RFC 8707).** An authorization request may name one
+resource: a solution's MCP endpoint **as a client can reach it**, which on a
+deployed cell is the host frontend's solution proxy —
+`https://<host>/api/solutions/<id>/proxy/mcp`. The gateway's own
+`/solutions/<id>/*` is an internal surface, and on the public origin that prefix
+is a frontend page that redirects to login, so a resource spelled that way names
+a document no client can fetch.
+
+The resource is recorded on the authorization code, persisted on the session, and
+carried as a second `aud` value beside the host's own — so every existing
+verifier still accepts the token. A rotation reissues the binding from the locked
+session row, never from the request.
+
+**A solution's MCP endpoint admits only a token issued for itself** (the security
+posture's SP-SOL-07). A token carrying just the host audience is a credential for
+the host's own API, and the whole purpose of a resource indicator is that one
+audience is not the other: it is refused there, with a 401 and a challenge saying
+what to authorize for. A deployment that has not been told its own public address
+cannot state which resource its tool endpoint requires, so it refuses by name
+rather than admitting what arrived.
+
+That line is drawn at the tool endpoint, not across every solution route. A
+solution's other routes are the product's own API surface, reached by a signed-in
+person whose session token names no resource; a resource-bound token is still
+confined there to the solution it names, so one solution's token never reads
+another's data.
+
+**The resource identifier is compared EXACTLY, by code-point equality, at both
+issuance and admission.** The resource URL is itself the audience value this host
+mints; a solution's runtime publishes that same string as its `resource`; and RFC
+9728 §3.3 has the client require the document's `resource` to equal the URL it
+dialled. No step in that chain folds case or re-renders the URL, so a host that
+accepted several spellings of one resource would have several resources — and a
+variant it minted would be rejected by the very client it was issued for. Both
+sides compare against `auth.SolutionMCPResource`, the single place the string is
+composed. A deployment with no configured public address cannot state what the
+expected identifier is, so it refuses to issue one and refuses to admit one.
+
+**A token's audience set has three readings, not two.** Bound to nothing, bound
+to one valid resource, or unreadable — and the third is refused on every path. It
+cannot be carried as an empty resource, because empty means "bound to nothing",
+which is the reading admitted most widely. Two resource audiences, or one that is
+not shaped like a resource identifier (userinfo, a query, a fragment, a
+non-loopback `http` origin), are refused. The verifier's shape rule is the
+issuer's own `auth.ParseResourceIndicator`, so verification cannot drift looser
+than issuance; the gateway spells the identical rule on its own side of the
+module boundary because nothing crosses it.
+
+**A sign-in state that cannot be recorded as used is refused** (handbook
+SP-IDENT-04). While the consumption store is unavailable, "has this state been
+used before?" has no answer, and admitting on no answer means the single-use
+property does not hold for the duration of the outage. The refusal carries its
+own error so an operator can tell a failing dependency from a replayed state; the
+caller maps both to one sentinel before answering.
+
+**RFC 8252 §7.3 is unconditional for loopback.** A native client takes an
+ephemeral port from the operating system at the moment of the request, so it
+cannot have registered the port it will listen on, and any port is allowed at
+request time whether or not the registration named one. The port is the only
+component relaxed — scheme, host, path and query must match, and userinfo and a
+fragment are refused.
+
+**This changes what an existing registration means.** The rule lives on
+`RegisteredClient.AllowsRedirect`, which the operator-declared registry uses too,
+so a client already declared with `http://localhost:3000/auth/callback` now
+matches that path on **any** port. An operator who wrote the port expecting it to
+pin should read it as no longer pinning: on loopback the port is not the thing
+that identifies the recipient, which is why §7.3 requires this and why PKCE is
+what protects the exchange.
+
+**A session cookie is not a credential at this perimeter.** The gateway verifies
+a bearer — an access token or an API key — and reads no cookie anywhere; a cookie
+is how the frontend holds a session for its own pages. A caller presenting one is
+told that, rather than reading "authentication required" while holding what looks
+to them like a credential.
+
+**Consent.** The host asks the person to approve a client by name when the
+client registered itself by publishing a document (nobody but the person can
+vouch for it) or when the request narrows the credential to a named resource.
+An operator-declared client asking for nothing in particular keeps the silent
+handoff it has today.
+
+The consent screen always shows the origin the host **verified** — the one it
+fetched the document from. A document's own `client_uri` is read by nothing: a
+document at `https://client.example.com/doc` may claim any `client_uri`, and
+displaying that claim would name a publisher the host never reached (CIMD
+draft-02 §8.5). The client's `client_name` is shown as untrusted presentation
+beside the verified origin, never instead of it.
+
+A redemption is checked against the client's policy **as it stands then**, not
+only against the code: a metadata client withdraws a callback by removing it
+from its document, since there is no row to delete.
+
+An MCP token is a **session** credential: the gateway stamps
+`x-credential-kind: session` with a session id, so a solution's SDK mints the
+viewer's Work Context from it exactly as from a browser session. Lifetime,
+refresh rotation and revocation are the registered-client tokens'.
 
 ## Three layers of authorization
 

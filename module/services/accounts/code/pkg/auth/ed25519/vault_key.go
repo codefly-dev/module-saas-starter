@@ -17,8 +17,15 @@ package ed25519minter
 //	}
 //
 // The vault service used by the dev fixture already seeds this path on
-// first boot (see services/vault start). For deployed environments a
-// one-shot seeding script writes the keypair once and Vault persists it.
+// first boot (see services/vault start), in an in-memory store a restart
+// discards. For every deployed environment the key's custody is the
+// platform's identity-seeding command: it writes the keypair once,
+// create-only, from the cell's durable seed, so a re-seed restores the
+// SAME keypair and the kid the gateway pinned does not move. accounts
+// reads this path and refuses to boot without it; it never generates a
+// key of its own outside the local environment, because a self-minted one
+// would diverge from that seed and invalidate every live session. See
+// module/KEY_ROTATION.md, "Custody of the signing key".
 
 import (
 	"context"
@@ -31,6 +38,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"accounts/pkg/meshtransport"
 )
 
 // VaultKeyLoaderConfig is the minimum input to fetch the signing key.
@@ -43,13 +52,12 @@ type VaultKeyLoaderConfig struct {
 	SecretPath string
 	// HTTPClient is used for the HTTP GET. Defaults to a 5s-timeout client.
 	HTTPClient *http.Client
-	// AllowInsecureHTTP permits fetching the key over cleartext http from a
-	// non-loopback host. Both the Vault token and the returned private key then
-	// travel unprotected at the app layer, so this may be set only when the
-	// operator knows the connection is protected out of band — e.g. an mTLS
-	// service mesh wraps the hop. The safety of a given path is a deployment
-	// fact the operator asserts; it cannot be inferred from the address.
-	AllowInsecureHTTP bool
+	// MeshProtected carries the composition's assertion that every in-cluster
+	// hop is wrapped by a mutually authenticated mesh. With it, cleartext http
+	// is permitted to an in-cluster Service address and to nothing else — both
+	// halves of that rule live in package meshtransport, which this defers to so
+	// there is one rule rather than two that can drift.
+	MeshProtected bool
 }
 
 // LoadKeyFromVault fetches the Ed25519 keypair from Vault KV v2.
@@ -61,7 +69,7 @@ func LoadKeyFromVault(ctx context.Context, cfg VaultKeyLoaderConfig) (ed25519.Pr
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("ed25519minter: vault token is required")
 	}
-	if err := validateVaultAddress(cfg.Address, cfg.AllowInsecureHTTP); err != nil {
+	if err := validateVaultAddress(cfg.Address, cfg.MeshProtected); err != nil {
 		return nil, err
 	}
 	if cfg.SecretPath == "" {
@@ -90,7 +98,13 @@ func LoadKeyFromVault(ctx context.Context, cfg VaultKeyLoaderConfig) (ed25519.Pr
 		return nil, fmt.Errorf("ed25519minter: read vault response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ed25519minter: vault http %d: %s", resp.StatusCode, string(body))
+		// Vault's body is never echoed. This request presents the token in a
+		// header, and a server or intermediary that reflected the request back —
+		// some do, in an error — would put the live token into a startup error
+		// and from there into every log that collected it. The status plus the
+		// path is what diagnoses this, and the AppRole and Transit clients
+		// already suppress bodies for the same reason.
+		return nil, fmt.Errorf("ed25519minter: vault http %d reading %s", resp.StatusCode, cfg.SecretPath)
 	}
 
 	var envelope struct {
@@ -124,16 +138,18 @@ func LoadKeyFromVault(ctx context.Context, cfg VaultKeyLoaderConfig) (ed25519.Pr
 //
 //   - loopback, always, so the dev fixture (http://localhost:8200) keeps
 //     working — traffic to 127.0.0.0/8 or ::1 never leaves the host; and
-//   - any host, when allowInsecureHTTP is set — the operator's explicit
-//     assertion that this connection is protected out of band (e.g. an mTLS
-//     service mesh wraps the hop, as with the in-cluster dev-vault).
+//   - an in-cluster Kubernetes Service address, when meshProtected is set —
+//     the composition's explicit assertion that a mutually authenticated mesh
+//     wraps every in-cluster hop. A cell Vault listens in-mesh without TLS of
+//     its own, so a meshed cell has no https URL to give.
 //
-// The out-of-band case is an operator decision, not something derivable from the
-// address: a hostname suffix like ".svc" says nothing about whether the peer is
-// actually enrolled in the mesh, and an ExternalName service can even resolve a
-// ".svc.cluster.local" name to a public host. So confidentiality is gated on the
-// operator's assertion rather than a naming heuristic.
-func validateVaultAddress(address string, allowInsecureHTTP bool) error {
+// Neither condition is derivable from the address alone, and neither is enough
+// alone. A hostname suffix like ".svc" says nothing about whether the peer is
+// enrolled in the mesh, and "vault.svc.example.com" is externally routable
+// despite carrying the label — so the assertion is required. And the assertion
+// covers only what a mesh can cover, so it admits no external name, bare IP or
+// short name even when set. Both halves are package meshtransport's rule.
+func validateVaultAddress(address string, meshProtected bool) error {
 	u, err := url.Parse(address)
 	if err != nil {
 		return fmt.Errorf("ed25519minter: parse vault address: %w", err)
@@ -142,10 +158,10 @@ func validateVaultAddress(address string, allowInsecureHTTP bool) error {
 	case "https":
 		return nil
 	case "http":
-		if isLoopbackHost(u.Hostname()) || allowInsecureHTTP {
+		if isLoopbackHost(u.Hostname()) || meshtransport.Admits(meshProtected, address) {
 			return nil
 		}
-		return fmt.Errorf("ed25519minter: refusing to fetch the signing key over cleartext http from non-loopback host %q; use https, or opt in to insecure http only when the connection is protected out of band (e.g. an mTLS mesh)", u.Host)
+		return fmt.Errorf("ed25519minter: refusing to fetch the signing key over cleartext http from non-loopback host %q; %s", u.Host, meshtransport.Remedy)
 	default:
 		return fmt.Errorf("ed25519minter: vault address must use http or https, got scheme %q", u.Scheme)
 	}

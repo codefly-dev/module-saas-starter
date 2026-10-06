@@ -1,8 +1,11 @@
+import type { DeclaredSource } from "../datasources/declared-source.js";
+
 /**
- * What the host hands every solution remote it mounts — the part of
- * `SolutionPageProps` a remote's own code reaches its backend with. The host's
- * `SolutionPageProps` extends this interface, so the remote and the host read
- * one definition rather than two copies that drift.
+ * What the host hands every solution remote it mounts — what a remote's own
+ * code reaches its backend with, plus the host's copy of what this solution
+ * declared about itself. The host's `SolutionPageProps` extends this
+ * interface, so the remote and the host read one definition rather than two
+ * copies that drift.
  *
  * Widening this is a minor of the host↔remote contract; making a field
  * required that a remote already receives optionally, or removing one, is a
@@ -56,6 +59,24 @@ export interface SolutionBinding {
 		input: RequestInfo | URL,
 		init?: RequestInit,
 	) => Promise<Response>;
+	/**
+	 * The sources this solution declared it is built on, as the host validated
+	 * and stored them at registration (`sources:` in the registration
+	 * manifest). The host hands the declaration straight back rather than
+	 * making the remote restate it in code: one statement, validated once,
+	 * where an operator reading the registration and the person reading the
+	 * page see the same repository.
+	 *
+	 * A declaration is not a connection and not a permission. It says which
+	 * repository the solution reads; whether the organization has connected it
+	 * is answered by the host's own source list, which is what
+	 * `<DeclaredSourceCard>` reads.
+	 *
+	 * Optional, and absent from an older host: a remote reading it must treat
+	 * absence as "the host does not tell me", never as "this solution declares
+	 * nothing".
+	 */
+	declaredSources?: DeclaredSource[];
 }
 
 /**

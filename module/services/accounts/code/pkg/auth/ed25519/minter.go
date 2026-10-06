@@ -51,8 +51,31 @@ import (
 
 // Config controls Minter behaviour. Zero values are safe defaults.
 type Config struct {
-	// Issuer is set as `iss` on every access token.
+	// Issuer is set as `iss` on every access token. A deployment that publishes
+	// RFC 8414 metadata sets it to the same https URL the metadata names, which
+	// is what lets a client that discovered the metadata verify the token.
 	Issuer string
+	// RegistrationIssuer is the `iss` on the module- and solution-registration
+	// credentials, which is deliberately NOT Issuer.
+	//
+	// Those are internal cluster credentials with their own audiences and their
+	// own verifiers — in the gateway and in the frontend, each pinned to a
+	// literal. Access tokens had to move to an https URL because RFC 8414
+	// requires the published OAuth issuer to be one; registration credentials
+	// are not OAuth and publish nothing, so moving them with the access token
+	// bought nothing and broke every verifier that had not moved in the same
+	// release. A solution's gateway half would register while its frontend half
+	// was refused, and a registration needs both.
+	//
+	// Keeping it fixed means there is no migration: the verifiers are correct as
+	// they stand, including for credentials minted before and after the change.
+	RegistrationIssuer string
+	// AdditionalAcceptedIssuers are `iss` values VerifyAccess accepts besides
+	// Issuer. It exists for exactly one migration: a deployment moving from the
+	// pre-metadata literal issuer to its https URL keeps accepting the literal
+	// while tokens minted under it are still in flight, so the change does not
+	// sign out every live session at deploy.
+	AdditionalAcceptedIssuers []string
 	// Audience is set as `aud` on every access token.
 	Audience string
 	// AccessTokenTTL is the lifetime of an access token. Default 3 min — kept
@@ -91,6 +114,9 @@ func (c *Config) withDefaults() error {
 	}
 	if c.Audience == "" {
 		c.Audience = "saas-starter"
+	}
+	if c.RegistrationIssuer == "" {
+		c.RegistrationIssuer = "saas-starter"
 	}
 	if c.AccessTokenTTL == 0 {
 		c.AccessTokenTTL = 3 * time.Minute
@@ -305,7 +331,8 @@ func (m *Minter) MintModuleRegistration(prefix string) (string, time.Time, error
 	}
 	claims := moduleRegistrationClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    m.cfg.Issuer,
+			// RegistrationIssuer, not Issuer: see the Config field's comment.
+			Issuer:    m.cfg.RegistrationIssuer,
 			Subject:   "module:" + prefix,
 			Audience:  jwt.ClaimStrings{ModuleRegistrationAudience},
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -427,6 +454,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		IPAddress:             identity.IPAddress,
 		FamilyID:              familyID,
 		ClientID:              identity.ClientID,
+		Resource:              identity.Resource,
 		ActingAsUserID:        identity.ActingAsUserID,
 		RefreshHash:           hash,
 		IssuedAt:              now,
@@ -454,23 +482,30 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 //     unknown tokens return the same ErrRefreshRevoked sentinel to avoid an
 //     existence oracle.
 func (m *Minter) VerifyRefresh(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
-	return m.rotateRefresh(ctx, refreshToken, "")
+	return m.rotateRefresh(ctx, refreshToken, "", "")
 }
 
-// VerifyClientRefresh implements auth.JWTMinter.VerifyClientRefresh. The client
-// check happens inside the locked rotation, on the stored row, so it cannot be
-// raced by a concurrent rotation that changes which session the hash resolves
-// to. A mismatch is not a terminal rejection: the token is a legitimate one
-// held by its own client, and revoking its family because a different client
-// named it would make one client able to sign another out.
-func (m *Minter) VerifyClientRefresh(ctx context.Context, refreshToken, clientID string) (*auth.TokenPair, error) {
+// VerifyClientRefresh implements auth.JWTMinter.VerifyClientRefresh. Both
+// checks happen inside the locked rotation, on the stored row, so neither can
+// be raced by a concurrent rotation that changes which session the hash
+// resolves to. Neither is a terminal rejection: the token is a legitimate one
+// held by its own client, and revoking its family because a different client —
+// or the same client naming a different resource — presented it would make one
+// request able to sign a session out.
+func (m *Minter) VerifyClientRefresh(
+	ctx context.Context,
+	refreshToken, clientID, requiredResource string,
+) (*auth.TokenPair, error) {
 	if clientID == "" {
 		return nil, errors.New("ed25519minter: client refresh names no client")
 	}
-	return m.rotateRefresh(ctx, refreshToken, clientID)
+	return m.rotateRefresh(ctx, refreshToken, clientID, requiredResource)
 }
 
-func (m *Minter) rotateRefresh(ctx context.Context, refreshToken, requiredClientID string) (*auth.TokenPair, error) {
+func (m *Minter) rotateRefresh(
+	ctx context.Context,
+	refreshToken, requiredClientID, requiredResource string,
+) (*auth.TokenPair, error) {
 	if m.configErr != nil {
 		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
 	}
@@ -487,6 +522,13 @@ func (m *Minter) rotateRefresh(ctx context.Context, refreshToken, requiredClient
 		}
 		if requiredClientID != "" && rec.ClientID != requiredClientID {
 			return nil, auth.ErrRefreshRevoked
+		}
+		// RFC 8707 §2.2 lets a token request repeat `resource`, and it must be
+		// one the authorization granted. Checked here, on the locked row and
+		// before consumption, so naming the wrong one costs the client nothing
+		// but the refusal — it still holds the token it was legitimately issued.
+		if requiredResource != "" && rec.Resource != requiredResource {
+			return nil, auth.ErrRefreshResourceMismatch
 		}
 		now := m.now()
 		if !now.Before(rec.ExpiresAt) {
@@ -517,7 +559,8 @@ func (m *Minter) rotateRefresh(ctx context.Context, refreshToken, requiredClient
 		return next, err
 	})
 	if err != nil {
-		if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) {
+		if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) ||
+			errors.Is(err, auth.ErrRefreshResourceMismatch) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("ed25519minter: rotate refresh: %w", err)
@@ -614,6 +657,7 @@ func identityFromCurrentAuthorization(
 		ScopedRolesTruncated:  authorization.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		ClientID:              rec.ClientID,
+		Resource:              rec.Resource,
 		Email:                 rec.Email,
 		DisplayName:           rec.DisplayName,
 		MFASatisfied:          mfaSatisfied,
@@ -652,9 +696,13 @@ func (m *Minter) Revoke(ctx context.Context, refreshToken string) error {
 //
 // alg is locked to EdDSA. iss/aud/exp/nbf are validated. Clock skew tolerated.
 func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
+	// The issuer is checked below rather than by the parser: jwt.WithIssuer takes
+	// one value, and a deployment mid-migration must accept two — what it mints
+	// now and what it minted before. Dropping the parser option without
+	// replacing the check would accept ANY issuer, so the explicit comparison
+	// is the whole of it and runs before any claim is read.
 	parser := jwt.NewParser(
 		jwt.WithValidMethods([]string{"EdDSA"}),
-		jwt.WithIssuer(m.cfg.Issuer),
 		jwt.WithAudience(m.cfg.Audience),
 		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(m.cfg.ClockSkew),
@@ -693,6 +741,9 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 	}
 	if !token.Valid {
 		return nil, auth.ErrTokenMalformed
+	}
+	if !m.acceptsIssuer(claims.Issuer) {
+		return nil, auth.ErrTokenWrongIssuer
 	}
 
 	userID, err := uuid.Parse(claims.Subject)
@@ -757,6 +808,14 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		}
 	}
 
+	// Refused rather than projected: a token whose audience set names no single
+	// valid resource has no scope this host can state, and every caller
+	// downstream reads Identity.Resource as that scope.
+	resource, err := resourceAudienceOf(claims.Audience, m.cfg.Audience)
+	if err != nil {
+		return nil, err
+	}
+
 	return &auth.Identity{
 		UserID:                userID,
 		OrgID:                 orgID,
@@ -766,6 +825,7 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		ClientID:              claims.AuthorizedParty,
+		Resource:              resource,
 		Email:                 claims.Email,
 		DisplayName:           claims.Name,
 		ActingAsUserID:        actingAs,
@@ -776,6 +836,20 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		AssuranceLevel:        claims.AssuranceLevel,
 		MFAVerifiedAt:         numericDateTime(claims.MFAVerifiedAt),
 	}, nil
+}
+
+// acceptsIssuer reports whether an `iss` is one this minter trusts: the one it
+// signs with, or one explicitly declared for a migration window. An empty
+// candidate is never accepted, so a token carrying no issuer at all is refused
+// rather than matching an unset slot.
+func (m *Minter) acceptsIssuer(candidate string) bool {
+	if candidate == "" {
+		return false
+	}
+	if candidate == m.cfg.Issuer {
+		return true
+	}
+	return slices.Contains(m.cfg.AdditionalAcceptedIssuers, candidate)
 }
 
 // RevokeAccess parses the given access token (signature + claim
@@ -860,11 +934,25 @@ func (m *Minter) signAccess(
 		return "", time.Time{}, err
 	}
 	expiresAt := now.Add(m.accessTTL(identity))
+	// The host's own audience is always present, and a resource-bound token
+	// carries the RFC 8707 indicator beside it. Both, not one: the token is
+	// genuinely for two audiences — the named resource, and the host's own API
+	// that the resource resolves the caller's authority against — and dropping
+	// the host audience would make a verifier that validates it (the gateway's
+	// parser, this minter's own VerifyAccess) refuse a token it minted.
+	//
+	// What makes the indicator load-bearing is the gateway's check: a request
+	// to a solution's surface whose token carries a resource must carry THIS
+	// solution's resource. So the extra audience narrows rather than widens.
+	audience := jwt.ClaimStrings{m.cfg.Audience}
+	if identity.Resource != "" {
+		audience = append(audience, identity.Resource)
+	}
 	claims := accessClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.cfg.Issuer,
 			Subject:   identity.UserID.String(),
-			Audience:  jwt.ClaimStrings{m.cfg.Audience},
+			Audience:  audience,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -908,6 +996,41 @@ func (m *Minter) signAccess(
 		return "", time.Time{}, err
 	}
 	return signed, expiresAt, nil
+}
+
+// resourceAudienceOf projects the resource a verified token is bound to, and
+// refuses an audience set that names no single valid one.
+//
+// Three outcomes, not two. An empty resource means "bound to nothing" — an
+// ordinary session credential — so it cannot also stand for "I could not read
+// this", which would make an unreadable binding indistinguishable from the
+// classification that is accepted most widely. Two resource audiences, or one
+// that is not a resource identifier this host issues, are refused here.
+//
+// The shape question is answered by auth.ParseResourceIndicator, the same
+// function the authorization endpoint uses when it ISSUES one, so the verifier
+// cannot drift looser than the issuer. The gateway holds the identical rule on
+// its own side of the module boundary (classifyResourceAudience), which it must
+// spell separately because nothing may be imported across that boundary.
+func resourceAudienceOf(audience jwt.ClaimStrings, hostAudience string) (string, error) {
+	var resources []string
+	for _, value := range audience {
+		if value == hostAudience {
+			continue
+		}
+		resources = append(resources, value)
+	}
+	switch len(resources) {
+	case 0:
+		return "", nil
+	case 1:
+		if _, err := auth.ParseResourceIndicator(resources[0]); err != nil {
+			return "", auth.ErrInvalidResourceAudience
+		}
+		return resources[0], nil
+	default:
+		return "", auth.ErrInvalidResourceAudience
+	}
 }
 
 func numericDateTime(value *jwt.NumericDate) time.Time {
@@ -983,7 +1106,7 @@ func (m *Minter) MintSolutionRegistration(solutionID string) (string, time.Time,
 	}
 	claims := solutionRegistrationClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    m.cfg.Issuer,
+			Issuer:    m.cfg.RegistrationIssuer,
 			Subject:   "solution:" + solutionID,
 			Audience:  jwt.ClaimStrings{SolutionRegistrationAudience},
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -1009,7 +1132,7 @@ func (m *Minter) MintSolutionRegistration(solutionID string) (string, time.Time,
 func (m *Minter) MintForClient(
 	ctx context.Context,
 	userID, authorizingSessionID uuid.UUID,
-	clientID string,
+	clientID, resource string,
 ) (*auth.TokenPair, error) {
 	if m.configErr != nil {
 		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
@@ -1027,6 +1150,7 @@ func (m *Minter) MintForClient(
 			return nil, err
 		}
 		identity.ClientID = clientID
+		identity.Resource = resource
 		// The browser's device description belongs to the browser. A client runs
 		// somewhere else entirely, so carrying it over would label the new
 		// session with a device that is not the one holding its token.

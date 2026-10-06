@@ -1,4 +1,9 @@
 export {
+	type AppearanceStyleProperties,
+	appearanceStyleProperties,
+	appearanceVariableName,
+} from "./appearance.js";
+export {
 	CACHE_MAX_ENTRIES,
 	clearSkinCache,
 	type ResolveSkinOptions,

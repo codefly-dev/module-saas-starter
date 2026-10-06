@@ -65,7 +65,13 @@ var (
 	ErrSsoProvisioningMisconfigured = errors.New("auth: organization sso jit provisioning has no allowed email domains configured")
 
 	// Refresh rotation
-	ErrRefreshRevoked           = errors.New("auth: refresh token revoked")
+	ErrRefreshRevoked = errors.New("auth: refresh token revoked")
+	// ErrRefreshResourceMismatch is a token request repeating an RFC 8707
+	// `resource` the presented refresh token is not bound to. Distinct from
+	// ErrRefreshRevoked because the token is fine: the request disagrees with
+	// it, the rotation never happened, and the client still holds a usable
+	// credential. A caller surfaces it as `invalid_target`, not `invalid_grant`.
+	ErrRefreshResourceMismatch  = errors.New("auth: refresh token is bound to a different resource")
 	ErrRefreshReuse             = errors.New("auth: refresh token reuse detected")
 	ErrSessionUnavailable       = errors.New("auth: device session unavailable")
 	ErrOrganizationAccessDenied = errors.New("auth: organization membership required")

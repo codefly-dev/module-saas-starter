@@ -33,6 +33,13 @@ type SessionRecord struct {
 	// revoked without touching the person's other sessions. Empty for the host's
 	// own web session.
 	ClientID string
+	// Resource is the RFC 8707 resource indicator the session's tokens are
+	// bound to, persisted so a refresh rotation reissues the same audience. A
+	// rotation that re-read it from the request instead would let a client
+	// widen or move its own audience by asking; reading it from the locked row
+	// means the binding is fixed when the person consented to it. Empty for a
+	// session that named no resource.
+	Resource string
 	// ActingAsUserID is non-zero only on an impersonation window, where UserID
 	// is the admin and this is the user being viewed. Such a row carries no
 	// RefreshHash: an impersonation session is never rotatable, and its

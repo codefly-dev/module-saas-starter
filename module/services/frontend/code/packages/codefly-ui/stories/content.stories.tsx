@@ -133,3 +133,53 @@ export const DocumentPreview = {
 		</div>
 	),
 };
+
+const VERSION = `---
+title: A proposal
+owner: jane
+---
+
+# A module kit carries its own structure
+
+The host compiles **no stylesheet** for a remote, so a kit's layout is inline
+and only colour comes from the host's tokens. See [the decision](../decisions/surfaces.md#option-c).
+
+- A paragraph is byte-exact.
+- A bullet is not: markdown wrote it.
+
+\`\`\`ts
+const exact = true;
+\`\`\`
+`;
+
+/**
+ * The same bytes, shown as a reader sees them and as the annotation layer reads
+ * them: every block carries the range of the version it came from, and the plain
+ * runs carry theirs character for character.
+ */
+export const SourceMappedDocument = {
+	render: () => {
+		const front = VERSION.indexOf("# A module kit");
+		const body = VERSION.slice(front);
+		const base = new TextEncoder().encode(VERSION.slice(0, front)).length;
+		return (
+			<div className="max-w-2xl p-4">
+				<Markdown
+					headingLevel={2}
+					sourceOffsets
+					sourceStart={base}
+					resolveLink={(href) => ({
+						href: `https://example.com/corpus/${href.replace(/^\.\.\//, "")}`,
+						external: true,
+					})}
+				>
+					{body}
+				</Markdown>
+				<p className="mt-4 type-card-metadata text-muted-foreground">
+					Front matter is not rendered, and the offsets still name the version:
+					this body starts at byte {base}.
+				</p>
+			</div>
+		);
+	},
+};

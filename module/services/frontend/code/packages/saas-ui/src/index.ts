@@ -7,6 +7,31 @@ export {
 	DatasourcesPanel,
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
+// The credential block, presentational and controlled, exported for the same
+// reason `matchDeclaredSources` is: a consumer that renders the three states
+// in its own shell must be able to ASK for the credential without copying
+// `ConnectGitHubForm`. `solutions/README.md` refuses a copied capability in a
+// shared card, so offering the matching rule while withholding the one control
+// a caller cannot write for itself would leave the only documented path out of
+// the whole card a path across that boundary.
+export {
+	AccessTokenField,
+	AppInstallPrompt,
+	type CredentialMethod,
+	CredentialMethodField,
+	credentialMethodFrom,
+	fieldErrorClass,
+	WebhookSecretField,
+} from "./datasources/credential-mode.js";
+export {
+	type DeclaredSource,
+	declaredCollectionLabel,
+	matchDeclaredSources,
+} from "./datasources/declared-source.js";
+export {
+	DeclaredSourceCard,
+	type DeclaredSourceCardProps,
+} from "./datasources/declared-source-card.js";
 export {
 	DatasourceAccountLinks,
 	DatasourceDirectoryPanel,
@@ -81,8 +106,14 @@ export { parsePaths } from "./datasources/util.js";
 export {
 	type AccessibleScopeState,
 	COLLECTION_ACCESS_PATH,
+	type NameOf,
 	NoReadableCollection,
 	type NoReadableCollectionProps,
+	PrincipalName,
+	type PrincipalDirectoryState,
+	type PrincipalNameProps,
+	PrincipalNamesProvider,
+	type PrincipalNamesProviderProps,
 	requestBinding,
 	type SolutionBinding,
 	SolutionBindingError,
@@ -95,11 +126,15 @@ export {
 	solutionTransport,
 	useAccessibleScope,
 	useAccessToken,
+	useNameOf,
+	usePrincipalDirectory,
+	usePrincipalNames,
 	useSolutionJson,
 	useViewerEpoch,
 	viewerAdministersOrganization,
 	viewerIdentity,
 	viewerOrganization,
+	viewerPrincipal,
 } from "./solution/index.js";
 // When someone last signed in, said as a person reads it and kept true as time
 // passes; relativeTime is its words alone, for a consumer's own shell.

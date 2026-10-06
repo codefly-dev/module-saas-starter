@@ -1,3 +1,4 @@
+export type { DeclaredSource } from "../datasources/declared-source.js";
 export {
 	requestBinding,
 	type SolutionBinding,
@@ -12,6 +13,17 @@ export {
 	type NoReadableCollectionProps,
 } from "./no-readable-collection.js";
 export {
+	type NameOf,
+	PrincipalName,
+	type PrincipalDirectoryState,
+	type PrincipalNameProps,
+	PrincipalNamesProvider,
+	type PrincipalNamesProviderProps,
+	useNameOf,
+	usePrincipalDirectory,
+	usePrincipalNames,
+} from "./principal-names.js";
+export {
 	SolutionRequestError,
 	solutionFetch,
 	solutionJson,
@@ -25,4 +37,5 @@ export {
 	viewerAdministersOrganization,
 	viewerIdentity,
 	viewerOrganization,
+	viewerPrincipal,
 } from "./viewer.js";
