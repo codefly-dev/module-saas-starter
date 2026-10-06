@@ -12,7 +12,7 @@ import {
 	type ResolvedTypeSlot,
 	resolveTypeRole,
 	resolveTypeSlot,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import type { CSSProperties } from "react";
 
 /**

@@ -3,7 +3,7 @@
 import type {
 	FrontendBranding,
 	FrontendConfig,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { useQuery } from "@tanstack/react-query";
 import {
 	createContext,

@@ -19,14 +19,16 @@ const CODE_ROOT = join(dirname(SCRIPT_PATH), "..");
 // from the registry version — which is why every shared package must be
 // installable from the registry: a package the host shares but nobody publishes
 // forces each solution to re-implement the panel instead of mounting it.
-// GitHub Packages only accepts the org's `@codefly-dev` scope, so each of these
-// is named under it. Their plugin peers are optional (see each manifest), so a
-// solution installs those subpaths without the host-internal plugin packages —
-// no need to publish them here.
+// GitHub Packages only accepts the org's `@codefly-dev` scope and omits
+// peerDependenciesMeta from version metadata. Publish the plugin peers too,
+// under that scope: installation must not depend on optional-peer metadata.
+// Publish dependencies before their consumers so each new version resolves.
 export const PACKAGES = [
+	"@codefly-dev/saas-plugin-contract",
+	"@codefly-dev/saas-plugin-react",
+	"@codefly-dev/saas-sdk",
 	"@codefly-dev/ui",
 	"@codefly-dev/saas-ui",
-	"@codefly-dev/saas-sdk",
 ];
 
 export function workspacesByName(codeRoot = CODE_ROOT) {

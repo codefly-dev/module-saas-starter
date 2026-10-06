@@ -1,5 +1,10 @@
 "use client";
 
+import * as PluginContract from "@codefly-dev/saas-plugin-contract";
+import * as PluginCapabilities from "@codefly-dev/saas-plugin-contract/capabilities";
+import * as PluginReact from "@codefly-dev/saas-plugin-react";
+import * as PluginRuntime from "@codefly-dev/saas-plugin-react/runtime";
+import * as PluginUi from "@codefly-dev/saas-plugin-react/ui";
 import * as SaasSdk from "@codefly-dev/saas-sdk";
 import * as SaasUi from "@codefly-dev/saas-ui";
 import * as SaasUiSolution from "@codefly-dev/saas-ui/solution";
@@ -39,7 +44,12 @@ import {
 	refreshToken,
 	subscribeToken,
 } from "@/lib/connect/token-store";
-import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
+import {
+	CODEFLY_KIT_VERSION,
+	CODEFLY_SAAS_SDK_VERSION,
+	CODEFLY_PLUGIN_CONTRACT_VERSION,
+	CODEFLY_PLUGIN_REACT_VERSION,
+} from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
 // shadow or replace it: a solution remote renders against the one true instance
@@ -73,6 +83,31 @@ export { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION };
 // scope. This is the single source of truth the `kit-shared-version` test
 // asserts against directly, so a dropped `singleton` flag fails CI.
 export const CODEFLY_KIT_SHARED = {
+	"@codefly-dev/saas-plugin-contract": {
+		version: CODEFLY_PLUGIN_CONTRACT_VERSION,
+		lib: () => PluginContract,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-plugin-contract/capabilities": {
+		version: CODEFLY_PLUGIN_CONTRACT_VERSION,
+		lib: () => PluginCapabilities,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-plugin-react": {
+		version: CODEFLY_PLUGIN_REACT_VERSION,
+		lib: () => PluginReact,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-plugin-react/runtime": {
+		version: CODEFLY_PLUGIN_REACT_VERSION,
+		lib: () => PluginRuntime,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-plugin-react/ui": {
+		version: CODEFLY_PLUGIN_REACT_VERSION,
+		lib: () => PluginUi,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
 	"@codefly-dev/ui/layout": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => CodeflyLayout,

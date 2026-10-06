@@ -352,8 +352,8 @@ process.stdout.write(JSON.stringify({
 		const starterPluginImports = sourceFiles(join(codeDir, "src/plugins"))
 			.filter((path) => !path.includes("/__tests__/"))
 			.flatMap((path) => importsIn(readFileSync(path, "utf8")));
-		expect(starterPluginImports).toContain("@codefly/saas-plugin-contract");
-		expect(starterPluginImports).toContain("@codefly/saas-plugin-react");
+		expect(starterPluginImports).toContain("@codefly-dev/saas-plugin-contract");
+		expect(starterPluginImports).toContain("@codefly-dev/saas-plugin-react");
 
 		const referenceImports = importsIn(
 			readFileSync(
@@ -361,9 +361,11 @@ process.stdout.write(JSON.stringify({
 				"utf8",
 			),
 		);
-		expect(referenceImports).toContain("@codefly/saas-plugin-contract");
-		expect(referenceImports).toContain("@codefly/saas-plugin-react");
-		expect(referenceImports).toContain("@codefly/saas-plugin-react/runtime");
+		expect(referenceImports).toContain("@codefly-dev/saas-plugin-contract");
+		expect(referenceImports).toContain("@codefly-dev/saas-plugin-react");
+		expect(referenceImports).toContain(
+			"@codefly-dev/saas-plugin-react/runtime",
+		);
 	});
 
 	it("keeps App Router page and layout boundaries server-first", () => {

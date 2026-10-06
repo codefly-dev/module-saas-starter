@@ -3,7 +3,7 @@ import { join } from "node:path";
 import {
 	DEFAULT_FRONTEND_APPEARANCE,
 	resolveFrontendAppearance,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 import { FONT_CATALOG } from "../../app/fonts";
 import { appearanceStyleProperties } from "../appearance";

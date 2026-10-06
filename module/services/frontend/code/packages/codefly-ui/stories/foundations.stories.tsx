@@ -9,7 +9,7 @@ import {
 	FRONTEND_TYPE_SCALE_STEPS,
 	FRONTEND_TYPE_SLOT_NAMES,
 	resolveTypeSlot,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { useState } from "react";
 
 import {

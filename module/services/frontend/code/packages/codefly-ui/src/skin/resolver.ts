@@ -4,7 +4,7 @@ import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
 	resolveSkinRules,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import type {
 	RawBrandingOverride,
 	ResolvedSkin,

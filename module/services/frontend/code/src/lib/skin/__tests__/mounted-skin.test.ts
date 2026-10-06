@@ -5,7 +5,7 @@ import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
 	resolveTypeSlot,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	assertSkinSurvives,
 	type RawSkinDescriptor,
