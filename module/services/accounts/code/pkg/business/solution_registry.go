@@ -2,7 +2,9 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,6 +12,27 @@ import (
 
 // Solution registrations are projections of reconciled declarations. Delivery
 // owns their presence and removal; runtime processes cannot write them.
+
+var (
+	// ErrSolutionRegistrationNotFound is returned when no record exists for the
+	// solution a caller named.
+	//
+	// It survives the deletion of the runtime registration writer because it
+	// describes a READ, not a write: the Work Context mint looks a solution's
+	// boundary seed up by the id a verified credential named, and "there is no
+	// such registration" is one of the answers it must be able to give. See
+	// mapSolutionBoundaryError.
+	ErrSolutionRegistrationNotFound = errors.New("solution registration not found")
+
+	// ErrSolutionRegistrationTombstoned is returned when the record exists and
+	// is withdrawn.
+	//
+	// Distinct from NotFound on purpose, and more load-bearing now than it was:
+	// the cold cutover WITHDRAWS a runtime-registered row rather than deleting
+	// it, so "exists but is not authorized" is a state the registry holds
+	// durably and a mint must refuse by name rather than reporting an absence.
+	ErrSolutionRegistrationTombstoned = errors.New("solution registration is tombstoned")
+)
 
 // SolutionRegistrationStatus is derived from the record at read time.
 type SolutionRegistrationStatus string

@@ -235,15 +235,18 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Which registered solution is minting a Work Context, read BEFORE the
-	// strip below removes the credential it is proved from. A refused
-	// credential never becomes an ordinary mint (verifiedSolutionMint).
-	solution, solutionPublisher, solutionRefused := g.verifiedSolutionMint(r, entry)
-	if solutionRefused {
-		log.Printf("WARN: blocked request: method=%s path=%s reason=invalid_solution_registration_credential", r.Method, r.URL.Path)
-		httpError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
+	// THERE IS NO SOLUTION MINT AT THIS EDGE ANY MORE. This read a solution's
+	// signed, solution-bound REGISTRATION credential and asserted, to accounts,
+	// which registered solution was minting. That credential was issued by
+	// runtime self-registration, which this branch deletes, so the gateway has
+	// nothing left to prove the claim from — and an unprovable assertion of
+	// which solution is minting is worse than none, because accounts seals a
+	// runtime boundary from it.
+	//
+	// The gateway therefore asserts no solution identity. Both headers are
+	// still STRIPPED below (see strippedIdentityHeaders) so a caller cannot
+	// supply what the gateway no longer stamps; they are simply never
+	// restamped.
 
 	// Identity and trust credentials are never accepted from the public side
 	// of the gateway. ExtAuthz.Check only sees the caller's real credential
@@ -325,13 +328,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 		// Stamped after the identity projection, so it joins the headers
-		// accounts reads beside the gateway credential rather than being
-		// replaced by it. Set, never Add: a second value of a forwarded
-		// identity field is refused by accounts as ambiguous.
-		if solution != "" {
-			r.Header.Set(solutionIdentityHeader, solution)
-			r.Header.Set(solutionPublisherHeader, solutionPublisher)
-		}
 		g.rateLimitThenProxy(w, r, upstream, entry)
 
 	case "mfa_pending":
@@ -662,13 +658,15 @@ var untrustedAuthHeaders = []string{
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
 	"x-codefly-module-secret", "x-codefly-solution-secret", "x-codefly-solution-registration",
-	// This gateway's assertion of which registered solution is minting a Work
-	// Context, and of its publisher. They select the runtime boundary accounts
-	// seals, so a caller that could set them would mint under another solution's
-	// boundary; both are stripped here and restamped only from a verified
-	// solution credential.
-	solutionIdentityHeader,
-	solutionPublisherHeader,
+	// The gateway's former assertion of which registered solution is minting a
+	// Work Context, and of its publisher. They select the runtime boundary
+	// accounts seals, so a caller that could set them would mint under another
+	// solution's boundary. THE GATEWAY NO LONGER STAMPS EITHER — the
+	// registration credential they were proved from is deleted — but they stay
+	// on this list, because stripping them is what stops a caller supplying
+	// them, and that matters more now than when something restamped them.
+	"x-codefly-solution-identity",
+	"x-codefly-solution-publisher",
 	clientIDHeader,
 }
 
