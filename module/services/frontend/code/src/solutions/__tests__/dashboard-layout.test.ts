@@ -718,24 +718,28 @@ describe("dashboard layout", () => {
 			]);
 		});
 
-		it("falls back to the default when no section is left, or seenSections is not a list", () => {
-			const fallback = defaultLayout(sectioned);
-			for (const raw of [
-				JSON.stringify({
-					version: 2,
-					sections: [{ id: "retired", tiles: ["w_net"] }],
-					seen: ["w_items", "w_net"],
-					seenSections: ["overview", "detail", "later"],
-				}),
-				JSON.stringify({
-					version: 2,
-					sections: [{ id: "overview", tiles: [] }],
-					seen: [],
-					seenSections: "overview",
-				}),
-			]) {
-				expect(parseLayout(raw, sectioned), raw).toEqual(fallback);
-			}
+		it("gets a section back when none the viewer kept is left, and keeps their removals", () => {
+			// The viewer kept only "retired" and removed w_items; the solution
+			// has since retired that section.
+			const raw = JSON.stringify({
+				version: 2,
+				sections: [{ id: "retired", tiles: ["w_net"] }],
+				seen: ["w_items", "w_net"],
+				seenSections: ["overview", "detail", "later"],
+			});
+			expect(parseLayout(raw, sectioned)).toEqual([
+				{ id: "overview", tiles: ["w_net"] },
+			]);
+		});
+
+		it("falls back to the default when seenSections is not a list", () => {
+			const raw = JSON.stringify({
+				version: 2,
+				sections: [{ id: "overview", tiles: [] }],
+				seen: [],
+				seenSections: "overview",
+			});
+			expect(parseLayout(raw, sectioned)).toEqual(defaultLayout(sectioned));
 		});
 	});
 

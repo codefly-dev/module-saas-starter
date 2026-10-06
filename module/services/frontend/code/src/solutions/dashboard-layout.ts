@@ -580,7 +580,9 @@ function keptSections(
  * section (or in the flat shape saved before sections) goes to its declared
  * section if the layout has it, else to the last section. So does a widget
  * declared since the layout was saved, so a viewer who customized still sees
- * what the solution adds.
+ * what the solution adds. When none of the sections the viewer kept is left
+ * (the solution retired them), the layout gets the default's first section
+ * back and the viewer's tiles go there: a widget they removed stays removed.
  */
 export function parseLayout(raw: string | null, dashboard: Dashboard): Layout {
 	const fallback = defaultLayout(dashboard);
@@ -594,7 +596,7 @@ export function parseLayout(raw: string | null, dashboard: Dashboard): Layout {
 	const stored = storedLayout(saved);
 	if (!stored) return fallback;
 	const layout = keptSections(stored, dashboard);
-	if (layout.length === 0) return fallback;
+	if (layout.length === 0) layout.push({ id: fallback[0].id, tiles: [] });
 
 	const placed = new Set<string>();
 	// Whether a saved id is a declared widget not yet placed.
