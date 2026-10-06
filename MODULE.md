@@ -323,6 +323,14 @@ request time whether or not the registration named one. The port is the only
 component relaxed — scheme, host, path and query must match, and userinfo and a
 fragment are refused.
 
+**This changes what an existing registration means.** The rule lives on
+`RegisteredClient.AllowsRedirect`, which the operator-declared registry uses too,
+so a client already declared with `http://localhost:3000/auth/callback` now
+matches that path on **any** port. An operator who wrote the port expecting it to
+pin should read it as no longer pinning: on loopback the port is not the thing
+that identifies the recipient, which is why §7.3 requires this and why PKCE is
+what protects the exchange.
+
 **A session cookie is not a credential at this perimeter.** The gateway verifies
 a bearer — an access token or an API key — and reads no cookie anywhere; a cookie
 is how the frontend holds a session for its own pages. A caller presenting one is

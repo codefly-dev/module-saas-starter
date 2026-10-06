@@ -243,6 +243,25 @@ type ClientMetadataResolver struct {
 
 	mu     sync.Mutex
 	cached map[string]cachedMetadataClient
+	// inflight is one entry per document being fetched right now, so N
+	// concurrent requests for one client_id make ONE outbound request.
+	//
+	// Without it the cache only helps after a fetch completes, so a burst for
+	// an uncached document is a burst of outbound requests — this host
+	// reflecting inbound concurrency at a third-party origin one-for-one, each
+	// held for up to the fetch timeout. The inbound rate-limit class bounds how
+	// fast that burst can arrive; this bounds what one document costs while it
+	// is in flight.
+	inflight map[string]*metadataFetchInFlight
+}
+
+// metadataFetchInFlight is one fetch several callers are waiting on. done is
+// closed exactly once, by the caller that started it, after client and err are
+// written — so a reader that observes the close observes both.
+type metadataFetchInFlight struct {
+	done   chan struct{}
+	client RegisteredClient
+	err    error
 }
 
 // StaticMetadataDocuments answers from a fixed set of documents, keyed by
@@ -289,10 +308,11 @@ func NewClientMetadataResolverWith(
 	fetcher MetadataDocumentFetcher,
 ) *ClientMetadataResolver {
 	return &ClientMetadataResolver{
-		policy:  policy,
-		fetcher: fetcher,
-		now:     time.Now,
-		cached:  map[string]cachedMetadataClient{},
+		policy:   policy,
+		fetcher:  fetcher,
+		now:      time.Now,
+		cached:   map[string]cachedMetadataClient{},
+		inflight: map[string]*metadataFetchInFlight{},
 	}
 }
 
@@ -349,21 +369,71 @@ func (r *ClientMetadataResolver) Resolve(ctx context.Context, clientID string) (
 	if err := r.policy.Admits(canonical); err != nil {
 		return RegisteredClient{}, err
 	}
-	if client, ok := r.fromCache(canonical); ok {
-		return client, nil
+	// One lock covers the cache read and the in-flight claim, so two callers
+	// arriving together cannot both decide to fetch.
+	r.mu.Lock()
+	if entry, ok := r.cached[canonical]; ok && r.now().Before(entry.expiresAt) {
+		r.mu.Unlock()
+		return entry.client, nil
 	}
-	document, freshness, err := r.fetcher.Fetch(ctx, canonical)
+	if waiting, ok := r.inflight[canonical]; ok {
+		r.mu.Unlock()
+		return r.awaitFetch(ctx, waiting)
+	}
+	flight := &metadataFetchInFlight{done: make(chan struct{})}
+	r.inflight[canonical] = flight
+	r.mu.Unlock()
+
+	client, freshness, err := r.fetchAndValidate(ctx, canonical)
+
+	// Publish to the waiters BEFORE touching the cache, so nobody blocks on the
+	// lock to learn an answer that is already decided.
+	flight.client, flight.err = client, err
+	close(flight.done)
+
+	r.mu.Lock()
+	delete(r.inflight, canonical)
+	r.mu.Unlock()
+
 	if err != nil {
 		// Not cached: see the clientMetadataFailureTTL comment. A refusal is
 		// re-derived on the next request, so a recovered origin works at once.
 		return RegisteredClient{}, err
 	}
-	client, err := ClientFromMetadataDocument(canonical, document)
-	if err != nil {
-		return RegisteredClient{}, err
-	}
 	r.remember(canonical, client, freshness)
 	return client, nil
+}
+
+// fetchAndValidate performs the one outbound request and applies every
+// admission rule to what came back.
+func (r *ClientMetadataResolver) fetchAndValidate(
+	ctx context.Context,
+	canonical string,
+) (RegisteredClient, time.Duration, error) {
+	document, freshness, err := r.fetcher.Fetch(ctx, canonical)
+	if err != nil {
+		return RegisteredClient{}, 0, err
+	}
+	client, err := ClientFromMetadataDocument(canonical, document)
+	if err != nil {
+		return RegisteredClient{}, 0, err
+	}
+	return client, freshness, nil
+}
+
+// awaitFetch waits for the fetch another caller started, or gives up when THIS
+// caller's own request is cancelled — a shared fetch must not outlive the
+// caller waiting on it.
+func (r *ClientMetadataResolver) awaitFetch(
+	ctx context.Context,
+	waiting *metadataFetchInFlight,
+) (RegisteredClient, error) {
+	select {
+	case <-waiting.done:
+		return waiting.client, waiting.err
+	case <-ctx.Done():
+		return RegisteredClient{}, ErrClientMetadataUnreachable
+	}
 }
 
 func (r *ClientMetadataResolver) fromCache(clientID string) (RegisteredClient, bool) {

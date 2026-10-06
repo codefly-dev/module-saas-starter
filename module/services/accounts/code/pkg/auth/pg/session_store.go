@@ -806,6 +806,20 @@ func validateRefreshReplacement(
 	if next.ClientID != current.ClientID {
 		return errors.New("pgauth: refresh replacement changed client")
 	}
+	// The audience a rotation reissues is the one the authorization bound, read
+	// from the locked row — never from the refresh request, which a client
+	// controls. Checked here because this is the authority every rotation passes
+	// through: the projection that builds `next` carries the field today, and
+	// this is what keeps a later edit to it from silently unbinding a narrowed
+	// credential, which would then be admitted wherever an unbound one is.
+	//
+	// The other two paths that insert a session need no such check: a new
+	// browser session names no resource, and a client session's resource is SET
+	// from the authorization code rather than inherited from the session that
+	// authorized it.
+	if next.Resource != current.Resource {
+		return errors.New("pgauth: refresh replacement changed resource")
+	}
 	if next.OrgID != authorization.OrgID ||
 		next.OrgRole != authorization.OrgRole ||
 		next.PlatformRole != authorization.PlatformRole {

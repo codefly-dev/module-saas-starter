@@ -123,8 +123,16 @@ func (s *Service) ExchangeClientToken(
 	if s.minter == nil {
 		return nil, auth.ErrClientAuthorizationRejected
 	}
-	client, err := s.resolveOAuthClient(ctx, req.GetClientId())
-	if err != nil {
+	// Registry only, deliberately: this RPC must not fetch a remote document.
+	//
+	// Its paired issue path (resolveClientAuthorization) is registry-only too,
+	// so no metadata-document client can obtain a code through this flow, and
+	// the standard endpoints resolve their own client without coming through
+	// here. Resolving metadata documents here would therefore add an outbound
+	// fetch for a caller-supplied URL — before any code is examined — to a
+	// published RPC, for a capability nothing can reach.
+	client, ok := s.clientRegistry.Lookup(req.GetClientId())
+	if !ok {
 		return nil, auth.ErrClientAuthorizationRejected
 	}
 

@@ -89,7 +89,19 @@ type ExtAuthz struct {
 	issuer          string
 	acceptedIssuers []string
 	audience        string
-	internalToken   string
+	// publicBase is this host's configured public origin, resolved ONCE at
+	// construction like issuer and acceptedIssuers above.
+	//
+	// Not read per request. workspaceEnv falls back to os.Getenv when the SDK
+	// read fails, so a deployment that supplies APP_BASE_URL through the
+	// `application` configuration group and not as a process variable would, on
+	// a transient read failure, see "" for one request — and with exact
+	// identifier comparison that refuses every resource-bound token for exactly
+	// that request, with nothing logged and no state changed. Configuration
+	// cannot change after process start, so reading it once is both correct and
+	// the pattern this struct already follows.
+	publicBase    string
+	internalToken string
 	// previousInternalToken stays accepted alongside internalToken during an
 	// overlapping rotation window. Outbound calls always present the current
 	// internalToken; only inbound checks honour the previous one.
@@ -141,6 +153,7 @@ func NewExtAuthz(backendConn *grpc.ClientConn, keys accessKeys) *ExtAuthz {
 		// minted under the literal are still unexpired.
 		issuer:                gatewayTokenIssuer(),
 		acceptedIssuers:       gatewayAcceptedIssuers(),
+		publicBase:            publicBaseURL(),
 		audience:              "saas-starter",
 		internalToken:         workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"),
 		previousInternalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"),
@@ -341,7 +354,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		return deny(401, "the token's audience does not name a single valid resource"), nil
 	}
 	if solutionID, isSolutionPath := solutionIDFromPath(path); isSolutionPath {
-		base := publicBaseURL()
+		base := s.publicBase
 		switch {
 		case isSolutionToolRequestPath(path):
 			// SP-SOL-07 (register finding SA-F-MCPAUD): a solution's tool

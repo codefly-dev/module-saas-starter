@@ -143,19 +143,6 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// Same identity discipline as every protected route: drop caller-supplied
 	// identity, run ext_authz, and require a valid credential.
 	stripAllIdentityHeaders(r)
-	// An MCP client discovers how to authenticate from the 401 itself: the
-	// challenge names where the resource describes itself, the document names
-	// this host as its authorization server, and the client then runs the
-	// authorization-code flow. A 401 without the challenge is a dead end — the
-	// client has nothing to go on and reports only "unauthorized" — so it is
-	// stamped before the check runs rather than at each refusal site, which is
-	// also why a 503 from an unavailable revocation store carries it too
-	// (harmless: a client reads it only on 401).
-	//
-	// Every protected solution path, not only the exact `/mcp`: this is the
-	// process that denies them all, so narrowing it left `/solutions/<id>/mcp/`
-	// and every other path without a way to begin.
-	stampResourceChallenge(w, id)
 	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "auth check failed")
@@ -166,6 +153,28 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		if code == 0 {
 			code = http.StatusForbidden
 		}
+		// The discovery challenge rides on a 401 and ONLY on a 401.
+		//
+		// An MCP client discovers how to authenticate from the 401 itself: the
+		// challenge names where the resource describes itself, that document
+		// names this host as its authorization server, and the client then runs
+		// the authorization-code flow. A 401 without it is a dead end.
+		//
+		// But `error="invalid_token"` is an assertion about the caller's
+		// credential, and RFC 6750 §3 has a client read the challenge on a 403
+		// as well as a 401 — so putting it on an answer that is not about the
+		// credential tells a client to re-authenticate when re-authenticating
+		// cannot help. On the 503 this gateway returns when a revocation store
+		// is unavailable, that would mean every refused request triggers a
+		// fresh discovery and authorization round against this host's own
+		// endpoints, adding load while a dependency is already down.
+		//
+		// Stamped here rather than before the check, so there is no state to
+		// undo on the paths that must not carry it: the 500 above, the 403
+		// below, and every served response.
+		if code == http.StatusUnauthorized {
+			stampResourceChallenge(w, id, g.authz.publicBase)
+		}
 		httpError(w, code, denied.GetBody())
 		return true
 	}
@@ -173,10 +182,6 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusForbidden, "forbidden")
 		return true
 	}
-	// The request was authenticated, so the challenge is not part of the answer.
-	// Leaving it on a 200 would tell a conforming client its token was refused
-	// on a response that served its data.
-	w.Header().Del("WWW-Authenticate")
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 
 	// Proxy to the solution. The caller's bearer is preserved so the solution

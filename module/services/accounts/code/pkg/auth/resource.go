@@ -64,8 +64,8 @@ const (
 // documents for one resource is two places to disagree, and the client follows
 // whichever URL the challenge names anyway.
 func SolutionResourceMetadataPath(solutionID string) string {
-	return solutionResourcePrefix + solutionID + solutionResourceMiddle +
-		"/.well-known/oauth-protected-resource"
+	return fmt.Sprintf("%s%s%s/.well-known/oauth-protected-resource",
+		solutionResourcePrefix, solutionID, solutionResourceMiddle)
 }
 
 // ResourceIndicator is a validated RFC 8707 `resource` value: the exact string
@@ -86,8 +86,8 @@ type ResourceIndicator struct {
 // is the single place the string is composed, so the authorization server, the
 // published metadata, and the gateway's expectation cannot drift apart.
 func SolutionMCPResource(origin, solutionID string) string {
-	return strings.TrimSuffix(origin, "/") + solutionResourcePrefix + solutionID +
-		solutionResourceMiddle + solutionMCPSuffix
+	return fmt.Sprintf("%s%s%s%s%s", strings.TrimSuffix(origin, "/"),
+		solutionResourcePrefix, solutionID, solutionResourceMiddle, solutionMCPSuffix)
 }
 
 // ParseResourceIndicator validates a client-supplied `resource` parameter

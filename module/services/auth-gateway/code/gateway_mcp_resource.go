@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -137,7 +138,15 @@ func resourceAudienceAdmits(resource, solutionID, publicBase string) bool {
 	// The request arrived on this gateway's INTERNAL path; what is compared is
 	// the token's audience against the public identifier for the solution that
 	// path addresses.
-	return resource == publicBase+solutionProxyBase+solutionID+solutionProxyMid+"/"+solutionMCPSegment
+	return resource == solutionMCPResource(publicBase, solutionID)
+}
+
+// solutionMCPResource is the one resource identifier this host accepts for a
+// solution's tool endpoint: the public proxy route a client actually dials.
+// Composed in exactly one place, so admission and the challenge cannot drift.
+func solutionMCPResource(publicBase, solutionID string) string {
+	return fmt.Sprintf("%s%s%s%s/%s",
+		publicBase, solutionProxyBase, solutionID, solutionProxyMid, solutionMCPSegment)
 }
 
 // solutionIDFromPath extracts the solution a request path addresses, for the
@@ -192,14 +201,39 @@ func solutionResourceMetadataPath(solutionID string) string {
 // without it is a dead end, and that was true for `/solutions/<id>/mcp/` (a
 // trailing slash) and for every other solution path. Required by issue #1003's
 // comment of 2026-10-04.
-func stampResourceChallenge(w http.ResponseWriter, solutionID string) {
-	base := publicBaseURL()
-	metadata := solutionResourceMetadataPath(solutionID)
-	if base != "" {
-		metadata = base + metadata
-	}
+func stampResourceChallenge(w http.ResponseWriter, solutionID, publicBase string) {
 	w.Header().Set("WWW-Authenticate",
-		`Bearer error="invalid_token", resource_metadata="`+metadata+`"`)
+		bearerChallenge(resourceMetadataURL(publicBase, solutionID)))
+}
+
+// resourceMetadataURL is the absolute URL of a solution's protected-resource
+// metadata document — what a client fetches to learn which authorization server
+// to use. Empty when this host has no configured public address, because there
+// is then no absolute URL to name.
+//
+// RFC 9728 and RFC 6750 require an absolute URI, and a header value carries no
+// document base for a client to resolve a relative one against: a path here is
+// not a weaker answer, it is an unusable one, leaving a client to reject the
+// challenge or dial its own guess at the origin.
+func resourceMetadataURL(publicBase, solutionID string) string {
+	if publicBase == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s%s", publicBase, solutionResourceMetadataPath(solutionID))
+}
+
+// bearerChallenge renders the RFC 6750 §3 `WWW-Authenticate` value for a 401:
+// the token was not accepted, and — when there is one to give — where the
+// resource describes itself.
+//
+// Without a metadata URL the challenge still says `invalid_token`, because
+// "you must authenticate" is what a 401 means and remains true. Where to do so
+// is then in the response body, which names the missing configuration.
+func bearerChallenge(resourceMetadata string) string {
+	if resourceMetadata == "" {
+		return `Bearer error="invalid_token"`
+	}
+	return fmt.Sprintf(`Bearer error="invalid_token", resource_metadata=%q`, resourceMetadata)
 }
 
 // legacyTokenIssuer is the literal `iss` accounts minted before it published

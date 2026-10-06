@@ -682,3 +682,90 @@ func TestTheChallengeNamesTheFrontendProxyBase(t *testing.T) {
 		"/api/solutions/example/proxy/.well-known/oauth-protected-resource",
 		solutionResourceMetadataPath("example"))
 }
+
+// r1/f1. The challenge rides on a 401 and ONLY on a 401.
+//
+// `error="invalid_token"` is an assertion about the caller's credential, and RFC
+// 6750 §3 has a client read the challenge on a 403 as well as a 401. Putting it
+// on an answer that is not about the credential tells a client to
+// re-authenticate where that cannot help: on the 503 this gateway returns when a
+// revocation store is unavailable, every refused request would trigger a fresh
+// discovery and authorization round against this host's own endpoints — adding
+// load while a dependency is already down.
+func TestOnlyA401CarriesTheDiscoveryChallenge(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, _, priv := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "example")
+	token := signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp")
+
+	// A 401 carries it: an unauthenticated caller has nowhere else to begin.
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, 401, w.Code)
+	require.Contains(t, w.Header().Get("WWW-Authenticate"), "resource_metadata=")
+
+	// A 503 does not. Verification being unavailable says nothing about the
+	// token, and this is a credential that would otherwise be admitted.
+	gw.authz.keys = nil
+	req = httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, 503, w.Code)
+	require.Empty(t, w.Header().Get("WWW-Authenticate"),
+		"a 503 must not tell a client its token was refused")
+}
+
+// r1/f2. With no configured public address there is no absolute URL to name, and
+// a relative one is unusable rather than merely weaker: a header carries no
+// document base for a client to resolve it against. The challenge still says
+// `invalid_token`, because that is what a 401 means.
+func TestWithoutAPublicAddressTheChallengeNamesNoMetadataURL(t *testing.T) {
+	withPublicBase(t, "")
+	gw, _, _, _ := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "example")
+
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, 401, w.Code)
+	challenge := w.Header().Get("WWW-Authenticate")
+	require.Equal(t, `Bearer error="invalid_token"`, challenge)
+	require.NotContains(t, challenge, "resource_metadata",
+		"a relative metadata URL is not a usable answer")
+}
+
+// r1/f3. The public address is resolved ONCE, at construction, so a request's
+// outcome does not depend on the environment as it stands at request time.
+//
+// This is the property a per-request read cannot have. `workspaceEnv` falls back
+// to `os.Getenv` when the SDK read fails, so a deployment that supplies
+// APP_BASE_URL through the `application` configuration group rather than as a
+// process variable sees empty on a transient failure — and because the resource
+// identifier is compared exactly, an empty base refuses every resource-bound
+// token. That would be one request refused between two that are admitted, with
+// no state changed and nothing logged.
+//
+// The environment is cleared AFTER the gateway is built, which is what such a
+// transient read looks like from inside checkJWT. A test that only sets the
+// value before construction cannot tell the two implementations apart — reading
+// it per request returns the same string — which is why this test moves it.
+func TestThePublicAddressIsResolvedOnceAtConstruction(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, _, priv := newGatewayHarness(t)
+	example := registerSolutionUpstream(t, gw, "example")
+	token := signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp")
+
+	t.Setenv("APP_BASE_URL", "")
+
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, 200, w.Code,
+		"a resource-bound token must not be refused because the environment moved under the process")
+	require.Equal(t, "/mcp", example.lastPath)
+}
