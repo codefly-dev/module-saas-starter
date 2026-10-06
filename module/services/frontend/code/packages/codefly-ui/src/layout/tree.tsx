@@ -96,6 +96,13 @@ export function Tree({
 	const expanded = new Set(expandedIds ?? internalExpanded);
 	const rows = flatten(items, expanded);
 	const [activeId, setActiveId] = useState<string | undefined>(selectedId);
+	const revealIndex = rows.findIndex((row) => row.node.id === focusedId);
+	const [lastRequest, setLastRequest] = useState({ id: focusedId, index: -1 });
+	// Reconcile a changed caller request before committing; DOM scrolling stays in the effect.
+	if (lastRequest.id !== focusedId || lastRequest.index !== revealIndex) {
+		setLastRequest({ id: focusedId, index: revealIndex });
+		if (revealIndex >= 0 && focusedId) setActiveId(focusedId);
+	}
 	const ancestor = ancestorIds(items, activeId)
 		.reverse()
 		.find((id) => rows.some((row) => row.node.id === id));
@@ -148,10 +155,8 @@ export function Tree({
 		}
 	}, [rows.length, viewportHeight, rowHeight]);
 
-	const revealIndex = rows.findIndex((row) => row.node.id === focusedId);
 	useEffect(() => {
 		if (revealIndex < 0 || !focusedId) return;
-		setActiveId(focusedId);
 		if (viewportHeight && rowHeight && root.current) {
 			const top = revealIndex * rowHeight;
 			const current = root.current.scrollTop;
@@ -245,10 +250,10 @@ export function Tree({
 			default: {
 				if (event.key.length !== 1 || event.nativeEvent.isComposing) break;
 				search.current.text =
-					Date.now() - search.current.at > 700
+					event.timeStamp - search.current.at > 700
 						? event.key
 						: search.current.text + event.key;
-				search.current.at = Date.now();
+				search.current.at = event.timeStamp;
 				const text = search.current.text.toLocaleLowerCase();
 				const candidates = [
 					...rows.slice(index + 1),

@@ -7,6 +7,8 @@ import { cn } from "./cn.js";
 
 export interface DisclosureProps extends Omit<Collapsible.Root.Props, "title"> {
 	title: ReactNode;
+	/** Retain descendant state while closed, for drafts or nested controls. */
+	keepMounted?: boolean;
 	/** Heading semantics belong to the surrounding document. */
 	headingLevel?: 2 | 3 | 4 | 5 | 6;
 }
@@ -14,6 +16,7 @@ export interface DisclosureProps extends Omit<Collapsible.Root.Props, "title"> {
 /** An expandable section; the consumer owns its label, content and state. */
 export function Disclosure({
 	title,
+	keepMounted = false,
 	headingLevel = 3,
 	children,
 	className,
@@ -36,6 +39,7 @@ export function Disclosure({
 				</Collapsible.Trigger>
 			</Heading>
 			<Collapsible.Panel
+				keepMounted={keepMounted}
 				data-slot="disclosure-content"
 				className="px-3 pb-3 type-card-description"
 			>

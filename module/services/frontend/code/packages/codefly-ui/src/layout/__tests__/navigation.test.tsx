@@ -293,3 +293,20 @@ it("an external focus request reveals a distant row without selecting or stealin
 			.getAttribute("aria-selected"),
 	).toBe("false");
 });
+
+it("retained disclosure content preserves an uncontrolled draft through collapse", async () => {
+	render(
+		<Disclosure title="Options" defaultOpen keepMounted>
+			<input aria-label="Draft" defaultValue="" />
+		</Disclosure>,
+	);
+	const input = screen.getByRole("textbox", { name: "Draft" });
+	fireEvent.change(input, { target: { value: "incomplete draft" } });
+	fireEvent.click(screen.getByRole("button", { name: "Options" }));
+	expect(input.isConnected).toBe(true);
+	fireEvent.click(screen.getByRole("button", { name: "Options" }));
+	await waitFor(() =>
+		expect(screen.getByRole("textbox", { name: "Draft" })).toBe(input),
+	);
+	expect((input as HTMLInputElement).value).toBe("incomplete draft");
+});
