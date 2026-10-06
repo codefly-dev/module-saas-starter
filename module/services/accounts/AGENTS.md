@@ -175,21 +175,46 @@ size (the presence document's `build_size` section, codefly-dev/core#708,
 computed by the CLI at build, codefly-dev/cli#901): the host counts no lines
 itself. So each reads `NOT_RECORDED` or `NOT_OBSERVED`.
 
-**Authorization has three cases, not two**: an approval (`authorized_revision` +
-the approved `{image_digest, build_incarnation}`), `not_authorized` — a known
-absence the approval record states — and a gap, where the host cannot tell. An
-unrecorded approval is never shown as a refusal.
+**Authorization has three cases, not two**: an approval, `not_authorized` — a
+known absence the approval record states — and a gap, where the host cannot
+tell. An unrecorded approval is never shown as a refusal.
+
+**What an approval approves is the deployment contract's document, not a host
+description of it.** The execution inventory (`codefly/execution-inventory/v1`)
+has one definition, the Go module `github.com/codefly-dev/cli/contracts/deployment`
+(stdlib-only, enforced by its own boundary test). An approval in the Catalogue
+names the approved inventory by the digest approval signs, plus which member of
+that delivery aggregate the entry is, plus the host's own `build_incarnation`,
+which is not an inventory field. The inventory's canonical bytes travel once per
+response in `approved_inventories`, and the host reads them only through the
+contract: `Check` accepts the inventory's intrinsic form, its digest must be the
+approved one, and the containers are the contract's own seven-key projection
+(`Rows`) — no traversal of workload templates is written here. No proto here re-describes an inventory
+field; a second description would be the first thing to disagree with what is
+deployed.
 
 **The observed verdict judges against the authorization, never the
-declaration** (`judgeCatalogueObserved`): `RUNNING_AUTHORIZED` only for the
-approved digest and incarnation, `RUNNING_DIFFERS` for anything else,
-`RUNNING_UNAUTHORIZED` for an observation with no current authorization — the
-row the retirement sweep exists to stop. Without an observation it is
-`NOT_OBSERVED`, and with an observation but no known authorization it is
-`NOT_RECORDED`; neither is ever a match. Withdrawal, credential revocation,
-retirement and build size have gap-only `oneof`s: their value vocabularies are
-the deployment contract's and core#708's to define, and each value case joins
-its `oneof` when that record exists, read in `newCatalogueEntry`.
+declaration** (`judgeCatalogueObserved`). An observation is each container's image
+digest, keyed `<workload id>/<container name>` in the approved inventory's names,
+plus the presented incarnation:
+
+- `RUNNING_AUTHORIZED` only when every container of the approved member (init
+  containers included) runs its approved digest, nothing else runs, and the
+  incarnation is the approved one;
+- `RUNNING_DIFFERS` for any other digest, an extra container, or another
+  incarnation;
+- `RUNNING_UNAUTHORIZED` for an observation with no current authorization — the
+  row the retirement sweep exists to stop;
+- `NOT_OBSERVED` with no observation, or one missing an approved container (an
+  incomplete observation is never counted as approved);
+- `NOT_RECORDED` when there is no authorization to read, or the approved
+  inventory is not held, does not hash to its digest, is refused by the
+  contract, or has no such member.
+
+Withdrawal, credential revocation, retirement and build size have gap-only
+`oneof`s: their value vocabularies are later spec items' and core#708's to define,
+and each value case joins its `oneof` when that record exists, read in
+`newCatalogueEntry`.
 
 **The registration it returns withholds topology**: `catalogueRegistrationProto`
 blanks the frontend manifest, backend upstream and service alias, as every other

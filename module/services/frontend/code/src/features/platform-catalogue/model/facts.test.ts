@@ -44,7 +44,10 @@ function observedWith(verdict: CatalogueObservedVerdict) {
 	return {
 		observedExecutionValue: {
 			case: "observedExecution" as const,
-			value: { imageDigest: "sha256:bbb", buildIncarnation: BigInt(3) },
+			value: {
+				containerImageDigests: { "worker/worker": "sha256:bbb" },
+				buildIncarnation: BigInt(3),
+			},
 		},
 		verdictValue: { case: "verdict" as const, value: verdict },
 	};
@@ -152,16 +155,20 @@ describe("authorization", () => {
 							case: "authorization",
 							value: {
 								authorizedRevision: BigInt(4),
-								approvedExecution: {
-									imageDigest: "sha256:aaa",
-									buildIncarnation: BigInt(3),
-								},
+								inventoryDigest: "sha256:aaa",
+								memberBinding: "member",
+								buildIncarnation: BigInt(3),
 							},
 						},
 					},
 				}),
 			),
-		).toMatchObject({ kind: "value", text: "Revision 4", tone: "success" });
+		).toMatchObject({
+			kind: "value",
+			text: "Revision 4",
+			tone: "success",
+			detail: "Approved inventory sha256:aaa, member member, incarnation 3.",
+		});
 		expect(
 			authorizationView(
 				entry({

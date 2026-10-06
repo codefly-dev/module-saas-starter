@@ -2,9 +2,12 @@ package business
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
+	deployment "github.com/codefly-dev/cli/contracts/deployment"
 	"github.com/codefly-dev/core/wool"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -43,9 +46,13 @@ type PlatformCatalogueEntry struct {
 }
 
 // PlatformCatalogue is the whole Catalogue at one registry revision.
+// ApprovedInventories holds, by digest, the canonical bytes of every approved
+// execution inventory an entry's authorization names; no record carries an
+// approval yet, so it is empty.
 type PlatformCatalogue struct {
-	Entries          []*PlatformCatalogueEntry
-	RegistryRevision int64
+	Entries             []*PlatformCatalogueEntry
+	RegistryRevision    int64
+	ApprovedInventories map[string][]byte
 }
 
 const (
@@ -178,7 +185,7 @@ func newCatalogueEntry(kind gen.CatalogueEntryKind, name string) *gen.CatalogueE
 		},
 		BuildSizeValue: &gen.CatalogueEntry_BuildSizeGap{BuildSizeGap: catalogueGap(notRecorded, catalogueNoBuildSize)},
 	}
-	judgeCatalogueObserved(entry.Authorized, entry.Observed)
+	judgeCatalogueObserved(entry.Authorized, entry.Observed, nil)
 	return entry
 }
 
@@ -188,28 +195,102 @@ func newCatalogueEntry(kind gen.CatalogueEntryKind, name string) *gen.CatalogueE
 // both are known:
 //
 //   - no observation: NOT_OBSERVED, never a match;
-//   - an observation, but the host cannot tell what is authorized: NOT_RECORDED;
 //   - an observation with no current authorization: RUNNING_UNAUTHORIZED;
-//   - an observation of the approved digest and incarnation: RUNNING_AUTHORIZED;
+//   - an observation, but no authorization this host can read: NOT_RECORDED;
+//   - an observation missing an approved container: NOT_OBSERVED, because an
+//     incomplete observation is never counted as approved execution;
+//   - every approved container on its approved digest, nothing else running,
+//     and the approved incarnation: RUNNING_AUTHORIZED;
 //   - anything else: RUNNING_DIFFERS.
-func judgeCatalogueObserved(authorized *gen.CatalogueAuthorized, observed *gen.CatalogueObserved) {
+//
+// The approved execution is read from the approved inventory through the
+// deployment contract, keyed by the inventory's digest in inventories.
+func judgeCatalogueObserved(authorized *gen.CatalogueAuthorized, observed *gen.CatalogueObserved, inventories map[string][]byte) {
+	gap := func(reason gen.CatalogueGapReason, detail string) {
+		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(reason, detail)}
+	}
+	verdict := func(v gen.CatalogueObservedVerdict) {
+		observed.VerdictValue = &gen.CatalogueObserved_Verdict{Verdict: v}
+	}
 	running := observed.GetObservedExecution()
 	switch {
 	case running == nil:
-		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, catalogueNotObserved)}
+		gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, catalogueNotObserved)
+		return
 	case authorized.GetNotAuthorized() != nil:
-		observed.VerdictValue = &gen.CatalogueObserved_Verdict{Verdict: gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED}
+		verdict(gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED)
+		return
 	case authorized.GetAuthorization() == nil:
-		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueNoVerdict)}
-	default:
-		approved := authorized.GetAuthorization().GetApprovedExecution()
-		verdict := gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS
-		if approved.GetImageDigest() != "" && approved.GetImageDigest() == running.GetImageDigest() &&
-			approved.GetBuildIncarnation() == running.GetBuildIncarnation() {
-			verdict = gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED
-		}
-		observed.VerdictValue = &gen.CatalogueObserved_Verdict{Verdict: verdict}
+		gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueNoVerdict)
+		return
 	}
+	approval := authorized.GetAuthorization()
+	approved, err := approvedContainerImageDigests(inventories[approval.GetInventoryDigest()], approval.GetInventoryDigest(), approval.GetMemberBinding())
+	if err != nil {
+		gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, "The approved inventory cannot be read: "+err.Error())
+		return
+	}
+	observedDigests := running.GetContainerImageDigests()
+	for key := range approved {
+		if _, ok := observedDigests[key]; !ok {
+			gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, "The observation is incomplete: approved container "+key+" was not observed.")
+			return
+		}
+	}
+	if maps.Equal(approved, observedDigests) && running.GetBuildIncarnation() == approval.GetBuildIncarnation() {
+		verdict(gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED)
+		return
+	}
+	verdict(gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS)
+}
+
+// approvedContainerImageDigests reads one member's approved containers out of
+// an approved inventory, as "<workload id>/<container name>" → image manifest
+// digest. Everything comes from the deployment contract: Check accepts the
+// inventory's intrinsic form, its digest must be the one approval signed, and
+// the containers are the contract's own seven-key projection (Rows), never a
+// traversal of the workload templates written here.
+func approvedContainerImageDigests(canonical []byte, digest, member string) (map[string]string, error) {
+	if len(canonical) == 0 {
+		return nil, fmt.Errorf("no inventory is held for %s", digest)
+	}
+	checked, err := deployment.Check(canonical)
+	if err != nil {
+		return nil, fmt.Errorf("the deployment contract refuses it: %w", err)
+	}
+	if got := checked.Digest(); got != digest {
+		return nil, fmt.Errorf("its canonical bytes hash to %s, not the approved %s", got, digest)
+	}
+	inventory := checked.Inventory()
+	var workloads []string
+	for _, candidate := range inventory.Members {
+		if candidate.Binding == member {
+			workloads = candidate.Workloads
+		}
+	}
+	if workloads == nil {
+		return nil, fmt.Errorf("it has no member %q", member)
+	}
+	// The projection is one row per workload, in the inventory's workload
+	// order; a row does not name its workload, so the pairing is by position.
+	rows := checked.Rows()
+	if len(rows) != len(inventory.Workloads) {
+		return nil, fmt.Errorf("the contract projected %d rows for %d workloads", len(rows), len(inventory.Workloads))
+	}
+	out := make(map[string]string)
+	for i, workload := range inventory.Workloads {
+		if !slices.Contains(workloads, workload.ID) {
+			continue
+		}
+		for name, reference := range rows[i].Images {
+			_, imageDigest, ok := strings.Cut(reference, "@")
+			if !ok {
+				return nil, fmt.Errorf("container %s/%s has no image digest", workload.ID, name)
+			}
+			out[workload.ID+"/"+name] = imageDigest
+		}
+	}
+	return out, nil
 }
 
 func catalogueInstallation(record *CatalogueInstallationRecord) *gen.CatalogueInstallation {

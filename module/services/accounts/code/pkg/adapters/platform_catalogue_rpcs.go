@@ -33,7 +33,10 @@ func (s *PlatformAdminServer) ListPlatformCatalogue(ctx context.Context, req *ge
 		}
 		return nil, status.Error(codes.Internal, "cannot read the platform catalogue")
 	}
-	response := &gen.ListPlatformCatalogueResponse{RegistryRevision: catalogue.RegistryRevision}
+	response := &gen.ListPlatformCatalogueResponse{
+		RegistryRevision:    catalogue.RegistryRevision,
+		ApprovedInventories: catalogue.ApprovedInventories,
+	}
 	for _, row := range catalogue.Entries {
 		entry := row.Entry
 		if row.Registration != nil {

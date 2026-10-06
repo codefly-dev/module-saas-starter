@@ -145,7 +145,8 @@ type CatalogueObservedVerdict int32
 
 const (
 	CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED CatalogueObservedVerdict = 0
-	// The observed image digest and incarnation are the approved execution.
+	// Every container of the approved inventory member runs its approved image
+	// digest, no other container runs, and the incarnation is the approved one.
 	CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED CatalogueObservedVerdict = 1
 	// Something other than the approved execution is running: what cluster
 	// admission refuses.
@@ -2089,60 +2090,6 @@ func (x *CatalogueRelease) GetVersion() string {
 	return ""
 }
 
-// CatalogueExecution is what runs: an OCI image manifest digest and the build
-// incarnation the host assigned to it, the same pair a Work Context seals.
-type CatalogueExecution struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	ImageDigest      string                 `protobuf:"bytes,1,opt,name=image_digest,json=imageDigest,proto3" json:"image_digest,omitempty"`
-	BuildIncarnation uint64                 `protobuf:"varint,2,opt,name=build_incarnation,json=buildIncarnation,proto3" json:"build_incarnation,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *CatalogueExecution) Reset() {
-	*x = CatalogueExecution{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[34]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CatalogueExecution) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CatalogueExecution) ProtoMessage() {}
-
-func (x *CatalogueExecution) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[34]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CatalogueExecution.ProtoReflect.Descriptor instead.
-func (*CatalogueExecution) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{34}
-}
-
-func (x *CatalogueExecution) GetImageDigest() string {
-	if x != nil {
-		return x.ImageDigest
-	}
-	return ""
-}
-
-func (x *CatalogueExecution) GetBuildIncarnation() uint64 {
-	if x != nil {
-		return x.BuildIncarnation
-	}
-	return 0
-}
-
 // CatalogueDesired is what the composition declares.
 type CatalogueDesired struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2162,7 +2109,7 @@ type CatalogueDesired struct {
 
 func (x *CatalogueDesired) Reset() {
 	*x = CatalogueDesired{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[35]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2174,7 +2121,7 @@ func (x *CatalogueDesired) String() string {
 func (*CatalogueDesired) ProtoMessage() {}
 
 func (x *CatalogueDesired) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[35]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2187,7 +2134,7 @@ func (x *CatalogueDesired) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CatalogueDesired.ProtoReflect.Descriptor instead.
 func (*CatalogueDesired) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{35}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CatalogueDesired) GetDeclaredRevisionValue() isCatalogueDesired_DeclaredRevisionValue {
@@ -2272,19 +2219,36 @@ func (*CatalogueDesired_DeclaredRelease) isCatalogueDesired_DeclaredReleaseValue
 
 func (*CatalogueDesired_DeclaredReleaseGap) isCatalogueDesired_DeclaredReleaseValue() {}
 
-// CatalogueAuthorization is a current platform approval: the authorized
-// revision and the execution it approved.
+// CatalogueAuthorization is a current platform approval. What it approves is an
+// execution inventory, `codefly/execution-inventory/v1`, whose one definition is
+// the deployment contract module (github.com/codefly-dev/cli/contracts/deployment).
+// The host does not re-describe that document: it names the approved inventory
+// by the digest approval signs, carries the inventory's canonical bytes once per
+// response (ListPlatformCatalogueResponse.approved_inventories), and reads them
+// only through the contract.
 type CatalogueAuthorization struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	AuthorizedRevision int64                  `protobuf:"varint,1,opt,name=authorized_revision,json=authorizedRevision,proto3" json:"authorized_revision,omitempty"`
-	ApprovedExecution  *CatalogueExecution    `protobuf:"bytes,2,opt,name=approved_execution,json=approvedExecution,proto3" json:"approved_execution,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The approved inventory's digest, as the contract computes it over its
+	// canonical bytes.
+	InventoryDigest string `protobuf:"bytes,2,opt,name=inventory_digest,json=inventoryDigest,proto3" json:"inventory_digest,omitempty"`
+	// Which member of that inventory's delivery aggregate this entry is.
+	MemberBinding string `protobuf:"bytes,3,opt,name=member_binding,json=memberBinding,proto3" json:"member_binding,omitempty"`
+	// The build incarnation this host assigned to the approved execution. Not an
+	// inventory field: this host, and only this host, assigns it — advancing it
+	// whenever the approved execution changes — and a Work Context seals it beside
+	// the image digest. The verdict compares it with an observation's
+	// incarnation, which is the same host-assigned value as presented by the
+	// running workload; an incarnation from any other assigner would make that
+	// comparison meaningless, not merely wrong.
+	BuildIncarnation uint64 `protobuf:"varint,4,opt,name=build_incarnation,json=buildIncarnation,proto3" json:"build_incarnation,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CatalogueAuthorization) Reset() {
 	*x = CatalogueAuthorization{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[36]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2296,7 +2260,7 @@ func (x *CatalogueAuthorization) String() string {
 func (*CatalogueAuthorization) ProtoMessage() {}
 
 func (x *CatalogueAuthorization) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[36]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2309,7 +2273,7 @@ func (x *CatalogueAuthorization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CatalogueAuthorization.ProtoReflect.Descriptor instead.
 func (*CatalogueAuthorization) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{36}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CatalogueAuthorization) GetAuthorizedRevision() int64 {
@@ -2319,11 +2283,25 @@ func (x *CatalogueAuthorization) GetAuthorizedRevision() int64 {
 	return 0
 }
 
-func (x *CatalogueAuthorization) GetApprovedExecution() *CatalogueExecution {
+func (x *CatalogueAuthorization) GetInventoryDigest() string {
 	if x != nil {
-		return x.ApprovedExecution
+		return x.InventoryDigest
 	}
-	return nil
+	return ""
+}
+
+func (x *CatalogueAuthorization) GetMemberBinding() string {
+	if x != nil {
+		return x.MemberBinding
+	}
+	return ""
+}
+
+func (x *CatalogueAuthorization) GetBuildIncarnation() uint64 {
+	if x != nil {
+		return x.BuildIncarnation
+	}
+	return 0
 }
 
 // CatalogueNotAuthorized is a known absence of current authorization —
@@ -2338,7 +2316,7 @@ type CatalogueNotAuthorized struct {
 
 func (x *CatalogueNotAuthorized) Reset() {
 	*x = CatalogueNotAuthorized{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[37]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2350,7 +2328,7 @@ func (x *CatalogueNotAuthorized) String() string {
 func (*CatalogueNotAuthorized) ProtoMessage() {}
 
 func (x *CatalogueNotAuthorized) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[37]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2363,7 +2341,7 @@ func (x *CatalogueNotAuthorized) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CatalogueNotAuthorized.ProtoReflect.Descriptor instead.
 func (*CatalogueNotAuthorized) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{37}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *CatalogueNotAuthorized) GetDetail() string {
@@ -2388,7 +2366,7 @@ type CatalogueAuthorized struct {
 
 func (x *CatalogueAuthorized) Reset() {
 	*x = CatalogueAuthorized{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[38]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2400,7 +2378,7 @@ func (x *CatalogueAuthorized) String() string {
 func (*CatalogueAuthorized) ProtoMessage() {}
 
 func (x *CatalogueAuthorized) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[38]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2413,7 +2391,7 @@ func (x *CatalogueAuthorized) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CatalogueAuthorized.ProtoReflect.Descriptor instead.
 func (*CatalogueAuthorized) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{38}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CatalogueAuthorized) GetAuthorizationValue() isCatalogueAuthorized_AuthorizationValue {
@@ -2486,7 +2464,7 @@ type CatalogueApplied struct {
 
 func (x *CatalogueApplied) Reset() {
 	*x = CatalogueApplied{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[39]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2498,7 +2476,7 @@ func (x *CatalogueApplied) String() string {
 func (*CatalogueApplied) ProtoMessage() {}
 
 func (x *CatalogueApplied) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[39]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2511,7 +2489,7 @@ func (x *CatalogueApplied) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CatalogueApplied.ProtoReflect.Descriptor instead.
 func (*CatalogueApplied) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{39}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CatalogueApplied) GetAppliedRevisionValue() isCatalogueApplied_AppliedRevisionValue {
@@ -2555,6 +2533,65 @@ func (*CatalogueApplied_AppliedRevision) isCatalogueApplied_AppliedRevisionValue
 
 func (*CatalogueApplied_AppliedRevisionGap) isCatalogueApplied_AppliedRevisionValue() {}
 
+// CatalogueObservedExecution is what an observation found running for an entry:
+// each container's image manifest digest, keyed "<workload id>/<container
+// name>" in the approved inventory's own names, and the build incarnation the
+// running workload presents — the incarnation this host assigned, sealed into
+// its Work Context, never one the workload or another party chose.
+// Observation is the observing consumer's record, not the inventory's, so its
+// shape is the host's.
+type CatalogueObservedExecution struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ContainerImageDigests map[string]string      `protobuf:"bytes,1,rep,name=container_image_digests,json=containerImageDigests,proto3" json:"container_image_digests,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	BuildIncarnation      uint64                 `protobuf:"varint,2,opt,name=build_incarnation,json=buildIncarnation,proto3" json:"build_incarnation,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *CatalogueObservedExecution) Reset() {
+	*x = CatalogueObservedExecution{}
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CatalogueObservedExecution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CatalogueObservedExecution) ProtoMessage() {}
+
+func (x *CatalogueObservedExecution) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CatalogueObservedExecution.ProtoReflect.Descriptor instead.
+func (*CatalogueObservedExecution) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *CatalogueObservedExecution) GetContainerImageDigests() map[string]string {
+	if x != nil {
+		return x.ContainerImageDigests
+	}
+	return nil
+}
+
+func (x *CatalogueObservedExecution) GetBuildIncarnation() uint64 {
+	if x != nil {
+		return x.BuildIncarnation
+	}
+	return 0
+}
+
 // CatalogueObserved is what is actually running.
 type CatalogueObserved struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2575,8 +2612,9 @@ type CatalogueObserved struct {
 	//	*CatalogueObserved_ObservedExecution
 	//	*CatalogueObserved_ObservedExecutionGap
 	ObservedExecutionValue isCatalogueObserved_ObservedExecutionValue `protobuf_oneof:"observed_execution_value"`
-	// A verdict exists only when both an observation and a known authorization
-	// do; anything less is a gap, and an unobserved entry is never a match.
+	// A verdict exists only when both a complete observation and a readable
+	// authorization do; anything less is a gap, and an unobserved or
+	// incompletely observed entry is never a match.
 	//
 	// Types that are valid to be assigned to VerdictValue:
 	//
@@ -2674,7 +2712,7 @@ func (x *CatalogueObserved) GetObservedExecutionValue() isCatalogueObserved_Obse
 	return nil
 }
 
-func (x *CatalogueObserved) GetObservedExecution() *CatalogueExecution {
+func (x *CatalogueObserved) GetObservedExecution() *CatalogueObservedExecution {
 	if x != nil {
 		if x, ok := x.ObservedExecutionValue.(*CatalogueObserved_ObservedExecution); ok {
 			return x.ObservedExecution
@@ -2754,7 +2792,7 @@ type isCatalogueObserved_ObservedExecutionValue interface {
 }
 
 type CatalogueObserved_ObservedExecution struct {
-	ObservedExecution *CatalogueExecution `protobuf:"bytes,5,opt,name=observed_execution,json=observedExecution,proto3,oneof"`
+	ObservedExecution *CatalogueObservedExecution `protobuf:"bytes,5,opt,name=observed_execution,json=observedExecution,proto3,oneof"`
 }
 
 type CatalogueObserved_ObservedExecutionGap struct {
@@ -3367,8 +3405,13 @@ type ListPlatformCatalogueResponse struct {
 	Entries []*CatalogueEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
 	// The registry revision the solution entries were read at.
 	RegistryRevision int64 `protobuf:"varint,2,opt,name=registry_revision,json=registryRevision,proto3" json:"registry_revision,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Every approved execution inventory an entry's authorization names, keyed by
+	// its digest, in the deployment contract's canonical bytes (codefly-json-v1).
+	// Carried once per response because one delivery aggregate is approved as a
+	// whole and several entries can be members of it.
+	ApprovedInventories map[string][]byte `protobuf:"bytes,3,rep,name=approved_inventories,json=approvedInventories,proto3" json:"approved_inventories,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ListPlatformCatalogueResponse) Reset() {
@@ -3413,6 +3456,13 @@ func (x *ListPlatformCatalogueResponse) GetRegistryRevision() int64 {
 		return x.RegistryRevision
 	}
 	return 0
+}
+
+func (x *ListPlatformCatalogueResponse) GetApprovedInventories() map[string][]byte {
+	if x != nil {
+		return x.ApprovedInventories
+	}
+	return nil
 }
 
 var File_saas_accounts_v1_platform_admin_proto protoreflect.FileDescriptor
@@ -3550,20 +3600,19 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x10CatalogueRelease\x12\x1c\n" +
 	"\tpublisher\x18\x01 \x01(\tR\tpublisher\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"d\n" +
-	"\x12CatalogueExecution\x12!\n" +
-	"\fimage_digest\x18\x01 \x01(\tR\vimageDigest\x12+\n" +
-	"\x11build_incarnation\x18\x02 \x01(\x04R\x10buildIncarnation\"\xf1\x02\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\"\xf1\x02\n" +
 	"\x10CatalogueDesired\x12-\n" +
 	"\x11declared_revision\x18\x01 \x01(\x03H\x00R\x10declaredRevision\x12T\n" +
 	"\x15declared_revision_gap\x18\x02 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x00R\x13declaredRevisionGap\x12O\n" +
 	"\x10declared_release\x18\x03 \x01(\v2\".saas.accounts.v1.CatalogueReleaseH\x01R\x0fdeclaredRelease\x12R\n" +
 	"\x14declared_release_gap\x18\x04 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x01R\x12declaredReleaseGapB\x19\n" +
 	"\x17declared_revision_valueB\x18\n" +
-	"\x16declared_release_value\"\x9e\x01\n" +
+	"\x16declared_release_value\"\xc8\x01\n" +
 	"\x16CatalogueAuthorization\x12/\n" +
-	"\x13authorized_revision\x18\x01 \x01(\x03R\x12authorizedRevision\x12S\n" +
-	"\x12approved_execution\x18\x02 \x01(\v2$.saas.accounts.v1.CatalogueExecutionR\x11approvedExecution\"0\n" +
+	"\x13authorized_revision\x18\x01 \x01(\x03R\x12authorizedRevision\x12)\n" +
+	"\x10inventory_digest\x18\x02 \x01(\tR\x0finventoryDigest\x12%\n" +
+	"\x0emember_binding\x18\x03 \x01(\tR\rmemberBinding\x12+\n" +
+	"\x11build_incarnation\x18\x04 \x01(\x04R\x10buildIncarnation\"0\n" +
 	"\x16CatalogueNotAuthorized\x12\x16\n" +
 	"\x06detail\x18\x01 \x01(\tR\x06detail\"\xa0\x02\n" +
 	"\x13CatalogueAuthorized\x12P\n" +
@@ -3574,14 +3623,20 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x10CatalogueApplied\x12+\n" +
 	"\x10applied_revision\x18\x01 \x01(\x03H\x00R\x0fappliedRevision\x12R\n" +
 	"\x14applied_revision_gap\x18\x02 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x00R\x12appliedRevisionGapB\x18\n" +
-	"\x16applied_revision_value\"\xd6\x05\n" +
+	"\x16applied_revision_value\"\x94\x02\n" +
+	"\x1aCatalogueObservedExecution\x12\x7f\n" +
+	"\x17container_image_digests\x18\x01 \x03(\v2G.saas.accounts.v1.CatalogueObservedExecution.ContainerImageDigestsEntryR\x15containerImageDigests\x12+\n" +
+	"\x11build_incarnation\x18\x02 \x01(\x04R\x10buildIncarnation\x1aH\n" +
+	"\x1aContainerImageDigestsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xde\x05\n" +
 	"\x11CatalogueObserved\x12-\n" +
 	"\x11observed_revision\x18\x01 \x01(\x03H\x00R\x10observedRevision\x12T\n" +
 	"\x15observed_revision_gap\x18\x02 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x00R\x13observedRevisionGap\x12=\n" +
 	"\vobserved_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\n" +
 	"observedAt\x12\\\n" +
-	"\x19observation_freshness_gap\x18\x04 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x01R\x17observationFreshnessGap\x12U\n" +
-	"\x12observed_execution\x18\x05 \x01(\v2$.saas.accounts.v1.CatalogueExecutionH\x02R\x11observedExecution\x12V\n" +
+	"\x19observation_freshness_gap\x18\x04 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x01R\x17observationFreshnessGap\x12]\n" +
+	"\x12observed_execution\x18\x05 \x01(\v2,.saas.accounts.v1.CatalogueObservedExecutionH\x02R\x11observedExecution\x12V\n" +
 	"\x16observed_execution_gap\x18\x06 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x02R\x14observedExecutionGap\x12F\n" +
 	"\averdict\x18\a \x01(\x0e2*.saas.accounts.v1.CatalogueObservedVerdictH\x03R\averdict\x12A\n" +
 	"\vverdict_gap\x18\b \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x03R\n" +
@@ -3629,10 +3684,14 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x10build_size_valueB\x0f\n" +
 	"\r_registration\"M\n" +
 	"\x1cListPlatformCatalogueRequest\x12-\n" +
-	"\x12include_tombstoned\x18\x01 \x01(\bR\x11includeTombstoned\"\x88\x01\n" +
+	"\x12include_tombstoned\x18\x01 \x01(\bR\x11includeTombstoned\"\xcd\x02\n" +
 	"\x1dListPlatformCatalogueResponse\x12:\n" +
 	"\aentries\x18\x01 \x03(\v2 .saas.accounts.v1.CatalogueEntryR\aentries\x12+\n" +
-	"\x11registry_revision\x18\x02 \x01(\x03R\x10registryRevision*~\n" +
+	"\x11registry_revision\x18\x02 \x01(\x03R\x10registryRevision\x12{\n" +
+	"\x14approved_inventories\x18\x03 \x03(\v2H.saas.accounts.v1.ListPlatformCatalogueResponse.ApprovedInventoriesEntryR\x13approvedInventories\x1aF\n" +
+	"\x18ApprovedInventoriesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01*~\n" +
 	"\x12CatalogueEntryKind\x12$\n" +
 	" CATALOGUE_ENTRY_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bCATALOGUE_ENTRY_KIND_MODULE\x10\x01\x12!\n" +
@@ -3697,7 +3756,7 @@ func file_saas_accounts_v1_platform_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_platform_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_saas_accounts_v1_platform_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_saas_accounts_v1_platform_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
 var file_saas_accounts_v1_platform_admin_proto_goTypes = []any{
 	(CatalogueEntryKind)(0),                    // 0: saas.accounts.v1.CatalogueEntryKind
 	(CatalogueGapReason)(0),                    // 1: saas.accounts.v1.CatalogueGapReason
@@ -3736,12 +3795,12 @@ var file_saas_accounts_v1_platform_admin_proto_goTypes = []any{
 	(*UpsertFeatureFlagResponse)(nil),          // 34: saas.accounts.v1.UpsertFeatureFlagResponse
 	(*CatalogueGap)(nil),                       // 35: saas.accounts.v1.CatalogueGap
 	(*CatalogueRelease)(nil),                   // 36: saas.accounts.v1.CatalogueRelease
-	(*CatalogueExecution)(nil),                 // 37: saas.accounts.v1.CatalogueExecution
-	(*CatalogueDesired)(nil),                   // 38: saas.accounts.v1.CatalogueDesired
-	(*CatalogueAuthorization)(nil),             // 39: saas.accounts.v1.CatalogueAuthorization
-	(*CatalogueNotAuthorized)(nil),             // 40: saas.accounts.v1.CatalogueNotAuthorized
-	(*CatalogueAuthorized)(nil),                // 41: saas.accounts.v1.CatalogueAuthorized
-	(*CatalogueApplied)(nil),                   // 42: saas.accounts.v1.CatalogueApplied
+	(*CatalogueDesired)(nil),                   // 37: saas.accounts.v1.CatalogueDesired
+	(*CatalogueAuthorization)(nil),             // 38: saas.accounts.v1.CatalogueAuthorization
+	(*CatalogueNotAuthorized)(nil),             // 39: saas.accounts.v1.CatalogueNotAuthorized
+	(*CatalogueAuthorized)(nil),                // 40: saas.accounts.v1.CatalogueAuthorized
+	(*CatalogueApplied)(nil),                   // 41: saas.accounts.v1.CatalogueApplied
+	(*CatalogueObservedExecution)(nil),         // 42: saas.accounts.v1.CatalogueObservedExecution
 	(*CatalogueObserved)(nil),                  // 43: saas.accounts.v1.CatalogueObserved
 	(*CatalogueWithdrawing)(nil),               // 44: saas.accounts.v1.CatalogueWithdrawing
 	(*CatalogueRetired)(nil),                   // 45: saas.accounts.v1.CatalogueRetired
@@ -3750,130 +3809,133 @@ var file_saas_accounts_v1_platform_admin_proto_goTypes = []any{
 	(*ListPlatformCatalogueRequest)(nil),       // 48: saas.accounts.v1.ListPlatformCatalogueRequest
 	(*ListPlatformCatalogueResponse)(nil),      // 49: saas.accounts.v1.ListPlatformCatalogueResponse
 	nil,                                        // 50: saas.accounts.v1.SessionInfo.DeviceInfoEntry
-	(*User)(nil),                               // 51: saas.accounts.v1.User
-	(*Organization)(nil),                       // 52: saas.accounts.v1.Organization
-	(*OrgMembership)(nil),                      // 53: saas.accounts.v1.OrgMembership
-	(*timestamppb.Timestamp)(nil),              // 54: google.protobuf.Timestamp
-	(*Installation)(nil),                       // 55: saas.accounts.v1.Installation
-	(*CollectionReadGrant)(nil),                // 56: saas.accounts.v1.CollectionReadGrant
-	(*SolutionRegistration)(nil),               // 57: saas.accounts.v1.SolutionRegistration
-	(*v1.GetJobOperationsRequest)(nil),         // 58: saas.jobs.v1.GetJobOperationsRequest
-	(*v1.ListJobsRequest)(nil),                 // 59: saas.jobs.v1.ListJobsRequest
-	(*v1.GetJobRequest)(nil),                   // 60: saas.jobs.v1.GetJobRequest
-	(*v1.ReplayJobRequest)(nil),                // 61: saas.jobs.v1.ReplayJobRequest
-	(*v11.GetEventOperationsRequest)(nil),      // 62: saas.events.v1.GetEventOperationsRequest
-	(*v11.ListEventSubscriptionsRequest)(nil),  // 63: saas.events.v1.ListEventSubscriptionsRequest
-	(*emptypb.Empty)(nil),                      // 64: google.protobuf.Empty
-	(*v1.GetJobOperationsResponse)(nil),        // 65: saas.jobs.v1.GetJobOperationsResponse
-	(*v1.ListJobsResponse)(nil),                // 66: saas.jobs.v1.ListJobsResponse
-	(*v1.GetJobResponse)(nil),                  // 67: saas.jobs.v1.GetJobResponse
-	(*v1.ReplayJobResponse)(nil),               // 68: saas.jobs.v1.ReplayJobResponse
-	(*v11.GetEventOperationsResponse)(nil),     // 69: saas.events.v1.GetEventOperationsResponse
-	(*v11.ListEventSubscriptionsResponse)(nil), // 70: saas.events.v1.ListEventSubscriptionsResponse
+	nil,                                        // 51: saas.accounts.v1.CatalogueObservedExecution.ContainerImageDigestsEntry
+	nil,                                        // 52: saas.accounts.v1.ListPlatformCatalogueResponse.ApprovedInventoriesEntry
+	(*User)(nil),                               // 53: saas.accounts.v1.User
+	(*Organization)(nil),                       // 54: saas.accounts.v1.Organization
+	(*OrgMembership)(nil),                      // 55: saas.accounts.v1.OrgMembership
+	(*timestamppb.Timestamp)(nil),              // 56: google.protobuf.Timestamp
+	(*Installation)(nil),                       // 57: saas.accounts.v1.Installation
+	(*CollectionReadGrant)(nil),                // 58: saas.accounts.v1.CollectionReadGrant
+	(*SolutionRegistration)(nil),               // 59: saas.accounts.v1.SolutionRegistration
+	(*v1.GetJobOperationsRequest)(nil),         // 60: saas.jobs.v1.GetJobOperationsRequest
+	(*v1.ListJobsRequest)(nil),                 // 61: saas.jobs.v1.ListJobsRequest
+	(*v1.GetJobRequest)(nil),                   // 62: saas.jobs.v1.GetJobRequest
+	(*v1.ReplayJobRequest)(nil),                // 63: saas.jobs.v1.ReplayJobRequest
+	(*v11.GetEventOperationsRequest)(nil),      // 64: saas.events.v1.GetEventOperationsRequest
+	(*v11.ListEventSubscriptionsRequest)(nil),  // 65: saas.events.v1.ListEventSubscriptionsRequest
+	(*emptypb.Empty)(nil),                      // 66: google.protobuf.Empty
+	(*v1.GetJobOperationsResponse)(nil),        // 67: saas.jobs.v1.GetJobOperationsResponse
+	(*v1.ListJobsResponse)(nil),                // 68: saas.jobs.v1.ListJobsResponse
+	(*v1.GetJobResponse)(nil),                  // 69: saas.jobs.v1.GetJobResponse
+	(*v1.ReplayJobResponse)(nil),               // 70: saas.jobs.v1.ReplayJobResponse
+	(*v11.GetEventOperationsResponse)(nil),     // 71: saas.events.v1.GetEventOperationsResponse
+	(*v11.ListEventSubscriptionsResponse)(nil), // 72: saas.events.v1.ListEventSubscriptionsResponse
 }
 var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
-	51, // 0: saas.accounts.v1.SearchUsersResponse.users:type_name -> saas.accounts.v1.User
-	52, // 1: saas.accounts.v1.PlatformOrganization.organization:type_name -> saas.accounts.v1.Organization
+	53, // 0: saas.accounts.v1.SearchUsersResponse.users:type_name -> saas.accounts.v1.User
+	54, // 1: saas.accounts.v1.PlatformOrganization.organization:type_name -> saas.accounts.v1.Organization
 	6,  // 2: saas.accounts.v1.ListAllOrganizationsResponse.organizations:type_name -> saas.accounts.v1.PlatformOrganization
-	53, // 3: saas.accounts.v1.GetOrganizationRosterResponse.members:type_name -> saas.accounts.v1.OrgMembership
+	55, // 3: saas.accounts.v1.GetOrganizationRosterResponse.members:type_name -> saas.accounts.v1.OrgMembership
 	50, // 4: saas.accounts.v1.SessionInfo.device_info:type_name -> saas.accounts.v1.SessionInfo.DeviceInfoEntry
-	54, // 5: saas.accounts.v1.SessionInfo.created_at:type_name -> google.protobuf.Timestamp
-	54, // 6: saas.accounts.v1.SessionInfo.last_active_at:type_name -> google.protobuf.Timestamp
-	54, // 7: saas.accounts.v1.SessionInfo.expires_at:type_name -> google.protobuf.Timestamp
-	54, // 8: saas.accounts.v1.SessionInfo.idle_expires_at:type_name -> google.protobuf.Timestamp
+	56, // 5: saas.accounts.v1.SessionInfo.created_at:type_name -> google.protobuf.Timestamp
+	56, // 6: saas.accounts.v1.SessionInfo.last_active_at:type_name -> google.protobuf.Timestamp
+	56, // 7: saas.accounts.v1.SessionInfo.expires_at:type_name -> google.protobuf.Timestamp
+	56, // 8: saas.accounts.v1.SessionInfo.idle_expires_at:type_name -> google.protobuf.Timestamp
 	17, // 9: saas.accounts.v1.ListActiveSessionsResponse.sessions:type_name -> saas.accounts.v1.SessionInfo
 	22, // 10: saas.accounts.v1.GetOrgEntitlementsResponse.entitlements:type_name -> saas.accounts.v1.EntitlementInfo
-	54, // 11: saas.accounts.v1.PlatformAdminEntry.granted_at:type_name -> google.protobuf.Timestamp
+	56, // 11: saas.accounts.v1.PlatformAdminEntry.granted_at:type_name -> google.protobuf.Timestamp
 	28, // 12: saas.accounts.v1.ListPlatformAdminsResponse.admins:type_name -> saas.accounts.v1.PlatformAdminEntry
 	31, // 13: saas.accounts.v1.ListFeatureFlagsResponse.flags:type_name -> saas.accounts.v1.FeatureFlagEntry
 	1,  // 14: saas.accounts.v1.CatalogueGap.reason:type_name -> saas.accounts.v1.CatalogueGapReason
 	35, // 15: saas.accounts.v1.CatalogueDesired.declared_revision_gap:type_name -> saas.accounts.v1.CatalogueGap
 	36, // 16: saas.accounts.v1.CatalogueDesired.declared_release:type_name -> saas.accounts.v1.CatalogueRelease
 	35, // 17: saas.accounts.v1.CatalogueDesired.declared_release_gap:type_name -> saas.accounts.v1.CatalogueGap
-	37, // 18: saas.accounts.v1.CatalogueAuthorization.approved_execution:type_name -> saas.accounts.v1.CatalogueExecution
-	39, // 19: saas.accounts.v1.CatalogueAuthorized.authorization:type_name -> saas.accounts.v1.CatalogueAuthorization
-	40, // 20: saas.accounts.v1.CatalogueAuthorized.not_authorized:type_name -> saas.accounts.v1.CatalogueNotAuthorized
-	35, // 21: saas.accounts.v1.CatalogueAuthorized.authorization_gap:type_name -> saas.accounts.v1.CatalogueGap
-	35, // 22: saas.accounts.v1.CatalogueApplied.applied_revision_gap:type_name -> saas.accounts.v1.CatalogueGap
+	38, // 18: saas.accounts.v1.CatalogueAuthorized.authorization:type_name -> saas.accounts.v1.CatalogueAuthorization
+	39, // 19: saas.accounts.v1.CatalogueAuthorized.not_authorized:type_name -> saas.accounts.v1.CatalogueNotAuthorized
+	35, // 20: saas.accounts.v1.CatalogueAuthorized.authorization_gap:type_name -> saas.accounts.v1.CatalogueGap
+	35, // 21: saas.accounts.v1.CatalogueApplied.applied_revision_gap:type_name -> saas.accounts.v1.CatalogueGap
+	51, // 22: saas.accounts.v1.CatalogueObservedExecution.container_image_digests:type_name -> saas.accounts.v1.CatalogueObservedExecution.ContainerImageDigestsEntry
 	35, // 23: saas.accounts.v1.CatalogueObserved.observed_revision_gap:type_name -> saas.accounts.v1.CatalogueGap
-	54, // 24: saas.accounts.v1.CatalogueObserved.observed_at:type_name -> google.protobuf.Timestamp
+	56, // 24: saas.accounts.v1.CatalogueObserved.observed_at:type_name -> google.protobuf.Timestamp
 	35, // 25: saas.accounts.v1.CatalogueObserved.observation_freshness_gap:type_name -> saas.accounts.v1.CatalogueGap
-	37, // 26: saas.accounts.v1.CatalogueObserved.observed_execution:type_name -> saas.accounts.v1.CatalogueExecution
+	42, // 26: saas.accounts.v1.CatalogueObserved.observed_execution:type_name -> saas.accounts.v1.CatalogueObservedExecution
 	35, // 27: saas.accounts.v1.CatalogueObserved.observed_execution_gap:type_name -> saas.accounts.v1.CatalogueGap
 	2,  // 28: saas.accounts.v1.CatalogueObserved.verdict:type_name -> saas.accounts.v1.CatalogueObservedVerdict
 	35, // 29: saas.accounts.v1.CatalogueObserved.verdict_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 30: saas.accounts.v1.CatalogueWithdrawing.withdrawal_state_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 31: saas.accounts.v1.CatalogueWithdrawing.credential_revocation_state_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 32: saas.accounts.v1.CatalogueRetired.retirement_state_gap:type_name -> saas.accounts.v1.CatalogueGap
-	55, // 33: saas.accounts.v1.CatalogueInstallation.installation:type_name -> saas.accounts.v1.Installation
+	57, // 33: saas.accounts.v1.CatalogueInstallation.installation:type_name -> saas.accounts.v1.Installation
 	36, // 34: saas.accounts.v1.CatalogueInstallation.agent_release:type_name -> saas.accounts.v1.CatalogueRelease
 	35, // 35: saas.accounts.v1.CatalogueInstallation.agent_release_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 36: saas.accounts.v1.CatalogueInstallation.revision_gap:type_name -> saas.accounts.v1.CatalogueGap
-	56, // 37: saas.accounts.v1.CatalogueInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
-	56, // 38: saas.accounts.v1.CatalogueInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	58, // 37: saas.accounts.v1.CatalogueInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	58, // 38: saas.accounts.v1.CatalogueInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
 	0,  // 39: saas.accounts.v1.CatalogueEntry.kind:type_name -> saas.accounts.v1.CatalogueEntryKind
 	35, // 40: saas.accounts.v1.CatalogueEntry.publisher_gap:type_name -> saas.accounts.v1.CatalogueGap
-	38, // 41: saas.accounts.v1.CatalogueEntry.desired:type_name -> saas.accounts.v1.CatalogueDesired
-	41, // 42: saas.accounts.v1.CatalogueEntry.authorized:type_name -> saas.accounts.v1.CatalogueAuthorized
-	42, // 43: saas.accounts.v1.CatalogueEntry.applied:type_name -> saas.accounts.v1.CatalogueApplied
+	37, // 41: saas.accounts.v1.CatalogueEntry.desired:type_name -> saas.accounts.v1.CatalogueDesired
+	40, // 42: saas.accounts.v1.CatalogueEntry.authorized:type_name -> saas.accounts.v1.CatalogueAuthorized
+	41, // 43: saas.accounts.v1.CatalogueEntry.applied:type_name -> saas.accounts.v1.CatalogueApplied
 	43, // 44: saas.accounts.v1.CatalogueEntry.observed:type_name -> saas.accounts.v1.CatalogueObserved
 	44, // 45: saas.accounts.v1.CatalogueEntry.withdrawing:type_name -> saas.accounts.v1.CatalogueWithdrawing
 	45, // 46: saas.accounts.v1.CatalogueEntry.retired:type_name -> saas.accounts.v1.CatalogueRetired
 	35, // 47: saas.accounts.v1.CatalogueEntry.build_size_gap:type_name -> saas.accounts.v1.CatalogueGap
-	57, // 48: saas.accounts.v1.CatalogueEntry.registration:type_name -> saas.accounts.v1.SolutionRegistration
+	59, // 48: saas.accounts.v1.CatalogueEntry.registration:type_name -> saas.accounts.v1.SolutionRegistration
 	46, // 49: saas.accounts.v1.CatalogueEntry.installations:type_name -> saas.accounts.v1.CatalogueInstallation
 	47, // 50: saas.accounts.v1.ListPlatformCatalogueResponse.entries:type_name -> saas.accounts.v1.CatalogueEntry
-	3,  // 51: saas.accounts.v1.PlatformAdminService.SearchUsers:input_type -> saas.accounts.v1.SearchUsersRequest
-	10, // 52: saas.accounts.v1.PlatformAdminService.SuspendUser:input_type -> saas.accounts.v1.SuspendUserRequest
-	11, // 53: saas.accounts.v1.PlatformAdminService.UnsuspendUser:input_type -> saas.accounts.v1.UnsuspendUserRequest
-	12, // 54: saas.accounts.v1.PlatformAdminService.ImpersonateUser:input_type -> saas.accounts.v1.ImpersonateUserRequest
-	14, // 55: saas.accounts.v1.PlatformAdminService.StopImpersonation:input_type -> saas.accounts.v1.StopImpersonationRequest
-	16, // 56: saas.accounts.v1.PlatformAdminService.ListActiveSessions:input_type -> saas.accounts.v1.ListActiveSessionsRequest
-	19, // 57: saas.accounts.v1.PlatformAdminService.RevokeSession:input_type -> saas.accounts.v1.RevokeSessionRequest
-	20, // 58: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:input_type -> saas.accounts.v1.GetOrgEntitlementsRequest
-	23, // 59: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:input_type -> saas.accounts.v1.OverrideEntitlementRequest
-	25, // 60: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:input_type -> saas.accounts.v1.GrantPlatformRoleRequest
-	26, // 61: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:input_type -> saas.accounts.v1.RevokePlatformRoleRequest
-	27, // 62: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:input_type -> saas.accounts.v1.ListPlatformAdminsRequest
-	5,  // 63: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:input_type -> saas.accounts.v1.ListAllOrganizationsRequest
-	8,  // 64: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:input_type -> saas.accounts.v1.GetOrganizationRosterRequest
-	30, // 65: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:input_type -> saas.accounts.v1.ListFeatureFlagsRequest
-	33, // 66: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:input_type -> saas.accounts.v1.UpsertFeatureFlagRequest
-	58, // 67: saas.accounts.v1.PlatformAdminService.GetJobOperations:input_type -> saas.jobs.v1.GetJobOperationsRequest
-	59, // 68: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
-	60, // 69: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
-	61, // 70: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
-	62, // 71: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
-	63, // 72: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
-	48, // 73: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:input_type -> saas.accounts.v1.ListPlatformCatalogueRequest
-	4,  // 74: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
-	64, // 75: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
-	64, // 76: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
-	13, // 77: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
-	15, // 78: saas.accounts.v1.PlatformAdminService.StopImpersonation:output_type -> saas.accounts.v1.StopImpersonationResponse
-	18, // 79: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
-	64, // 80: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
-	21, // 81: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
-	24, // 82: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
-	64, // 83: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
-	64, // 84: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
-	29, // 85: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
-	7,  // 86: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:output_type -> saas.accounts.v1.ListAllOrganizationsResponse
-	9,  // 87: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:output_type -> saas.accounts.v1.GetOrganizationRosterResponse
-	32, // 88: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
-	34, // 89: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
-	65, // 90: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
-	66, // 91: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
-	67, // 92: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
-	68, // 93: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
-	69, // 94: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
-	70, // 95: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
-	49, // 96: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:output_type -> saas.accounts.v1.ListPlatformCatalogueResponse
-	74, // [74:97] is the sub-list for method output_type
-	51, // [51:74] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	52, // 51: saas.accounts.v1.ListPlatformCatalogueResponse.approved_inventories:type_name -> saas.accounts.v1.ListPlatformCatalogueResponse.ApprovedInventoriesEntry
+	3,  // 52: saas.accounts.v1.PlatformAdminService.SearchUsers:input_type -> saas.accounts.v1.SearchUsersRequest
+	10, // 53: saas.accounts.v1.PlatformAdminService.SuspendUser:input_type -> saas.accounts.v1.SuspendUserRequest
+	11, // 54: saas.accounts.v1.PlatformAdminService.UnsuspendUser:input_type -> saas.accounts.v1.UnsuspendUserRequest
+	12, // 55: saas.accounts.v1.PlatformAdminService.ImpersonateUser:input_type -> saas.accounts.v1.ImpersonateUserRequest
+	14, // 56: saas.accounts.v1.PlatformAdminService.StopImpersonation:input_type -> saas.accounts.v1.StopImpersonationRequest
+	16, // 57: saas.accounts.v1.PlatformAdminService.ListActiveSessions:input_type -> saas.accounts.v1.ListActiveSessionsRequest
+	19, // 58: saas.accounts.v1.PlatformAdminService.RevokeSession:input_type -> saas.accounts.v1.RevokeSessionRequest
+	20, // 59: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:input_type -> saas.accounts.v1.GetOrgEntitlementsRequest
+	23, // 60: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:input_type -> saas.accounts.v1.OverrideEntitlementRequest
+	25, // 61: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:input_type -> saas.accounts.v1.GrantPlatformRoleRequest
+	26, // 62: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:input_type -> saas.accounts.v1.RevokePlatformRoleRequest
+	27, // 63: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:input_type -> saas.accounts.v1.ListPlatformAdminsRequest
+	5,  // 64: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:input_type -> saas.accounts.v1.ListAllOrganizationsRequest
+	8,  // 65: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:input_type -> saas.accounts.v1.GetOrganizationRosterRequest
+	30, // 66: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:input_type -> saas.accounts.v1.ListFeatureFlagsRequest
+	33, // 67: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:input_type -> saas.accounts.v1.UpsertFeatureFlagRequest
+	60, // 68: saas.accounts.v1.PlatformAdminService.GetJobOperations:input_type -> saas.jobs.v1.GetJobOperationsRequest
+	61, // 69: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
+	62, // 70: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
+	63, // 71: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
+	64, // 72: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
+	65, // 73: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
+	48, // 74: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:input_type -> saas.accounts.v1.ListPlatformCatalogueRequest
+	4,  // 75: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
+	66, // 76: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
+	66, // 77: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
+	13, // 78: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
+	15, // 79: saas.accounts.v1.PlatformAdminService.StopImpersonation:output_type -> saas.accounts.v1.StopImpersonationResponse
+	18, // 80: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
+	66, // 81: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
+	21, // 82: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
+	24, // 83: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
+	66, // 84: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
+	66, // 85: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
+	29, // 86: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
+	7,  // 87: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:output_type -> saas.accounts.v1.ListAllOrganizationsResponse
+	9,  // 88: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:output_type -> saas.accounts.v1.GetOrganizationRosterResponse
+	32, // 89: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
+	34, // 90: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
+	67, // 91: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
+	68, // 92: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
+	69, // 93: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
+	70, // 94: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
+	71, // 95: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
+	72, // 96: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
+	49, // 97: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:output_type -> saas.accounts.v1.ListPlatformCatalogueResponse
+	75, // [75:98] is the sub-list for method output_type
+	52, // [52:75] is the sub-list for method input_type
+	52, // [52:52] is the sub-list for extension type_name
+	52, // [52:52] is the sub-list for extension extendee
+	0,  // [0:52] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_platform_admin_proto_init() }
@@ -3885,18 +3947,18 @@ func file_saas_accounts_v1_platform_admin_proto_init() {
 	file_saas_accounts_v1_common_proto_init()
 	file_saas_accounts_v1_installations_proto_init()
 	file_saas_accounts_v1_solution_registry_proto_init()
-	file_saas_accounts_v1_platform_admin_proto_msgTypes[35].OneofWrappers = []any{
+	file_saas_accounts_v1_platform_admin_proto_msgTypes[34].OneofWrappers = []any{
 		(*CatalogueDesired_DeclaredRevision)(nil),
 		(*CatalogueDesired_DeclaredRevisionGap)(nil),
 		(*CatalogueDesired_DeclaredRelease)(nil),
 		(*CatalogueDesired_DeclaredReleaseGap)(nil),
 	}
-	file_saas_accounts_v1_platform_admin_proto_msgTypes[38].OneofWrappers = []any{
+	file_saas_accounts_v1_platform_admin_proto_msgTypes[37].OneofWrappers = []any{
 		(*CatalogueAuthorized_Authorization)(nil),
 		(*CatalogueAuthorized_NotAuthorized)(nil),
 		(*CatalogueAuthorized_AuthorizationGap)(nil),
 	}
-	file_saas_accounts_v1_platform_admin_proto_msgTypes[39].OneofWrappers = []any{
+	file_saas_accounts_v1_platform_admin_proto_msgTypes[38].OneofWrappers = []any{
 		(*CatalogueApplied_AppliedRevision)(nil),
 		(*CatalogueApplied_AppliedRevisionGap)(nil),
 	}
@@ -3933,7 +3995,7 @@ func file_saas_accounts_v1_platform_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_platform_admin_proto_rawDesc), len(file_saas_accounts_v1_platform_admin_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   48,
+			NumMessages:   50,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

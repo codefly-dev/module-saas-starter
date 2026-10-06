@@ -15,7 +15,12 @@ const notObserved = (detail: string) => ({
 	reason: "CATALOGUE_GAP_REASON_NOT_OBSERVED",
 	detail,
 });
-const approved = { imageDigest: "sha256:aaa", buildIncarnation: "3" };
+const approved = {
+	authorizedRevision: "4",
+	inventoryDigest: "sha256:aaa",
+	memberBinding: "member",
+	buildIncarnation: "3",
+};
 
 // What this host has today for every entry: each state's facts as gaps.
 const unknownStates = {
@@ -43,7 +48,10 @@ function observedRunning(verdict: string, imageDigest: string) {
 	return {
 		observedRevisionGap: notObserved("No cluster state."),
 		observationFreshnessGap: notObserved("No cluster state."),
-		observedExecution: { imageDigest, buildIncarnation: "3" },
+		observedExecution: {
+			containerImageDigests: { "worker/worker": imageDigest },
+			buildIncarnation: "3",
+		},
 		verdict,
 	};
 }
@@ -75,7 +83,7 @@ const catalogue = {
 		},
 		solution("drifted-solution", {
 			authorized: {
-				authorization: { authorizedRevision: "4", approvedExecution: approved },
+				authorization: approved,
 			},
 			observed: observedRunning(
 				"CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS",
@@ -121,7 +129,7 @@ const catalogue = {
 		}),
 		solution("steady-solution", {
 			authorized: {
-				authorization: { authorizedRevision: "4", approvedExecution: approved },
+				authorization: approved,
 			},
 			observed: observedRunning(
 				"CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED",

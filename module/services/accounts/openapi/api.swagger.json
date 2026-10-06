@@ -848,13 +848,23 @@
       "type": "object"
     },
     "v1CatalogueAuthorization": {
-      "description": "CatalogueAuthorization is a current platform approval: the authorized\nrevision and the execution it approved.",
+      "description": "CatalogueAuthorization is a current platform approval. What it approves is an\nexecution inventory, `codefly/execution-inventory/v1`, whose one definition is\nthe deployment contract module (github.com/codefly-dev/cli/contracts/deployment).\nThe host does not re-describe that document: it names the approved inventory\nby the digest approval signs, carries the inventory's canonical bytes once per\nresponse (ListPlatformCatalogueResponse.approved_inventories), and reads them\nonly through the contract.",
       "properties": {
-        "approvedExecution": {
-          "$ref": "#/definitions/v1CatalogueExecution"
-        },
         "authorizedRevision": {
           "format": "int64",
+          "type": "string"
+        },
+        "buildIncarnation": {
+          "description": "The build incarnation this host assigned to the approved execution. Not an\ninventory field: this host, and only this host, assigns it — advancing it\nwhenever the approved execution changes — and a Work Context seals it beside\nthe image digest. The verdict compares it with an observation's\nincarnation, which is the same host-assigned value as presented by the\nrunning workload; an incarnation from any other assigner would make that\ncomparison meaningless, not merely wrong.",
+          "format": "uint64",
+          "type": "string"
+        },
+        "inventoryDigest": {
+          "description": "The approved inventory's digest, as the contract computes it over its\ncanonical bytes.",
+          "type": "string"
+        },
+        "memberBinding": {
+          "description": "Which member of that inventory's delivery aggregate this entry is.",
           "type": "string"
         }
       },
@@ -955,19 +965,6 @@
       ],
       "type": "string"
     },
-    "v1CatalogueExecution": {
-      "description": "CatalogueExecution is what runs: an OCI image manifest digest and the build\nincarnation the host assigned to it, the same pair a Work Context seals.",
-      "properties": {
-        "buildIncarnation": {
-          "format": "uint64",
-          "type": "string"
-        },
-        "imageDigest": {
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "v1CatalogueGap": {
       "description": "CatalogueGap is a Catalogue fact this host cannot state, with the reason.",
       "properties": {
@@ -1048,7 +1045,7 @@
           "type": "string"
         },
         "observedExecution": {
-          "$ref": "#/definitions/v1CatalogueExecution"
+          "$ref": "#/definitions/v1CatalogueObservedExecution"
         },
         "observedExecutionGap": {
           "$ref": "#/definitions/v1CatalogueGap"
@@ -1069,9 +1066,25 @@
       },
       "type": "object"
     },
+    "v1CatalogueObservedExecution": {
+      "description": "CatalogueObservedExecution is what an observation found running for an entry:\neach container's image manifest digest, keyed \"<workload id>/<container\nname>\" in the approved inventory's own names, and the build incarnation the\nrunning workload presents — the incarnation this host assigned, sealed into\nits Work Context, never one the workload or another party chose.\nObservation is the observing consumer's record, not the inventory's, so its\nshape is the host's.",
+      "properties": {
+        "buildIncarnation": {
+          "format": "uint64",
+          "type": "string"
+        },
+        "containerImageDigests": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "v1CatalogueObservedVerdict": {
       "default": "CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED",
-      "description": "CatalogueObservedVerdict judges what runs against what is authorized —\nnever against what is declared, because only authorization admits execution.\n\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED: The observed image digest and incarnation are the approved execution.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS: Something other than the approved execution is running: what cluster\nadmission refuses.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED: Something is running with no current authorization at all: what the\nretirement sweep exists to stop.",
+      "description": "CatalogueObservedVerdict judges what runs against what is authorized —\nnever against what is declared, because only authorization admits execution.\n\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED: Every container of the approved inventory member runs its approved image\ndigest, no other container runs, and the incarnation is the approved one.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS: Something other than the approved execution is running: what cluster\nadmission refuses.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED: Something is running with no current authorization at all: what the\nretirement sweep exists to stop.",
       "enum": [
         "CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED",
         "CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED",
@@ -3111,6 +3124,14 @@
     },
     "v1ListPlatformCatalogueResponse": {
       "properties": {
+        "approvedInventories": {
+          "additionalProperties": {
+            "format": "byte",
+            "type": "string"
+          },
+          "description": "Every approved execution inventory an entry's authorization names, keyed by\nits digest, in the deployment contract's canonical bytes (codefly-json-v1).\nCarried once per response because one delivery aggregate is approved as a\nwhole and several entries can be members of it.",
+          "type": "object"
+        },
         "entries": {
           "description": "Modules first, then solutions, each ordered by name.",
           "items": {

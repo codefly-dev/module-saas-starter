@@ -300,13 +300,6 @@ message CatalogueRelease {
   string version = 3;
 }
 
-// CatalogueExecution is what runs: an OCI image manifest digest and the build
-// incarnation the host assigned to it, the same pair a Work Context seals.
-message CatalogueExecution {
-  string image_digest = 1;
-  uint64 build_incarnation = 2;
-}
-
 // CatalogueDesired is what the composition declares.
 message CatalogueDesired {
   oneof declared_revision_value {
@@ -319,11 +312,28 @@ message CatalogueDesired {
   }
 }
 
-// CatalogueAuthorization is a current platform approval: the authorized
-// revision and the execution it approved.
+// CatalogueAuthorization is a current platform approval. What it approves is an
+// execution inventory, `codefly/execution-inventory/v1`, whose one definition is
+// the deployment contract module (github.com/codefly-dev/cli/contracts/deployment).
+// The host does not re-describe that document: it names the approved inventory
+// by the digest approval signs, carries the inventory's canonical bytes once per
+// response (ListPlatformCatalogueResponse.approved_inventories), and reads them
+// only through the contract.
 message CatalogueAuthorization {
   int64 authorized_revision = 1;
-  CatalogueExecution approved_execution = 2;
+  // The approved inventory's digest, as the contract computes it over its
+  // canonical bytes.
+  string inventory_digest = 2;
+  // Which member of that inventory's delivery aggregate this entry is.
+  string member_binding = 3;
+  // The build incarnation this host assigned to the approved execution. Not an
+  // inventory field: this host, and only this host, assigns it — advancing it
+  // whenever the approved execution changes — and a Work Context seals it beside
+  // the image digest. The verdict compares it with an observation's
+  // incarnation, which is the same host-assigned value as presented by the
+  // running workload; an incarnation from any other assigner would make that
+  // comparison meaningless, not merely wrong.
+  uint64 build_incarnation = 4;
 }
 
 // CatalogueNotAuthorized is a known absence of current authorization —
@@ -350,11 +360,24 @@ message CatalogueApplied {
   }
 }
 
+// CatalogueObservedExecution is what an observation found running for an entry:
+// each container's image manifest digest, keyed "<workload id>/<container
+// name>" in the approved inventory's own names, and the build incarnation the
+// running workload presents — the incarnation this host assigned, sealed into
+// its Work Context, never one the workload or another party chose.
+// Observation is the observing consumer's record, not the inventory's, so its
+// shape is the host's.
+message CatalogueObservedExecution {
+  map<string, string> container_image_digests = 1;
+  uint64 build_incarnation = 2;
+}
+
 // CatalogueObservedVerdict judges what runs against what is authorized —
 // never against what is declared, because only authorization admits execution.
 enum CatalogueObservedVerdict {
   CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED = 0;
-  // The observed image digest and incarnation are the approved execution.
+  // Every container of the approved inventory member runs its approved image
+  // digest, no other container runs, and the incarnation is the approved one.
   CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED = 1;
   // Something other than the approved execution is running: what cluster
   // admission refuses.
@@ -376,11 +399,12 @@ message CatalogueObserved {
     CatalogueGap observation_freshness_gap = 4;
   }
   oneof observed_execution_value {
-    CatalogueExecution observed_execution = 5;
+    CatalogueObservedExecution observed_execution = 5;
     CatalogueGap observed_execution_gap = 6;
   }
-  // A verdict exists only when both an observation and a known authorization
-  // do; anything less is a gap, and an unobserved entry is never a match.
+  // A verdict exists only when both a complete observation and a readable
+  // authorization do; anything less is a gap, and an unobserved or
+  // incompletely observed entry is never a match.
   oneof verdict_value {
     CatalogueObservedVerdict verdict = 7;
     CatalogueGap verdict_gap = 8;
@@ -478,6 +502,11 @@ message ListPlatformCatalogueResponse {
   repeated CatalogueEntry entries = 1;
   // The registry revision the solution entries were read at.
   int64 registry_revision = 2;
+  // Every approved execution inventory an entry's authorization names, keyed by
+  // its digest, in the deployment contract's canonical bytes (codefly-json-v1).
+  // Carried once per response because one delivery aggregate is approved as a
+  // whole and several entries can be members of it.
+  map<string, bytes> approved_inventories = 3;
 }
 
 // PlatformAdminService — cross-tenant operations for platform operators.

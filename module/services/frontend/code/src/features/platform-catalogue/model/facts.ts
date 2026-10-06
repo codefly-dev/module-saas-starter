@@ -2,12 +2,13 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { ComponentProps } from "react";
 import {
+	type CatalogueAuthorization,
 	type CatalogueEntry,
 	CatalogueEntryKind,
-	type CatalogueExecution,
 	type CatalogueGap,
 	CatalogueGapReason,
 	type CatalogueInstallation,
+	type CatalogueObservedExecution,
 	CatalogueObservedVerdict,
 	type CatalogueRelease,
 } from "@/gen/saas/accounts/v1/platform_admin_pb";
@@ -88,11 +89,24 @@ export function releaseText(release: CatalogueRelease): string {
 	return `${release.publisher}/${release.name}@${release.version}`;
 }
 
-export function executionText(
-	execution: CatalogueExecution | undefined,
+/**
+ * An approval names the execution inventory it approved by the digest approval
+ * signs, and the member of that inventory this entry is. The inventory itself is
+ * the deployment contract's document; the page names it, and does not re-read
+ * its fields.
+ */
+export function approvalText(approval: CatalogueAuthorization): string {
+	return `Approved inventory ${approval.inventoryDigest}, member ${approval.memberBinding}, incarnation ${approval.buildIncarnation}.`;
+}
+
+export function observationText(
+	execution: CatalogueObservedExecution | undefined,
 ): string {
-	if (!execution) return "unknown";
-	return `${execution.imageDigest || "no digest"} (incarnation ${execution.buildIncarnation})`;
+	if (!execution) return "Nothing observed.";
+	const containers = Object.entries(execution.containerImageDigests)
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([container, digest]) => `${container} ${digest}`);
+	return `Observed ${containers.join(", ") || "no containers"} at incarnation ${execution.buildIncarnation}.`;
 }
 
 export function kindLabel(kind: CatalogueEntryKind): string {
@@ -173,7 +187,7 @@ export function authorizationView(entry: CatalogueEntry): FactView {
 			kind: "value",
 			text: `Revision ${v.value.authorizedRevision}`,
 			tone: "success",
-			detail: `Approved ${executionText(v.value.approvedExecution)}.`,
+			detail: approvalText(v.value),
 		};
 	}
 	if (v?.case === "notAuthorized") {
@@ -200,7 +214,7 @@ export function observedVerdictView(entry: CatalogueEntry): FactView {
 		observed?.observedExecutionValue.case === "observedExecution"
 			? observed.observedExecutionValue.value
 			: undefined;
-	const detail = `Observed ${executionText(running)}.`;
+	const detail = observationText(running);
 	switch (v.value) {
 		case CatalogueObservedVerdict.RUNNING_AUTHORIZED:
 			return {
