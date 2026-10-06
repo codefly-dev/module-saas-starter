@@ -1,9 +1,10 @@
 package business
 
 import (
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/stretchr/testify/require"
 
