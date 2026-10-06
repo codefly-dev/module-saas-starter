@@ -88,9 +88,12 @@ activating a remote.
   server judges the verdict and re-checks it at its read boundary, so a response
   that still arrives claiming the approved execution runs with no approval, no
   build incarnation, no observed execution or no time of observation is a defect —
-  and `features/platform-catalogue/model/facts.ts` renders it as a fact this host
-  cannot state rather than a green cell. A reader sees green and stops looking,
-  which is why that one cell is checked and the two that report trouble are not.
+  and `features/platform-catalogue/model/facts.ts` renders it as **"Inconsistent"**
+  rather than a green cell. That label is deliberately not one of the server's gap
+  reasons: the server did not say it could not tell, it said something its own
+  response contradicts, and conflating the two would hide a defect among the facts
+  this host simply does not hold yet. A reader sees green and stops looking, which
+  is why that one cell is checked and the two that report trouble are not.
   The browser checks only that each piece of evidence is *present*: how long an
   observation speaks for the present is the host's to decide, and a copy of that
   window here would drift from it.

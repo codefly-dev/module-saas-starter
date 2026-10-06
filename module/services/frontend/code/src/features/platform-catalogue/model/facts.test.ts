@@ -299,7 +299,7 @@ describe("observedVerdictView", () => {
 		(_name, init, missing) => {
 			const view = observedVerdictView(entry(init));
 			expect(view.kind).toBe("gap");
-			expect(view.kind === "gap" && view.label).toBe("Not observed");
+			expect(view.kind === "gap" && view.label).toBe("Inconsistent");
 			expect(view.kind === "gap" && view.detail).toContain(missing);
 		},
 	);

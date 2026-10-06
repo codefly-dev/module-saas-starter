@@ -216,6 +216,11 @@ export function authorizationView(entry: CatalogueEntry): FactView {
  * and a second copy of that window in a browser would drift from it. The
  * observation's own time is shown beside the verdict, so an operator reads the
  * age for themselves.
+ *
+ * The cell reads "Inconsistent" rather than borrowing one of the server's gap
+ * reasons: the server did not say it could not tell, it said something its own
+ * response contradicts, and conflating the two would hide a defect among the
+ * facts this host simply does not hold yet.
  */
 function affirmativeVerdictUnsupported(
 	entry: CatalogueEntry,
@@ -255,11 +260,7 @@ export function observedVerdictView(entry: CatalogueEntry): FactView {
 		case CatalogueObservedVerdict.RUNNING_AUTHORIZED: {
 			const unsupported = affirmativeVerdictUnsupported(entry);
 			if (unsupported)
-				return {
-					kind: "gap",
-					label: gapLabel(CatalogueGapReason.NOT_OBSERVED),
-					detail: unsupported,
-				};
+				return { kind: "gap", label: "Inconsistent", detail: unsupported };
 			return {
 				kind: "value",
 				text: "Running authorized",

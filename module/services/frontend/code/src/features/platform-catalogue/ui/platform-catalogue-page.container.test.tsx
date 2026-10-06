@@ -224,9 +224,7 @@ describe("PlatformCataloguePage admin container", () => {
 		// operator reads and stops at, so it is never shown.
 		const undated = stateOf("undated-solution", "Observed");
 		expect(within(undated).queryByText("Running authorized")).toBeNull();
-		expect(within(undated).getAllByText("Not observed").length).toBeGreaterThan(
-			0,
-		);
+		expect(within(undated).getByText("Inconsistent")).toBeTruthy();
 
 		const moduleObserved = stateOf("billing-module", "Observed");
 		expect(
