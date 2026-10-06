@@ -1,10 +1,10 @@
 package adapters
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -185,12 +185,11 @@ func TestCookieTheRefreshTokenLeavesAnUnrelatedResponseAlone(t *testing.T) {
 // require it of every authConnectHandler method whose response message carries a
 // refresh token, so a handler added later cannot quietly use the plain helper.
 func TestEveryConnectAuthCompletionRoutesThroughTheLift(t *testing.T) {
-	source, err := os.ReadFile("connect_handlers.go")
-	require.NoError(t, err)
+	text := executableSource(t, "connect_handlers.go")
 
 	methods := regexp.MustCompile(
 		`(?m)^func \(h \*authConnectHandler\) ([A-Za-z]+)\(ctx context\.Context, req \*connect\.Request\[gen\.([A-Za-z]+)\]\) \(\*connect\.Response\[gen\.([A-Za-z]+)\][^\n]*\n((?:\t[^\n]*\n)*)`).
-		FindAllStringSubmatch(string(source), -1)
+		FindAllStringSubmatch(text, -1)
 	require.NotEmpty(t, methods)
 
 	checked := 0
@@ -262,9 +261,9 @@ func TestR1019ConnectWithNoCarrierIsUnchanged(t *testing.T) {
 // rejected before the cookie is ever consulted. The handler is the only place that
 // ordering holds, so it is asserted from the source.
 func TestR1019ConnectRefreshLiftsBeforeValidation(t *testing.T) {
-	source, err := os.ReadFile("connect_handlers.go")
-	require.NoError(t, err)
-	text := string(source)
+	// Comments stripped: replacing the call with a comment that contains its text
+	// satisfied a substring search while nothing consumed the cookie (R1019-N15).
+	text := executableSource(t, "connect_handlers.go")
 
 	for _, method := range []string{"RefreshToken", "Logout"} {
 		pattern := regexp.MustCompile(`func \(h \*authConnectHandler\) ` + method +
@@ -278,4 +277,29 @@ func TestR1019ConnectRefreshLiftsBeforeValidation(t *testing.T) {
 			"%s must lift the cookie before dispatching, or validation refuses the empty field first",
 			method)
 	}
+}
+
+// R1019-N15: every assertion above either calls cookieTheRefreshToken directly or
+// reads the source for the wrapper's NAME, so removing the lift from inside the
+// wrapper survived the whole suite — the helper still worked when called by a test,
+// and the handlers still named the wrapper that no longer called it.
+//
+// This drives the wrapper itself. It is the only test that fails if the call inside
+// it goes away.
+func TestR1019TheLiftRunsInsideTheWrapper(t *testing.T) {
+	request := connect.NewRequest(&gen.RefreshTokenRequest{RefreshToken: "rt-in"})
+
+	response, err := unaryCookieingRefreshToken(t.Context(), request,
+		func(context.Context, *gen.RefreshTokenRequest) (*gen.RefreshTokenResponse, error) {
+			return &gen.RefreshTokenResponse{AccessToken: "at", RefreshToken: "rt-secret"}, nil
+		})
+	require.NoError(t, err)
+
+	require.Empty(t, response.Msg.GetRefreshToken(),
+		"the wrapper must lift the credential out of the body it returns")
+	require.Equal(t, "at", response.Msg.GetAccessToken(), "the rest of the response is untouched")
+	setCookie := response.Header().Get("Set-Cookie")
+	require.Contains(t, setCookie, refreshTokenCookieName+"=rt-secret",
+		"the wrapper must put the credential in the cookie it lifted it into")
+	require.Contains(t, setCookie, "HttpOnly")
 }

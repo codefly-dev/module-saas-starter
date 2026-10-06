@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -108,4 +109,59 @@ func TestR1019DatasourceKeyFloorAndProvisionedValue(t *testing.T) {
 	provisioned := strings.Repeat("7Kq2Xp9Vb4Nf", 4)
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__DATASOURCE_KEYS__"+key, provisioned)
 	require.Equal(t, []byte(provisioned), usableDatasourceKey(key, false))
+}
+
+// R1019-N15: replacing the datasource keys' wiring with the perimeter credential
+// survived the whole accounts suite. Every existing assertion was about the
+// DERIVATION — that two keys differ, that a placeholder is refused — and none about
+// WHERE the value comes from, so substituting another provisioned secret changed
+// nothing any test looked at.
+//
+// This asserts the source: each key is read from the `datasource-keys` group, by its
+// own name. The internal token is a provisioned 32+ character value with no
+// placeholder marker, so it passes every other check in usableDatasourceKey — the
+// group is the only thing that distinguishes it.
+func TestR1019DatasourceKeysComeFromTheirOwnGroup(t *testing.T) {
+	// A deployed runtime with the perimeter credential provisioned and the datasource
+	// group blank. If the wiring read the perimeter credential, the purposes would be
+	// available; they must not be.
+	for _, key := range []string{"CODEFLY_INTERNAL_TOKEN", "CODEFLY_GATEWAY_TOKEN"} {
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__INTERNAL_AUTH__"+key,
+			strings.Repeat("7Kq2Xp9Vb4Nf", 4))
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__GATEWAY_TRUST__"+key,
+			strings.Repeat("7Kq2Xp9Vb4Nf", 4))
+		t.Setenv(key, strings.Repeat("7Kq2Xp9Vb4Nf", 4))
+	}
+	for _, key := range []string{"DATASOURCE_CONTENT_TICKET_KEY", "DATASOURCE_ACCOUNT_LINK_KEY"} {
+		blankWorkspaceKey(t, "datasource-keys", key)
+		require.Nil(t, usableDatasourceKey(key, false),
+			"%s is absent from its own group, so its purpose must be unavailable — a "+
+				"provisioned credential from another group is not this key", key)
+	}
+
+	// And the converse: provisioned in its own group, it resolves. Without this the
+	// assertions above would pass for a function that always returned nil.
+	for _, key := range []string{"DATASOURCE_CONTENT_TICKET_KEY", "DATASOURCE_ACCOUNT_LINK_KEY"} {
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__DATASOURCE_KEYS__"+key,
+			strings.Repeat("9Zr4Lm7Td2Wc", 4))
+		require.Equal(t, []byte(strings.Repeat("9Zr4Lm7Td2Wc", 4)), usableDatasourceKey(key, false),
+			"%s provisioned in datasource-keys must resolve", key)
+	}
+}
+
+// The wiring itself, from the source: boot must pass each key through
+// usableDatasourceKey with the deployment's own local flag. A key wired from a
+// constant, or from another group's value, is the same defect as not wiring it.
+func TestR1019DatasourceKeyWiringIsReadFromItsGroup(t *testing.T) {
+	source, err := os.ReadFile("work.go")
+	require.NoError(t, err)
+	text := string(source)
+
+	for _, key := range []string{"DATASOURCE_CONTENT_TICKET_KEY", "DATASOURCE_ACCOUNT_LINK_KEY"} {
+		require.Contains(t, text,
+			`usableDatasourceKey("`+key+`", codefly.IsLocal())`,
+			"%s must be wired through usableDatasourceKey from the runtime's own local flag", key)
+	}
+	require.Contains(t, text, `workspaceEnv("datasource-keys", key)`,
+		"the keys must be read from the datasource-keys group, not from another group's credential")
 }

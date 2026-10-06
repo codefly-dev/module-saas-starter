@@ -2,7 +2,6 @@ package adapters
 
 import (
 	"context"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -125,14 +124,13 @@ func TestAnOrdinaryAudiencePassesTheReservedAudienceGuard(t *testing.T) {
 // caller's). Matching those too would make this test demand a second gate on a
 // path with no caller-supplied value to gate.
 func TestEveryRequestSuppliedAudienceRefusesTheReservedOne(t *testing.T) {
-	source, err := os.ReadFile("work_context_rpcs.go")
-	require.NoError(t, err)
+	// Comments stripped: a source check that cannot tell code from prose is satisfied
+	// by writing the answer in a comment (R1019-N15).
+	text := executableSource(t, "work_context_rpcs.go")
 
 	methods := regexp.MustCompile(`(?m)^func \(s \*WorkContextAuthorityServer\) ([A-Z][A-Za-z]*)\(`).
-		FindAllStringSubmatchIndex(string(source), -1)
+		FindAllStringSubmatchIndex(text, -1)
 	require.NotEmpty(t, methods)
-
-	text := string(source)
 	for index, match := range methods {
 		name := text[match[2]:match[3]]
 		end := len(text)
@@ -147,11 +145,19 @@ func TestEveryRequestSuppliedAudienceRefusesTheReservedOne(t *testing.T) {
 		// directly, or the local that a renewal resolves it into. Anything else
 		// passing through this gate is a value this test cannot vouch for, so it
 		// is not accepted as one.
-		gatesTheField := strings.Contains(body, "requireVocabularyAudience(ctx, req.GetAudience())")
-		gatesTheResolved := strings.Contains(body, "requireVocabularyAudience(ctx, audience)") &&
-			strings.Contains(body, "audience := req.GetAudience()")
+		//
+		// Each is matched as a guard whose error LEAVES the handler. Matching the
+		// call alone is what let the discard mutation survive (R1019-N15): a call
+		// whose result is dropped reads as a check and enforces nothing.
+		gatesTheField := regexp.MustCompile(
+			guardReturnsItsRefusal(`requireVocabularyAudience\(ctx, req\.GetAudience\(\)\)`)).
+			MatchString(body)
+		gatesTheResolved := regexp.MustCompile(
+			guardReturnsItsRefusal(`requireVocabularyAudience\(ctx, audience\)`)).
+			MatchString(body) && strings.Contains(body, "audience := req.GetAudience()")
 		require.True(t, gatesTheField || gatesTheResolved,
-			"%s takes its audience from the request and must refuse the reserved module audience", name)
+			"%s takes its audience from the request and must refuse the reserved module "+
+				"audience AND return that refusal; a guard whose error is discarded enforces nothing", name)
 	}
 }
 
@@ -169,9 +175,7 @@ func scopesForReservedAudienceTest() []*gen.WorkContextScope {
 // a person-driven renewal could still carry the reserved module audience. The
 // EFFECTIVE value is what gets signed, so the effective value is what is refused.
 func TestR1019RenewInheritedAudience(t *testing.T) {
-	source, err := os.ReadFile("work_context_rpcs.go")
-	require.NoError(t, err)
-	text := string(source)
+	text := executableSource(t, "work_context_rpcs.go")
 
 	body := regexp.MustCompile(
 		`func \(s \*WorkContextAuthorityServer\) RenewWorkContext\((?s:.*?)\n\}\n`).
@@ -181,13 +185,30 @@ func TestR1019RenewInheritedAudience(t *testing.T) {
 	inherit := strings.Index(body, "audience = parent.GetAudience()")
 	require.NotEqual(t, -1, inherit, "renewal still inherits the parent audience")
 
-	// A refusal of the EFFECTIVE audience, after the inheritance and before signing.
-	effective := strings.Index(body, "refuseReservedModuleAudience(audience)")
-	require.NotEqual(t, -1, effective,
-		"renewal must refuse the audience it will actually sign, not only the one requested")
+	// A refusal of the EFFECTIVE audience, after the inheritance and before signing —
+	// and one whose error is RETURNED. Discarding it left the call in place and
+	// enforced nothing, which is how this check passed while the guard did not run
+	// (R1019-N15).
+	returns := regexp.MustCompile(guardReturnsItsRefusal(`requireVocabularyAudience\(ctx, audience\)`))
+	located := returns.FindStringIndex(body)
+	require.NotNil(t, located,
+		"renewal must refuse the audience it will actually sign, not only the one "+
+			"requested, and must return that refusal")
+	effective := located[0]
 	require.Less(t, inherit, effective, "the check must follow the inheritance")
 
 	sign := strings.Index(body, "s.signer.")
 	require.NotEqual(t, -1, sign)
 	require.Less(t, effective, sign, "the check must precede signing")
+}
+
+// guardReturnsItsRefusal is the pattern for "this guard is called AND its error leaves
+// the handler". A call whose result is discarded is not a guard, and matching the call
+// alone is what let that mutation survive.
+//
+// The error variable's name is not pinned, because these handlers bind several
+// different ones; what is pinned is that something is bound from the call, tested
+// against nil, and returned from inside that branch.
+func guardReturnsItsRefusal(call string) string {
+	return `if \w+ := ` + call + `; \w+ != nil \{\s*return nil, \w+\s*\}`
 }
