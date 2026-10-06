@@ -12,6 +12,7 @@
 //
 // Public pages (login, callback, landing, health) bypass the check.
 
+import { getWorkspaceConfiguration } from "codefly";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import {
@@ -22,7 +23,6 @@ import {
 	expectedInternalToken,
 	INTERNAL_TOKEN_HEADER,
 } from "@/lib/internal-token";
-import { getWorkspaceConfiguration } from "codefly";
 import { resolveAccountsBindings } from "../server/accounts-bindings.mjs";
 import {
 	contentSecurityPolicyFromInputs,
@@ -32,8 +32,71 @@ import {
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
 const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
 
+/**
+ * The host's OAuth 2.1 / MCP surface, at the paths the specifications put it
+ * (issue #1003). This app is the module's public entry, so the standard paths
+ * have to exist here; the behaviour behind each one belongs to the service that
+ * owns it, so each is forwarded rather than reimplemented.
+ *
+ *   /.well-known/oauth-authorization-server  the RFC 8414 document, published by
+ *                                            accounts — the server whose
+ *                                            behaviour it describes
+ *   /oauth2/token                            the RFC 6749 token endpoint, in
+ *                                            accounts
+ *   /.well-known/oauth-protected-resource/…  the RFC 9728 document for a
+ *                                            solution's MCP endpoint, served by
+ *                                            the gateway, which is the component
+ *                                            that enforces what it says
+ *   /solutions/<id>/mcp                      the resource itself, proxied by the
+ *                                            gateway to the solution's runtime
+ *
+ * `/oauth2/authorize` is deliberately NOT here: the authorization endpoint shows
+ * the person a login page and a consent screen, which is this app's job. It is
+ * a route handler (src/app/oauth2/authorize/route.ts).
+ *
+ * Each entry maps a public path to the gateway path it is forwarded to. The
+ * mapping is explicit per path rather than a prefix, because `/solutions/` at
+ * the gateway also carries the registration endpoints, which are
+ * cluster-internal and must not become reachable from the edge by widening a
+ * prefix here.
+ */
+const OAUTH_SURFACE_REWRITES: ReadonlyArray<readonly [string, string]> = [
+	[
+		"/.well-known/oauth-authorization-server",
+		"/v1/oauth2/authorization-server",
+	],
+	["/oauth2/token", "/v1/oauth2/token"],
+] as const;
+
+/**
+ * The gateway path a public OAuth path is served from, or undefined when the
+ * path is not part of that surface.
+ *
+ * Deliberately only the two authorization-server paths. An MCP client reaches a
+ * solution's backend — and the protected-resource metadata its runtime serves —
+ * through `/api/solutions/<id>/proxy/*`, which is a route of this app and needs
+ * no rewrite.
+ *
+ * An earlier revision also forwarded `/solutions/<id>/mcp` and a constructed
+ * `/.well-known/oauth-protected-resource/...`. Both were public paths that do
+ * not exist on a deployed cell, where `/solutions/*` on the public origin is a
+ * page of this app that redirects to login — so a client following the
+ * advertised metadata URL reached a login page instead of a JSON document.
+ * Adding a second public route to a solution's backend would also mean two
+ * paths to keep identical forever.
+ */
+export function oauthSurfaceUpstreamPath(pathname: string): string | undefined {
+	for (const [publicPath, upstreamPath] of OAUTH_SURFACE_REWRITES) {
+		if (pathname === publicPath) return upstreamPath;
+	}
+	return undefined;
+}
+
 function isProductAPI(pathname: string): boolean {
-	return PRODUCT_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+	if (PRODUCT_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+		return true;
+	}
+	return oauthSurfaceUpstreamPath(pathname) !== undefined;
 }
 
 // Next derives `nextUrl`'s protocol and host from the internal request URL and
@@ -91,7 +154,10 @@ export function trustedGatewayRequestHeaders(
  */
 export function productAPIDestination(pathname: string, search: string): URL {
 	const { rest } = resolveAccountsBindings();
-	return new URL(`${rest}${pathname}${search}`);
+	// A public OAuth path is served from its own gateway path; everything else
+	// is forwarded unchanged.
+	const upstreamPath = oauthSurfaceUpstreamPath(pathname) ?? pathname;
+	return new URL(`${rest}${upstreamPath}${search}`);
 }
 
 const PUBLIC_PATHS = [
@@ -533,7 +599,17 @@ function reportMissingGateway(err: unknown): void {
 	);
 }
 
-function isPublic(pathname: string): boolean {
+/**
+ * Whether a path bypasses the page middleware's login redirect.
+ *
+ * Exported for its own test. This one predicate decides whether an
+ * unauthenticated request is answered or sent to a login page, and getting it
+ * wrong is invisible from inside the app: a browser follows the 307 and looks
+ * fine, while a non-browser client parses a login page as JSON and reports that
+ * the endpoint does not exist. That failure mode is worth a direct test rather
+ * than one inferred through `proxy()`.
+ */
+export function isPublic(pathname: string): boolean {
 	if (PUBLIC_PATHS.includes(pathname)) return true;
 	// Next internals must always pass through.
 	if (pathname.startsWith("/_next/")) return true;
@@ -544,6 +620,35 @@ function isPublic(pathname: string): boolean {
 	// response semantics.
 	if (pathname.startsWith("/v1/")) return true;
 	if (pathname.startsWith("/saas.accounts.v1.")) return true;
+	// The OAuth 2.1 / MCP surface. These carry their own credentials (a bearer,
+	// a PKCE verifier) or none at all by specification, and are answered by the
+	// backend, so the page middleware's login redirect must not intercept them:
+	// an MCP client POSTing its token request would get a 307 to a login page.
+	// /oauth2/authorize is a page of this app and belongs here too — it is where
+	// an unauthenticated person is SUPPOSED to arrive.
+	if (pathname === "/oauth2/authorize") return true;
+	// EVERY well-known path, wherever it sits in the tree and whether or not
+	// this host serves a document there.
+	//
+	// `.well-known` is a reserved metadata namespace (RFC 8615) and every
+	// discovery chain begins by GETting one with no credential at all.
+	// Answering one with a 307 to a login page does not merely inconvenience a
+	// client: a non-browser client follows the redirect, parses an HTML login
+	// page as JSON, and concludes the metadata does not exist — so the flow ends
+	// before it has begun, and the symptom it reports is "this host is not an
+	// authorization server" rather than "you are not signed in".
+	//
+	// Matched as a path SEGMENT rather than a prefix, because these documents
+	// are not all at the root. A solution's protected-resource metadata sits
+	// beneath its own route, and `/solutions/<id>/` is a page of this app — so a
+	// prefix test on "/.well-known/" leaves exactly the namespace a client reads
+	// during discovery behind the login redirect.
+	//
+	// A well-known path this host does NOT serve must reach the handler that
+	// answers 404. "No document here" is a true answer a client can act on; a
+	// login page is not.
+	if (pathname.split("/").includes(".well-known")) return true;
+	if (oauthSurfaceUpstreamPath(pathname) !== undefined) return true;
 	if (pathname === "/monitoring") return true;
 	if (pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|avif|css|js|woff2?)$/))
 		return true;

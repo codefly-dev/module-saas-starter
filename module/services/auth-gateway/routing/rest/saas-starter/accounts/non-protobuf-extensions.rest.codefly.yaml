@@ -79,3 +79,51 @@ routes:
       extension:
         exposed: true
         protected: true
+    # The OAuth 2.1 / MCP authorization-server surface (accounts
+    # pkg/adapters/oauth_http.go). These are not protobuf RPCs because the shape
+    # IS the contract: RFC 6749 §3.2 requires a form-encoded token request and
+    # §5.2 a specific JSON error body, neither of which grpc-gateway produces.
+    #
+    # They reserve the `/v1/oauth2` prefix against runtime module registration
+    # (ReservedV1Prefixes); reservedV1Prefixes in routing_rest_test.go pins that
+    # consequence.
+    #
+    # The host's public edge maps the standard paths onto these — see
+    # frontend/code/src/proxy.ts:
+    #   GET  /.well-known/oauth-authorization-server -> authorization-server
+    #   POST /oauth2/token                           -> token
+    #
+    # Unprotected, because they run before the person holds a credential for
+    # this client: the metadata document is public by RFC 8414, the validate
+    # call must refuse an unregistered client while the browser is still on the
+    # host and nothing has been typed, and the token endpoint's credential is
+    # the code plus its PKCE verifier (a public client authenticates with
+    # `none`). RATE_LIMIT_CLASS_AUTHENTICATION is the budget for all three, the
+    # same one every other pre-credential route carries.
+    - path: /v1/oauth2/authorization-server
+      method: GET
+      extension:
+        exposed: true
+        protected: false
+        rate-limit-class: RATE_LIMIT_CLASS_AUTHENTICATION
+    - path: /v1/oauth2/authorize/validate
+      method: POST
+      extension:
+        exposed: true
+        protected: false
+        rate-limit-class: RATE_LIMIT_CLASS_AUTHENTICATION
+    - path: /v1/oauth2/token
+      method: POST
+      extension:
+        exposed: true
+        protected: false
+        rate-limit-class: RATE_LIMIT_CLASS_AUTHENTICATION
+    # The code is issued from the signed-in person's own host session, so this
+    # one is protected: the full ext_authz bearer path runs and accounts reads
+    # the forwarded identity beside the gateway credential.
+    - path: /v1/oauth2/authorize/grant
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+        rate-limit-class: RATE_LIMIT_CLASS_SENSITIVE

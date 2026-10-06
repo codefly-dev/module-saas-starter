@@ -84,6 +84,7 @@ export const FRONTEND_ROUTES = [
   { path: "/legal/privacy", sourcePath: "src/app/(auth)/legal/privacy/page.tsx", match: "exact", access: "public" },
   { path: "/legal/terms", sourcePath: "src/app/(auth)/legal/terms/page.tsx", match: "exact", access: "public" },
   { path: "/notifications", sourcePath: "src/app/(dashboard)/notifications/page.tsx", match: "exact", access: "authenticated" },
+  { path: "/oauth2/consent", sourcePath: "src/app/(dashboard)/oauth2/consent/page.tsx", match: "exact", access: "authenticated" },
   { path: "/onboarding", sourcePath: "src/app/(dashboard)/onboarding/page.tsx", match: "exact", access: "authenticated" },
   { path: "/s/{solutionId}", sourcePath: "src/app/(dashboard)/s/[solutionId]/page.tsx", match: "parameter", access: "authenticated" },
   { path: "/security", sourcePath: "src/app/(dashboard)/security/page.tsx", match: "exact", access: "authenticated" },

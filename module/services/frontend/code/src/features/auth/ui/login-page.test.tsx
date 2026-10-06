@@ -126,14 +126,25 @@ describe("LoginPage", () => {
 
 	it("names the client once the host has accepted its request", async () => {
 		h.query = clientQuery();
-		h.validateClientAuthorization.mockResolvedValue("Example Add-in");
+		h.validateClientAuthorization.mockResolvedValue({
+			clientName: "Example Add-in",
+			clientSource: "registry",
+			scope: "offline_access",
+			requiresConsent: false,
+		});
 
 		render(<LoginPage identity={{}} />);
 
 		await waitFor(() =>
 			expect(screen.getByText(/to continue to Example Add-in/)).toBeTruthy(),
 		);
-		expect(h.rememberClientAuthorization).toHaveBeenCalledTimes(1);
+		// The host's whole answer is remembered, not just the name: the consent
+		// page renders what the HOST said about this client, never what the query
+		// string claimed.
+		expect(h.rememberClientAuthorization).toHaveBeenCalledWith(
+			expect.objectContaining({ clientId: "example-addin" }),
+			expect.objectContaining({ clientName: "Example Add-in" }),
+		);
 		expect(
 			screen.getByRole("button", { name: /Continue with Provider/ }),
 		).toBeTruthy();

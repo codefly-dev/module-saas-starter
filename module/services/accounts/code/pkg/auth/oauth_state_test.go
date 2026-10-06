@@ -119,14 +119,40 @@ func (boomConsumer) Consume(context.Context, string, time.Duration) (bool, error
 	return false, errors.New("redis down")
 }
 
-func TestOAuthStateSigner_FailsOpenWhenConsumerErrors(t *testing.T) {
+// A sign-in whose single use cannot be recorded is REFUSED (handbook
+// SP-IDENT-04). This replaces a test that asserted the opposite.
+//
+// The state here is otherwise entirely valid — correct signature, unexpired,
+// right provider and redirect — so the only reason to refuse it is that the
+// consumption could not be written. While the store is unavailable the question
+// "has this been used before?" has no answer, and admitting on no answer means
+// the single-use property does not hold for the duration of the outage.
+func TestAStateWhoseSingleUseCannotBeRecordedIsRefused(t *testing.T) {
 	s := newSigner(t, "seed")
 	s.SetNonceConsumer(boomConsumer{})
 	state, _ := s.Mint("workos", "https://x.example.com/cb")
-	// The IdP's own single-use code is the authoritative anti-replay, so a
-	// consumer-store outage must admit rather than break every OAuth login.
+
+	err := s.Verify(context.Background(), state, "workos", "https://x.example.com/cb")
+
+	if !errors.Is(err, auth.ErrOAuthStateNotVerifiable) {
+		t.Errorf("Verify = %v, want ErrOAuthStateNotVerifiable", err)
+	}
+	// A distinct error from a bad state, because an operator has to tell their
+	// own dependency failing from someone presenting a replayed state. The
+	// caller maps both to one sentinel before answering, so the client sees no
+	// difference.
+	if errors.Is(err, auth.ErrInvalidOAuthState) {
+		t.Error("an outage must not be reported as an invalid state")
+	}
+}
+
+// And the same signer admits that state once the store answers again: the
+// refusal above is about the outage, not about the state.
+func TestAValidStateIsAdmittedOnceTheStoreAnswers(t *testing.T) {
+	s := newSigner(t, "seed")
+	state, _ := s.Mint("workos", "https://x.example.com/cb")
 	if err := s.Verify(context.Background(), state, "workos", "https://x.example.com/cb"); err != nil {
-		t.Errorf("Verify should fail open on consumer error, got %v", err)
+		t.Errorf("Verify = %v, want the state admitted", err)
 	}
 }
 

@@ -276,6 +276,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
     {
+      "path": "/oauth2/consent",
+      "source_path": "src/app/(dashboard)/oauth2/consent/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
       "path": "/onboarding",
       "source_path": "src/app/(dashboard)/onboarding/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
