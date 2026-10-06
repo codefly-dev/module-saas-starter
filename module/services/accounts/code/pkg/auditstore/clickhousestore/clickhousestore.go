@@ -85,6 +85,11 @@ type Config struct {
 	// ExportMaxBytes bounds the events one export gathers, counted by their
 	// text (auditeval.Event.Size). Zero is business.AuditExportMaxBytes.
 	ExportMaxBytes int64
+	// AggregateMaxBytes bounds the state one aggregation keeps in the service —
+	// its buckets, and the samples and distinct values of the aggregation the
+	// service evaluates itself — counted by auditeval.StateBudget. Zero is
+	// business.AuditAggregateMaxBytes.
+	AggregateMaxBytes int64
 }
 
 // clusterPattern is a cluster name as remote_servers declares one, or a macro
@@ -106,6 +111,8 @@ type Store struct {
 	readSettings clickhouse.Settings
 	// exportMaxBytes is the most an export gathers before it gives up.
 	exportMaxBytes int64
+	// aggregateMaxBytes is the most state an aggregation keeps before it gives up.
+	aggregateMaxBytes int64
 	// writeSettings are sent with every insert: on a cluster, the quorum that
 	// makes an acknowledgement durable.
 	writeSettings clickhouse.Settings
@@ -143,14 +150,22 @@ func New(conn Conn, cfg Config) (*Store, error) {
 	if exportMaxBytes == 0 {
 		exportMaxBytes = business.AuditExportMaxBytes
 	}
+	if cfg.AggregateMaxBytes < 0 {
+		return nil, errors.New("clickhouse audit store: aggregation bound cannot be negative")
+	}
+	aggregateMaxBytes := cfg.AggregateMaxBytes
+	if aggregateMaxBytes == 0 {
+		aggregateMaxBytes = business.AuditAggregateMaxBytes
+	}
 	store := &Store{
-		conn:           conn,
-		database:       cfg.Database,
-		cluster:        cfg.Cluster,
-		deploymentID:   cfg.DeploymentID,
-		eventsDays:     eventsDays,
-		detailDays:     detailDays,
-		exportMaxBytes: exportMaxBytes,
+		conn:              conn,
+		database:          cfg.Database,
+		cluster:           cfg.Cluster,
+		deploymentID:      cfg.DeploymentID,
+		eventsDays:        eventsDays,
+		detailDays:        detailDays,
+		exportMaxBytes:    exportMaxBytes,
+		aggregateMaxBytes: aggregateMaxBytes,
 		// Pinned per read, whatever the user's profile says, because each one
 		// changes an answer.
 		readSettings: clickhouse.Settings{

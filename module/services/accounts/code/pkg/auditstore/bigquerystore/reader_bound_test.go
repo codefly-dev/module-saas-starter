@@ -45,10 +45,17 @@ func newBoundWarehouse(t *testing.T) *boundWarehouse {
 
 func (w *boundWarehouse) reader(t *testing.T, windowBytes, exportMaxBytes int64) *Reader {
 	t.Helper()
-	reader, err := NewReader(ReadConfig{
+	return w.readerWith(t, func(cfg *ReadConfig) { cfg.WindowBytes, cfg.ExportMaxBytes = windowBytes, exportMaxBytes })
+}
+
+func (w *boundWarehouse) readerWith(t *testing.T, mutate func(*ReadConfig)) *Reader {
+	t.Helper()
+	cfg := ReadConfig{
 		Client: w.fake, Project: boundProject, Dataset: boundDataset, DeploymentID: boundDeployment,
-		WindowBytes: windowBytes, ExportMaxBytes: exportMaxBytes, Now: func() time.Time { return boundNow },
-	})
+		Now: func() time.Time { return boundNow },
+	}
+	mutate(&cfg)
+	reader, err := NewReader(cfg)
 	require.NoError(t, err)
 	return reader
 }
@@ -183,6 +190,93 @@ func TestAPayloadAggregationHoldsOneBoundedWindowAndCountsEachEventOnce(t *testi
 
 	require.LessOrEqual(t, small.windowPeak.Load(), int64(budget+oneRow))
 	require.Greater(t, large.windowPeak.Load(), int64(4*budget))
+}
+
+// distinctMonth fills the warehouse with 600 events over fifteen days, each with
+// a number and a text of its own: an aggregation over them keeps a float and a
+// string per event, and a bucket per event when it groups by the text.
+func (w *boundWarehouse) distinctMonth(t *testing.T) {
+	t.Helper()
+	var records []business.AuditRecord
+	for i := 0; i < 600; i++ {
+		at := boundNow.Add(-time.Hour - time.Duration(i)*36*time.Minute)
+		records = append(records, boundEvent(t, i+1, at, map[string]any{"n": i, "uniq": fmt.Sprintf("value-%06d", i), "pad": strings.Repeat("p", 300)}))
+	}
+	w.append(t, records...)
+	w.append(t, records...)
+}
+
+// What an aggregation keeps from window to window is a number the deployment
+// chose too: the window budget frees each window before the next, so it does
+// not count the percentile samples, distinct values and buckets that outlive
+// one. A read of a long history that needs more than the aggregation bound is
+// refused, as soon as it passes it and never with a partial answer.
+func TestAnAggregationOverManyWindowsGivesUpPastItsStateBound(t *testing.T) {
+	w := newBoundWarehouse(t)
+	w.distinctMonth(t)
+	read := orgScoped(business.AuditQuery{})
+	const windowBytes = 64 << 10
+	// The newest day is forty events: it fits each bound below; the fifteen days
+	// do not.
+	newestDay := boundNow.Add(-24 * time.Hour)
+	for name, tc := range map[string]struct {
+		spec   business.AuditAggregationSpec
+		budget int64
+	}{
+		"a percentile":     {business.AuditAggregationSpec{Metrics: []business.AuditMetric{{Op: "percentile", Field: "payload:n", Percentile: 0.5, Alias: "p50"}}}, 4 << 10},
+		"a distinct count": {business.AuditAggregationSpec{Metrics: []business.AuditMetric{{Op: "count_distinct", Field: "payload:uniq", Alias: "distinct"}}}, 4 << 10},
+		"a bucket per key": {business.AuditAggregationSpec{GroupBy: []string{"payload:uniq"}}, 20 << 10},
+	} {
+		bounded := w.readerWith(t, func(cfg *ReadConfig) { cfg.WindowBytes, cfg.AggregateMaxBytes = windowBytes, tc.budget })
+		before := len(w.fake.Sessions())
+		_, err := bounded.AggregateAuditEvents(context.Background(), read, tc.spec)
+		require.ErrorIs(t, err, business.ErrAuditAggregateTooLarge, name)
+		stopped := len(w.fake.Sessions()) - before
+
+		recent := orgScoped(business.AuditQuery{From: &newestDay})
+		got, err := bounded.AggregateAuditEvents(context.Background(), recent, tc.spec)
+		require.NoError(t, err, "%s: the newest day alone fits the same bound; it is the windows together that do not", name)
+		require.NotEmpty(t, got, name)
+
+		before = len(w.fake.Sessions())
+		got, err = w.readerWith(t, func(cfg *ReadConfig) { cfg.WindowBytes = windowBytes }).AggregateAuditEvents(context.Background(), read, tc.spec)
+		require.NoError(t, err, "%s: under the default bound the same read is answered", name)
+		require.NotEmpty(t, got, name)
+		require.Less(t, stopped, len(w.fake.Sessions())-before, "%s: and the bounded read stopped as soon as the bound was passed", name)
+	}
+}
+
+// A bound that is not passed changes nothing: the answer is the one a reader
+// with no practical bound gives, across the many windows it is read in.
+func TestAnAggregationUnderTheDefaultStateBoundMatchesOneWithoutAny(t *testing.T) {
+	w := newBoundWarehouse(t)
+	w.distinctMonth(t)
+	spec := business.AuditAggregationSpec{Metrics: []business.AuditMetric{
+		{Op: "percentile", Field: "payload:n", Percentile: 0.5, Alias: "p50"},
+		{Op: "count_distinct", Field: "payload:uniq", Alias: "distinct"},
+		{Op: "sum", Field: "payload:n", Alias: "total"},
+	}}
+	read := orgScoped(business.AuditQuery{})
+
+	before := len(w.fake.Sessions())
+	got, err := w.readerWith(t, func(cfg *ReadConfig) { cfg.WindowBytes = 64 << 10 }).AggregateAuditEvents(context.Background(), read, spec)
+	require.NoError(t, err)
+	require.Greater(t, len(w.fake.Sessions())-before, 4, "read in many windows")
+	reference, err := w.readerWith(t, func(cfg *ReadConfig) { cfg.WindowBytes, cfg.AggregateMaxBytes = 1<<40, 1<<40 }).AggregateAuditEvents(context.Background(), read, spec)
+	require.NoError(t, err)
+	require.Equal(t, reference, got)
+	require.Len(t, got, 1)
+	require.Equal(t, 299.5, got[0].Metrics["p50"], "600 events of 0 to 599, each delivered twice and counted once")
+	require.Equal(t, 600.0, got[0].Metrics["distinct"])
+	require.Equal(t, 599.0*600/2, got[0].Metrics["total"])
+}
+
+func TestAReadersAggregationBoundCannotBeNegative(t *testing.T) {
+	w := newBoundWarehouse(t)
+	_, err := NewReader(ReadConfig{
+		Client: w.fake, Project: boundProject, Dataset: boundDataset, DeploymentID: boundDeployment, AggregateMaxBytes: -1,
+	})
+	require.ErrorContains(t, err, "read budgets cannot be negative")
 }
 
 func TestAnExportHoldsOneBoundedWindowAndTheEventsItReturns(t *testing.T) {

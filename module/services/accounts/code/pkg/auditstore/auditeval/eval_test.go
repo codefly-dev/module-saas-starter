@@ -165,7 +165,7 @@ func TestMatcherRefusals(t *testing.T) {
 	require.ErrorContains(t, err, "event-type index")
 	_, err = NewMatcher(business.AuditRead{Scope: business.OrganizationAuditScope(org), Query: business.AuditQuery{OrgID: org, CollectionID: "c"}})
 	require.ErrorContains(t, err, "uncompiled collection filter")
-	_, err = NewAggregator(business.AuditAggregationSpec{GroupBy: []string{"category"}}, nil)
+	_, err = NewAggregator(business.AuditAggregationSpec{GroupBy: []string{"category"}}, nil, 0)
 	require.ErrorContains(t, err, "event-type index")
 
 	m, err := NewMatcher(business.AuditRead{Scope: business.OrganizationAuditScope(org), Query: business.AuditQuery{

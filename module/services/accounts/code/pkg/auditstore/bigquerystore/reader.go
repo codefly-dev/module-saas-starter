@@ -73,6 +73,10 @@ type ReadConfig struct {
 	// ExportMaxBytes bounds the events one export gathers, counted the same
 	// way. Zero is business.AuditExportMaxBytes.
 	ExportMaxBytes int64
+	// AggregateMaxBytes bounds the state one aggregation keeps across all the
+	// windows it reads — its buckets, percentile samples and distinct values,
+	// counted by auditeval.StateBudget. Zero is business.AuditAggregateMaxBytes.
+	AggregateMaxBytes int64
 	// Now is a seam for tests; nil is the clock.
 	Now func() time.Time
 }
@@ -113,16 +117,18 @@ const (
 // that would hold more is abandoned and read again as two halves of its span,
 // newer first, so a day of a million events is read as the several pieces that
 // fit. What outlives a window is the answer alone: a page and the proof of the
-// next, an aggregation's buckets, an export's events (up to ExportMaxBytes).
+// next, an aggregation's state (up to AggregateMaxBytes), an export's events
+// (up to ExportMaxBytes).
 type Reader struct {
-	client         ReadSessionClient
-	project        string
-	dataset        string
-	deploymentID   string
-	maxStreams     int
-	windowBytes    int64
-	exportMaxBytes int64
-	now            func() time.Time
+	client            ReadSessionClient
+	project           string
+	dataset           string
+	deploymentID      string
+	maxStreams        int
+	windowBytes       int64
+	exportMaxBytes    int64
+	aggregateMaxBytes int64
+	now               func() time.Time
 
 	// windowPeak is the most bytes any one attempt at a window has counted, the
 	// attempt that overflowed included, since the reader was built.
@@ -139,18 +145,19 @@ func NewReader(cfg ReadConfig) (*Reader, error) {
 			return nil, fmt.Errorf("bigquery audit store: %s is required to read", name)
 		}
 	}
-	if cfg.WindowBytes < 0 || cfg.ExportMaxBytes < 0 {
+	if cfg.WindowBytes < 0 || cfg.ExportMaxBytes < 0 || cfg.AggregateMaxBytes < 0 {
 		return nil, errors.New("bigquery audit store: read budgets cannot be negative")
 	}
 	reader := &Reader{
-		client:         cfg.Client,
-		project:        cfg.Project,
-		dataset:        cfg.Dataset,
-		deploymentID:   cfg.DeploymentID,
-		maxStreams:     cfg.MaxStreams,
-		windowBytes:    cfg.WindowBytes,
-		exportMaxBytes: cfg.ExportMaxBytes,
-		now:            cfg.Now,
+		client:            cfg.Client,
+		project:           cfg.Project,
+		dataset:           cfg.Dataset,
+		deploymentID:      cfg.DeploymentID,
+		maxStreams:        cfg.MaxStreams,
+		windowBytes:       cfg.WindowBytes,
+		exportMaxBytes:    cfg.ExportMaxBytes,
+		aggregateMaxBytes: cfg.AggregateMaxBytes,
+		now:               cfg.Now,
 	}
 	if reader.maxStreams <= 0 {
 		reader.maxStreams = DefaultReadStreams
@@ -160,6 +167,9 @@ func NewReader(cfg ReadConfig) (*Reader, error) {
 	}
 	if reader.exportMaxBytes == 0 {
 		reader.exportMaxBytes = business.AuditExportMaxBytes
+	}
+	if reader.aggregateMaxBytes == 0 {
+		reader.aggregateMaxBytes = business.AuditAggregateMaxBytes
 	}
 	if reader.now == nil {
 		reader.now = time.Now
@@ -633,13 +643,17 @@ func needsPayload(m *auditeval.Matcher, spec business.AuditAggregationSpec) bool
 // AggregateAuditEvents implements business.AuditReader: the query's span read
 // window by window, each window deduplicated and aggregated whole before the
 // next is read. Copies of an event share its occurrence, so a window holds all
-// of them and the deduplication needs no memory of the windows before it.
+// of them and the deduplication needs no memory of the windows before it. What
+// the aggregation keeps from one window to the next (its buckets, percentile
+// samples and distinct values) is counted against the reader's aggregation
+// bound, and the read gives up with business.ErrAuditAggregateTooLarge, never
+// a partial answer, as soon as it passes it.
 func (r *Reader) AggregateAuditEvents(ctx context.Context, read business.AuditRead, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
 	m, err := auditeval.NewMatcher(read)
 	if err != nil {
 		return nil, err
 	}
-	aggregator, err := auditeval.NewAggregator(spec, read.Types)
+	aggregator, err := auditeval.NewAggregator(spec, read.Types, r.aggregateMaxBytes)
 	if err != nil {
 		return nil, err
 	}

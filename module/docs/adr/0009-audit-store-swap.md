@@ -207,7 +207,7 @@ Postgres transaction.
    them — against a byte budget, `ReadConfig.WindowBytes` (64 MiB by default; the
    service exposes no setting for it). A window that passes the budget is read
    again as two halves. What outlives a window is the answer: a page, an
-   aggregation's buckets, an export's events. Three limits remain:
+   aggregation's buckets, an export's events. Four limits remain:
    - A read whose events at a single instant alone pass the budget cannot be
      split further and fails (`ErrReadTooDense`).
    - An export is the one answer as large as the history it matches. One export
@@ -215,6 +215,16 @@ Postgres transaction.
      (`AuditExportMaxBytes`) and is refused with `ResourceExhausted` past it. The
      export request carries no time range, so an actor or an event type is all
      that narrows it.
+   - An aggregation keeps more than its buckets while it reads: a float per
+     percentile input and a string per distinct value, over every window, so a
+     read with no time range can outgrow a pod while it returns one bucket. The
+     aggregator counts that state — 8 bytes a sample, a value's text and entry,
+     a bucket's keys and metrics — against a bound of 32 MiB
+     (`AuditAggregateMaxBytes`, `ReadConfig.AggregateMaxBytes` and
+     `clickhousestore.Config.AggregateMaxBytes`), and the read is refused with
+     `ResourceExhausted` (`ErrAuditAggregateTooLarge`) as soon as it passes it,
+     never answered in part. A time range, an actor or an event type narrows it,
+     as does grouping by fewer dimensions.
    - The history copy (item 7) reads and holds a whole window of the store at a
      time outside this budget.
 

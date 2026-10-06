@@ -321,7 +321,12 @@ func (s *Store) ExportAuditEvents(ctx context.Context, read business.AuditRead) 
 
 // AggregateAuditEvents implements business.AuditReader: one GROUP BY in
 // ClickHouse when it is exact for this read (aggregate.go), and otherwise the
-// deduplicated, matched events aggregated in the service.
+// deduplicated, matched events aggregated in the service. Either way the state
+// the service keeps for the answer (the buckets, and in the second the
+// percentile samples and distinct values) is counted against the store's
+// aggregation bound, and the read gives up with
+// business.ErrAuditAggregateTooLarge, never a partial answer, as soon as it
+// passes it.
 func (s *Store) AggregateAuditEvents(ctx context.Context, read business.AuditRead, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
 	m, err := auditeval.NewMatcher(read)
 	if err != nil {
@@ -329,7 +334,7 @@ func (s *Store) AggregateAuditEvents(ctx context.Context, read business.AuditRea
 	}
 	// The service's aggregator is built either way: it refuses what Postgres
 	// refuses, and it is the fallback.
-	aggregator, err := auditeval.NewAggregator(spec, read.Types)
+	aggregator, err := auditeval.NewAggregator(spec, read.Types, s.aggregateMaxBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +343,11 @@ func (s *Store) AggregateAuditEvents(ctx context.Context, read business.AuditRea
 		return nil, nil
 	}
 	if !m.NeedsPayload() || pl.payload != nil {
-		buckets, exact, err := s.aggregateInClickHouse(ctx, pl, spec, read.Types)
+		state, err := auditeval.NewStateBudget(s.aggregateMaxBytes)
+		if err != nil {
+			return nil, err
+		}
+		buckets, exact, err := s.aggregateInClickHouse(ctx, pl, spec, read.Types, state)
 		if err != nil || exact {
 			return buckets, err
 		}
@@ -355,8 +364,8 @@ func (s *Store) AggregateAuditEvents(ctx context.Context, read business.AuditRea
 
 // aggregateInClickHouse runs the aggregation statement. exact is false when a
 // row it grouped is one ClickHouse cannot read as Postgres does, and the
-// buckets are then discarded.
-func (s *Store) aggregateInClickHouse(ctx context.Context, pl plan, spec business.AuditAggregationSpec, types business.AuditEventTypeIndex) ([]business.AuditAggregateBucket, bool, error) {
+// buckets are then discarded. Each bucket it keeps is counted against state.
+func (s *Store) aggregateInClickHouse(ctx context.Context, pl plan, spec business.AuditAggregationSpec, types business.AuditEventTypeIndex, state *auditeval.StateBudget) ([]business.AuditAggregateBucket, bool, error) {
 	agg, ok, err := s.buildAggregation(pl, spec, types)
 	if err != nil || !ok {
 		return nil, err == nil, err
@@ -391,6 +400,9 @@ func (s *Store) aggregateInClickHouse(ctx context.Context, pl plan, spec busines
 		inexact += rowInexact
 		if inexact > 0 {
 			return false, nil
+		}
+		if err := state.Take(auditeval.BucketBytes(keys, len(agg.metrics))); err != nil {
+			return false, err
 		}
 		bucket := business.AuditAggregateBucket{
 			Keys:    keys,

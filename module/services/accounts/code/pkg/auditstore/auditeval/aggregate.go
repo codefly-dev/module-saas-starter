@@ -30,6 +30,13 @@ import (
 //
 // An event without details (a content-class event past the content window)
 // has no payload: its payload dimensions are "" and its payload metrics NULL.
+//
+// What an Aggregator keeps grows with the events it is offered — a bucket per
+// distinct key, a float per percentile input, a string per distinct value —
+// and a store offers it every event of a history, window by window, so it
+// counts that state against a budget (StateBudget) and gives up with
+// business.ErrAuditAggregateTooLarge when it passes. An Aggregator that has
+// returned an error from Add has an incomplete state and must be discarded.
 type Aggregator struct {
 	spec    business.AuditAggregationSpec
 	dims    []string
@@ -37,7 +44,75 @@ type Aggregator struct {
 	aliases []string
 	groups  map[string]*group
 	order   []*group
+	state   *StateBudget
 }
+
+// What the state of an aggregation costs, counted rather than measured so the
+// bound is one number the deployment chose. The figures err high: a bucket's
+// cost includes the bucket it is answered as, and a sample's the 8 bytes of its
+// float, not the capacity a slice that grows by doubling may hold past it.
+const (
+	// bucketBytes is a bucket's own: the group, its entries in the map and the
+	// ordered list, and the answer built from it.
+	bucketBytes = 256
+	// keyBytes is what each of a bucket's dimension values costs beside its
+	// text, which is held twice (as the key and in the bucket's identity).
+	keyBytes = 32
+	// metricBytes is a bucket's accumulator for one metric and its entries in
+	// the answer's Samples and Metrics maps.
+	metricBytes = 160
+	// sampleBytes is a percentile input: one float64.
+	sampleBytes = 8
+	// distinctEntryBytes is what a value a distinct count remembers costs beside
+	// its text: its string header and its entry in the set.
+	distinctEntryBytes = 32
+)
+
+// BucketBytes is the state of one bucket of an aggregation with metrics
+// metrics, whose dimension values are keys.
+func BucketBytes(keys []string, metrics int) int64 {
+	n := int64(bucketBytes + len(keys)*keyBytes + metrics*metricBytes)
+	for _, key := range keys {
+		n += 2 * int64(len(key))
+	}
+	return n
+}
+
+// SampleBytes is the state of n percentile inputs.
+func SampleBytes(n int) int64 { return int64(n) * sampleBytes }
+
+// StateBudget counts the bytes an aggregation retains across every window it
+// reads. The window budget of a store bounds what one window holds; this is
+// the bound on what outlives a window.
+type StateBudget struct {
+	limit, held int64
+}
+
+// NewStateBudget is a budget of limit bytes; zero is
+// business.AuditAggregateMaxBytes.
+func NewStateBudget(limit int64) (*StateBudget, error) {
+	switch {
+	case limit < 0:
+		return nil, errors.New("audit: the aggregation state budget cannot be negative")
+	case limit == 0:
+		limit = business.AuditAggregateMaxBytes
+	}
+	return &StateBudget{limit: limit}, nil
+}
+
+// Take counts n more bytes as retained, and reports
+// business.ErrAuditAggregateTooLarge once they pass the limit. The bytes are
+// counted either way: a caller that gets the error stops.
+func (b *StateBudget) Take(n int64) error {
+	b.held += n
+	if b.held > b.limit {
+		return fmt.Errorf("%w (the bound is %d bytes)", business.ErrAuditAggregateTooLarge, b.limit)
+	}
+	return nil
+}
+
+// Held is the bytes counted so far.
+func (b *StateBudget) Held() int64 { return b.held }
 
 type group struct {
 	keys    []string
@@ -56,7 +131,13 @@ type accumulator struct {
 // NewAggregator prepares spec, which the caller has validated. It refuses a
 // spec that groups or counts by category without the event-type index, and
 // any dimension or metric the Postgres aggregation would not run either.
-func NewAggregator(spec business.AuditAggregationSpec, types business.AuditEventTypeIndex) (*Aggregator, error) {
+// maxStateBytes is the bound on the state it keeps (StateBudget); zero is
+// business.AuditAggregateMaxBytes.
+func NewAggregator(spec business.AuditAggregationSpec, types business.AuditEventTypeIndex, maxStateBytes int64) (*Aggregator, error) {
+	state, err := NewStateBudget(maxStateBytes)
+	if err != nil {
+		return nil, err
+	}
 	dims := spec.GroupBy
 	if len(dims) == 0 {
 		dims = []string{"event_type"}
@@ -103,6 +184,7 @@ func NewAggregator(spec business.AuditAggregationSpec, types business.AuditEvent
 		types:   types,
 		aliases: aliases,
 		groups:  map[string]*group{},
+		state:   state,
 	}, nil
 }
 
@@ -124,6 +206,9 @@ func (a *Aggregator) Add(event *Event) error {
 	id := groupID(keys)
 	g, ok := a.groups[id]
 	if !ok {
+		if err := a.state.Take(BucketBytes(keys, len(a.spec.Metrics))); err != nil {
+			return err
+		}
 		g = &group{keys: keys, metrics: make([]*accumulator, len(a.spec.Metrics))}
 		for i := range g.metrics {
 			g.metrics[i] = &accumulator{min: math.Inf(1), max: math.Inf(-1)}
@@ -146,7 +231,12 @@ func (a *Aggregator) Add(event *Event) error {
 			if acc.distinct == nil {
 				acc.distinct = map[string]struct{}{}
 			}
-			acc.distinct[value] = struct{}{}
+			if _, seen := acc.distinct[value]; !seen {
+				if err := a.state.Take(distinctEntryBytes + int64(len(value))); err != nil {
+					return err
+				}
+				acc.distinct[value] = struct{}{}
+			}
 		default:
 			key, _ := payloadKey(metric.Field)
 			value, ok := jsonbNumeric(payload, key)
@@ -158,6 +248,9 @@ func (a *Aggregator) Add(event *Event) error {
 			acc.min = math.Min(acc.min, value)
 			acc.max = math.Max(acc.max, value)
 			if metric.Op == "percentile" {
+				if err := a.state.Take(sampleBytes); err != nil {
+					return err
+				}
 				acc.values = append(acc.values, value)
 			}
 		}

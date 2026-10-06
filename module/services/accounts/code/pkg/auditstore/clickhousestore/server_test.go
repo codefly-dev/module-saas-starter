@@ -167,7 +167,7 @@ func (f *fixture) referenceAggregate(t *testing.T, read business.AuditRead, spec
 	t.Helper()
 	m, err := auditeval.NewMatcher(read)
 	require.NoError(t, err)
-	aggregator, err := auditeval.NewAggregator(spec, read.Types)
+	aggregator, err := auditeval.NewAggregator(spec, read.Types, 0)
 	require.NoError(t, err)
 	for _, event := range f.events() {
 		ok, err := m.Match(event)
@@ -568,4 +568,64 @@ func TestServerNumericReadingIsExact(t *testing.T) {
 		require.Equal(t, f.referenceAggregate(t, read, spec), got, metric)
 	}
 	require.Zero(t, inService, "every one ran in ClickHouse")
+}
+
+// An aggregation keeps state in the service whichever way ClickHouse reads it:
+// the buckets of its answer, and, when the service evaluates it itself, a float
+// per percentile input and a string per distinct value. That state grows with
+// the history, so past its bound the aggregation gives up instead.
+func TestServerAggregationGivesUpPastItsStateBound(t *testing.T) {
+	conn, database := serverDatabase(t)
+	ctx := context.Background()
+	org, actor := uuid.NewString(), uuid.NewString()
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	f := &fixture{org: org}
+	for i := range 400 {
+		f.records = append(f.records, newRecord(t, org, actor, business.EventDocumentRead, "doc", base.Add(-time.Duration(i)*time.Minute),
+			business.RetentionContent, map[string]any{"nested": map[string]any{"a": []any{"q"}}, "n": i, "uniq": "value-" + uuid.NewString()}))
+	}
+	store := serverStore(t, conn, database)
+	require.NoError(t, store.Ensure(ctx))
+	appendBatch(t, store, testDeployment, f.records...)
+
+	inService := 0
+	store.inService = func() { inService++ }
+	bounded := serverStore(t, conn, database, func(cfg *Config) { cfg.AggregateMaxBytes = 2 << 10 })
+	boundedInService := 0
+	bounded.inService = func() { boundedInService++ }
+
+	// A nested payload filter has no SQL form: the service aggregates the events
+	// itself, in one bucket that keeps a sample and a value per event.
+	service := business.AuditRead{Scope: business.OrganizationAuditScope(org), Query: business.AuditQuery{
+		OrgID: org, PayloadContains: map[string]any{"nested": map[string]any{"a": []any{"q"}}},
+	}}
+	// ClickHouse groups it: one bucket per distinct text.
+	engine := business.AuditRead{Scope: business.OrganizationAuditScope(org), Query: business.AuditQuery{OrgID: org}}
+	for name, tc := range map[string]struct {
+		read      business.AuditRead
+		spec      business.AuditAggregationSpec
+		inService bool
+	}{
+		"a percentile in the service": {service, business.AuditAggregationSpec{Metrics: []business.AuditMetric{{Op: "percentile", Field: "payload:n", Percentile: 0.5, Alias: "p50"}}}, true},
+		"a distinct count in the service": {service, business.AuditAggregationSpec{Metrics: []business.AuditMetric{
+			{Op: "count_distinct", Field: "payload:uniq", Alias: "distinct"}}}, true},
+		"a bucket per key in the service": {service, business.AuditAggregationSpec{GroupBy: []string{"payload:uniq"}}, true},
+		"a bucket per key in ClickHouse":  {engine, business.AuditAggregationSpec{GroupBy: []string{"payload:uniq"}}, false},
+	} {
+		before, boundedBefore := inService, boundedInService
+		_, err := bounded.AggregateAuditEvents(ctx, tc.read, tc.spec)
+		require.ErrorIs(t, err, business.ErrAuditAggregateTooLarge, name)
+		require.Equal(t, tc.inService, boundedInService-boundedBefore == 1, "%s: which path ran", name)
+
+		// Under the default bound the same read is answered, as the reference
+		// semantics answer it.
+		got, err := store.AggregateAuditEvents(ctx, tc.read, tc.spec)
+		require.NoError(t, err, name)
+		require.Equal(t, f.referenceAggregate(t, tc.read, tc.spec), got, name)
+		require.Equal(t, tc.inService, inService-before == 1, "%s: the same path", name)
+	}
+
+	_, err := New(conn, Config{Database: database, DeploymentID: testDeployment, EventsRetention: 2555 * 24 * time.Hour,
+		ContentDetailRetention: 30 * 24 * time.Hour, AggregateMaxBytes: -1})
+	require.ErrorContains(t, err, "aggregation bound cannot be negative")
 }

@@ -568,7 +568,7 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 		if err != nil {
 			return nil, err
 		}
-		return s.auditStore.AggregateAuditEvents(ctx, read, spec)
+		return auditAggregateResult(s.auditStore.AggregateAuditEvents(ctx, read, spec))
 	}
 	var out []AuditAggregateBucket
 	err := s.store.WithOrgTx(ctx, q.OrgID, func(ctx context.Context) error {
@@ -681,7 +681,7 @@ func (s *Service) AggregateAuditLog(ctx context.Context, q AuditQuery, spec Audi
 	if err != nil {
 		return nil, err
 	}
-	return s.auditReads().AggregateAuditEvents(ctx, read, spec)
+	return auditAggregateResult(s.auditReads().AggregateAuditEvents(ctx, read, spec))
 }
 
 // buildAuditEntry assembles an AuditEntry. actorID is the effective subject the
