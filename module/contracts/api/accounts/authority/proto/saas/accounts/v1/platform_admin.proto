@@ -248,14 +248,20 @@ message UpsertFeatureFlagResponse {
 // the durable solution registry, the installations table, and the composition's
 // module principal registry — and it adds no store of its own.
 //
-// Several facts the Catalogue is specified to show are carried by records this
-// host does not hold yet: the declared release, build digest and generation
-// arrive with applied presence documents, the running incarnation needs observed
-// cluster state, and build size is a signed section of the presence document
-// (codefly-dev/core#708, computed by the CLI at build). Each such fact is a
-// oneof of its value and a CatalogueGap, so an absent fact is reported with its
-// reason and is never an empty value a reader could take for zero, unset, or a
-// match. A fact gains its value case when the record that carries it exists.
+// Each entry is placed in the registry's state model — desired, authorized,
+// applied, observed, withdrawing, physically retired — with the public status
+// fields that model names (declared_revision, authorized_revision,
+// applied_revision, observed_revision, observation_freshness, withdrawal_state,
+// retirement_state, credential_revocation_state), never one "installed" flag.
+//
+// Most of those facts are carried by records this host does not hold yet:
+// declarations and applied generations arrive with presence documents, approval
+// and withdrawal with the deployment contract's signed approval, observations
+// and retirement with cluster observation, and build size is a signed section of
+// the presence document (codefly-dev/core#708, computed by the CLI at build).
+// Each such fact is a oneof of its value and a CatalogueGap, so an absent fact is
+// reported with its reason and is never an empty value a reader could take for
+// zero, unset, or a match. A fact gains its value case when its record exists.
 // ============================================================================
 
 // CatalogueEntryKind distinguishes a composed module from a solution.
@@ -287,7 +293,7 @@ message CatalogueGap {
   string detail = 2;
 }
 
-// CatalogueRelease is a declared release, publisher/name@version.
+// CatalogueRelease is a release, publisher/name@version.
 message CatalogueRelease {
   string publisher = 1;
   string name = 2;
@@ -301,22 +307,106 @@ message CatalogueExecution {
   uint64 build_incarnation = 2;
 }
 
-// CatalogueRunningVerdict compares the observed execution with the declared
-// one. It exists only when both are known; anything less is a CatalogueGap.
-enum CatalogueRunningVerdict {
-  CATALOGUE_RUNNING_VERDICT_UNSPECIFIED = 0;
-  // The observed image digest and incarnation are the declared ones.
-  CATALOGUE_RUNNING_VERDICT_MATCHES = 1;
-  // Something other than the declared execution is running — what cluster
-  // admission refuses.
-  CATALOGUE_RUNNING_VERDICT_DIFFERS = 2;
+// CatalogueDesired is what the composition declares.
+message CatalogueDesired {
+  oneof declared_revision_value {
+    int64 declared_revision = 1;
+    CatalogueGap declared_revision_gap = 2;
+  }
+  oneof declared_release_value {
+    CatalogueRelease declared_release = 3;
+    CatalogueGap declared_release_gap = 4;
+  }
 }
 
-// CatalogueRunning is the running incarnation beside the declared one.
-message CatalogueRunning {
-  CatalogueExecution declared = 1;
-  CatalogueExecution observed = 2;
-  CatalogueRunningVerdict verdict = 3;
+// CatalogueAuthorization is a current platform approval: the authorized
+// revision and the execution it approved.
+message CatalogueAuthorization {
+  int64 authorized_revision = 1;
+  CatalogueExecution approved_execution = 2;
+}
+
+// CatalogueNotAuthorized is a known absence of current authorization —
+// never approved, or approval withdrawn. It is a statement the approval record
+// makes, distinct from a CatalogueGap, where the host cannot tell.
+message CatalogueNotAuthorized {
+  string detail = 1;
+}
+
+// CatalogueAuthorized is what the platform has approved to execute.
+message CatalogueAuthorized {
+  oneof authorization_value {
+    CatalogueAuthorization authorization = 1;
+    CatalogueNotAuthorized not_authorized = 2;
+    CatalogueGap authorization_gap = 3;
+  }
+}
+
+// CatalogueApplied is what delivery actually wrote.
+message CatalogueApplied {
+  oneof applied_revision_value {
+    int64 applied_revision = 1;
+    CatalogueGap applied_revision_gap = 2;
+  }
+}
+
+// CatalogueObservedVerdict judges what runs against what is authorized —
+// never against what is declared, because only authorization admits execution.
+enum CatalogueObservedVerdict {
+  CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED = 0;
+  // The observed image digest and incarnation are the approved execution.
+  CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED = 1;
+  // Something other than the approved execution is running: what cluster
+  // admission refuses.
+  CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS = 2;
+  // Something is running with no current authorization at all: what the
+  // retirement sweep exists to stop.
+  CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED = 3;
+}
+
+// CatalogueObserved is what is actually running.
+message CatalogueObserved {
+  oneof observed_revision_value {
+    int64 observed_revision = 1;
+    CatalogueGap observed_revision_gap = 2;
+  }
+  // When the observation was made; a stale observation is never current.
+  oneof observation_freshness_value {
+    google.protobuf.Timestamp observed_at = 3;
+    CatalogueGap observation_freshness_gap = 4;
+  }
+  oneof observed_execution_value {
+    CatalogueExecution observed_execution = 5;
+    CatalogueGap observed_execution_gap = 6;
+  }
+  // A verdict exists only when both an observation and a known authorization
+  // do; anything less is a gap, and an unobserved entry is never a match.
+  oneof verdict_value {
+    CatalogueObservedVerdict verdict = 7;
+    CatalogueGap verdict_gap = 8;
+  }
+}
+
+// CatalogueWithdrawing is approval withdrawn and retirement not yet complete,
+// acknowledged separately from retirement itself. The value cases are the
+// deployment contract's withdrawal and revocation records; until they exist
+// each field holds only its gap.
+message CatalogueWithdrawing {
+  oneof withdrawal_state_value {
+    CatalogueGap withdrawal_state_gap = 1;
+  }
+  oneof credential_revocation_state_value {
+    CatalogueGap credential_revocation_state_gap = 2;
+  }
+}
+
+// CatalogueRetired is whether the workload is physically stopped. Retired
+// requires stop or fence evidence; until a retirement controller reports to
+// this host, the field holds only its gap and nothing reads as retired.
+message CatalogueRetired {
+  oneof retirement_state_value {
+    CatalogueGap retirement_state_gap = 1;
+  }
 }
 
 // CatalogueInstallation is one organization's installation of a solution.
@@ -329,7 +419,7 @@ message CatalogueInstallation {
     CatalogueRelease agent_release = 3;
     CatalogueGap agent_release_gap = 4;
   }
-  // The installation revision the installed generation is pinned at.
+  // The installation's own revision, independent of the deployment's.
   oneof revision_value {
     CatalogueGap revision_gap = 5;
   }
@@ -338,7 +428,11 @@ message CatalogueInstallation {
   repeated CollectionReadGrant exposed_teams = 6;
 }
 
-// CatalogueEntry is one module or solution.
+// CatalogueEntry is one module or solution, placed in the registry's state
+// model: desired, authorized, applied, observed, withdrawing and physically
+// retired are distinct, and a row shows each separately, so an entry desired
+// but not authorized, or observed but no longer authorized, reads as exactly
+// that.
 message CatalogueEntry {
   CatalogueEntryKind kind = 1;
   // A module's principal prefix, or a solution's registry id — the identifier
@@ -349,37 +443,25 @@ message CatalogueEntry {
     string publisher = 3;
     CatalogueGap publisher_gap = 4;
   }
-  oneof declared_release_value {
-    CatalogueRelease declared_release = 5;
-    CatalogueGap declared_release_gap = 6;
-  }
-  // The OCI image manifest digest the entry was published at.
-  oneof build_digest_value {
-    string build_digest = 7;
-    CatalogueGap build_digest_gap = 8;
-  }
-  // The presence generation this host applied.
-  oneof generation_value {
-    int64 generation = 9;
-    CatalogueGap generation_gap = 10;
-  }
-  oneof running_value {
-    CatalogueRunning running = 11;
-    CatalogueGap running_gap = 12;
-  }
+  CatalogueDesired desired = 5;
+  CatalogueAuthorized authorized = 6;
+  CatalogueApplied applied = 7;
+  CatalogueObserved observed = 8;
+  CatalogueWithdrawing withdrawing = 9;
+  CatalogueRetired retired = 10;
   // Lines of code, backend and frontend, vendored paths excluded. The value
   // case is the presence document's build_size section (codefly-dev/core#708)
   // as delivered; this host counts nothing itself.
   oneof build_size_value {
-    CatalogueGap build_size_gap = 13;
+    CatalogueGap build_size_gap = 11;
   }
-  // The solution's registration, with deployment topology withheld: the
+  // The solution's self-registration, with deployment topology withheld: the
   // frontend manifest, backend upstream and service alias are always empty
   // here, as on every browser-facing projection of the registry. Absent for a
   // module, which does not self-register, and for a solution known only from
   // its installations.
-  optional SolutionRegistration registration = 14;
-  repeated CatalogueInstallation installations = 15;
+  optional SolutionRegistration registration = 12;
+  repeated CatalogueInstallation installations = 13;
 }
 
 message ListPlatformCatalogueRequest {

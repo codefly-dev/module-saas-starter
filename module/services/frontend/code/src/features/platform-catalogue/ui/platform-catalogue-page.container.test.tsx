@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, http, type JsonBodyType } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
@@ -11,13 +11,56 @@ const notRecorded = (detail: string) => ({
 	reason: "CATALOGUE_GAP_REASON_NOT_RECORDED",
 	detail,
 });
-const presenceGaps = {
-	declaredReleaseGap: notRecorded("No applied presence document."),
-	buildDigestGap: notRecorded("No applied presence document."),
-	generationGap: notRecorded("No applied presence document."),
+const notObserved = (detail: string) => ({
+	reason: "CATALOGUE_GAP_REASON_NOT_OBSERVED",
+	detail,
+});
+const approved = { imageDigest: "sha256:aaa", buildIncarnation: "3" };
+
+// What this host has today for every entry: each state's facts as gaps.
+const unknownStates = {
+	desired: {
+		declaredRevisionGap: notRecorded("No applied presence document."),
+		declaredReleaseGap: notRecorded("No applied presence document."),
+	},
+	authorized: { authorizationGap: notRecorded("No approval record.") },
+	applied: { appliedRevisionGap: notRecorded("No applied generation.") },
+	observed: {
+		observedRevisionGap: notObserved("No cluster state."),
+		observationFreshnessGap: notObserved("No cluster state."),
+		observedExecutionGap: notObserved("No cluster state."),
+		verdictGap: notObserved("No cluster state."),
+	},
+	withdrawing: {
+		withdrawalStateGap: notRecorded("No withdrawal record."),
+		credentialRevocationStateGap: notRecorded("No revocation record."),
+	},
+	retired: { retirementStateGap: notObserved("No retirement controller.") },
 	buildSizeGap: notRecorded("Build size is codefly-dev/core#708."),
 };
-const declared = { imageDigest: "sha256:aaa", buildIncarnation: "3" };
+
+function observedRunning(verdict: string, imageDigest: string) {
+	return {
+		observedRevisionGap: notObserved("No cluster state."),
+		observationFreshnessGap: notObserved("No cluster state."),
+		observedExecution: { imageDigest, buildIncarnation: "3" },
+		verdict,
+	};
+}
+
+function solution(name: string, extra: Record<string, unknown>) {
+	return {
+		kind: "CATALOGUE_ENTRY_KIND_SOLUTION",
+		name,
+		publisher: `solution:${name}`,
+		...unknownStates,
+		registration: {
+			solutionId: name,
+			status: "SOLUTION_REGISTRATION_STATUS_ACTIVE",
+		},
+		...extra,
+	};
+}
 
 const catalogue = {
 	registryRevision: "12",
@@ -28,26 +71,16 @@ const catalogue = {
 			publisherGap: notRecorded(
 				"A composed module is known by its prefix alone.",
 			),
-			...presenceGaps,
-			runningGap: {
-				reason: "CATALOGUE_GAP_REASON_NOT_OBSERVED",
-				detail: "No cluster state.",
-			},
+			...unknownStates,
 		},
-		{
-			kind: "CATALOGUE_ENTRY_KIND_SOLUTION",
-			name: "drifted-solution",
-			publisher: "solution:drifted-solution",
-			...presenceGaps,
-			running: {
-				declared,
-				observed: { imageDigest: "sha256:bbb", buildIncarnation: "3" },
-				verdict: "CATALOGUE_RUNNING_VERDICT_DIFFERS",
+		solution("drifted-solution", {
+			authorized: {
+				authorization: { authorizedRevision: "4", approvedExecution: approved },
 			},
-			registration: {
-				solutionId: "drifted-solution",
-				status: "SOLUTION_REGISTRATION_STATUS_ACTIVE",
-			},
+			observed: observedRunning(
+				"CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS",
+				"sha256:bbb",
+			),
 			installations: [
 				{
 					installation: {
@@ -61,7 +94,7 @@ const catalogue = {
 						name: "drifted",
 						version: "1.2.0",
 					},
-					revisionGap: notRecorded("Not pinned to a presence revision."),
+					revisionGap: notRecorded("No installation revision."),
 					exposedTeams: [
 						{
 							grant: { id: "g1", scopePath: "root" },
@@ -71,76 +104,111 @@ const catalogue = {
 					],
 				},
 			],
-		},
-		{
-			kind: "CATALOGUE_ENTRY_KIND_SOLUTION",
-			name: "steady-solution",
-			publisher: "solution:steady-solution",
-			...presenceGaps,
-			running: {
-				declared,
-				observed: declared,
-				verdict: "CATALOGUE_RUNNING_VERDICT_MATCHES",
+		}),
+		solution("rogue-solution", {
+			authorized: { notAuthorized: { detail: "Approval withdrawn." } },
+			observed: observedRunning(
+				"CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED",
+				"sha256:aaa",
+			),
+		}),
+		solution("steady-solution", {
+			authorized: {
+				authorization: { authorizedRevision: "4", approvedExecution: approved },
 			},
-			registration: {
-				solutionId: "steady-solution",
-				status: "SOLUTION_REGISTRATION_STATUS_ACTIVE",
-			},
-		},
+			observed: observedRunning(
+				"CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED",
+				"sha256:aaa",
+			),
+		}),
 	],
 };
 
-function rowOf(name: string): HTMLElement {
+function stateOf(name: string, state: string): HTMLElement {
 	const row = screen.getByText(name).closest("tr");
-	if (!row) throw new Error(`no row for ${name}`);
-	return row;
+	const cell = row?.querySelector<HTMLElement>(`[aria-label="${state}"]`);
+	if (!cell) throw new Error(`no ${state} cell for ${name}`);
+	return cell;
+}
+
+function serve(body: JsonBodyType) {
+	server.use(
+		http.post(rpc("PlatformAdminService", "ListPlatformCatalogue"), () =>
+			HttpResponse.json(body),
+		),
+	);
 }
 
 describe("PlatformCataloguePage admin container", () => {
-	it("shows a match, a mismatch and an unobserved entry for what they are", async () => {
-		server.use(
-			http.post(rpc("PlatformAdminService", "ListPlatformCatalogue"), () =>
-				HttpResponse.json(catalogue),
-			),
-		);
+	it("shows each entry in the six states, one column each", async () => {
+		serve(catalogue);
+		renderInApp(<PlatformCataloguePage />);
+		await screen.findByText("drifted-solution");
+		for (const state of [
+			"Desired",
+			"Authorized",
+			"Applied",
+			"Observed",
+			"Withdrawing",
+			"Retired",
+		]) {
+			expect(screen.getByRole("columnheader", { name: state })).toBeTruthy();
+		}
+	});
+
+	it("tells running authorized, differing, running without authorization and unobserved apart", async () => {
+		serve(catalogue);
 		renderInApp(<PlatformCataloguePage />);
 		await screen.findByText("drifted-solution");
 
 		expect(
-			within(rowOf("drifted-solution")).getByText("Differs from declared"),
+			within(stateOf("steady-solution", "Observed")).getByText(
+				"Running authorized",
+			),
 		).toBeTruthy();
 		expect(
-			within(rowOf("steady-solution")).getByText("Matches declared"),
+			within(stateOf("drifted-solution", "Observed")).getByText(
+				"Differs from authorized",
+			),
 		).toBeTruthy();
-		const moduleRow = rowOf("billing-module");
-		expect(within(moduleRow).getByText("Not observed")).toBeTruthy();
-		expect(within(moduleRow).queryByText("Matches declared")).toBeNull();
-		expect(within(moduleRow).getByText("Module")).toBeTruthy();
+		expect(
+			within(stateOf("rogue-solution", "Observed")).getByText(
+				"Running without authorization",
+			),
+		).toBeTruthy();
+		expect(
+			within(stateOf("rogue-solution", "Authorized")).getByText(
+				"Not authorized",
+			),
+		).toBeTruthy();
 
-		// Build size is unavailable on every row until the presence document
-		// carries it, and the page says what would supply it.
-		for (const name of [
-			"billing-module",
-			"drifted-solution",
-			"steady-solution",
-		]) {
-			const sizeCell = within(rowOf(name))
-				.getAllByText("Not recorded")
-				.find((cell) => cell.getAttribute("title")?.includes("core#708"));
-			expect(sizeCell).toBeTruthy();
-		}
+		const moduleObserved = stateOf("billing-module", "Observed");
+		expect(
+			within(moduleObserved).getAllByText("Not observed").length,
+		).toBeGreaterThan(0);
+		expect(within(moduleObserved).queryByText("Running authorized")).toBeNull();
+		expect(
+			within(stateOf("billing-module", "Authorized")).getByText("Not recorded"),
+		).toBeTruthy();
+		expect(
+			within(stateOf("billing-module", "Retired")).getByText("Not observed"),
+		).toBeTruthy();
+	});
+
+	it("says what the host cannot state, and what would supply it", async () => {
+		serve(catalogue);
+		renderInApp(<PlatformCataloguePage />);
+		await screen.findByText("drifted-solution");
 		expect(screen.getByText("Not known to this host")).toBeTruthy();
 		expect(
 			screen.getByText("Build size is codefly-dev/core#708."),
 		).toBeTruthy();
+		expect(screen.getByText("No approval record.")).toBeTruthy();
+		expect(screen.getByText("No withdrawal record.")).toBeTruthy();
 	});
 
 	it("opens an entry's installations: organization, agent release, exposed teams", async () => {
-		server.use(
-			http.post(rpc("PlatformAdminService", "ListPlatformCatalogue"), () =>
-				HttpResponse.json(catalogue),
-			),
-		);
+		serve(catalogue);
 		renderInApp(<PlatformCataloguePage />);
 		fireEvent.click(
 			await screen.findByRole("button", {
@@ -178,11 +246,7 @@ describe("PlatformCataloguePage admin container", () => {
 	});
 
 	it("says an empty platform is empty", async () => {
-		server.use(
-			http.post(rpc("PlatformAdminService", "ListPlatformCatalogue"), () =>
-				HttpResponse.json({ entries: [], registryRevision: "0" }),
-			),
-		);
+		serve({ entries: [], registryRevision: "0" });
 		renderInApp(<PlatformCataloguePage />);
 		expect(await screen.findByText(/Nothing is deployed/)).toBeTruthy();
 	});

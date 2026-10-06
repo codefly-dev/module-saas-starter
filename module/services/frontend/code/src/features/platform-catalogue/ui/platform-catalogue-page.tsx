@@ -34,21 +34,20 @@ import {
 } from "@/shared/ui";
 import {
 	agentReleaseView,
-	buildDigestView,
 	buildSizeView,
+	CATALOGUE_STATES,
 	catalogueGaps,
-	declaredReleaseView,
+	catalogueStates,
 	type FactView,
-	generationView,
 	installationRevisionView,
 	kindLabel,
 	publisherView,
-	registrationView,
-	runningView,
+	type StateFact,
 } from "../model/facts";
 import { usePlatformCatalogue } from "../service/queries";
 
-const COLUMNS = 10;
+// The expander, the entry, one column per state, installations and build size.
+const COLUMNS = 2 + CATALOGUE_STATES.length + 2;
 
 /**
  * One cell. A gap reads as its reason in muted italics with the detail on
@@ -77,6 +76,26 @@ export function Fact({ view }: { view: FactView }) {
 		<span className="font-mono text-sm" title={view.detail} data-fact="value">
 			{view.text}
 		</span>
+	);
+}
+
+/**
+ * One state's facts, stacked and labelled. A state the host holds nothing for
+ * reads as its gaps, so a row shows where an entry stands in the progression
+ * and where this host cannot tell.
+ */
+function StateFacts({ state, facts }: { state: string; facts: StateFact[] }) {
+	return (
+		<dl className="space-y-1" aria-label={state}>
+			{facts.map((item) => (
+				<div key={item.label}>
+					<dt className="text-xs text-muted-foreground">{item.label}</dt>
+					<dd>
+						<Fact view={item.view} />
+					</dd>
+				</div>
+			))}
+		</dl>
 	);
 }
 
@@ -162,13 +181,10 @@ export function PlatformCataloguePage() {
 							<TableHeader>
 								<TableRow>
 									<TableHead className="w-8" />
-									<TableHead>Name</TableHead>
-									<TableHead>Registration</TableHead>
-									<TableHead>Publisher</TableHead>
-									<TableHead>Declared release</TableHead>
-									<TableHead>Build</TableHead>
-									<TableHead>Generation</TableHead>
-									<TableHead>Running</TableHead>
+									<TableHead>Entry</TableHead>
+									{CATALOGUE_STATES.map((state) => (
+										<TableHead key={state}>{state}</TableHead>
+									))}
 									<TableHead>Installations</TableHead>
 									<TableHead>Build size</TableHead>
 								</TableRow>
@@ -204,25 +220,18 @@ export function PlatformCataloguePage() {
 															{kindLabel(entry.kind)}
 														</Badge>
 													</div>
+													<div className="mt-1">
+														<Fact view={publisherView(entry)} />
+													</div>
 												</TableCell>
-												<TableCell>
-													<Fact view={registrationView(entry)} />
-												</TableCell>
-												<TableCell>
-													<Fact view={publisherView(entry)} />
-												</TableCell>
-												<TableCell>
-													<Fact view={declaredReleaseView(entry)} />
-												</TableCell>
-												<TableCell>
-													<Fact view={buildDigestView(entry)} />
-												</TableCell>
-												<TableCell>
-													<Fact view={generationView(entry)} />
-												</TableCell>
-												<TableCell>
-													<Fact view={runningView(entry)} />
-												</TableCell>
+												{CATALOGUE_STATES.map((state) => (
+													<TableCell key={state} className="align-top">
+														<StateFacts
+															state={state}
+															facts={catalogueStates(entry)[state]}
+														/>
+													</TableCell>
+												))}
 												<TableCell className="text-sm">
 													{entry.installations.length}
 												</TableCell>

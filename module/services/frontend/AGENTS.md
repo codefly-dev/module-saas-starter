@@ -79,9 +79,11 @@ activating a remote.
   it reads accounts' `PlatformAdminService.ListPlatformCatalogue`, super
   administrators only, and that response carries each registration's status,
   revisions, contract versions and leases with the manifest, upstream and service
-  alias withheld (`../accounts/AGENTS.md`). A fact the host has no record of is
-  rendered as its gap reason — "Not recorded", "Not observed" — never as an empty
-  cell, a zero or a match.
+  alias withheld (`../accounts/AGENTS.md`). Each entry shows the registry's six
+  states — desired, authorized, applied, observed, withdrawing, retired — one
+  column each, and a fact the host has no record of is rendered as its gap
+  reason ("Not recorded", "Not observed"), never as an empty cell, a zero or a
+  match.
 
 ## Loading a remote, and its CSP
 

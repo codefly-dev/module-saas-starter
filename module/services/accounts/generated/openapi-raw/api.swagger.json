@@ -6845,6 +6845,66 @@
         }
       }
     },
+    "v1CatalogueApplied": {
+      "type": "object",
+      "properties": {
+        "appliedRevision": {
+          "type": "string",
+          "format": "int64"
+        },
+        "appliedRevisionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "description": "CatalogueApplied is what delivery actually wrote."
+    },
+    "v1CatalogueAuthorization": {
+      "type": "object",
+      "properties": {
+        "authorizedRevision": {
+          "type": "string",
+          "format": "int64"
+        },
+        "approvedExecution": {
+          "$ref": "#/definitions/v1CatalogueExecution"
+        }
+      },
+      "description": "CatalogueAuthorization is a current platform approval: the authorized\nrevision and the execution it approved."
+    },
+    "v1CatalogueAuthorized": {
+      "type": "object",
+      "properties": {
+        "authorization": {
+          "$ref": "#/definitions/v1CatalogueAuthorization"
+        },
+        "notAuthorized": {
+          "$ref": "#/definitions/v1CatalogueNotAuthorized"
+        },
+        "authorizationGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "description": "CatalogueAuthorized is what the platform has approved to execute."
+    },
+    "v1CatalogueDesired": {
+      "type": "object",
+      "properties": {
+        "declaredRevision": {
+          "type": "string",
+          "format": "int64"
+        },
+        "declaredRevisionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "declaredRelease": {
+          "$ref": "#/definitions/v1CatalogueRelease"
+        },
+        "declaredReleaseGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "description": "CatalogueDesired is what the composition declares."
+    },
     "v1CatalogueEntry": {
       "type": "object",
       "properties": {
@@ -6861,37 +6921,30 @@
         "publisherGap": {
           "$ref": "#/definitions/v1CatalogueGap"
         },
-        "declaredRelease": {
-          "$ref": "#/definitions/v1CatalogueRelease"
+        "desired": {
+          "$ref": "#/definitions/v1CatalogueDesired"
         },
-        "declaredReleaseGap": {
-          "$ref": "#/definitions/v1CatalogueGap"
+        "authorized": {
+          "$ref": "#/definitions/v1CatalogueAuthorized"
         },
-        "buildDigest": {
-          "type": "string"
+        "applied": {
+          "$ref": "#/definitions/v1CatalogueApplied"
         },
-        "buildDigestGap": {
-          "$ref": "#/definitions/v1CatalogueGap"
+        "observed": {
+          "$ref": "#/definitions/v1CatalogueObserved"
         },
-        "generation": {
-          "type": "string",
-          "format": "int64"
+        "withdrawing": {
+          "$ref": "#/definitions/v1CatalogueWithdrawing"
         },
-        "generationGap": {
-          "$ref": "#/definitions/v1CatalogueGap"
-        },
-        "running": {
-          "$ref": "#/definitions/v1CatalogueRunning"
-        },
-        "runningGap": {
-          "$ref": "#/definitions/v1CatalogueGap"
+        "retired": {
+          "$ref": "#/definitions/v1CatalogueRetired"
         },
         "buildSizeGap": {
           "$ref": "#/definitions/v1CatalogueGap"
         },
         "registration": {
           "$ref": "#/definitions/v1SolutionRegistration",
-          "description": "The solution's registration, with deployment topology withheld: the\nfrontend manifest, backend upstream and service alias are always empty\nhere, as on every browser-facing projection of the registry. Absent for a\nmodule, which does not self-register, and for a solution known only from\nits installations."
+          "description": "The solution's self-registration, with deployment topology withheld: the\nfrontend manifest, backend upstream and service alias are always empty\nhere, as on every browser-facing projection of the registry. Absent for a\nmodule, which does not self-register, and for a solution known only from\nits installations."
         },
         "installations": {
           "type": "array",
@@ -6901,7 +6954,7 @@
           }
         }
       },
-      "description": "CatalogueEntry is one module or solution."
+      "description": "CatalogueEntry is one module or solution, placed in the registry's state\nmodel: desired, authorized, applied, observed, withdrawing and physically\nretired are distinct, and a row shows each separately, so an entry desired\nbut not authorized, or observed but no longer authorized, reads as exactly\nthat."
     },
     "v1CatalogueEntryKind": {
       "type": "string",
@@ -6979,6 +7032,58 @@
       },
       "description": "CatalogueInstallation is one organization's installation of a solution."
     },
+    "v1CatalogueNotAuthorized": {
+      "type": "object",
+      "properties": {
+        "detail": {
+          "type": "string"
+        }
+      },
+      "description": "CatalogueNotAuthorized is a known absence of current authorization —\nnever approved, or approval withdrawn. It is a statement the approval record\nmakes, distinct from a CatalogueGap, where the host cannot tell."
+    },
+    "v1CatalogueObserved": {
+      "type": "object",
+      "properties": {
+        "observedRevision": {
+          "type": "string",
+          "format": "int64"
+        },
+        "observedRevisionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "observationFreshnessGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "observedExecution": {
+          "$ref": "#/definitions/v1CatalogueExecution"
+        },
+        "observedExecutionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "verdict": {
+          "$ref": "#/definitions/v1CatalogueObservedVerdict"
+        },
+        "verdictGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "description": "CatalogueObserved is what is actually running."
+    },
+    "v1CatalogueObservedVerdict": {
+      "type": "string",
+      "enum": [
+        "CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED",
+        "CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED",
+        "CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS",
+        "CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED"
+      ],
+      "default": "CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED",
+      "description": "CatalogueObservedVerdict judges what runs against what is authorized —\nnever against what is declared, because only authorization admits execution.\n\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED: The observed image digest and incarnation are the approved execution.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS: Something other than the approved execution is running: what cluster\nadmission refuses.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED: Something is running with no current authorization at all: what the\nretirement sweep exists to stop."
+    },
     "v1CatalogueRelease": {
       "type": "object",
       "properties": {
@@ -6992,32 +7097,28 @@
           "type": "string"
         }
       },
-      "description": "CatalogueRelease is a declared release, publisher/name@version."
+      "description": "CatalogueRelease is a release, publisher/name@version."
     },
-    "v1CatalogueRunning": {
+    "v1CatalogueRetired": {
       "type": "object",
       "properties": {
-        "declared": {
-          "$ref": "#/definitions/v1CatalogueExecution"
-        },
-        "observed": {
-          "$ref": "#/definitions/v1CatalogueExecution"
-        },
-        "verdict": {
-          "$ref": "#/definitions/v1CatalogueRunningVerdict"
+        "retirementStateGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
         }
       },
-      "description": "CatalogueRunning is the running incarnation beside the declared one."
+      "description": "CatalogueRetired is whether the workload is physically stopped. Retired\nrequires stop or fence evidence; until a retirement controller reports to\nthis host, the field holds only its gap and nothing reads as retired."
     },
-    "v1CatalogueRunningVerdict": {
-      "type": "string",
-      "enum": [
-        "CATALOGUE_RUNNING_VERDICT_UNSPECIFIED",
-        "CATALOGUE_RUNNING_VERDICT_MATCHES",
-        "CATALOGUE_RUNNING_VERDICT_DIFFERS"
-      ],
-      "default": "CATALOGUE_RUNNING_VERDICT_UNSPECIFIED",
-      "description": "CatalogueRunningVerdict compares the observed execution with the declared\none. It exists only when both are known; anything less is a CatalogueGap.\n\n - CATALOGUE_RUNNING_VERDICT_MATCHES: The observed image digest and incarnation are the declared ones.\n - CATALOGUE_RUNNING_VERDICT_DIFFERS: Something other than the declared execution is running — what cluster\nadmission refuses."
+    "v1CatalogueWithdrawing": {
+      "type": "object",
+      "properties": {
+        "withdrawalStateGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "credentialRevocationStateGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "description": "CatalogueWithdrawing is approval withdrawn and retirement not yet complete,\nacknowledged separately from retirement itself. The value cases are the\ndeployment contract's withdrawal and revocation records; until they exist\neach field holds only its gap."
     },
     "v1ClientAuthorizationRequest": {
       "type": "object",

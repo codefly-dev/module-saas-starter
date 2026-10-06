@@ -155,20 +155,41 @@ team grants at its authority root or above (the same labelled-grant query
 `solution_identifier`, so that is the join; an identifier no registration carries
 becomes a solution entry known only by its installations.
 
-**Absent facts are gaps, never values.** The declared release, build digest,
-generation, running incarnation, installation revision and build size each have
-a `oneof` of their value and a `CatalogueGap{reason, detail}`. Today no record on
-this host carries the declared release, build digest, generation or installation
-revision (they arrive with applied presence documents), nothing observes what
-runs, and build size is the presence document's `build_size` section
-(codefly-dev/core#708, computed by the CLI at build, codefly-dev/cli#901): the host
-counts no lines itself. So every entry reports those as `NOT_RECORDED`, and
-running as `NOT_OBSERVED`. A running verdict (`MATCHES` / `DIFFERS`) exists only
-when both a declared and an observed `{image_digest, build_incarnation}` are
-known (`setCatalogueRunning`); an unobserved deployment is never a match. When a
-record starts carrying a fact, `newCatalogueEntry` reads it and the value case of
-that `oneof` replaces the gap — build size gains its value field in the same
-`oneof`.
+**Each entry is placed in the registry's state model** — desired, authorized,
+applied, observed, withdrawing, physically retired — one message per state,
+carrying the public status fields that model names: `declared_revision`,
+`authorized_revision`, `applied_revision`, `observed_revision`,
+`observation_freshness`, `withdrawal_state`, `credential_revocation_state`,
+`retirement_state`. Never one "installed" flag: an entry desired but not
+authorized, or observed but no longer authorized, must read as exactly that.
+The solution's self-registration status is shown under Desired, as the only
+record of intent this host holds today.
+
+**Absent facts are gaps, never values.** Every fact is a `oneof` of its value and
+a `CatalogueGap{reason, detail}`. Today no record on this host carries a
+declaration or an applied generation (they arrive with applied presence
+documents), an approval or a withdrawal (the deployment contract's signed
+approval, not built yet), an observation or a retirement (nothing observes the
+cluster or reports stop/fence evidence), an installation revision, or a build
+size (the presence document's `build_size` section, codefly-dev/core#708,
+computed by the CLI at build, codefly-dev/cli#901): the host counts no lines
+itself. So each reads `NOT_RECORDED` or `NOT_OBSERVED`.
+
+**Authorization has three cases, not two**: an approval (`authorized_revision` +
+the approved `{image_digest, build_incarnation}`), `not_authorized` — a known
+absence the approval record states — and a gap, where the host cannot tell. An
+unrecorded approval is never shown as a refusal.
+
+**The observed verdict judges against the authorization, never the
+declaration** (`judgeCatalogueObserved`): `RUNNING_AUTHORIZED` only for the
+approved digest and incarnation, `RUNNING_DIFFERS` for anything else,
+`RUNNING_UNAUTHORIZED` for an observation with no current authorization — the
+row the retirement sweep exists to stop. Without an observation it is
+`NOT_OBSERVED`, and with an observation but no known authorization it is
+`NOT_RECORDED`; neither is ever a match. Withdrawal, credential revocation,
+retirement and build size have gap-only `oneof`s: their value vocabularies are
+the deployment contract's and core#708's to define, and each value case joins
+its `oneof` when that record exists, read in `newCatalogueEntry`.
 
 **The registration it returns withholds topology**: `catalogueRegistrationProto`
 blanks the frontend manifest, backend upstream and service alias, as every other

@@ -14,10 +14,13 @@ import (
 // already keeps — the durable solution registry, the installations table and the
 // composition's module principal registry. It adds no store of its own.
 //
-// Some facts the Catalogue is specified to show have no record on this host
-// yet. Each is reported as a CatalogueGap naming why, never as an empty value:
-// an unrecorded generation is not generation 0, an unreported build size is not
-// zero lines, and an unobserved deployment is not one that matches.
+// Each entry is placed in the registry's state model — desired, authorized,
+// applied, observed, withdrawing, physically retired — each state reported
+// separately. Most of those facts have no record on this host yet. Each is
+// reported as a CatalogueGap naming why, never as an empty value: an unrecorded
+// revision is not revision 0, an unreported build size is not zero lines, an
+// unobserved deployment is not one that matches, and an unrecorded approval is
+// not a refusal.
 
 // CatalogueInstallationRecord is one active installation as the Catalogue reads
 // it: the installation, its organization's name, the identifier of the agent
@@ -44,12 +47,18 @@ type PlatformCatalogue struct {
 }
 
 const (
-	catalogueNoPresenceDetail = "This host holds no applied presence document for this entry, which is what records it."
+	catalogueNoDeclaration    = "This host holds no applied presence document for this entry, which is what records what the composition declares."
+	catalogueNoApplication    = "This host has applied no presence generation for this entry."
+	catalogueNoApproval       = "This host holds no approval record: signed platform approval of the execution inventory, bound to target and ownership scope, has not been built yet."
 	catalogueNotObserved      = "This host reads no observed cluster state, so what runs is unknown — never assumed to match."
+	catalogueNoVerdict        = "There is no approval record to judge the observed execution against."
+	catalogueNoWithdrawal     = "This host holds no withdrawal record; withdrawal is a change to the approval record, which does not exist yet."
+	catalogueNoRevocation     = "This host holds no credential-revocation record for this entry."
+	catalogueNoRetirement     = "No retirement controller reports to this host; without stop or fence evidence nothing is reported as retired."
 	catalogueNoBuildSize      = "Build size is the presence document's build_size section (codefly-dev/core#708), computed at build by the CLI; this host holds no presence document for this entry."
 	catalogueModulePublisher  = "A composed module is known by its principal prefix alone; the composition records no publisher."
 	catalogueUnregistered     = "No registration exists under this identifier; it is named only by its installations."
-	catalogueNoRevision       = "Installations are not pinned to a presence revision on this host."
+	catalogueNoRevision       = "Installations carry no revision of their own on this host."
 	catalogueNoAgentRelease   = "The installation's agent principal carries no publisher/name:version identifier."
 )
 
@@ -133,41 +142,71 @@ func projectPlatformCatalogue(
 	return append(moduleEntries, solutionEntries...)
 }
 
-// newCatalogueEntry is an entry whose presence-borne facts are all gaps: no
-// record on this host carries a declared release, build digest, generation,
-// observed execution or build size yet. When one does, the entry reads it here
-// and the gap gives way to the value.
+// newCatalogueEntry is an entry whose state facts are all gaps: no record on
+// this host carries a declaration, an approval, an applied generation, an
+// observation, a withdrawal, a retirement or a build size yet. When one does,
+// the entry reads it here and the gap gives way to the value.
 func newCatalogueEntry(kind gen.CatalogueEntryKind, name string) *gen.CatalogueEntry {
 	notRecorded := gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED
+	notObserved := gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED
 	entry := &gen.CatalogueEntry{
-		Kind:                 kind,
-		Name:                 name,
-		DeclaredReleaseValue: &gen.CatalogueEntry_DeclaredReleaseGap{DeclaredReleaseGap: catalogueGap(notRecorded, catalogueNoPresenceDetail)},
-		BuildDigestValue:     &gen.CatalogueEntry_BuildDigestGap{BuildDigestGap: catalogueGap(notRecorded, catalogueNoPresenceDetail)},
-		GenerationValue:      &gen.CatalogueEntry_GenerationGap{GenerationGap: catalogueGap(notRecorded, catalogueNoPresenceDetail)},
-		BuildSizeValue:       &gen.CatalogueEntry_BuildSizeGap{BuildSizeGap: catalogueGap(notRecorded, catalogueNoBuildSize)},
+		Kind: kind,
+		Name: name,
+		Desired: &gen.CatalogueDesired{
+			DeclaredRevisionValue: &gen.CatalogueDesired_DeclaredRevisionGap{DeclaredRevisionGap: catalogueGap(notRecorded, catalogueNoDeclaration)},
+			DeclaredReleaseValue:  &gen.CatalogueDesired_DeclaredReleaseGap{DeclaredReleaseGap: catalogueGap(notRecorded, catalogueNoDeclaration)},
+		},
+		Authorized: &gen.CatalogueAuthorized{
+			AuthorizationValue: &gen.CatalogueAuthorized_AuthorizationGap{AuthorizationGap: catalogueGap(notRecorded, catalogueNoApproval)},
+		},
+		Applied: &gen.CatalogueApplied{
+			AppliedRevisionValue: &gen.CatalogueApplied_AppliedRevisionGap{AppliedRevisionGap: catalogueGap(notRecorded, catalogueNoApplication)},
+		},
+		Observed: &gen.CatalogueObserved{
+			ObservedRevisionValue:     &gen.CatalogueObserved_ObservedRevisionGap{ObservedRevisionGap: catalogueGap(notObserved, catalogueNotObserved)},
+			ObservationFreshnessValue: &gen.CatalogueObserved_ObservationFreshnessGap{ObservationFreshnessGap: catalogueGap(notObserved, catalogueNotObserved)},
+			ObservedExecutionValue:    &gen.CatalogueObserved_ObservedExecutionGap{ObservedExecutionGap: catalogueGap(notObserved, catalogueNotObserved)},
+		},
+		Withdrawing: &gen.CatalogueWithdrawing{
+			WithdrawalStateValue:           &gen.CatalogueWithdrawing_WithdrawalStateGap{WithdrawalStateGap: catalogueGap(notRecorded, catalogueNoWithdrawal)},
+			CredentialRevocationStateValue: &gen.CatalogueWithdrawing_CredentialRevocationStateGap{CredentialRevocationStateGap: catalogueGap(notRecorded, catalogueNoRevocation)},
+		},
+		Retired: &gen.CatalogueRetired{
+			RetirementStateValue: &gen.CatalogueRetired_RetirementStateGap{RetirementStateGap: catalogueGap(notObserved, catalogueNoRetirement)},
+		},
+		BuildSizeValue: &gen.CatalogueEntry_BuildSizeGap{BuildSizeGap: catalogueGap(notRecorded, catalogueNoBuildSize)},
 	}
-	setCatalogueRunning(entry, nil, nil)
+	judgeCatalogueObserved(entry.Authorized, entry.Observed)
 	return entry
 }
 
-// setCatalogueRunning states what runs beside what was declared. A verdict is
-// given only when both are known: without an observation the answer is
-// NOT_OBSERVED, and without a declaration there is nothing to compare an
-// observation with. Neither is ever reported as a match.
-func setCatalogueRunning(entry *gen.CatalogueEntry, declared, observed *gen.CatalogueExecution) {
+// judgeCatalogueObserved sets the observed verdict from the authorized and
+// observed states the entry already carries. It judges what runs against what
+// is authorized, never against what is declared, and gives a verdict only when
+// both are known:
+//
+//   - no observation: NOT_OBSERVED, never a match;
+//   - an observation, but the host cannot tell what is authorized: NOT_RECORDED;
+//   - an observation with no current authorization: RUNNING_UNAUTHORIZED;
+//   - an observation of the approved digest and incarnation: RUNNING_AUTHORIZED;
+//   - anything else: RUNNING_DIFFERS.
+func judgeCatalogueObserved(authorized *gen.CatalogueAuthorized, observed *gen.CatalogueObserved) {
+	running := observed.GetObservedExecution()
 	switch {
-	case observed == nil:
-		entry.RunningValue = &gen.CatalogueEntry_RunningGap{RunningGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, catalogueNotObserved)}
-	case declared == nil:
-		entry.RunningValue = &gen.CatalogueEntry_RunningGap{RunningGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueNoPresenceDetail)}
+	case running == nil:
+		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, catalogueNotObserved)}
+	case authorized.GetNotAuthorized() != nil:
+		observed.VerdictValue = &gen.CatalogueObserved_Verdict{Verdict: gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED}
+	case authorized.GetAuthorization() == nil:
+		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueNoVerdict)}
 	default:
-		verdict := gen.CatalogueRunningVerdict_CATALOGUE_RUNNING_VERDICT_DIFFERS
-		if declared.GetImageDigest() != "" && declared.GetImageDigest() == observed.GetImageDigest() &&
-			declared.GetBuildIncarnation() == observed.GetBuildIncarnation() {
-			verdict = gen.CatalogueRunningVerdict_CATALOGUE_RUNNING_VERDICT_MATCHES
+		approved := authorized.GetAuthorization().GetApprovedExecution()
+		verdict := gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS
+		if approved.GetImageDigest() != "" && approved.GetImageDigest() == running.GetImageDigest() &&
+			approved.GetBuildIncarnation() == running.GetBuildIncarnation() {
+			verdict = gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED
 		}
-		entry.RunningValue = &gen.CatalogueEntry_Running{Running: &gen.CatalogueRunning{Declared: declared, Observed: observed, Verdict: verdict}}
+		observed.VerdictValue = &gen.CatalogueObserved_Verdict{Verdict: verdict}
 	}
 }
 

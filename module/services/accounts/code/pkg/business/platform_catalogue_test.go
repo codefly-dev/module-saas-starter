@@ -9,65 +9,88 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// The running column answers "is what runs what was declared?" Only two known
-// executions get a verdict; an unobserved one is never reported as a match.
-func TestCatalogueRunningVerdict(t *testing.T) {
-	declared := &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3}
+// The observed state's verdict answers "is what runs what is authorized?" It is
+// judged against the approval, never the declaration, and given only when both
+// an observation and a known authorization exist: an unobserved entry is never a
+// match, and an entry the host cannot judge is never "unauthorized".
+func TestCatalogueObservedVerdict(t *testing.T) {
+	approved := &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3}
+	authorized := &gen.CatalogueAuthorized{AuthorizationValue: &gen.CatalogueAuthorized_Authorization{
+		Authorization: &gen.CatalogueAuthorization{AuthorizedRevision: 4, ApprovedExecution: approved},
+	}}
+	notAuthorized := &gen.CatalogueAuthorized{AuthorizationValue: &gen.CatalogueAuthorized_NotAuthorized{
+		NotAuthorized: &gen.CatalogueNotAuthorized{Detail: "approval withdrawn"},
+	}}
+	unknown := &gen.CatalogueAuthorized{AuthorizationValue: &gen.CatalogueAuthorized_AuthorizationGap{
+		AuthorizationGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, "no approval record"),
+	}}
 	cases := []struct {
-		name     string
-		declared *gen.CatalogueExecution
-		observed *gen.CatalogueExecution
-		verdict  gen.CatalogueRunningVerdict
-		gap      gen.CatalogueGapReason
+		name       string
+		authorized *gen.CatalogueAuthorized
+		observed   *gen.CatalogueExecution
+		verdict    gen.CatalogueObservedVerdict
+		gap        gen.CatalogueGapReason
 	}{
-		{name: "nothing observed", declared: declared, gap: gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED},
-		{name: "nothing declared or observed", gap: gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED},
+		{name: "authorized, nothing observed", authorized: authorized, gap: gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED},
+		{name: "not authorized, nothing observed", authorized: notAuthorized, gap: gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED},
 		{
-			name:     "observed without a declaration",
-			observed: &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3},
-			gap:      gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED,
+			name:       "observed, authorization unknown to this host",
+			authorized: unknown,
+			observed:   &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3},
+			gap:        gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED,
 		},
 		{
-			name:     "same digest and incarnation",
-			declared: declared,
-			observed: &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3},
-			verdict:  gen.CatalogueRunningVerdict_CATALOGUE_RUNNING_VERDICT_MATCHES,
+			name:       "the approved digest and incarnation",
+			authorized: authorized,
+			observed:   &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3},
+			verdict:    gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED,
 		},
 		{
-			name:     "another image",
-			declared: declared,
-			observed: &gen.CatalogueExecution{ImageDigest: "sha256:bbb", BuildIncarnation: 3},
-			verdict:  gen.CatalogueRunningVerdict_CATALOGUE_RUNNING_VERDICT_DIFFERS,
+			name:       "another image",
+			authorized: authorized,
+			observed:   &gen.CatalogueExecution{ImageDigest: "sha256:bbb", BuildIncarnation: 3},
+			verdict:    gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS,
 		},
 		{
 			// The incarnation moves when command, configuration or identity
 			// change under the same image, so the image alone does not match.
-			name:     "same image, another incarnation",
-			declared: declared,
-			observed: &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 2},
-			verdict:  gen.CatalogueRunningVerdict_CATALOGUE_RUNNING_VERDICT_DIFFERS,
+			name:       "same image, another incarnation",
+			authorized: authorized,
+			observed:   &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 2},
+			verdict:    gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS,
 		},
 		{
-			name:     "two empty digests are not a match",
-			declared: &gen.CatalogueExecution{},
+			name: "two empty digests are not a match",
+			authorized: &gen.CatalogueAuthorized{AuthorizationValue: &gen.CatalogueAuthorized_Authorization{
+				Authorization: &gen.CatalogueAuthorization{ApprovedExecution: &gen.CatalogueExecution{}},
+			}},
 			observed: &gen.CatalogueExecution{},
-			verdict:  gen.CatalogueRunningVerdict_CATALOGUE_RUNNING_VERDICT_DIFFERS,
+			verdict:  gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS,
+		},
+		{
+			// The dangerous row: something runs that nothing currently
+			// authorizes, whatever its image.
+			name:       "observed with no current authorization",
+			authorized: notAuthorized,
+			observed:   &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3},
+			verdict:    gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			entry := &gen.CatalogueEntry{}
-			setCatalogueRunning(entry, tc.declared, tc.observed)
+			observed := &gen.CatalogueObserved{}
+			if tc.observed != nil {
+				observed.ObservedExecutionValue = &gen.CatalogueObserved_ObservedExecution{ObservedExecution: tc.observed}
+			}
+			judgeCatalogueObserved(tc.authorized, observed)
 			if tc.gap != gen.CatalogueGapReason_CATALOGUE_GAP_REASON_UNSPECIFIED {
-				require.Nil(t, entry.GetRunning())
-				require.Equal(t, tc.gap, entry.GetRunningGap().GetReason())
-				require.NotEmpty(t, entry.GetRunningGap().GetDetail())
+				require.Equal(t, gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED, observed.GetVerdict())
+				require.Equal(t, tc.gap, observed.GetVerdictGap().GetReason())
+				require.NotEmpty(t, observed.GetVerdictGap().GetDetail())
 				return
 			}
-			require.Nil(t, entry.GetRunningGap())
-			require.Equal(t, tc.verdict, entry.GetRunning().GetVerdict())
-			require.Same(t, tc.declared, entry.GetRunning().GetDeclared())
-			require.Same(t, tc.observed, entry.GetRunning().GetObserved())
+			require.Nil(t, observed.GetVerdictGap())
+			require.Equal(t, tc.verdict, observed.GetVerdict())
 		})
 	}
 }
@@ -129,17 +152,29 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 		byName[entry.Entry.GetName()] = entry
 	}
 
-	// Every entry reports the presence-borne facts as gaps, never as values.
+	// Every entry reports each state's facts as gaps, never as values: no
+	// record on this host carries them yet, so nothing reads as authorized,
+	// applied, running, withdrawn or retired.
 	for _, entry := range entries {
 		e := entry.Entry
 		notRecorded := gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED
-		require.Equal(t, notRecorded, e.GetDeclaredReleaseGap().GetReason(), e.GetName())
-		require.Equal(t, notRecorded, e.GetBuildDigestGap().GetReason(), e.GetName())
-		require.Equal(t, notRecorded, e.GetGenerationGap().GetReason(), e.GetName())
+		notObserved := gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED
+		require.Equal(t, notRecorded, e.GetDesired().GetDeclaredRevisionGap().GetReason(), e.GetName())
+		require.Equal(t, notRecorded, e.GetDesired().GetDeclaredReleaseGap().GetReason(), e.GetName())
+		require.Equal(t, notRecorded, e.GetAuthorized().GetAuthorizationGap().GetReason(), e.GetName())
+		require.Nil(t, e.GetAuthorized().GetNotAuthorized(), "%s: an unrecorded approval is not a refusal", e.GetName())
+		require.Equal(t, notRecorded, e.GetApplied().GetAppliedRevisionGap().GetReason(), e.GetName())
+		require.Equal(t, notObserved, e.GetObserved().GetObservedRevisionGap().GetReason(), e.GetName())
+		require.Equal(t, notObserved, e.GetObserved().GetObservationFreshnessGap().GetReason(), e.GetName())
+		require.Equal(t, notObserved, e.GetObserved().GetObservedExecutionGap().GetReason(), e.GetName())
+		require.Equal(t, notObserved, e.GetObserved().GetVerdictGap().GetReason(), e.GetName())
+		require.Equal(t, gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED, e.GetObserved().GetVerdict(),
+			"%s: an unobserved entry has no verdict", e.GetName())
+		require.Equal(t, notRecorded, e.GetWithdrawing().GetWithdrawalStateGap().GetReason(), e.GetName())
+		require.Equal(t, notRecorded, e.GetWithdrawing().GetCredentialRevocationStateGap().GetReason(), e.GetName())
+		require.Equal(t, notObserved, e.GetRetired().GetRetirementStateGap().GetReason(), e.GetName())
 		require.Equal(t, notRecorded, e.GetBuildSizeGap().GetReason(), e.GetName())
 		require.Contains(t, e.GetBuildSizeGap().GetDetail(), "codefly-dev/core#708")
-		require.Equal(t, gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, e.GetRunningGap().GetReason(), e.GetName())
-		require.Nil(t, e.GetRunning(), "%s: an unobserved entry has no verdict", e.GetName())
 	}
 
 	module := byName["alpha"]

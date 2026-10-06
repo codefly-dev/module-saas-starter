@@ -4,28 +4,30 @@ import {
 	CatalogueEntryKind,
 	CatalogueEntrySchema,
 	CatalogueGapReason,
-	CatalogueRunningVerdict,
+	CatalogueObservedVerdict,
 } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import {
 	SolutionRegistrationSchema,
 	SolutionRegistrationStatus,
 } from "@/gen/saas/accounts/v1/solution_registry_pb";
 import {
+	authorizationView,
 	buildSizeView,
+	CATALOGUE_STATES,
 	catalogueGaps,
-	declaredReleaseView,
+	catalogueStates,
 	gapLabel,
-	generationView,
+	observedVerdictView,
 	registrationView,
-	runningView,
 } from "./facts";
 
+const notRecorded = (detail: string) => ({
+	reason: CatalogueGapReason.NOT_RECORDED,
+	detail,
+});
 const notObserved = {
-	case: "runningGap" as const,
-	value: {
-		reason: CatalogueGapReason.NOT_OBSERVED,
-		detail: "No cluster state.",
-	},
+	reason: CatalogueGapReason.NOT_OBSERVED,
+	detail: "No cluster state.",
 };
 
 function entry(
@@ -34,125 +36,207 @@ function entry(
 	return create(CatalogueEntrySchema, {
 		kind: CatalogueEntryKind.SOLUTION,
 		name: "example",
-		runningValue: notObserved,
 		...init,
 	});
 }
 
-describe("runningView", () => {
-	const declared = { imageDigest: "sha256:aaa", buildIncarnation: BigInt(3) };
+function observedWith(verdict: CatalogueObservedVerdict) {
+	return {
+		observedExecutionValue: {
+			case: "observedExecution" as const,
+			value: { imageDigest: "sha256:bbb", buildIncarnation: BigInt(3) },
+		},
+		verdictValue: { case: "verdict" as const, value: verdict },
+	};
+}
 
-	it("states a match only when the server judged both executions equal", () => {
-		const view = runningView(
-			entry({
-				runningValue: {
-					case: "running",
-					value: {
-						declared,
-						observed: declared,
-						verdict: CatalogueRunningVerdict.MATCHES,
-					},
-				},
-			}),
-		);
-		expect(view).toMatchObject({
-			kind: "value",
-			text: "Matches declared",
-			tone: "success",
-		});
+describe("the state model", () => {
+	it("is the registry's six states, in order", () => {
+		expect([...CATALOGUE_STATES]).toEqual([
+			"Desired",
+			"Authorized",
+			"Applied",
+			"Observed",
+			"Withdrawing",
+			"Retired",
+		]);
 	});
 
-	it("flags a mismatch with both executions, since admission would refuse it", () => {
-		const view = runningView(
-			entry({
-				runningValue: {
-					case: "running",
-					value: {
-						declared,
-						observed: {
-							imageDigest: "sha256:bbb",
-							buildIncarnation: BigInt(3),
-						},
-						verdict: CatalogueRunningVerdict.DIFFERS,
-					},
+	it("reads every state of an entry the host holds nothing for as gaps, never as values", () => {
+		const e = entry({
+			authorized: {
+				authorizationValue: {
+					case: "authorizationGap",
+					value: notRecorded("No approval record."),
 				},
-			}),
-		);
-		expect(view).toMatchObject({
-			kind: "value",
-			text: "Differs from declared",
-			tone: "danger",
+			},
+			applied: {
+				appliedRevisionValue: {
+					case: "appliedRevisionGap",
+					value: notRecorded("No applied generation."),
+				},
+			},
+			observed: { verdictValue: { case: "verdictGap", value: notObserved } },
+			withdrawing: {
+				withdrawalStateValue: {
+					case: "withdrawalStateGap",
+					value: notRecorded("No withdrawal record."),
+				},
+			},
+			retired: {
+				retirementStateValue: {
+					case: "retirementStateGap",
+					value: notObserved,
+				},
+			},
 		});
-		expect(view.kind === "value" && view.detail).toContain("sha256:aaa");
-		expect(view.kind === "value" && view.detail).toContain("sha256:bbb");
-	});
-
-	it("says an unobserved deployment is not observed — never a match", () => {
-		expect(runningView(entry())).toEqual({
+		const states = catalogueStates(e);
+		for (const state of [
+			"Authorized",
+			"Applied",
+			"Withdrawing",
+			"Retired",
+		] as const) {
+			for (const item of states[state])
+				expect(item.view.kind, `${state} ${item.label}`).toBe("gap");
+		}
+		expect(observedVerdictView(e)).toEqual({
 			kind: "gap",
 			label: "Not observed",
 			detail: "No cluster state.",
 		});
+		expect(gapLabel(CatalogueGapReason.NOT_REPORTED)).toBe("Not reported");
 	});
 
-	it("does not read an unset verdict or an unset oneof as a value", () => {
-		expect(
-			runningView(
-				entry({
-					runningValue: {
-						case: "running",
-						value: { declared, observed: declared },
-					},
-				}),
-			).kind,
-		).toBe("gap");
-		expect(
-			runningView(entry({ runningValue: { case: undefined } })),
-		).toMatchObject({
-			kind: "gap",
-			label: "Unknown",
+	it("does not read an unset oneof as a value", () => {
+		const states = catalogueStates(entry());
+		for (const state of CATALOGUE_STATES) {
+			for (const item of states[state]) {
+				if (item.label === "Registration") continue;
+				expect(item.view, `${state} ${item.label}`).toMatchObject({
+					kind: "gap",
+					label: "Unknown",
+				});
+			}
+		}
+	});
+
+	it("renders a revision once the server sends one", () => {
+		const e = entry({
+			applied: {
+				appliedRevisionValue: { case: "appliedRevision", value: BigInt(7) },
+			},
+			desired: {
+				declaredReleaseValue: {
+					case: "declaredRelease",
+					value: { publisher: "example", name: "billing", version: "1.2.0" },
+				},
+			},
+		});
+		const states = catalogueStates(e);
+		expect(states.Applied[0].view).toEqual({ kind: "value", text: "7" });
+		expect(states.Desired[1].view).toEqual({
+			kind: "value",
+			text: "example/billing@1.2.0",
 		});
 	});
 });
 
-describe("presence-borne facts", () => {
-	it("render the server's gap reason, never an empty value or zero", () => {
-		const gap = {
-			reason: CatalogueGapReason.NOT_RECORDED,
-			detail: "No presence document.",
-		};
-		const e = entry({
-			generationValue: { case: "generationGap", value: gap },
-			buildSizeValue: { case: "buildSizeGap", value: gap },
-			declaredReleaseValue: { case: "declaredReleaseGap", value: gap },
+describe("authorization", () => {
+	it("tells an approval, a known absence of one, and the host not knowing apart", () => {
+		expect(
+			authorizationView(
+				entry({
+					authorized: {
+						authorizationValue: {
+							case: "authorization",
+							value: {
+								authorizedRevision: BigInt(4),
+								approvedExecution: {
+									imageDigest: "sha256:aaa",
+									buildIncarnation: BigInt(3),
+								},
+							},
+						},
+					},
+				}),
+			),
+		).toMatchObject({ kind: "value", text: "Revision 4", tone: "success" });
+		expect(
+			authorizationView(
+				entry({
+					authorized: {
+						authorizationValue: {
+							case: "notAuthorized",
+							value: { detail: "approval withdrawn" },
+						},
+					},
+				}),
+			),
+		).toMatchObject({ kind: "value", text: "Not authorized" });
+		expect(
+			authorizationView(
+				entry({
+					authorized: {
+						authorizationValue: {
+							case: "authorizationGap",
+							value: notRecorded("No approval record."),
+						},
+					},
+				}),
+			),
+		).toEqual({
+			kind: "gap",
+			label: "Not recorded",
+			detail: "No approval record.",
 		});
-		for (const view of [
-			generationView(e),
-			buildSizeView(e),
-			declaredReleaseView(e),
-		]) {
-			expect(view).toEqual({
-				kind: "gap",
-				label: "Not recorded",
-				detail: "No presence document.",
-			});
-		}
-		expect(gapLabel(CatalogueGapReason.NOT_REPORTED)).toBe("Not reported");
+	});
+});
+
+describe("observedVerdictView", () => {
+	it("states running authorized only when the server judged it so", () => {
+		expect(
+			observedVerdictView(
+				entry({
+					observed: observedWith(CatalogueObservedVerdict.RUNNING_AUTHORIZED),
+				}),
+			),
+		).toMatchObject({
+			kind: "value",
+			text: "Running authorized",
+			tone: "success",
+		});
 	});
 
-	it("render a value once the server sends one", () => {
-		const e = entry({
-			generationValue: { case: "generation", value: BigInt(7) },
-			declaredReleaseValue: {
-				case: "declaredRelease",
-				value: { publisher: "example", name: "billing", version: "1.2.0" },
-			},
+	it("flags an execution that differs from the approved one", () => {
+		const view = observedVerdictView(
+			entry({
+				observed: observedWith(CatalogueObservedVerdict.RUNNING_DIFFERS),
+			}),
+		);
+		expect(view).toMatchObject({
+			text: "Differs from authorized",
+			tone: "danger",
 		});
-		expect(generationView(e)).toEqual({ kind: "value", text: "7" });
-		expect(declaredReleaseView(e)).toEqual({
-			kind: "value",
-			text: "example/billing@1.2.0",
-		});
+		expect(view.kind === "value" && view.detail).toContain("sha256:bbb");
+	});
+
+	it("flags an execution nothing currently authorizes — the dangerous row", () => {
+		expect(
+			observedVerdictView(
+				entry({
+					observed: observedWith(CatalogueObservedVerdict.RUNNING_UNAUTHORIZED),
+				}),
+			),
+		).toMatchObject({ text: "Running without authorization", tone: "danger" });
+	});
+
+	it("does not read an unspecified verdict as a value", () => {
+		expect(
+			observedVerdictView(
+				entry({ observed: observedWith(CatalogueObservedVerdict.UNSPECIFIED) }),
+			).kind,
+		).toBe("gap");
 	});
 });
 
@@ -160,7 +244,9 @@ describe("registrationView", () => {
 	it("tells a composed module, a solution known only by installations, and each status apart", () => {
 		expect(
 			registrationView(entry({ kind: CatalogueEntryKind.MODULE })),
-		).toMatchObject({ text: "Composed" });
+		).toMatchObject({
+			text: "Composed",
+		});
 		expect(registrationView(entry())).toMatchObject({
 			kind: "gap",
 			label: "Not registered",
@@ -178,10 +264,15 @@ describe("registrationView", () => {
 });
 
 describe("catalogueGaps", () => {
-	it("lists each unavailable fact once, however many entries share it", () => {
-		const gap = { reason: CatalogueGapReason.NOT_RECORDED, detail: "core#708" };
+	it("lists each unavailable fact once, named by its state, however many entries share it", () => {
 		const shared = {
-			buildSizeValue: { case: "buildSizeGap" as const, value: gap },
+			buildSizeValue: {
+				case: "buildSizeGap" as const,
+				value: notRecorded("core#708"),
+			},
+			observed: {
+				verdictValue: { case: "verdictGap" as const, value: notObserved },
+			},
 		};
 		const gaps = catalogueGaps([
 			entry(shared),
@@ -190,6 +281,7 @@ describe("catalogueGaps", () => {
 		expect(gaps.filter((g) => g.fact === "Build size")).toEqual([
 			{ fact: "Build size", label: "Not recorded", detail: "core#708" },
 		]);
-		expect(gaps.filter((g) => g.fact === "Running")).toHaveLength(1);
+		expect(gaps.filter((g) => g.fact === "Observed · Running")).toHaveLength(1);
+		expect(buildSizeView(entry(shared)).kind).toBe("gap");
 	});
 });
