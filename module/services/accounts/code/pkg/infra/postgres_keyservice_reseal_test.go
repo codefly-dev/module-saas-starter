@@ -140,6 +140,9 @@ func TestResealEnvelopesReportsWhatItCouldNotMove(t *testing.T) {
 // and the plaintext behind it, so an assertion can prove BOTH survived the move.
 type sealedRow struct {
 	purpose, plaintext string
+	// sealed is the stored value as seeded, so an assertion can prove a
+	// protected row is untouched byte for byte.
+	sealed string
 	// locate reads the stored value back.
 	locate func(t *testing.T) string
 }
@@ -257,6 +260,13 @@ func seedEveryEnvelopedColumn(t *testing.T, sealer *keyservice.Cipher) map[strin
 		business.ConnectorSecretPurpose(sourceID), `{"token":"ghp"}`, "id", credentialID)
 
 	require.Len(t, seeded, 9, "every enveloped column must be seeded, or the sweep is only partly exercised")
+	// Read each stored value back, so a later assertion can prove an untouched
+	// row is untouched byte for byte without assuming the sealer is
+	// deterministic.
+	for key, row := range seeded {
+		row.sealed = row.locate(t)
+		seeded[key] = row
+	}
 	return seeded
 }
 
@@ -293,4 +303,105 @@ func seedWebAuthnDevice(t *testing.T, userID, credentialEnvelope string) string 
 		return err
 	}))
 	return deviceID
+}
+
+// The crypto-shredding invariant, which is the whole point of a per-organization
+// key: the sweep must LEAVE ALONE an organization whose key this deployment does
+// not control.
+//
+// Without this the sweep would re-seal a customer-held organization's
+// credentials under a key we hold — undoing the single property that key exists
+// to provide, and reporting a successful migration while doing it. For a revoked
+// key it would attempt a decrypt that cannot succeed, which the datasource
+// failure path turns into telling the customer to reconnect a source whose data
+// they instructed us to destroy.
+func TestResealEnvelopesLeavesAloneAnOrganizationWhoseKeyWeDoNotControl(t *testing.T) {
+	for name, bind := range map[string]string{
+		"the organization holds its own key": `INSERT INTO org_key_bindings (org_id, key_ref, customer_held)
+		                                      VALUES ($1, 'customer-held-key', true)`,
+		"the organization revoked its key": `INSERT INTO org_key_bindings (org_id, key_ref, customer_held, revoked_at, revoked_reason)
+		                                     VALUES ($1, 'destroyed-key', false, NOW(), 'customer instruction')`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			outgoing := reversibleSealer{tag: "outgoing-key-service"}
+			selected := reversibleSealer{tag: "selected-key-service"}
+			before, err := keyservice.NewCipher(outgoing, nil)
+			require.NoError(t, err)
+			cutover, err := keyservice.NewCipher(selected, outgoing)
+			require.NoError(t, err)
+
+			seeded := seedEveryEnvelopedColumn(t, before)
+
+			// Bind every organization the fixture created. The fixture seeds one
+			// org, so this covers each organization-scoped column.
+			require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+				rows, err := storetx.Tx(ctx).Query(ctx, `SELECT DISTINCT org_id::text FROM webhook_subscriptions`)
+				require.NoError(t, err)
+				var orgs []string
+				for rows.Next() {
+					var orgID string
+					require.NoError(t, rows.Scan(&orgID))
+					orgs = append(orgs, orgID)
+				}
+				rows.Close()
+				require.NotEmpty(t, orgs)
+				for _, orgID := range orgs {
+					if _, err := storetx.Tx(ctx).Exec(ctx, bind, orgID); err != nil {
+						return err
+					}
+				}
+				return nil
+			}))
+
+			outcomes, err := testStore.ResealEnvelopes(testCtx, cutover)
+			require.NoError(t, err)
+
+			protected := 0
+			for _, outcome := range outcomes {
+				protected += outcome.Protected
+			}
+			require.Positive(t, protected,
+				"the organization's columns must be reported as left alone, not silently skipped")
+
+			// Every organization-scoped value is untouched: still sealed by the
+			// outgoing backend, byte for byte.
+			for key, expected := range seeded {
+				stored := expected.locate(t)
+				if orgScopedEnvelopedColumn(key) {
+					require.Equal(t, expected.sealed, stored,
+						"%s belongs to an organization whose key we do not control and must be untouched", key)
+					continue
+				}
+				// A user's MFA seed and WebAuthn credential are not any one
+				// organization's, so they move as usual.
+				require.True(t, strings.HasPrefix(stored, keyservice.EnvelopePrefix(selected.Tag())),
+					"%s is not organization-scoped and must still be re-sealed", key)
+			}
+
+			// And the report must not count them as outstanding work: an
+			// operator chasing Remaining to zero would never finish, and would
+			// eventually force it.
+			_, remaining, detail := infra.ResealReport(outcomes)
+			require.Empty(t, remaining,
+				"a protected organization is never 'still to do'; detail: %v", detail)
+			require.Contains(t, strings.Join(detail, " "), "left alone")
+		})
+	}
+}
+
+// orgScopedEnvelopedColumn reports whether a seeded column belongs to an
+// organization. Kept beside the assertion rather than derived, so adding an
+// organization-scoped column without deciding this fails the test above.
+func orgScopedEnvelopedColumn(tableAndColumn string) bool {
+	switch tableAndColumn {
+	case "webhook_subscriptions.secret_encrypted",
+		"webhook_subscriptions.previous_secret_encrypted",
+		"datasource_sources.credential_secret_ref",
+		"datasource_sources.webhook_secret_ref",
+		"org_identity_providers.client_secret_ref",
+		"connector_credentials.secret_encrypted":
+		return true
+	default:
+		return false
+	}
 }

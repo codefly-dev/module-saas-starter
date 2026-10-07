@@ -31,6 +31,14 @@ type ResealOutcome struct {
 	// Remaining counts rows per backend tag that the selected backend did not
 	// seal. An empty map is what makes withdrawing the previous backend safe.
 	Remaining map[string]int
+	// Protected counts rows the sweep deliberately did not touch because the
+	// organization's key is not this deployment's to re-seal with.
+	//
+	// They are NOT Remaining: remaining means "still to do", and these are never
+	// to be done. Counting them together would make a finished cutover look
+	// unfinished forever, and an operator chasing the number to zero would
+	// eventually be tempted to force it.
+	Protected int
 }
 
 // enveloped is one column holding sealed credentials, and how to rebuild the
@@ -46,6 +54,12 @@ type enveloped struct {
 	// idColumn identifies a row for the compare-and-swap write. Not every table
 	// has an `id`: webauthn_credentials is keyed by the device it belongs to.
 	idColumn string
+	// orgColumn names the organization a row's credential belongs to, where it
+	// has one. Empty means the value is not an organization's: a user's MFA seed
+	// and WebAuthn credential belong to a person who may be in many
+	// organizations, so "whose key" has no answer for them and they stay on the
+	// deployment's own key.
+	orgColumn string
 	// keyColumn supplies the purpose's binding. Empty where the purpose is a
 	// constant.
 	keyColumn string
@@ -80,31 +94,31 @@ var envelopedColumns = []enveloped{
 		purpose: func(string) string { return business.WebAuthnSessionPurpose },
 	},
 	{
-		table: "webhook_subscriptions", column: "secret_encrypted",
+		table: "webhook_subscriptions", column: "secret_encrypted", orgColumn: "org_id",
 		keyColumn: "id", purpose: business.WebhookSecretPurpose,
 	},
 	{
 		// The rotation overlap's outgoing secret, under the same purpose as the
 		// current one: both are bound to the subscription, not to the slot.
-		table: "webhook_subscriptions", column: "previous_secret_encrypted",
+		table: "webhook_subscriptions", column: "previous_secret_encrypted", orgColumn: "org_id",
 		keyColumn: "id", purpose: business.WebhookSecretPurpose,
 	},
 	{
-		table: "datasource_sources", column: "credential_secret_ref",
+		table: "datasource_sources", column: "credential_secret_ref", orgColumn: "org_id",
 		keyColumn: "id", purpose: business.DatasourceConnectorSecretPurpose,
 	},
 	{
-		table: "datasource_sources", column: "webhook_secret_ref",
+		table: "datasource_sources", column: "webhook_secret_ref", orgColumn: "org_id",
 		keyColumn: "id", purpose: business.DatasourceWebhookSecretPurpose,
 	},
 	{
 		// Bound to the org, not the row: one provider per org, and org_id is the
 		// table's stable identity.
-		table: "org_identity_providers", column: "client_secret_ref",
+		table: "org_identity_providers", column: "client_secret_ref", orgColumn: "org_id",
 		keyColumn: "org_id", purpose: business.OrgIdentityProviderSecretPurpose,
 	},
 	{
-		table: "connector_credentials", column: "secret_encrypted",
+		table: "connector_credentials", column: "secret_encrypted", orgColumn: "org_id",
 		keyColumn: "source_id", purpose: business.ConnectorSecretPurpose,
 	},
 }
@@ -138,7 +152,7 @@ func (s *PostgresStore) ResealEnvelopes(ctx context.Context, cipher *keyservice.
 }
 
 type envelopedRow struct {
-	id, key, stored string
+	id, key, stored, org string
 }
 
 func (s *PostgresStore) resealColumn(
@@ -151,6 +165,10 @@ func (s *PostgresStore) resealColumn(
 	keyExpression := "''"
 	if column.keyColumn != "" {
 		keyExpression = column.keyColumn + "::text"
+	}
+	orgExpression := "''"
+	if column.orgColumn != "" {
+		orgExpression = column.orgColumn + "::text"
 	}
 	idColumn := column.idColumn
 	if idColumn == "" {
@@ -171,15 +189,15 @@ func (s *PostgresStore) resealColumn(
 	if err := s.WithControlPlane(ctx, func(ctx context.Context) error {
 		//nolint:gosec // identifiers come from envelopedColumns, never from a caller
 		result, err := s.getQueryExecutor(ctx).Query(ctx, fmt.Sprintf(
-			`SELECT %s::text, %s, %s FROM %s WHERE %s`,
-			idColumn, keyExpression, column.column, column.table, where))
+			`SELECT %s::text, %s, %s, %s FROM %s WHERE %s`,
+			idColumn, keyExpression, orgExpression, column.column, column.table, where))
 		if err != nil {
 			return err
 		}
 		defer result.Close()
 		for result.Next() {
 			var row envelopedRow
-			if err := result.Scan(&row.id, &row.key, &row.stored); err != nil {
+			if err := result.Scan(&row.id, &row.key, &row.org, &row.stored); err != nil {
 				return err
 			}
 			rows = append(rows, row)
@@ -189,11 +207,29 @@ func (s *PostgresStore) resealColumn(
 		return outcome, err
 	}
 
+	protectedOrgs, err := s.organizationsWithForeignKeys(ctx)
+	if err != nil {
+		return outcome, err
+	}
+
 	for _, row := range rows {
 		// Pre-envelope plaintext belongs to the legacy migrations, which run
 		// before this and own the base32 and empty-secret cases. Re-sealing one
 		// here would seal it under the wrong purpose-bound shape.
 		if !keyservice.IsEnvelopeFraming(row.stored) {
+			continue
+		}
+		// The organization's key is not this deployment's to re-seal with.
+		//
+		// For a customer-held key, re-sealing under a key we control would undo
+		// the single property that key exists to provide, and would do it while
+		// reporting a successful migration. For a revoked one there is nothing
+		// to re-seal: the credential is unreadable by design, and attempting it
+		// would surface as "this credential cannot be decrypted" — which the
+		// datasource failure path turns into telling the customer to reconnect
+		// a source whose data they instructed us to destroy.
+		if row.org != "" && protectedOrgs[row.org] {
+			outcome.Protected++
 			continue
 		}
 		purpose := column.purpose(row.key)
@@ -232,6 +268,37 @@ func (s *PostgresStore) resealColumn(
 	return outcome, nil
 }
 
+// organizationsWithForeignKeys is every organization whose envelope key this
+// deployment may not re-seal with: one that holds its own key, and one whose key
+// is gone.
+//
+// Read once per column rather than per row, and under the control plane for the
+// same reason the sweep itself is: the question spans every tenant.
+func (s *PostgresStore) organizationsWithForeignKeys(ctx context.Context) (map[string]bool, error) {
+	protected := map[string]bool{}
+	if err := s.WithControlPlane(ctx, func(ctx context.Context) error {
+		rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+			SELECT org_id::text
+			FROM org_key_bindings
+			WHERE customer_held OR revoked_at IS NOT NULL`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var orgID string
+			if err := rows.Scan(&orgID); err != nil {
+				return err
+			}
+			protected[orgID] = true
+		}
+		return rows.Err()
+	}); err != nil {
+		return nil, err
+	}
+	return protected, nil
+}
+
 // ResealReport renders the outcomes for a log line, newest-first by what is
 // still outstanding, so the one number an operator needs — is anything still
 // sealed under the outgoing backend — is not buried in a per-table list.
@@ -239,6 +306,10 @@ func ResealReport(outcomes []ResealOutcome) (resealed int, remaining map[string]
 	remaining = map[string]int{}
 	for _, outcome := range outcomes {
 		resealed += outcome.Resealed
+		if outcome.Protected > 0 {
+			detail = append(detail, fmt.Sprintf("%s.%s=%d left alone (the organization holds its own key, or revoked it)",
+				outcome.Table, outcome.Column, outcome.Protected))
+		}
 		for tag, count := range outcome.Remaining {
 			remaining[tag] += count
 			detail = append(detail, fmt.Sprintf("%s.%s=%d under %s", outcome.Table, outcome.Column, count, tag))
