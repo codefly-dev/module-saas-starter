@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
+	"accounts/pkg/keyservice"
 )
 
 // Compile-time check that PostgresStore implements MFAStore.
@@ -33,7 +34,7 @@ func (s *PostgresStore) MigrateLegacyMFASecrets(ctx context.Context, cipher busi
 			SELECT id, user_id, secret_encrypted
 			FROM mfa_devices
 			WHERE device_type = 'totp'
-			  AND secret_encrypted NOT LIKE 'cfs1:vault-transit:%'`)
+			  AND secret_encrypted NOT LIKE 'cfs%'`)
 		if err != nil {
 			return err
 		}
@@ -52,6 +53,14 @@ func (s *PostgresStore) MigrateLegacyMFASecrets(ctx context.Context, cipher busi
 
 	migrated := 0
 	for _, item := range legacy {
+		// The SQL predicate above narrows; this decides. A value already sealed
+		// by ANY backend or framing is not legacy plaintext, and treating one as
+		// plaintext would re-seal the envelope STRING — storing a doubly-wrapped
+		// payload nothing can read. The SQL cannot be the authority because it
+		// would have to enumerate every present and future framing.
+		if keyservice.IsEnvelopeFraming(item.plaintext) {
+			continue
+		}
 		if _, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(item.plaintext)); err != nil {
 			return migrated, fmt.Errorf("legacy MFA secret %s is not valid base32: %w", item.id, err)
 		}

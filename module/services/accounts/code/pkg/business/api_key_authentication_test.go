@@ -145,3 +145,82 @@ func TestCreateAPIKeyRefusesAScopeThatIsNotOneScope(t *testing.T) {
 	require.ErrorContains(t, err, "stopped at the database")
 	require.Equal(t, 1, transactions)
 }
+
+// hashKeyedStore answers only for the one hash a key is actually stored under,
+// which is what makes the lookup's single-candidate assumption visible: the
+// store is keyed BY hash, so a hash computed under a different key finds nothing
+// and is indistinguishable from a revoked key.
+type hashKeyedStore struct {
+	business.Store
+	storedUnder    string
+	authentication *business.APIKeyAuthentication
+	lookups        []string
+}
+
+func (store *hashKeyedStore) GetAPIKeyAuthentication(_ context.Context, keyHash string) (*business.APIKeyAuthentication, error) {
+	store.lookups = append(store.lookups, keyHash)
+	if keyHash != store.storedUnder {
+		return nil, nil
+	}
+	return store.authentication, nil
+}
+
+// cutoverHasher is a key service mid-cutover: it hashes new keys under the
+// selected backend and can also produce the hash the outgoing backend wrote.
+type cutoverHasher struct{ selected, previous string }
+
+func (h cutoverHasher) HashKey(context.Context, string) (string, error) { return h.selected, nil }
+
+func (h cutoverHasher) CandidateHashes(context.Context, string) ([]string, error) {
+	return []string{h.selected, h.previous}, nil
+}
+
+// A keyed hash cannot be re-keyed — the plaintext is gone once the key is
+// issued — so the re-seal sweep that rewrites every enveloped column cannot
+// touch api_keys.key_hash. If the lookup used only the selected backend's hash,
+// every API key issued before a key-service cutover would stop authenticating,
+// reported as simply invalid.
+func TestValidateAPIKeyFindsAKeyStoredUnderThePreviousBackend(t *testing.T) {
+	store := &hashKeyedStore{
+		storedUnder: "hash-written-by-the-outgoing-backend",
+		authentication: &business.APIKeyAuthentication{
+			Key:    &gen.APIKey{UserId: "user", OrganizationId: "org"},
+			Claims: business.APIKeyIdentityClaims{Member: true, OrgRole: "admin"},
+		},
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	service.SetHasher(cutoverHasher{
+		selected: "hash-under-the-selected-backend",
+		previous: "hash-written-by-the-outgoing-backend",
+	})
+
+	response, err := service.ValidateAPIKey(context.Background(), "presented-key")
+	require.NoError(t, err)
+	require.True(t, response.Valid,
+		"a key issued before the cutover must still authenticate while the previous backend is bound")
+	require.Equal(t,
+		[]string{"hash-under-the-selected-backend", "hash-written-by-the-outgoing-backend"},
+		store.lookups,
+		"the selected backend's hash is tried first, so a settled deployment does one lookup")
+}
+
+// Once the cutover is finished the previous backend is withdrawn and there is a
+// single hash to look up: no extra query per validation.
+func TestValidateAPIKeyDoesOneLookupWhenNoCutoverIsInProgress(t *testing.T) {
+	store := &hashKeyedStore{
+		storedUnder: "hash",
+		authentication: &business.APIKeyAuthentication{
+			Key:    &gen.APIKey{UserId: "user", OrganizationId: "org"},
+			Claims: business.APIKeyIdentityClaims{Member: true, OrgRole: "admin"},
+		},
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	service.SetHasher(staticKeyHasher{})
+
+	response, err := service.ValidateAPIKey(context.Background(), "presented-key")
+	require.NoError(t, err)
+	require.True(t, response.Valid)
+	require.Equal(t, []string{"hash"}, store.lookups)
+}
