@@ -126,6 +126,9 @@ var viewerGatedSurfacesPending = map[string]string{
 var projectionSurfaces = []string{
 	"services/frontend/code/src/app/api/solutions/route.ts",
 	"services/frontend/code/src/app/api/solutions/surfaces/route.ts",
+	// One solution's installation for the outlet to hand the page: the viewer
+	// organization's, resolved from the entitlement read, never from the page.
+	"services/frontend/code/src/app/api/solutions/[id]/installation/route.ts",
 }
 
 // trafficSurfaces are the files that decide whether a REQUEST reaches a
