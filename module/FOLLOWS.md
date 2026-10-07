@@ -264,10 +264,11 @@ therefore rechecked at **three** points, all through host ports:
    per page, which bounds the read.
 3. **Deep-link resolution**: the link is re-authorized when followed, by
    `ResolveNotificationAction`. Shape is settled separately, and on both sides: a
-   module-supplied `action_url` is refused at the write unless it is a
-   same-origin relative path (`ValidNotificationActionURL`,
-   `pkg/business/notifications.go`), and the resolved answer is narrowed to one
-   again before `router.push` (`notificationActionUrl`,
+   module-supplied `action_url` is refused unless it is a same-origin relative
+   path (`ValidNotificationActionURL`, `pkg/business/notifications.go`) — at the
+   write, and again when the destination is followed, so a row stored before the
+   rule existed cannot be followed either — and the resolved answer is narrowed
+   to one more time before `router.push` (`notificationActionUrl`,
    `features/notifications/model/transforms.ts`). Shape is not authority.
 
 A follow item's stored `title`/`body` must carry no resource-derived content

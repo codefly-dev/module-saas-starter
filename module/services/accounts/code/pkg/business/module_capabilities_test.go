@@ -782,14 +782,21 @@ func TestModuleNotify_OffOriginActionURLRejectedBeforeAnyWrite(t *testing.T) {
 		"/\t/evil.example/steal",
 		"/../../admin/billing",
 		"javascript:alert(document.cookie)",
+		// Encoded forms: harmless to a browser, but url.URL.Path hands a Go
+		// caller "///evil.example/steal" and "/\\evil.example", which are not.
+		"/%2F%2Fevil.example/steal",
+		"/%5Cevil.example",
 	}
 
 	store := &notifyRecordingStore{fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}}}
 	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
 	for _, actionURL := range offOrigin {
+		// A mandatory category, so a missing guard reaches the recording store's
+		// write and fails this assertion, rather than the optional-category
+		// settings read the fake does not implement.
 		_, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
 			Tenant: moduleTenantA, UserID: moduleUserA, Title: "Review this", Body: "Body",
-			Type: "info", Category: "product", ActionURL: actionURL,
+			Type: "info", Category: "security", ActionURL: actionURL,
 		})
 		requireCode(t, err, codes.InvalidArgument)
 
@@ -825,6 +832,15 @@ type notifyRecordingStore struct {
 func (s *notifyRecordingStore) OrgMemberExists(ctx context.Context, orgID, userID string) (bool, error) {
 	s.membershipReads++
 	return s.fakeTxStore.OrgMemberExists(ctx, orgID, userID)
+}
+
+// NotifyOrgAdmins resolves its recipients through the listing rather than the
+// point check, so a refusal that runs before any recipient is read has to be
+// counted here too — fakeTxStore does not implement it, and without this a
+// missing guard surfaces as a nil dereference instead of a failed assertion.
+func (s *notifyRecordingStore) ListOrgMembers(context.Context, string) ([]*gen.OrgMembership, error) {
+	s.membershipReads++
+	return nil, nil
 }
 
 func (s *notifyRecordingStore) CreateNotification(context.Context, *business.Notification) error {

@@ -93,18 +93,24 @@ func ValidNotificationActionURL(actionURL string) bool {
 	if actionURL == "" {
 		return true
 	}
-	if !strings.HasPrefix(actionURL, "/") || strings.HasPrefix(actionURL, "//") {
-		return false
-	}
-	if strings.Contains(actionURL, "\\") {
-		return false
-	}
-	if strings.ContainsFunc(actionURL, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
-		return false
-	}
 	parsed, err := url.Parse(actionURL)
 	if err != nil || parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil {
 		return false
+	}
+	// The string as given and its decoded path both have to be a single-slash
+	// path. Judging only the raw form accepts "/%2F%2Fhost", which decodes to
+	// "///host" — another origin to anything that resolves the decoded form, and
+	// Go hands a caller exactly that in url.URL.Path.
+	for _, path := range []string{actionURL, parsed.Path} {
+		if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+			return false
+		}
+		if strings.Contains(path, "\\") {
+			return false
+		}
+		if strings.ContainsFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+			return false
+		}
 	}
 	// The decoded path, so a percent-encoded dot segment is the same answer as a
 	// literal one.
@@ -406,6 +412,16 @@ func (s *Service) ResolveNotificationAction(ctx context.Context, userID, id stri
 		return "", w.Wrapf(err, "cannot resolve notification action")
 	}
 	if notification == nil || notification.ActionURL == "" {
+		return "", ErrNotificationNotFound
+	}
+	// A row stored before this rule was enforced, or by any path that does not
+	// pass through it, gets the same answer an absent destination gets: there is
+	// nowhere to send the person either way. Refusing here is what makes the rule
+	// retroactive — the write gate cannot reach a row already in the table.
+	if !ValidNotificationActionURL(notification.ActionURL) {
+		w.Warn("notification destination refused: not a same-origin relative path",
+			wool.Field("notification_id", notification.ID),
+			wool.Field("action_url", notification.ActionURL))
 		return "", ErrNotificationNotFound
 	}
 	if notification.ResourceType == "" {

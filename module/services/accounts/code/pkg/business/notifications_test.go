@@ -558,10 +558,44 @@ func TestValidNotificationActionURLAcceptsOnlySameOriginPaths(t *testing.T) {
 		"/a/../../etc/passwd",
 		"/./admin",
 		"/%2e%2e/admin",
+		// A browser keeps these encoded and stays on the origin, but url.URL.Path
+		// hands a Go caller "///evil.example/path" and "/\\evil.example" — which
+		// new URL() resolves to https://evil.example.
+		"/%2F%2Fevil.example/path",
+		"/%2f%2fevil.example/path",
+		"/%5Cevil.example",
+		"/%0A%2F%2Fevil.example",
 		"admin/billing",
 		"mailto:user@example.com",
 		"\\\\evil.example\\share",
 	} {
 		require.False(t, business.ValidNotificationActionURL(actionURL), "%q should be refused", actionURL)
+	}
+}
+
+// The write gate cannot reach a row already in the table, and NotifyOrgAdmins
+// accepted an off-site destination before it existed, so the destination is
+// judged again when it is followed. An unusable one is reported exactly as an
+// absent one is: there is nowhere to send the person either way.
+func TestResolveNotificationActionRefusesAStoredOffOriginDestination(t *testing.T) {
+	for _, stored := range []string{
+		"https://evil.example/harvest",
+		"//evil.example/harvest",
+		"/\\evil.example/harvest",
+		"/%2F%2Fevil.example/harvest",
+		"javascript:alert(document.cookie)",
+	} {
+		store := &notificationActionStore{
+			notification: &business.Notification{
+				ID: "legacy", UserID: "user-1", OrgID: "org-1", ActionURL: stored,
+			},
+		}
+		service, err := business.NewService(store)
+		require.NoError(t, err)
+
+		actionURL, err := service.ResolveNotificationAction(context.Background(), "user-1", "legacy")
+
+		require.ErrorIs(t, err, business.ErrNotificationNotFound, "stored %q", stored)
+		require.Empty(t, actionURL)
 	}
 }

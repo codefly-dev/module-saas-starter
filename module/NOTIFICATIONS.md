@@ -7,11 +7,20 @@ was written, not that an email, Slack message, or text message was sent.
 
 A module-supplied `action_url` must be a same-origin relative path: one leading
 slash, no authority, no scheme, no backslash, no ASCII control character, no `.`
-or `..` segment. `NotifyUser` and `NotifyOrgAdmins` answer `InvalidArgument` for
-anything else, before the membership read and before any row is written, so a
-module cannot put an off-site link in a member's inbox. The product's own router
-follows whatever `ResolveNotificationAction` returns, and it narrows the answer
-to a same-origin path again before navigating.
+or `..` segment. Both the string as given and its decoded path are judged, so a
+value such as `/%2F%2Fhost` — which a browser keeps on the origin but `url.Parse`
+hands a caller as `///host` — is refused too. `NotifyUser` and `NotifyOrgAdmins`
+answer `InvalidArgument` for anything else, before the membership read and before
+any row is written, so a module cannot put an off-site link in a member's inbox.
+One refused destination fails the whole `NotifyOrgAdmins` call: no administrator
+is notified, rather than all of them receiving a notice they cannot follow.
+
+The same rule is applied again when a destination is followed.
+`ResolveNotificationAction` reports an unusable stored `action_url` exactly as it
+reports an absent one — `notification not found` — because the write gate cannot
+reach a row already in the table, and `NotifyOrgAdmins` accepted off-site links
+before the gate existed. The product's own router narrows the answer to a
+same-origin path once more before navigating.
 
 The host shell renders the bell, SSE unread updates, inbox and banner. The
 banner requests unread items in the active organization before pagination and
