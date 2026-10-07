@@ -151,10 +151,16 @@ const SYNC_STATES: Array<[string, SourceSyncView]> = [
 		storySync({ phase: "fetching", fetchingAt: storyAgo(900_000) }),
 	],
 	[
+		// `queued`, which is what the host actually stamps for a job the queue is
+		// retrying — there is no `retrying` phase on the wire. Shown with the
+		// stamps and the change set the first attempt left behind, because that is
+		// the combination that used to send the bar backwards to a quarter.
 		"Retrying",
 		storySync({
-			phase: "fetching",
-			fetchingAt: storyAgo(5_000),
+			phase: "queued",
+			fetchingAt: storyAgo(300_000),
+			compiledAt: storyAgo(120_000),
+			changes: storyChanges,
 			attempt: 3,
 			maxAttempts: 5,
 			failure: {
@@ -165,6 +171,10 @@ const SYNC_STATES: Array<[string, SourceSyncView]> = [
 				retryAt: new Date(STORY_NOW + 420_000).toISOString(),
 			},
 		}),
+	],
+	[
+		"Waiting for a worker, for too long",
+		storySync({ phase: "queued", queuedAt: storyAgo(1_800_000) }),
 	],
 	[
 		"Failed",
@@ -216,6 +226,48 @@ export const SyncProgressWithExecution = {
 			)}
 			onOpenExecution={() => {}}
 		/>
+	),
+};
+
+/**
+ * A source that still syncs and still hands off, with nothing on the other end
+ * to accept it. The host's hand-off jobs succeed, so the sync reports handed
+ * off; the consuming module refuses each one at its own admission, which the
+ * host cannot see. The line is the half the host CAN see.
+ */
+export const SyncProgressWithoutDelegation = {
+	render: () => (
+		<div className="space-y-4">
+			<SourceSyncProgress
+				source={source}
+				delegation="none"
+				report={describeSync(
+					storySync({
+						phase: "done",
+						compiledAt: storyAgo(30_000),
+						handedOffAt: storyAgo(10_000),
+						finishedAt: storyAgo(10_000),
+						changes: storyChanges,
+					}),
+					{ now: STORY_NOW },
+				)}
+			/>
+			{/* The same source, read by someone who cannot act on it. */}
+			<SourceSyncProgress
+				source={source}
+				delegation="none"
+				canManage={false}
+				report={describeSync(
+					storySync({
+						phase: "done",
+						handedOffAt: storyAgo(10_000),
+						finishedAt: storyAgo(10_000),
+						changes: storyChanges,
+					}),
+					{ now: STORY_NOW },
+				)}
+			/>
+		</div>
 	),
 };
 

@@ -320,6 +320,20 @@ export function datasourceClientOverTransport(
 				throw error;
 			}
 		},
+		async listSourceDelegations(orgId) {
+			// Active only: `includeRevoked` stays false, so every row that comes
+			// back is one a source can still deliver through. A revoked row read as
+			// a delegation would answer the panel's question backwards.
+			const response = await client.listSourceDelegations({ orgId });
+			return response.delegations
+				.filter((delegation) => !delegation.revokedAt)
+				.map((delegation) => ({
+					id: delegation.id,
+					sourceId: delegation.sourceId,
+					module: delegation.module,
+					binding: delegation.binding,
+				}));
+		},
 		async deleteSource(orgId, id) {
 			await client.deleteSource({ orgId, id });
 		},

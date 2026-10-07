@@ -54,8 +54,12 @@ export {
 } from "./datasources/schema.js";
 export { SourceExecutionRestricted } from "./datasources/source-execution-access.js";
 export {
+	SETTLED_SYNC_VISIBLE_MS,
+	type SourceDelegationState,
 	SourceSyncProgress,
+	syncStateLabel,
 	useSourceSync,
+	withinSettledWindow,
 } from "./datasources/sync-progress.js";
 // The sync-progress model is exported beside its component so a consumer can
 // render the same phases in its own shell — a compact line in a header, say —
@@ -63,6 +67,7 @@ export {
 // (a done sync that handed nothing off, a failure that is still retrying)
 // subtly wrong.
 export {
+	DEFAULT_QUEUE_STALL_AFTER_MS,
 	DEFAULT_STALL_AFTER_MS,
 	type DescribeSyncOptions,
 	describeSync,
@@ -92,6 +97,7 @@ export type {
 	DatasourceView,
 	DomainView,
 	GroupBindingView,
+	SourceDelegationView,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,
 	SourceSyncTriggerName,

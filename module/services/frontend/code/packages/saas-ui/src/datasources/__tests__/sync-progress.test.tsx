@@ -11,7 +11,11 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatasourcesPanel } from "../datasources-panel.js";
 import { SourceExecutionRestricted } from "../source-execution-access.js";
-import { SourceSyncProgress } from "../sync-progress.js";
+import {
+	SETTLED_SYNC_VISIBLE_MS,
+	SourceSyncProgress,
+	withinSettledWindow,
+} from "../sync-progress.js";
 import { describeSync } from "../sync-progress-model.js";
 import { notifySourceSyncRequested } from "../sync-requests.js";
 import type {
@@ -90,10 +94,10 @@ describe("SourceSyncProgress", () => {
 		expect(bar().getAttribute("aria-label")).toBe(
 			"Sync progress for example-org/example-repo",
 		);
-		// The words, not the number, are what assistive tech reads out.
-		expect(bar().getAttribute("aria-valuetext")).toBe(
-			"Accepted, waiting for a worker",
-		);
+		// The bar's words say where on the ladder it is. They used to repeat the
+		// headline, which the status line announces already — so a screen reader
+		// heard the same sentence twice and never heard the step.
+		expect(bar().getAttribute("aria-valuetext")).toBe("Step 1 of 4");
 		expect(screen.getByText("Step 1 of 4")).toBeTruthy();
 		// The badge names the state, the headline says what the state does not.
 		expect(screen.getByText("Queued")).toBeTruthy();
@@ -191,7 +195,58 @@ describe("SourceSyncProgress", () => {
 
 		const status = screen.getByRole("status");
 		expect(status.getAttribute("aria-live")).toBe("polite");
-		expect(screen.queryByRole("alert")).toBeNull();
+		// The polite region is the status LINE, not the whole card: a region around
+		// everything re-announced the headline, the counts and the detail on every
+		// phase change and every per-minute stall update.
+		expect(status.textContent).toBe("Running: Fetching from the repository");
+		expect(status.querySelector("[role='progressbar']")).toBeNull();
+		// The assertive region is always mounted, and empty while nothing is wrong.
+		// It used to be the same element as the polite one, re-roled in the very
+		// render whose content became a failure — which is the case assistive
+		// technology is least likely to announce, since a live region has to exist
+		// with its politeness before the content inside it changes.
+		const alert = screen.getByRole("alert");
+		expect(alert.getAttribute("aria-live")).toBe("assertive");
+		expect(alert.textContent).toBe("");
+	});
+
+	it("puts the failure in the assertive region that was already there", () => {
+		const { rerender } = render(
+			<SourceSyncProgress
+				source={source}
+				report={describeSync(
+					sync({ phase: "fetching", fetchingAt: ago(1_000) }),
+					{ now: NOW },
+				)}
+			/>,
+		);
+		// Present and empty before the failure, so the announcement lands in a
+		// region the reader's software has already registered.
+		expect(screen.getByRole("alert").textContent).toBe("");
+
+		rerender(
+			<SourceSyncProgress
+				source={source}
+				report={describeSync(
+					sync({
+						phase: "failed",
+						fetchingAt: ago(60_000),
+						finishedAt: ago(1_000),
+						failure: {
+							reason: "credential",
+							code: "datasource.credential_invalid",
+							message: "The stored credential was refused.",
+							retrying: false,
+						},
+					}),
+					{ now: NOW },
+				)}
+			/>,
+		);
+
+		expect(screen.getByRole("alert").textContent).toBe(
+			"The stored credential was refused.",
+		);
 	});
 
 	it("labels a stalled sync as having made no progress, not as failed", () => {
@@ -722,5 +777,231 @@ describe("the panel's execution extension point", () => {
 		);
 
 		expect(screen.queryByText("member execution")).toBeNull();
+	});
+});
+
+describe("what the card says a reader may not act on", () => {
+	it("names who reconnects a source when the reader cannot", () => {
+		// The host's own failure sentence tells the reader to reconnect. A member
+		// has no Reconnect control, so without this they are handed an instruction,
+		// no way to act on it, and no explanation.
+		render(
+			<SourceSyncProgress
+				source={source}
+				canManage={false}
+				report={describeSync(
+					sync({
+						phase: "failed",
+						fetchingAt: ago(60_000),
+						finishedAt: ago(1_000),
+						failure: {
+							reason: "credential",
+							code: "datasource.credential_invalid",
+							message:
+								"The stored credential was refused. Reconnect the source with a new token.",
+							retrying: false,
+						},
+					}),
+					{ now: NOW },
+				)}
+			/>,
+		);
+
+		expect(
+			screen.getByText(/An organization administrator connects, reconnects/),
+		).toBeTruthy();
+	});
+
+	it("says nothing about administrators to a reader who can act", () => {
+		render(
+			<SourceSyncProgress
+				source={source}
+				canManage
+				report={describeSync(
+					sync({
+						phase: "failed",
+						finishedAt: ago(1_000),
+						failure: {
+							reason: "credential",
+							code: "datasource.credential_invalid",
+							message: "The stored credential was refused.",
+							retrying: false,
+						},
+					}),
+					{ now: NOW },
+				)}
+			/>,
+		);
+
+		expect(screen.queryByText(/organization administrator/)).toBeNull();
+	});
+
+	it("paints the state badge with the tone it was computed from", () => {
+		// The tone used to be mapped onto the legacy `variant` axis, where a
+		// warning became the PRIMARY brand fill and a success a bare outline — the
+		// one element in this card a reader judges at a glance, saying the wrong
+		// thing in colour.
+		render(
+			<SourceSyncProgress
+				source={source}
+				report={describeSync(
+					sync({ phase: "fetching", fetchingAt: ago(600_000) }),
+					{ now: NOW },
+				)}
+			/>,
+		);
+
+		const badge = screen.getByText("No progress");
+		expect(badge.className).toContain("warning");
+		expect(badge.className).not.toContain("bg-primary");
+	});
+});
+
+describe("a source with nothing to deliver through", () => {
+	const handedOff = () =>
+		describeSync(
+			sync({
+				phase: "done",
+				compiledAt: ago(30_000),
+				handedOffAt: ago(10_000),
+				finishedAt: ago(10_000),
+				changes: {
+					files: 3,
+					added: 3,
+					modified: 0,
+					deleted: 0,
+					splitKnown: true,
+					snapshot: false,
+					commit: "abc1234",
+				},
+			}),
+			{ now: NOW },
+		);
+
+	it("explains a hand-off that nothing can accept", () => {
+		// The host's hand-off jobs genuinely succeeded, so the sync is `done`. With
+		// no delegation the consuming module refuses every one of them at its own
+		// admission, which the host cannot see — this is the half it can.
+		render(
+			<SourceSyncProgress
+				source={source}
+				report={handedOff()}
+				delegation="none"
+			/>,
+		);
+
+		expect(screen.getByText(/no active delegation/)).toBeTruthy();
+		expect(
+			screen.getByText(/Reconnect the source to delegate it again/),
+		).toBeTruthy();
+	});
+
+	it("claims nothing when the delegation could not be read", () => {
+		// A read this viewer may not make, a read that failed, and a client that
+		// cannot make it are all silence. Rendering silence as "no delegation"
+		// would accuse a healthy source on the strength of the reader's
+		// permissions.
+		render(
+			<SourceSyncProgress
+				source={source}
+				report={handedOff()}
+				delegation="unknown"
+			/>,
+		);
+
+		expect(screen.queryByText(/delegation/)).toBeNull();
+	});
+
+	it("tells a member who restores it", () => {
+		render(
+			<SourceSyncProgress
+				source={source}
+				report={handedOff()}
+				delegation="none"
+				canManage={false}
+			/>,
+		);
+
+		expect(
+			screen.getByText(/An organization administrator reconnects a source/),
+		).toBeTruthy();
+	});
+});
+
+describe("many sources syncing at once", () => {
+	const manySources = Array.from({ length: 6 }, (_, index) => ({
+		...source,
+		id: `ds-${index + 1}`,
+		repo: `example-org/repo-${index + 1}`,
+	}));
+
+	it("expands one sync and collapses the rest to lines", async () => {
+		// Every source used to get a whole card — headline, bar, step line, counts,
+		// detail — stacked above the table they are meant to introduce. The
+		// ten-minute window bounded how LONG a finished card stayed, never how MANY
+		// stood at once, so an organization on a reconcile schedule had a stack
+		// with nobody having pressed anything.
+		const client = fakeClient({
+			listSources: vi.fn(async () => manySources),
+			getSourceSync: vi.fn(async () =>
+				sync({ phase: "fetching", fetchingAt: ago(1_000) }),
+			),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await waitFor(() => expect(screen.getAllByRole("listitem").length).toBe(6));
+		// Nothing has been acted on, so nothing is expanded: six lines, no bar.
+		expect(screen.queryByRole("progressbar")).toBeNull();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Show the sync of example-org/repo-3",
+			}),
+		);
+
+		expect(await screen.findByRole("progressbar")).toBeTruthy();
+		// One card, and the others stay lines.
+		expect(screen.getAllByRole("progressbar").length).toBe(1);
+		expect(screen.getAllByRole("listitem").length).toBe(5);
+	});
+
+	it("keeps the only source's card without anyone pressing anything", async () => {
+		// The collapse exists for the stack. A single source has nothing to stack
+		// against, and taking its live bar away would hit the organizations most
+		// likely to be watching one.
+		const client = fakeClient({
+			getSourceSync: vi.fn(async () =>
+				sync({ phase: "fetching", fetchingAt: ago(1_000) }),
+			),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByRole("progressbar")).toBeTruthy();
+		expect(screen.queryByRole("listitem")).toBeNull();
+	});
+});
+
+describe("withinSettledWindow", () => {
+	// Shared by the render decision and by the clock: a settled sync that has aged
+	// out is not shown, and the clock that only exists to age it out stops.
+	it("holds a just-finished sync and lets an old one go", () => {
+		expect(withinSettledWindow(sync({ finishedAt: ago(1_000) }), NOW)).toBe(
+			true,
+		);
+		expect(
+			withinSettledWindow(
+				sync({ finishedAt: ago(SETTLED_SYNC_VISIBLE_MS + 1_000) }),
+				NOW,
+			),
+		).toBe(false);
+	});
+
+	it("treats a settled sync with no usable finish stamp as old", () => {
+		// Showing it would pin a card of unknown age above the table for as long as
+		// the page is open.
+		expect(withinSettledWindow(sync({}), NOW)).toBe(false);
+		expect(withinSettledWindow(sync({ finishedAt: "not a date" }), NOW)).toBe(
+			false,
+		);
 	});
 });

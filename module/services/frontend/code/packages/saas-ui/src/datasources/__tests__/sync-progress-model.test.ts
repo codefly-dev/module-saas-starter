@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	DEFAULT_QUEUE_STALL_AFTER_MS,
 	DEFAULT_STALL_AFTER_MS,
 	describeSync,
 	SYNC_STEPS,
@@ -338,6 +339,120 @@ describe("describeSync", () => {
 		expect(report.step).toBe(0);
 		expect(report.percent).toBe(0);
 		expect(report.attempts).toBeUndefined();
+	});
+
+	it("keeps a retrying sync at the furthest step the host stamped", () => {
+		// The host has NO retrying phase: a job the queue is retrying is stamped
+		// `queued`, and retrying rides on `failure.retrying`. The stamps and the
+		// change set from the attempt that already ran stay on the record. Reading
+		// the phase name alone sent the bar backwards — a quarter full, "Step 1 of
+		// 4", beside its own count of 162 compiled files — and then jumped it to
+		// 100% when the retry landed.
+		const report = describeSync(
+			sync({
+				phase: "queued",
+				queuedAt: ago(300_000),
+				fetchingAt: ago(240_000),
+				compiledAt: ago(60_000),
+				attempt: 2,
+				maxAttempts: 5,
+				changes: {
+					files: 162,
+					added: 12,
+					modified: 150,
+					deleted: 0,
+					splitKnown: true,
+					snapshot: false,
+					commit: "0f1e2d3c4b5a6978",
+				},
+				failure: {
+					reason: "rate_limited",
+					code: "datasource.github_rate_limited",
+					message: "GitHub rate-limited this sync.",
+					retrying: true,
+					retryAt: new Date(NOW + 60_000).toISOString(),
+				},
+			}),
+			{ now: NOW },
+		);
+
+		expect(report.state).toBe("retrying");
+		expect(report.step).toBe(3);
+		expect(report.percent).toBe(75);
+		// The counts and the step have to agree: they are read side by side.
+		expect(report.counts[0]).toEqual({ label: "Files", value: 162 });
+	});
+
+	it("does not let the phase name drag a sync below its own stamps", () => {
+		// The general form of the same bug, independent of retrying: whatever the
+		// phase says, the furthest stamp is evidence the host wrote down.
+		const report = describeSync(
+			sync({
+				phase: "queued",
+				queuedAt: ago(10_000),
+				fetchingAt: ago(9_000),
+				handedOffAt: ago(1_000),
+			}),
+			{ now: NOW },
+		);
+
+		expect(report.step).toBe(4);
+	});
+
+	it("does not call a sync waiting for a worker stalled at the phase threshold", () => {
+		// Waiting in a queue is not a phase that stopped. The host stamps `queued`
+		// from the job's creation, so one threshold for both reported every sync
+		// behind a busy queue as "No progress" — a warning for the system working
+		// as designed, which is how a reader learns to ignore warnings.
+		const report = describeSync(
+			sync({ phase: "queued", queuedAt: ago(DEFAULT_STALL_AFTER_MS * 2) }),
+			{ now: NOW },
+		);
+
+		expect(report.state).toBe("queued");
+		expect(report.tone).toBe("info");
+	});
+
+	it("eventually says a queue has produced no worker", () => {
+		const report = describeSync(
+			sync({
+				phase: "queued",
+				queuedAt: ago(DEFAULT_QUEUE_STALL_AFTER_MS + 1_000),
+			}),
+			{ now: NOW },
+		);
+
+		expect(report.state).toBe("stalling");
+		// Its own words: "No progress" is wrong for work that never started.
+		expect(report.detail).toContain("No worker has taken this up");
+	});
+
+	it("never claims a done sync was ingested, only handed off", () => {
+		// `done` is reached on `handoff.Succeeded >= handoff.Jobs` — every hand-off
+		// DELIVERED to the consuming module's queue. The host never learns what the
+		// module then did with it, so nothing here may say the content arrived.
+		const report = describeSync(
+			sync({
+				phase: "done",
+				compiledAt: ago(30_000),
+				handedOffAt: ago(10_000),
+				finishedAt: ago(10_000),
+				changes: {
+					files: 3,
+					added: 3,
+					modified: 0,
+					deleted: 0,
+					splitKnown: true,
+					snapshot: false,
+					commit: "abc1234",
+				},
+			}),
+			{ now: NOW },
+		);
+
+		expect(report.state).toBe("done");
+		expect(report.headline).toBe("Handed off the changed files");
+		expect(report.headline).not.toMatch(/ingest|complete|done/i);
 	});
 
 	it("says nothing about attempts on a first attempt", () => {

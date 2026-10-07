@@ -5,11 +5,18 @@ import {
 	Banner,
 	Button,
 	Card,
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
+	EmptyState,
+	ErrorState,
 	Input,
 	Label,
 	Spinner,
@@ -50,7 +57,14 @@ import {
 	useSyncSource,
 } from "./queries.js";
 import type { ConnectGitHubValues } from "./schema.js";
-import { SourceSyncProgress, useSourceSync } from "./sync-progress.js";
+import type { SyncProgressReport } from "./sync-progress-model.js";
+import {
+	type SourceDelegationState,
+	SourceSyncProgress,
+	syncStateLabel,
+	useSourceSync,
+	withinSettledWindow,
+} from "./sync-progress.js";
 import type {
 	AccessibleScopeView,
 	DatasourceClient,
@@ -221,10 +235,16 @@ function DatasourcesPanelView({
 	const [reconnecting, setReconnecting] = useState<DatasourceView | null>(null);
 	const [reconnectPending, setReconnectPending] = useState(false);
 	const [reconnectError, setReconnectError] = useState<string>();
+	// The one source whose progress is worth a whole card: the one this reader
+	// acted on. Every other sync in flight shows as a line. Before anything has
+	// been pressed there is no such source, and a page of scheduled syncs is a
+	// list of lines rather than a stack of cards above the table.
+	const [watchedSourceId, setWatchedSourceId] = useState<string | null>(null);
 	const beginAppSetup = client.beginGitHubAppSetup?.bind(client);
 	const completeAppSetup = client.completeGitHubAppSetup?.bind(client);
 	const migrateToApp = client.migrateGitHubSourceToApp?.bind(client);
 	const reconnectSource = client.reconnectSource?.bind(client);
+	const listSourceDelegations = client.listSourceDelegations?.bind(client);
 
 	// The return leg, captured once during the first render: the redirect's
 	// parameters are a property of the URL the page loaded with, so the value has
@@ -281,6 +301,39 @@ function DatasourcesPanelView({
 		list.isLoading,
 	);
 	const scopes = useAccessibleScopes(client, orgId);
+	// The organization's ACTIVE source delegations, read once for the whole table
+	// rather than once per row: the host's listing answers for every source, and
+	// a per-source read would multiply a poll by the source count to learn one
+	// bit per row.
+	//
+	// Administrators only, because that is what the host's policy on
+	// `ListSourceDelegations` requires. A member's panel must not call it, and
+	// says who can instead — calling it anyway would turn a refusal the reader
+	// cannot act on into the panel's own error.
+	const delegations = useQuery({
+		queryKey: ["source-delegations", orgId],
+		queryFn: () => listSourceDelegations!(orgId),
+		enabled: !!orgId && !!listSourceDelegations && canManage,
+		retry: false,
+	});
+	const delegatedSourceIds = useMemo(
+		() => new Set((delegations.data ?? []).map((row) => row.sourceId)),
+		[delegations.data],
+	);
+	/**
+	 * Whether a source still has something to deliver through.
+	 *
+	 * `unknown` unless the listing actually succeeded. A read that failed, one
+	 * this viewer may not make, and a client that cannot make it at all are all
+	 * silence — and silence must not be rendered as "no delegation", which would
+	 * accuse a healthy source on the strength of the reader's permissions.
+	 */
+	const delegationOf = (source: DatasourceView): SourceDelegationState =>
+		delegations.isSuccess
+			? delegatedSourceIds.has(source.id)
+				? "active"
+				: "none"
+			: "unknown";
 	const collections = useQuery({
 		queryKey: ["collection-access", orgId],
 		queryFn: () => client.listCollections!(orgId),
@@ -468,6 +521,9 @@ function DatasourcesPanelView({
 	const handleSync = async (source: DatasourceView) => {
 		setSyncNotice(null);
 		setActionError(null);
+		// Pressing Sync is what makes this source the one worth a card; the others
+		// stay as lines.
+		setWatchedSourceId(source.id);
 		setSyncingIds((prev) => new Set(prev).add(source.id));
 		// Per-call callbacks on a shared mutation only observe the latest call.
 		// Await each request so every row reports its result and clears pending.
@@ -503,6 +559,20 @@ function DatasourcesPanelView({
 	};
 
 	const sources = list.data ?? [];
+	// Resolved from the list rather than held as a view, so a source deleted or
+	// renamed under the card stops being the watched one instead of pinning a
+	// stale copy of itself above the table.
+	//
+	// A single source keeps its card with nobody pressing anything: there is
+	// nothing for it to stack against, and collapsing the only sync on the page
+	// to a line would take the live bar away from the organizations most likely
+	// to be watching one — which is the opposite of what this panel is for. The
+	// collapse exists for the many-source case that produced a stack.
+	const watchedSource = watchedSourceId
+		? sources.find((source) => source.id === watchedSourceId)
+		: sources.length === 1
+			? sources[0]
+			: undefined;
 	const boundaries = useMemo(() => {
 		const byNode = new Map<string, AccessibleScopeView>();
 		for (const scope of (scopes.isError ? [] : scopes.data) ?? [])
@@ -613,22 +683,54 @@ function DatasourcesPanelView({
 					/>
 				)}
 
-				{/* One card per source whose sync is worth watching, above the table so
-				    a reader who just pressed Sync does not have to find the row again. */}
-				{client.getSourceSync &&
-					sources.map((source) => (
-						<SourceSyncWatch
-							key={source.id}
-							client={client}
-							orgId={orgId}
-							source={source}
-							onOpenExecution={
-								renderSourceExecution
-									? () => setExecutionSource(source)
-									: undefined
-							}
-						/>
-					))}
+				{/* The sync the reader acted on gets a card, above the table so they do
+				    not have to find the row again. Every other sync in flight gets one
+				    line.
+
+				    It used to be a card each, for every source, unconditionally. The
+				    ten-minute window bounded how LONG a finished card stayed, never how
+				    MANY stood at once — so an organization whose sources are on a
+				    reconcile schedule had a card per source, each with a headline, a
+				    bar, a step line, counts and a detail, stacked above the table they
+				    are meant to introduce, with nobody having pressed anything. Every
+				    source is still watched: that is how the data arrives, and the watch
+				    now stops its clock once it has nothing left to show. */}
+				{client.getSourceSync && (
+					<>
+						{watchedSource && (
+							<SourceSyncWatch
+								key={watchedSource.id}
+								client={client}
+								orgId={orgId}
+								source={watchedSource}
+								display="card"
+								canManage={canManage}
+								delegation={delegationOf(watchedSource)}
+								onOpenExecution={
+									renderSourceExecution
+										? () => setExecutionSource(watchedSource)
+										: undefined
+								}
+							/>
+						)}
+						<ul className="space-y-2 empty:hidden">
+							{sources
+								.filter((source) => source.id !== watchedSource?.id)
+								.map((source) => (
+									<SourceSyncWatch
+										key={source.id}
+										client={client}
+										orgId={orgId}
+										source={source}
+										display="line"
+										canManage={canManage}
+										delegation={delegationOf(source)}
+										onExpand={() => setWatchedSourceId(source.id)}
+									/>
+								))}
+						</ul>
+					</>
+				)}
 
 				{executionSource && renderSourceExecution && (
 					<SourceExecution
@@ -652,39 +754,44 @@ function DatasourcesPanelView({
 				{listQuiet ? null : listIndicator ? (
 					<PanelMessage>Loading data sources…</PanelMessage>
 				) : list.isError ? (
-					<PanelMessage tone="error">
-						Couldn&apos;t load data sources. Retry shortly or check the service
-						status.
-					</PanelMessage>
+					/* The kit's own error and empty blocks, rather than a bordered div
+					   and a paragraph assembled here: this panel's reported problem is
+					   its layout, and these were the two places it declined the
+					   containers every other surface in the product uses. */
+					<ErrorState
+						title="Couldn't load data sources."
+						detail="Retry shortly or check the service status."
+					/>
 				) : sources.length === 0 ? (
-					<div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
-						<p className="type-emphasis">No data sources connected.</p>
-						{canManage ? (
-							<>
-								<p className="type-body text-muted-foreground">
-									Connect a GitHub repository to start ingesting.
-								</p>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => setShowConnect(true)}
-								>
-									Connect a repository
-								</Button>
-							</>
-						) : (
-							<p className="type-body text-muted-foreground">
-								An organization administrator connects the repositories this
-								organization ingests from.
-							</p>
+					<EmptyState
+						heading="No data sources connected."
+						description={
+							canManage
+								? "Connect a GitHub repository to start ingesting."
+								: "An organization administrator connects the repositories this organization ingests from."
+						}
+					>
+						{canManage && (
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => setShowConnect(true)}
+							>
+								Connect a repository
+							</Button>
 						)}
-					</div>
+					</EmptyState>
 				) : (
 					<SourcesTable
 						canManage={canManage}
 						onActivity={client.listActivity ? setActivitySource : undefined}
 						onExecution={renderSourceExecution ? setExecutionSource : undefined}
 						onReconnect={(source) => {
+							// A reconnect already in flight owns the form. Switching under
+							// it let the first request's own completion close the form the
+							// reader had just opened for a second source and report the
+							// first one's repository in the notice.
+							if (reconnectPending) return;
 							setReconnectError(undefined);
 							setReconnecting(source);
 						}}
@@ -698,6 +805,7 @@ function DatasourcesPanelView({
 						onSync={handleSync}
 						onDelete={handleDelete}
 						renderSourceDetail={renderSourceDetail}
+						delegationOf={delegationOf}
 					/>
 				)}
 			</section>
@@ -807,42 +915,83 @@ function DatasourcesPanelView({
 				</p>
 			)}
 
-			{canManage && reconnecting && (
-				<ReconnectSource
-					source={reconnecting}
-					credentialOptional={reconnectSource !== undefined}
-					pending={reconnectPending}
-					error={reconnectError}
-					onCancel={() => {
-						if (!reconnectPending) setReconnecting(null);
-					}}
-					onSubmit={async (token) => {
-						setReconnectPending(true);
-						setReconnectError(undefined);
-						try {
-							const jobId = reconnectSource
-								? await reconnectSource(
-										orgId,
-										reconnecting.id,
-										token || undefined,
-									)
-								: await client.syncSource(orgId, reconnecting.id, token);
-							setSyncNotice(
-								token
-									? `Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`
-									: `Reconnected. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`,
-							);
-							setReconnecting(null);
-							onSyncEnqueued?.(jobId);
-							await list.refetch();
-						} catch (error) {
-							setReconnectError(messageOf(error));
-						} finally {
-							setReconnectPending(false);
-						}
-					}}
-				/>
-			)}
+			{/* In a modal dialog, which is what fixes where this used to appear. It
+			    rendered as the last child of this panel, AFTER the whole Collection
+			    access section — so pressing Reconnect in a row's menu mounted a form
+			    off-screen beneath an unrelated heading, with nothing scrolled, nothing
+			    focused and nothing announced, while Base UI returned focus to the
+			    "More" button the reader had just left. The dialog portals out of the
+			    document flow, traps focus, names itself, and closes on Escape, so
+			    where it sits in this tree no longer decides where it appears. */}
+			<Dialog
+				open={canManage && !!reconnecting}
+				onOpenChange={(open) => {
+					// A request in flight owns the form until it settles: closing under
+					// it would strand a credential the host may already have accepted.
+					if (!open && !reconnectPending) setReconnecting(null);
+				}}
+			>
+				{canManage && reconnecting && (
+					<DialogContent>
+						<DialogHeader>
+							<DialogTitle>Reconnect {reconnecting.repo}</DialogTitle>
+							<DialogDescription>
+								{reconnectSource !== undefined
+									? "Its syncs will run on your behalf from now on. Enter a new PAT to replace the saved one, or leave it empty for a public repository. A sync starts right away; your source, collection, content, and history are preserved."
+									: "Replace the saved PAT and start a sync. Your source, collection, content, and history are preserved."}
+							</DialogDescription>
+						</DialogHeader>
+						<ReconnectSource
+							// Keyed by source, so switching from one row's Reconnect to
+							// another's remounts the form with an empty field. Without it
+							// React kept the instance — the same position, the same element
+							// type — and with it the PAT typed for the first source, shown as
+							// dots that read as the saved credential, which the next submit
+							// would have stored against the second source.
+							key={reconnecting.id}
+							source={reconnecting}
+							credentialOptional={reconnectSource !== undefined}
+							pending={reconnectPending}
+							error={reconnectError}
+							onCancel={() => {
+								if (!reconnectPending) setReconnecting(null);
+							}}
+							onSubmit={async (token) => {
+								setReconnectPending(true);
+								setReconnectError(undefined);
+								try {
+									const jobId = reconnectSource
+										? await reconnectSource(
+												orgId,
+												reconnecting.id,
+												token || undefined,
+											)
+										: await client.syncSource(orgId, reconnecting.id, token);
+									setSyncNotice(
+										token
+											? `Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`
+											: `Reconnected. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`,
+									);
+									// The sync this just queued is the one worth a card.
+									setWatchedSourceId(reconnecting.id);
+									setReconnecting(null);
+									onSyncEnqueued?.(jobId);
+									// Reconnecting delegates the source again, so the delegation
+									// listing is stale the moment this succeeds — and that listing is
+									// what decides whether the card says the source has nothing to
+									// deliver through.
+									await list.refetch();
+									if (delegations.isSuccess) await delegations.refetch();
+								} catch (error) {
+									setReconnectError(messageOf(error));
+								} finally {
+									setReconnectPending(false);
+								}
+							}}
+						/>
+					</DialogContent>
+				)}
+			</Dialog>
 			{canManage && showConnect && (
 				<ConnectGitHubForm
 					// Both legs or neither: an install the panel cannot redeem on the
@@ -999,7 +1148,16 @@ const statusPresentation: Record<
  * whatever its status: it keeps running, and the flag says why its provider
  * cannot be connected again.
  */
-function StatusCell({ source }: { source: DatasourceView }) {
+function StatusCell({
+	source,
+	delegation,
+	canManage,
+}: {
+	source: DatasourceView;
+	delegation: SourceDelegationState;
+	/** False adds who performs the remedies this cell names. */
+	canManage: boolean;
+}) {
 	const presentation =
 		source.status === "active" ? undefined : statusPresentation[source.status];
 	return (
@@ -1009,13 +1167,33 @@ function StatusCell({ source }: { source: DatasourceView }) {
 					{presentation.label}
 				</Badge>
 			)}
+			{/* A source with no active delegation keeps syncing and keeps reporting
+			    those syncs as handed off — the host's hand-off jobs genuinely
+			    succeed — while the consuming module refuses every one of them at its
+			    own admission, which the host cannot see. This is the one half of that
+			    the host CAN see, and saying it in the row is what makes it legible
+			    before a sync runs rather than after one appears to have worked.
+			    `unknown` says nothing: see `delegationOf`. */}
+			{delegation === "none" && (
+				<>
+					<Badge tone="warning" dot>
+						No delegation
+					</Badge>
+					<p className="type-caption-plain text-muted-foreground">
+						Nothing this source hands off can be accepted until someone
+						reconnects it.
+					</p>
+				</>
+			)}
 			{source.statusReason && (
 				<p className="type-caption-plain">{source.statusReason}</p>
 			)}
 			{source.status === "degraded" && (
 				<p className="type-caption-plain text-muted-foreground">
-					Scheduled pulls have stopped; use Sync to retry once the cause is
-					fixed. Content already ingested stays readable.
+					Scheduled pulls have stopped;{" "}
+					{canManage ? "use Sync" : "an organization administrator uses Sync"}{" "}
+					to retry once the cause is fixed. Content already ingested stays
+					readable.
 				</p>
 			)}
 			{source.conformant === false && (
@@ -1052,6 +1230,7 @@ function SourcesTable({
 	onReconnect,
 	onMigrateToApp,
 	renderSourceDetail,
+	delegationOf,
 }: {
 	canManage: boolean;
 	sources: DatasourceView[];
@@ -1068,6 +1247,8 @@ function SourcesTable({
 	onReconnect: (source: DatasourceView) => void;
 	onMigrateToApp?: (source: DatasourceView) => void;
 	renderSourceDetail?: (source: DatasourceView) => ReactNode;
+	/** Whether each source still has an active delegation, or nothing is known. */
+	delegationOf: (source: DatasourceView) => SourceDelegationState;
 }) {
 	// A viewer who manages nothing is offered nothing to do but read a row's
 	// history or its execution, so the column is there only when there is
@@ -1112,7 +1293,11 @@ function SourcesTable({
 								)}
 							</TableCell>
 							<TableCell className={cn(cellClass, wrapClass)}>
-								<StatusCell source={source} />
+								<StatusCell
+									source={source}
+									delegation={delegationOf(source)}
+									canManage={canManage}
+								/>
 							</TableCell>
 							<TableCell className={cellClass}>
 								{source.paths.length === 0 ? (
@@ -1296,33 +1481,70 @@ function BoundaryCell({
 }
 
 /**
- * How long a finished sync's card stays up. Its result belongs on the surface
- * that ran it for long enough to be read, and no longer: History is where an
- * older sync lives, and a panel that keeps every outcome becomes a list of
- * cards above the table it is meant to introduce.
+ * One sync as a single line, for a source the reader did not ask about.
  *
- * A failure is not special-cased into permanence. The source's own Status cell
- * carries a source that went degraded, and that one does not age out.
+ * Says what the card's first line says — which source, what state, where on the
+ * ladder — and offers the card. Enough to see at a glance that six scheduled
+ * syncs are running and that none of them has failed, without six cards.
  */
-const SETTLED_SYNC_VISIBLE_MS = 600_000;
+function SourceSyncLine({
+	source,
+	report,
+	onExpand,
+}: {
+	source: DatasourceView;
+	report: SyncProgressReport;
+	onExpand: () => void;
+}) {
+	return (
+		<li className="flex items-center justify-between gap-3 border-t pt-2">
+			<div className="flex min-w-0 items-center gap-2">
+				<Badge tone={report.tone}>{syncStateLabel[report.state]}</Badge>
+				<span className="truncate type-body">{source.repo}</span>
+				<span className="shrink-0 type-body text-muted-foreground">
+					Step {report.step} of {report.stepCount}
+				</span>
+			</div>
+			<Button
+				type="button"
+				variant="ghost"
+				size="sm"
+				aria-label={`Show the sync of ${source.repo}`}
+				onClick={onExpand}
+			>
+				Show
+			</Button>
+		</li>
+	);
+}
 
 /**
- * One source's live sync, or nothing.
+ * One source's live sync, as a card or as a line, or nothing.
  *
  * A component per source rather than a loop over one hook, so each row's watch
  * has its own query and mounting a new source cannot change how many hooks the
- * panel calls.
+ * panel calls. Every source is watched whichever way it displays: the watch is
+ * how the sync is discovered at all, including one a schedule or a webhook
+ * started.
  */
 function SourceSyncWatch({
 	client,
 	orgId,
 	source,
+	display,
+	delegation,
+	canManage,
 	onOpenExecution,
+	onExpand,
 }: {
 	client: DatasourceClient;
 	orgId: string;
 	source: DatasourceView;
+	display: "card" | "line";
+	delegation: SourceDelegationState;
+	canManage: boolean;
 	onOpenExecution?: () => void;
+	onExpand?: () => void;
 }) {
 	// `now` comes from the hook's ticking clock rather than being read here: a
 	// stalled sync produces an identical read on every poll, so the clock
@@ -1330,24 +1552,24 @@ function SourceSyncWatch({
 	// render would make two renders of the same data disagree.
 	const { sync, report, now } = useSourceSync(client, orgId, source);
 	if (!sync || !report) return null;
-	if (!report.active) {
-		const finishedAt = sync.finishedAt
-			? Date.parse(sync.finishedAt)
-			: Number.NaN;
-		// An unparseable or absent finish stamp on a settled sync says nothing
-		// about how old it is, so it is treated as old: showing it would pin a
-		// card of unknown age above the table for as long as the page is open.
-		if (
-			Number.isNaN(finishedAt) ||
-			now - finishedAt > SETTLED_SYNC_VISIBLE_MS
-		) {
-			return null;
-		}
+	// A settled sync is shown while it is still fresh. The window is the hook's,
+	// because it also decides when the clock has nothing left to change.
+	if (!report.active && !withinSettledWindow(sync, now)) return null;
+	if (display === "line") {
+		return (
+			<SourceSyncLine
+				source={source}
+				report={report}
+				onExpand={onExpand ?? (() => {})}
+			/>
+		);
 	}
 	return (
 		<SourceSyncProgress
 			source={source}
 			report={report}
+			delegation={delegation}
+			canManage={canManage}
 			{...(onOpenExecution ? { onOpenExecution } : {})}
 		/>
 	);

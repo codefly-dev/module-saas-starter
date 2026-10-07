@@ -1720,3 +1720,164 @@ describe("DatasourcesPanel for a viewer who manages nothing", () => {
 		expect(link.getAttribute("href")).toBe("/admin/datasources");
 	});
 });
+
+it("asks for the replacement credential in a modal dialog, not at the foot of the page", async () => {
+	// It used to render as the last child of the panel, AFTER the whole Collection
+	// access section: pressing Reconnect mounted a form off-screen beneath an
+	// unrelated heading, with nothing scrolled, nothing focused and nothing
+	// announced, while Base UI returned focus to the "More" button.
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	await openRowActions();
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
+
+	const dialog = await screen.findByRole("dialog");
+	expect(dialog.textContent).toContain(
+		"Reconnect codefly-dev/module-saas-starter",
+	);
+	// The form is inside the dialog, so it cannot be anywhere else on the page.
+	expect(
+		dialog.querySelector("form[aria-label='Reconnect GitHub source']"),
+	).toBeTruthy();
+	// And focus went with it, rather than staying on the menu trigger.
+	await waitFor(() =>
+		expect(dialog.contains(document.activeElement)).toBe(true),
+	);
+});
+
+it("never carries a credential typed for one source into another", async () => {
+	// The form had no `key`, so React kept the same instance — and with it the PAT
+	// typed for the first source, shown as dots that read as the saved credential,
+	// which the next submit would have stored against the second.
+	const client = fakeClient({
+		listSources: vi.fn(async () => [sampleSource, secondSource]),
+	});
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+	const menus = await screen.findAllByRole("button", {
+		name: /^More actions for /,
+	});
+	fireEvent.click(menus[0]);
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
+	fireEvent.change(screen.getByLabelText("New GitHub PAT"), {
+		target: { value: "token-for-the-first-source" },
+	});
+
+	// Straight to the other row's Reconnect, without closing the form.
+	fireEvent.click(menus[1]);
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
+
+	const dialog = await screen.findByRole("dialog");
+	expect(dialog.textContent).toContain("Reconnect codefly-dev/other-repo");
+	expect(
+		(screen.getByLabelText("New GitHub PAT") as HTMLInputElement).value,
+	).toBe("");
+});
+
+it("will not switch the reconnect form while a reconnect is in flight", async () => {
+	// The in-flight request's own completion closed the form the reader had just
+	// opened for a second source, and reported the first one's repository.
+	let release: (jobId: string) => void = () => {};
+	const client = fakeClient({
+		listSources: vi.fn(async () => [sampleSource, secondSource]),
+		syncSource: vi.fn(
+			() =>
+				new Promise<string>((resolve) => {
+					release = resolve;
+				}),
+		),
+	});
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+	const menus = await screen.findAllByRole("button", {
+		name: /^More actions for /,
+	});
+	fireEvent.click(menus[0]);
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
+	fireEvent.change(screen.getByLabelText("New GitHub PAT"), {
+		target: { value: "first-token" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Reconnect and sync" }));
+	await screen.findByRole("button", { name: "Validating and reconnecting…" });
+
+	fireEvent.click(menus[1]);
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
+
+	// Still the first source's form, still validating.
+	expect((await screen.findByRole("dialog")).textContent).toContain(
+		"Reconnect codefly-dev/module-saas-starter",
+	);
+
+	await act(async () => {
+		release("job-1");
+	});
+});
+
+it("says in the row when a source has no delegation to deliver through", async () => {
+	// The host's hand-off jobs succeed and the sync reports handed off; the
+	// consuming module refuses every one at its own admission, which the host
+	// cannot see. This is the half it can see, said before a sync runs rather than
+	// after one appears to have worked.
+	const client = fakeClient({
+		listSources: vi.fn(async () => [sampleSource, secondSource]),
+		listSourceDelegations: vi.fn(async () => [
+			{
+				id: "del-1",
+				sourceId: "ds-2",
+				module: "example-module",
+				binding: "ingest",
+			},
+		]),
+	});
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+	expect(await screen.findByText("No delegation")).toBeTruthy();
+	// Exactly the source without one, never the source that has it.
+	expect(screen.getAllByText("No delegation").length).toBe(1);
+	expect(
+		screen.getByText(/Nothing this source hands off can be accepted/),
+	).toBeTruthy();
+});
+
+it("accuses no source when the delegation listing cannot be read", async () => {
+	// A failed read, a read this viewer may not make, and a client that cannot
+	// make it are all silence; rendering silence as "no delegation" would accuse a
+	// healthy source on the strength of the reader's permissions.
+	const client = fakeClient({
+		listSources: vi.fn(async () => [sampleSource]),
+		listSourceDelegations: vi.fn(async () => {
+			throw new ConnectError("nope", Code.PermissionDenied);
+		}),
+	});
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+	await screen.findByText("codefly-dev/module-saas-starter");
+	await waitFor(() => expect(client.listSourceDelegations).toHaveBeenCalled());
+	expect(screen.queryByText("No delegation")).toBeNull();
+});
+
+it("does not ask for delegations as a member, and says who reconnects instead", async () => {
+	// The host's policy on the delegation listing is organization-administrator
+	// only, so a member's panel calling it would turn a refusal the reader cannot
+	// act on into the panel's own error.
+	const client = fakeClient({
+		listSources: vi.fn(async () => [
+			{
+				...sampleSource,
+				status: "degraded" as const,
+				statusReason: "the stored credential was rejected by GitHub (401)",
+			},
+		]),
+		listSourceDelegations: vi.fn(async () => []),
+	});
+	renderWithClient(
+		<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+	);
+
+	await screen.findByText("codefly-dev/module-saas-starter");
+	expect(client.listSourceDelegations).not.toHaveBeenCalled();
+	// And the remedy this row names is attributed, since the reader has no Sync.
+	expect(
+		screen.getByText(/an organization administrator uses Sync/),
+	).toBeTruthy();
+});

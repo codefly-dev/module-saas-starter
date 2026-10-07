@@ -260,6 +260,24 @@ export interface SourceSyncView {
 	maxAttempts: number;
 }
 
+/**
+ * One ACTIVE source delegation: that a person, by connecting the source,
+ * delegated its sync to an installed operation binding of the consuming module.
+ *
+ * Revoked delegations are not modelled. The panel's whole question is whether a
+ * source still has something to deliver through, and a view that could hold a
+ * revoked row would make "there is a delegation" and "the delegation works" the
+ * same shape — the distinction this type exists to keep.
+ */
+export interface SourceDelegationView {
+	id: string;
+	sourceId: string;
+	/** The consuming module's registration prefix. */
+	module: string;
+	/** The key of the module's `operation_audiences` entry it confers. */
+	binding: string;
+}
+
 export interface DatasourceClient {
 	listCollections?(orgId: string): Promise<CollectionAccessView[]>;
 	listGrantSubjects?(orgId: string): Promise<CollectionGrantSubject[]>;
@@ -302,6 +320,23 @@ export interface DatasourceClient {
 		sourceId: string,
 		jobId?: string,
 	): Promise<SourceSyncView | undefined>;
+	/**
+	 * Lists the organization's source delegations, active ones only.
+	 *
+	 * Without a delegation nothing the host hands off can be admitted by the
+	 * consuming module, and the host cannot see that refusal in its own job
+	 * records: a sync whose every hand-off was *delivered* is `done` whatever
+	 * the module then did with it. This read is what lets the panel say the
+	 * source has nothing to deliver *through*, rather than reporting a sync that
+	 * went nowhere as a success.
+	 *
+	 * Organization administrators only, which is what the host's own policy on
+	 * `ListSourceDelegations` requires — so a member's panel must not call it
+	 * and is told who can instead. Optional so a consumer adapting its own
+	 * client keeps compiling; absent, the panel claims nothing about delegation
+	 * either way rather than guessing from its absence.
+	 */
+	listSourceDelegations?(orgId: string): Promise<SourceDelegationView[]>;
 	deleteSource(orgId: string, id: string): Promise<void>;
 	/**
 	 * Enumerates the caller’s readable collection boundaries; failure must

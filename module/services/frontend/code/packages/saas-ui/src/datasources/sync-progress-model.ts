@@ -34,7 +34,12 @@ export type SyncStepName = (typeof SYNC_STEPS)[number];
  * - `retrying` — the host failed an attempt and will try again. It carries the
  *   reason, because a tenant can often act on it (a bad credential) before the
  *   retry lands.
- * - `done` — finished, with a change set.
+ * - `done` — finished, with a change set, and every hand-off accepted by the
+ *   consuming module's queue. That is the whole of what the host knows, and it
+ *   is NOT "ingested": the host reaches this state on `handoff.Succeeded >=
+ *   handoff.Jobs`, so a module that takes the message and then refuses it at
+ *   its own admission leaves this sync `done`. Nothing here may say the content
+ *   arrived; only the module that ingests it can say that.
  * - `unchanged` — finished, having handed nothing off: the source had not
  *   moved. Distinct from `done` because "0 files" reads as a failure otherwise.
  * - `failed` — the host stopped retrying.
@@ -96,6 +101,19 @@ export interface SyncProgressReport {
  */
 export const DEFAULT_STALL_AFTER_MS = 120_000;
 
+/**
+ * How long a sync may wait for a worker before the view says so.
+ *
+ * Deliberately far longer than `DEFAULT_STALL_AFTER_MS`, because waiting in a
+ * queue is not a phase failing to advance. The host stamps `queued` from the
+ * job's creation, so one threshold for both made every sync that waited two
+ * minutes behind a busy queue report "No progress" with a warning — a warning
+ * for the system working exactly as designed, which is the quickest way to
+ * teach a tenant to ignore warnings. A queue that has produced no worker in a
+ * quarter of an hour is worth saying out loud; two minutes of it is not.
+ */
+export const DEFAULT_QUEUE_STALL_AFTER_MS = 900_000;
+
 const STEP_OF: Record<SyncStepName, number> = {
 	queued: 1,
 	fetching: 2,
@@ -103,19 +121,37 @@ const STEP_OF: Record<SyncStepName, number> = {
 	handed_off: 4,
 };
 
-/** The phase the ladder is on, or undefined for a phase that is not a step. */
-function stepOf(view: SourceSyncView): number {
-	const step = STEP_OF[view.phase as SyncStepName];
-	if (step) return step;
-	// `done` sits past the ladder; `failed` and `unknown` are placed by the
-	// furthest timestamp the host stamped, so a failed sync's bar still shows
-	// how far it had got.
-	if (view.phase === "done") return SYNC_STEPS.length;
+/**
+ * The furthest step the host stamped a time for.
+ *
+ * Read in its own right rather than only as a fallback for a phase that is not
+ * a step: the stamps are the host's evidence, and the phase name alone can be
+ * behind them.
+ */
+function stampedStep(view: SourceSyncView): number {
 	if (view.handedOffAt) return 4;
 	if (view.compiledAt) return 3;
 	if (view.fetchingAt) return 2;
 	if (view.queuedAt) return 1;
 	return 0;
+}
+
+/**
+ * Where the sync is on the ladder: the furthest step the host has evidence for,
+ * never the phase name on its own.
+ *
+ * The host has no `retrying` phase. A job the queue is retrying is stamped
+ * `queued` — retrying rides on `failure.retrying` instead — while the stamps and
+ * the change set from the attempt that already ran stay on the record. Trusting
+ * the name sent the bar *backwards*: a sync that had fetched and compiled 162
+ * files reported "Step 1 of 4" at a quarter full, beside its own file counts,
+ * and then jumped to 100% when the retry landed.
+ *
+ * `done` sits past the ladder, so it is the one phase that outranks the stamps.
+ */
+function stepOf(view: SourceSyncView): number {
+	if (view.phase === "done") return SYNC_STEPS.length;
+	return Math.max(STEP_OF[view.phase as SyncStepName] ?? 0, stampedStep(view));
 }
 
 const STEP_HEADLINE: Record<SyncStepName, string> = {
@@ -175,8 +211,10 @@ function formatDuration(ms: number): string {
 export interface DescribeSyncOptions {
 	/** Now, in epoch ms. Injected so every state is testable without a fake clock. */
 	now?: number;
-	/** Overrides `DEFAULT_STALL_AFTER_MS`. */
+	/** Overrides `DEFAULT_STALL_AFTER_MS`, for a phase that should be advancing. */
 	stallAfterMs?: number;
+	/** Overrides `DEFAULT_QUEUE_STALL_AFTER_MS`, for a sync still waiting for a worker. */
+	queueStallAfterMs?: number;
 }
 
 /**
@@ -189,6 +227,8 @@ export function describeSync(
 ): SyncProgressReport {
 	const now = options.now ?? Date.now();
 	const stallAfterMs = options.stallAfterMs ?? DEFAULT_STALL_AFTER_MS;
+	const queueStallAfterMs =
+		options.queueStallAfterMs ?? DEFAULT_QUEUE_STALL_AFTER_MS;
 	const step = stepOf(view);
 	const stepCount = SYNC_STEPS.length;
 	const counts = countsOf(view);
@@ -269,11 +309,16 @@ export function describeSync(
 	// In flight. A phase that has not advanced for a long time is reported as
 	// such — with what it is waiting on and for how long — rather than left as a
 	// bar that looks alive.
+	//
+	// Waiting for a worker is held to its own, longer threshold and said in its
+	// own words: a queue is not a phase that stopped, and "No progress" over a
+	// sync the host simply has not started yet names a fault that is not there.
 	const enteredAt = enteredCurrentPhaseAt(view);
 	const waiting = enteredAt === undefined ? 0 : now - enteredAt;
 	const headline =
 		STEP_HEADLINE[view.phase as SyncStepName] ?? "Sync in progress";
-	if (waiting >= stallAfterMs) {
+	const queueing = view.phase === "queued";
+	if (waiting >= (queueing ? queueStallAfterMs : stallAfterMs)) {
 		return {
 			...base,
 			state: "stalling",
@@ -281,7 +326,9 @@ export function describeSync(
 			active: true,
 			percent: percentFor(step, stepCount),
 			headline,
-			detail: `No progress for ${formatDuration(waiting)}. The host has not given up; open the execution view for the durable attempts.`,
+			detail: queueing
+				? `No worker has taken this up for ${formatDuration(waiting)}. The host has not given up; open the execution view for the durable attempts.`
+				: `No progress for ${formatDuration(waiting)}. The host has not given up; open the execution view for the durable attempts.`,
 		};
 	}
 	return {

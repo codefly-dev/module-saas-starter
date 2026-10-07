@@ -289,34 +289,64 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
   transport you already own. Its `getSourceSync(orgId, sourceId)` reads a source's latest
   sync as typed phases (queued, fetching, compiled, handed off, done, failed) with a
-  timestamp for each, the compiled change set, and a typed failure.
+  timestamp for each, the compiled change set, and a typed failure. Its
+  `listSourceDelegations(orgId)` reads the organization's **active** delegations —
+  revoked rows are dropped, so every row that comes back is one a source can
+  still deliver through.
 - `onSourceSyncRequested((sourceId) => …)` — hears every sync the kit's client enqueues
   (Sync now, a reconnect, the first sync a connect starts), so a view rendering a source's
   progress in the panel's per-source slot can watch closely at once. It returns the
   unsubscribe. The registry lives on `globalThis`, so a remote's own copy of the kit hears
   the host panel.
-- **Live sync progress.** While a sync runs the panel shows a card per source
-  above the table: a phase bar (queued → fetching → compiled → handed off), the
-  compiled change set's counts, and — when it goes quiet or fails — what is
-  wrong. Every phase, count and failure sentence is the host's own projection,
+- **Live sync progress.** The sync the reader acted on gets a card above the
+  table: a phase bar (queued → fetching → compiled → handed off), the compiled
+  change set's counts, and — when it goes quiet or fails — what is wrong. Every
+  other sync in flight gets one line, with a control that promotes it to the
+  card. A single source keeps its card without anyone pressing anything, having
+  nothing to stack against. Every source is watched either way: that is how a
+  sync a webhook or a reconcile schedule started is discovered at all.
+  Every phase, count and failure sentence is the host's own projection,
   stamped from the durable sync and hand-off jobs; nothing is inferred from
   elapsed time. The read tightens to a two-second poll while a sync is active,
   slackens to thirty seconds once it settles, and is re-armed the instant
   `onSourceSyncRequested` fires, so the bar appears on the press rather than on
   the next interval. A card leaves the panel ten minutes after its sync
-  finished — an older sync lives in History.
-  Six states are distinguished, because collapsing any two of them misreports a
+  finished — an older sync lives in History — and the clock that ages it out
+  stops once it has, since moving it can no longer change anything.
+  Seven states are distinguished, because collapsing any two of them misreports a
   healthy sync: **queued**, **running**, **no progress** (a phase that has not
-  advanced for `DEFAULT_STALL_AFTER_MS`; still running, never called failed —
-  only the host may say that), **retrying** (the host failed an attempt and will
-  try again, with the reason and the wait), **done**, **no changes** (finished
-  having handed nothing off — the source had not moved, which is a success and
-  not an empty failure), and **failed**.
-- `describeSync(sync, { now, stallAfterMs })` → `SyncProgressReport` is that
+  advanced for `DEFAULT_STALL_AFTER_MS` — or, for a sync still waiting on a
+  worker, the much longer `DEFAULT_QUEUE_STALL_AFTER_MS`, because a queue is not
+  a phase that stopped and reporting queue depth as a fault teaches a reader to
+  ignore warnings; still running, never called failed, only the host may say
+  that), **retrying** (the host failed an attempt and will try again, with the
+  reason and the wait — note the host stamps `queued` for a retrying job, so the
+  bar stays at the furthest phase it actually reached), **handed off**, **no
+  changes** (finished having handed nothing off — the source had not moved, which
+  is a success and not an empty failure), and **failed**.
+  **"Handed off" is not "ingested".** The host reaches that state when every
+  hand-off was *delivered* to the consuming module's queue, and it never learns
+  what the module then did with it — so a module that accepts the message and
+  refuses it at its own admission leaves the sync handed off. Only the module
+  that ingests the files can say they arrived.
+- **Delegation health.** A source syncs and hands off only as long as it has an
+  active delegation; without one the consuming module refuses every hand-off at
+  its own admission, which the host cannot see in its own job records. With
+  `listSourceDelegations` on the client the panel reads the organization's active
+  delegations once for the whole table and says, in the row and on the card, that
+  a source has nothing to deliver through — before a sync runs rather than after
+  one appears to have worked. The host's policy makes that listing organization
+  administrators only, so a member's panel does not call it and is told who
+  reconnects a source instead. A listing that is absent, refused or failed claims
+  nothing either way: silence is never rendered as "no delegation".
+- `describeSync(sync, { now, stallAfterMs, queueStallAfterMs })` →
+  `SyncProgressReport` is that
   decision as a pure function, exported so a consumer can render the same states
   in its own shell — a line in a header, say — without re-deriving them from the
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
-  report />` is the card, and `useSourceSync(client, orgId, source)` the read.
+  report delegation canManage />` is the card, `syncStateLabel` its state words,
+  and `useSourceSync(client, orgId, source)` the read; `withinSettledWindow`
+  decides whether a finished sync is still fresh enough to show.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
 
