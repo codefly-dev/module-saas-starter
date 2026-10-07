@@ -62,8 +62,9 @@ Promotion requires a released CLI with Core's consumer-derived allow-list
 support and the audit promotion driver from
 [CLI PR 919](https://github.com/codefly-dev/cli/pull/919). Merge the CLI change,
 release that compatible CLI, then promote this kit cutover. The module agent,
-accounts catalog generator, and module tools require stable Core 0.14 or later,
-which accepts these declarations and derives consumer access. Core 0.13 refuses
+accounts, auth-gateway, store migrator, and module tools require stable Core 0.14
+or later to load these declarations and derive consumer access. The runtime SDK
+also loads the module when resolving local endpoints or secrets. Core 0.13 refuses
 internal interface exports without an authored list. The CI pin at CLI 0.1.171
 still loads the module with its older Core 0.7, but does not derive cross-module
 access: an internal endpoint with no authored list denies other modules. It is
