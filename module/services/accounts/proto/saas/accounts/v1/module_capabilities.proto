@@ -30,6 +30,28 @@ import "saas/policy/v1/options.proto";
 // a principal explicitly granted cross-tenant authority may operate on other
 // tenants and enqueue global inbox work.
 //
+// REFUSALS. Every refusal of the CALLER is Unauthenticated or PermissionDenied
+// — an identity it cannot prove, a principal no composition registered, a
+// tenant it is not bound to, a queue or namespace its grant does not cover —
+// and so is the endpoint refusing a procedure it does not serve. A person this
+// surface is asked to act on who is not a member of the named tenant is
+// instead FAILED_PRECONDITION, so a module driving this surface from a journal
+// with retries can drop the work for a departed person without also dropping
+// it for a composition whose MODULE_PRINCIPALS entry or identity secret is
+// wrong.
+//
+// FAILED_PRECONDITION ALONE IS NOT A DISCRIMINATOR. This surface answers it to
+// several unrelated facts — a non-member person, an idempotency key reused for
+// different content, a viewer whose visibility set is too large to serve whole
+// — so a consumer keys on the google.rpc.ErrorInfo reason, under domain
+// saas.accounts.v1, and never on the code alone or on the message text. On the
+// notify and subject-visibility methods every FAILED_PRECONDITION names one:
+// TENANT_MEMBERSHIP_MISSING, NOTIFICATION_IDEMPOTENCY_CONFLICT, or
+// SUBJECT_VISIBILITY_SET_TOO_LARGE. Note that the Mint* exchanges' own
+// refusals carry reasons under a different domain
+// (accounts.saas.codefly.dev), so a reason is read together with the domain
+// the same call answered with.
+//
 // Jobs reuse the saas.jobs.v1 envelope, lease, and lifecycle verbatim. Because
 // the caller cannot join the saas transaction, the module producer contract is
 // at-least-once with idempotency keys (unlike the in-process producer, which
@@ -1114,7 +1136,10 @@ service ModuleCapabilitiesService {
     };
   }
 
-  // EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+  // EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+  // subject-scoped job whose subject is not a member of the tenant is
+  // FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+  // and key on the reason rather than the code.
   rpc EnqueueJob(ModuleEnqueueJobRequest) returns (ModuleEnqueueJobResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1184,7 +1209,12 @@ service ModuleCapabilitiesService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
-  // NotifyUser delivers a notification subject to category policy.
+  // NotifyUser delivers a notification subject to category policy. A recipient
+  // who is not a member of the tenant is FAILED_PRECONDITION with reason
+  // TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+  // already used for different content is FAILED_PRECONDITION too, with reason
+  // NOTIFICATION_IDEMPOTENCY_CONFLICT, so the reason — not the code — says
+  // which of the two happened; see REFUSALS.
   rpc NotifyUser(ModuleNotifyUserRequest) returns (ModuleNotifyUserResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1199,7 +1229,9 @@ service ModuleCapabilitiesService {
     };
   }
   // NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-  // see the request.
+  // see the request. It names no recipient, so it has no non-member refusal; an
+  // idempotency_key already used for different content is FAILED_PRECONDITION
+  // with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
   rpc NotifyOrgAdmins(ModuleNotifyOrgAdminsRequest) returns (ModuleNotifyOrgAdminsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1291,7 +1323,11 @@ service ModuleCapabilitiesService {
     };
   }
   // ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-  // whole set of other subjects whose rows that viewer may read.
+  // whole set of other subjects whose rows that viewer may read. A viewer who
+  // is not a member of the tenant is FAILED_PRECONDITION with reason
+  // TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+  // FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+  // the reason tells a consumer which it got.
   rpc ListSubjectVisibility(ModuleListSubjectVisibilityRequest) returns (ModuleListSubjectVisibilityResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL

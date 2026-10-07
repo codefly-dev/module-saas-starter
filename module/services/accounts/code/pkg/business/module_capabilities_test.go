@@ -15,6 +15,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -187,6 +188,28 @@ func requireCode(t *testing.T, err error, want codes.Code) {
 	}
 }
 
+// requireRefusal asserts a refusal's code and the google.rpc.ErrorInfo reason a
+// consumer keys on, since it may not match the message text. A want of "" means
+// the refusal names no reason at all.
+func requireRefusal(t *testing.T, err error, want codes.Code, wantReason string) {
+	t.Helper()
+	requireCode(t, err, want)
+	var reason string
+	for _, detail := range status.Convert(err).Details() {
+		info, ok := detail.(*errdetails.ErrorInfo)
+		if !ok {
+			continue
+		}
+		reason = info.GetReason()
+		if domain := info.GetDomain(); domain != "saas.accounts.v1" {
+			t.Fatalf("reason %q carries domain %q", reason, domain)
+		}
+	}
+	if reason != wantReason {
+		t.Fatalf("refusal reason = %q, want %q (%v)", reason, wantReason, err)
+	}
+}
+
 func TestModuleEnqueueJob_UnknownPrincipalRejected(t *testing.T) {
 	svc := newModuleService(t, &fakeJobBackend{})
 	_, err := svc.ModuleEnqueueJob(context.Background(),
@@ -224,7 +247,7 @@ func TestModuleEnqueueJob_SubjectScopeRequiresMembership(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc := newModuleServiceWithStore(t, fakeTxStore{members: map[string]bool{}}, backend, false)
 	_, err := svc.ModuleEnqueueJob(context.Background(), moduleCaller(), moduleTenantA, subjectScopedJob(moduleUserA, "documents"))
-	requireCode(t, err, codes.PermissionDenied)
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
 	if len(backend.enqueued) != 0 {
 		t.Fatalf("no job should be enqueued for a non-member subject, got %d", len(backend.enqueued))
 	}
@@ -790,13 +813,65 @@ func (s *notifyRecordingStore) CreateNotification(context.Context, *business.Not
 
 // TestModuleNotifyUser_NonMemberRejected pins the fix for cross-tenant
 // notification injection: notifying a user who is not a member of the tenant is
-// denied before any notification is created.
+// refused before any notification is created.
 func TestModuleNotifyUser_NonMemberRejected(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{members: map[string]bool{}}, &fakeJobBackend{}, false)
 	_, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
 		Tenant: moduleTenantA, UserID: moduleUserA, Title: "Reset your password", Body: "click", Type: "info", Category: "security",
 	})
-	requireCode(t, err, codes.PermissionDenied)
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
+}
+
+// A module driving this surface from a journal with retries has to decide what a
+// refusal means. A recipient who is no longer a member is final for that
+// recipient and nothing a retry resolves; a composition missing its
+// MODULE_PRINCIPALS entry, or naming a tenant it was never bound to, is an
+// operator's to fix and its work is worth holding. So only the member fact
+// answers FailedPrecondition with a reason, and every refusal of the caller
+// keeps PermissionDenied (or Unauthenticated) and names none — a sentinel built
+// on the reason matches the departed recipient alone.
+func TestModuleSurfaceSeparatesANonMemberFromAModuleSideRefusal(t *testing.T) {
+	noMembers := func() fakeTxStore { return fakeTxStore{members: map[string]bool{}} }
+	surfaces := map[string]func(*testing.T, fakeTxStore, business.ModuleCaller, string) error{
+		"NotifyUser": func(t *testing.T, store fakeTxStore, caller business.ModuleCaller, tenant string) error {
+			svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+			_, err := svc.ModuleNotifyUser(context.Background(), caller, business.ModuleNotifyUserInput{
+				Tenant: tenant, UserID: moduleUserA, Title: "Title", Body: "Body", Type: "info", Category: "product",
+			})
+			return err
+		},
+		"EnqueueJob": func(t *testing.T, store fakeTxStore, caller business.ModuleCaller, tenant string) error {
+			svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+			_, err := svc.ModuleEnqueueJob(context.Background(), caller, tenant, subjectScopedJob(moduleUserA, "documents"))
+			return err
+		},
+		"ListSubjectVisibility": func(t *testing.T, store fakeTxStore, caller business.ModuleCaller, tenant string) error {
+			visibility := &fakeVisibilityStore{fakeTxStore: store}
+			_, err := newVisibilityService(t, visibility, false).ModuleListSubjectVisibility(context.Background(), caller, tenant, moduleUserA)
+			return err
+		},
+	}
+	for name, call := range surfaces {
+		t.Run(name, func(t *testing.T) {
+			requireRefusal(t, call(t, noMembers(), moduleCaller(), moduleTenantA),
+				codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
+			// A tenant the principal is not bound to, refused before the
+			// membership read — which the codes now tell apart: the member fact
+			// could no longer answer PermissionDenied.
+			requireRefusal(t, call(t, noMembers(), moduleCaller(), moduleTenantB), codes.PermissionDenied, "")
+			requireRefusal(t, call(t, noMembers(), business.ModuleCaller{PrincipalID: "someone-else", BoundOrg: moduleTenantA}, moduleTenantA),
+				codes.PermissionDenied, "")
+			requireRefusal(t, call(t, noMembers(), business.ModuleCaller{BoundOrg: moduleTenantA}, moduleTenantA), codes.Unauthenticated, "")
+
+			// A membership read that FAILED proves nothing either way, so it
+			// stays Internal and names no reason. Collapsing it into the refusal
+			// above would turn a transient organization_members outage into a
+			// consumer dropping every notice for good, since the refusal is the
+			// one this surface documents as final.
+			unavailable := fakeTxStore{members: map[string]bool{}, membersErr: errors.New("organization_members unavailable")}
+			requireRefusal(t, call(t, unavailable, moduleCaller(), moduleTenantA), codes.Internal, "")
+		})
+	}
 }
 
 // TestApprovalResumeEnqueuedOnQuorum proves the primitive wiring the module
@@ -1077,7 +1152,7 @@ func TestModuleListSubjectVisibility_ViewerOutsideTenantRejected(t *testing.T) {
 	store := &fakeVisibilityStore{fakeTxStore: fakeTxStore{members: map[string]bool{}}}
 	svc := newVisibilityService(t, store, true)
 	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantB, moduleUserA)
-	requireCode(t, err, codes.PermissionDenied)
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
 	if store.gotViewer != "" {
 		t.Fatal("membership must be settled before the visibility read runs")
 	}
@@ -1145,7 +1220,10 @@ func TestModuleListSubjectVisibility_OversizedSetRefused(t *testing.T) {
 	}
 	svc := newVisibilityService(t, store, false)
 	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
-	requireCode(t, err, codes.FailedPrecondition)
+	// It shares FailedPrecondition with the non-member refusal, so the reason is
+	// the only thing that tells the two apart: a consumer reading this one as a
+	// departed viewer would stop replacing a live viewer's set for good.
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleSubjectVisibilitySetTooLargeReason)
 }
 
 // A set exactly at the cap is servable — the boundary is not off by one.
@@ -1435,7 +1513,8 @@ func TestModuleNotifyOrgAdmins_IdempotencyKeyIsPerRecipient(t *testing.T) {
 }
 
 // A different notification under a key already used is the caller's error,
-// FailedPrecondition, never Internal.
+// FailedPrecondition, never Internal — and it names its own reason, because it
+// shares the code with the non-member refusal a consumer treats as final.
 func TestModuleNotifyOrgAdmins_KeyReusedForDifferentContentIsFailedPrecondition(t *testing.T) {
 	svc, _, _ := newOrgAdminsFixture(t)
 	if _, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), adminNotice(moduleTenantA, "info", "key-1")); err != nil {
@@ -1444,7 +1523,53 @@ func TestModuleNotifyOrgAdmins_KeyReusedForDifferentContentIsFailedPrecondition(
 	changed := adminNotice(moduleTenantA, "info", "key-1")
 	changed.Body = "something else"
 	_, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), changed)
-	requireCode(t, err, codes.FailedPrecondition)
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleNotificationIdempotencyConflictReason)
+}
+
+// notifyConflictStore refuses the second write under one key with different
+// content, the way the store's payload-equality guard does.
+type notifyConflictStore struct {
+	fakeTxStore
+	written []*business.Notification
+}
+
+func (s *notifyConflictStore) CreateNotification(_ context.Context, n *business.Notification) error {
+	for _, existing := range s.written {
+		if existing.ID == n.ID && existing.Body != n.Body {
+			return business.ErrNotificationIdempotencyConflict
+		}
+	}
+	s.written = append(s.written, n)
+	return nil
+}
+
+// The two facts NotifyUser answers FailedPrecondition to must be told apart by
+// something, and the code is not it. A consumer that keyed on the code would
+// read its own reused idempotency key as "the recipient is gone" and drop the
+// notice for good, which is the loss this surface's reasons exist to prevent.
+func TestModuleNotifyUser_SharedFailedPreconditionIsSeparatedByReason(t *testing.T) {
+	store := &notifyConflictStore{fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}}}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	notice := func(body string) business.ModuleNotifyUserInput {
+		return business.ModuleNotifyUserInput{
+			Tenant: moduleTenantA, UserID: moduleUserA, Title: "Title", Body: body,
+			// A mandatory category, so the write never consults user settings:
+			// this test is about which refusal comes back, not about policy.
+			Type: "info", Category: "security", IdempotencyKey: "notice-1",
+		}
+	}
+	if _, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), notice("first")); err != nil {
+		t.Fatalf("the first notice must be delivered: %v", err)
+	}
+	_, conflict := svc.ModuleNotifyUser(context.Background(), moduleCaller(), notice("different"))
+	requireRefusal(t, conflict, codes.FailedPrecondition, business.ModuleNotificationIdempotencyConflictReason)
+
+	// Same code, same RPC, different fact: a non-member recipient. Only the
+	// reason separates them, so these two assertions must not be able to pass
+	// with one reason for both.
+	absent := newModuleServiceWithStore(t, fakeTxStore{members: map[string]bool{}}, &fakeJobBackend{}, false)
+	_, departed := absent.ModuleNotifyUser(context.Background(), moduleCaller(), notice("first"))
+	requireRefusal(t, departed, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
 }
 
 // A module bound to one tenant cannot notify another's administrators, and an

@@ -2525,7 +2525,10 @@ export const ModuleCapabilitiesService: GenService<{
     output: typeof ModulePlaceRecordResponseSchema;
   },
   /**
-   * EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+   * EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+   * subject-scoped job whose subject is not a member of the tenant is
+   * FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+   * and key on the reason rather than the code.
    *
    * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob
    */
@@ -2575,7 +2578,12 @@ export const ModuleCapabilitiesService: GenService<{
     output: typeof EmptySchema;
   },
   /**
-   * NotifyUser delivers a notification subject to category policy.
+   * NotifyUser delivers a notification subject to category policy. A recipient
+   * who is not a member of the tenant is FAILED_PRECONDITION with reason
+   * TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+   * already used for different content is FAILED_PRECONDITION too, with reason
+   * NOTIFICATION_IDEMPOTENCY_CONFLICT, so the reason — not the code — says
+   * which of the two happened; see REFUSALS.
    *
    * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.NotifyUser
    */
@@ -2586,7 +2594,9 @@ export const ModuleCapabilitiesService: GenService<{
   },
   /**
    * NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-   * see the request.
+   * see the request. It names no recipient, so it has no non-member refusal; an
+   * idempotency_key already used for different content is FAILED_PRECONDITION
+   * with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
    *
    * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins
    */
@@ -2648,7 +2658,11 @@ export const ModuleCapabilitiesService: GenService<{
   },
   /**
    * ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-   * whole set of other subjects whose rows that viewer may read.
+   * whole set of other subjects whose rows that viewer may read. A viewer who
+   * is not a member of the tenant is FAILED_PRECONDITION with reason
+   * TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+   * FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+   * the reason tells a consumer which it got.
    *
    * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility
    */

@@ -28,8 +28,11 @@ import (
 // request, so a snapshot of any size costs its reader one call per batch and
 // GitHub one request per batch at most.
 const (
-	// datasourceErrorDomain scopes the ErrorInfo reasons below.
-	datasourceErrorDomain = "saas.accounts.v1"
+	// accountsErrorDomain scopes the ErrorInfo reasons this package attaches —
+	// the ones below and the module surface's own. It is not the service's only
+	// domain: the adapters layer answers under SolutionRegistryErrorDomain, so a
+	// reason is read together with the domain it arrived with.
+	accountsErrorDomain = "saas.accounts.v1"
 
 	DatasourceReasonRateLimited        = "DATASOURCE_RATE_LIMITED"
 	DatasourceReasonBatchTooLarge      = "DATASOURCE_BATCH_TOO_LARGE"
@@ -215,7 +218,7 @@ func datasourceConnectorStatus(w *wool.Wool, err error) error {
 // for a retryable refusal, a RetryInfo.
 func datasourceStatus(code codes.Code, reason, message string, metadata map[string]string, retry time.Duration) error {
 	st := status.New(code, message)
-	details := []protoadapt.MessageV1{&errdetails.ErrorInfo{Reason: reason, Domain: datasourceErrorDomain, Metadata: metadata}}
+	details := []protoadapt.MessageV1{&errdetails.ErrorInfo{Reason: reason, Domain: accountsErrorDomain, Metadata: metadata}}
 	if retry > 0 {
 		details = append(details, &errdetails.RetryInfo{RetryDelay: durationpb.New(retry)})
 	}
