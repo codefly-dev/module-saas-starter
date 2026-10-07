@@ -2198,10 +2198,11 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 // seeding command rather than a sentence about one. This module never names
 // that command itself: a module names nothing above it.
 //
-// On the `kms` backend there is no command and no seeding: the key is a Cloud
-// KMS key version the cell provisions, and its material never leaves the
-// service — which is also why selecting it refuses at the call site above, see
-// keyservice.SigningKey.InProcessPrivateKey.
+// The `kms` backend cannot hold this key at all, and keyservice.Selection
+// refuses it there by name: its material never leaves the service, while the
+// Work Context signer, the delegation minter and the OAuth state signer are each
+// handed the key itself. So there is no custody command to name on that backend
+// because the backend is not reachable for this key — see ReadVaultSigningKey.
 //
 // allowEphemeral is set only in dev/fixture mode, where a freshly generated key
 // lets `codefly run service frontend --fixture dev-admin` work on a machine with
