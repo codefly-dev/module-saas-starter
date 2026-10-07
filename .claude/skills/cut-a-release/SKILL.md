@@ -66,6 +66,15 @@ endpoint must appear there — an endpoint the file omits would otherwise genera
 every service in its package, in every default language — and the `clients-config`
 gate in `module/tools/composition` enforces that.
 
+The same job publishes `@codefly-dev/ui`, `@codefly-dev/saas-ui`,
+`@codefly-dev/saas-plugin-contract`, and `@codefly-dev/saas-plugin-react` in
+dependency order. GitHub Packages does not preserve optional-peer metadata;
+all runtime peers must be installable under the supported scope. The job's
+clean registry-consumer check must pass after publication before declaring the
+kit consumable. It verifies peer resolution and shared plugin-context identity,
+not just that versions exist. The plugin packages version independently of the
+co-versioned UI packages and remain peers rather than bundled contexts.
+
 ## Rolling a Core release through the fleet
 
 Order is core → cli → agents → this repo, and each step is one `codefly` verb:

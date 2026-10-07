@@ -18,12 +18,12 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
-        digest: sha256:a80e92b319dc442c93eb9604129192c86aaf491e635cb549cd7bcca5681b45ee
+        digest: sha256:54cb486f38f377a71fec1a6bbfc8f05fcb86a00054dd00cf1dd7b76a38aaac29
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:a80e92b319dc442c93eb9604129192c86aaf491e635cb549cd7bcca5681b45ee
+        digest: sha256:54cb486f38f377a71fec1a6bbfc8f05fcb86a00054dd00cf1dd7b76a38aaac29
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -101,15 +101,16 @@ breaking-changes:
   - "The `telemetry` service is removed: the module no longer ships an OTLP gateway, and the cell's collector takes its place. `accounts` and `auth-gateway` read where it is from the `observability` configuration group — `TELEMETRY_STATE` is `available` with `OTEL_EXPORTER_OTLP_ENDPOINT` (an `http://` endpoint is plaintext on the wire because the mesh supplies mTLS; `https://` is TLS), or `absent` with `TELEMETRY_ABSENT_REASON` — and refuse to start when the group does not say which. `OBSERVABILITY_EXPORTER` and `OTEL_EXPORTER_OTLP_HEADERS` no longer mean anything, the `/metrics` scrape endpoint of both services is gone (metrics leave by OTLP push only), and `service.name` is no longer fixed in code: `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` sets it, else the service's own Codefly identity. A consumer that depended on the `telemetry` service, or that overrides the `observability` group, must move to the keys above."
 reserved-namespaces:
   - "@codefly/saas-"
+  - "@codefly-dev/saas-"
   - saas
 claims:
   - {kind: package, key: "@base-ui/react", owner: base}
   - {kind: package, key: "@biomejs/biome", owner: base}
   - {kind: package, key: "@bufbuild/protobuf", owner: base}
   - {kind: package, key: "@bufbuild/protoc-gen-es", owner: base}
-  - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-plugin-contract", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-manifest", owner: base}
-  - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-plugin-react", owner: base}
   - {kind: package, key: "@codefly/saas-settings", owner: base}
   - {kind: package, key: "@codefly-dev/saas-sdk", owner: base}
   - {kind: package, key: "@codefly-dev/saas-ui", owner: base}

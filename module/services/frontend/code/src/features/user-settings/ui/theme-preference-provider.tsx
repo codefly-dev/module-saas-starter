@@ -1,6 +1,6 @@
 "use client";
 
-import type { FrontendThemePreference } from "@codefly/saas-plugin-contract";
+import type { FrontendThemePreference } from "@codefly-dev/saas-plugin-contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createContext,

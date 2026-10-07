@@ -670,6 +670,14 @@ runs with the accounts service test suite.
 
 ## Published frontend kit version
 
+The publish set includes the UI, SaaS UI and SDK plus their plugin contract and
+React peers, all under `@codefly-dev`. Runtime peers are published before their
+consumers. GitHub Packages omits optional-peer metadata, so the pre-release
+consumer proof resolves the packed graph through a registry fixture without
+that metadata. The release job repeats the clean consumer proof against the
+real registry after publication, checking declarations, rendering, styles and
+plugin-context identity. Publication alone does not establish consumption.
+
 A registry version is immutable, so the frontend kit's version has to move
 whenever its content does. `publish-frontend-kit.mjs` enforces that at the
 registry — it compares the built tarball's integrity against the version already

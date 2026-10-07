@@ -42,7 +42,7 @@ Read before changing the plugin boundary:
    cannot contain URLs, credentials, or endpoint overrides.
 6. Browser calls are same-origin. Deployment URLs and Codefly binding
    resolution are server-only host concerns. Products obtain the injected
-   transport from `@codefly/saas-plugin-react`; they do not import host auth or
+   transport from `@codefly-dev/saas-plugin-react`; they do not import host auth or
    construct a parallel client.
 7. The generated server allowlist also generates the frontend's external
    Codefly service dependencies. Product installs never patch the service

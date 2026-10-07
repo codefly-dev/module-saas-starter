@@ -37,6 +37,8 @@ const KIT_ROOT = "module/services/frontend/code/packages";
 // source of truth for *what* is published; kit-version.test.mjs asserts this
 // list covers exactly it, so a package added there cannot escape the gate.
 export const PUBLISHED_KIT_PACKAGES = [
+  { name: "@codefly-dev/saas-plugin-contract", directory: `${KIT_ROOT}/saas-plugin-contract` },
+  { name: "@codefly-dev/saas-plugin-react", directory: `${KIT_ROOT}/saas-plugin-react` },
   { name: "@codefly-dev/ui", directory: `${KIT_ROOT}/codefly-ui` },
   { name: "@codefly-dev/saas-ui", directory: `${KIT_ROOT}/saas-ui` },
   { name: "@codefly-dev/saas-sdk", directory: `${KIT_ROOT}/saas-sdk` },

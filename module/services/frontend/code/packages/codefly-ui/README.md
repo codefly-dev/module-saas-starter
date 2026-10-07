@@ -15,7 +15,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
 ## What ships here
 
 - **Plugin host** (`@codefly-dev/ui/plugin-host`) — product-neutral React
-  contribution composition, re-exported from `@codefly/saas-plugin-react` so
+  contribution composition, re-exported from `@codefly-dev/saas-plugin-react` so
   host and remotes resolve one instance. Client adapters are on the
   `./plugin-host/runtime` and `./plugin-host/ui` subpaths.
 - **Skin mechanism** (`@codefly-dev/ui/skin`) — the tokens-as-data resolver: it
@@ -114,20 +114,19 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/theme.css`       | The token layer: token → utility, light/dark binding, custom variants (Tailwind source) |
 | `@codefly-dev/ui/preview.css`     | The kit compiled with the default skin, for previews only — see below |
 
-`react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
+`react`, `@codefly-dev/saas-plugin-react`, and `@codefly-dev/saas-plugin-contract` are
 **peer** dependencies — the host provides them so it and its Module-Federation
 remotes resolve one shared instance each. This matters most for
-`@codefly/saas-plugin-react`, which carries the plugin-runtime React context: a
+`@codefly-dev/saas-plugin-react`, which carries the plugin-runtime React context: a
 second copy would split that context and break `usePluginRuntime` in a remote.
 
-The two plugin peers are **optional** (`peerDependenciesMeta`): only `.`,
-`./plugin-host`, and `./skin` touch them, and the host supplies them. The
-`./layout`, `./dashboard`, `./chat`, `./content` and `./board` subpaths reference neither, so a consumer
-of just those subpaths installs the kit without pulling the host-internal plugin
-packages. `./layout` does pull the primitives' public runtime deps
-(`@base-ui/react`, `lucide-react`, `class-variance-authority`, `clsx`,
-`tailwind-merge`), declared as ordinary `dependencies` so a consumer resolves them
-from the public registry with no extra config.
+The plugin peers are published alongside the kit under `@codefly-dev` and are
+required. GitHub Packages omits `peerDependenciesMeta` from version metadata;
+marking unpublished peers optional therefore does not make a registry install
+work. Normal npm resolution now installs a complete published peer graph.
+The `./layout`, `./dashboard`, `./chat`, `./content`, `./board` and `./lifecycle`
+entry points still do not import the plugin runtime; installing its peers does
+not bundle them into those presentation entry points.
 
 ## Consuming from a solution
 
@@ -139,8 +138,8 @@ checks the declared range against the version the host publishes, so a range tha
 is too loose fails at runtime rather than at install.)
 
 A solution fe-remote imports `@codefly-dev/ui/layout` + `@codefly-dev/ui/dashboard` and
-shares them as Module-Federation singletons served by the host. Because the
-plugin peers are optional, the solution only needs an `.npmrc` pointing the
+shares them as Module-Federation singletons served by the host.
+The solution needs an `.npmrc` pointing the
 `@codefly-dev` scope at the GitHub Packages registry (with a read token) plus a
 `react` peer it already has:
 
@@ -149,8 +148,20 @@ plugin peers are optional, the solution only needs an `.npmrc` pointing the
 //npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
 ```
 
-`npm ci` then resolves `@codefly-dev/ui` with no reference to the unpublished
-`@codefly/saas-plugin-*` packages.
+`npm ci` resolves the UI kit and its published plugin peers from the same scope.
+UI imports are unchanged. A plugin author importing the former unpublished
+`@codefly/saas-plugin-contract` or `@codefly/saas-plugin-react` must migrate both
+imports and dependency keys to `@codefly-dev/saas-plugin-contract` and
+`@codefly-dev/saas-plugin-react`; do not mix old and new runtime packages. Remotes
+share the kit entry points they use as singletons. Direct plugin imports must
+also share their exact entry points; the host publishes every entry point of
+both plugin packages in the same sealed scope.
+
+`node scripts/test-registry-ui.mjs` checks a fresh version-based install against
+packed registry metadata that omits optional-peer flags. Release CI repeats it
+with `--registry` against GitHub Packages after publication. Both proofs check
+peer auto-installation, declarations, public exports, rendering, CSS and shared
+plugin context without workspace links or peer-resolution bypasses.
 
 **Styling.** The kit's components name their type slots and control rungs as
 classes (`type-card-title`, `control-sm`) that the kit defines, not Tailwind. A

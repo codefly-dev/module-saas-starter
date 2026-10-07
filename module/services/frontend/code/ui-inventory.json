@@ -2674,7 +2674,7 @@
     {
       "source": "src/components/admin-layout.tsx",
       "imports": [
-        "@codefly/saas-plugin-contract",
+        "@codefly-dev/saas-plugin-contract",
         "lucide-react",
         "next/link",
         "next/navigation",
@@ -4886,7 +4886,7 @@
     {
       "source": "src/features/user-settings/ui/general-settings-page.tsx",
       "imports": [
-        "@codefly/saas-plugin-contract",
+        "@codefly-dev/saas-plugin-contract",
         "@tanstack/react-query",
         "react",
         "sonner",
@@ -4913,7 +4913,7 @@
     {
       "source": "src/features/user-settings/ui/theme-preference-provider.tsx",
       "imports": [
-        "@codefly/saas-plugin-contract",
+        "@codefly-dev/saas-plugin-contract",
         "@tanstack/react-query",
         "react",
         "@/lib/auth",

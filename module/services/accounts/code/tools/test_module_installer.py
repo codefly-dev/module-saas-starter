@@ -14,6 +14,7 @@ import time
 import uuid
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--run", default="^TestModuleInstallationPostgres", help="Go test regex for durable authority regressions")
 args = parser.parse_args()
 
 service = Path(__file__).resolve().parents[1]
@@ -40,6 +41,6 @@ try:
         "-v", "ON_ERROR_STOP=1", "-q", input=sql, text=True, stdout=subprocess.DEVNULL)
     port = subprocess.check_output(["docker", "port", name, "5432"], text=True).strip().split(":")[-1]
     env = dict(os.environ, ACCOUNTS_INSTALLER_TEST_DATABASE_URL=f"postgres://postgres@127.0.0.1:{port}/installer_test_repeatable?sslmode=disable")
-    run("go", "test", "-race", "./pkg/infra", "-run", "^TestModuleInstallationPostgres", "-count=1", "-v", cwd=service, env=env)
+    run("go", "test", "-race", "./pkg/infra", "-run", args.run, "-count=1", "-v", cwd=service, env=env)
 finally:
     subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)

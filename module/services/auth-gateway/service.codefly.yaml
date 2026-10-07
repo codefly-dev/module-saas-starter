@@ -34,9 +34,11 @@ workspace-configuration-dependencies:
     - security
 endpoints:
     - name: grpc
-      visibility: module
+      visibility: internal
+      allow-modules: ["*"]
     - name: rest
-      visibility: module
+      visibility: internal
+      allow-modules: ["*"]
 spec:
     hot-reload: true
     protocol-output-dirs:

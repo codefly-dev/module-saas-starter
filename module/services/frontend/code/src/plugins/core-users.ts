@@ -1,8 +1,8 @@
 import {
 	definePlugin,
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
-} from "@codefly/saas-plugin-contract";
-import { defineReactPlugin } from "@codefly/saas-plugin-react";
+} from "@codefly-dev/saas-plugin-contract";
+import { defineReactPlugin } from "@codefly-dev/saas-plugin-react";
 import { FRONTEND_NAVIGATION } from "@/gen/saas/frontend/v1/plugin_catalog";
 
 export const coreUsersPlugin = defineReactPlugin({

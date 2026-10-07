@@ -12,7 +12,7 @@ private-host restrictions.
 
 ## Active packages
 
-`@codefly/saas-plugin-contract` exposes its React-free metadata API at the
+`@codefly-dev/saas-plugin-contract` exposes its React-free metadata API at the
 package root:
 
 ```ts
@@ -29,7 +29,7 @@ import {
   type FrontendPlugin,
   type FrontendServiceBinding,
 	type FrontendThemePreference,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 ```
 
 The appearance contract also carries the four-layer type and geometry vocabulary
@@ -78,7 +78,7 @@ resolved preset during server rendering. Plugins do not contribute branding,
 raw CSS, or appearance state. Tenant branding is a validated runtime overlay
 owned by the host.
 
-`@codefly/saas-plugin-react` owns the separate React registration and service
+`@codefly-dev/saas-plugin-react` owns the separate React registration and service
 runtime. Every declared route/widget ID must receive exactly one component;
 missing, duplicate, and extra registrations fail before rendering:
 
@@ -87,11 +87,11 @@ import { lazy } from "react";
 import {
   definePlugin,
   FRONTEND_PLUGIN_CONTRACT_VERSION,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import {
   defineReactFrontend,
   defineReactPlugin,
-} from "@codefly/saas-plugin-react";
+} from "@codefly-dev/saas-plugin-react";
 
 const manifest = definePlugin({
   contractVersion: FRONTEND_PLUGIN_CONTRACT_VERSION,
@@ -115,7 +115,7 @@ resolved `routes` and `widgets` attach the validated lazy components for host
 outlets. Product controllers use the separate runtime entry point:
 
 ```tsx
-import { usePluginService } from "@codefly/saas-plugin-react/runtime";
+import { usePluginService } from "@codefly-dev/saas-plugin-react/runtime";
 
 export function useExampleRepository() {
   const service = usePluginService("example", "api");
@@ -139,9 +139,9 @@ are defined by the
 [authentication and tenant matrix](frontend-plugin-auth-tenant-matrix.md).
 Product packages do not gain backend authority from this frontend API.
 
-`@codefly/saas-plugin-contract/capabilities` is the protobuf-defined backend
-handshake surface. Its package version is `2.1.0`; the React package version is
-`0.4.1`. The published contract package includes the canonical
+`@codefly-dev/saas-plugin-contract/capabilities` is the protobuf-defined backend
+handshake surface. Its package version is `2.4.2`; the React package version is
+`0.4.3`. The published contract package includes the canonical
 `proto/saas/frontend/plugin/v1/capabilities.proto`, generated message/service
 schemas, strict ProtoJSON helpers, and fixed REST/Connect operation constants.
 Backend implementations generate their native bindings from that proto instead
@@ -161,7 +161,7 @@ non-sensitive availability contract:
 import {
   pluginErrorFromResponse,
   usePluginService,
-} from "@codefly/saas-plugin-react/runtime";
+} from "@codefly-dev/saas-plugin-react/runtime";
 
 const service = usePluginService("example", "api");
 const response = await service.request("overview");
@@ -169,7 +169,7 @@ if (!response.ok) throw await pluginErrorFromResponse(response);
 ```
 
 The host wraps every route and every widget independently with
-`PluginErrorBoundary` from `@codefly/saas-plugin-react/ui` and its own Suspense
+`PluginErrorBoundary` from `@codefly-dev/saas-plugin-react/ui` and its own Suspense
 fallback. `loading` means the lazy contribution is pending, `ready` means it is
 rendering normally, and failures are one of `unavailable`, `incompatible`, or
 `failed`. The public failure descriptor contains only a stable code, an

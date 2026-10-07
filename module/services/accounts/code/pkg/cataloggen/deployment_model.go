@@ -143,6 +143,14 @@ func assembleDeploymentBindings(documents DeploymentDocuments) (deploymentBindin
 		},
 		Interface: module.Interface.Endpoints,
 	}
+	for i := range bindings.Interface {
+		exported := &bindings.Interface[i]
+		visibility, err := manifestCatalogVisibility(exported.Visibility, "", exported.AllowModules)
+		if err != nil {
+			return deploymentBindings{}, fmt.Errorf("interface %s/%s: %w", exported.Service, exported.Endpoint, err)
+		}
+		exported.Visibility, exported.AllowModules = visibility, nil
+	}
 	declared := make(map[string]bool, len(module.Services))
 	for _, reference := range module.Services {
 		if declared[reference.Name] {
@@ -217,9 +225,9 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 		if api == "" {
 			api = endpoint.Name
 		}
-		visibility := endpoint.Visibility
-		if visibility == "" {
-			visibility = "private"
+		visibility, err := manifestCatalogVisibility(endpoint.Visibility, endpoint.Location, endpoint.AllowModules)
+		if err != nil {
+			return deploymentServiceBinding{}, fmt.Errorf("service %q endpoint %q: %w", name, endpoint.Name, err)
 		}
 		port, declared := spec.EndpointPorts[endpoint.Name]
 		allocated := false
@@ -260,6 +268,35 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 		service.Dependencies = append(service.Dependencies, entry)
 	}
 	return service, nil
+}
+
+// manifestCatalogVisibility projects Codefly's independent visibility/location
+// axes into this catalog's categories. MODULE represents every module, so
+// narrower allow-lists refuse rather than silently widening the generated policy.
+func manifestCatalogVisibility(visibility, location string, allowed []string) (string, error) {
+	if visibility == "" {
+		visibility = "private"
+	}
+	if location != "" {
+		if location != "external" || visibility != "private" || len(allowed) != 0 {
+			return "", fmt.Errorf("unsupported external endpoint policy")
+		}
+		return "external", nil
+	}
+	switch visibility {
+	case "private", "public":
+		if len(allowed) != 0 {
+			return "", fmt.Errorf("allow-modules requires internal visibility")
+		}
+		return visibility, nil
+	case "internal":
+		if len(allowed) != 1 || allowed[0] != "*" {
+			return "", fmt.Errorf("deployment catalog requires internal visibility with allow-modules [*]; narrower exports need an allow-list-aware catalog")
+		}
+		return "module", nil
+	default:
+		return "", fmt.Errorf("unsupported authored endpoint visibility %q", visibility)
+	}
 }
 
 func decodeDeploymentSpec(service string, spec map[string]any) (deploymentSpec, error) {

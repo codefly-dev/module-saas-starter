@@ -6,16 +6,20 @@ interface:
     endpoints:
         - service: accounts
           endpoint: authority
-          visibility: module
+          visibility: internal
+          allow-modules: ["*"]
         - service: accounts
           endpoint: connect
-          visibility: module
+          visibility: internal
+          allow-modules: ["*"]
         - service: auth-gateway
           endpoint: grpc
-          visibility: module
+          visibility: internal
+          allow-modules: ["*"]
         - service: auth-gateway
           endpoint: rest
-          visibility: module
+          visibility: internal
+          allow-modules: ["*"]
         - service: frontend
           endpoint: http
           visibility: public

@@ -1,4 +1,4 @@
-import type { FrontendThemePreference } from "@codefly/saas-plugin-contract";
+import type { FrontendThemePreference } from "@codefly-dev/saas-plugin-contract";
 import { ThemePreference } from "@/gen/saas/accounts/v1/user_settings_pb";
 
 export const themePreferenceOptions = ["light", "dark", "system"] as const;

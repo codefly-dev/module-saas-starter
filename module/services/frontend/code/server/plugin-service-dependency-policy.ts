@@ -1,4 +1,4 @@
-import type { FrontendServiceAllowlist } from "@codefly/saas-plugin-contract";
+import type { FrontendServiceAllowlist } from "@codefly-dev/saas-plugin-contract";
 import { load } from "js-yaml";
 
 const CODEFLY_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;

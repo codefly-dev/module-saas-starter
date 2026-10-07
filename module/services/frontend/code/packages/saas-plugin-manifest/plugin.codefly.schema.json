@@ -200,7 +200,7 @@
 		"ui": {
 			"type": "object",
 			"additionalProperties": false,
-			"description": "Frontend contribution block validated by @codefly/saas-plugin-contract. The plugin's identity supplies the contract version and name.",
+			"description": "Frontend contribution block validated by @codefly-dev/saas-plugin-contract. The plugin's identity supplies the contract version and name.",
 			"properties": {
 				"navigation": { "type": "object" },
 				"navItems": { "type": "array" },

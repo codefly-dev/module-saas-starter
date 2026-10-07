@@ -87,6 +87,14 @@ fence — so a run whose delegation is revoked mid-flight closes partial.
 An operation binding declares canonical invoke scopes and a read-only lookup
 subset:
 
+A call may return to an earlier audience to read that owner's retained record.
+Only exchanging to the immediate parent's audience is refused. Every intervening
+binding must preserve the required read scope, including receipt-lookup paths;
+the return binding cannot recover authority removed by an earlier exchange.
+Use a separate read-only binding for that proof rather than a task-start or
+execution binding. The signed owner, tenant, task and session remain unchanged,
+and current revocation is checked again on the return exchange.
+
 ```json
 {"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"example-producer","invoke_scopes":[{"resource_kind":"results","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"results","actions":["read"]}]}}}}
 ```

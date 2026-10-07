@@ -50,7 +50,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	require.Equal(t, "accounts", legacy.GetOwner().GetService())
 	require.Equal(t, "connect", legacy.GetUpstreamEndpoint())
 
-	renamed := withService(t, topologyDocuments, "accounts", "    - name: connect\n      visibility: module\n", "    - name: connect-api\n      api: connect\n      visibility: module\n")
+	renamed := withService(t, topologyDocuments, "accounts", "    - name: connect\n      visibility: internal\n      allow-modules: [\"*\"]\n", "    - name: connect-api\n      api: connect\n      visibility: internal\n      allow-modules: [\"*\"]\n")
 	renamed = withService(t, renamed, "auth-gateway", "        - name: connect\n", "        - name: connect-api\n")
 	renamed = withModule(t, renamed, "          endpoint: connect\n", "          endpoint: connect-api\n")
 	renamedRoutes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, renamed)
@@ -101,7 +101,7 @@ func TestGatewayRouteValidationRejectsUnsafeDrift(t *testing.T) {
 	wrongSchema.SchemaVersion = "saas.gateway.routes.v2"
 	require.ErrorContains(t, cataloggen.ValidateGatewayRouteCatalog(wrongSchema), "unsupported")
 
-	badEndpoint := withService(t, topologyDocuments, "accounts", "    - name: connect\n      visibility: module\n", "    - name: connect\n      api: connect;raw\n      visibility: module\n")
+	badEndpoint := withService(t, topologyDocuments, "accounts", "    - name: connect\n      visibility: internal\n      allow-modules: [\"*\"]\n", "    - name: connect\n      api: connect;raw\n      visibility: internal\n      allow-modules: [\"*\"]\n")
 	_, err = cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, badEndpoint)
 	require.ErrorContains(t, err, "Codefly API")
 

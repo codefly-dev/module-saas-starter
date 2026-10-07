@@ -167,7 +167,7 @@ export type Metric = SourceMetric | DerivedMetric;
 
 /**
  * One dashboard widget bound to a declared metric. Distinct from the manifest's
- * `ui.widgets` (`DashboardWidget` in `@codefly/saas-plugin-contract`), which are
+ * `ui.widgets` (`DashboardWidget` in `@codefly-dev/saas-plugin-contract`), which are
  * presentation slots contributed to host surfaces; a `MetricWidget` renders a
  * data-graph metric inside a `<Dashboard>`.
  */

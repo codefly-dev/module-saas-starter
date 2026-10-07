@@ -42,7 +42,7 @@ function declaredModuleExports(source: string): string[] {
 
 describe("frozen public import map", () => {
 	it("matches the active package barrel exactly", () => {
-		const declaration = publicApi.packages["@codefly/saas-plugin-contract"];
+		const declaration = publicApi.packages["@codefly-dev/saas-plugin-contract"];
 		expect(declaration.status).toBe("active");
 		expect(declaration.entrypoints).toEqual([".", "./capabilities"]);
 		expect(
@@ -65,8 +65,8 @@ describe("frozen public import map", () => {
 			version: string;
 			exports: Record<string, unknown>;
 		};
-		const declaration = publicApi.packages["@codefly/saas-plugin-contract"];
-		expect(packageJSON.name).toBe("@codefly/saas-plugin-contract");
+		const declaration = publicApi.packages["@codefly-dev/saas-plugin-contract"];
+		expect(packageJSON.name).toBe("@codefly-dev/saas-plugin-contract");
 		expect(packageJSON.version).toBe(declaration.packageVersion);
 		expect(Object.keys(packageJSON.exports)).toEqual([".", "./capabilities"]);
 	});
@@ -82,9 +82,7 @@ describe("frozen public import map", () => {
 		]
 			.map((name) => readFileSync(join(packageDir, "src", name), "utf8"))
 			.join("\n");
-		expect(source).not.toMatch(
-			/from\s+["'](?:@\/|react["'/]|next\/)/,
-		);
+		expect(source).not.toMatch(/from\s+["'](?:@\/|react["'/]|next\/)/);
 		const packageJSON = JSON.parse(
 			readFileSync(join(packageDir, "package.json"), "utf8"),
 		) as {
