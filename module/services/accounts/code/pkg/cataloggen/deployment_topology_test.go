@@ -71,15 +71,15 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/network-policy.golden.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
-	require.Len(t, first.Catalog.GetServices(), 7)
+	require.Len(t, first.Catalog.GetServices(), 8)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 6)
-	require.Len(t, first.Catalog.GetPublicEgress(), 3)
+	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 12, endpointCount)
+	require.Equal(t, 13, endpointCount)
 	require.Equal(t, 6, dependencyCount)
 	// The accounts REST surface is reachable only through the gateway; the
 	// gateway's REST surface is module-visible because composed modules and
@@ -115,7 +115,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	for _, grant := range first.Catalog.GetPublicEgress() {
 		egress[grant.GetService()] = true
 	}
-	require.Equal(t, map[string]bool{"accounts": true, "frontend": true, "marketing": true}, egress)
+	require.Equal(t, map[string]bool{"accounts": true, "frontend": true, "marketing": true, "policy-log": true}, egress)
 	require.False(t, egress["auth-gateway"], "auth-gateway must have no public egress")
 	accountsConnectExposed, accountsAuthorityExposed, gatewayRESTExposed := false, false, false
 	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
@@ -136,7 +136,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.True(t, accountsConnectExposed)
 	require.True(t, accountsAuthorityExposed)
 	require.True(t, gatewayRESTExposed)
-	require.Equal(t, 18, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 19, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	for _, name := range []string{
 		"allow-accounts-from-dependents", "allow-auth-gateway-from-dependents", "allow-auth-gateway-to-dependencies",
@@ -177,6 +177,17 @@ func TestDeploymentTopologyRefusesUnrepresentableEndpointPolicies(t *testing.T) 
 		_, err := cataloggen.BuildDeploymentArtifacts(catalog, changed)
 		require.Error(t, err, policy)
 	}
+	// And the authored spelling BUILDS, so the removals above are not this test
+	// quietly accepting everything: an unchanged tree must still produce artifacts.
+	_, err := cataloggen.BuildDeploymentArtifacts(catalog, documents)
+	require.NoError(t, err, "the authored `internal` with no allow-list must build")
+	// A legacy wildcard is also an authored consumer grant and must refuse,
+	// matching the Core declaration boundary used to load these manifests.
+	legacy := withService(t, documents, "accounts",
+		"    - name: connect\n      visibility: internal\n",
+		"    - name: connect\n      visibility: internal\n      allow-modules: [\"*\"]\n")
+	_, err = cataloggen.BuildDeploymentArtifacts(catalog, legacy)
+	require.ErrorContains(t, err, "derived from consumers", "legacy wildcard grants must refuse")
 }
 
 // The manifests are the model: a deployment fact lives in the service manifest
@@ -216,7 +227,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, loadedModule.ValidateInterface(ctx))
 	loadedServices, err := loadedModule.LoadServices(ctx)
 	require.NoError(t, err)
-	require.Len(t, loadedServices, 7)
+	require.Len(t, loadedServices, 8)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
 	var moduleEntry struct {
@@ -228,7 +239,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
 	require.NoError(t, err)
-	require.Len(t, module.ServiceReferences, 7)
+	require.Len(t, module.ServiceReferences, 8)
 
 	for _, reference := range module.ServiceReferences {
 		document := readFixture(t, filepath.Join("../../../../../services", reference.Name, "service.codefly.yaml"))
@@ -270,7 +281,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 18)
+	require.Len(t, names, 19)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
 	require.False(t, names["allow-istio-ingress-to-auth-gateway"])
@@ -395,12 +406,11 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 	const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
 
 	// Every authored route, and the methods that carry internal authority on it.
-	// A GET on /api/solutions/register is the sidebar's unauthenticated nav poll
+	// A GET on /api/solutions is the sidebar's viewer-authenticated nav poll
 	// and must stay reachable; a GET on /api/internal/solutions is the internal
 	// detail read and must not.
 	wantRules := map[string][]any{
 		"/api/internal/solutions": {"GET"},
-		"/api/solutions/register": {"DELETE", "POST"},
 	}
 
 	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/mesh-policy.golden.yaml"))))
@@ -455,7 +465,7 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 				require.True(t, ok)
 				paths := operation["paths"].([]any)
 				// Istio does not merge duplicate slashes by default, so the exact
-				// path alone would let //api/solutions/register reach the handler.
+				// path alone would let //api/internal/solutions reach the handler.
 				require.Len(t, paths, 2, "each route is matched exactly and as a suffix")
 				path := paths[1].(string)
 				require.Equal(t, "*"+path, paths[0])
@@ -549,15 +559,15 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteManifests(t *testing.T) {
 	require.ErrorContains(t, err, "service entry references unknown service")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "                - DELETE\n                - POST", "                - POST\n                - DELETE"))
-	require.ErrorContains(t, err, "internal HTTP route \"/api/solutions/register\" methods are invalid or unsorted")
+		withService(t, documents, "frontend", "                - GET", "                - POST\n                - GET"))
+	require.ErrorContains(t, err, "internal HTTP route \"/api/internal/solutions\" methods are invalid or unsorted")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "            - path: /api/solutions/register", "            - path: api/solutions/register"))
+		withService(t, documents, "frontend", "            - path: /api/internal/solutions", "            - path: api/internal/solutions"))
 	require.ErrorContains(t, err, "internal HTTP routes are invalid or unsorted")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "              methods:\n                - DELETE\n                - POST", "              methods: []"))
+		withService(t, documents, "frontend", "              methods:\n                - GET", "              methods: []"))
 	require.ErrorContains(t, err, "declares no methods")
 
 	// A path policy on a service that speaks TCP matches nothing that will ever

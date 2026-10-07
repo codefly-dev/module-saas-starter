@@ -37,6 +37,16 @@ func newInstallationMintServer(t *testing.T, facts *business.InstallationAuthori
 		Authority:  &workContextAuthorityFake{installationFcts: facts, installationErr: err},
 	})
 	require.NoError(t, server.configureErr)
+	// Every mint resolves the host's audience vocabulary, so a server with no
+	// service wired refuses before it reaches the mint these tests are about. The
+	// audiences they address are declared module prefixes, which is the set's third
+	// member and what they are in a deployment too.
+	previous := service
+	svc, svcErr := business.NewService(renewMembershipStore{})
+	require.NoError(t, svcErr)
+	service = svc
+	declareTestAudiences(svc)
+	t.Cleanup(func() { service = previous })
 	return server
 }
 

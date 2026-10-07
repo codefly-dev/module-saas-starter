@@ -129,6 +129,7 @@ func newModuleService(t *testing.T, backend *fakeJobBackend) *business.Service {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
 	})
@@ -141,6 +142,7 @@ func newModuleServiceWithStore(t *testing.T, store business.Store, backend *fake
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
 	})
@@ -771,6 +773,57 @@ func TestModuleNotifyUser_InvalidTypeRejectedBeforeAnyWrite(t *testing.T) {
 	}
 }
 
+// A module-supplied destination that a browser would resolve to another origin
+// never reaches an inbox: both notification capabilities refuse it as the
+// caller's error, before the membership read and before any row is written.
+func TestModuleNotify_OffOriginActionURLRejectedBeforeAnyWrite(t *testing.T) {
+	offOrigin := []string{
+		"https://evil.example/steal",
+		"//evil.example/steal",
+		"/\\evil.example/steal",
+		"/\t/evil.example/steal",
+		"/../../admin/billing",
+		"javascript:alert(document.cookie)",
+		// Encoded forms: harmless to a browser, but url.URL.Path hands a Go
+		// caller "///evil.example/steal" and "/\\evil.example", which are not.
+		"/%2F%2Fevil.example/steal",
+		"/%5Cevil.example",
+	}
+
+	store := &notifyRecordingStore{fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}}}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	for _, actionURL := range offOrigin {
+		// A mandatory category, so a missing guard reaches the recording store's
+		// write and fails this assertion, rather than the optional-category
+		// settings read the fake does not implement.
+		_, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+			Tenant: moduleTenantA, UserID: moduleUserA, Title: "Review this", Body: "Body",
+			Type: "info", Category: "security", ActionURL: actionURL,
+		})
+		requireCode(t, err, codes.InvalidArgument)
+
+		_, err = svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), business.ModuleNotifyOrgAdminsInput{
+			Tenant: moduleTenantA, Title: "Review this", Body: "Body",
+			Type: "info", Category: "security", ActionURL: actionURL,
+		})
+		requireCode(t, err, codes.InvalidArgument)
+	}
+	if store.created != 0 || store.membershipReads != 0 {
+		t.Fatalf("a refused destination read %d memberships and wrote %d notifications", store.membershipReads, store.created)
+	}
+
+	result, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+		Tenant: moduleTenantA, UserID: moduleUserA, Title: "Review this", Body: "Body",
+		Type: "info", Category: "security", ActionURL: "/documents/doc-7?comment=3",
+	})
+	if err != nil {
+		t.Fatalf("a same-origin path should be delivered: %v", err)
+	}
+	if !result.Delivered || store.created != 1 {
+		t.Fatalf("delivered = %v after %d writes, want one write", result.Delivered, store.created)
+	}
+}
+
 // notifyRecordingStore counts the membership reads and notification writes a
 // ModuleNotifyUser call makes.
 type notifyRecordingStore struct {
@@ -781,6 +834,15 @@ type notifyRecordingStore struct {
 func (s *notifyRecordingStore) OrgMemberExists(ctx context.Context, orgID, userID string) (bool, error) {
 	s.membershipReads++
 	return s.fakeTxStore.OrgMemberExists(ctx, orgID, userID)
+}
+
+// NotifyOrgAdmins resolves its recipients through the listing rather than the
+// point check, so a refusal that runs before any recipient is read has to be
+// counted here too — fakeTxStore does not implement it, and without this a
+// missing guard surfaces as a nil dereference instead of a failed assertion.
+func (s *notifyRecordingStore) ListOrgMembers(context.Context, string) ([]*gen.OrgMembership, error) {
+	s.membershipReads++
+	return nil, nil
 }
 
 func (s *notifyRecordingStore) CreateNotification(context.Context, *business.Notification) error {
@@ -810,6 +872,7 @@ func TestApprovalResumeEnqueuedOnQuorum(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Queues: []string{"documents"}},
 	})
@@ -863,6 +926,7 @@ func TestApprovalResumeStampsCompletingDecider(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Queues: []string{"documents"}},
 	})
@@ -946,7 +1010,7 @@ func TestModuleRequestApproval_ResumeQueueMustBeAllowed(t *testing.T) {
 // an opaque id and every side computes the same one.
 func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
 	registry, err := business.ParseModulePrincipalRegistry(
-		`{"documents":{"queues":["datasource"],"namespaces":["document"],"tenant":"` + moduleTenantA + `"}}`)
+		`{"documents":{"queues":["datasource"],"namespaces":["document"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -966,7 +1030,7 @@ func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
 // two the host reads out of a sealed capability are refused.
 func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing.T) {
 	registry, err := business.ParseModulePrincipalRegistry(
-		`{"documents":{"resources":["documents.files","rolesets"],"tenant":"` + moduleTenantA + `"}}`)
+		`{"documents":{"resources":["documents.files","rolesets"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -985,16 +1049,16 @@ func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing
 
 func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) {
 	tests := map[string]string{
-		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"tenant":"` + moduleTenantA + `"}}`,
+		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 		// The tenant is sealed into a signed capability and compared against
 		// organization ids: a malformed one signs, then matches no tenant and drops
 		// the org from its own audit record, so it is rejected where it is read.
 		"no tenant":       `{"documents":{"queues":["datasource"]}}`,
-		"non-uuid tenant": `{"documents":{"queues":["datasource"],"tenant":"acme-org"}}`,
+		"non-uuid tenant": `{"documents":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"acme-org"}}`,
 		// A principal id is a valid prefix by pattern, so an entry keyed the way the
 		// registry used to be would otherwise parse into a principal no module can
 		// ever be, denying every call for a reason that names the caller.
-		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"tenant":"` + moduleTenantA + `"}}`,
+		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 		// `roles` and `audit` are read off a sealed capability by the host itself
 		// (the collection-metadata disclosure) rather than authorized per node, so
 		// the content-read branch's "every read is re-authorized per node"
@@ -1003,8 +1067,8 @@ func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) 
 		// who holds a grant on every readable collection, which only an
 		// organization-wide assignment could reach before. The registry is operator
 		// text this host cannot otherwise check, so it is refused at parse time.
-		"host-sealed scope resource roles": `{"documents":{"resources":["documents.files","roles"],"tenant":"` + moduleTenantA + `"}}`,
-		"host-sealed scope resource audit": `{"documents":{"resources":["audit"],"tenant":"` + moduleTenantA + `"}}`,
+		"host-sealed scope resource roles": `{"documents":{"resources":["documents.files","roles"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
+		"host-sealed scope resource audit": `{"documents":{"resources":["audit"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1050,6 +1114,7 @@ func newVisibilityService(t *testing.T, store business.Store, crossTenant bool) 
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", CrossTenant: crossTenant},
 	})
@@ -1461,5 +1526,103 @@ func TestModuleNotifyOrgAdmins_RefusedBeforeAnyWrite(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 	if len(store.notified) != 0 {
 		t.Fatalf("a refused call wrote %d notifications", len(store.notified))
+	}
+}
+
+// A declaration with no workload FAILS THE BOOT, naming the entry.
+//
+// Config errors fail early here, and this is one: execution binding is
+// unconditional, so a principal whose workload is not declared can never be
+// authenticated — every call it makes is refused. Caught at parse, the operator
+// reads one line naming the entry; caught at the mint, they read "denied" and go
+// looking at the caller.
+//
+// All three parts, each on its own, because a partial workload is the
+// whole-or-absent trap: it would check the parts it has and silently skip the
+// rest, which reads as enforcement.
+func TestAModulePrincipalMustDeclareItsWorkload(t *testing.T) {
+	const tenant = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
+	for name, workload := range map[string]string{
+		"absent":             ``,
+		"empty":              `"workload":{},`,
+		"no service account": `"workload":{"namespace":"acme-prod","container":"app"},`,
+		"no namespace":       `"workload":{"service_account":"documents","container":"app"},`,
+		"no container":       `"workload":{"service_account":"documents","namespace":"acme-prod"},`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := business.ParseModulePrincipalRegistry(
+				`{"documents":{` + workload + `"tenant":"` + tenant + `"}}`)
+			if err == nil {
+				t.Fatal("a principal that can never be authenticated must not parse")
+			}
+			if !strings.Contains(err.Error(), "documents") || !strings.Contains(err.Error(), "workload") {
+				t.Fatalf("the refusal must name the entry and the workload, or an operator cannot find it: %v", err)
+			}
+		})
+	}
+
+	// NON-VACUITY: a fully declared workload parses, so the cases above fail for
+	// the workload rather than for something else in the fixture.
+	registry, err := business.ParseModulePrincipalRegistry(
+		`{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},` +
+			`"tenant":"` + tenant + `"}}`)
+	if err != nil {
+		t.Fatalf("a fully declared entry must parse: %v", err)
+	}
+	want := business.ModuleWorkload{ServiceAccount: "documents", Namespace: "acme-prod", Container: "app"}
+	if got := registry[business.ModulePrincipalID("documents")].Workload; got != want {
+		t.Fatalf("the parsed workload must be carried through verbatim, or it reads as undeclared later: got %+v want %+v", got, want)
+	}
+}
+
+// A workload whose three values are PRESENT but malformed is refused at parse,
+// naming the entry and the field.
+//
+// The test above covers absence. This covers the case that used to boot
+// cleanly: a value that cannot name a Kubernetes object parsed, and the failure
+// surfaced at the mint as ErrExecutionIdentityMismatch — "declared to run as
+// A/B, the presented token authenticates C/D" — which accuses the CALLER. A
+// trailing space in a declaration was reported as an impersonation attempt, so
+// the operator audited the module instead of reading the one line that was
+// wrong.
+//
+// Mutation-verified: removing the grant.Workload.validateForm(prefix) call from
+// the parse guard makes every row below fail (each fixture parses and the test
+// demands a refusal), and dropping the field-name assertion alone still leaves
+// the rows failing — so the rows test the refusal and the extra assertion tests
+// that the refusal is findable. Replacing the DNS-1123 check with a bare
+// non-emptiness test fails every row except the two whitespace ones, which is
+// what distinguishes this check from declared().
+func TestAMalformedModuleWorkloadIsRefusedAtParseNotAtTheMint(t *testing.T) {
+	const tenant = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
+	for name, fixture := range map[string]struct{ workload, field string }{
+		"trailing space in service account": {
+			`"workload":{"service_account":"documents ","namespace":"acme-prod","container":"app"},`, "service_account"},
+		"leading space in namespace": {
+			`"workload":{"service_account":"documents","namespace":" acme-prod","container":"app"},`, "namespace"},
+		"uppercase namespace is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents","namespace":"Acme-Prod","container":"app"},`, "namespace"},
+		"underscore is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents_api","namespace":"acme-prod","container":"app"},`, "service_account"},
+		"leading hyphen is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents","namespace":"-acme-prod","container":"app"},`, "namespace"},
+		"uppercase container": {
+			`"workload":{"service_account":"documents","namespace":"acme-prod","container":"App"},`, "container"},
+		"label longer than 63 characters": {
+			`"workload":{"service_account":"documents","namespace":"acme-prod","container":"` +
+				strings.Repeat("a", 64) + `"},`, "container"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := business.ParseModulePrincipalRegistry(
+				`{"documents":{` + fixture.workload + `"tenant":"` + tenant + `"}}`)
+			if err == nil {
+				t.Fatal("a workload that can never name a real object must not parse: " +
+					"every mint for it would be refused as an identity mismatch, accusing the caller")
+			}
+			if !strings.Contains(err.Error(), "documents") || !strings.Contains(err.Error(), fixture.field) {
+				t.Fatalf("the refusal must name the entry and the offending field %q, "+
+					"or the operator goes looking at the caller: %v", fixture.field, err)
+			}
+		})
 	}
 }

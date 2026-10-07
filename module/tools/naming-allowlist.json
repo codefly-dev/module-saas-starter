@@ -16,6 +16,16 @@
       "path": ".gitleaks-baseline.json",
       "reason": "Machine-generated from commit metadata, so author names are reproduced mechanically. Regenerate the baseline rather than hand-editing it; hand-edits are overwritten on the next run.",
       "ticket": "policy:AGENTS.md"
+    },
+    {
+      "path": "module/services/accounts/code/pkg/infra/solution_host_bundle_verifier.go",
+      "reason": "Holds the ONE literal filesystem path the delivery trust anchor is mounted at. It must match byte-for-byte what the platform infrastructure renders and pins, in a different repository, or the host reads a path nothing writes \u2014 which fails closed at boot forever and invites someone to 'fix' it by making the path configurable again, restoring the seam that let a composition choose the anchor its own documents are verified against. A placeholder here would break the file in the strict sense: the constant would name a directory that does not exist. Scoped to this one file deliberately; every other reference in this repository cites the Go constant rather than repeating the literal, so there is one source of truth and nothing to drift.",
+      "ticket": "policy:AGENTS.md"
+    },
+    {
+      "path": "module/services/policy-log/code/identity/signing_key.go",
+      "reason": "Holds the ONE literal path the witness log's Ed25519 signing key is mounted at, by the same rule as the delivery trust anchor: no path argument, no environment override, so the location is out of reach of anything the composition supplies. It must match byte-for-byte what the platform infrastructure renders, in a different repository, or the service reads a path nothing writes and refuses to boot forever \u2014 and the obvious 'fix' is to make the path configurable, which is the seam this design deletes. A placeholder here would name a directory that does not exist. Scoped to this one file: every other reference cites the Go constant rather than repeating the literal.",
+      "ticket": "policy:AGENTS.md"
     }
   ]
 }

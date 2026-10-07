@@ -16,185 +16,123 @@ spelling that older docs and the `generated-pins-gate` message still show no
 longer works. The full procedure and why are in
 [../../REST_SURFACE.md](../../REST_SURFACE.md#regeneration).
 
-Who registers a composed module's REST prefix is in
-[../auth-gateway/AGENTS.md](../auth-gateway/AGENTS.md#composed-module-rest-federation):
-the consuming backend, holding the prefix's registration secret. The consumed
-module holds only its identity secret, which is what the Work Context
-exchanges below authenticate.
+A composed module's REST routes belong to the gateway's generated and explicit
+catalogs. Its identity secret authenticates the Work Context exchanges below.
 
-## The solution registry is one durable record
+The principal directory lists stored identities only. Declared module authority
+is read by the capability checks and does not create synthetic directory rows.
 
-Both halves of a solution registration — frontend remote and gateway upstream —
-are **one durable record**, not two process-local maps.
-`solution_registrations` (migration `126_solution_registrations`) holds the
-solution identity, its publisher, the frontend and backend halves, a
-registry-wide `revision`, and a per-half lease. A registration therefore
-survives a restart and reaches every replica, and is only served when it is
-**whole**: a solution that registered its page but not its backend is a durable
-`pending` record, deliberately absent from the navigation.
+## Declared solution presence and the registry
 
-- Writes are **compare-and-swap on the revision**, so a stale publisher cannot
-  overwrite newer state.
-- A frontend-half write that changes the manifest also **admits the audit event
-  types its dashboard graph declares** (events carrying `fields`), in the same
-  transaction (`pkg/business/solution_audit_events.go`). An admitted type is an
-  `audit_event_types` row owned by `solution:<id>`. A solution admits types
-  only into the namespaces its own `MODULE_PRINCIPALS` entry (keyed by its
-  solution id) binds — no entry, no admission — so the registration credential
-  alone claims nothing. A namespace belongs to one producer (one the composed
-  event catalog publishes domain events under is already held), a
-  re-declaration may only add fields, and a refusal rolls the whole write back.
-  Ownership follows the binding: the operator releases a namespace by removing
-  it from the holder's entry and binding it to another solution, whose next
-  admission takes every type in it over, recorded as
-  `audit_namespaces_taken_over` on `saas.solution.registration_updated`.
-  Every path that reads a type's schema — the version stamp, payload checks,
-  the category label, and PII redaction on webhooks, the export feed and
-  downloads — resolves it through one lookup (`business.AuditEventResolver`),
-  which reads a declared type's row, so a declared field marked `pii` is
-  stripped like a catalog one and a declared type is never dead-lettered as
-  unregistered. `ModuleEmitAuditEvent` accepts a declared type only when the
-  `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
-  lists its namespace. A declared type also carries a **visibility** — `tenant`
-  by default, or `external` — and only an `external` one is ever delivered to a
-  tenant's outbound webhook endpoint. It takes two keys: the producer declares
-  it (manifest `dashboard.events[].visibility`, or
-  `ModuleAuditEventTypeDeclaration.visibility`) and the operator grants the
-  namespace external delivery (`external_namespaces`, a subset of `namespaces`,
-  refused at boot if it is not). Visibility is fixed at admission — a
-  re-declaration that changes it is refused — because narrowing would silently
-  stop deliveries to endpoints already subscribed and widening would start
-  sending out facts under a name a tenant subscribed to when it meant something
-  else. A declared type may also state its **retention class** (ADR 0009) —
-  `content` by default, or `security` (manifest `dashboard.events[].retention`,
-  or `ModuleAuditEventTypeDeclaration.retention`) — which decides how long a
-  warehouse store of record keeps its full details. The class only grows, like
-  `pii`: a re-declaration may raise it to `security` and is refused if it would
-  lower it, omission included.
-- **Audit reads go through the Service**, never straight to `audit_events`:
-  `QueryAuditLog`, `AggregateAuditLog(ForReader)`, `ExportAuditLog` and
-  `LatestSourceSyncRequests` read the audit store of record — `audit_events`
-  under `postgres`/`both`, the warehouse under a swap value (ADR 0009), where
-  `audit_events` receives no new rows. Each read names its scope
-  (`AuditReadScope`: one organization, or the explicit platform read) and the
-  store refuses one without it. The BigQuery reads run no query job — the
-  service also holds the append grant, and append plus job creation would
-  allow DML — so they use the Storage Read API with row restrictions and are
-  evaluated in the service (`pkg/auditstore/auditeval`) with the Postgres
-  reads' semantics. The ClickHouse reads run in SQL with bound parameters and
-  fall back to `auditeval` only where ClickHouse cannot compute what Postgres
-  does (`pkg/auditstore/clickhousestore/reader.go` lists where);
-  `pkg/business/audit_store_parity_test.go` holds every store to one fixture
-  (ClickHouse joins when `AUDIT_CLICKHOUSE_TEST_DSN` names a server).
-- **Audit relay and queue** (ADR 0009, `pkg/business/audit_relay.go`,
-  `pkg/infra/postgres_audit_queue.go`, migrations 20 and 23). Under a swap value
-  `EmitTx` writes a short-lived `audit_event_queue` row on the caller's
-  transaction; the relay drains it to the archive and then the warehouse and
-  deletes the row only after both acknowledged. It is at-least-once, so every
-  read dedupes by event id. Four rules a change must keep. (1) The archive object
-  is written once per batch, whole, under a name no other set of rows ever uses
-  — the object-store writers take a precondition failure on a name to mean "this
-  batch, already written" — so only the *warehouse* write is repeated, without
-  the rows it refused for good, when a batch fails. (2) A row is set aside into `audit_event_quarantine` only when the
-  warehouse adapter reports a permanent refusal of that row
-  (`business.PermanentRowRejection`, carrying the event id) or the row's details
-  cannot be serialized; every other failure — transport, 5xx, 429, quota,
-  timeout, quorum or replica, or an error the adapter cannot classify — is
-  retried and sets nothing aside, and no decision is drawn from what else the
-  warehouse accepted. The reason starts with its class
-  (`warehouse_rejected_archived` or `unserializable_not_archived`) and is bounded
-  valid text. The move from queue to quarantine is one statement, and nothing in the kit ever deletes a queue or quarantine row (the
-  down migrations refuse while either holds rows). (3) The queue is observed
-  under every `AUDIT_SINK` (`saas.audit_queue.{depth,oldest_age,quarantined,
-  snapshot_errors}`): a failed read makes the gauges absent, never stale, and
-  rows left in the queue under `postgres`/`both` are logged at startup with their
-  count — startup never refuses, because that would take login down. (4) A
-  process that records audit events outside the service (the role catalog
-  import) resolves `AUDIT_SINK` through `auditsink.RequireMode` and refuses an
-  unset value. Replaying quarantined rows is not built yet.
-- **History copy** (`cmd/audit-history-copy`, `pkg/business/audit_history.go`):
-  a deployment switching to a swap value copies its `audit_events` rows into the
-  store of record and the archive — classified and hashed as the relay does a
-  live event — and verifies them by reading them back. It reads back before it
-  writes, and writes an event again when the store holds it without details a
-  write supplies (`inspect`, the one rule `verify` shares), so a rerun finishes
-  an interrupted run, repeated failed details writes included. That rewrite is
-  made at most once per event per run; earlier copies never prove a permanent
-  refusal. An event the store
-  refuses for good fails verification alone, as the relay sets one row aside. Only with `-confirm-drop`,
-  after a verification pass in the same run and a recount showing nothing
-  changed, does it drop the copied partitions, named one by one through
-  `audit_events_drop_verified_partitions` (migration 22), which recounts each
-  under a lock and drops exactly those; retention's
-  `audit_events_drop_partitions_before` is not used. It never deletes a row.
-  Its exit statuses (2 usage, 3 unverified, 4 drop refused, 5 nothing to verify)
-  are documented in `module/AUDIT_OPERATIONS.md`.
-- A composed **module** with no frontend half declares its own audit event
-  types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
-  (`pkg/business/module_audit_declarations.go`): the same validator
-  (`ValidateAuditEventTypeDeclarations`) and the same admission, under the
-  same binding. `prefix` must be the caller's own (the principal derived from
-  it), the types are owned as `solution:<prefix>`, and its emissions name that
-  prefix as `solution`. Re-declaring what is admitted writes and records
-  nothing, so a module may declare on every start; a change is recorded as
-  `saas.module.audit_types_declared`.
-- A deregistration leaves a **tombstone**, so a retiring deployment's delayed
-  heartbeat cannot resurrect it.
-- accounts serves this as `SolutionRegistryService` on the **internal listener**;
-  the auth-gateway is its **only** client and brokers the frontend's half,
-  exactly as it brokers module registration.
-- Both surfaces hold a short-lived cache rebuilt from that snapshot, so
-  convergence after any write is bounded: the gateway reconciles about every 10s
-  plus an on-demand refresh on a cache miss, the frontend holds a 5s snapshot TTL.
+`solution_host_bindings` stores desired and applied `SolutionHostBinding`
+generations and pending reasons. Core owns document admission; each apply
+re-decides under the binding row lock. A refused or unreadable delivery does not
+withdraw the last applied generation. Withdrawal requires a tombstone generation.
 
-## The record carries the solution's runtime boundary seed
+`solution_registrations` is the durable read projection, keyed by the route alias.
+Every row names its declared binding, generation, release and immutable target.
+A binding ID identifies a deployment instance, while an alias identifies a route;
+consent names the target and cannot follow an alias to a replacement instance.
+Only observations for the same declared target may survive a re-declaration.
+
+The internal `SolutionRegistryService` exposes the registry and host-binding
+reads. The gateway reads the snapshot and brokers it to the frontend. Both cache
+briefly: gateway reconciliation is approximately 10 seconds with a refresh on
+cache miss; frontend snapshots expire after 5 seconds and a failed refresh
+reports unavailable. An incomplete record stays pending and is not served.
+
+Migration 26 destructively removes runtime-only state and makes declaration
+ownership mandatory. Its from-zero proof is `TestMigration25FromZero` in the
+store module; `TestMigration22FromZero` separately proves immutable installation
+targets and withdrawal serialization using a freshly created package database.
+
+Audit type admission remains available through
+`ModuleCapabilitiesService.DeclareAuditEventTypes`. Its validator and namespace
+admission use declared module authority. Namespace ownership, additive schema
+changes, immutable visibility and the operator's `external_namespaces` grant
+remain enforced. `ModuleEmitAuditEvent` can emit only a type owned by the caller's
+solution scope and an authorized namespace. `business.AuditEventResolver` resolves
+stored schemas for payload validation and PII redaction.
+
+The principal directory lists stored identities. The `MODULE_PRINCIPALS` map
+below supplies declared authority to capability checks only.
+
+See [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence)
+for the trust model, field ownership and delivery configuration.
+
+## The solution's runtime boundary is derived from its delivered binding
 
 A runtime task is reachable only under the boundary of the Work Context that
-admitted it — the context's `task_id`.
-`solution_registrations.runtime_boundary` (migration
-`17_solution_runtime_boundary`) is the **seed** that boundary is derived from,
-so a run a page admits stays reachable across the mints of one session rather
-than only under the one context that admitted it.
+admitted it — the context's `task_id`. A solution's boundary is derived from the
+**delivered presence binding** (`solution_registrations.declared_binding_id`), so
+a run a page admits stays reachable across the mints of one session rather than
+only under the one context that admitted it.
 
-**The boundary is derived per organization**, not stored: a UUIDv5 of the seed
-and the org id (`business.SolutionRuntimeBoundary`). A run is filed under
-(tenant, boundary), so a single per-solution value would make every tenant of a
-solution share one. The seed never leaves this host.
+**The binding id is the seed because it has the lifetime a boundary needs.** It
+survives a withdrawal and a re-approval, and it is terminal with its tombstone.
+The seed used to be `solution_registrations.runtime_boundary`, a
+per-REGISTRATION `gen_random_uuid()` from migration
+`17_solution_runtime_boundary` — the wrong lifetime twice over: a solution
+withdrawn and registered afresh drew a new value and orphaned every run filed
+under the old one, while a binding that never moved could have its value replaced
+by a write it did not make. **Migration 28 drops that column and its UNIQUE
+constraint**, and `business.SolutionRegistration` carries no boundary field: a
+field no store can populate would read as "this solution has no boundary"
+wherever it was found empty.
 
-**The host assigns it and nothing else can.** The column's `gen_random_uuid()`
-default fires on insert; the registry's upsert deliberately omits the column
-from its `ON CONFLICT … DO UPDATE`, and `RETURNING` makes the stored value the
-one the caller gets back. A UNIQUE constraint keeps two registrations from
-sharing a seed. So no request field reaches it, no write replaces it, and it
-survives a tombstone — a reactivated registration keeps naming the runs it
-already admitted.
+**The boundary is derived per organization**, not stored: a UUIDv5 of a namespace
+derived from the binding id, then of the org id
+(`business.SolutionRuntimeBoundary`). A run is filed under (tenant, boundary), so
+a single per-solution value would make every tenant of a solution share one. Two
+steps, because a binding id is not a UUID — it may carry characters a path
+segment may not, so `uuid.Parse` on it fails. `solutionBoundaryNamespace` is a
+constant of this host and not a secret: unguessability comes from the per-org
+derivation and from the boundary never appearing on a readable record.
 
-**No response carries a seed.** `solutionRegistrationProto` never sets the
-field, on any path: not a listing, not a deregistration, not either half's own
-write. Nothing above this service needs one, because accounts derives and seals
-the boundary itself. `TestSolutionRegistrationResponsesCarryNoRuntimeBoundary`
-holds every response to that.
+**Nothing above this service may choose one.** `declared_binding_id` is written
+only from the delivered declaration, never from a registrant's request, so the
+boundary moves when the host's own reconciliation moves it and at no other time.
 
-**The mint** reads the seed through
+**No response carries a boundary.** `solutionRegistrationProto` sets no such
+field on any path, and there is no field to set: field 9 is reserved on
+`saas.accounts.v1.SolutionRegistration` and
+`TestSolutionRegistrationResponsesCarryNoRuntimeBoundary` asserts over the
+DESCRIPTOR, so reintroducing the field fails rather than only a value happening
+to be empty.
+
+**The mint** reads the binding through
 `business.SolutionRuntimeBoundarySeedStore`, which also reports the publisher of
 record and whether the backend half is serving, and refuses a missing record and
-a tombstone separately. Which solution is asking comes from
-`auth.VerifiedSolution`, stamped from the `X-Codefly-Solution-Id` and
-`X-Codefly-Solution-Publisher` the gateway proved from that solution's
-registration credential (`../auth-gateway/AGENTS.md`); both are forwarded
-identity headers, so they are stripped from any caller arriving without a valid
-gateway token. Before deriving anything the mint checks the publisher equals the
-credential's and the backend half is serving — the half that mints — and a
-caller-supplied `task_id` is **refused**, not ignored.
+a tombstone separately. A row with no `declared_binding_id` answers the
+tombstoned error: the cutover's own constraint makes an undeclared row a
+withdrawn one. **Serving is delivered presence**, not an asserted lease — a
+non-tombstoned declared row whose applied generation carries a backend half
+(`backend_revision` and `backend_upstream`) — and the refusal names both columns.
+Revocation reaches a capability through that per-mint read, under the existing
+120 s cache bound: carrier deletion is not revocation, the applied tombstone is.
 
-**And every other mint refuses a `task_id` that is somebody's boundary.** A
+Which solution is asking comes from `auth.VerifiedSolution`, and **nothing on the
+wire sets it**: a request carrying `X-Codefly-Solution-Id` or
+`X-Codefly-Solution-Publisher` behind a valid gateway token is **refused by
+name** (`errSolutionAttestationNotDelivered`) rather than believed, because this
+host has no delivered attestation to check such a claim against; without a
+gateway token the headers are stripped. Either header alone is a claim.
+`WithVerifiedSolution` is kept as that attestation's landing site and has no
+non-test caller, which `TestNoProductionCodeSetsAVerifiedSolution` holds. So
+solution-scoped minting does not work on this host until the attestation lands —
+stated as the follow-up rather than left to be discovered. Before deriving
+anything the mint checks the publisher equals the credential's and the backend
+half is serving — the half that mints — and a caller-supplied `task_id` is
+**refused**, not ignored.
+
+**And every other mint refuses a `task_id` that is any solution's boundary.** A
 boundary is not a secret a consumer keeps: a consuming module that serves
 durable runs reports, on a run it lets a person read, the Work Context task it
 was admitted under, so one read any caller is entitled to would otherwise hand
 them a stable value to name on an ordinary mint. `StartTask`'s ordinary path and
 `StartInstallationTask` both run `refuseRegisteredBoundary`, which compares the
-caller's `task_id` against every stored seed and the boundary derived from each
-for the organization named in the request — tombstones included, because a
+caller's `task_id` against every stored binding id and the boundary derived from
+each for the organization named in the request — tombstones included, because a
 removed solution's runs may still be executing. It fails **closed**: a registry
 that cannot answer refuses the mint, because the capability cannot then be shown
 not to be a solution's. Otherwise mints are unchanged: a request with no
@@ -315,8 +253,8 @@ and each value case joins its `oneof` when that record exists, read in
 
 **The registration it returns withholds topology**: `catalogueRegistrationProto`
 blanks the frontend manifest, backend upstream and service alias, as every other
-browser-facing projection of the registry does, and the runtime-boundary seed is
-withheld as on every response.
+browser-facing projection of the registry does; there is no runtime-boundary
+field for it to withhold.
 
 ## The composed-module service principal
 
@@ -324,7 +262,7 @@ A module consuming the module-facing capability surface
 (`ModuleCapabilitiesService`: job enqueue/claim, notify, approvals, audit,
 events, subject visibility) calls it as its own **service principal**, whose id
 is derived from the
-same registration prefix (`business.ModulePrincipalID`) — nothing is
+declared module prefix (`business.ModulePrincipalID`) — nothing is
 hand-authored as an opaque id.
 
 Its authority is declared in the `module-capabilities` group's
@@ -359,9 +297,245 @@ once the capability exists. The response carries
   credentials never substitute for missing identity digests.
 - The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
   for that principal, so a module cannot name a tenant by asking.
-- The capability **seals identity and tenant only**: what the principal may do is
-  re-read from the declared grant on every call, so narrowing a grant takes
-  effect immediately rather than when the outstanding token expires.
+- The capability's effective authority **is, in a running deployment today, the
+  LIVE half alone.** `min(sealed, live)` is the target — blocker decision **B1**,
+  which *reverses* what this file said before it — and it is **not yet reached**.
+
+  **In a running deployment this mechanism enforces NOTHING on a module
+  capability, and that has to be said in those words.** The comparison against a
+  sealed ceiling is written and tested, but nothing populates the seal — the
+  module Work Context mint (`StartModuleTask`) passes only audience, tenant,
+  owner principal, task, session, actor chain and TTL, and `sdk-go`'s token
+  carries no installation id, producer epoch, binding revision, build
+  incarnation or image digest to put there.
+
+  `checkAgainstSealed` returns on its first line when the seal is nil. So for
+  every real module credential the live read runs, fetches the epoch, and the
+  result is **discarded**: `AuthorizeModuleCapability` is `moduleGrant` plus a
+  database round trip whose answer nothing compares. The declared grant alone
+  binds, which is the behaviour that preceded this work.
+
+  The consequences, stated rather than left to be derived:
+
+  - **Uninstalling a solution does not revoke a module capability in flight.**
+  - **Advancing an organisation's or a principal's authority epoch does not
+    revoke one.**
+  - An earlier version of this paragraph said "the intersection has one operand".
+    That was still too generous: an intersection of one operand would at least be
+    bounded by the live read. Nothing is.
+
+  Code that exists and a behaviour that holds are different facts, and a rules
+  file other agents read as a statement of what is in place must lead with the
+  second. This bullet has now been corrected three times, each time in the
+  direction of claiming less, which is itself the thing to notice about it.
+
+  **What moved, and what the move does NOT yet reach.** Two of the pieces this
+  bullet described as absent now exist and run:
+
+  - `ApprovedBuildReconciler` populates the approved-build view from the
+    delivered authority inbox, in the same reconcile pass as presence. Before
+    it, `MonotonicApprovedBuilds` was never written to, so every principal was
+    UNKNOWN and `ApprovedBuild` refused every one.
+  - `SetExecutionBinding` is called from `work.go`, with the Kubernetes client
+    that reviews a delivery carrier and that approved-build view. Before it, the
+    execution reviewer was nil on every running host and `BindExecution`
+    answered ErrExecutionUnbound for every caller — the mechanism was built,
+    guarded, unit-tested and unreachable.
+
+  **The mint still does not call it, so the sentence above this one still
+  holds.** `StartModuleTask` passes audience, tenant, owner principal, task,
+  session, actor chain and TTL, and nothing else; the capability still carries
+  no seal, and `checkAgainstSealed` still returns on its first line for every
+  real module credential. `BindExecution` is now REACHABLE and is not REACHED.
+
+  The reason is a contract, not an oversight: the mint authenticates with
+  `req.GetSecret()`, a shared secret, and a secret cannot be execution-bound in
+  principle — it says "I know the secret", never "I am this pod running this
+  image". Reaching the check means replacing that credential with a projected
+  service-account token on the request message, which is a proto change and a
+  consumer-visible break. Until that lands, every consequence listed above is
+  still a consequence.
+
+  This bullet has now been wrong twice in opposite directions. It first asserted
+  the whole model in the present tense while none of it existed. It was then
+  corrected to "the live half is built, the sealed half is partly built" — true
+  of the code and still misleading about the deployment, because "partly built"
+  invites a reader to assume some sealing happens. None does.
+
+  What follows separates what the code does from what it is still to do, and the
+  separation is load-bearing rather than cautious.
+
+  **Both halves bind, and neither alone is enough.** Re-reading alone means a
+  widened grant, or a database restored to a broader state, retroactively widens
+  a credential already in flight. Sealing alone means a narrowing does not take
+  effect until the outstanding credential expires. So the effective authority is
+  the intersection, which is strictly stronger than either.
+
+  **What is built.** Every module capability path resolves its authority through
+  `Service.AuthorizeModuleCapability`, which re-reads the live installation, its
+  revision and the principal's producer epoch in **one** statement — three
+  separate reads would let a revoke land between two of them and produce a
+  decision describing a state that never existed. The revocation predicate is a
+  conjunction and each term closes a different hole:
+
+  - **installation freshness**, without which an uninstall-and-reinstall produces
+    a new installation an old credential would satisfy;
+  - **producer epoch**, without which a narrowing revokes only the credential
+    being held and the replacement is reminted with the old authority — so the
+    narrowing undoes itself after one credential lifetime;
+  - **binding revision**, for an operation context, resolved by
+    `Service.ExactOperationBinding`.
+
+  A host that *cannot* re-read refuses every capability (`FailedPrecondition`)
+  rather than falling back to the declared ceiling. A read that *fails* is
+  `Unavailable` — neither a denial nor an allow, because a database blip is not
+  mass revocation and an allow would be the check not running.
+
+  **The exact binding lookup exists; one call site still searches, and it is
+  named here rather than glossed.** `Service.ExactOperationBinding` resolves the
+  one binding a credential named, by id, and refuses a capability that names none
+  rather than falling back — an optional exact lookup is a search with extra
+  steps, so the fallback is the whole defect.
+
+  But `moduleOperationContextStale` (`module_operation_context.go`) **still
+  searches**: it iterates `grant.OperationAudiences` and accepts if **any**
+  binding's `headless_scopes` contain the presented set. So a context minted
+  against a narrow binding is satisfied by any **wider** binding the principal
+  also holds, and narrowing one binding achieves nothing while a broader one
+  survives. That is the defect both reviews named.
+
+  It cannot be routed through the exact lookup yet, and the reason is structural
+  rather than effort: the staleness check has no binding id to look up, because
+  the credential does not carry one. Sealing the binding id is the Work Context
+  cutover, so this site is **gated on condition 2**, not pending on condition 1.
+  Until then, `operationScopesSubset` there is bounding-by-search and the
+  narrowing it misses is real.
+
+  **Deferred work is re-checked when it runs**, not when it is enqueued, because
+  "at use" has to mean at the moment of use. A producer stamps
+  `DeferredWorkAuthority`; a worker re-checks it and revoked work fails
+  **terminally** (`ErrDeferredWorkRevoked`) rather than retrying — the authority
+  will not come back by waiting. An unreadable authority stays retryable, because
+  nothing was decided.
+
+  **Absence is not zero, and this is the trap.** `SealedModuleAuthority`'s fields
+  are pointers, so a credential carrying no claim about a term is skipped rather
+  than compared against zero. "Treat missing as zero" is the shorter
+  implementation, it looks exactly like a check, and it admits every unsealed
+  credential — which is all of them until the Work Context cutover. Core's own
+  seal made the same change for the same reason: `build_incarnation` and
+  `image_digest` became optional so "bears no execution" and "bears execution
+  zero" stopped being the same bytes.
+
+  `TestEveryModuleCapabilityPathReReadsLiveAuthority` in `module/tools` is what
+  makes "every path" true rather than aspirational: it walks the AST for any
+  function calling `moduleGrant` directly and holds the set against a
+  **shrink-only** baseline, now empty. Its non-vacuity check is anchored on the
+  enforcement rather than on the violations — zero direct callers is the goal, so
+  deleting the wrapper must not satisfy it.
+
+  **What is NOT built, and so must not be relied on.** The credential seals
+  identity and tenant only: the mint does not yet populate the installation id,
+  revision, epoch or binding fields, so in a running deployment every
+  `Sealed` is nil and the intersection is the live half alone. That is sound for
+  narrowing and silent about widening, which is strictly better than before and
+  strictly weaker than the target. The intersection also does not yet cover
+  queues, resources, namespaces, external publication and audiences; only the
+  three authority terms above. Those are gated on the Work Context cutover to
+  core's `workcontext`, tracked on #952 / PR #953 as Lane 3 condition 1.
+
+## Establishing what a caller is running
+
+`Service.BindExecution` answers what a caller IS RUNNING, from sources the
+caller does not control. The mint authenticated with a **shared secret**, which
+is a bearer token — whoever holds it is the module — so it could not answer this
+at all. A secret cannot be execution-bound in principle: it says "I know the
+secret", never "I am this pod running this image".
+
+**Three digest types, and conflating any two defeats the check.** They are
+separate Go types rather than three strings for exactly that reason:
+
+| | what it says | who can write it |
+| --- | --- | --- |
+| `ApprovedDigest` | what the authority document approves | signed, out of band — the caller has no influence |
+| `DeclaredDigest` | what the pod **spec** asks to run | whoever can create the pod |
+| `RunningDigest` | what the container **status** reports, as `imageID` | the kubelet |
+
+The check is **approved == running**. Comparing approved against declared is the
+classic defeat: a pod spec can name an approved image and run something else if
+the tag moved, and the comparison passes while the workload is unapproved.
+Comparing declared against running proves only that the pod got what it asked
+for, which says nothing about whether it was allowed to ask. `DeclaredDigest`
+exists with nothing compared against it so that a reader reaching for "the pod's
+image" has a name for the thing they must not use.
+
+**Three independent sources, so no one of them can satisfy the check.** Filling
+both sides from the same place — approved digest and running digest both out of
+the authority document — compares a value to itself and passes for every caller.
+Here the approved digest comes from the signed document, the running digest from
+the Kubernetes API, keyed by a pod UID that came from a TokenReview of a token
+the caller could not forge.
+
+**The order is load-bearing:** authenticate, then read the pod *the token named*,
+then compare. Reading the pod first would mean reading a pod the **caller**
+named, which is a caller-supplied input; the token is what makes the pod
+reference trustworthy. The audience is `accounts`, so a token minted for the API
+server's own audience authenticates the same service account while having been
+issued for something else.
+
+**The UID is what is compared, not the name.** A pod name is reused across
+generations of a workload and the UID is not, so a replacement pod at the same
+name is refused.
+
+**Two answers that must not be confused.** `ErrExecutionNotApproved` is a verdict
+about the caller. `ErrExecutionUnbound` means the host could not *tell* — an
+unreachable API, a container still pulling, no reviewer wired — and **nothing is
+issued**, because a mint that proceeded would issue an unbound capability exactly
+when binding was impossible. A legacy non-bound token is **refused**, not
+skipped: skipping would make the check opt-out by presenting an older token,
+which is the easiest possible bypass.
+
+**A tag is never an approval.** The comparison is on the digest portion and is an
+exact match on it — not a suffix test (`HasSuffix` passes when the approved
+digest is a suffix of a longer hex string) and not a `sha256:` prefix check
+(which would let any repository satisfy an approval granted for one image). A
+value with no digest never matches, because an approval is only ever a statement
+about immutable content.
+
+### The monotonicity contract, which is this host's to keep
+
+Core's `SealSource.ApprovedBuild` states the rule and says plainly that it
+compares values for **equality** and cannot detect a source that moves
+backwards. `MonotonicApprovedBuilds` enforces both clauses:
+
+1. for one principal, the incarnation never **decreases**;
+2. a change of **digest** comes with an **increase** in the incarnation.
+
+Clause 2 is the one core's own `MemorySealSource` missed: approve B at
+incarnation 5, then approve A again at 5, and every capability sealed to A at 5 —
+which the move to B revoked — verifies again. A swap-back at a fixed counter is
+the rewind the rule exists to prevent, reached through the field clause 1 does
+not cover. A violating write is **refused**, not clamped: clamping would serve a
+value the writer did not intend and the writer would never learn. A source that
+genuinely must rewind is reconstructing state rather than recording it, and
+belongs behind a fresh instance.
+
+**Three states, and collapsing two of them is the dangerous direction:** a record
+→ the approved pair; known but no record → `ErrNoApprovedBuild`, and the caller
+may act unbound; unknown → `ErrUnknownExecutionPrincipal`, refused. Collapsing
+unknown into "bears none" would mint an unbound capability for an identity the
+host has never heard of, so an **empty** authority refuses everyone rather than
+minting unbound capabilities for everyone.
+
+A principal bearing no approved build binds with **neither** field set, because
+core's seal makes `build_incarnation` and `image_digest` optional *and paired* —
+a digest without an incarnation is refused by its schema.
+
+**Not wired yet:** no mint calls `BindExecution`, and the approved digests are
+not populated from the delivered authority documents, so this is exercised by
+tests rather than by a running deployment. `module_operation_context.go`'s
+binding search is unblocked by the sealed binding id, which the Work Context
+cutover carries and which is still outstanding.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,
@@ -650,3 +824,75 @@ cause (v2 of that type; `datasourceAccessLostCodes` is the whole vocabulary a
 registry test holds the declaration to). Recovery is the ordinary one — a later
 snapshot clearing the degrade — which a repository made public again, or
 reconnected with a PAT or through the App, all reach.
+
+## Audit store and retention
+
+- **Audit reads go through the Service**, never straight to `audit_events`:
+  `QueryAuditLog`, `AggregateAuditLog(ForReader)`, `ExportAuditLog` and
+  `LatestSourceSyncRequests` read the audit store of record — `audit_events`
+  under `postgres`/`both`, the warehouse under a swap value (ADR 0009), where
+  `audit_events` receives no new rows. Each read names its scope
+  (`AuditReadScope`: one organization, or the explicit platform read) and the
+  store refuses one without it. The BigQuery reads run no query job — the
+  service also holds the append grant, and append plus job creation would
+  allow DML — so they use the Storage Read API with row restrictions and are
+  evaluated in the service (`pkg/auditstore/auditeval`) with the Postgres
+  reads' semantics. The ClickHouse reads run in SQL with bound parameters and
+  fall back to `auditeval` only where ClickHouse cannot compute what Postgres
+  does (`pkg/auditstore/clickhousestore/reader.go` lists where);
+  `pkg/business/audit_store_parity_test.go` holds every store to one fixture
+  (ClickHouse joins when `AUDIT_CLICKHOUSE_TEST_DSN` names a server).
+- **Audit relay and queue** (ADR 0009, `pkg/business/audit_relay.go`,
+  `pkg/infra/postgres_audit_queue.go`, migrations 30 and 33). Under a swap value
+  `EmitTx` writes a short-lived `audit_event_queue` row on the caller's
+  transaction; the relay drains it to the archive and then the warehouse and
+  deletes the row only after both acknowledged. It is at-least-once, so every
+  read dedupes by event id. Four rules a change must keep. (1) The archive object
+  is written once per batch, whole, under a name no other set of rows ever uses
+  — the object-store writers take a precondition failure on a name to mean "this
+  batch, already written" — so only the *warehouse* write is repeated, without
+  the rows it refused for good, when a batch fails. (2) A row is set aside into `audit_event_quarantine` only when the
+  warehouse adapter reports a permanent refusal of that row
+  (`business.PermanentRowRejection`, carrying the event id) or the row's details
+  cannot be serialized; every other failure — transport, 5xx, 429, quota,
+  timeout, quorum or replica, or an error the adapter cannot classify — is
+  retried and sets nothing aside, and no decision is drawn from what else the
+  warehouse accepted. The reason starts with its class
+  (`warehouse_rejected_archived` or `unserializable_not_archived`) and is bounded
+  valid text. The move from queue to quarantine is one statement, and nothing in the kit ever deletes a queue or quarantine row (the
+  down migrations refuse while either holds rows). (3) The queue is observed
+  under every `AUDIT_SINK` (`saas.audit_queue.{depth,oldest_age,quarantined,
+  snapshot_errors}`): a failed read makes the gauges absent, never stale, and
+  rows left in the queue under `postgres`/`both` are logged at startup with their
+  count — startup never refuses, because that would take login down. (4) A
+  process that records audit events outside the service (the role catalog
+  import) resolves `AUDIT_SINK` through `auditsink.RequireMode` and refuses an
+  unset value. Replaying quarantined rows is not built yet.
+- **History copy** (`cmd/audit-history-copy`, `pkg/business/audit_history.go`):
+  a deployment switching to a swap value copies its `audit_events` rows into the
+  store of record and the archive — classified and hashed as the relay does a
+  live event — and verifies them by reading them back. It reads back before it
+  writes, and writes an event again when the store holds it without details a
+  write supplies (`inspect`, the one rule `verify` shares), so a rerun finishes
+  an interrupted run, repeated failed details writes included. That rewrite is
+  made at most once per event per run; earlier copies never prove a permanent
+  refusal. An event the store
+  refuses for good fails verification alone, as the relay sets one row aside. Only with `-confirm-drop`,
+  after a verification pass in the same run and a recount showing nothing
+  changed, does it drop the copied partitions, named one by one through
+  `audit_events_drop_verified_partitions` (migration 32), which recounts each
+  under a lock and drops exactly those; retention's
+  `audit_events_drop_partitions_before` is not used. It never deletes a row.
+  Its exit statuses (2 usage, 3 unverified, 4 drop refused, 5 nothing to verify)
+  are documented in `module/AUDIT_OPERATIONS.md`.
+- A composed **module** with no frontend half declares its own audit event
+  types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
+  (`pkg/business/module_audit_declarations.go`): the same validator
+  (`ValidateAuditEventTypeDeclarations`) and the same admission, under the
+  same binding. `prefix` must be the caller's own (the principal derived from
+  it), the types are owned as `solution:<prefix>`, and its emissions name that
+  prefix as `solution`. Re-declaring what is admitted writes and records
+  nothing, so a module may declare on every start; a change is recorded as
+  `saas.module.audit_types_declared`.
+
+Declared event types may state `content` or `security` retention (ADR 0009); omission means content. Admission may raise a class to security and refuses lowering it, including omission after security was admitted. Warehouse reads, payload validation, PII redaction and catalog import must preserve that class.

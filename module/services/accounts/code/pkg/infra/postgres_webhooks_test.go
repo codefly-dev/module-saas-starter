@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -351,12 +352,20 @@ func TestCreateAndListWebhookDeliveries(t *testing.T) {
 }
 
 func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
+	// Guarded, because the handler runs on the server's goroutine and the
+	// assertions run on the test's. The round trip happens to establish
+	// happens-before in practice, which is exactly why an unguarded version
+	// passes until -race or a scheduling change says otherwise.
+	var captureMutex sync.Mutex
 	var receivedBody []byte
 	var receivedDeliveryID, receivedEventID string
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedBody, _ = io.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
+		captureMutex.Lock()
+		receivedBody = body
 		receivedDeliveryID = r.Header.Get("X-Webhook-Delivery-ID")
 		receivedEventID = r.Header.Get("X-Webhook-Event-ID")
+		captureMutex.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(endpoint.Close)
@@ -399,17 +408,29 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 	})
 	// The audit record and its event commit together; fan-out is the relay's
 	// work afterwards, which is what the emitter no longer does itself.
-	relayed, err := transport.RelayOnce(testCtx)
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, relayed, 1)
-
+	// Relay until THIS event has fanned out, for the same reason the delivery
+	// loop below exists: `relayed >= 1` is satisfied by any other test's event
+	// sitting ahead of this one in the shared relay. It did not cause a failure
+	// here — the fan-out happened to land in the first pass — which is precisely
+	// what makes it worth fixing now rather than when it starts failing.
+	//
+	// The subscription scopes the read, so draining other events is harmless;
+	// what must not happen is concluding from a count that ours was among them.
 	var deliveries []*business.WebhookDelivery
-	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		var err error
-		deliveries, err = testStore.ListWebhookDeliveries(ctx, sub.ID, 10)
-		return err
-	}))
-	require.Len(t, deliveries, 1)
+	for pass := 0; pass < 50 && len(deliveries) == 0; pass++ {
+		relayed, relayErr := transport.RelayOnce(testCtx)
+		require.NoError(t, relayErr)
+		require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			var listErr error
+			deliveries, listErr = testStore.ListWebhookDeliveries(ctx, sub.ID, 10)
+			return listErr
+		}))
+		if relayed == 0 && len(deliveries) == 0 {
+			break
+		}
+	}
+	require.Len(t, deliveries, 1,
+		"event %s never fanned out to subscription %s after draining the shared relay", eventID, sub.ID)
 	require.Equal(t, eventID, deliveries[0].EventID)
 	require.Equal(t, eventID, deliveries[0].OutboxEventID)
 	require.Equal(t, "pending", deliveries[0].Status)
@@ -437,11 +458,43 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 		Handler: handler, WorkerID: "outbound-webhook-integration", BatchSize: 100,
 	})
 	require.NoError(t, err)
-	processed, _ := worker.RunOnce(testCtx)
-	require.Positive(t, processed)
-	require.Equal(t, deliveries[0].Payload, string(receivedBody))
-	require.Equal(t, deliveries[0].ID, receivedDeliveryID)
-	require.Equal(t, eventID, receivedEventID)
+	// Run until THIS delivery arrives, rather than once with a count.
+	//
+	// `OutboundWebhookQueue` is shared by every test in this package, so a
+	// single RunOnce with BatchSize 100 claims whatever is at the head of the
+	// queue — and `require.Positive(processed)` is satisfied by a hundred OTHER
+	// tests' jobs while this one's sits behind them. That is what made this test
+	// fail: not contention for a row, but an assertion on a COUNT where an
+	// IDENTITY was meant. The same shape as asserting a suite ran because the
+	// exit code was zero.
+	//
+	// Bounded, so a genuinely undelivered job fails rather than hanging, and the
+	// failure names what was being waited for instead of reporting an empty
+	// string.
+	var delivered bool
+	for pass := 0; pass < 50 && !delivered; pass++ {
+		processed, runErr := worker.RunOnce(testCtx)
+		require.NoError(t, runErr)
+		captureMutex.Lock()
+		delivered = receivedDeliveryID == deliveries[0].ID
+		captureMutex.Unlock()
+		if processed == 0 && !delivered {
+			// Nothing left to claim and ours never came: a real failure, and
+			// looping further would only turn it into a timeout.
+			break
+		}
+	}
+	captureMutex.Lock()
+	gotBody, gotDeliveryID, gotEventID := string(receivedBody), receivedDeliveryID, receivedEventID
+	captureMutex.Unlock()
+
+	require.True(t, delivered,
+		"delivery %s for event %s never reached the endpoint after draining the shared %s queue; "+
+			"last delivery seen was %q",
+		deliveries[0].ID, eventID, business.OutboundWebhookQueue, gotDeliveryID)
+	require.Equal(t, deliveries[0].Payload, gotBody)
+	require.Equal(t, deliveries[0].ID, gotDeliveryID)
+	require.Equal(t, eventID, gotEventID)
 
 	var jobState string
 	var jobAttempts int

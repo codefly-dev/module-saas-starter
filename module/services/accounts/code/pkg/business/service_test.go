@@ -148,6 +148,13 @@ func runBusinessTests(m *testing.M) int {
 	}
 	service.SetWebhookJobProducer(store)
 
+	// The policy log's two halves. Every narrowing — uninstall, solution-target
+	// close, scope-grant revocation, team-membership removal — now REFUSES on a
+	// host with no log, so a service without one could not exercise any of them.
+	// The local half is the real postgres store; only the external warehouse is a
+	// double (policy_log_production_path_test.go says why).
+	wirePolicyLogForTests(service, store)
+
 	// Wire optional components
 	vaultClient, err := infra.NewVaultClient(ctx)
 	if err == nil {

@@ -14,6 +14,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// artifactTransportTargetID is the consented target this fake's installation
+// names, and artifactTransportBindingID the binding it records. The guard keys
+// on the binding, so the fake has to answer both rather than a route alias.
+const (
+	artifactTransportTargetID  = "4f1b4b4c-0000-4000-8000-00000000f00d"
+	artifactTransportBindingID = "binding-acme-example-0001"
+)
+
 type artifactTransportStore struct {
 	business.Store
 	business.InstallationStore
@@ -22,11 +30,22 @@ type artifactTransportStore struct {
 	admin  bool
 }
 
+// WithControlPlane runs the body as the control plane. The target read is
+// control-plane because solution_targets is global with exact grants.
+func (s *artifactTransportStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+func (s *artifactTransportStore) GetSolutionTarget(_ context.Context, targetID string) (*business.SolutionTarget, error) {
+	if targetID != artifactTransportTargetID {
+		return nil, nil
+	}
+	return &business.SolutionTarget{ID: artifactTransportTargetID, BindingID: artifactTransportBindingID, SolutionID: "acme/example"}, nil
+}
 func (s *artifactTransportStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
 	return fn(ctx)
 }
 func (s *artifactTransportStore) GetInstallation(context.Context, string, string) (*gen.Installation, gen.InstallationHealth, error) {
-	return &gen.Installation{SolutionIdentifier: "acme/example", Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE}, gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY, nil
+	return &gen.Installation{TargetId: artifactTransportTargetID, Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE}, gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY, nil
 }
 func (s *artifactTransportStore) GetOrgMembership(context.Context, string, string) (*gen.OrgMembership, error) {
 	if !s.member {
@@ -67,7 +86,7 @@ func TestExecutableArtifactServedTransport(t *testing.T) {
 	service, err = business.NewService(store)
 	require.NoError(t, err)
 	digest := "sha256:" + strings.Repeat("a", 64)
-	policy := business.ExecutableArtifactPolicy{Schema: "example.artifact/v1", Sources: map[string]string{"acme.example": "acme/example"}, Activate: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Run: business.ArtifactPermission{Resource: "definitions", Action: "run"}, Contracts: []business.ArtifactContract{{Kind: "model", Name: "example/chat", Digest: digest}}, RequiredKinds: []string{"model"}}
+	policy := business.ExecutableArtifactPolicy{Schema: "example.artifact/v1", Sources: map[string]string{"acme.example": artifactTransportBindingID}, Activate: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Run: business.ArtifactPermission{Resource: "definitions", Action: "run"}, Contracts: []business.ArtifactContract{{Kind: "model", Name: "example/chat", Digest: digest}}, RequiredKinds: []string{"model"}}
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, ArtifactPolicies: map[string]business.ExecutableArtifactPolicy{"content": policy}}})
 	parent := mint("example", "definitions", "configure")
 	body := &gen.ModuleExecutableArtifactRequest{ParentWorkContextToken: parent, InstallationId: uuid.NewString(), PolicyId: "content", Identity: &gen.ExecutableArtifactIdentity{Schema: policy.Schema, Source: "acme.example", Subject: []byte(`{"configuration":"pinned","scripts":[]}`), ExpectedRevision: 9007199254740993, Contracts: []*gen.ExecutableArtifactContract{{Kind: "model", Name: "example/chat", Digest: digest}}}}

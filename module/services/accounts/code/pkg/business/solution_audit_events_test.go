@@ -16,7 +16,7 @@ import (
 
 // Admission rules for solution-declared audit event types, exercised without a
 // database: the manifest parser, the additive-change rule, the stored-schema
-// round trip, and admission through PutSolutionRegistration against an
+// round trip, and declaration admission against an
 // in-memory store that rolls a failed transaction back. The SQL itself is
 // covered in solution_audit_events_integration_test.go.
 
@@ -373,21 +373,31 @@ func newDeclaringService(t *testing.T, store *declaredAuditStore, bound bindings
 	if err != nil {
 		t.Fatal(err)
 	}
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(bound.registry())
 	return svc
 }
 
-func registerDeclaring(t *testing.T, svc *Service, id string, expected *int64, events string) (*SolutionRegistration, error) {
+func admitDeclaring(t *testing.T, svc *Service, id string, events string) ([]string, error) {
 	t.Helper()
-	write := frontendWrite(id, "publisher-"+id, declaringManifest(id, events))
-	write.ExpectedRevision = expected
-	return svc.PutSolutionRegistration(context.Background(), write)
+	declared, err := ParseDeclaredAuditEventTypes(id, declaringManifest(id, events))
+	if err != nil {
+		return nil, err
+	}
+	var taken []string
+	err = svc.store.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		var err error
+		taken, err = svc.admitDeclaredAuditEventTypes(ctx, id, declared)
+		return err
+	})
+	return taken, err
 }
 
-func TestPutSolutionRegistration_AdmitsDeclaredTypes(t *testing.T) {
+func TestAuditDeclarationAdmission_AdmitsDeclaredTypes(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc := newDeclaringService(t, store, bindings{"acme": {"acme"}, "other": {"acme"}, "third": {"legacy"}})
-	record, err := registerDeclaring(t, svc, "acme", nil, exampleDeclaredEvent)
+	_, err := admitDeclaring(t, svc, "acme", exampleDeclaredEvent)
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -402,8 +412,7 @@ func TestPutSolutionRegistration_AdmitsDeclaredTypes(t *testing.T) {
 	// An identical declaration in a changed manifest is idempotent: the
 	// registration advances, the admitted type is not rewritten.
 	puts := store.puts
-	revision := record.Revision
-	record, err = registerDeclaring(t, svc, "acme", &revision,
+	_, err = admitDeclaring(t, svc, "acme",
 		exampleDeclaredEvent+`,{"name":"login","type":"saas.auth.login"}`)
 	if err != nil {
 		t.Fatalf("re-register identical declaration: %v", err)
@@ -413,8 +422,7 @@ func TestPutSolutionRegistration_AdmitsDeclaredTypes(t *testing.T) {
 	}
 
 	// Adding a field is admitted.
-	revision = record.Revision
-	record, err = registerDeclaring(t, svc, "acme", &revision,
+	_, err = admitDeclaring(t, svc, "acme",
 		`{"name":"created","type":"acme.item.created","fields":[{"name":"stage","kind":"enum","values":["draft","final"]},{"name":"score","kind":"number"},{"name":"count","kind":"int"},{"name":"owner_id","kind":"uuid"}]}`)
 	if err != nil {
 		t.Fatalf("additive change: %v", err)
@@ -425,21 +433,20 @@ func TestPutSolutionRegistration_AdmitsDeclaredTypes(t *testing.T) {
 
 	// Dropping a field refuses the whole write: the registration keeps the
 	// revision and manifest it had.
-	revision = record.Revision
-	before := store.registrations["acme"]
-	if _, err := registerDeclaring(t, svc, "acme", &revision,
+	before := store.rows["acme.item.created"]
+	if _, err := admitDeclaring(t, svc, "acme",
 		`{"name":"created","type":"acme.item.created","fields":[{"name":"count","kind":"int"}]}`); !errors.Is(err, ErrSolutionAuditDeclarationRejected) {
 		t.Fatalf("dropping a field: err = %v, want rejected", err)
 	}
-	if after := store.registrations["acme"]; after.Revision != before.Revision || after.Frontend.Manifest != before.Frontend.Manifest {
+	if after := store.rows["acme.item.created"]; !reflect.DeepEqual(after, before) {
 		t.Fatal("a refused declaration must leave the last admitted registration in place")
 	}
 }
 
-func TestPutSolutionRegistration_RefusesAnotherProducersNamespace(t *testing.T) {
+func TestAuditDeclarationAdmission_RefusesAnotherProducersNamespace(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc := newDeclaringService(t, store, bindings{"acme": {"acme"}, "other": {"acme"}, "third": {"legacy"}})
-	if _, err := registerDeclaring(t, svc, "acme", nil, exampleDeclaredEvent); err != nil {
+	if _, err := admitDeclaring(t, svc, "acme", exampleDeclaredEvent); err != nil {
 		t.Fatalf("first solution: %v", err)
 	}
 	// A second solution may neither take the type nor add one beside it.
@@ -447,7 +454,7 @@ func TestPutSolutionRegistration_RefusesAnotherProducersNamespace(t *testing.T) 
 		exampleDeclaredEvent,
 		`{"name":"deleted","type":"acme.item.deleted","fields":[]}`,
 	} {
-		_, err := registerDeclaring(t, svc, "other", nil, events)
+		_, err := admitDeclaring(t, svc, "other", events)
 		if !errors.Is(err, ErrSolutionAuditNamespaceOwned) || !errors.Is(err, ErrSolutionAuditDeclarationRejected) {
 			t.Fatalf("second solution: err = %v, want the namespace refused", err)
 		}
@@ -457,14 +464,14 @@ func TestPutSolutionRegistration_RefusesAnotherProducersNamespace(t *testing.T) 
 	}
 	// A namespace the code catalog holds is refused the same way.
 	store.rows["legacy.item.created"] = declaredAuditRow{owner: "accounts", namespace: "legacy"}
-	if _, err := registerDeclaring(t, svc, "third", nil, `{"name":"e","type":"legacy.item.other","fields":[]}`); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
+	if _, err := admitDeclaring(t, svc, "third", `{"name":"e","type":"legacy.item.other","fields":[]}`); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
 		t.Fatalf("code-owned namespace: err = %v, want refused", err)
 	}
 }
 
 // A namespace the composed event catalog publishes domain events under already
 // has its producer, even though no audit_event_types row names it.
-func TestPutSolutionRegistration_RefusesPublishedEventNamespaces(t *testing.T) {
+func TestAuditDeclarationAdmission_RefusesPublishedEventNamespaces(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc := newDeclaringService(t, store, bindings{"acme": {"acme"}, "other": {"acme"}, "third": {"legacy"}})
 	// installation and scope are the platform's own domain-event namespaces;
@@ -477,7 +484,7 @@ func TestPutSolutionRegistration_RefusesPublishedEventNamespaces(t *testing.T) {
 		}
 	}
 	for _, namespace := range namespaces {
-		_, err := registerDeclaring(t, svc, "acme", nil,
+		_, err := admitDeclaring(t, svc, "acme",
 			`{"name":"e","type":"`+namespace+`.item.created","fields":[]}`)
 		if !errors.Is(err, ErrSolutionAuditNamespaceOwned) || !errors.Is(err, ErrSolutionAuditDeclarationRejected) {
 			t.Fatalf("%s: err = %v, want the namespace refused", namespace, err)
@@ -490,33 +497,15 @@ func TestPutSolutionRegistration_RefusesPublishedEventNamespaces(t *testing.T) {
 		}
 	}
 	// A namespace no producer publishes under is still free.
-	if _, err := registerDeclaring(t, svc, "acme", nil, `{"name":"e","type":"acme.item.created","fields":[]}`); err != nil {
+	if _, err := admitDeclaring(t, svc, "acme", `{"name":"e","type":"acme.item.created","fields":[]}`); err != nil {
 		t.Fatalf("unpublished namespace: %v", err)
-	}
-}
-
-// A renewal carries a manifest already admitted and is not re-read, so a
-// heartbeat never touches the audit registry.
-func TestPutSolutionRegistration_RenewalDoesNotReadmit(t *testing.T) {
-	store := newDeclaredAuditStore()
-	svc := newDeclaringService(t, store, bindings{"acme": {"acme"}, "other": {"acme"}, "third": {"legacy"}})
-	if _, err := registerDeclaring(t, svc, "acme", nil, exampleDeclaredEvent); err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	puts := store.puts
-	delete(store.rows, "acme.item.created")
-	if _, err := registerDeclaring(t, svc, "acme", nil, exampleDeclaredEvent); err != nil {
-		t.Fatalf("renewal: %v", err)
-	}
-	if store.puts != puts {
-		t.Fatal("a lease renewal must not re-admit declared types")
 	}
 }
 
 func TestAuditEventTypes_ListsCatalogAndDeclaredTypes(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc := newDeclaringService(t, store, bindings{"acme": {"acme"}, "other": {"acme"}, "third": {"legacy"}})
-	if _, err := registerDeclaring(t, svc, "acme", nil, exampleDeclaredEvent); err != nil {
+	if _, err := admitDeclaring(t, svc, "acme", exampleDeclaredEvent); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	definitions, err := svc.AuditEventTypes(context.Background())
@@ -543,7 +532,7 @@ func TestAuditEventTypes_ListsCatalogAndDeclaredTypes(t *testing.T) {
 
 // A solution admits types only into the namespaces the operator bound to it,
 // so a registration credential alone claims nothing.
-func TestPutSolutionRegistration_RefusesAnUnboundNamespace(t *testing.T) {
+func TestAuditDeclarationAdmission_RefusesAnUnboundNamespace(t *testing.T) {
 	for name, bound := range map[string]bindings{
 		"no principal entry":        {},
 		"entry binds no namespace":  {"acme": nil},
@@ -551,7 +540,7 @@ func TestPutSolutionRegistration_RefusesAnUnboundNamespace(t *testing.T) {
 	} {
 		store := newDeclaredAuditStore()
 		svc := newDeclaringService(t, store, bound)
-		_, err := registerDeclaring(t, svc, "acme", nil, exampleDeclaredEvent)
+		_, err := admitDeclaring(t, svc, "acme", exampleDeclaredEvent)
 		if !errors.Is(err, ErrSolutionAuditNamespaceUnbound) || !errors.Is(err, ErrSolutionAuditDeclarationRejected) {
 			t.Fatalf("%s: err = %v, want the unbound namespace refused", name, err)
 		}
@@ -562,7 +551,7 @@ func TestPutSolutionRegistration_RefusesAnUnboundNamespace(t *testing.T) {
 	// A manifest that declares nothing needs no binding.
 	store := newDeclaredAuditStore()
 	svc := newDeclaringService(t, store, bindings{})
-	if _, err := registerDeclaring(t, svc, "acme", nil, `{"name":"login","type":"saas.auth.login"}`); err != nil {
+	if _, err := admitDeclaring(t, svc, "acme", `{"name":"login","type":"saas.auth.login"}`); err != nil {
 		t.Fatalf("a fieldless declaration: %v", err)
 	}
 }
@@ -570,10 +559,10 @@ func TestPutSolutionRegistration_RefusesAnUnboundNamespace(t *testing.T) {
 // Ownership follows the binding: once the operator unbinds a namespace from
 // its holder and binds it to another solution, that solution's next admission
 // takes every type in it over, and the registration event records it.
-func TestPutSolutionRegistration_TakesOverAReleasedNamespace(t *testing.T) {
+func TestAuditDeclarationAdmission_TakesOverAReleasedNamespace(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc := newDeclaringService(t, store, bindings{"acme": {"acme"}})
-	if _, err := registerDeclaring(t, svc, "acme", nil, exampleDeclaredEvent); err != nil {
+	if _, err := admitDeclaring(t, svc, "acme", exampleDeclaredEvent); err != nil {
 		t.Fatalf("first holder: %v", err)
 	}
 
@@ -584,44 +573,44 @@ func TestPutSolutionRegistration_TakesOverAReleasedNamespace(t *testing.T) {
 	} {
 		store := newDeclaredAuditStore()
 		svc := newDeclaringService(t, store, bindings{"acme": {"acme"}})
-		if _, err := registerDeclaring(t, svc, "acme", nil, exampleDeclaredEvent); err != nil {
+		if _, err := admitDeclaring(t, svc, "acme", exampleDeclaredEvent); err != nil {
 			t.Fatalf("%s: first holder: %v", name, err)
 		}
 		emitter := &recordingEmitter{}
 		svc.SetAuditEmitter(emitter)
+		withCurrentAuthority(svc)
+		withCurrentAuthority(svc)
 		svc.SetModulePrincipals(bound.registry())
 		// The successor re-declares the type (still additive) and adds one.
-		if _, err := registerDeclaring(t, svc, "successor", nil, exampleDeclaredEvent+
+		if taken, err := admitDeclaring(t, svc, "successor", exampleDeclaredEvent+
 			`,{"name":"deleted","type":"acme.item.deleted","fields":[]}`); err != nil {
 			t.Fatalf("%s: successor: %v", name, err)
+		} else if !reflect.DeepEqual(taken, []string{"acme"}) {
+			t.Fatalf("takeover = %v", taken)
 		}
 		for _, eventType := range []EventType{"acme.item.created", "acme.item.deleted"} {
 			if got := store.rows[eventType].owner; got != "solution:successor" {
 				t.Fatalf("%s: %s owner = %q, want solution:successor", name, eventType, got)
 			}
 		}
-		var recorded []string
-		for _, entry := range emitter.entries {
-			if entry.EventType == EventSolutionRegistrationUpdated {
-				recorded, _ = entry.Payload["audit_namespaces_taken_over"].([]string)
-			}
-		}
-		if !reflect.DeepEqual(recorded, []string{"acme"}) {
-			t.Fatalf("%s: takeover recorded as %v, want [acme]", name, recorded)
-		}
+
 	}
 
 	// While the holder is still bound, a second binding does not release it:
 	// that is a misconfiguration, refused rather than raced.
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(bindings{"acme": {"acme"}, "successor": {"acme"}}.registry())
-	if _, err := registerDeclaring(t, svc, "successor", nil, exampleDeclaredEvent); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
+	if _, err := admitDeclaring(t, svc, "successor", exampleDeclaredEvent); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
 		t.Fatalf("holder still bound: err = %v, want refused", err)
 	}
 
 	// A code-owned namespace is never taken over.
 	store.rows["legacy.item.created"] = declaredAuditRow{owner: "accounts", namespace: "legacy"}
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(bindings{"successor": {"legacy"}}.registry())
-	if _, err := registerDeclaring(t, svc, "successor", nil, `{"name":"e","type":"legacy.item.other","fields":[]}`); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
+	if _, err := admitDeclaring(t, svc, "successor", `{"name":"e","type":"legacy.item.other","fields":[]}`); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
 		t.Fatalf("code-owned namespace: err = %v, want refused", err)
 	}
 }

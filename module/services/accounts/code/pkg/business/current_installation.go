@@ -3,7 +3,6 @@ package business
 import (
 	"context"
 	"strings"
-	"unicode/utf8"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -47,8 +46,37 @@ func (s *Service) ModuleCurrentInstallation(ctx context.Context, caller ModuleCa
 	if err != nil {
 		return nil, err
 	}
-	if found == nil || found.Id != id || found.OrgId != tenant || found.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE || found.RevokedAt != nil || strings.TrimSpace(found.SolutionIdentifier) == "" || !utf8.ValidString(found.SolutionIdentifier) {
+	if found == nil || found.Id != id || found.OrgId != tenant || found.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE || found.RevokedAt != nil || strings.TrimSpace(found.TargetId) == "" {
 		return nil, status.Error(codes.NotFound, "active installation unavailable")
 	}
-	return &gen.ModuleCurrentInstallationResponse{InstallationId: found.Id, TenantId: found.OrgId, SolutionIdentifier: found.SolutionIdentifier}, nil
+	// The identity, not the alias. This returned `found.SolutionIdentifier` — a
+	// free-text route alias a later binding may take — so a caller comparing it
+	// could not tell one binding's presence from its replacement's. The target is
+	// the consented identity and the binding is what an authority decision keys
+	// on; a caller that wants the alias for display asks the catalogue read,
+	// which serves accepted applied state and joins on this target id.
+	//
+	// A closed target is refused rather than reported: an installation whose
+	// presence was withdrawn is not a current installation.
+	//
+	// The read is control-plane, for the reason requireConsentedBinding states:
+	// `solution_targets` is global with exact grants and the request-path role
+	// holds no SELECT on it.
+	var target *SolutionTarget
+	if err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		target, e = s.store.GetSolutionTarget(ctx, found.TargetId)
+		return e
+	}); err != nil {
+		return nil, err
+	}
+	if !target.Live() || target.BindingID == "" {
+		return nil, status.Error(codes.NotFound, "active installation unavailable")
+	}
+	return &gen.ModuleCurrentInstallationResponse{
+		InstallationId: found.Id,
+		TenantId:       found.OrgId,
+		TargetId:       found.TargetId,
+		BindingId:      target.BindingID,
+	}, nil
 }

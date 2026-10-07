@@ -235,16 +235,27 @@ func (s *Service) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) 
 // Phase 3 idea: thread orgID into the proto so the WithControlPlane step
 // goes away and org-admins can revoke their own keys without
 // platform-admin perms.
+// It is a NARROWING — a credential that authenticates stops authenticating —
+// so it runs under the policy log: the entry is appended to the external record
+// and receipted BEFORE the key is marked, and the revocation commits in the
+// same transaction as the receipt's commit. A host that cannot witness the
+// append refuses rather than revoking unwitnessed: a key revocation a restore
+// could silently undo is a live credential nobody knows is live.
 func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.RevokeAPIKeyRequest) error {
 	// Org-scoped revoke: the store statement pins id AND organization_id, so an
 	// org admin can never revoke another org's key by id (handler authorized
-	// the actor for req.OrganizationId; the WHERE enforces the binding).
-	if err := s.store.WithOrgTx(ctx, req.OrganizationId, func(ctx context.Context) error {
-		if err := s.store.RevokeAPIKey(ctx, req.Id, req.OrganizationId); err != nil {
-			return err
-		}
-		return s.emitTx(ctx, actorID, "user", EventAPIKeyRevoked, "api_key", req.Id, req.OrganizationId)
-	}); err != nil {
+	// the actor for req.OrganizationId; the WHERE enforces the binding). That
+	// WHERE is also what keeps the revoke confined now the transaction is the
+	// policy log's control-plane one — the receipt relation is control-plane
+	// only, and the receipt and the revocation have to be the same transaction.
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		revokeAPIKeyPolicyLogEntry(actorID, req.OrganizationId, req.Id),
+		func(ctx context.Context) error {
+			if err := s.store.RevokeAPIKey(ctx, req.Id, req.OrganizationId); err != nil {
+				return err
+			}
+			return s.emitTx(ctx, actorID, "user", EventAPIKeyRevoked, "api_key", req.Id, req.OrganizationId)
+		}); err != nil {
 		return err
 	}
 	return nil

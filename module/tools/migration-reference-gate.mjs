@@ -83,9 +83,25 @@ function main() {
   try {
     const archive = execFileSync('git', ['archive', reference, 'module/services/store/migrations'], { maxBuffer: 32 * 1024 * 1024 });
     execFileSync('tar', ['-x', '-C', temp], { input: archive });
-    execFileSync('go', ['test', '-count=1', '-v', '-run', '^TestMigrationUpgrade$', '.'], {
+    // `^TestMigration` rather than the one test by name. This is the only CI
+    // step that declares `postgres:16` as an external input and has a container
+    // runtime, so it is where every migration test belongs — and a prefix means
+    // the next one is covered by existing it rather than by someone remembering
+    // to widen a regex. A test named by hand here is a test that silently stops
+    // running the day it is renamed, and `go test` exits 0 when its `-run`
+    // matches nothing.
+    //
+    // MIGRATION_CONSENT_REPLAY is the switch the replay tests read: they start
+    // their own throwaway cluster and must skip wherever no container runtime
+    // was declared. MIGRATION_REFERENCE carries the reference ledger that
+    // TestMigrationUpgrade diffs against; the others ignore it.
+    execFileSync('go', ['test', '-count=1', '-v', '-timeout', '40m', '-run', '^TestMigration', '.'], {
       cwd: 'module/services/store/code', stdio: 'inherit',
-      env: { ...process.env, MIGRATION_REFERENCE: join(temp, 'module/services/store/migrations') },
+      env: {
+        ...process.env,
+        MIGRATION_REFERENCE: join(temp, 'module/services/store/migrations'),
+        MIGRATION_CONSENT_REPLAY: '1',
+      },
     });
   } finally {
     rmSync(temp, { recursive: true, force: true });

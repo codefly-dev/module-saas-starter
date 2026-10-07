@@ -80,6 +80,11 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
 			return nil, err
 		}
+		// The policy log's serving gate. After authorization, so the
+		// refusal reaches only callers this host would have served.
+		if err := enforcePolicyLogServing(ctx); err != nil {
+			return nil, err
+		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
 		return handler(ctx, req)
 	}
@@ -99,6 +104,9 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 			return err
 		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
+			return err
+		}
+		if err := enforcePolicyLogServing(ctx); err != nil {
 			return err
 		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
@@ -291,6 +299,14 @@ func (stream *contextServerStream) Context() context.Context { return stream.ctx
 func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string) (context.Context, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	trustedForwarded := singleValidGatewayToken(md.Get("x-codefly-gateway-token"))
+	// The same unprovable claim over gRPC metadata, refused in the same place
+	// and for the same reasons as the Connect half (see
+	// errSolutionAttestationNotDelivered and the comment beside the Connect
+	// refusal): not inside the stamp helper, whose caller rewrites every error
+	// into "forwarded identity is malformed".
+	if trustedForwarded && solutionIdentityAssertedMD(md) {
+		return ctx, status.Error(codes.PermissionDenied, errSolutionAttestationNotDelivered.Error())
+	}
 	if trustedForwarded && forwardedIdentityAmbiguous(md.Get) {
 		return ctx, status.Error(codes.PermissionDenied, "forwarded identity is ambiguous")
 	}
@@ -390,6 +406,13 @@ func firstMetadataValue(md metadata.MD, key string) string {
 	return ""
 }
 
+// solutionIdentityAssertedMD is the gRPC-metadata half of
+// solutionIdentityAsserted. Metadata keys are lowercase on the wire.
+func solutionIdentityAssertedMD(md metadata.MD) bool {
+	return firstMetadataValue(md, strings.ToLower(solutionIdentityHeader)) != "" ||
+		firstMetadataValue(md, strings.ToLower(solutionPublisherHeader)) != ""
+}
+
 func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Context, error) {
 	if forwardedCredentialIncomplete(md.Get) {
 		return ctx, errForwardedCredentialIncomplete
@@ -420,14 +443,6 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Co
 	ctx = withCredentialKind(ctx, firstMetadataValue(md, "x-credential-kind"))
 	if scopedRoles := firstMetadataValue(md, "x-scoped-roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
-	}
-	if solution := firstMetadataValue(md, strings.ToLower(solutionIdentityHeader)); solution != "" {
-		ctx, err = auth.WithVerifiedSolution(
-			ctx, solution, firstMetadataValue(md, strings.ToLower(solutionPublisherHeader)),
-		)
-		if err != nil {
-			return ctx, err
-		}
 	}
 	return withScopedRolesTruncated(ctx, firstMetadataValue(md, "x-scoped-roles-truncated") == "true"), nil
 }

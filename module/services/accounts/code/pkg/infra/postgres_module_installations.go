@@ -20,7 +20,7 @@ func installerConflict(reason string) error {
 // It serializes the complete compare/create transaction across Accounts replicas.
 func (s *PostgresStore) ReconcileModuleInstallation(ctx context.Context, p *business.InstallSolutionParams, permissions []string, apply bool) (*business.ModuleInstallationResult, error) {
 	executor := s.getQueryExecutor(ctx)
-	if err := lockSolutionInstallation(ctx, executor, p.OrgID, p.SolutionIdentifier); err != nil {
+	if err := lockSolutionInstallation(ctx, executor, p.OrgID, p.TargetID); err != nil {
 		return nil, err
 	}
 	var admin bool
@@ -43,7 +43,7 @@ func (s *PostgresStore) ReconcileModuleInstallation(ctx context.Context, p *busi
 	if !sameStringSet(permissions, rolePermissions) {
 		return nil, installerConflict("approved role permissions have changed")
 	}
-	existing, err := scanInstallation(executor.QueryRow(ctx, `SELECT `+installationColumns+` FROM installations WHERE org_id=$1 AND solution_identifier=$2 ORDER BY created_at DESC LIMIT 1`, p.OrgID, p.SolutionIdentifier))
+	existing, err := scanInstallation(executor.QueryRow(ctx, `SELECT `+installationColumns+` FROM installations WHERE org_id=$1 AND target_id=$2::uuid ORDER BY created_at DESC LIMIT 1`, p.OrgID, p.TargetID))
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}

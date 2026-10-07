@@ -36,6 +36,7 @@ func moduleDeclaringService(t *testing.T, bound map[string][]string) *business.S
 		registry[business.ModulePrincipalID(prefix)] = business.ModulePrincipalGrant{Prefix: prefix, Namespaces: namespaces}
 	}
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, registry)
 	return svc
 }

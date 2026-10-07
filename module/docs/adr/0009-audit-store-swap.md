@@ -357,7 +357,7 @@ Postgres transaction.
    per-row hashes. Once verified, the copied monthly partitions are removed
    with `DROP TABLE`, as `RunRetention` drops expired ones, so no row is
    deleted and the append-only triggers stay as they are. The removal is one
-   database function (migration 22) that takes an explicit list of the
+   database function (migration 32) that takes an explicit list of the
    verified partitions, locks them, re-counts each against the count that was
    verified, and refuses on any mismatch — a partition that gained a row since
    verification is never dropped. `-through`, the cutoff of the copy, accepts
@@ -464,7 +464,7 @@ The sink shape itself:
   as well, through its own verified-partition function. Under a swap value,
   expiry belongs to the warehouse where it sets one — the details table on
   both, the events table on ClickHouse only — and to the archive's lock.
-- `store/migrations` — migration 20 adds the queue table, under the same tenant
+- `store/migrations` — migration 30 adds the queue table, under the same tenant
   row-level security as `audit_events` (`audit_events_tenant`, in
   `1_baseline.up.sql`), with insert granted to the writers and select and delete
   to the relay; its down migration refuses to drop a non-empty queue, since the

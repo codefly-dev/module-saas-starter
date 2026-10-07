@@ -13,16 +13,39 @@ const { getEndpoints, getWorkspaceSecret } = vi.hoisted(() => ({
 }));
 vi.mock("codefly", () => ({ getEndpoints, getWorkspaceSecret }));
 
+import type {
+  SolutionEntitlement,
+  ViewerEntitlements,
+} from "@/solutions/entitlements";
+import {
+  cachedProjection,
+  entitledSolutions,
+  invalidateProjections,
+  navProjection,
+  surfacesProjection,
+} from "@/solutions/projections";
 import {
   browserManifestUrl,
   detailProjection,
   findSolution,
   loadSolutions,
   parseManifest,
-  registerSolution,
-  surfacesProjection,
-  unregisterSolution,
 } from "@/solutions/registry";
+
+// The host's target for a route alias, in these fixtures. A projection joins
+// entitlements to manifests on the TARGET, so a fixture has to make the two
+// agree the way the registry snapshot does — the manifest's target is stamped
+// from the record, never parsed from the solution's own manifest.
+const targetFor = (alias: string) => `target-${alias}`;
+
+// The entitlement every projection now requires. A healthy one is the ordinary
+// case: the org installed the solution and the viewer's team was granted it.
+const granted: SolutionEntitlement = {
+  targetId: targetFor("audit"),
+  healthy: true,
+  scopeNodeId: "11111111-1111-1111-1111-111111111111",
+};
+const grantedButUnhealthy: SolutionEntitlement = { ...granted, healthy: false };
 
 function baseManifest(overrides: Record<string, unknown> = {}) {
   return {
@@ -502,11 +525,12 @@ describe("surfacesProjection", () => {
   ]);
 
   it("projects only the asked-for kind, named by the solution", () => {
-    expect(surfacesProjection(manifest, "word")).toEqual({
+    expect(surfacesProjection(manifest, "word", granted)).toEqual({
       id: "audit",
       title: "Audit",
       // Without this the declared module path resolves against nothing.
       origin: "https://audit.internal",
+      available: true,
       surfaces: [
         {
           id: "footnote",
@@ -523,14 +547,14 @@ describe("surfacesProjection", () => {
   });
 
   it("carries the origin without the manifest path it came from", () => {
-    const projected = surfacesProjection(manifest, "word");
+    const projected = surfacesProjection(manifest, "word", granted);
     expect(projected?.origin).toBe("https://audit.internal");
     expect(JSON.stringify(projected)).not.toContain("mf-manifest.json");
   });
 
   it("reports nothing for a kind the solution does not serve", () => {
-    expect(surfacesProjection(manifest, "excel")).toBeNull();
-    expect(surfacesProjection(withSurfaces([]), "word")).toBeNull();
+    expect(surfacesProjection(manifest, "excel", granted)).toBeNull();
+    expect(surfacesProjection(withSurfaces([]), "word", granted)).toBeNull();
   });
 
   it("does not hand out a reference into the cached snapshot", () => {
@@ -549,7 +573,7 @@ describe("surfacesProjection", () => {
         events: ["documents.entry.*"],
       },
     ]);
-    const surface = surfacesProjection(cached, "word")?.surfaces[0];
+    const surface = surfacesProjection(cached, "word", granted)?.surfaces[0];
     if (surface === undefined) throw new Error("expected one surface");
     surface.title = "Rewritten";
     surface.events?.push("injected");
@@ -585,7 +609,7 @@ describe("registry snapshot", () => {
     solutions: Array<{ id: string; status: string; manifest?: string }>,
   ) {
     return new Response(
-      JSON.stringify({ revision: 7, leaseSeconds: 120, solutions }),
+      JSON.stringify({ revision: 7, solutions }),
       {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -608,6 +632,15 @@ describe("registry snapshot", () => {
     vi.unstubAllGlobals();
     getEndpoints.mockReset();
     getWorkspaceSecret.mockReset();
+  });
+
+  it("checks runtime compatibility on the read-only projection", async () => {
+    const manifest = baseManifest({ schemaVersion: 999 });
+    vi.stubGlobal("fetch", vi.fn(async () => snapshotResponse([
+      { id: "audit", status: "active", manifest: JSON.stringify(manifest) },
+    ])));
+    expect(await loadSolutions()).toEqual([]);
+    expect(await findSolution("audit")).toBeNull();
   });
 
   // Every browser polling the navigation drives this read, so a registry
@@ -715,87 +748,18 @@ describe("registry snapshot", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // A registry outage must degrade, not delete: a blip after a good read keeps
-  // serving the last snapshot instead of emptying the navigation.
-  it("keeps the last snapshot when a refetch fails", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        snapshotResponse([
-          { id: "a", status: "active", manifest: manifestFor("a", 1) },
-        ]),
-      )
-      .mockRejectedValue(new Error("unreachable"));
-    vi.stubGlobal("fetch", fetchMock);
-
+  it("drops an expired snapshot when a refetch fails", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(snapshotResponse([
+        { id: "a", status: "active", manifest: manifestFor("a", 1) },
+      ]))
+      .mockRejectedValue(new Error("unreachable")));
     expect(await loadSolutions()).toHaveLength(1);
-    (globalThis as Record<string, unknown>).__solutionSnapshot = {
-      ...((globalThis as Record<string, unknown>).__solutionSnapshot as object),
-      expiresAt: 0,
-    };
-    expect(await loadSolutions()).toHaveLength(1);
-  });
-
-  // Degrading on a blip is right; degrading forever is not. Past the gateway's
-  // lease nothing in the held snapshot is provably still registered, so
-  // continuing to serve it renders pages the gateway has already stopped
-  // routing.
-  it("stops serving a stale snapshot once it outlives the gateway lease", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        snapshotResponse([
-          { id: "a", status: "active", manifest: manifestFor("a", 1) },
-        ]),
-      )
-      .mockRejectedValue(new Error("unreachable"));
-    vi.stubGlobal("fetch", fetchMock);
-
-    expect(await loadSolutions()).toHaveLength(1);
-
-    const g = globalThis as Record<string, unknown>;
-    g.__solutionSnapshot = {
-      ...(g.__solutionSnapshot as object),
-      expiresAt: 0,
-      fetchedAt: Date.now() - 120_001,
-    };
-
+    const state = globalThis as Record<string, unknown>;
+    state.__solutionSnapshot = { ...(state.__solutionSnapshot as object), expiresAt: 0 };
     expect(await loadSolutions()).toBe("unavailable");
     expect(await findSolution("a")).toBe("unavailable");
-  });
-
-  // The ceiling must come from the gateway's own lease, not a copy of it: a
-  // mirrored literal keeps the old bound when the gateway's lease changes.
-  it("bounds staleness by the lease the gateway reported, not a local copy", async () => {
-    const shortLease = new Response(
-      JSON.stringify({
-        revision: 7,
-        leaseSeconds: 10,
-        solutions: [
-          { id: "a", status: "active", manifest: manifestFor("a", 1) },
-        ],
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(shortLease)
-        .mockRejectedValue(new Error("unreachable")),
-    );
-
-    expect(await loadSolutions()).toHaveLength(1);
-
-    // Older than the gateway's 10s lease, far younger than the 120s fallback.
-    const g = globalThis as Record<string, unknown>;
-    g.__solutionSnapshot = {
-      ...(g.__solutionSnapshot as object),
-      expiresAt: 0,
-      fetchedAt: Date.now() - 11_000,
-    };
-
-    expect(await loadSolutions()).toBe("unavailable");
+    expect(state.__solutionSnapshot).toBeNull();
   });
 
   // Unbounded, a wedged gateway never settles the fetch. Readers coalesce onto
@@ -814,78 +778,13 @@ describe("registry snapshot", () => {
     );
 
     await loadSolutions();
-    const manifest = parseManifest(JSON.parse(manifestFor("a", 1)));
-    if (!manifest) throw new Error("fixture failed to parse");
-    await registerSolution(manifest);
-
-    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(seen).toHaveLength(1);
     for (const init of seen) {
       expect(
         init?.signal,
         "every registry request must carry an abort signal",
       ).toBeInstanceOf(AbortSignal);
     }
-  });
-
-  // The TTL and the ceiling are independent windows. Serving on the TTL alone
-  // is only safe while the ceiling is the larger of the two, which nothing
-  // guarantees once the gateway reports the lease.
-  it("honours a lease shorter than the snapshot TTL", async () => {
-    const shortLease = new Response(
-      JSON.stringify({
-        revision: 7,
-        leaseSeconds: 1,
-        solutions: [
-          { id: "a", status: "active", manifest: manifestFor("a", 1) },
-        ],
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(shortLease)
-        .mockRejectedValue(new Error("unreachable")),
-    );
-    expect(await loadSolutions()).toHaveLength(1);
-
-    // Past the 1s lease but still inside the 5s TTL: the fast path must not
-    // serve it just because the TTL has not elapsed.
-    const g = globalThis as Record<string, unknown>;
-    g.__solutionSnapshot = {
-      ...(g.__solutionSnapshot as object),
-      fetchedAt: Date.now() - 2_000,
-      expiresAt: Date.now() + 3_000,
-    };
-    expect(await loadSolutions()).toBe("unavailable");
-  });
-
-  // The ceiling is a safety bound, so the far side must not be able to set it
-  // to "effectively never".
-  it("clamps an out-of-range reported lease", async () => {
-    // 1e999 parses to Infinity; an unchecked `> 0` accepts it and the ceiling
-    // silently never trips again.
-    const absurd = new Response(
-      `{"revision":7,"leaseSeconds":1e999,"solutions":[{"id":"a","status":"active","manifest":${JSON.stringify(manifestFor("a", 1))}}]}`,
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(absurd)
-        .mockRejectedValue(new Error("unreachable")),
-    );
-    expect(await loadSolutions()).toHaveLength(1);
-
-    const g = globalThis as Record<string, unknown>;
-    g.__solutionSnapshot = {
-      ...(g.__solutionSnapshot as object),
-      expiresAt: 0,
-      fetchedAt: Date.now() - 3_600_001,
-    };
-    expect(await loadSolutions()).toBe("unavailable");
   });
 
   it("drops a stored manifest that no longer validates", async () => {
@@ -904,34 +803,7 @@ describe("registry snapshot", () => {
     expect(await loadSolutions()).toEqual([]);
   });
 
-  it("maps a registry refusal onto a typed write result", async () => {
-    const manifest = parseManifest(JSON.parse(manifestFor("a", 1)));
-    if (!manifest) throw new Error("fixture failed to parse");
-    for (const [status, reason] of [
-      [409, "conflict"],
-      [403, "forbidden"],
-      [500, "unavailable"],
-    ] as const) {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => new Response("", { status })),
-      );
-      expect(await registerSolution(manifest)).toEqual({ ok: false, reason });
-    }
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ revision: 4, status: "active" }), {
-            status: 200,
-          }),
-      ),
-    );
-    expect(await unregisterSolution("a")).toMatchObject({
-      ok: true,
-      revision: 4,
-    });
-  });
+
 });
 
 describe("surfacesProjection for a solution served through the host", () => {
@@ -955,13 +827,222 @@ describe("surfacesProjection for a solution served through the host", () => {
   })();
 
   it("resolves modules against this host's origin, under the solution's proxy", () => {
-    expect(surfacesProjection(manifest, "word", "https://app.example")).toMatchObject({
+    expect(surfacesProjection(manifest, "word", granted, "https://app.example")).toMatchObject({
       origin: "https://app.example",
       surfaces: [{ module: "/api/solutions/audit/proxy/assets/surfaces/footnote.js" }],
     });
   });
 
   it("leaves the solution out when there is no host origin to resolve against", () => {
-    expect(surfacesProjection(manifest, "word")).toBeNull();
+    expect(surfacesProjection(manifest, "word", granted)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-organization, per-viewer narrowing (issue #949)
+// ---------------------------------------------------------------------------
+
+function entitlements(
+  overrides: Partial<ViewerEntitlements> & {
+    solutions?: SolutionEntitlement[];
+  } = {},
+): ViewerEntitlements {
+  const { solutions = [granted], ...rest } = overrides;
+  return {
+    org: "org-acme",
+    viewer: "viewer-1",
+    byTarget: new Map(
+      solutions.map((entitlement) => [entitlement.targetId, entitlement]),
+    ),
+    revision: solutions.map((s) => `${s.targetId}:${s.healthy}`).join("|"),
+    ...rest,
+  };
+}
+
+function manifestFor(id: string) {
+  const parsed = parseManifest(
+    baseManifest({ id, nav: { title: id, path: `/s/${id}` } }),
+  );
+  if (parsed === null) throw new Error("fixture manifest must parse");
+  // Stamped exactly as manifestsFromSnapshot stamps it: the target is the
+  // host's fact about the record, not a field of the document.
+  return { ...parsed, targetId: targetFor(id) };
+}
+
+describe("entitledSolutions", () => {
+  it("leaves out a deployed solution the organization has not installed", () => {
+    // The whole point of the narrowing: registered is not the same as usable.
+    const registered = [manifestFor("audit"), manifestFor("ledger")];
+    const pairs = entitledSolutions(registered, entitlements());
+    expect(pairs.map(({ manifest }) => manifest.id)).toEqual(["audit"]);
+  });
+
+  it("gives two teams in one organization genuinely different sets", () => {
+    const registered = [
+      manifestFor("audit"),
+      manifestFor("ledger"),
+      manifestFor("intake"),
+    ];
+    // Same org, same registered set, different grants — which is the acceptance
+    // case: the answer must be a function of the viewer, not of the deployment.
+    const reviewers = entitlements({
+      viewer: "viewer-in-reviewers",
+      solutions: [granted],
+    });
+    const clerks = entitlements({
+      viewer: "viewer-in-clerks",
+      solutions: [
+        { targetId: targetFor("ledger"), healthy: true, scopeNodeId: "node-ledger" },
+        { targetId: targetFor("intake"), healthy: true, scopeNodeId: "node-intake" },
+      ],
+    });
+    expect(
+      entitledSolutions(registered, reviewers).map(({ manifest }) => manifest.id),
+    ).toEqual(["audit"]);
+    expect(
+      entitledSolutions(registered, clerks).map(({ manifest }) => manifest.id),
+    ).toEqual(["ledger", "intake"]);
+  });
+
+  it("narrows after a revocation", () => {
+    const registered = [manifestFor("audit"), manifestFor("ledger")];
+    const before = entitlements({
+      solutions: [
+        granted,
+        { targetId: targetFor("ledger"), healthy: true, scopeNodeId: "node-ledger" },
+      ],
+    });
+    expect(entitledSolutions(registered, before)).toHaveLength(2);
+    // The grant on `ledger` is revoked: the authority stops returning it, so the
+    // projection stops carrying it. Nothing about the registration changed.
+    const after = entitlements({ solutions: [granted] });
+    expect(
+      entitledSolutions(registered, after).map(({ manifest }) => manifest.id),
+    ).toEqual(["audit"]);
+  });
+
+  it("ignores an entitlement for a solution this deployment does not serve", () => {
+    // An org can hold an installation for a solution that was deregistered or
+    // has not registered yet. That is not an error to report into a menu.
+    const pairs = entitledSolutions(
+      [manifestFor("audit")],
+      entitlements({
+        solutions: [
+          granted,
+          { targetId: targetFor("retired"), healthy: true, scopeNodeId: "node-retired" },
+        ],
+      }),
+    );
+    expect(pairs.map(({ manifest }) => manifest.id)).toEqual(["audit"]);
+  });
+});
+
+describe("projection availability", () => {
+  it("keeps an unhealthy installation visible and marks it unavailable", () => {
+    // Visible, because the org installed it and the viewer was granted it —
+    // hiding it sends someone looking for a grant that already exists. Not
+    // available, because it must not be routed as though it were serving.
+    expect(navProjection(manifestFor("audit"), grantedButUnhealthy)).toEqual({
+      id: "audit",
+      nav: { title: "audit", path: "/s/audit" },
+      available: false,
+    });
+  });
+
+  it("marks a healthy installation available", () => {
+    expect(navProjection(manifestFor("audit"), granted).available).toBe(true);
+  });
+});
+
+describe("cachedProjection", () => {
+  beforeEach(() => {
+    invalidateProjections();
+  });
+
+  it("recomputes when the authority revision moves", () => {
+    const compute = vi.fn(() => ["audit"]);
+    const before = entitlements();
+    expect(cachedProjection(before, "word", 1, compute)).toEqual(["audit"]);
+    // Same key: reused.
+    cachedProjection(before, "word", 1, compute);
+    expect(compute).toHaveBeenCalledTimes(1);
+    // A revoke moves the revision, so the key moves and the menu is recomputed.
+    // Without this a cached projection outlives the grant that justified it —
+    // the one failure this cache key exists to prevent.
+    cachedProjection(entitlements({ solutions: [] }), "word", 1, compute);
+    expect(compute).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not share a projection between organizations, viewers or kinds", () => {
+    const compute = vi.fn(() => ["audit"]);
+    const base = entitlements();
+    cachedProjection(base, "word", 1, compute);
+    cachedProjection({ ...base, org: "org-other" }, "word", 1, compute);
+    cachedProjection({ ...base, viewer: "viewer-2" }, "word", 1, compute);
+    cachedProjection(base, "excel", 1, compute);
+    // Four distinct keys — one per dimension the projection depends on.
+    expect(compute).toHaveBeenCalledTimes(4);
+  });
+
+  it("recomputes when the registered set moves under an unchanged grant", () => {
+    const compute = vi.fn(() => ["audit"]);
+    const base = entitlements();
+    cachedProjection(base, "word", 1, compute);
+    // A re-registration with a new nav title moves no grant, so the authority
+    // revision is identical; the registry revision is what must catch it.
+    cachedProjection(base, "word", 2, compute);
+    expect(compute).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("an entitlement that can never join a registration", () => {
+  beforeEach(() => {
+    (globalThis as Record<string, unknown>).__unjoinableSolutionIdentifiers =
+      undefined;
+  });
+
+  it("is reported once when a viewer is entitled to a target the registry does not serve", () => {
+    // Ordinary during a redeploy, so it is debug volume rather than an error —
+    // but reported ONCE per target, because a lasting mismatch means presence
+    // and installation have genuinely diverged and nothing else would say so.
+    const logged = vi.spyOn(console, "debug").mockImplementation(() => {});
+    try {
+      const unserved = entitlements({
+        solutions: [
+          granted,
+          {
+            targetId: "target-not-currently-served",
+            healthy: true,
+            scopeNodeId: "node-x",
+          },
+        ],
+      });
+      entitledSolutions([manifestFor("audit")], unserved);
+      entitledSolutions([manifestFor("audit")], unserved);
+      const reports = logged.mock.calls.filter((call) =>
+        String(call[0]).includes("target-not-currently-served"),
+      );
+      expect(reports).toHaveLength(1);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("does not report a slug-shaped id this deployment simply does not serve", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      entitledSolutions(
+        [manifestFor("audit")],
+        entitlements({
+          solutions: [
+            granted,
+            { targetId: targetFor("retired"), healthy: true, scopeNodeId: "node-retired" },
+          ],
+        }),
+      );
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+    }
   });
 });

@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"accounts/pkg/datasource/github"
@@ -52,6 +53,98 @@ import (
 // worker needs to service every tenant's deliveries on its queue. Tenant is the
 // org a single-tenant module is bound to, which its minted Work Context carries;
 // a cross-tenant module names the tenant per mint instead.
+// ModuleWorkload is the Kubernetes identity this principal's pods run as, and
+// the container within them that runs its image.
+//
+// WHY THE DECLARATION HOLDS THIS AT ALL. Execution binding is unconditional, so
+// `BindExecution` is the only thing authenticating a module mint — and it takes
+// the principal as an INPUT. On its own that leaves the principal a bare claim:
+// a module presenting its own perfectly valid service-account token could name
+// ANOTHER module's prefix, and the check would then compare that other
+// principal's approved build against this caller's running image. Two modules
+// built from one image are interchangeable, and a shared base image makes the
+// hole wider than that. The shared secret used to bind the prefix to the
+// caller; removing it without this would have removed the binding.
+//
+// So the declaration says which workload a principal IS, the TokenReview says
+// which workload the caller is, and a mismatch is a refusal. The prefix becomes
+// a claim the host can check rather than one it has to believe.
+//
+// THE CONTAINER IS DECLARED, NOT CHOSEN. It was a caller-supplied argument, and
+// that is the last degree of freedom the caller had over its own identity: a
+// pod's containers do not all run the same image, so naming a sibling picks
+// which image the approval is tested against. Reading it from the declaration
+// means nothing about the identity is the caller's to pick — the prefix is
+// checked, the pod comes from the token, the container comes from here, the
+// running image comes from the pod's status, and the approval comes from a
+// signed document.
+type ModuleWorkload struct {
+	ServiceAccount string `json:"service_account"`
+	Namespace      string `json:"namespace"`
+	Container      string `json:"container"`
+}
+
+// declared reports whether the workload is fully stated. All three or none: a
+// partial workload would check the parts it has and silently skip the rest,
+// which is the whole-or-absent trap.
+func (w ModuleWorkload) declared() bool {
+	return w.ServiceAccount != "" && w.Namespace != "" && w.Container != ""
+}
+
+// dns1123LabelPattern is Kubernetes' DNS-1123 label rule, which a service
+// account, a namespace and a container name must each satisfy to name a real
+// object.
+//
+// Deliberately NOT registrationIdentityPattern, which has the same shape today.
+// That one mirrors the gateway's catalog-identity rule and is free to change
+// with the router; this one is Kubernetes' and changes only when Kubernetes
+// does. Sharing them would let a routing decision silently redefine what can
+// name a pod.
+var dns1123LabelPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
+
+const dns1123LabelMaxLength = 63
+
+// validateForm refuses a workload whose three values are PRESENT but cannot
+// name a real Kubernetes object.
+//
+// declared() catches absence; this catches malformation, and the difference
+// matters because of where the second one used to surface. A trailing space or
+// an uppercase letter parsed cleanly and the host booted; then every mint
+// compared the declared value against the TokenReview's real one and returned
+// ErrExecutionIdentityMismatch — "X is declared to run as A/B, the presented
+// token authenticates C/D". That is a verdict that the CALLER is lying, so a
+// one-character typo in a declaration sent the operator to audit the module.
+// Caught here, they read one line naming the entry and the field.
+//
+// Trim-difference is REFUSED rather than trimmed. Silently trimming would make
+// the value the host compares differ from the value the composition rendered,
+// which is a drift nothing downstream can see — the same reason a canonicalized
+// tenant is parsed rather than patched.
+func (w ModuleWorkload) validateForm(prefix string) error {
+	for _, field := range []struct{ name, value string }{
+		{"service_account", w.ServiceAccount},
+		{"namespace", w.Namespace},
+		{"container", w.Container},
+	} {
+		if trimmed := strings.TrimSpace(field.value); trimmed != field.value {
+			return fmt.Errorf(
+				"module principal %q declares workload %s %q with leading or trailing whitespace: "+
+					"it is refused rather than trimmed, because a trimmed value no longer equals what "+
+					"the composition rendered and every mint would then be denied as an identity mismatch",
+				prefix, field.name, field.value)
+		}
+		if len(field.value) > dns1123LabelMaxLength || !dns1123LabelPattern.MatchString(field.value) {
+			return fmt.Errorf(
+				"module principal %q declares workload %s %q, which is not a DNS-1123 label "+
+					"(lowercase alphanumerics and hyphens, starting and ending alphanumeric, "+
+					"at most %d characters): it can never name a real Kubernetes object, so every "+
+					"mint for this principal would be denied as an identity mismatch",
+				prefix, field.name, field.value, dns1123LabelMaxLength)
+		}
+	}
+	return nil
+}
+
 type ModulePrincipalGrant struct {
 	ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
 	ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
@@ -70,6 +163,11 @@ type ModulePrincipalGrant struct {
 	Resources          []string
 	CrossTenant        bool
 	Tenant             string
+
+	// Workload is the Kubernetes identity this principal runs as. Required:
+	// see ModuleWorkload for why a principal without one cannot be
+	// authenticated at all.
+	Workload ModuleWorkload
 }
 
 func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
@@ -211,6 +309,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		Resources          []string                            `json:"resources"`
 		CrossTenant        bool                                `json:"cross_tenant"`
 		Tenant             string                              `json:"tenant"`
+		Workload           ModuleWorkload                      `json:"workload"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		return nil, err
@@ -242,6 +341,22 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		}
 		if err := validateArtifactPolicies(grant.ArtifactPolicies); err != nil {
 			return nil, fmt.Errorf("module %q: %w", prefix, err)
+		}
+		// The workload, refused at boot rather than at the mint it would deny.
+		// A principal with no declared workload can never be authenticated —
+		// execution binding is unconditional and has nothing to compare the
+		// reviewed service account against — so an entry missing it is a
+		// composition that cannot work, and saying so here names the entry
+		// instead of leaving every one of its calls refused as "denied".
+		if !grant.Workload.declared() {
+			return nil, fmt.Errorf(
+				"module principal %q must declare its workload identity (service_account, namespace, container): "+
+					"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
+					"from any other caller holding a valid token",
+				prefix)
+		}
+		if err := grant.Workload.validateForm(prefix); err != nil {
+			return nil, err
 		}
 		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
 			return nil, err
@@ -281,6 +396,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 			Resources:          grant.Resources,
 			CrossTenant:        grant.CrossTenant,
 			Tenant:             tenant.String(),
+			Workload:           grant.Workload,
 		}
 	}
 	return registry, nil
@@ -291,6 +407,16 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 type ModuleCaller struct {
 	PrincipalID string // the acting service principal (subject) id
 	BoundOrg    string // the tenant the principal is bound to
+
+	// Sealed is what the credential CLAIMED at mint, when it claims anything.
+	//
+	// Nil, and every field within it nil, means "this credential makes no claim
+	// about that term" — which is every credential until the Work Context
+	// cutover. Pointers rather than values precisely so absence and zero stay
+	// distinguishable: a zero installation revision is a real revision, so
+	// defaulting absence to zero would make the check PASS for exactly the
+	// credentials that claim nothing.
+	Sealed *SealedModuleAuthority
 }
 
 // grant resolves the caller's declared authority. An unknown principal is
@@ -299,11 +425,31 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 	if caller.PrincipalID == "" {
 		return ModulePrincipalGrant{}, status.Error(codes.Unauthenticated, "module caller identity required")
 	}
-	grant, ok := s.modulePrincipals[caller.PrincipalID]
+	grant, ok := s.declaredModules()[caller.PrincipalID]
 	if !ok {
 		return ModulePrincipalGrant{}, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	return grant, nil
+}
+
+// moduleCapability is moduleGrant WITH the live re-read, and it deliberately has
+// moduleGrant's exact shape.
+//
+// Same returns, one extra parameter. That makes routing a capability path a
+// one-token edit rather than a restructuring of its error handling — and the
+// first attempt at this change did restructure 25 call sites with a script,
+// which broke return arities and duplicated error returns in four files. A
+// mechanical migration is only safe when it is actually mechanical.
+//
+// A path needing the live installation id or producer epoch — a deferred
+// producer stamping work, say — calls AuthorizeModuleCapability directly and
+// keeps the whole authority.
+func (s *Service) moduleCapability(ctx context.Context, caller ModuleCaller) (ModulePrincipalGrant, error) {
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
+	if err != nil {
+		return ModulePrincipalGrant{}, err
+	}
+	return authority.Grant, nil
 }
 
 // ModuleContentResources reports the permission resource types the content of
@@ -321,7 +467,7 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 // This is the per-caller counterpart of ContentResources, which takes the union
 // because its caller is an org administrator rather than one module.
 func (s *Service) ModuleContentResources(prefix string) ([]string, error) {
-	grant, registered := s.modulePrincipals[ModulePrincipalID(prefix)]
+	grant, registered := s.declaredModules()[ModulePrincipalID(prefix)]
 	if !registered || len(grant.Resources) == 0 {
 		return nil, status.Error(codes.PermissionDenied, "capability audience declares no module content")
 	}
@@ -375,7 +521,7 @@ func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string
 // worker producer.
 func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, tenant string, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
 	w := wool.Get(ctx).In("ModuleEnqueueJob")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +596,7 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, ten
 // queue (e.g. datasource, which carries every tenant's ingest jobs).
 func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
 	w := wool.Get(ctx).In("ModuleClaimJobs")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +617,7 @@ func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req 
 // caller without the current, unexpired token cannot renew.
 func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, req *jobsv1.HeartbeatJobRequest) (*jobsv1.HeartbeatJobResponse, error) {
 	w := wool.Get(ctx).In("ModuleHeartbeatJob")
-	if _, err := s.moduleGrant(caller); err != nil {
+	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return nil, err
 	}
 	resp, err := s.moduleJobStore.Heartbeat(ctx, req)
@@ -484,7 +630,7 @@ func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, r
 // ModuleAckJob completes a leased job successfully.
 func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, executionKind, executionID string) error {
 	w := wool.Get(ctx).In("ModuleAckJob")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -506,7 +652,7 @@ func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *
 // the attempt budget is exhausted); otherwise it dead-letters immediately.
 func (s *Service) ModuleNackJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, failure *jobsv1.JobFailure, retryable bool, retryAt *timestamppb.Timestamp) error {
 	w := wool.Get(ctx).In("ModuleNackJob")
-	if _, err := s.moduleGrant(caller); err != nil {
+	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return err
 	}
 	if retryable {
@@ -571,7 +717,7 @@ type ModuleNotifyUserResult struct {
 // notifications are user-scoped, so the tenant guard alone does not stop a
 // module bound to tenant A from notifying a user in tenant B.
 func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in ModuleNotifyUserInput) (ModuleNotifyUserResult, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleNotifyUserResult{}, err
 	}
@@ -586,6 +732,9 @@ func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in 
 	// Internal, which a module's outbox retries forever instead of fixing.
 	if !ValidNotificationType(in.Type) {
 		return ModuleNotifyUserResult{}, status.Errorf(codes.InvalidArgument, "invalid notification type %q: must be one of %v", in.Type, NotificationTypes)
+	}
+	if !ValidNotificationActionURL(in.ActionURL) {
+		return ModuleNotifyUserResult{}, status.Errorf(codes.InvalidArgument, "invalid notification action URL %q: must be a same-origin relative path", in.ActionURL)
 	}
 	if err := s.requireTenantMember(ctx, in.Tenant, in.UserID); err != nil {
 		return ModuleNotifyUserResult{}, err
@@ -634,7 +783,7 @@ type ModuleNotifyOrgAdminsInput struct {
 // key and the recipient, so a redelivered call converges on the rows it already
 // wrote. The send is audited with the recipient and delivery counts.
 func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller, in ModuleNotifyOrgAdminsInput) (bool, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return false, err
 	}
@@ -646,6 +795,9 @@ func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller
 	}
 	if !ValidNotificationType(in.Type) {
 		return false, status.Errorf(codes.InvalidArgument, "invalid notification type %q: must be one of %v", in.Type, NotificationTypes)
+	}
+	if !ValidNotificationActionURL(in.ActionURL) {
+		return false, status.Errorf(codes.InvalidArgument, "invalid notification action URL %q: must be a same-origin relative path", in.ActionURL)
 	}
 	var members []*gen.OrgMembership
 	if err := s.store.WithOrgTx(ctx, in.Tenant, func(ctx context.Context) error {
@@ -739,7 +891,7 @@ type ModuleRequestApprovalInput struct {
 // resume queue must be one the principal may claim, so a decision cannot direct
 // work onto a queue the module does not own.
 func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller, in ModuleRequestApprovalInput) (string, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
 	}
@@ -769,7 +921,7 @@ func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller
 
 // ModuleGetApproval returns one approval request on the caller's tenant.
 func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, tenant, id string) (*ApprovalRequest, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -785,7 +937,7 @@ func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, te
 
 // ModuleCancelApproval withdraws a still-open approval request.
 func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller, tenant, id, reason string) error {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -898,7 +1050,7 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // entryID must be an opaque identifier; one that is a locator is dropped rather
 // than stored, for the reasons opaqueAuditEntryID gives.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -1185,7 +1337,7 @@ type ModuleSubjectVisibilityGrant struct {
 // bound to one tenant could name a subject in another and learn whether that
 // subject has colleagues.
 func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller ModuleCaller, tenant, viewer string) ([]ModuleSubjectVisibilityGrant, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -1233,7 +1385,7 @@ func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller Module
 // grant names, so it can neither introduce a type it holds no grant for nor
 // re-point a record another module owns.
 func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, tenant, scopePath, kind, label, resourceType, resourceID string) (string, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
 	}
@@ -1300,7 +1452,7 @@ func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, te
 // anything over maxContentTicketBytes is refused rather than buffered.
 func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCaller, sourceID, blobSHA string) ([]byte, string, error) {
 	w := wool.Get(ctx).In("ModuleFetchDatasourceBlob")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1394,7 +1546,7 @@ func mapPublishError(err error) error {
 // of record is itself the trail — so only subscription changes and replays emit
 // audit events.
 func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, tenant string, envelope *events.EventEnvelope) (string, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
 	}
@@ -1493,7 +1645,7 @@ func missingFollowableSubject(envelope *events.EventEnvelope) (string, bool) {
 // ones taken against the module itself. A re-subscribe of the same (principal,
 // pattern, queue) returns the existing live row and emits no second audit event.
 func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, typePattern, queue, delivery string) (*EventSubscription, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -1558,7 +1710,7 @@ func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, type
 // revoking an unknown or already-revoked subscription is NotFound and emits no
 // audit event.
 func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, subscriptionID string) error {
-	if _, err := s.moduleGrant(caller); err != nil {
+	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return err
 	}
 	var revoked bool
@@ -1585,7 +1737,7 @@ func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, su
 
 // ModuleListSubscriptions returns the calling principal's live subscriptions.
 func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCaller) ([]*EventSubscription, error) {
-	if _, err := s.moduleGrant(caller); err != nil {
+	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return nil, err
 	}
 	var subscriptions []*EventSubscription
@@ -1605,7 +1757,7 @@ func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCall
 // acknowledged the event still receives the replay. The replay itself is
 // audited (a control-plane action) but the individual redeliveries are not.
 func (s *Service) ModuleReplayEvents(ctx context.Context, caller ModuleCaller, tenant, eventType string, since time.Time) (int, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return 0, err
 	}

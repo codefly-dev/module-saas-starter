@@ -10,6 +10,10 @@ import (
 	"testing"
 
 	accountsauth "accounts/pkg/auth"
+	"io/fs"
+	"os"
+	"path/filepath"
+
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -36,8 +40,10 @@ import (
 const (
 	boundarySolutionA = "example-solution-a"
 	boundarySolutionB = "example-solution-b"
-	boundarySeedA     = "019f6c01-aaaa-7aaa-8aaa-aaaaaaaaaa01"
-	boundarySeedB     = "019f6c01-bbbb-7bbb-8bbb-bbbbbbbbbb02"
+	// Binding ids, not UUIDs: the boundary is derived from the declared
+	// presence binding, and a binding id may carry characters a UUID may not.
+	boundarySeedA     = "binding-solution-a-0001"
+	boundarySeedB     = "binding-solution-b-0002"
 	boundaryPublisher = "solution:example"
 	// A second organization, to show one tenant's boundary is not another's.
 	boundaryOtherOrg = "019f6bf7-5b4b-74e5-8c17-092259bb1672"
@@ -79,10 +85,15 @@ func (f *solutionBoundaryAuthorityFake) SolutionRuntimeBoundarySeed(
 	if !ok {
 		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationNotFound
 	}
+	missing := ""
+	if f.backendStopped {
+		missing = "backend_revision and backend_upstream"
+	}
 	return business.SolutionBoundarySeed{
-		Seed:           seed,
-		Publisher:      f.publisher,
-		BackendServing: !f.backendStopped,
+		BindingID:          seed,
+		MissingBackendHalf: missing,
+		Publisher:          f.publisher,
+		BackendServing:     !f.backendStopped,
 	}, nil
 }
 
@@ -129,14 +140,48 @@ func newSolutionBoundaryServer(t *testing.T) (*WorkContextAuthorityServer, *solu
 	return server, authority
 }
 
-// solutionBoundaryService installs the membership store requireOrgMember reads.
+// solutionBoundaryService installs the membership store requireOrgMember reads,
+// plus the audience vocabulary every mint resolves.
 func solutionBoundaryService(t *testing.T) {
 	t.Helper()
 	previous := service
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
+}
+
+// declareTestAudiences declares the module prefixes the mint tests address, the
+// way a deployment declares them: through the MODULE_PRINCIPALS registry, which is
+// where the vocabulary's third member comes from.
+//
+// Without this every mint in these files refuses with "not an audience this host
+// serves" — correctly, because an audience naming no declared consumer is exactly
+// what the closed set exists to refuse. Declaring them here keeps each test about
+// what it is about while still exercising the real rule: an audience NOT declared
+// here is still refused, which TestTheMintAudienceVocabularyIsClosedAndDerived
+// asserts directly.
+// It MERGES rather than replaces: a test that declared its own grant — with the
+// permission resources its content is governed by — must keep it, or the content
+// surface starts answering "declares no module content" for a reason that has
+// nothing to do with what the test is about.
+func declareTestAudiences(svc *business.Service) {
+	registry := svc.ModulePrincipals()
+	if registry == nil {
+		registry = business.ModulePrincipalRegistry{}
+	}
+	for _, prefix := range []string{
+		"runtime.tasks", "runtime.operations", "tool.test", "consumer.test",
+		"acme.collection", "rows", "documents", "example", "example-producer",
+	} {
+		id := business.ModulePrincipalID(prefix)
+		if _, declared := registry[id]; declared {
+			continue
+		}
+		registry[id] = business.ModulePrincipalGrant{Prefix: prefix}
+	}
+	svc.SetModulePrincipals(registry)
 }
 
 // boundaryCaller is the viewer behind the passthrough: the person whose bearer
@@ -345,16 +390,28 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 	})
 }
 
-// The solution identity reaches a handler only from a trusted forwarder, on
-// both transports. Without that, an authenticated viewer could name any
-// solution and mint under its boundary — the cross-boundary access the host
-// assigns the boundary to prevent.
-func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
+// NOTHING ON THE WIRE SETS A VERIFIED SOLUTION, and a request that claims one
+// is REFUSED BY NAME.
+//
+// This test asserted the opposite until the cutover: that the solution identity
+// is trusted from a trusted forwarder. That was correct while the gateway proved
+// the claim from a solution's registration credential. Runtime
+// self-registration is deleted, so the gateway stamps neither header and there
+// is nothing left to prove it from — which turns "trusted from the gateway"
+// into "trusted from whoever reached the gateway", i.e. any authenticated
+// viewer naming any solution.
+//
+// Refused rather than ignored: a miswired runtime that silently received an
+// ordinary capability would look like it worked, and would read nothing of the
+// solution's runs. The message names the prerequisite instead.
+func TestAClaimedSolutionIdentityIsRefusedByNameAndNeverTrusted(t *testing.T) {
 	previousGateway := gatewayToken
 	SetGatewayToken("test-gateway-token")
 	t.Cleanup(func() { SetGatewayToken(previousGateway) })
 
-	trustedConnect, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
+	// Behind a VALID gateway token — the trusted path, which is exactly where
+	// the old contract believed the claim.
+	_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
 		context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", http.Header{
 			"X-Codefly-Gateway-Token":      []string{"test-gateway-token"},
 			"X-Credential-Kind":            []string{credentialKindSession},
@@ -364,9 +421,11 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 			"X-Codefly-Solution-Id":        []string{boundarySolutionA},
 			"X-Codefly-Solution-Publisher": []string{boundaryPublisher},
 		})
-	require.NoError(t, err)
+	require.Error(t, err, "a claimed solution identity behind the gateway token must be refused")
+	require.Contains(t, err.Error(), "solution attestation is not delivered on this host",
+		"the refusal must name the missing attestation, not a generic forwarded-identity error")
 
-	trustedGRPC, err := (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
+	_, err = (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
 		metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 			"x-codefly-gateway-token", "test-gateway-token",
 			"x-credential-kind", credentialKindSession,
@@ -376,18 +435,30 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 			"x-codefly-solution-id", boundarySolutionA,
 			"x-codefly-solution-publisher", boundaryPublisher,
 		)), "/saas.accounts.v1.WorkContextService/StartTask")
-	require.NoError(t, err)
+	require.Error(t, err, "same claim over gRPC metadata")
+	require.Contains(t, err.Error(), "solution attestation is not delivered on this host")
 
-	for name, ctx := range map[string]context.Context{
-		"gateway to Connect": trustedConnect,
-		"gateway to gRPC":    trustedGRPC,
+	// Either header ALONE is a claim. Refusing only the complete pair would
+	// make the refusal depend on how completely a caller lied.
+	for name, headers := range map[string]http.Header{
+		"id alone":        {"X-Codefly-Solution-Id": []string{boundarySolutionA}},
+		"publisher alone": {"X-Codefly-Solution-Publisher": []string{boundaryPublisher}},
 	} {
-		identity, ok := accountsauth.VerifiedSolution(ctx)
-		require.True(t, ok, name)
-		require.Equal(t, boundarySolutionA, identity.SolutionID, name)
-		require.Equal(t, boundaryPublisher, identity.Publisher, name)
+		t.Run(name, func(t *testing.T) {
+			headers.Set("X-Codefly-Gateway-Token", "test-gateway-token")
+			headers.Set("X-Credential-Kind", credentialKindSession)
+			headers.Set("X-Scopes", "")
+			headers.Set("X-User-Id", renewActorID)
+			_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
+				context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", headers)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "solution attestation is not delivered on this host")
+		})
 	}
 
+	// WITHOUT a gateway token the headers are deleted rather than refused: an
+	// anonymous prober gets the ordinary answer for its credential, not a
+	// signal that these headers mean something. Either way no solution is set.
 	minter := func() accountsauth.JWTMinter {
 		return &fixedAccessMinter{identity: &accountsauth.Identity{
 			UserID:    uuid.MustParse(renewActorID),
@@ -413,31 +484,30 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 	require.NoError(t, err)
 	_, ok = accountsauth.VerifiedSolution(forgedGRPC)
 	require.False(t, ok)
+}
 
-	// A trusted forwarder's value that is not a catalog identity is refused
-	// rather than dropped: minting with it would seal a boundary nobody owns.
-	// So is an id with no publisher — the gateway stamps both from the same
-	// claims, so an assertion carrying one lost half of itself, and admitting it
-	// would skip the ownership check entirely.
-	for name, headers := range map[string]http.Header{
-		"not a catalog identity": {
-			"X-Codefly-Solution-Id":        []string{"Not A Solution"},
-			"X-Codefly-Solution-Publisher": []string{boundaryPublisher},
-		},
-		"no publisher": {
-			"X-Codefly-Solution-Id": []string{boundarySolutionA},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			headers.Set("X-Codefly-Gateway-Token", "test-gateway-token")
-			headers.Set("X-Credential-Kind", credentialKindSession)
-			headers.Set("X-Scopes", "")
-			headers.Set("X-User-Id", renewActorID)
-			_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
-				context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", headers)
-			require.Error(t, err)
-		})
-	}
+// The source-level half of the same promise: no non-test code may put a
+// verified solution into a context. A refusal in the interceptors is only as
+// good as the absence of another writer, and an interceptor is easy to add.
+func TestNoProductionCodeSetsAVerifiedSolution(t *testing.T) {
+	root := ".."
+	var writers []string
+	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(body), "WithVerifiedSolution(") &&
+			!strings.HasSuffix(path, "solution_identity.go") {
+			writers = append(writers, path)
+		}
+		return nil
+	}))
+	require.Empty(t, writers,
+		"WithVerifiedSolution is called outside its own declaration: a solution identity can only come from a delivered attestation, which does not exist on this host yet")
 }
 
 // The hole this closes (issue #1015, BLOCKER of the PR #1017 review). A
@@ -456,10 +526,16 @@ func TestOrdinaryMintRefusesARegisteredSolutionsBoundary(t *testing.T) {
 	solutionBoundaryService(t)
 	server, authority := newSolutionBoundaryServer(t)
 
+	// The BINDING ID behind a boundary is no longer in this set, and that is a
+	// consequence of the re-key rather than a gap. A task_id is a UUID; a
+	// binding id is not, and is refused on shape before this check is reached —
+	// so asserting the boundary message here would assert the wrong refusal.
+	// TestNamingABindingIDAsATaskIDIsRefused keeps that case covered on its own
+	// terms, and the derived boundaries below are the values a caller could
+	// actually guess at.
 	for name, taskID := range map[string]string{
 		"another solution's derived boundary": derivedBoundary(t, boundarySeedA, renewOrgID),
 		"its own derived boundary":            derivedBoundary(t, boundarySeedB, renewOrgID),
-		"the seed behind one":                 boundarySeedA,
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := boundaryMintRequest("runtime.tasks")
@@ -600,4 +676,70 @@ func TestRegisteredBoundaryRefusalCoversEverySpellingThatReachesIt(t *testing.T)
 				"the schema must refuse this spelling, so the guard never sees it")
 		})
 	}
+}
+
+// TestNamingABindingIDAsATaskIDIsRefused keeps the case the boundary table
+// above gave up when the seed stopped being a UUID.
+//
+// A declared presence binding id is not a task_id and never was; what changed
+// is that it is now the boundary's INPUT, so a caller who learned one might try
+// naming it. It is refused — and the assertion is only that it is refused and
+// that the message names no solution, because the reason is a shape refusal
+// rather than the boundary collision, and pinning it to the collision's wording
+// would be asserting a path this value cannot reach.
+func TestNamingABindingIDAsATaskIDIsRefused(t *testing.T) {
+	solutionBoundaryService(t)
+	server, _ := newSolutionBoundaryServer(t)
+
+	request := boundaryMintRequest("runtime.tasks")
+	request.TaskId = boundarySeedA
+
+	_, err := server.StartTask(boundaryCaller(), request)
+	require.Error(t, err)
+	require.NotContains(t, status.Convert(err).Message(), boundarySolutionA)
+	require.NotContains(t, status.Convert(err).Message(), boundarySolutionB)
+}
+
+// TestTheSealedClaimIsTheBindingIDsDerivationAndTheRefusalNamesTheMissingHalf
+// holds the two halves of the serving ruling, on the FAKE-backed path so it
+// runs in CI rather than skipping on a missing DSN — which is how the mint's
+// total break reached a pushed head in the first place.
+//
+// Half one: the boundary a mint seals is the derivation of the declared
+// presence BINDING ID, not of a per-registration random. Asserted by value
+// against business.SolutionRuntimeBoundary rather than by re-deriving inside
+// the test, so a change to the derivation moves both sides and this still
+// compares the sealed claim to the binding id's answer.
+//
+// Half two: a declared row with no backend half refuses "not serving" AND
+// names the columns it read. A refusal that only says "not serving" sends an
+// operator to look for a lease that no longer exists.
+func TestTheSealedClaimIsTheBindingIDsDerivationAndTheRefusalNamesTheMissingHalf(t *testing.T) {
+	solutionBoundaryService(t)
+	server, authority := newSolutionBoundaryServer(t)
+
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
+	require.NoError(t, err)
+
+	issued, err := server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
+	require.NoError(t, err)
+	want, err := business.SolutionRuntimeBoundary(boundarySeedA, renewOrgID)
+	require.NoError(t, err)
+	// Read off the SIGNED capability, not the response field: a consumer
+	// verifies the first.
+	require.Equal(t, want, boundaryOf(t, server, "runtime.tasks", issued),
+		"the sealed claim must be the BINDING ID's derivation")
+	require.NotEqual(t, boundarySeedA, issued.GetTaskId(),
+		"the binding id itself is the input, never the sealed value")
+
+	// The backend half stops being delivered: no lease lapses, the declaration
+	// simply no longer carries it.
+	authority.backendStopped = true
+	_, err = server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	message := status.Convert(err).Message()
+	require.Contains(t, message, "not serving")
+	require.Contains(t, message, "backend_revision")
+	require.Contains(t, message, "backend_upstream")
+	require.NotContains(t, message, "lease", "a lapsed lease is not why a declaration is absent")
 }

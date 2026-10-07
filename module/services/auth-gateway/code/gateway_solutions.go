@@ -2,54 +2,51 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"net"
 	"net/http"
-	"net/url"
 	stdpath "path"
 	"regexp"
 	"strings"
 
-	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
-
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
 )
 
-// The runtime solution surface: /solutions/* proxying, plus the internal
-// registration endpoints both halves of a solution register through.
-//
-// An independently deployed component the saas has no build-time knowledge of
-// POSTs its upstream on startup and the gateway then proxies matching requests
-// to it. This is a deliberate, contained relaxation of the otherwise
-// static-catalog-only rule (every request must match an explicit catalog
-// entry): proxied data endpoints stay auth-required, the same ext_authz Check
-// runs, and identity headers are stripped and re-stamped exactly as for catalog
-// routes. The gateway performs authentication and identity projection; the
-// registered upstream's own downstream calls remain the authorization
-// authority.
-//
-// Registrations are durable and shared (see gateway_solution_registry.go): they
-// live in accounts, not in this process, so they survive a restart and every
-// replica converges on the same revision. What this file owns is the perimeter
-// — who may register, what an upstream may point at — and the proxy itself.
+// Solution routing reads the durable declared registry. Every authenticated
+// request uses the ordinary identity pipeline and per-viewer admission.
 
 const solutionPrefix = "/solutions/"
 
 const (
-	// solutionRegisterPath registers (POST) or deregisters (DELETE) a
-	// solution's backend half — the upstream this gateway proxies to.
-	solutionRegisterSegment = "_register"
-	// solutionFrontendSegment registers the frontend half. The frontend has no
-	// route to the accounts internal listener, so it hands its validated
-	// manifest to the gateway, which is already the broker for that listener.
-	solutionFrontendSegment = "_frontend"
-	// solutionRegistrySegment reads this replica's snapshot: the frontend
-	// rebuilds its own cache from it, and an operator reads it to tell an
-	// unregistered solution from a pending, expired, or removed one.
+	solutionServicePrefix = "solution:"
+	// solutionRegistrySegment serves the internal read-only snapshot.
 	solutionRegistrySegment = "_registry"
 )
+
+// solutionRouteAudience is the audience a capability presented to a solution route
+// must name: the host's `solution:<binding-id>` vocabulary entry for the binding
+// that route resolved to.
+//
+// The BINDING, not the alias. An alias is deliberately reusable, so an audience
+// keyed on it would let a replacement binding under the same route be addressed as
+// its predecessor — the same reuse hole the artifact-approval authority and the
+// boundary derivation both had to close.
+//
+// An empty binding id yields an empty expectation, which means "do not compare".
+// That case is unreachable from here: a record with no declaration is refused
+// before this, and a routable resolution always carries a binding. It is written
+// this way rather than defended with a panic because the surrounding refusals are
+// the real guarantee, and a nil-safe accessor beside them is not a second one.
+func solutionRouteAudience(bindingID string) string {
+	if bindingID == "" {
+		return ""
+	}
+	return solutionAudiencePrefix + bindingID
+}
+
+// solutionAudiencePrefix mirrors business.SolutionAudiencePrefix in accounts. The
+// gateway cannot import it — separate Go modules — so the two are pinned to each
+// other by a test rather than left to agree by eye.
+const solutionAudiencePrefix = "solution:"
 
 // solutionIDPattern mirrors the identity rule the registry validates: one
 // lowercase segment usable as a path element and a routing key.
@@ -64,47 +61,81 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	}
 	rest := strings.TrimPrefix(r.URL.Path, solutionPrefix)
 
-	// Registration and registry reads mutate or expose the proxy's routing state
-	// and decide what the host loads as an in-origin remote, so they are
-	// authenticated with the registrant's own signed, solution-bound credential
-	// rather than with network placement or a secret the whole mesh shares.
 	switch rest {
-	case solutionRegistrationTokenSegment:
-		g.handleSolutionRegistrationToken(w, r)
-		return true
-	case solutionRegisterSegment:
-		g.handleSolutionRegister(w, r)
-		return true
-	case solutionFrontendSegment:
-		g.handleSolutionFrontendRegister(w, r)
-		return true
 	case solutionRegistrySegment:
 		g.handleSolutionRegistrySnapshot(w, r)
 		return true
 	}
 
+	// The per-viewer control segments dispatch from their own file, so that what
+	// remains BELOW in this one is the proxy decision alone — registered, active,
+	// authenticated, routed — with no reference to any tenant's installations. That
+	// separation is load-bearing: route and page exposure stays deployment-wide
+	// while the projections do not, and module/tools' boundary test reads this file
+	// to hold the first half of that (SOLUTION_REGISTRATION.md §4).
+	if g.handleSolutionViewerSegment(w, r, rest) {
+		return true
+	}
+
 	id, path, _ := strings.Cut(rest, "/")
-	if id == "" {
+	if !solutionIDPattern.MatchString(id) {
 		httpError(w, http.StatusNotFound, "solution not specified")
 		return true
 	}
-	upstream, resolution := g.solutions.resolve(r.Context(), id)
+	// ONE resolution, carried from here to the forward. Admission is decided on
+	// routing.TargetID and traffic goes to routing.Upstream, and both are read
+	// from the same record in the same lookup — see solutionRouting. A second
+	// read further down this handler is what let a replacement binding be
+	// admitted on its own installation while the bearer went to its
+	// predecessor's address.
+	routing, resolution := g.solutions.resolveRouting(r.Context(), id)
 	switch resolution {
 	case solutionUnregistered:
 		httpError(w, http.StatusBadGateway, "solution not registered")
 		return true
 	case solutionNotActive:
-		// Registered but not serving: a half never arrived, a lease lapsed, the
-		// halves disagree on a contract version, or it was deregistered. This is
+		// Registered but not serving: a half is absent, the
+		// halves disagree on a contract version, or delivery withdrew it. This is
 		// deliberately not the "not registered" answer — the distinction is what
 		// tells an operator whether to look for a missing deployment or a
 		// misbehaving one.
 		httpError(w, http.StatusServiceUnavailable, "solution registration not active")
 		return true
+	case solutionWrongKind:
+		// The alias is declared, and not as a SOLUTION — a module, or a record
+		// whose kind this gateway cannot read. Same answer and same code as a
+		// record nothing declared, for the same reason: from this surface it is
+		// not a solution this host declares, and no later read changes that. A
+		// module is reached at /v1/<alias>/*, which is where its own refusal is
+		// worded.
+		httpError(w, http.StatusForbidden, "solution is not declared on this host")
+		return true
 	case solutionRegistryUnavailable:
 		// No snapshot has ever loaded, so this replica cannot tell an
 		// unregistered solution from a registered one. Fail closed and say so.
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
+		return true
+	}
+
+	// THE ROUTE IS RESOLVED, SO THE AUDIENCE IS KNOWN: a capability presented to
+	// this route must name THIS binding. Derived from the same carried resolution
+	// that chose the upstream, so the token cannot be judged against one binding
+	// while traffic goes to another's address.
+	//
+	// This is what makes A-for-B a 403-with-the-audience-error rather than a
+	// forward: a capability minted for `solution:<other-binding>` verified cleanly
+	// here before, and only the callee could notice.
+	//
+	// IT IS NOT AN AUTHORITY CHECK, and the per-viewer installation admission below
+	// stays load-bearing. The mint holds a requested audience to the host's closed
+	// vocabulary, which makes an audience PLAUSIBLE — but it ties it to the caller
+	// only when that caller carries an audience ceiling, and accounts'
+	// enforceActorAudience treats an empty ceiling as unrestricted while the actor
+	// is nil for every owner-only mint. So a viewer can hold a capability naming a
+	// binding it was never installed against, and what refuses the request is the
+	// admission call, not this comparison. Deleting that admission because "the
+	// audience already covers it" would remove the only check that does.
+	if g.rejectInvalidWorkContext(w, r, solutionRouteAudience(routing.BindingID)) {
 		return true
 	}
 
@@ -130,13 +161,29 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// unauthenticated flood of this proxy is still capped. Leaving it on bare
 	// proxyTo would make it the one unmetered public proxy in the gateway (#513).
 	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
+		if routing.TargetID == "" {
+			// Presence nothing declared. This fetch carries no credential, so
+			// there is no VIEWER to ask the authority about — but there is still
+			// an installation question with a final answer, and it needs no
+			// viewer: a registration no declaration opened a target for cannot
+			// have been installed by any organisation, so nobody consented to
+			// this host serving its bytes. Until this check, such a record's
+			// remote entry and chunks were served same-origin and executed
+			// inside the host origin under its own `'self'`, while the
+			// authenticated surface beside it refused the same record outright.
+			//
+			// A verdict (403), not an outage: the record is here, it is active,
+			// and it is declared by nothing — no later read changes that.
+			httpError(w, http.StatusForbidden, "solution is not declared on this host")
+			return true
+		}
 		stripAllIdentityHeaders(r)
 		entry := &RouteEntry{
 			Service:        "solution:" + id,
 			UpstreamPath:   publicPath,
 			RateLimitClass: edgeRateLimitClassPublic,
 		}
-		g.rateLimitThenProxy(w, r, upstream, entry)
+		g.rateLimitThenProxy(w, r, routing.Upstream, entry)
 		return true
 	}
 
@@ -184,6 +231,40 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	}
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 
+	// AVAILABLE is not INSTALLED. Delivery (or, until the cutover, a
+	// registration) makes a solution available on this deployment; an
+	// organization installing it and a grant reaching the viewer are what make
+	// it usable. Those are three layers and none is inferred from another, so
+	// the proxy asks the authority before it forwards anything — including the
+	// caller's own bearer, which is the part that matters: without this check a
+	// viewer in any organization reached the data endpoints of every solution
+	// the deployment runs, and the solution received a real bearer for them.
+	//
+	// It is deliberately AFTER ext_authz. The identity this is decided on must
+	// be the verified one, and during an impersonation it must be the
+	// impersonated viewer — the subject accounts authorizes against — rather
+	// than the administrator acting. Both come from what the check just stamped.
+	//
+	// The public GET surface above is not gated PER VIEWER and cannot be: it is
+	// fetched by the browser's module loader with no credential, so there is no
+	// viewer to ask about. What it serves is the solution's own static
+	// Module-Federation bytes, which carry no tenant data; the authenticated
+	// surface below is where an organization's admission is enforced.
+	//
+	// It is not declaration-blind, though, and the two were conflated for as
+	// long as "there is no viewer" was treated as "nothing can be checked". A
+	// record nothing declared is refused above, because that answer needs no
+	// viewer.
+	org := r.Header.Get("X-Org-Id")
+	viewer := effectiveViewer(r)
+	if org == "" || viewer == "" {
+		// Authenticated, but the session names no organization. There is no
+		// org-scoped admission to read, so this is refused rather than routed —
+		// the same answer, for the same reason, as the entitlement listing.
+		w.Header().Set(solutionEntitlementRefusalHeader, refusalNoOrganization)
+		httpError(w, http.StatusForbidden, "no organization in this session")
+		return true
+	}
 	// Proxy to the solution. The caller's bearer is preserved so the solution
 	// can call accounts through the gateway on the user's behalf.
 	//
@@ -212,7 +293,37 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		Protected:      true,
 		RateLimitClass: class,
 	}
-	g.rateLimitThenProxy(w, r, upstream, entry)
+	// Metered FIRST, and the admission check runs inside the budget.
+	//
+	// The authority call is the expensive part of this path — up to one
+	// scope-tree read per entitlement page, per request — and it costs the same
+	// whether the request is forwarded, refused as not entitled, or abandoned
+	// because accounts is down. Admitting before metering therefore left an
+	// authenticated caller an unmetered way to spend that cost: ask about a
+	// solution it is not entitled to, as fast as it likes, and every refusal was
+	// free. The entitlement LISTING already wrapped its work this way; the proxy
+	// did not.
+	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch g.admitViewerSolution(r.Context(), org, viewer, routing) {
+		case viewerSolutionNotEntitled:
+			// A verdict on this organization's admission, named so a client can
+			// tell it from an ext_authz denial on the credential: one is fixed by
+			// installing and granting, the other by signing in again.
+			w.Header().Set(solutionEntitlementRefusalHeader, refusalNotEntitled)
+			httpError(w, http.StatusForbidden, "solution is not installed for this organization")
+			return
+		case viewerSolutionUndecidable:
+			// The authority could not be asked. 503 and nothing forwarded:
+			// routing would serve a solution nobody has confirmed is installed,
+			// and 403 would tell an operator the grant is missing when accounts
+			// is simply down.
+			httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
+			return
+		}
+		// The destination is the one this request's single resolution named, and
+		// the one whose identity the authority just admitted.
+		g.proxyTo(w, r, routing.Upstream, entry)
+	}))
 	return true
 }
 
@@ -245,262 +356,30 @@ func solutionPublicUpstreamPath(method, subPath string) (string, bool) {
 	return "", false
 }
 
-// solutionRegistrationBody is the shared shape of both registration endpoints.
-// Only one of the halves' fields is read by each handler; sharing the envelope
-// keeps identity, ownership, and the compare-and-swap controls identical on
-// both, which is the point of having one record behind them.
-type solutionRegistrationBody struct {
-	ID        string `json:"id"`
-	Publisher string `json:"publisher"`
-	// ExpectedRevision lets a registrant that tracks its own revision drive the
-	// compare-and-swap itself. Left unset, the gateway supplies the revision it
-	// last saw for the record, which is what makes the pre-existing
-	// `{id, upstream}` registration call keep working unchanged.
-	ExpectedRevision *int64 `json:"expectedRevision"`
-	// Reactivate is the explicit re-registration of a deregistered solution. A
-	// plain retry from a retiring deployment does not set it, so it cannot
-	// resurrect what an operator removed.
-	Reactivate      bool   `json:"reactivate"`
-	ContractVersion string `json:"contractVersion"`
-
-	// Backend half.
-	Upstream     string `json:"upstream"`
-	ServiceAlias string `json:"serviceAlias"`
-
-	// Frontend half. The manifest is carried as the exact JSON text the
-	// frontend validated, not as a nested object: the gateway stores it
-	// verbatim and never reinterprets it, and byte stability is what lets the
-	// registry recognise a re-registration as a lease renewal rather than a
-	// change.
-	Manifest string `json:"manifest"`
-}
-
-// decodeSolutionRegistration reads and validates the parts of a registration
-// body common to both halves. It writes the error response itself and returns
-// ok=false when the caller must stop.
-func (g *Gateway) decodeSolutionRegistration(w http.ResponseWriter, r *http.Request) (*solutionRegistrationBody, bool) {
-	if r.Method != http.MethodPost {
-		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return nil, false
-	}
-	// Registration is a privileged mutation, not a public endpoint: it decides
-	// where authenticated solution traffic (bearer + injected identity) gets
-	// forwarded and what the host renders as an in-origin remote. Require the
-	// cluster-internal token — the same credential the frontend presents to
-	// establish a trusted origin — so an unauthenticated edge caller cannot
-	// register an attacker-controlled upstream and harvest forwarded bearers.
-	// acceptsInternalToken fails closed on an empty/unset credential.
-	claims, authorized := g.acceptsSolutionRegistrationCredential(r)
-	if !authorized {
-		httpError(w, http.StatusUnauthorized, "unauthorized")
-		return nil, false
-	}
-	body := &solutionRegistrationBody{}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSolutionRegistrationBytes)).Decode(body); err != nil {
-		httpError(w, http.StatusBadRequest, "invalid json")
-		return nil, false
-	}
-	if !solutionIDPattern.MatchString(body.ID) {
-		httpError(w, http.StatusBadRequest, "missing id")
-		return nil, false
-	}
-	// The credential names the one id it may act on, so a holder of Example
-	// Solution A's credential cannot write B's record whatever the body says.
-	if claims.Solution != body.ID {
-		httpError(w, http.StatusForbidden, "solution not authorized for this identity")
-		return nil, false
-	}
-	// The publisher is the VERIFIED subject, never a caller-supplied field: that
-	// is what turns the registry's cross-publisher refusal from a first-claim
-	// convention into an owner-bound guarantee.
-	body.Publisher = claims.Subject
-	return body, true
-}
-
-// maxSolutionRegistrationBytes bounds a registration body. A frontend manifest
-// carries a nav entry, a remote descriptor, and an optional dashboard graph;
-// 256 KiB is far above any of those and matches what the registry accepts.
-const maxSolutionRegistrationBytes = 256 << 10
-
-// acceptsSolutionRegistrationCredential verifies the presented registration
-// credential and burns its single use, returning the claims it proved. The
-// shared cluster-internal token is deliberately NOT accepted: it attests to no
-// particular publisher, which is what left the registry's publisher binding
-// first-claim-wins on the id rather than owner-bound.
-func (g *Gateway) acceptsSolutionRegistrationCredential(
-	r *http.Request,
-) (*solutionRegistrationClaims, bool) {
-	claims, ok := g.authz.verifySolutionRegistration(
-		r.Context(), r.Header.Get(solutionRegistrationHeader))
-	if !ok {
-		return nil, false
-	}
-	// A credential is fetched per attempt and presented once. Burning the jti
-	// stops a copy captured in transit or in a log from re-pointing a route
-	// inside its remaining lifetime.
-	if !g.registrationReplay.consume(claims.ID, claims.ExpiresAt.Time) {
-		return nil, false
-	}
-	return claims, true
-}
-
-// handleSolutionRegister serves the backend half: POST registers or renews the
-// upstream, DELETE deregisters the whole solution.
-func (g *Gateway) handleSolutionRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodDelete {
-		g.handleSolutionDeregister(w, r)
-		return
-	}
-	body, ok := g.decodeSolutionRegistration(w, r)
-	if !ok {
-		return
-	}
-	upstream, err := url.Parse(body.Upstream)
-	if err != nil || (upstream.Scheme != "http" && upstream.Scheme != "https") || upstream.Host == "" {
-		httpError(w, http.StatusBadRequest, "invalid upstream")
-		return
-	}
-	// Defence in depth against a confused or compromised internal caller: never
-	// let a solution upstream point at the cloud metadata endpoint or another
-	// link-local/unspecified address (the credential-theft SSRF sinks reachable
-	// from inside the mesh). Loopback is deliberately allowed — local
-	// `codefly run` solutions self-register loopback upstreams, and a deployed
-	// upstream is a cluster DNS name, never link-local.
-	if isDisallowedRegisteredUpstreamHost(upstream.Hostname()) {
-		httpError(w, http.StatusBadRequest, "forbidden upstream host")
-		return
-	}
-	alias := body.ServiceAlias
-	if alias == "" {
-		alias = body.ID
-	}
-	req := g.newSolutionPut(body)
-	req.Half = &accountsv1.PutSolutionRegistrationRequest_Backend{
-		Backend: &accountsv1.SolutionBackendRegistration{
-			// Normalized to scheme+host: the registry stores the routing target,
-			// not whatever path or query the registrant happened to send.
-			Upstream:        (&url.URL{Scheme: upstream.Scheme, Host: upstream.Host}).String(),
-			ServiceAlias:    alias,
-			ContractVersion: body.ContractVersion,
-		},
-	}
-	g.submitSolutionPut(w, r, req, body)
-}
-
-// handleSolutionFrontendRegister serves the frontend half. The frontend cannot
-// reach the accounts internal listener itself — the mesh policy admits only
-// this gateway's service account — so it registers through here, exactly as a
-// composed module obtains its registration credential through here.
-func (g *Gateway) handleSolutionFrontendRegister(w http.ResponseWriter, r *http.Request) {
-	body, ok := g.decodeSolutionRegistration(w, r)
-	if !ok {
-		return
-	}
-	// The manifest's contents are the frontend's business; the gateway checks
-	// only that it was given a document, so a truncated or empty body fails
-	// here rather than being stored as a valid-looking half.
-	if !json.Valid([]byte(body.Manifest)) {
-		httpError(w, http.StatusBadRequest, "invalid manifest")
-		return
-	}
-	req := g.newSolutionPut(body)
-	req.Half = &accountsv1.PutSolutionRegistrationRequest_Frontend{
-		Frontend: &accountsv1.SolutionFrontendRegistration{
-			Manifest:        body.Manifest,
-			ContractVersion: body.ContractVersion,
-		},
-	}
-	g.submitSolutionPut(w, r, req, body)
-}
-
-// newSolutionPut builds the part of a registry write both halves share,
-// including the compare-and-swap token when the caller did not supply one. The
-// caller fills in Half.
-func (g *Gateway) newSolutionPut(body *solutionRegistrationBody) *accountsv1.PutSolutionRegistrationRequest {
-	return &accountsv1.PutSolutionRegistrationRequest{
-		SolutionId:       body.ID,
-		Publisher:        body.Publisher,
-		LeaseSeconds:     uint32(solutionLease.Seconds()),
-		ExpectedRevision: g.solutionExpectedRevision(body),
-	}
-}
-
-// submitSolutionPut sends the write and renders its outcome.
-func (g *Gateway) submitSolutionPut(
-	w http.ResponseWriter, r *http.Request, req *accountsv1.PutSolutionRegistrationRequest,
-	body *solutionRegistrationBody,
-) {
-	record, err := g.solutions.write(r.Context(), req, func() *int64 {
-		return g.solutionExpectedRevision(body)
-	})
-	if err != nil {
-		writeSolutionRegistryError(w, err)
-		return
-	}
-	g.writeSolutionRegistrationResult(w, record)
-}
-
-// solutionExpectedRevision picks the compare-and-swap token for a write.
-//
-// An explicit token from the registrant always wins. Otherwise the gateway
-// supplies the revision it last saw, which is what turns the unchanged
-// `{id, upstream}` call into a correct read-modify-write. The one case it
-// deliberately withholds a token is a tombstoned record without `reactivate`:
-// the registry then refuses the write, which is exactly how a delayed retry
-// from a retired deployment is stopped from recreating a removed registration.
-func (g *Gateway) solutionExpectedRevision(body *solutionRegistrationBody) *int64 {
-	if body.ExpectedRevision != nil {
-		return body.ExpectedRevision
-	}
-	return g.solutions.expectedRevisionFor(body.ID, body.Reactivate)
-}
-
-// handleSolutionDeregister tombstones a registration. Both halves go away
-// together: a solution is removed as a unit, so there is no window where the
-// page survives its backend or the other way round.
-func (g *Gateway) handleSolutionDeregister(w http.ResponseWriter, r *http.Request) {
-	claims, authorized := g.acceptsSolutionRegistrationCredential(r)
-	if !authorized {
-		httpError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	id := r.URL.Query().Get("id")
-	if !solutionIDPattern.MatchString(id) {
-		httpError(w, http.StatusBadRequest, "missing id")
-		return
-	}
-	if claims.Solution != id {
-		httpError(w, http.StatusForbidden, "solution not authorized for this identity")
-		return
-	}
-	record, err := g.solutions.remove(r.Context(), id)
-	if err != nil {
-		writeSolutionRegistryError(w, err)
-		return
-	}
-	g.writeSolutionRegistrationResult(w, record)
-}
-
 // solutionRegistryProjection is what the gateway publishes about the registry.
 // It is a deliberate projection, not the record: the upstream URL stays inside
 // this process, because the only component that routes to it is this one.
 type solutionRegistryProjection struct {
-	Revision int64 `json:"revision"`
-	// LeaseSeconds is the liveness window this gateway grants a registrant. A
-	// consumer that caches this snapshot needs it to bound its own staleness
-	// the way this process does — past the lease nothing in the snapshot is
-	// provably still registered. Publishing it keeps that bound derived from
-	// the one place the lease is defined, instead of mirrored in a second
-	// literal that goes silently wrong the moment this one changes.
-	LeaseSeconds uint32                           `json:"leaseSeconds"`
-	Solutions    []solutionRegistrationProjection `json:"solutions"`
+	Revision  int64                            `json:"revision"`
+	Solutions []solutionRegistrationProjection `json:"solutions"`
 }
 
 type solutionRegistrationProjection struct {
-	ID           string  `json:"id"`
-	Publisher    string  `json:"publisher"`
-	Revision     int64   `json:"revision"`
-	Status       string  `json:"status"`
+	ID        string `json:"id"`
+	Publisher string `json:"publisher"`
+	Revision  int64  `json:"revision"`
+	Status    string `json:"status"`
+	// TargetID is the immutable solution target this record is declared under —
+	// the identity an installation names, and therefore the key a consumer joins
+	// its entitlements against. Empty for a record nothing declared, which no
+	// entitlement can ever match.
+	//
+	// It is published because the alternative is what was here before: the
+	// consumer joined on `id`, the route alias, which a later binding may claim —
+	// so a replacement solution inherited the predecessor's menu entry and its
+	// team exposure. The alias stays in the projection because it is what a URL
+	// is built from; it is no longer what anything is authorised by.
+	TargetID     string  `json:"targetId,omitempty"`
 	ServiceAlias string  `json:"serviceAlias,omitempty"`
 	Manifest     *string `json:"manifest,omitempty"`
 }
@@ -524,18 +403,17 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
 		return
 	}
-	now := g.solutions.now()
 	out := solutionRegistryProjection{
-		Revision:     revision,
-		LeaseSeconds: uint32(solutionLease.Seconds()),
-		Solutions:    make([]solutionRegistrationProjection, 0, len(records)),
+		Revision:  revision,
+		Solutions: make([]solutionRegistrationProjection, 0, len(records)),
 	}
 	for _, record := range records {
 		projection := solutionRegistrationProjection{
 			ID:           record.GetSolutionId(),
 			Publisher:    record.GetPublisher(),
 			Revision:     record.GetRevision(),
-			Status:       solutionRegistryStatusLabel(record, now),
+			Status:       solutionRegistryStatusLabel(record),
+			TargetID:     record.GetDeclared().GetTargetId(),
 			ServiceAlias: record.GetBackend().GetServiceAlias(),
 		}
 		if manifest := record.GetFrontend().GetManifest(); manifest != "" {
@@ -544,24 +422,6 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 		out.Solutions = append(out.Solutions, projection)
 	}
 	writeSolutionJSON(w, http.StatusOK, out)
-}
-
-// writeSolutionRegistrationResult echoes the revision the write landed at, so
-// a registrant can hold it and drive its own compare-and-swap next time, and
-// the status, so it learns immediately that its half alone is not yet serving.
-func (g *Gateway) writeSolutionRegistrationResult(w http.ResponseWriter, record *accountsv1.SolutionRegistration) {
-	// A registration answer deliberately carries NO runtime boundary (issue
-	// #1015). A solution never needs one: accounts seals it into the capability
-	// from the solution's own credential, so nothing in a solution reads, sends
-	// or stores it, and echoing it here would widen who can see a value that is
-	// now stable for the life of the registration. The registry does not send
-	// one either — see solutionRegistrationProto in accounts.
-	writeSolutionJSON(w, http.StatusOK, map[string]any{
-		"ok":       true,
-		"id":       record.GetSolutionId(),
-		"revision": record.GetRevision(),
-		"status":   solutionRegistryStatusLabel(record, g.solutions.now()),
-	})
 }
 
 func writeSolutionJSON(w http.ResponseWriter, code int, payload any) {
@@ -573,64 +433,6 @@ func writeSolutionJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("content-type", "application/json")
 	w.WriteHeader(code)
 	_, _ = w.Write(body)
-}
-
-// writeSolutionRegistryError maps the registry's refusals onto HTTP. The
-// conflict cases are distinguished from an outage so a registrant can tell "you
-// are out of date, re-read and retry" from "the registry is down, back off".
-func writeSolutionRegistryError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errSolutionRegistryUnconfigured) {
-		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
-		return
-	}
-	switch grpcstatus.Code(err) {
-	case codes.Aborted:
-		httpError(w, http.StatusConflict, "registration revision conflict")
-	case codes.FailedPrecondition:
-		httpError(w, http.StatusConflict, "registration conflicts with current state")
-	case codes.PermissionDenied:
-		httpError(w, http.StatusForbidden, "solution is registered to another publisher")
-	case codes.NotFound:
-		httpError(w, http.StatusNotFound, "solution not registered")
-	case codes.InvalidArgument:
-		if isSolutionAuditDeclarationRejection(err) {
-			// The registry will not admit the audit event types the manifest
-			// declares. That is a manifest (or a binding) to change, not a
-			// malformed write, so it has its own status and a stable error the
-			// frontend relays; the message says which rule was broken.
-			writeSolutionJSON(w, http.StatusUnprocessableEntity, map[string]any{
-				"error":  "registration_rejected",
-				"detail": grpcstatus.Convert(err).Message(),
-			})
-			return
-		}
-		httpError(w, http.StatusBadRequest, "invalid registration")
-	default:
-		httpError(w, http.StatusBadGateway, "solution registry unavailable")
-	}
-}
-
-// The google.rpc.ErrorInfo accounts attaches to a refused audit event
-// declaration (adapters.SolutionAuditDeclarationRejectedReason and
-// adapters.SolutionRegistryErrorDomain in accounts). The two strings are a wire
-// contract; a test on each side pins them.
-const (
-	solutionAuditDeclarationRejectedReason = "SOLUTION_AUDIT_DECLARATION_REJECTED"
-	solutionRegistryErrorDomain            = "accounts.saas.codefly.dev"
-)
-
-// isSolutionAuditDeclarationRejection reports whether a registry refusal is
-// the audit registry declining the manifest's declared event types. It reads
-// the structured ErrorInfo, never the message.
-func isSolutionAuditDeclarationRejection(err error) bool {
-	for _, detail := range grpcstatus.Convert(err).Details() {
-		if info, ok := detail.(*errdetails.ErrorInfo); ok &&
-			info.GetReason() == solutionAuditDeclarationRejectedReason &&
-			info.GetDomain() == solutionRegistryErrorDomain {
-			return true
-		}
-	}
-	return false
 }
 
 // isForbiddenUpstreamHost blocks upstream hosts that are credential-theft SSRF

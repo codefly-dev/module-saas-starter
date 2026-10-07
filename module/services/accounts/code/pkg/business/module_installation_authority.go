@@ -13,7 +13,7 @@ import (
 
 // ModuleInstallationAuthorityVersion identifies the installation contract being
 // fingerprinted, not a software release, credential or live authorization token.
-const ModuleInstallationAuthorityVersion = "accounts.module-installation-authority/v1"
+const ModuleInstallationAuthorityVersion = "accounts.module-installation-authority/v2"
 
 var ErrInstallationAuthorityVersion = errors.New("unsupported installation authority reference version")
 
@@ -34,10 +34,10 @@ func moduleInstallationAuthority(caller ModuleCaller, delegation InstallerDelega
 	// Only Accounts chooses these durable identities. Display labels, installer
 	// credential/expiry, software/image versions and deployment receipts are absent.
 	payload := map[string]any{
-		"schema_version":      ModuleInstallationAuthorityVersion,
-		"module_id":           req.ModuleID,
-		"agent_identifier":    req.AgentIdentifier,
-		"solution_identifier": req.SolutionIdentifier,
+		"schema_version":   ModuleInstallationAuthorityVersion,
+		"module_id":        req.ModuleID,
+		"agent_identifier": req.AgentIdentifier,
+		"target_id":        req.TargetID,
 	}
 	for key, value := range map[string]string{
 		"organization_id":        result.OrganizationID,

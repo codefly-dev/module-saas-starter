@@ -224,6 +224,10 @@ func ParseRegistrationSecrets(raw string) (map[string][sha256.Size]byte, error) 
 	return secrets, nil
 }
 
+// TODO(#952, Unit D): delete both registration mints and their secret configuration
+// with module/services/accounts/code/pkg/adapters/module_capabilities_server.go.
+// That protected file still calls these methods; its owner must remove the RPC
+// handlers before this issuer and the work.go configuration readers can be deleted.
 // ModuleMintRegistration authorizes a module against its declared registration
 // secret and issues the gateway credential. Every refusal returns
 // ErrModuleRegistrationDenied.
@@ -307,7 +311,7 @@ func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkC
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	principalID := ModulePrincipalID(prefix)
-	grant, registered := s.modulePrincipals[principalID]
+	grant, registered := s.declaredModules()[principalID]
 	if !registered {
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}

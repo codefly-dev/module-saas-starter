@@ -982,7 +982,20 @@ message ModuleCurrentInstallationRequest {
 message ModuleCurrentInstallationResponse {
  string installation_id = 1;
  string tenant_id = 2;
- string solution_identifier = 3;
+ // Was `solution_identifier`: the route alias. The host cannot answer it on a
+ // request path — the alias lives on the host's presence state, and resolving
+ // it here would mean joining every organisation's presence to answer about
+ // one — and it is not an identity in any case, because a later binding may
+ // take the same route. Reserved rather than reused so no caller reads an
+ // identity out of a field that carried an alias.
+ reserved 3;
+ reserved "solution_identifier";
+ // The immutable target this installation was consented to: one continuous
+ // period of one binding's presence, never reused.
+ string target_id = 4 [(buf.validate.field).string.uuid = true];
+ // The delivered presence binding whose period that target records. This is
+ // what an authority decision keys on; the alias is display only.
+ string binding_id = 5;
 }
 
 service ModuleCapabilitiesService {

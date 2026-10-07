@@ -500,7 +500,7 @@ func TestConfigureModuleIdentity(t *testing.T) {
 				"documents": sha256.Sum256([]byte("registration-secret")),
 			})
 			registry, err := business.ParseModulePrincipalRegistry(
-				`{"documents":{"tenant":"` + tenant + `"}}`)
+				`{"documents":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + tenant + `"}}`)
 			require.NoError(t, err)
 			service.SetModuleCapabilities(nil, nil, registry)
 

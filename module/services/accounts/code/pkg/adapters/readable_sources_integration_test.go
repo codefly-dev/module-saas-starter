@@ -53,6 +53,7 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	defer store.Close()
 	service, err = business.NewService(store)
 	require.NoError(t, err)
+	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"documents"}},
 		business.ModulePrincipalID("rows"):      {Prefix: "rows", Resources: []string{"rows"}},
