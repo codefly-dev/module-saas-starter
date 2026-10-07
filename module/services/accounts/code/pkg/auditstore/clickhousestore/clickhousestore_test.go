@@ -249,7 +249,8 @@ func TestAppendAuditBatchIsOneInsertPerTable(t *testing.T) {
 	require.NoError(t, store.AppendAuditBatch(context.Background(), batch))
 
 	require.Len(t, conn.batches, 2, "one insert per table for the whole relay batch, never one per row")
-	events, details := conn.batches[0], conn.batches[1]
+	details, events := conn.batches[0], conn.batches[1]
+	require.Contains(t, details.query, "audit_event_details", "the details insert goes first: a content event's events row follows only once its details are accepted")
 	require.Equal(t, "INSERT INTO audit_events (event_id, deployment_id, org_id, actor_id, actor_type, event_type, schema_version, "+
 		"resource, resource_id, occurred_at, ip_address, impersonated_by, is_impersonated, client_id, retention_class, details_sha256, details)", events.query)
 	require.Equal(t, "INSERT INTO audit_event_details (event_id, deployment_id, org_id, event_type, occurred_at, details_sha256, details)", details.query)

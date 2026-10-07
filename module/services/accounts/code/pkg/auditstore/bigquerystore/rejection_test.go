@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"accounts/pkg/business"
@@ -177,6 +178,7 @@ func TestARowRefusedInTheDetailsTableIsARefusalOfItsEvent(t *testing.T) {
 
 	require.Equal(t, []string{ids[2]}, refusedIDs(err))
 	require.ErrorContains(t, err, DetailsTable)
+	require.Empty(t, events.requests, "no events row is written when a details row is refused: it would be an event with an empty payload")
 }
 
 func TestEveryRowThatCannotFitARequestIsARefusalAndNothingIsSent(t *testing.T) {
@@ -194,4 +196,165 @@ func TestEveryRowThatCannotFitARequestIsARefusalAndNothingIsSent(t *testing.T) {
 	require.ErrorAs(t, err, &tooLarge)
 	require.Empty(t, events.requests)
 	require.Empty(t, details.requests)
+}
+
+// orderedInserter is a scriptedInserter that records, in a log shared with the
+// other table's, which table each request went to.
+type orderedInserter struct {
+	scriptedInserter
+	table string
+	log   *[]string
+}
+
+func (o *orderedInserter) Put(ctx context.Context, src any) error {
+	*o.log = append(*o.log, o.table)
+	return o.scriptedInserter.Put(ctx, src)
+}
+
+func (s *scriptedInserter) ids() []string {
+	var ids []string
+	for _, request := range s.requests {
+		for _, row := range request {
+			ids = append(ids, row.InsertID)
+		}
+	}
+	return ids
+}
+
+func TestTheDetailsAreWrittenBeforeTheEventsTheyBelongTo(t *testing.T) {
+	var log []string
+	events := &orderedInserter{table: EventsTable, log: &log}
+	details := &orderedInserter{table: DetailsTable, log: &log}
+	store := &Store{events: events, details: details}
+	records, ids := batchOf(t, 3, business.RetentionContent)
+	security := record(t, business.RetentionSecurity, "")
+
+	require.NoError(t, store.AppendAuditBatch(context.Background(), business.AuditBatch{
+		DeploymentID: "deployment-1", Records: append(records, security),
+	}))
+
+	require.Equal(t, []string{DetailsTable, EventsTable}, log, "a content event's events row is written only once its details are accepted")
+	require.Equal(t, ids, details.ids())
+	require.Equal(t, append(slices.Clone(ids), security.Entry.ID), events.ids(), "and every event, the security one included, then has its events row")
+}
+
+// A details row BigQuery refuses leaves no events row of its event: the events
+// table is where every read starts, and an event there with no details is an
+// event with an empty payload whose quarantine reason says the warehouse holds
+// nothing of it.
+func TestARefusedDetailsRowLeavesNoEventsRowOfItsEvent(t *testing.T) {
+	records, ids := batchOf(t, 4, business.RetentionContent)
+	security := record(t, business.RetentionSecurity, "")
+	details := &scriptedInserter{answer: func(request []Row) error {
+		reasons := map[int]string{}
+		for i := range request {
+			reasons[i] = "stopped"
+		}
+		reasons[1] = "invalid"
+		return insertErrors(request, reasons)
+	}}
+	events := &scriptedInserter{}
+	store := &Store{events: events, details: details}
+
+	err := store.AppendAuditBatch(context.Background(), business.AuditBatch{
+		DeploymentID: "deployment-1", Records: append(records, security),
+	})
+
+	require.Equal(t, []string{ids[1]}, refusedIDs(err))
+	require.Empty(t, events.requests, "nothing of the batch reaches the events table until its details are all accepted")
+
+	// The relay sends the rest again without the refused row, and every events row
+	// of it is then written, security-class ones included.
+	details.answer = nil
+	remaining := append(slices.Clone(records[:1]), records[2:]...)
+	require.NoError(t, store.AppendAuditBatch(context.Background(), business.AuditBatch{
+		DeploymentID: "deployment-1", Records: append(remaining, security),
+	}))
+	require.NotContains(t, events.ids(), ids[1], "the refused event never has an events row")
+	require.Len(t, events.ids(), 4)
+}
+
+// A table changed under the writer refuses every row alike. That is not a set of
+// bad rows, and naming each of them would have the relay set the whole stream
+// aside.
+func TestARequestEveryRowOfWhichIsRefusedForOneReasonNamesNoRow(t *testing.T) {
+	for _, table := range []string{"details", "events"} {
+		records, _ := batchOf(t, 6, business.RetentionContent)
+		refuse := &scriptedInserter{answer: func(request []Row) error {
+			reasons := map[int]string{}
+			for i := range request {
+				reasons[i] = "invalid"
+			}
+			return insertErrors(request, reasons)
+		}}
+		events, details := &scriptedInserter{}, &scriptedInserter{}
+		if table == "events" {
+			events = refuse
+		} else {
+			details = refuse
+		}
+		store := &Store{events: events, details: details}
+
+		err := store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+		require.Error(t, err, table)
+		require.Empty(t, refusedIDs(err), "%s: no row is named, so the relay retries the batch and sets nothing aside", table)
+		require.ErrorContains(t, err, "every one of the 6 rows of a request was refused as invalid for one reason", table)
+		require.ErrorContains(t, err, "cannot parse invalid", "%s: the reason BigQuery gave is kept", table)
+	}
+}
+
+func TestARequestRefusedRowByRowForDifferentReasonsNamesEachRow(t *testing.T) {
+	records, ids := batchOf(t, 3, business.RetentionContent)
+	details := &scriptedInserter{answer: func(request []Row) error {
+		var multi bigquery.PutMultiError
+		for i, row := range request {
+			multi = append(multi, bigquery.RowInsertionError{
+				InsertID: row.InsertID, RowIndex: i,
+				Errors: bigquery.MultiError{&bigquery.Error{Reason: "invalid", Location: "details", Message: "invalid value " + row.InsertID}},
+			})
+		}
+		return multi
+	}}
+	store := &Store{events: &scriptedInserter{}, details: details}
+
+	err := store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	require.Equal(t, ids, refusedIDs(err), "each row has its own reason, so each row is the one at fault")
+}
+
+func TestOneRowRefusedAloneIsARefusalOfThatRowWhateverTheReason(t *testing.T) {
+	records, ids := batchOf(t, 1, business.RetentionContent)
+	details := &scriptedInserter{answer: func(request []Row) error {
+		return insertErrors(request, map[int]string{0: "invalid"})
+	}}
+	store := &Store{events: &scriptedInserter{}, details: details}
+
+	err := store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	require.Equal(t, ids, refusedIDs(err), "a request of one row cannot be told from a table that refuses everything")
+}
+
+// The reason is what BigQuery said of the row and nothing of where the row sat in
+// the request, so that two rows refused for one cause have one reason.
+func TestTheReasonOfARefusedRowIsTheSameForRowsRefusedForOneCause(t *testing.T) {
+	records, _ := batchOf(t, 5, business.RetentionContent)
+	details := &scriptedInserter{answer: func(request []Row) error {
+		reasons := map[int]string{}
+		for i := range request {
+			reasons[i] = "stopped"
+		}
+		reasons[1], reasons[3] = "invalid", "invalid"
+		return insertErrors(request, reasons)
+	}}
+	store := &Store{events: &scriptedInserter{}, details: details}
+
+	err := store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	rejections := business.PermanentRowRejections(err)
+	require.Len(t, rejections, 2)
+	require.NotEmpty(t, rejections[0].Reason)
+	require.Equal(t, rejections[0].Reason, rejections[1].Reason)
+	require.NotContains(t, rejections[0].Reason, rejections[0].EventID)
+	require.NotContains(t, rejections[0].Reason, "index")
 }

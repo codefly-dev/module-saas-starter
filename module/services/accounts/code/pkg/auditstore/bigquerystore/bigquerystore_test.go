@@ -224,7 +224,7 @@ func TestAppendAuditBatchRefusesARowThatCannotFitARequestAndSendsNothing(t *test
 
 func TestAppendAuditBatchFailsWholeAndNamesTheRejectedRow(t *testing.T) {
 	rejected := bigquery.PutMultiError{{InsertID: "event-7", RowIndex: 7, Errors: bigquery.MultiError{errors.New("no such field: extra")}}}
-	events, details := &fakeInserter{fail: rejected}, &fakeInserter{}
+	events, details := &fakeInserter{}, &fakeInserter{fail: rejected}
 	store := &Store{events: events, details: details}
 
 	err := store.AppendAuditBatch(context.Background(), business.AuditBatch{
@@ -233,7 +233,21 @@ func TestAppendAuditBatchFailsWholeAndNamesTheRejectedRow(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "row 7, insert id event-7")
 	require.ErrorContains(t, err, "no such field: extra")
-	require.Empty(t, details.requests, "a failed events append stops the batch; the relay retries it whole")
+	require.Empty(t, events.requests, "a failed details append stops the batch before any events row is written; the relay retries it whole")
+}
+
+func TestAppendAuditBatchFailsWholeWhenTheEventsAppendFails(t *testing.T) {
+	events, details := &fakeInserter{fail: errors.New("backendError")}, &fakeInserter{}
+	store := &Store{events: events, details: details}
+	content := record(t, business.RetentionContent, "")
+
+	err := store.AppendAuditBatch(context.Background(), business.AuditBatch{
+		DeploymentID: "deployment-1", Records: []business.AuditRecord{content},
+	})
+
+	require.ErrorContains(t, err, "backendError")
+	require.ErrorContains(t, err, EventsTable)
+	require.Equal(t, []string{content.Entry.ID}, details.ids(), "the details were accepted first; with no events row they are read by nothing, and the relay sends the batch again")
 }
 
 func TestTablesArePartitionedByDayOnOccurredAtAndClusteredByOrganization(t *testing.T) {

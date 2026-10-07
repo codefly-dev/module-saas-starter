@@ -169,6 +169,16 @@ type AuditRelayConfig struct {
 // refusals, the relay sets those rows aside and writes the rest again, so a
 // batch of one is judged exactly as a batch of five thousand.
 //
+// One refusal is not taken at its word: a write of two or more rows that the
+// store refuses in every row, for one and the same reason, is not a set of bad
+// rows but a store that cannot take them (a table changed under the relay).
+// Setting them all aside would quarantine the whole stream and leave reads with
+// gaps nobody was told of, so nothing is set aside: the rows stay queued, the
+// delivery fails with the reason, and the relay retries with backoff while the
+// queue's depth and age grow until the relay-lag alert fires
+// (RefusedForOneReason). A refusal that singles out some of the rows of a write
+// is still a refusal of those rows.
+//
 // While it runs, the relay remembers what each queued row has had acknowledged
 // and what it decided about it, so retrying a batch during an outage of one
 // side does not write it to the other side again: a warehouse outage does not
@@ -465,9 +475,11 @@ func awaitingAppend(rows []*queuedRow) []*queuedRow {
 
 // appendRows writes the archived rows the store has not acknowledged, whole.
 // When the store reports rows it refused for good, those are set aside and the
-// rest is written again; when it fails any other way, nothing is set aside and
-// the rows stay queued for the next attempt. Rows an earlier write of this call
-// may have stored are written again: the store keys a record by event id.
+// rest is written again; when it fails any other way — or refuses every row of
+// the write for one reason, which is the store's and not the rows' — nothing is
+// set aside and the rows stay queued for the next attempt. Rows an earlier write
+// of this call may have stored are written again: the store keys a record by
+// event id.
 func (r *AuditRelay) appendRows(ctx context.Context, rows []*queuedRow) error {
 	var failure error
 	for writes := 0; writes < auditRelayMaxAppendWrites; writes++ {
@@ -491,6 +503,9 @@ func (r *AuditRelay) appendRows(ctx context.Context, rows []*queuedRow) error {
 			return nil
 		}
 		failure = fmt.Errorf("audit relay: append %d rows of batch %s: %w", len(todo), first.id, err)
+		if reason, whole := RefusedForOneReason(err, eventIDsOf(todo)); whole {
+			return r.storeRefusesEveryRow(ctx, todo, first.id, reason)
+		}
 		if !r.setAsideRefused(ctx, todo, err) {
 			return failure
 		}
@@ -499,6 +514,28 @@ func (r *AuditRelay) appendRows(ctx context.Context, rows []*queuedRow) error {
 		return nil
 	}
 	return failure
+}
+
+// storeRefusesEveryRow is the failure of a write the store refused in every row
+// for one reason. It sets nothing aside: the reason is the store's, so the rows
+// are as deliverable as they were, and quarantining them would only move a
+// stream the store cannot take into a table nobody reads. The rows stay queued,
+// the error says why, and the loop's failure log, its backoff and the growing
+// depth and age of the queue are the signals.
+func (r *AuditRelay) storeRefusesEveryRow(ctx context.Context, todo []*queuedRow, batchID, reason string) error {
+	reason = AuditQuarantineReason(reason)
+	wool.Get(ctx).In("audit.relay").Error("audit store refused every row of a write for one reason: treated as a store failure, nothing set aside; the rows stay queued and are retried",
+		wool.Field("rows", strconv.Itoa(len(todo))), wool.Field("batch_id", batchID), wool.Field("reason", reason))
+	return fmt.Errorf("audit relay: append %d rows of batch %s: the store refused every row for one reason, so the rows are kept queued and not set aside: %s", len(todo), batchID, reason)
+}
+
+// eventIDsOf is the event id of each of rows.
+func eventIDsOf(rows []*queuedRow) []string {
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = row.event.Entry.ID
+	}
+	return ids
 }
 
 // setAsideRefused sets aside every row of todo that err says the store refused

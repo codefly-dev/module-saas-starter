@@ -565,29 +565,39 @@ func DetailRow(deploymentID string, record business.AuditRecord) []any {
 }
 
 // AppendAuditBatch implements business.AuditStoreWriter: the batch's rows
-// (BatchRows) as one insert into the events table and, when the batch holds
-// content-class events, one into the details table. Each insert is one block,
-// written atomically; a failure between the two leaves the events without
-// their details until the relay delivers the batch again, and every read
-// returns each event once by event id.
+// (BatchRows) as one insert into the details table, when the batch holds
+// content-class events, and then one into the events table. Each insert is one
+// block, written atomically.
+//
+// The details go first, and an event whose details row is refused is given no
+// events row, because a content-class event keeps its details nowhere but the
+// details table: an events row written beside a refused details row would be an
+// event with an empty payload, in the table every read starts from, for an event
+// the relay is about to set aside. A details row whose events row then fails is
+// harmless instead — no read starts from the details table — and the relay
+// delivers the batch again. A failure between the two inserts leaves details
+// without events until then, and every read returns each event once by event id.
 //
 // What a failure says about the batch is what the relay acts on, so it is
 // classified here (rejection.go): a row ClickHouse refuses for its own content is
 // returned as a business.PermanentRowRejection naming its event, found by
-// splitting the refused block down to single rows; every other failure is
-// returned as it came and the relay retries the batch whole. The rows around a
-// refused one are written while it is found, so the relay's retry of them is a
-// redelivery, which every read discards.
+// splitting the refused block down to single rows; an insert every row of which
+// is refused for one and the same reason names no row and is returned as a
+// failure, because that is a table changed under the writer and not a set of bad
+// rows (business.RefusedForOneReason); every other failure is returned as it came
+// and the relay retries the batch whole. The rows around a refused one are
+// written while it is found, so the relay's retry of them is a redelivery, which
+// every read discards.
 func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch) error {
 	events, details := BatchRows(batch)
-	refused, err := s.insert(ctx, EventsTable, EventsColumns(), events)
+	refused, err := s.insert(ctx, DetailsTable, DetailsColumns(), details)
 	if err != nil {
 		return failure(refused, err)
 	}
-	// An event whose events row was refused is not given a details row: the relay
-	// sets it aside, and its details would outlive the event they belong to.
-	details = withoutRefused(details, refused)
-	more, err := s.insert(ctx, DetailsTable, DetailsColumns(), details)
+	// An event whose details row was refused is not given an events row: the relay
+	// sets it aside, and its events row would be an event with no payload.
+	events = withoutRefused(events, refused)
+	more, err := s.insert(ctx, EventsTable, EventsColumns(), events)
 	return failure(append(refused, more...), err)
 }
 
@@ -619,7 +629,8 @@ func withoutRefused(rows [][]any, refused []error) [][]any {
 // insert writes rows to table. It returns the rows ClickHouse refused for their
 // own content, as business.PermanentRowRejection, and the failure that stopped
 // it when the rest could not be written; the rows it did not refuse are
-// written when it returns no failure.
+// written when it returns no failure. When every row is refused for one and the
+// same reason it returns that as a failure and names no row.
 func (s *Store) insert(ctx context.Context, table string, columns []Column, rows [][]any) ([]error, error) {
 	if len(rows) == 0 {
 		return nil, nil
@@ -627,7 +638,21 @@ func (s *Store) insert(ctx context.Context, table string, columns []Column, rows
 	if len(s.writeSettings) > 0 {
 		ctx = clickhouse.Context(ctx, clickhouse.WithSettings(s.writeSettings))
 	}
-	return s.isolate(ctx, table, columns, rows)
+	refused, err := s.isolate(ctx, table, columns, rows)
+	if err != nil {
+		return refused, err
+	}
+	// Every row refused for one reason is the table's refusal, not the rows': a
+	// column changed under the writer refuses them all alike. None is named, so the
+	// relay retries instead of setting the whole stream aside.
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = fmt.Sprint(row[0])
+	}
+	if reason, whole := business.RefusedForOneReason(errors.Join(refused...), ids); whole {
+		return nil, fmt.Errorf("clickhouse audit store: %s refused every one of its %d rows for one reason, which is the table's and not the rows': %s", table, len(rows), reason)
+	}
+	return refused, nil
 }
 
 // isolate sends rows as one block. When the block is refused it finds the rows

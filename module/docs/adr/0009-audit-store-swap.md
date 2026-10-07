@@ -140,8 +140,16 @@ Postgres transaction.
      failure — a transport or server error, a throttle, a quota, a timeout, a
      failed quorum, an error the store does not recognize — is retried with
      backoff and sets nothing aside, and the relay infers nothing from how often a
-     row failed or from what else the store accepted. After a write that names
-     refused rows, the relay sets those aside and writes the rest again;
+     row failed. After a write that names refused rows, the relay sets those aside
+     and writes the rest again. One refusal is read as a whole and not taken at
+     its word: a write of two or more rows refused in every row for one and the
+     same reason (`PermanentRowRejection.Reason`) is a table the store cannot
+     take, not a set of bad rows, so nothing is set aside, the rows stay queued
+     and the delivery is retried with backoff, and the queue's depth and age raise
+     the relay-lag alert. The adapters read each insert of their own the same way,
+     and write a batch's details before its events, giving an event an events row
+     only once its details are accepted, so that a refused event is not left in
+     the events table with an empty payload;
    - a set-aside row does not stall the queue. It moves, whole, in the same
      transaction that deletes the delivered rows, to an `audit_event_quarantine`
      table beside the queue, and is counted in `saas.audit_queue.quarantined`.

@@ -857,7 +857,13 @@ reconnected with a PAT or through the App, all reach.
   cannot be serialized; every other failure — transport, 5xx, 429, quota,
   timeout, quorum or replica, or an error the adapter cannot classify — is
   retried and sets nothing aside, and no decision is drawn from what else the
-  warehouse accepted. The reason starts with its class
+  warehouse accepted. The one exception reads the write as a whole: a write of
+  two or more rows refused in every row for one and the same
+  `PermanentRowRejection.Reason` (`business.RefusedForOneReason`) is a store that
+  cannot take them, not rows at fault, so nothing is set aside and the relay
+  retries; the adapters apply the same rule to each of their inserts, and write
+  a batch's details before its events so a refused event leaves no events row.
+  The reason starts with its class
   (`warehouse_rejected_archived` or `unserializable_not_archived`) and is bounded
   valid text. The move from queue to quarantine is one statement, and nothing in the kit ever deletes a queue or quarantine row (the
   down migrations refuse while either holds rows). (3) The queue is observed

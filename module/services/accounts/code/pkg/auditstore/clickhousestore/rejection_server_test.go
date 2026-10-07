@@ -42,7 +42,10 @@ func TestServerIsolatesARowTheTableRefusesAndNothingElse(t *testing.T) {
 	require.NoError(t, store.queryRow(ctx, "SELECT count() FROM "+EventsTable, nil, &events))
 	require.NoError(t, store.queryRow(ctx, "SELECT count() FROM "+DetailsTable, nil, &details))
 	require.EqualValues(t, 5, events, "the rows around the refused ones are written")
-	require.EqualValues(t, 5, details)
+	// The details go first, so those of the two events the events table then refused
+	// are already there: read by nothing, since no read starts from the details
+	// table, and held by the archive and the quarantine as well.
+	require.EqualValues(t, 7, details)
 
 	// A failure that is not about a row: a table that is gone refuses nothing.
 	require.NoError(t, conn.Exec(ctx, "DROP TABLE "+DetailsTable))

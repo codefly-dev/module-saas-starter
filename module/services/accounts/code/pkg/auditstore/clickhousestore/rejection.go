@@ -77,5 +77,32 @@ func refusal(table string, row []any, cause error) error {
 	return &business.PermanentRowRejection{
 		EventID: fmt.Sprint(row[0]),
 		Cause:   fmt.Errorf("clickhouse audit store: %s refused the row: %w", table, cause),
+		Reason:  refusalReason(table, cause),
 	}
 }
+
+// refusalReason is what was wrong with a refused row in words that do not depend
+// on which row it was, so that one cause refusing every row of an insert reads as
+// one reason: the server's exception code, or the driver's own words for the
+// value it cannot encode, never the event or the value. Empty when the refusal
+// is of a kind a table's change does not explain — a value over the size a
+// column holds is the row's own — which keeps such a row judged as a row.
+func refusalReason(table string, cause error) string {
+	var exception *clickhouse.Exception
+	if errors.As(cause, &exception) {
+		name, defect := rowDefectCodes[exception.Code]
+		if !defect || exception.Code == codeTooLargeString {
+			return ""
+		}
+		return fmt.Sprintf("%s: %s (code %d)", table, name, exception.Code)
+	}
+	var block *proto.BlockError
+	if errors.As(cause, &block) && block.Op == "AppendRow" {
+		return fmt.Sprintf("%s: %s", table, block.Error())
+	}
+	return ""
+}
+
+// codeTooLargeString is TOO_LARGE_STRING_SIZE, the one row-defect code that is
+// about the size of one value and never about the shape of the table.
+const codeTooLargeString = 131

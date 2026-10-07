@@ -70,6 +70,21 @@ recognize. A flapping or unreachable warehouse grows `saas.audit_queue.depth` an
 `oldest_age`, never the quarantine. The relay draws no conclusion from what else
 the warehouse accepted or from how often a row failed.
 
+One thing it does read from a refusal as a whole. A write the warehouse refuses
+in **every** row, for one and the same reason, is not a set of bad rows: a table
+was changed under the relay (a column added, dropped or retyped outside the kit)
+and refuses whatever it is sent. Setting those rows aside would move the whole
+stream into the quarantine and leave reads with gaps nobody was told of. So the
+relay sets nothing aside: the rows stay queued, the delivery fails with the
+reason in its error (`audit relay delivery failed; the rows stay queued and are
+retried`, and an error-level `audit store refused every row of a write for one
+reason`), and the relay retries with backoff while `depth` and `oldest_age` grow
+until `audit_relay_lag` fires. Read the reason, put the table back, and the rows
+are delivered as they are. The adapters apply the same reading to each insert of
+their own (a BigQuery request, a ClickHouse insert into one table), so a change
+to the details table alone is caught too. It takes two rows: one row refused
+alone cannot be told from a warehouse that refuses everything, and is a row.
+
 What the adapters report as a permanent refusal:
 
 - **BigQuery**: a row that `insertAll` lists with the reason `invalid` (a value
@@ -87,7 +102,12 @@ What the adapters report as a permanent refusal:
   retried and never searched.
 
 When a write names refused rows, the relay sets exactly those aside and writes the
-rest again, so a batch of one is judged as a batch of five thousand. The archive
+rest again, so a batch of one is judged as a batch of five thousand. Both adapters
+write a batch's details before its events, and write an event's events row only
+once its details are accepted: a content-class event keeps its details nowhere
+but the details table, so an events row beside a refused details row would be an
+event with an empty payload in the table every read starts from. A refused event
+therefore has no events row in the warehouse. The archive
 is written once, whole, before the warehouse is tried, so a row the warehouse
 refused is already in the archive. A row whose own details cannot be serialized is
 the exception: the archive's line for an event carries the hash of its canonical

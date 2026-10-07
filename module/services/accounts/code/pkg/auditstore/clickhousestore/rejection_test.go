@@ -31,6 +31,8 @@ type blameConn struct {
 	// the server was sent.
 	stored map[string][]string
 	sends  int
+	// order is the table of each block the server was sent, in order.
+	order []string
 }
 
 func (c *blameConn) PrepareBatch(_ context.Context, query string, _ ...driver.PrepareBatchOption) (driver.Batch, error) {
@@ -68,6 +70,7 @@ func (b *blameBatch) Append(values ...any) error {
 
 func (b *blameBatch) Send() error {
 	b.conn.sends++
+	b.conn.order = append(b.conn.order, b.table)
 	for _, row := range b.rows {
 		if b.conn.answer == nil {
 			continue
@@ -150,10 +153,11 @@ func TestSeveralRowsRefusedForTheirContentAreAllFound(t *testing.T) {
 	err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
 
 	require.ElementsMatch(t, bad, refusedIDs(err))
-	require.Len(t, conn.ids(EventsTable), 16)
 	require.Len(t, conn.ids(DetailsTable), 16, "the details of the rows that were not refused are written")
+	require.Len(t, conn.ids(EventsTable), 16, "and so are their events")
 	for _, id := range bad {
-		require.NotContains(t, conn.ids(DetailsTable), id, "an event refused in the events table is not given details")
+		require.NotContains(t, conn.ids(DetailsTable), id, "a refused row is not written")
+		require.NotContains(t, conn.ids(EventsTable), id, "and its event is given no events row")
 	}
 }
 
@@ -288,4 +292,187 @@ func (c *encodingConn) PrepareBatch(ctx context.Context, query string, opts ...d
 	}
 	inner.(*blameBatch).unencodable = c.unencodable
 	return inner, nil
+}
+
+func TestTheDetailsAreWrittenBeforeTheEventsTheyBelongTo(t *testing.T) {
+	records, _ := recordsOf(t, 5, business.RetentionContent)
+	conn := &blameConn{}
+	store, err := New(conn, validConfig())
+	require.NoError(t, err)
+
+	require.NoError(t, store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records}))
+
+	require.Equal(t, []string{DetailsTable, EventsTable}, conn.order, "a content event's events row is written only once its details are accepted")
+}
+
+// A details row ClickHouse refuses leaves no events row of its event: the events
+// table is where every read starts, and an event there with no details is an
+// event with an empty payload whose quarantine reason says the warehouse holds
+// nothing of it.
+func TestARefusedDetailsRowLeavesNoEventsRowOfItsEvent(t *testing.T) {
+	records, ids := recordsOf(t, 8, business.RetentionContent)
+	security := record(t, business.RetentionSecurity, "")
+	conn := &blameConn{answer: func(table, id string) error {
+		if table == DetailsTable && id == ids[3] {
+			return exception(41)
+		}
+		return nil
+	}}
+	store, err := New(conn, validConfig())
+	require.NoError(t, err)
+
+	err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: append(records, security)})
+
+	require.Equal(t, []string{ids[3]}, refusedIDs(err))
+	require.NotContains(t, conn.ids(EventsTable), ids[3], "the refused event has no events row")
+	require.NotContains(t, conn.ids(DetailsTable), ids[3])
+	want := append(slices.Delete(slices.Clone(ids), 3, 4), security.Entry.ID)
+	sort.Strings(want)
+	require.Equal(t, want, conn.ids(EventsTable), "every other event, the security one included, has its events row")
+}
+
+// A details insert that fails for a reason that says nothing of a row stops the
+// call before any events row is written.
+func TestAFailedDetailsInsertWritesNoEventsRow(t *testing.T) {
+	records, _ := recordsOf(t, 4, business.RetentionContent)
+	conn := &blameConn{answer: func(table, _ string) error {
+		if table == DetailsTable {
+			return exception(285)
+		}
+		return nil
+	}}
+	store, err := New(conn, validConfig())
+	require.NoError(t, err)
+
+	err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	require.Error(t, err)
+	require.Empty(t, refusedIDs(err))
+	require.Empty(t, conn.ids(EventsTable))
+}
+
+// A table changed under the writer refuses every row alike. That is not a set of
+// bad rows, and naming each of them would have the relay set the whole stream
+// aside.
+func TestAnInsertEveryRowOfWhichIsRefusedForOneReasonNamesNoRow(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		table  string
+		class  business.AuditRetentionClass
+		refuse error
+	}{
+		{"details, parse defect", DetailsTable, business.RetentionContent, exception(41)},
+		{"details, type mismatch", DetailsTable, business.RetentionContent, exception(53)},
+		{"events, parse defect", EventsTable, business.RetentionSecurity, exception(41)},
+		{"events, constraint", EventsTable, business.RetentionSecurity, exception(469)},
+	} {
+		records, _ := recordsOf(t, 6, tc.class)
+		conn := &blameConn{answer: func(table, _ string) error {
+			if table == tc.table {
+				return tc.refuse
+			}
+			return nil
+		}}
+		store, err := New(conn, validConfig())
+		require.NoError(t, err)
+
+		err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+		require.Error(t, err, tc.name)
+		require.Empty(t, refusedIDs(err), "%s: no row is named, so the relay retries the batch and sets nothing aside", tc.name)
+		require.ErrorContains(t, err, "refused every one of its 6 rows for one reason", tc.name)
+		require.ErrorContains(t, err, tc.table, tc.name)
+	}
+}
+
+func TestAnInsertRefusedRowByRowForDifferentReasonsNamesEachRow(t *testing.T) {
+	records, ids := recordsOf(t, 4, business.RetentionContent)
+	conn := &blameConn{answer: func(table, id string) error {
+		if table != DetailsTable {
+			return nil
+		}
+		if slices.Index(ids, id)%2 == 0 {
+			return exception(41)
+		}
+		return exception(53)
+	}}
+	store, err := New(conn, validConfig())
+	require.NoError(t, err)
+
+	err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	require.ElementsMatch(t, ids, refusedIDs(err), "two reasons are two causes: each row is the one at fault")
+}
+
+// A value over what a column holds is the row's own, never the table's, so rows
+// refused for it are rows however many there are.
+func TestRowsRefusedForTheirSizeAreAlwaysRows(t *testing.T) {
+	records, ids := recordsOf(t, 4, business.RetentionContent)
+	conn := &blameConn{answer: func(table, _ string) error {
+		if table == DetailsTable {
+			return exception(131)
+		}
+		return nil
+	}}
+	store, err := New(conn, validConfig())
+	require.NoError(t, err)
+
+	err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	require.ElementsMatch(t, ids, refusedIDs(err))
+}
+
+func TestOneRowRefusedAloneIsARefusalOfThatRowWhateverTheReason(t *testing.T) {
+	records, ids := recordsOf(t, 1, business.RetentionContent)
+	conn := &blameConn{answer: func(table, _ string) error {
+		if table == DetailsTable {
+			return exception(41)
+		}
+		return nil
+	}}
+	store, err := New(conn, validConfig())
+	require.NoError(t, err)
+
+	err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	require.Equal(t, ids, refusedIDs(err), "one row cannot be told from a table that refuses everything")
+}
+
+// The driver's refusal to encode a value names the column and its type, never the
+// row, so every row it refuses for the one column reads as one reason.
+func TestEveryRowTheDriverCannotEncodeForOneColumnNamesNoRow(t *testing.T) {
+	records, ids := recordsOf(t, 5, business.RetentionContent)
+	unencodable := map[string]bool{}
+	for _, id := range ids {
+		unencodable[id] = true
+	}
+	conn := &encodingConn{blameConn: &blameConn{}, unencodable: unencodable}
+	store, err := New(conn, validConfig())
+	require.NoError(t, err)
+
+	err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	require.Error(t, err)
+	require.Empty(t, refusedIDs(err))
+	require.ErrorContains(t, err, "schema_version")
+}
+
+func TestTheReasonOfARefusedRowIsTheSameForRowsRefusedForOneCause(t *testing.T) {
+	records, ids := recordsOf(t, 6, business.RetentionSecurity)
+	conn := &blameConn{answer: func(_, id string) error {
+		if id == ids[1] || id == ids[4] {
+			return exception(41)
+		}
+		return nil
+	}}
+	store, err := New(conn, validConfig())
+	require.NoError(t, err)
+
+	err = store.AppendAuditBatch(context.Background(), business.AuditBatch{DeploymentID: "deployment-1", Records: records})
+
+	rejections := business.PermanentRowRejections(err)
+	require.Len(t, rejections, 2)
+	require.NotEmpty(t, rejections[0].Reason)
+	require.Equal(t, rejections[0].Reason, rejections[1].Reason)
+	require.NotContains(t, rejections[0].Reason, rejections[0].EventID)
 }

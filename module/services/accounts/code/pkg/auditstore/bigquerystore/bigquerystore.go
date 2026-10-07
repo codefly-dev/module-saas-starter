@@ -351,8 +351,18 @@ func BatchRows(batch business.AuditBatch) (events, details []Row) {
 }
 
 // AppendAuditBatch implements business.AuditStoreWriter: the batch's rows
-// (BatchRows) streamed to the events and details tables, each table in as few
+// (BatchRows) streamed to the details and events tables, each table in as few
 // requests as hold at most maxRowsPerInsert rows and maxRequestBytes bytes.
+//
+// The details go first and the events only once every details row is accepted,
+// because a content-class event keeps its details nowhere but the details table:
+// an events row written beside a details row BigQuery then refuses would be an
+// event with an empty payload, in a table every read starts from, for an event
+// the relay is about to set aside. A details row whose events row then fails is
+// harmless instead — no read starts from the details table — and the relay
+// delivers the batch again. So when the details are not all accepted, no events
+// row is written in this call: the events of the rows that were accepted follow
+// when the relay sends the batch again without the rows refused.
 //
 // What a failure says about the batch is what the relay acts on, so the error
 // is classified here, where BigQuery's answer is known:
@@ -366,6 +376,11 @@ func BatchRows(batch business.AuditBatch) (events, details []Row) {
 //     is wrong for its column, and sending it again gives the same answer. The
 //     batch's other rows, which BigQuery reports as "stopped", are not refused;
 //     the relay sends them again without the refused rows.
+//   - A request every row of which BigQuery refuses as invalid for one and the
+//     same reason names no row: a table changed under the writer refuses every
+//     row alike, and the rows are as deliverable as they were. It is returned as
+//     a failure of the request, which the relay retries, so that the whole stream
+//     is not set aside for a cause that is not in it (business.RefusedForOneReason).
 //   - Every other failure is returned as it came — a request that failed (any
 //     HTTP error, a throttle, a quota, a timeout, a dead backend), a row
 //     reported with any other reason, an error of a kind not known here — and
@@ -377,11 +392,11 @@ func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch)
 	if refused := append(eventsRefused, detailsRefused...); len(refused) > 0 {
 		return errors.Join(refused...)
 	}
-	if err := put(ctx, s.events, events); err != nil {
-		return fmt.Errorf("bigquery audit store: append to %s: %w", EventsTable, err)
-	}
 	if err := put(ctx, s.details, details); err != nil {
 		return fmt.Errorf("bigquery audit store: append to %s: %w", DetailsTable, err)
+	}
+	if err := put(ctx, s.events, events); err != nil {
+		return fmt.Errorf("bigquery audit store: append to %s: %w", EventsTable, err)
 	}
 	return nil
 }
@@ -435,7 +450,7 @@ func planRequests(table string, rows []Row) (requests [][]bigquery.ValueSaver, r
 func put(ctx context.Context, inserter rowInserter, requests [][]bigquery.ValueSaver) error {
 	for _, request := range requests {
 		if err := inserter.Put(ctx, request); err != nil {
-			return classifyPutError(err)
+			return classifyPutError(err, request)
 		}
 	}
 	return nil
@@ -448,13 +463,17 @@ func put(ctx context.Context, inserter rowInserter, requests [][]bigquery.ValueS
 // "quotaExceeded" — say nothing against the row.
 const reasonInvalid = "invalid"
 
-// classifyPutError turns what Put returned into what the relay needs. A
-// PutMultiError lists every row BigQuery refused with the reasons it gave; each
-// row it gave the reason "invalid" is a *business.PermanentRowRejection, and the
-// error also carries the original, so the rows that were merely stopped, and any
-// that failed for another reason, are described and retried. Every other error is
-// the request's, not a row's, and is returned as it came.
-func classifyPutError(err error) error {
+// classifyPutError turns what Put returned for request into what the relay
+// needs. A PutMultiError lists every row BigQuery refused with the reasons it
+// gave; each row it gave the reason "invalid" is a *business.PermanentRowRejection,
+// and the error also carries the original, so the rows that were merely stopped,
+// and any that failed for another reason, are described and retried. Every other
+// error is the request's, not a row's, and is returned as it came.
+//
+// When every row of a request of two or more is refused as invalid for one and
+// the same reason, that is the table's, not the rows': none of them is named, so
+// the relay retries the batch instead of setting every row aside.
+func classifyPutError(err error, request []bigquery.ValueSaver) error {
 	var multi bigquery.PutMultiError
 	if !errors.As(err, &multi) || len(multi) == 0 {
 		return err
@@ -467,10 +486,27 @@ func classifyPutError(err error) error {
 		}
 		refused = append(refused, &business.PermanentRowRejection{
 			EventID: row.InsertID,
-			Cause:   fmt.Errorf("bigquery audit store: the row at index %d was refused as invalid: %v", row.RowIndex, row.Errors),
+			Cause:   fmt.Errorf("bigquery audit store: the row was refused as invalid: %v", row.Errors),
+			// What BigQuery said of the row, which for a table that changed is the
+			// same for every row: the row's place in the request is not part of it.
+			Reason: fmt.Sprint(row.Errors),
 		})
 	}
+	if reason, whole := business.RefusedForOneReason(errors.Join(refused...), insertIDs(request)); whole {
+		return fmt.Errorf("bigquery audit store: every one of the %d rows of a request was refused as invalid for one reason, which is the table's and not the rows': %s: %w", len(request), reason, failures[0])
+	}
 	return errors.Join(append(refused, failures...)...)
+}
+
+// insertIDs is the insert id of each row of a request, which is its event id.
+func insertIDs(request []bigquery.ValueSaver) []string {
+	ids := make([]string, 0, len(request))
+	for _, saver := range request {
+		if row, ok := saver.(Row); ok {
+			ids = append(ids, row.InsertID)
+		}
+	}
+	return ids
 }
 
 // rowIsInvalid reports whether BigQuery gave the row the reason "invalid".
