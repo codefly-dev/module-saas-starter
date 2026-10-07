@@ -925,3 +925,9 @@ approved identity, approver, installation or policy. A trigger makes revocation
 terminal. The service uses `As(verified tenant and current user).Within` and explicit tenant/installation/module
 predicates, serializing exact-identity decisions with revocation. Down migration
 refuses to discard any retained approval.
+
+The shared relation catalog classifies this table as tenant-scoped with a direct
+`org_id` policy. The live database inventory verifies the table grants, FORCE
+RLS, and policy against that classification. Column-level qualification permits
+updates only to the two revocation columns and verifies that the control-plane
+role has no table grant.
