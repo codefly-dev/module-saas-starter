@@ -9,7 +9,7 @@ require (
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect
-	github.com/codefly-dev/core v0.3.32 // indirect
+	github.com/codefly-dev/core v0.13.0 // indirect
 	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260927024316-b3fb40d43099 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
