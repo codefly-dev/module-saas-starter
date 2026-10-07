@@ -236,7 +236,7 @@ type SolutionRegistration struct {
 	UpdatedAt    *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	TombstonedAt *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=tombstoned_at,json=tombstonedAt,proto3,oneof" json:"tombstoned_at,omitempty"`
 	// The binding and immutable target that declared this record.
-	Declared      *SolutionDeclaredBinding `protobuf:"bytes,9,opt,name=declared,proto3,oneof" json:"declared,omitempty"`
+	Declared      *SolutionDeclaredBinding `protobuf:"bytes,10,opt,name=declared,proto3,oneof" json:"declared,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -902,7 +902,7 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\brevision\x18\x01 \x01(\x03R\brevision\x12\x1a\n" +
 	"\bupstream\x18\x02 \x01(\tR\bupstream\x12#\n" +
 	"\rservice_alias\x18\x03 \x01(\tR\fserviceAlias\x12)\n" +
-	"\x10contract_version\x18\x04 \x01(\tR\x0fcontractVersion\"\xd1\x04\n" +
+	"\x10contract_version\x18\x04 \x01(\tR\x0fcontractVersion\"\xe9\x04\n" +
 	"\x14SolutionRegistration\x12\x1f\n" +
 	"\vsolution_id\x18\x01 \x01(\tR\n" +
 	"solutionId\x12\x1c\n" +
@@ -914,12 +914,14 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12D\n" +
 	"\rtombstoned_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampH\x02R\ftombstonedAt\x88\x01\x01\x12J\n" +
-	"\bdeclared\x18\t \x01(\v2).saas.accounts.v1.SolutionDeclaredBindingH\x03R\bdeclared\x88\x01\x01B\v\n" +
+	"\bdeclared\x18\n" +
+	" \x01(\v2).saas.accounts.v1.SolutionDeclaredBindingH\x03R\bdeclared\x88\x01\x01B\v\n" +
 	"\t_frontendB\n" +
 	"\n" +
 	"\b_backendB\x10\n" +
 	"\x0e_tombstoned_atB\v\n" +
-	"\t_declared\"Q\n" +
+	"\t_declaredJ\x04\b\t\x10\n" +
+	"R\x10runtime_boundary\"Q\n" +
 	" ListSolutionRegistrationsRequest\x12-\n" +
 	"\x12include_tombstoned\x18\x01 \x01(\bR\x11includeTombstoned\"\x9e\x01\n" +
 	"!ListSolutionRegistrationsResponse\x12L\n" +

@@ -56,8 +56,20 @@ message SolutionRegistration {
   optional SolutionBackendBinding backend = 6;
   google.protobuf.Timestamp updated_at = 7;
   optional google.protobuf.Timestamp tombstoned_at = 8;
+  // Was `string runtime_boundary`: the opaque id every Work Context minted for
+  // this solution is sealed under. It is NOT a field a readable record carries
+  // — a boundary returned on a readable record is a capability leaking as a
+  // label — so it is deleted from the wire rather than renamed, and the host
+  // seals it into the capability instead.
+  //
+  // Reserved rather than reused. A released field number never takes another
+  // name or type: a consumer still on the old schema reading 9 would decode a
+  // message where it expected a string. `declared` therefore took 10, which
+  // cost a digest move and is the price of not corrupting an old reader.
+  reserved 9;
+  reserved "runtime_boundary";
   // The binding and immutable target that declared this record.
-  optional SolutionDeclaredBinding declared = 9;
+  optional SolutionDeclaredBinding declared = 10;
 }
 
 // ListSolutionRegistrationsRequest reads the whole registry. There is one
