@@ -30,6 +30,7 @@ pkg/business/audit.go: (*DurableAuditEmitter).Emit: WithControlPlane
 pkg/business/audit.go: (*Service).AggregateAuditLog: WithControlPlane
 pkg/business/audit.go: (*Service).QueryAuditLog: WithControlPlane
 pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithControlPlane
+pkg/business/current_installation.go: (*Service).ModuleCurrentInstallation: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Acquire: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Blocked: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).RunDatasourceReconcile: WithControlPlane
@@ -46,6 +47,7 @@ pkg/business/datasource_github_installation.go: (*Service).RunGitHubInstallation
 pkg/business/datasource_github_installation.go: (*Service).applyGitHubInstallationAccess: WithControlPlane
 pkg/business/datasource_github_installation.go: (*Service).applyGitHubInstallationAccess: WithControlPlane
 pkg/business/events_materialize.go: (*Service).MaterializeSubscriptionsFromCatalog: WithControlPlane
+pkg/business/executable_artifacts.go: (*Service).requireConsentedBinding: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).MaterializeFollowSubscriptions: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).fanOutFollowNotifications: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: WithControlPlane

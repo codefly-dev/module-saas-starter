@@ -451,6 +451,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.module.executable_artifact_decision
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.module.operation_context_minted
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external

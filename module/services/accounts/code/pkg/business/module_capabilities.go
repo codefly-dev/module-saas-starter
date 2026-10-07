@@ -146,8 +146,9 @@ func (w ModuleWorkload) validateForm(prefix string) error {
 }
 
 type ModulePrincipalGrant struct {
-	ReadAudiences      map[string]ModuleReadAudience      `json:"read_audiences"`
-	OperationAudiences map[string]ModuleOperationAudience `json:"operation_audiences"`
+	ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
+	ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
+	OperationAudiences map[string]ModuleOperationAudience  `json:"operation_audiences"`
 	Prefix             string
 	Queues             []string
 	Namespaces         []string
@@ -299,15 +300,16 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		return ModulePrincipalRegistry{}, nil
 	}
 	var wire map[string]struct {
-		ReadAudiences      map[string]ModuleReadAudience      `json:"read_audiences"`
-		OperationAudiences map[string]ModuleOperationAudience `json:"operation_audiences"`
-		Queues             []string                           `json:"queues"`
-		Namespaces         []string                           `json:"namespaces"`
-		ExternalNamespaces []string                           `json:"external_namespaces"`
-		Resources          []string                           `json:"resources"`
-		CrossTenant        bool                               `json:"cross_tenant"`
-		Tenant             string                             `json:"tenant"`
-		Workload           ModuleWorkload                     `json:"workload"`
+		ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
+		ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
+		OperationAudiences map[string]ModuleOperationAudience  `json:"operation_audiences"`
+		Queues             []string                            `json:"queues"`
+		Namespaces         []string                            `json:"namespaces"`
+		ExternalNamespaces []string                            `json:"external_namespaces"`
+		Resources          []string                            `json:"resources"`
+		CrossTenant        bool                                `json:"cross_tenant"`
+		Tenant             string                              `json:"tenant"`
+		Workload           ModuleWorkload                      `json:"workload"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		return nil, err
@@ -336,6 +338,9 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		tenant, err := uuid.Parse(grant.Tenant)
 		if err != nil {
 			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
+		}
+		if err := validateArtifactPolicies(grant.ArtifactPolicies); err != nil {
+			return nil, fmt.Errorf("module %q: %w", prefix, err)
 		}
 		// The workload, refused at boot rather than at the mint it would deny.
 		// A principal with no declared workload can never be authenticated —
@@ -381,6 +386,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 			}
 		}
 		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
+			ArtifactPolicies:   grant.ArtifactPolicies,
 			ReadAudiences:      grant.ReadAudiences,
 			OperationAudiences: grant.OperationAudiences,
 			Prefix:             prefix,

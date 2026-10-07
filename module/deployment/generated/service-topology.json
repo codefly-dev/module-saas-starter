@@ -161,7 +161,7 @@
         {
           "name": "tcp",
           "api": "CODEFLY_API_TCP",
-          "visibility": "ENDPOINT_VISIBILITY_EXTERNAL",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
           "port": 5432
         }
       ]

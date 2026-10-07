@@ -701,6 +701,10 @@ type Store interface {
 	//     replicas racing one pass a unique violation rather than two identities.
 	//   - RetargetSolutionTarget moves the alias and never the identity.
 	//   - CloseSolutionTarget ends the period; the row is never deleted.
+	//   - GetSolutionTarget resolves one by its own id, open or closed, for an
+	//     authority decision that must name the BINDING a target recorded
+	//     rather than the route alias the target happens to carry.
+	GetSolutionTarget(ctx context.Context, targetID string) (*SolutionTarget, error)
 	GetLiveSolutionTargetForUpdate(ctx context.Context, bindingID string) (*SolutionTarget, error)
 	OpenSolutionTarget(ctx context.Context, bindingID, solutionID string, generation uint64, now time.Time) (*SolutionTarget, error)
 	RetargetSolutionTarget(ctx context.Context, targetID, solutionID string, now time.Time) error
@@ -718,7 +722,7 @@ type Store interface {
 	//     organisation already holds an active installation.
 	ListAvailableSolutionTargets(ctx context.Context, query AvailableSolutionQuery) ([]*AvailableSolutionTarget, error)
 
-	// The generation history (migration 21), append-only: the control plane holds
+	// The generation history (migration 22), append-only: the control plane holds
 	// SELECT and INSERT and nothing else, because a decision is a fact about the
 	// past.
 	//

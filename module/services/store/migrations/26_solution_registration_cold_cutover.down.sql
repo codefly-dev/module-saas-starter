@@ -11,5 +11,5 @@
 -- the observations. Identity does not need recovering: the seeds were never
 -- touched.
 DO $$ BEGIN
-    RAISE EXCEPTION 'migration 25 is irreversible: the runtime lease and observation columns are dropped and cannot be recovered (identity is unaffected — runtime_boundary seeds are preserved by the up migration)';
+    RAISE EXCEPTION 'migration 26 is irreversible: the runtime lease and observation columns are dropped and cannot be recovered (identity is unaffected — runtime_boundary seeds are preserved by the up migration)';
 END $$;

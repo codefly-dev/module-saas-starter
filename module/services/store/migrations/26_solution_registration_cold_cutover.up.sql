@@ -67,7 +67,7 @@ WHERE declared_binding_id IS NOT NULL
 -- them is the whole change here.
 --
 -- Nothing replaces those NOT NULLs, because the invariant already exists:
--- migration 22 defines `solution_registrations_declared_whole` as
+-- migration 23 defines `solution_registrations_declared_whole` as
 -- `num_nonnulls(...) = ANY (ARRAY[0, 4])`, which is exactly the state machine
 -- this needs — wholly declared (authorized) or wholly undeclared (withdrawn,
 -- awaiting approval), never three-of-four. An earlier draft of this migration

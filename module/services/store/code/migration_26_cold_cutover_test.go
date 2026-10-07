@@ -65,7 +65,7 @@ func TestMigration25ColdCutoverFromZero(t *testing.T) {
 	}
 
 	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 25), raw); err != nil {
-		t.Fatalf("apply migration 25: %v", err)
+		t.Fatalf("apply migration 26: %v", err)
 	}
 	assertCount := func(query string, want int) {
 		t.Helper()
@@ -142,7 +142,7 @@ func TestMigration25ColdCutoverFromZero(t *testing.T) {
 			t.Fatalf("invalid registry state accepted: %s", query)
 		}
 	}
-	t.Log("migration 25 withdrew the runtime registration keeping its seed, dropped the lease columns, and kept declared presence, tombstones and the whole-half constraints")
+	t.Log("migration 26 withdrew the runtime registration keeping its seed, dropped the lease columns, and kept declared presence, tombstones and the whole-half constraints")
 }
 
 func execColdCutoverSQL(t *testing.T, db *sql.DB, statement string) {

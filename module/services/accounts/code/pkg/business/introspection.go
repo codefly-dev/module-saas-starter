@@ -73,6 +73,10 @@ var serviceInfo = &gen.ServiceInfo{
 // options; descriptions remain editorial prose until source comments are
 // compiled into the service catalog.
 var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
+	"ModuleCapabilitiesService/GetCurrentInstallation":             "Read current active installation identity as a verified organization member through an authenticated module.",
+	"ModuleCapabilitiesService/ApproveExecutableArtifact":          "Record explicit current-admin consent for an exact executable identity within installed source and contract ceilings.",
+	"ModuleCapabilitiesService/AuthorizeExecutableArtifact":        "Authorize an exact previously approved executable identity using current authority and revocation.",
+	"ModuleCapabilitiesService/RevokeExecutableArtifact":           "Permanently revoke consent for an exact executable identity.",
 	"ApprovalReviewService/GetApprovalReview":                      "Read the immutable subject, assigned approvers and decisions for a request visible to the caller.",
 	"ApprovalReviewService/DecideApprovalReview":                   "Record an assigned approver decision bound to the exact subject reviewed.",
 	"DirectoryService/ListOrganizationMembers":                     "List an organization's members (read-only directory).",

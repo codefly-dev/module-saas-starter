@@ -848,7 +848,7 @@ func (s *PostgresStore) ListCatalogueInstallations(ctx context.Context) ([]*busi
 		        JOIN organizations o ON o.id = i.org_id
 		        LEFT JOIN principals p ON p.id = i.agent_principal_id
 		       WHERE i.status = 'active') installations
-		-- target_id, because migration 22 DROPPED solution_identifier. An
+		-- target_id, because migration 23 DROPPED solution_identifier. An
 		-- installation names the immutable target now, and ordering by a
 		-- column that no longer exists is a hard query error on every fresh
 		-- database — which is what CI installs, and what a worktree whose

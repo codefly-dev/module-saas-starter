@@ -313,6 +313,7 @@ const (
 	EventModuleRegistrationMint     EventType = "saas.module.registration_minted"
 	EventModuleWorkContextMint      EventType = "saas.module.work_context_minted"
 	EventModuleOperationContextMint EventType = "saas.module.operation_context_minted"
+	EventExecutableArtifactDecision EventType = "saas.module.executable_artifact_decision"
 	EventDelegatedAudienceExchange  EventType = "saas.module.delegated_audience_exchange"
 	// A composed module declared audit event types of its own (DeclareAuditEventTypes).
 	EventModuleAuditTypesDeclared EventType = "saas.module.audit_types_declared"
@@ -576,6 +577,7 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "lookup", Kind: FieldBool, Required: true},
 		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{DelegatedAudienceExchangeIssued, DelegatedAudienceExchangeRefused}},
 		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}), 2),
+	mutation(EventExecutableArtifactDecision, CategoryAccess, "An administrator approved or revoked an exact executable artifact identity.", str("action"), uid("installation_id"), str("policy_id"), str("subject_digest"), str("module_principal_id")),
 	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
 	mutation(EventSolutionHostBindingApplied, CategoryAccess,

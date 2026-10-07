@@ -89,6 +89,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"source_delegations":                   {selectRows: true, insertRows: true, updateRows: true}, // revoked, never deleted
 	"domain_events":                        {selectRows: true},                                     // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
+	"executable_artifact_approvals":        {selectRows: true, insertRows: true}, // only revocation columns, no table-wide UPDATE
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
 	"membership_integrity_findings":        {}, // operator repair evidence; no request-traffic authority at all
 	"org_generic_settings":                 {selectRows: true, insertRows: true, updateRows: true},
@@ -355,6 +356,10 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 				deleteRows: true,
 			}
 			if authority.Scope == relationcatalog.ScopeWorker || authority.Scope == relationcatalog.ScopeJob {
+				want = relationPrivileges{}
+			}
+			// Executable consent is written under the verified tenant/user only.
+			if relation == "executable_artifact_approvals" {
 				want = relationPrivileges{}
 			}
 			if relation == "feature_flags" {
@@ -883,4 +888,26 @@ func livePolicies(ctx context.Context, t *testing.T, tx pgx.Tx, relation string)
 	}
 	require.NoError(t, rows.Err(), relation)
 	return policies
+}
+
+// A column grant must not grow into permission to replace approved content.
+func TestExecutableArtifactApprovalColumnGrantsOnlyPermitRevocation(t *testing.T) {
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		rows, err := storetx.Tx(ctx).Query(ctx, `
+			SELECT attname, has_column_privilege('app_tenant', 'executable_artifact_approvals', attname, 'UPDATE')
+			FROM pg_attribute WHERE attrelid='public.executable_artifact_approvals'::regclass
+			  AND attnum > 0 AND NOT attisdropped`)
+		require.NoError(t, err)
+		defer rows.Close()
+		count := 0
+		for rows.Next() {
+			var column string
+			var canUpdate bool
+			require.NoError(t, rows.Scan(&column, &canUpdate))
+			require.Equal(t, column == "revoked_at" || column == "revoked_by", canUpdate, column)
+			count++
+		}
+		require.Equal(t, 11, count, "inspect every approved identity and revocation column")
+		return rows.Err()
+	}))
 }

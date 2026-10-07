@@ -42,6 +42,30 @@ func scanSolutionTarget(row pgx.Row) (*business.SolutionTarget, error) {
 // binding, returning nil when the binding has none — which is both "never
 // present" and "withdrawn", deliberately: a withdrawn binding has no live target
 // to inherit, and that is the whole point of the record.
+// GetSolutionTarget resolves a target by its own identity, open or closed. It
+// is the read behind an authority decision that must name a BINDING rather than
+// a route alias: an installation carries a target id, the target carries the
+// binding whose presence it recorded, and the closed_generation it returns is
+// what makes a withdrawn period refuse rather than look live.
+//
+// No FOR UPDATE: this is a read on the authorization path, not a step in the
+// apply transaction that mints and closes targets.
+func (s *PostgresStore) GetSolutionTarget(
+	ctx context.Context, targetID string,
+) (*business.SolutionTarget, error) {
+	target, err := scanSolutionTarget(s.getQueryExecutor(ctx).QueryRow(ctx,
+		`SELECT `+solutionTargetColumns+`
+		 FROM public.solution_targets
+		 WHERE id = $1`, targetID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return target, nil
+}
+
 func (s *PostgresStore) GetLiveSolutionTargetForUpdate(
 	ctx context.Context, bindingID string,
 ) (*business.SolutionTarget, error) {

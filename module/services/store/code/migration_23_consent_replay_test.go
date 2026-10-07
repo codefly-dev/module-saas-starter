@@ -252,7 +252,7 @@ func stageInstallationParents(t *testing.T, db *sql.DB, email, slug string) (org
 func stageInstallation(t *testing.T, db *sql.DB, alias, createdAt, org, agent, owner, node string) string {
 	t.Helper()
 	var id string
-	// The columns migration 22 reads, on real parent rows.
+	// The columns migration 23 reads, on real parent rows.
 	mustQuery(t, db, `
 		INSERT INTO public.installations
 			(org_id, agent_principal_id, solution_identifier, owner_principal_id, root_scope_node_id, status, created_at)

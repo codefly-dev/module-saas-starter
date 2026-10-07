@@ -1748,7 +1748,7 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 //
 // Worse, while the gate existed the inbox was DEAD CODE in every deployment:
 // unset meant no reconciler, no verifier and no delivery endpoint, and set meant
-// the source was the mount — so the table migration 23 creates was written by
+// the source was the mount — so the table migration 24 creates was written by
 // the endpoint and read by nothing. Deleting the gate is what makes the inbox
 // the only path, and there is now exactly one: a carrier is POSTed, verified on
 // receipt, persisted, and re-verified by every reconcile pass that reads it.

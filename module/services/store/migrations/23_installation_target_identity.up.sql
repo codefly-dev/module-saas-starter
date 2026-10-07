@@ -1,5 +1,5 @@
 -- An installation names the immutable target it was consented to, never the
--- reusable route alias. This is the destructive half migration 20 deferred, and
+-- reusable route alias. This is the destructive half migration 21 deferred, and
 -- it arrives with its readers.
 --
 -- The hole it closes, which existed for as long as `solution_identifier` was the
@@ -19,7 +19,7 @@
 -- inherits A's installation.
 --
 -- `target_id` is a foreign key to `solution_targets`, one row per continuous
--- period of one binding's presence (migration 20). It is never reused, so
+-- period of one binding's presence (migration 21). It is never reused, so
 -- inheritance is not expressible: the withdrawn binding's target is CLOSED and
 -- the replacement's is a different row.
 --
@@ -276,7 +276,7 @@ UPDATE public.solution_registrations
  WHERE declared_binding_id IS NOT NULL
    AND declared_target_id IS NULL;
 
--- Migration 19's three-column version is REPLACED rather than left beside this
+-- Migration 20's three-column version is REPLACED rather than left beside this
 -- one. Two overlapping whole-or-absent checks are satisfiable only by their
 -- intersection, so keeping both would make the effective invariant something
 -- neither constraint states — the kind of schema a reader has to compute.

@@ -142,6 +142,10 @@ var narrowsNoAuthority = map[string]classification{
 // one: a method added here needs a sentence somebody has to write and a reader
 // can refuse.
 var unwitnessedNarrowings = map[string]classification{
+	"RevokeApprovedExecutableArtifact": {
+		why: "withdrawing consent to run an approved executable artifact narrows authority by its own name: the artifact was runnable under that installation and is not any more, so a restore that lost the revocation hands the authority back silently. It is unwitnessed for a GRANT reason and not a design one, which is why this entry can say exactly what closes it. The receipt and the narrowing have to be one transaction and that transaction is the policy log's CONTROL-PLANE one, but `19_executable_artifact_approvals.up.sql:23-24` grants SELECT/INSERT and UPDATE (revoked_at, revoked_by) to app_tenant ALONE — app_control_plane holds nothing on the table, and the tenant RLS policy is written for app_tenant. So wrapping the existing body in WithPolicyLoggedNarrowing today fails with permission denied on the revoke, which is fail-closed but broken. Closing it is a migration granting app_control_plane the same narrow UPDATE plus SELECT, a policy that admits it, and splitting the method into a read-and-authorize phase in the caller's organisation transaction followed by an append-and-revoke phase on the control plane — the shape UninstallSolution already uses, whose own comment explains why every statement then names the organisation explicitly. The split opens a check-to-revoke window, and its direction is safe: it can only revoke an approval the actor was authorized for a moment earlier, which is a narrowing.",
+		premise: premiseStillUnwitnessed,
+	},
 	"DeleteRole": {
 		why:     "deleting a custom role narrows every subject that holds it, all at once. Witnessing it needs the entry to name a subject the closed set has no kind for — the ROLE, not an assignment of it — so it waits on that kind the same way the organisation archive does.",
 		premise: premiseStillUnwitnessed,

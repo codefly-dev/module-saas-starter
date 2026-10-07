@@ -331,14 +331,14 @@ func TestInternalTransportContractNamesEveryExportedEndpoint(t *testing.T) {
 	document := readModuleFile(t, internalTransportDoc)
 	named := 0
 	for _, exported := range module.Interface.Endpoints {
-		if exported.Visibility != "module" {
+		if exported.Visibility != "internal" {
 			continue
 		}
 		named++
 		reference := fmt.Sprintf("`%s/%s`", exported.Service, exported.Endpoint)
 		if !strings.Contains(document, reference) {
 			t.Errorf(
-				"%s exports %s with module visibility and %s never names it",
+				"%s exports %s with internal visibility and %s never names it",
 				moduleManifest, reference, internalTransportDoc,
 			)
 		}

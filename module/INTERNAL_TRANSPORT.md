@@ -167,7 +167,10 @@ fail closed rather than fall back to another key when the set expires.
 
 ## The endpoint a composed module depends on: `accounts/authority`
 
-The module interface exports four endpoints at module visibility. Three do not
+The module interface exports four endpoints with `visibility: internal` and
+`allow-modules: ["*"]`. This explicitly preserves their reachability by every
+composed module; it grants neither public ingress nor application authority.
+The retired `module` spelling is refused by current Codefly. Three do not
 carry this tier: `accounts/connect` and `auth-gateway/grpc` are tenant surfaces
 whose tiering interceptor refuses internal methods, and `auth-gateway/rest`
 carries the brokered bootstrap routes (registration, Work Context mints) and the

@@ -18,6 +18,16 @@ module_operation_context.go:CheckModuleOperationContextRevision
 module_registration.go:ModuleAuthorizeWorkContext
 source_delegation.go:AuthorizeSourceOperationContext
 source_delegation.go:AuthorizeDelegationReferenceExchange
+# Arrived with main's executable-artifact consent (#1025), which landed while
+# this gate lived on a branch, so neither side could see the other. Both decide
+# authority off the declared ceiling: the revocation decides who may withdraw
+# consent to run an artifact, and the current-installation read decides what a
+# declared module may learn about its own installation. Routing them is this
+# file's group-A work and is owed, not waived — and the revocation is owed a
+# policy-log receipt in the same pass (see unwitnessedNarrowings), so the two
+# belong in one change rather than two.
+executable_artifacts.go:RevokeApprovedExecutableArtifact
+current_installation.go:ModuleCurrentInstallation
 #
 # B. WRITES made under a capability already authorised upstream. They re-read the
 #    registry to resolve a declared value rather than to decide authority, so
@@ -31,6 +41,11 @@ source_delegation.go:recordSourceDelegationsTx
 # to pick the delegation's shape. Its answer is used by callers in group A, which
 # is where the authority decision belongs.
 source_delegation.go:sourceDelegationShape
+# ExecutableArtifactPolicyFor resolves WHICH declared policy a module installed,
+# so a caller can compare an artifact against it. It decides nothing: every
+# caller of it is a group-A path that makes the authority decision itself. Same
+# shape as sourceDelegationShape above, and it arrived with #1025.
+executable_artifacts.go:ExecutableArtifactPolicyFor
 #
 # C. NOT capability decisions at all: accessors and listings over the registry,
 #    reached by paths with their own authorisation. They need a disposition other
