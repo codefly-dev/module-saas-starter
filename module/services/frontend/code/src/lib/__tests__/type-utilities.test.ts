@@ -6,7 +6,7 @@ import {
 	DEFAULT_FRONTEND_APPEARANCE,
 	FRONTEND_CONTROL_SIZE_NAMES,
 	FRONTEND_TYPE_SLOT_NAMES,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 
 import { appearanceStyleProperties } from "../appearance";

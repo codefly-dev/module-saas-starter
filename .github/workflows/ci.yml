@@ -1317,6 +1317,9 @@ jobs:
         id: publish
         working-directory: module/services/frontend/code
         run: node scripts/publish-frontend-kit.mjs
+      - name: Verify a clean GitHub Packages consumer
+        working-directory: module/services/frontend/code
+        run: node scripts/test-registry-ui.mjs --registry
       - name: Attest the published tarball provenance
         if: steps.publish.outputs.tarballs != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

@@ -4,11 +4,11 @@ import { fileURLToPath } from "node:url";
 import {
 	definePlugin,
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	defineReactFrontend,
 	defineReactPlugin,
-} from "@codefly/saas-plugin-react";
+} from "@codefly-dev/saas-plugin-react";
 import { describe, expect, it } from "vitest";
 import { isPermission } from "@/gen/saas/accounts/v1/frontend_catalog";
 import {

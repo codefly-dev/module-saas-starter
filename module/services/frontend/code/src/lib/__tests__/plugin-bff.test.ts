@@ -1,4 +1,4 @@
-import type { FrontendServiceAllowlistEntry } from "@codefly/saas-plugin-contract";
+import type { FrontendServiceAllowlistEntry } from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it, vi } from "vitest";
 
 import {

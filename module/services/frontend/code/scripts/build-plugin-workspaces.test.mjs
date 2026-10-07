@@ -10,15 +10,15 @@ describe("plugin workspace build order", () => {
 	it("builds local workspace dependencies before their consumers", () => {
 		const ordered = orderWorkspaceManifests([
 			workspace("@product/plugin", {
-				"@codefly/saas-plugin-react": "0.4.1",
-				"@codefly/saas-plugin-contract": "2.1.0",
+				"@codefly-dev/saas-plugin-react": "0.4.1",
+				"@codefly-dev/saas-plugin-contract": "2.1.0",
 			}),
-			workspace("@codefly/saas-plugin-react"),
-			workspace("@codefly/saas-plugin-contract"),
+			workspace("@codefly-dev/saas-plugin-react"),
+			workspace("@codefly-dev/saas-plugin-contract"),
 		]);
 		expect(ordered.map(({ manifest }) => manifest.name)).toEqual([
-			"@codefly/saas-plugin-contract",
-			"@codefly/saas-plugin-react",
+			"@codefly-dev/saas-plugin-contract",
+			"@codefly-dev/saas-plugin-react",
 			"@product/plugin",
 		]);
 	});

@@ -9,8 +9,8 @@ The first consuming solution is a reference consumer, not the platform shape.
 
 ```text
 SaaS public packages
-├── @codefly/saas-plugin-contract  React-free metadata + pure composition
-├── @codefly/saas-plugin-react     registration + runtime + isolation boundary
+├── @codefly-dev/saas-plugin-contract  React-free metadata + pure composition
+├── @codefly-dev/saas-plugin-react     registration + runtime + isolation boundary
 └── @codefly/saas-plugin-testkit   reserved certification helpers
 
 SaaS frontend host

@@ -1,7 +1,7 @@
 import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CACHE_MAX_ENTRIES, clearSkinCache, resolveSkin } from "../resolver";
 import type { RawSkinDescriptor, ResolvedSkinBase, SkinSource } from "../types";

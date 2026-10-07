@@ -14,13 +14,13 @@ and one explicit composition entry, with no product edits under starter `src/`.
 
 - Packaging and compatibility decisions are frozen in ADR 0001.
 - The public import map is machine-readable and enforced by tests.
-- `@codefly/saas-plugin-contract` owns React-free JSON-safe manifest types and
+- `@codefly-dev/saas-plugin-contract` owns React-free JSON-safe manifest types and
   pure metadata composition.
-- `@codefly/saas-plugin-react` binds lazy route/widget components to exact
+- `@codefly-dev/saas-plugin-react` binds lazy route/widget components to exact
   manifest IDs and produces the host render configuration.
 - Product packages use the public `definePlugin` helper for literal-preserving
   package-local validation; the host revalidates the installed set.
-- `@codefly/saas-plugin-react` also owns the active injected service runtime,
+- `@codefly-dev/saas-plugin-react` also owns the active injected service runtime,
   public provider/hooks, fixed same-origin browser request policy, safe
   availability errors, and the styling-neutral contribution error boundary.
 - `frontend.config.ts` explicitly lists installed plugins; scanning is removed.
@@ -101,7 +101,7 @@ fail predictably.
 
 Keep authenticated transport, exact component registration, contribution
 contexts, error/status boundaries, and genuinely shared UI adapters behind
-`@codefly/saas-plugin-react`. Do not export provider implementations, auth
+`@codefly-dev/saas-plugin-react`. Do not export provider implementations, auth
 stores, page files, or private feature code.
 
 The metadata/React split, service runtime, safe availability mapping, and

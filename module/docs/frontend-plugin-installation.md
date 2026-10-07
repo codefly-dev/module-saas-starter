@@ -25,7 +25,7 @@ plugin: example-console
 
 The package and version become inputs to the generated install graph. The named
 export must be a `FrontendReactPlugin` created with
-`@codefly/saas-plugin-react`. Its manifest owns navigation, routes, widgets,
+`@codefly-dev/saas-plugin-react`. Its manifest owns navigation, routes, widgets,
 presentation permissions, and logical service requirements. Route and widget
 components, models, repositories, controllers, and views stay in that external
 package.

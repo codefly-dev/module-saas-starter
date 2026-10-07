@@ -104,15 +104,16 @@ breaking-changes:
   - "Audit event types are namespaced under `saas.*` (`auth.login` -> `saas.auth.login`). The wire value of `audit_events.event_type`, the `X-Webhook-Event` header, and webhook routing keys all change; migration 116 rewrites stored history and existing subscriptions in place, so a live subscriber keeps firing, but a consumer that re-creates a subscription from a hardcoded pre-namespace name, or emits one through `ModuleEmitAuditEvent`, is now rejected. No alias layer."
 reserved-namespaces:
   - "@codefly/saas-"
+  - "@codefly-dev/saas-"
   - saas
 claims:
   - {kind: package, key: "@base-ui/react", owner: base}
   - {kind: package, key: "@biomejs/biome", owner: base}
   - {kind: package, key: "@bufbuild/protobuf", owner: base}
   - {kind: package, key: "@bufbuild/protoc-gen-es", owner: base}
-  - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-plugin-contract", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-manifest", owner: base}
-  - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-plugin-react", owner: base}
   - {kind: package, key: "@codefly/saas-settings", owner: base}
   - {kind: package, key: "@codefly-dev/saas-sdk", owner: base}
   - {kind: package, key: "@codefly-dev/saas-ui", owner: base}

@@ -1,4 +1,4 @@
-# @codefly/saas-plugin-contract
+# @codefly-dev/saas-plugin-contract
 
 Product-neutral manifest types and pure composition for trusted, compile-time
 plugins installed in the Codefly SaaS frontend host.
@@ -7,7 +7,7 @@ plugins installed in the Codefly SaaS frontend host.
 import {
   FRONTEND_PLUGIN_CONTRACT_VERSION,
   definePlugin,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 
 export const examplePlugin = definePlugin({
   contractVersion: FRONTEND_PLUGIN_CONTRACT_VERSION,
@@ -41,7 +41,7 @@ and generates its server-only routing inventory:
 import {
   buildFrontendServiceAllowlist,
   type FrontendServiceBinding,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 
 const bindings = [
   {
@@ -62,7 +62,7 @@ The application also owns branding and the semantic appearance preset. Plugins
 cannot inject brand identity, raw CSS, or theme side effects:
 
 ```ts
-import { defineFrontend } from "@codefly/saas-plugin-contract";
+import { defineFrontend } from "@codefly-dev/saas-plugin-contract";
 
 export const frontendConfig = defineFrontend({
 	branding: {
@@ -115,7 +115,7 @@ flash.
 
 This package has no React dependency or peer dependency. Product packages bind
 lazy components to the declared IDs through `defineReactPlugin` from the
-separately versioned `@codefly/saas-plugin-react` package.
+separately versioned `@codefly-dev/saas-plugin-react` package.
 
 ## Backend capability handshake
 
@@ -127,7 +127,7 @@ and strict helpers are available from the separate public entry point:
 import {
   defineFrontendPluginCapabilities,
   frontendPluginCapabilitiesToJson,
-} from "@codefly/saas-plugin-contract/capabilities";
+} from "@codefly-dev/saas-plugin-contract/capabilities";
 
 const response = defineFrontendPluginCapabilities({
   contract: "example.api",

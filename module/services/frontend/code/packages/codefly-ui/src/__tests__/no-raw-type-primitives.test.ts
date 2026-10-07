@@ -4,7 +4,7 @@ import { join, relative, resolve } from "node:path";
 import {
 	FRONTEND_CONTROL_SIZE_NAMES,
 	FRONTEND_TYPE_SLOT_NAMES,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 
 // Default-deny guard for the type half of the token contract, the counterpart to

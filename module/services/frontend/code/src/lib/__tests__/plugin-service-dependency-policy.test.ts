@@ -5,7 +5,7 @@ import {
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
 	type FrontendServiceAllowlist,
 	type FrontendServiceAllowlistEntry,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 
 import {

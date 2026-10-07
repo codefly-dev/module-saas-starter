@@ -50,7 +50,7 @@ package is defined in [EVENTS.md](./EVENTS.md); its `EventEnvelope` proto and th
 generated Go and TypeScript bindings ship with the P1 contract phase.
 
 `saas.frontend.plugin.v1` is a product-neutral runtime compatibility handshake
-published with `@codefly/saas-plugin-contract`. Product backends generate native
+published with `@codefly-dev/saas-plugin-contract`. Product backends generate native
 bindings from the packaged proto and implement its fixed REST well-known path or
 Connect service. The SaaS host compares the returned contract major with the
 installed frontend requirement; this namespace does not describe product DTOs
