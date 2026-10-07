@@ -147,6 +147,10 @@ var authorities = map[string]Authority{
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "tenant_id",
 		Notes: "Read-only tenant policy; publication goes through the SECURITY DEFINER outbox operation.",
 	},
+	"executable_artifact_approvals": {
+		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
+		Notes: "Immutable tenant consent: only revocation columns are mutable; revocation is terminal. No control-plane grant.",
+	},
 	"entitlement_overrides": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"installations":         {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"invitations":           {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},

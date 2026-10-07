@@ -918,7 +918,111 @@ message ModuleExchangeDelegatedOperationAudienceRequest {
  ];
 }
 
+// Exact dependency identity as asserted by the authenticated compiler owner.
+message ExecutableArtifactContract {
+ string kind = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 64];
+ string name = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 512];
+ string digest = 3 [(buf.validate.field).string.pattern = "^sha256:[0-9a-f]{64}$"];
+}
+message ExecutableArtifactIdentity {
+ string schema = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+ string source = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 512];
+ // Canonical bytes under schema: complete exported identity, not authored
+ // content. The host stores exact bytes and never recomputes a compiler hash.
+ bytes subject = 3 [(buf.validate.field).bytes.min_len = 1, (buf.validate.field).bytes.max_len = 65536];
+ repeated ExecutableArtifactContract contracts = 4 [(buf.validate.field).repeated.max_items = 256];
+ int64 expected_revision = 5 [(buf.validate.field).int64.gte = 0];
+}
+message ModuleExecutableArtifactRequest {
+ string parent_work_context_token = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ string installation_id = 2 [(buf.validate.field).string.uuid = true];
+ string policy_id = 3 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+ ExecutableArtifactIdentity identity = 4 [(buf.validate.field).required = true];
+}
+message ModuleRevokeExecutableArtifactRequest {
+ string parent_work_context_token = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ string installation_id = 2 [(buf.validate.field).string.uuid = true];
+ string approval_id = 3 [(buf.validate.field).string.uuid = true];
+}
+message ModuleExecutableArtifactResponse {
+ string schema_version = 1;
+ string qualified_name = 2;
+ string digest = 3;
+ int64 expected_revision = 4;
+}
+
+// A current observation under independently authenticated module and parent
+// authority. The caller supplies no tenant, owner, actor or source identity.
+message ModuleCurrentInstallationRequest {
+ string parent_work_context_token = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ string installation_id = 2 [(buf.validate.field).string.uuid = true];
+}
+message ModuleCurrentInstallationResponse {
+ string installation_id = 1;
+ string tenant_id = 2;
+ string solution_identifier = 3;
+}
+
 service ModuleCapabilitiesService {
+ // Organization-member metadata read, not executable consent or a durable
+ // liveness proof. Returns only a currently active, non-revoked installation.
+ rpc GetCurrentInstallation(ModuleCurrentInstallationRequest) returns (ModuleCurrentInstallationResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { emission: AUDIT_EMISSION_NONE }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_CONFIDENTIAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
+ // Explicit current-admin consent, never inferred from an execution request.
+ rpc ApproveExecutableArtifact(ModuleExecutableArtifactRequest) returns (ModuleExecutableArtifactResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { events: "saas.module.executable_artifact_decision" emission: AUDIT_EMISSION_SUCCESS }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_INTERNAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+ // Read existing exact approval; check live authority and revocation each time.
+ rpc AuthorizeExecutableArtifact(ModuleExecutableArtifactRequest) returns (ModuleExecutableArtifactResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { emission: AUDIT_EMISSION_NONE }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_INTERNAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+ // Terminal revocation of the exact approved identity.
+ rpc RevokeExecutableArtifact(ModuleRevokeExecutableArtifactRequest) returns (ModuleExecutableArtifactResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { events: "saas.module.executable_artifact_decision" emission: AUDIT_EMISSION_SUCCESS }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_INTERNAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
  // ExchangeDelegatedReadAudience authenticates the module independently of a
  // current parent context and exchanges only its installed read-only binding.
  rpc ExchangeDelegatedReadAudience(ModuleExchangeDelegatedReadAudienceRequest) returns (IssuedWorkContext) {

@@ -129,3 +129,11 @@ Codefly generation must run first because the REST compiler deliberately reads
 the checked raw generator output instead of trusting a previous public
 artifact. CI repeats this pipeline and rejects drift in the typed catalog,
 accounts runtime, auth-gateway runtime, and filtered OpenAPI document.
+
+The three executable-artifact consent methods on `ModuleCapabilitiesService`
+are internal-only gRPC/Connect methods. They have no REST annotations and are
+included explicitly in the module-authority listener. Their request carries a
+module credential separately from its current signed parent and an installed
+policy selector; neither an ordinary HTTP authorization header nor generic
+perimeter access grants consent. See `MODULE_INSTALLATION.md` for the exact
+identity, policy and lifecycle contract.

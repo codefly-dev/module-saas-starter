@@ -36,6 +36,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ModuleCapabilitiesServiceGetCurrentInstallationProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's GetCurrentInstallation RPC.
+	ModuleCapabilitiesServiceGetCurrentInstallationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation"
+	// ModuleCapabilitiesServiceApproveExecutableArtifactProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ApproveExecutableArtifact RPC.
+	ModuleCapabilitiesServiceApproveExecutableArtifactProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact"
+	// ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's AuthorizeExecutableArtifact RPC.
+	ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact"
+	// ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's RevokeExecutableArtifact RPC.
+	ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact"
 	// ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure is the fully-qualified name of
 	// the ModuleCapabilitiesService's ExchangeDelegatedReadAudience RPC.
 	ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
@@ -131,6 +143,15 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// Organization-member metadata read, not executable consent or a durable
+	// liveness proof. Returns only a currently active, non-revoked installation.
+	GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error)
+	// Explicit current-admin consent, never inferred from an execution request.
+	ApproveExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
+	// Read existing exact approval; check live authority and revocation each time.
+	AuthorizeExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
+	// Terminal revocation of the exact approved identity.
+	RevokeExecutableArtifact(context.Context, *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
@@ -251,6 +272,30 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 	baseURL = strings.TrimRight(baseURL, "/")
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
 	return &moduleCapabilitiesServiceClient{
+		getCurrentInstallation: connect.NewClient[v1.ModuleCurrentInstallationRequest, v1.ModuleCurrentInstallationResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceGetCurrentInstallationProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("GetCurrentInstallation")),
+			connect.WithClientOptions(opts...),
+		),
+		approveExecutableArtifact: connect.NewClient[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceApproveExecutableArtifactProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ApproveExecutableArtifact")),
+			connect.WithClientOptions(opts...),
+		),
+		authorizeExecutableArtifact: connect.NewClient[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("AuthorizeExecutableArtifact")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeExecutableArtifact: connect.NewClient[v1.ModuleRevokeExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("RevokeExecutableArtifact")),
+			connect.WithClientOptions(opts...),
+		),
 		exchangeDelegatedReadAudience: connect.NewClient[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
@@ -436,6 +481,10 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
+	getCurrentInstallation             *connect.Client[v1.ModuleCurrentInstallationRequest, v1.ModuleCurrentInstallationResponse]
+	approveExecutableArtifact          *connect.Client[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
+	authorizeExecutableArtifact        *connect.Client[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
+	revokeExecutableArtifact           *connect.Client[v1.ModuleRevokeExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
 	exchangeDelegatedReadAudience      *connect.Client[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext]
 	exchangeDelegatedOperationAudience *connect.Client[v1.ModuleExchangeDelegatedOperationAudienceRequest, v1.IssuedWorkContext]
 	checkWorkContextRecordAccess       *connect.Client[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse]
@@ -466,6 +515,29 @@ type moduleCapabilitiesServiceClient struct {
 	unsubscribe                        *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
 	listSubscriptions                  *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
 	replayEvents                       *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+}
+
+// GetCurrentInstallation calls saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation.
+func (c *moduleCapabilitiesServiceClient) GetCurrentInstallation(ctx context.Context, req *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error) {
+	return c.getCurrentInstallation.CallUnary(ctx, req)
+}
+
+// ApproveExecutableArtifact calls
+// saas.accounts.v1.ModuleCapabilitiesService.ApproveExecutableArtifact.
+func (c *moduleCapabilitiesServiceClient) ApproveExecutableArtifact(ctx context.Context, req *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return c.approveExecutableArtifact.CallUnary(ctx, req)
+}
+
+// AuthorizeExecutableArtifact calls
+// saas.accounts.v1.ModuleCapabilitiesService.AuthorizeExecutableArtifact.
+func (c *moduleCapabilitiesServiceClient) AuthorizeExecutableArtifact(ctx context.Context, req *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return c.authorizeExecutableArtifact.CallUnary(ctx, req)
+}
+
+// RevokeExecutableArtifact calls
+// saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact.
+func (c *moduleCapabilitiesServiceClient) RevokeExecutableArtifact(ctx context.Context, req *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return c.revokeExecutableArtifact.CallUnary(ctx, req)
 }
 
 // ExchangeDelegatedReadAudience calls
@@ -630,6 +702,15 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// Organization-member metadata read, not executable consent or a durable
+	// liveness proof. Returns only a currently active, non-revoked installation.
+	GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error)
+	// Explicit current-admin consent, never inferred from an execution request.
+	ApproveExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
+	// Read existing exact approval; check live authority and revocation each time.
+	AuthorizeExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
+	// Terminal revocation of the exact approved identity.
+	RevokeExecutableArtifact(context.Context, *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
@@ -746,6 +827,30 @@ type ModuleCapabilitiesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
+	moduleCapabilitiesServiceGetCurrentInstallationHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceGetCurrentInstallationProcedure,
+		svc.GetCurrentInstallation,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("GetCurrentInstallation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceApproveExecutableArtifactHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceApproveExecutableArtifactProcedure,
+		svc.ApproveExecutableArtifact,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ApproveExecutableArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceAuthorizeExecutableArtifactHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure,
+		svc.AuthorizeExecutableArtifact,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("AuthorizeExecutableArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceRevokeExecutableArtifactHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure,
+		svc.RevokeExecutableArtifact,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("RevokeExecutableArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
 		svc.ExchangeDelegatedReadAudience,
@@ -928,6 +1033,14 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ModuleCapabilitiesServiceGetCurrentInstallationProcedure:
+			moduleCapabilitiesServiceGetCurrentInstallationHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceApproveExecutableArtifactProcedure:
+			moduleCapabilitiesServiceApproveExecutableArtifactHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure:
+			moduleCapabilitiesServiceAuthorizeExecutableArtifactHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure:
+			moduleCapabilitiesServiceRevokeExecutableArtifactHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure:
 			moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure:
@@ -996,6 +1109,22 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 
 // UnimplementedModuleCapabilitiesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedModuleCapabilitiesServiceHandler struct{}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ApproveExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ApproveExecutableArtifact is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) AuthorizeExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.AuthorizeExecutableArtifact is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) RevokeExecutableArtifact(context.Context, *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact is not implemented"))
+}
 
 func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience is not implemented"))

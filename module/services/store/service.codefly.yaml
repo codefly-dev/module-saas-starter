@@ -10,7 +10,8 @@ agent:
     publisher: codefly.dev
 endpoints:
     - name: tcp
-      visibility: external
+      visibility: private
+      location: external
 spec:
     database-name: users
     debug: false
