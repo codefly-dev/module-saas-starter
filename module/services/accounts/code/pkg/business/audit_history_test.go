@@ -201,16 +201,51 @@ type historyDetailsRow struct {
 // event's, as the adapters' readers do. failDetails makes the details write of
 // that (1-based) append fail after its events rows landed: the partial write
 // either adapter can leave.
+//
+// It can also refuse rows for good, as both adapters do: refuseDetails names
+// events whose details row it refuses (its events row has landed), refuseEvents
+// those whose events row it refuses (and so their details row is never sent), each
+// reported as a PermanentRowRejection beside the other rows' result. By default
+// the rest of the batch is written, as ClickHouse does around a refused row;
+// stopRest leaves the rest of the refused table's rows unwritten, as BigQuery
+// does for the rows it reports as stopped. unreadable names events whose details
+// the store accepts and never reads back, as when their partition is already gone.
 type splitHistoryStore struct {
 	events      []StoredAuditEvent // a content-class row carries no details
 	details     []historyDetailsRow
 	appends     int
 	failDetails int
+
+	refuseDetails, refuseEvents, unreadable map[string]bool
+	stopRest                                bool
+	// attempts counts the records of every append by event id.
+	attempts map[string]int
+}
+
+func refusalOf(id, what string) error {
+	return &PermanentRowRejection{EventID: id, Cause: errors.New(what + " refused")}
 }
 
 func (s *splitHistoryStore) AppendAuditBatch(_ context.Context, batch AuditBatch) error {
 	s.appends++
+	if s.attempts == nil {
+		s.attempts = map[string]int{}
+	}
+	var refusals, eventRefusals []error
 	for _, record := range batch.Records {
+		s.attempts[record.Entry.ID]++
+		if s.refuseEvents[record.Entry.ID] {
+			eventRefusals = append(eventRefusals, refusalOf(record.Entry.ID, "events row"))
+		}
+	}
+	refusals = append(refusals, eventRefusals...)
+	if s.stopRest && len(eventRefusals) > 0 {
+		return errors.Join(append(refusals, errors.New("events rows stopped"))...)
+	}
+	for _, record := range batch.Records {
+		if s.refuseEvents[record.Entry.ID] {
+			continue
+		}
 		entry := record.Entry
 		entry.Payload = nil
 		event := StoredAuditEvent{
@@ -224,12 +259,22 @@ func (s *splitHistoryStore) AppendAuditBatch(_ context.Context, batch AuditBatch
 	if s.appends == s.failDetails {
 		return errors.New("details write failed")
 	}
+	var detailRefusals []error
 	for _, record := range batch.Records {
-		if record.Retention != RetentionSecurity {
+		if record.Retention != RetentionSecurity && !s.refuseEvents[record.Entry.ID] && s.refuseDetails[record.Entry.ID] {
+			detailRefusals = append(detailRefusals, refusalOf(record.Entry.ID, "details row"))
+		}
+	}
+	refusals = append(refusals, detailRefusals...)
+	if s.stopRest && len(detailRefusals) > 0 {
+		return errors.Join(append(refusals, errors.New("details rows stopped"))...)
+	}
+	for _, record := range batch.Records {
+		if record.Retention != RetentionSecurity && !s.refuseEvents[record.Entry.ID] && !s.refuseDetails[record.Entry.ID] {
 			s.details = append(s.details, historyDetailsRow{record.Entry.ID, record.DetailsSHA256, record.Details})
 		}
 	}
-	return nil
+	return errors.Join(refusals...)
 }
 
 func (s *splitHistoryStore) ReadStoredAuditEvents(_ context.Context, from, to time.Time, visit func(StoredAuditEvent) error) error {
@@ -237,7 +282,7 @@ func (s *splitHistoryStore) ReadStoredAuditEvents(_ context.Context, from, to ti
 		if event.Entry.CreatedAt.Before(from) || !event.Entry.CreatedAt.Before(to) {
 			continue
 		}
-		if event.Retention != RetentionSecurity {
+		if event.Retention != RetentionSecurity && !s.unreadable[event.Entry.ID] {
 			for _, row := range s.details {
 				if row.eventID != event.Entry.ID {
 					continue
@@ -995,33 +1040,52 @@ func TestAuditHistoryDoesNotRewriteWhatAWriteCannotFix(t *testing.T) {
 // What the copy writes and what verification reports are one rule, applied to
 // every copy of the event: a write is for the failure it removes, and when a
 // copy is wrong in a way no write removes, that is what is reported.
-func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
+// historyRecordOf is the record the copy builds for a row of the fixture's kind.
+func historyRecordOf(t *testing.T, n int, eventType EventType, at time.Time) AuditRecord {
+	t.Helper()
+	resolved, err := NewAuditEventResolver(nil).Resolve(context.Background(), eventType)
+	require.NoError(t, err)
+	record, err := NewAuditRecord(historyRow(n, "", eventType, at), resolved.RetentionClass())
+	require.NoError(t, err)
+	return record
+}
+
+// historyStoredOf is a copy of record as a store holds it right after the events
+// row landed: a security-class one with its details, a content-class one without.
+func historyStoredOf(record AuditRecord, change func(*StoredAuditEvent)) StoredAuditEvent {
+	entry := record.Entry
+	entry.Payload = nil
+	stored := StoredAuditEvent{DeploymentID: "deployment-1", Entry: entry, Retention: record.Retention, DetailsSHA256: record.DetailsSHA256}
+	if record.Retention == RetentionSecurity {
+		stored.Details, stored.HasDetails = record.Details, true
+	}
+	if change != nil {
+		change(&stored)
+	}
+	return stored
+}
+
+// historyInspector is a copy with nothing behind it, for the rule alone.
+func historyInspector(t *testing.T, retention time.Duration, now time.Time) *AuditHistoryCopy {
+	t.Helper()
 	copier, err := NewAuditHistoryCopy(AuditHistoryCopyConfig{
 		Source: &historySource{}, Store: &historyStore{}, Archive: &historyArchive{}, ReadBack: &historyStore{},
-		DeploymentID: "deployment-1", ContentRetention: 7 * 24 * time.Hour,
-		Now: func() time.Time { return historyNow },
+		DeploymentID: "deployment-1", ContentRetention: retention,
+		Now: func() time.Time { return now },
 	})
 	require.NoError(t, err)
-	recent, old := historyNow.Add(-24*time.Hour), historyNow.Add(-30*24*time.Hour)
+	return copier
+}
+
+func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
+	copier := historyInspector(t, 7*24*time.Hour, historyNow)
+	// recent is held; margin is a day the store may have expired a few hours ago
+	// and may still hold; old is long gone.
+	recent, margin, old := historyNow.Add(-24*time.Hour), historyNow.Add(-7*24*time.Hour), historyNow.Add(-30*24*time.Hour)
 	recordOf := func(n int, eventType EventType, at time.Time) AuditRecord {
-		resolved, err := NewAuditEventResolver(nil).Resolve(context.Background(), eventType)
-		require.NoError(t, err)
-		record, err := NewAuditRecord(historyRow(n, "", eventType, at), resolved.RetentionClass())
-		require.NoError(t, err)
-		return record
+		return historyRecordOf(t, n, eventType, at)
 	}
-	storedOf := func(record AuditRecord, change func(*StoredAuditEvent)) StoredAuditEvent {
-		entry := record.Entry
-		entry.Payload = nil
-		stored := StoredAuditEvent{DeploymentID: "deployment-1", Entry: entry, Retention: record.Retention, DetailsSHA256: record.DetailsSHA256}
-		if record.Retention == RetentionSecurity {
-			stored.Details, stored.HasDetails = record.Details, true
-		}
-		if change != nil {
-			change(&stored)
-		}
-		return stored
-	}
+	storedOf := historyStoredOf
 	hasDetails := func(record AuditRecord) func(*StoredAuditEvent) {
 		return func(e *StoredAuditEvent) { e.Details, e.HasDetails = record.Details, true }
 	}
@@ -1029,6 +1093,7 @@ func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
 	noDetails := func(e *StoredAuditEvent) { e.Details, e.HasDetails = "", false }
 
 	inside, outside := recordOf(1, EventDatasourceSourceSynced, recent), recordOf(2, EventDatasourceSourceSynced, old)
+	inMargin := recordOf(4, EventDatasourceSourceSynced, margin)
 	login := recordOf(3, EventAuthLogin, recent)
 	for name, tc := range map[string]struct {
 		record   AuditRecord
@@ -1043,6 +1108,11 @@ func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
 			problem: "content details are missing inside the content window", writable: true,
 		},
 		"content details missing past the window": {record: outside, copies: []StoredAuditEvent{storedOf(outside, nil)}},
+		"content details missing in the margin: written for, not a failure": {
+			record: inMargin, copies: []StoredAuditEvent{storedOf(inMargin, nil)}, writable: true,
+		},
+		"no copy in the margin":                 {record: inMargin, problem: "missing from the store", writable: true},
+		"content details present in the margin": {record: inMargin, copies: []StoredAuditEvent{storedOf(inMargin, hasDetails(inMargin))}},
 		"security details missing": {
 			record: login, copies: []StoredAuditEvent{storedOf(login, noDetails)},
 			problem: "security-class details are missing",
@@ -1055,9 +1125,17 @@ func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
 			record: inside, copies: []StoredAuditEvent{storedOf(inside, func(e *StoredAuditEvent) { otherOrg(e); hasDetails(inside)(e) }), storedOf(inside, nil)},
 			problem: "stored envelope differs from the row",
 		},
-		"every copy missing details": {
+		// A write for missing details is made once: a second copy of the event
+		// beside the first is the proof that one was made.
+		"every copy missing details, so a write was made": {
 			record: inside, copies: []StoredAuditEvent{storedOf(inside, nil), storedOf(inside, nil)},
-			problem: "content details are missing inside the content window", writable: true,
+			problem: "content details are missing inside the content window; the store holds 2 copies, so an earlier write did not supply them, and the event is not written again",
+		},
+		"every copy missing details in the margin, so a write was made": {
+			record: inMargin, copies: []StoredAuditEvent{storedOf(inMargin, nil), storedOf(inMargin, nil)},
+		},
+		"two copies, the details attached": {
+			record: inside, copies: []StoredAuditEvent{storedOf(inside, hasDetails(inside)), storedOf(inside, hasDetails(inside))},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1067,4 +1145,334 @@ func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
 			require.Equal(t, tc.problem, copier.verify(tc.record, tc.copies), "verification reports what inspect found")
 		})
 	}
+}
+
+// historyTotals is what a run reported across its partitions.
+type historyTotals struct {
+	copied, rewritten, failures int
+	verified, postgres          int64
+	problems                    []string
+}
+
+func totalsOf(report AuditHistoryReport) historyTotals {
+	var totals historyTotals
+	for _, partition := range report.Partitions {
+		totals.copied += partition.Copied
+		totals.rewritten += partition.Rewritten
+		totals.failures += partition.Failures
+		totals.problems = append(totals.problems, partition.Problems...)
+		for _, count := range partition.Orgs {
+			totals.verified += count.Verified
+			totals.postgres += count.Postgres
+		}
+	}
+	return totals
+}
+
+// The store refuses one event's details row for good — its events row has
+// landed — as ClickHouse does when its isolation finds the row, and as BigQuery
+// does when it reports the row invalid (and the rest of that request stopped).
+// That event is a verification failure of its own. It does not stop the copy of
+// the others, and it is not written again on every run: a write for missing
+// details is made once, and the run that finds one already made says so.
+func TestAuditHistoryAPermanentlyRefusedDetailsRowStopsNothingAndIsNotRepeated(t *testing.T) {
+	for name, stopRest := range map[string]bool{"the rest written around the refused row": false, "the rest of the request stopped": true} {
+		t.Run(name, func(t *testing.T) {
+			f := newHistoryFixture()
+			bad := f.source.rows[0].ID // the first content-class event, in the first batch
+			require.Equal(t, RetentionContent, historyRecordOf(t, 1, f.source.rows[0].EventType, f.source.rows[0].CreatedAt).Retention)
+			f.split = &splitHistoryStore{refuseDetails: map[string]bool{bad: true}, stopRest: stopRest}
+			run := func() (AuditHistoryReport, historyTotals) {
+				report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+				require.ErrorIs(t, err, ErrAuditHistoryUnverified, "a refused event is a verification failure, not a failed run")
+				require.False(t, report.Verified)
+				totals := totalsOf(report)
+				require.Equal(t, 1, totals.failures)
+				require.Len(t, totals.problems, 1)
+				require.Contains(t, totals.problems[0], bad)
+				require.Equal(t, int64(len(f.source.rows)), totals.postgres)
+				require.Equal(t, int64(len(f.source.rows)-1), totals.verified, "every other event is copied and verified")
+				return report, totals
+			}
+
+			// The run reaches the end: every later window and the later partition.
+			report, totals := run()
+			require.Len(t, report.Partitions, 3)
+			require.Equal(t, len(f.source.rows)-1, totals.copied, "the refused event is not counted as copied")
+			require.Zero(t, totals.rewritten)
+			require.Contains(t, totals.problems[0], "the store refused the event's row for good")
+			require.Equal(t, 1, f.split.copies()[bad])
+			require.Equal(t, 1, f.split.attempts[bad], "its batch is sent again without it, not with it")
+			september := report.Partitions[1]
+			require.NotEmpty(t, september.Orgs)
+			require.Zero(t, september.Failures)
+			events, archived := len(f.split.events), len(f.archive.batches)
+
+			// The next run makes the one write for the details it is missing and is
+			// refused again; nothing else is written.
+			_, totals = run()
+			require.Zero(t, totals.copied+totals.rewritten)
+			require.Equal(t, 2, f.split.attempts[bad])
+			require.Equal(t, 2, f.split.copies()[bad])
+			require.Equal(t, events+1, len(f.split.events))
+			require.Equal(t, archived+1, len(f.archive.batches))
+			require.Equal(t, []string{bad}, historyRecordIDs(f.archive.batches[len(f.archive.batches)-1].Records))
+			require.Contains(t, totals.problems[0], "the store refused the event's row for good")
+
+			// Neither this run nor the ones after it write or archive anything.
+			appends := f.split.appends
+			for range 3 {
+				_, totals = run()
+				require.Zero(t, totals.copied+totals.rewritten)
+				require.Equal(t, appends, f.split.appends, "nothing is appended")
+				require.Equal(t, events+1, len(f.split.events))
+				require.Len(t, f.archive.batches, archived+1, "nothing is archived")
+				require.Equal(t, 2, f.split.attempts[bad])
+				require.Contains(t, totals.problems[0], "the store holds 2 copies")
+				require.Contains(t, totals.problems[0], "not written again")
+			}
+		})
+	}
+}
+
+func historyRecordIDs(records []AuditRecord) []string {
+	var ids []string
+	for _, record := range records {
+		ids = append(ids, record.Entry.ID)
+	}
+	return ids
+}
+
+// An event whose events row the store refuses for good is stored nowhere, so
+// nothing on the next run says a write was made: it is written again each run, and
+// reported each time. The cost is one archive object holding that event alone, not
+// the window's, and no row in the store.
+func TestAuditHistoryAnEventWhoseEventsRowIsRefusedStopsNothing(t *testing.T) {
+	for name, stopRest := range map[string]bool{"the rest written around the refused row": false, "the rest of the request stopped": true} {
+		t.Run(name, func(t *testing.T) {
+			f := newHistoryFixture()
+			bad := f.source.rows[0].ID
+			f.split = &splitHistoryStore{refuseEvents: map[string]bool{bad: true}, stopRest: stopRest}
+			for run := range 3 {
+				before := len(f.archive.batches)
+				report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+				require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+				totals := totalsOf(report)
+				require.Equal(t, 1, totals.failures)
+				require.Equal(t, int64(len(f.source.rows)-1), totals.verified)
+				require.Len(t, totals.problems, 1)
+				require.Contains(t, totals.problems[0], bad)
+				require.Contains(t, totals.problems[0], "the store refused the event's row for good; missing from the store")
+				require.Zero(t, f.split.copies()[bad], "nothing of it is stored")
+				if run == 0 {
+					require.Equal(t, len(f.source.rows)-1, totals.copied)
+				} else {
+					require.Zero(t, totals.copied+totals.rewritten)
+					require.Len(t, f.archive.batches, before+1)
+					require.Equal(t, []string{bad}, historyRecordIDs(f.archive.batches[before].Records))
+				}
+			}
+		})
+	}
+}
+
+// A refusal that names no event of the batch is no evidence about any of them:
+// the run fails, as it does for any other failure of the store.
+func TestAuditHistoryARefusalOfAnEventNotInTheBatchFailsTheRun(t *testing.T) {
+	f := newHistoryFixture()
+	store := &refusingHistoryStore{historyStore: f.store, err: &PermanentRowRejection{EventID: "someone-else", Cause: errors.New("refused")}}
+	copier := f.copier(t, AuditHistoryCopyConfig{})
+	copier.cfg.Store = store
+	_, err := copier.Run(context.Background(), AuditHistoryCopyOptions{})
+	require.ErrorContains(t, err, "append batch")
+	require.NotErrorIs(t, err, ErrAuditHistoryUnverified)
+	require.Equal(t, 1, store.calls, "the batch is not sent again")
+}
+
+type refusingHistoryStore struct {
+	*historyStore
+	err   error
+	calls int
+}
+
+func (s *refusingHistoryStore) AppendAuditBatch(context.Context, AuditBatch) error {
+	s.calls++
+	return s.err
+}
+
+// A write whose details the store accepts and then never shows is made once in a
+// run, once more by the next, and not again: the run that finds the second copy
+// says that a write was made and did not supply them.
+func TestAuditHistoryDetailsWrittenButNeverReadableAreNotWrittenAgainAndAgain(t *testing.T) {
+	f := newHistoryFixture()
+	bad := f.source.rows[0].ID
+	f.split = &splitHistoryStore{unreadable: map[string]bool{bad: true}}
+	run := func() historyTotals {
+		report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+		require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+		totals := totalsOf(report)
+		require.Equal(t, 1, totals.failures)
+		require.Equal(t, int64(len(f.source.rows)-1), totals.verified)
+		require.Contains(t, totals.problems[0], bad)
+		return totals
+	}
+
+	totals := run()
+	require.Equal(t, len(f.source.rows), totals.copied)
+	require.Equal(t, 1, f.split.attempts[bad], "written once in the run, not again after the read-back")
+	require.Contains(t, totals.problems[0], "written by this run, but the read-back finds it incomplete: content details are missing")
+
+	totals = run()
+	require.Equal(t, 1, totals.rewritten)
+	require.Zero(t, totals.copied)
+	require.Equal(t, 2, f.split.attempts[bad])
+	require.Contains(t, totals.problems[0], "written by this run, but the read-back finds it incomplete")
+
+	appends, archived := f.split.appends, len(f.archive.batches)
+	for range 2 {
+		totals = run()
+		require.Zero(t, totals.copied+totals.rewritten)
+		require.Equal(t, appends, f.split.appends)
+		require.Len(t, f.archive.batches, archived)
+		require.Contains(t, totals.problems[0], "an earlier write did not supply them")
+	}
+}
+
+// The rule for the details of a content-class event, at the instants where it
+// changes. The store holds the details until the start of the event's UTC day
+// plus the retention, because it expires by day, so an event's details are
+// required while now is before that instant — and only then. For the margin
+// after it they may still be held: the copy writes them, and never fails for them.
+// A short retention keeps its requirement: one day still requires the events of
+// today.
+func TestAuditHistoryDetailsRuleAtTheBoundaries(t *testing.T) {
+	const day = 24 * time.Hour
+	today := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	nows := map[string]time.Time{
+		"at midnight":          today,
+		"at noon":              today.Add(12 * time.Hour),
+		"just before midnight": today.Add(day - time.Nanosecond),
+	}
+	type zone int
+	const (
+		required zone = iota // the store holds the details: a failure without them
+		optional             // it may: written for, never a failure
+		neither              // it does not: no failure, no write
+	)
+	for _, retention := range []time.Duration{day, 2 * day, 7 * day} {
+		for nowName, now := range nows {
+			copier := historyInspector(t, retention, now)
+			first := today.Add(-retention) // the day whose details the store may expire as of today
+			for offset, want := range map[int]zone{3: required, 2: required, 1: required, 0: optional, -1: optional, -2: neither, -3: neither} {
+				for _, at := range []time.Duration{0, day - time.Nanosecond} {
+					created := first.Add(time.Duration(offset)*day + at)
+					if created.After(now) {
+						continue
+					}
+					name := fmt.Sprintf("retention %s %s, event %d days from the first day, %s into its day", retention, nowName, offset, at)
+					t.Run(name, func(t *testing.T) {
+						record := historyRecordOf(t, 1, EventDatasourceSourceSynced, created)
+						copies := []StoredAuditEvent{historyStoredOf(record, nil)}
+						problem, writable := copier.inspect(record, copies)
+						switch want {
+						case required:
+							require.Equal(t, "content details are missing inside the content window", problem)
+							require.True(t, writable)
+						case optional:
+							require.Empty(t, problem, "the store may have expired them")
+							require.True(t, writable, "and may still hold them")
+						default:
+							require.Empty(t, problem)
+							require.False(t, writable)
+						}
+						require.Equal(t, problem, copier.verify(record, copies))
+						// The same rule for an event that is not in the store yet: it
+						// is written, whichever the zone.
+						problem, writable = copier.inspect(record, nil)
+						require.Equal(t, "missing from the store", problem)
+						require.True(t, writable)
+					})
+				}
+			}
+		}
+	}
+}
+
+// The same rule through a run, with the events of the fixture in each zone
+// (retention 62 days, now 2 November at noon): 30 August is past the margin,
+// 31 August and 1 September are in it, 2 September is held. The store accepts
+// each event's details and never shows those of one event of each day.
+func TestAuditHistoryContentDetailsInTheMarginAreWrittenForAndNeverFailed(t *testing.T) {
+	f := newHistoryFixture()
+	config := AuditHistoryCopyConfig{ContentRetention: 62 * 24 * time.Hour}
+	f.split = &splitHistoryStore{unreadable: map[string]bool{}}
+	byDay := map[int]string{}
+	for _, row := range f.source.rows {
+		if row.EventType == EventDatasourceSourceSynced && byDay[row.CreatedAt.Day()] == "" {
+			byDay[row.CreatedAt.Day()] = row.ID
+			f.split.unreadable[row.ID] = true
+		}
+	}
+	past, margin1, margin2, held := byDay[30], byDay[31], byDay[1], byDay[2]
+	require.Len(t, byDay, 4)
+	run := func() historyTotals {
+		report, err := f.copier(t, config).Run(context.Background(), AuditHistoryCopyOptions{})
+		require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+		totals := totalsOf(report)
+		require.Equal(t, 1, totals.failures, "only the event the store holds details of fails")
+		require.Contains(t, totals.problems[0], held)
+		return totals
+	}
+
+	run()
+	for _, id := range []string{past, margin1, margin2, held} {
+		require.Equal(t, 1, f.split.attempts[id], id)
+	}
+	totals := run()
+	require.Equal(t, 3, totals.rewritten, "the held event and the two in the margin are written once more; the one past it is not")
+	for id, attempts := range map[string]int{past: 1, margin1: 2, margin2: 2, held: 2} {
+		require.Equal(t, attempts, f.split.attempts[id], id)
+	}
+	appends := f.split.appends
+	for range 2 {
+		totals = run()
+		require.Zero(t, totals.copied+totals.rewritten)
+		require.Equal(t, appends, f.split.appends)
+	}
+}
+
+// With a retention of one day the details of today's events are still required,
+// and those of yesterday's are written for without being required: the store
+// held them until midnight.
+func TestAuditHistoryAShortRetentionStillRequiresTheDetailsOfTodaysEvents(t *testing.T) {
+	today, yesterday := time.Date(2026, 11, 2, 3, 0, 0, 0, time.UTC), time.Date(2026, 11, 1, 3, 0, 0, 0, time.UTC)
+	november := month(2026, time.November)
+	source := &historySource{partitions: []AuditHistoryPartition{november}, rows: []AuditEntry{
+		historyRow(1, "", EventDatasourceSourceSynced, yesterday), historyRow(2, "", EventDatasourceSourceSynced, today),
+	}}
+	newFixture := func(split *splitHistoryStore) *historyFixture {
+		return &historyFixture{source: source, store: &historyStore{}, archive: &historyArchive{}, split: split}
+	}
+	config := AuditHistoryCopyConfig{ContentRetention: 24 * time.Hour}
+
+	// A details write that failed is made again for today's event.
+	f := newFixture(&splitHistoryStore{failDetails: 1})
+	f.source = &historySource{partitions: []AuditHistoryPartition{november}, rows: source.rows[1:]}
+	_, err := f.copier(t, config).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.ErrorContains(t, err, "details write failed")
+	require.Empty(t, f.split.details)
+	report, err := f.copier(t, config).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	require.True(t, report.Verified)
+	require.Equal(t, 1, totalsOf(report).rewritten)
+	require.Len(t, f.split.details, 1)
+
+	// Details the store never shows fail verification for today's event alone.
+	f = newFixture(&splitHistoryStore{unreadable: map[string]bool{source.rows[0].ID: true, source.rows[1].ID: true}})
+	report, err = f.copier(t, config).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+	totals := totalsOf(report)
+	require.Equal(t, 1, totals.failures)
+	require.Contains(t, totals.problems[0], source.rows[1].ID)
+	require.Contains(t, totals.problems[0], "content details are missing inside the content window")
 }

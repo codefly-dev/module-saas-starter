@@ -122,8 +122,10 @@ type AuditHistoryCopyConfig struct {
 	Types DeclaredAuditEventTypeReader
 	// DeploymentID stamps every copied record, as the relay's.
 	DeploymentID string
-	// ContentRetention is the details window: a content-class event older than
-	// it has no details left to verify in the store.
+	// ContentRetention is the details window: the store keeps a content-class
+	// event's details for this long (a whole number of days, at least one). The
+	// copy requires the details of an event the store is certain to still hold
+	// when it is run (detailsHeldUntil) and tries to supply those of one it may.
 	ContentRetention time.Duration
 	// BatchSize is the most events one copied batch carries (default
 	// DefaultAuditRelayBatchSize).
@@ -168,9 +170,12 @@ type AuditHistoryPartitionReport struct {
 	// them.
 	Copied int
 	// Rewritten is how many events this run wrote again because the store held
-	// them without details that verification requires and that a write supplies
-	// (a content-class event whose details write was lost); the rest were
-	// already complete.
+	// them without details that a write supplies (a content-class event whose
+	// details write was lost); the rest were already complete. An event is
+	// written again only while the store holds one copy of it, so a rewrite that
+	// does not supply the details is made once, not on every run. Events the
+	// store refused for good are in neither Copied nor Rewritten: they are
+	// problems.
 	Rewritten int
 	// Orgs counts the partition's events per organization ("" is the
 	// platform's).
@@ -231,10 +236,13 @@ const auditHistoryPageSize = 1000
 // time: a day keeps the read-back of a busy deployment in memory.
 const auditHistoryWindow = 24 * time.Hour
 
-// auditHistoryDetailsMargin is how far inside the content window a
-// content-class event's details must still be in the store: the store expires
-// details by whole day partitions, so the last day or two of the window may
-// already be gone.
+// auditHistoryDetailsMargin is how far past the instant the store is certain to
+// hold an event's details the copy still tries to supply them. The store expires
+// details by the day of the event (BigQuery by day partition, ClickHouse by a TTL
+// merge that runs after the TTL), so for a day or two after that instant it may
+// still hold them. The copy writes in that span — a missing event is written with
+// its details, and so is one held without — but never fails verification there:
+// the details may be legitimately gone.
 const auditHistoryDetailsMargin = 2 * 24 * time.Hour
 
 // AuditHistoryCopy is the one-time history copy.
@@ -277,7 +285,9 @@ func NewAuditHistoryCopy(cfg AuditHistoryCopyConfig) (*AuditHistoryCopy, error) 
 // events the store lacks, and those it holds without the details a write
 // supplies — reads the window back again and verifies every event, so a run
 // after an interrupted one finishes what that one started, a failed details
-// write included. A verification failure blocks the drop and returns
+// write included. An event the store refuses for good (a PermanentRowRejection)
+// is a verification failure of that event alone: the rest of its batch and of the
+// run carry on. A verification failure blocks the drop and returns
 // ErrAuditHistoryUnverified; a run with nothing to verify returns
 // ErrAuditHistoryNothingToVerify; a drop that does not happen returns
 // ErrAuditHistoryDropRefused with the reason.
@@ -460,6 +470,12 @@ func (c *AuditHistoryCopy) copyPartition(ctx context.Context, resolver *AuditEve
 
 // copyWindow reads a window's rows, reads back what the store holds of it,
 // writes what is missing or incomplete, and verifies every row.
+//
+// Each event is written at most once by this call, whatever the read-back shows
+// afterwards: there is one write pass, then one read-back, then verification. An
+// event the store refuses for good is set aside for the rest of the call — the
+// relay's rule — and reported as that event's problem; the other events of its
+// batch are written without it.
 func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventResolver, from, to time.Time, opts AuditHistoryCopyOptions, report *AuditHistoryPartitionReport, digest hash.Hash) error {
 	records, err := c.readWindow(ctx, resolver, from, to)
 	if err != nil {
@@ -472,31 +488,39 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 	if err != nil {
 		return err
 	}
+	written := map[string]bool{} // event id: written by this call
+	refused := map[string]bool{} // event id: the store refused it for good
 	if !opts.VerifyOnly {
-		// An event is written when verification would fail for want of a write:
-		// the store holds none of it, or holds it without details a write
-		// supplies. The id being in the store says nothing: both adapters write
-		// an event's row before its details, so a failed details write leaves
-		// the row behind, and skipping on its id would block verification for
-		// good.
+		// An event is written when a write adds what verification would fail
+		// for, or what the store may still hold: the store holds none of it, or
+		// holds it without details a write supplies. The id being in the store
+		// says nothing: both adapters write an event's row before its details,
+		// so a failed details write leaves the row behind, and skipping on its
+		// id would block verification for good.
 		var pending []AuditRecord
 		var rewrite []bool // parallel to pending: the store already held the event
 		for _, record := range records {
 			copies := stored[record.Entry.ID]
-			if problem, writable := c.inspect(record, copies); problem != "" && writable {
+			if _, writable := c.inspect(record, copies); writable {
 				pending, rewrite = append(pending, record), append(rewrite, len(copies) > 0)
 			}
 		}
 		if len(pending) > 0 {
 			for start := 0; start < len(pending); start += c.cfg.BatchSize {
 				end := min(start+c.cfg.BatchSize, len(pending))
-				if err := c.write(ctx, pending[start:end]); err != nil {
+				rejected, err := c.write(ctx, pending[start:end])
+				if err != nil {
 					return err
 				}
-				for _, again := range rewrite[start:end] {
-					if again {
+				for i, record := range pending[start:end] {
+					id := record.Entry.ID
+					written[id] = true
+					switch {
+					case rejected[id]:
+						refused[id] = true
+					case rewrite[start+i]:
 						report.Rewritten++
-					} else {
+					default:
 						report.Copied++
 					}
 				}
@@ -520,10 +544,17 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 		org := record.Entry.OrgID
 		count := report.Orgs[org]
 		count.Postgres++
-		if problem := c.verify(record, stored[record.Entry.ID]); problem != "" {
+		id := record.Entry.ID
+		if problem := c.verify(record, stored[id]); problem != "" {
+			switch {
+			case refused[id]:
+				problem = auditHistoryRefusal + "; " + problem
+			case written[id]:
+				problem = "written by this run, but the read-back finds it incomplete: " + problem
+			}
 			report.Failures++
 			if len(report.Problems) < maxAuditHistoryProblems {
-				report.Problems = append(report.Problems, fmt.Sprintf("event %s: %s", record.Entry.ID, problem))
+				report.Problems = append(report.Problems, fmt.Sprintf("event %s: %s", id, problem))
 			}
 		} else {
 			count.Verified++
@@ -580,9 +611,21 @@ func (c *AuditHistoryCopy) readBack(ctx context.Context, from, to time.Time) (ma
 	return stored, nil
 }
 
-// write delivers one batch as the relay does: the archive first, then the
-// store. A failure leaves the rest of the window for the next run.
-func (c *AuditHistoryCopy) write(ctx context.Context, records []AuditRecord) error {
+// auditHistoryRefusal is what a problem says of an event the store refused for
+// good. The store's own words are left out of it: the operator's output carries no
+// provider errors.
+const auditHistoryRefusal = "the store refused the event's row for good"
+
+// write delivers one batch as the relay does: the archive first, whole and once,
+// then the store. A store that reports rows it refused for good (a
+// PermanentRowRejection naming an event of the batch) is sent the rest again
+// without them, as many times as it names another, so one event never holds the
+// others back, and returns those events by id. The batch is archived once: the
+// archive holds the refused events whole, and a store write is repeated without
+// them as the relay's is. A refusal that names no event of the batch, or any
+// other failure, is returned as an error and leaves the rest of the window for
+// the next run.
+func (c *AuditHistoryCopy) write(ctx context.Context, records []AuditRecord) (map[string]bool, error) {
 	batch := AuditBatch{
 		ID:           c.cfg.NewBatchID(),
 		DeploymentID: c.cfg.DeploymentID,
@@ -590,19 +633,44 @@ func (c *AuditHistoryCopy) write(ctx context.Context, records []AuditRecord) err
 		Records:      records,
 	}
 	if err := c.cfg.Archive.WriteAuditBatch(ctx, batch); err != nil {
-		return fmt.Errorf("archive batch %s: %w", batch.ID, err)
+		return nil, fmt.Errorf("archive batch %s: %w", batch.ID, err)
 	}
-	if err := c.cfg.Store.AppendAuditBatch(ctx, batch); err != nil {
-		return fmt.Errorf("append batch %s: %w", batch.ID, err)
+	refused := map[string]bool{}
+	for todo := records; len(todo) > 0; {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("append batch %s: %w", batch.ID, err)
+		}
+		attempt := batch
+		attempt.Records = todo
+		err := c.cfg.Store.AppendAuditBatch(ctx, attempt)
+		if err == nil {
+			return refused, nil
+		}
+		rejections := map[string]bool{}
+		for _, rejection := range PermanentRowRejections(err) {
+			rejections[rejection.EventID] = true
+		}
+		var kept []AuditRecord
+		for _, record := range todo {
+			if id := record.Entry.ID; rejections[id] {
+				refused[id] = true
+			} else {
+				kept = append(kept, record)
+			}
+		}
+		if len(kept) == len(todo) {
+			return nil, fmt.Errorf("append batch %s: %w", batch.ID, err)
+		}
+		todo = kept
 	}
-	return nil
+	return refused, nil
 }
 
 // verify reports what is wrong with the store's copies of record, or "".
 // Every copy must carry the record's envelope, retention class and details
 // hash, and whatever details it carries must hash to it; a security-class
-// event's details must be there, and a content-class event's while it is
-// inside the content window.
+// event's details must be there, and a content-class event's while the store
+// is certain to hold them (detailsHeldUntil).
 func (c *AuditHistoryCopy) verify(record AuditRecord, copies []StoredAuditEvent) string {
 	problem, _ := c.inspect(record, copies)
 	return problem
@@ -610,15 +678,18 @@ func (c *AuditHistoryCopy) verify(record AuditRecord, copies []StoredAuditEvent)
 
 // inspect is the one rule for the store's copies of record, shared by what
 // writes and what verifies: what verification finds wrong with them, and
-// whether writing the event again would remove it.
+// whether writing the event again would help.
 //
-// A write does when the store holds none of the event, or holds it without the
-// details of a content-class event inside the content window: both adapters
-// keep those in the details table and attach them to every copy of the event by
-// its id, so one more details row completes the copies already there, and the
-// events row the write appends beside them carries the same envelope.
+// A write helps when the store holds none of the event, or holds it without the
+// details of a content-class event: both adapters keep those in the details
+// table and attach them to every copy of the event by its id, so one more
+// details row completes the copies already there, and the events row the write
+// appends beside them carries the same envelope. The details are a verification
+// failure while the store is certain to hold them (the event is before
+// detailsHeldUntil); for auditHistoryDetailsMargin after that they may still be
+// held, so the write is made without a failure when they are not readable.
 //
-// A write does not when a copy is wrong in itself — stored under another
+// A write does not help when a copy is wrong in itself — stored under another
 // deployment, with an envelope or a retention class the row does not have, with a
 // details hash that is not the row's, or with details that do not hash to it —
 // because the store is append-only and every copy is verified, so the wrong copy
@@ -627,6 +698,12 @@ func (c *AuditHistoryCopy) verify(record AuditRecord, copies []StoredAuditEvent)
 // a new row does not complete. Such a copy is a verification failure for an
 // operator to look at. When copies differ in what is wrong, the reason that no
 // write removes is the one returned.
+//
+// A write for missing details is made once: when the store holds more than one
+// copy of the event, a write has already been made and did not supply them
+// (refused for good, or written and not readable), and another would add a copy
+// and an archive object and conclude the same. The failure stays, with the count
+// of copies as its reason.
 func (c *AuditHistoryCopy) inspect(record AuditRecord, copies []StoredAuditEvent) (problem string, writable bool) {
 	if len(copies) == 0 {
 		return "missing from the store", true
@@ -634,17 +711,26 @@ func (c *AuditHistoryCopy) inspect(record AuditRecord, copies []StoredAuditEvent
 	for _, stored := range copies {
 		reason, fixable := c.inspectCopy(record, stored)
 		switch {
-		case reason == "":
-		case !fixable:
+		case reason != "" && !fixable:
 			return reason, false
-		case problem == "":
-			problem = reason
+		case fixable:
+			writable = true
+			if problem == "" {
+				problem = reason
+			}
 		}
 	}
-	return problem, problem != ""
+	if writable && len(copies) > 1 {
+		if problem != "" {
+			problem = fmt.Sprintf("%s; the store holds %d copies, so an earlier write did not supply them, and the event is not written again", problem, len(copies))
+		}
+		return problem, false
+	}
+	return problem, writable
 }
 
-// inspectCopy is inspect for one stored copy.
+// inspectCopy is inspect for one stored copy. It returns writable without a
+// problem for details the store may still hold: written for, never failed.
 func (c *AuditHistoryCopy) inspectCopy(record AuditRecord, stored StoredAuditEvent) (problem string, writable bool) {
 	want, got := record.Entry, stored.Entry
 	switch {
@@ -664,10 +750,32 @@ func (c *AuditHistoryCopy) inspectCopy(record AuditRecord, stored StoredAuditEve
 		return "stored details do not hash to the row's hash", false
 	case !stored.HasDetails && record.Retention == RetentionSecurity:
 		return "security-class details are missing", false
-	case !stored.HasDetails && want.CreatedAt.After(c.cfg.Now().Add(-c.cfg.ContentRetention+auditHistoryDetailsMargin)):
+	case stored.HasDetails:
+		return "", false
+	}
+	// A content-class copy without details: its row says when the store may have
+	// expired them.
+	now, heldUntil := c.cfg.Now(), c.detailsHeldUntil(want.CreatedAt)
+	switch {
+	case now.Before(heldUntil):
 		return "content details are missing inside the content window", true
+	case now.Before(heldUntil.Add(auditHistoryDetailsMargin)):
+		return "", true
 	}
 	return "", false
+}
+
+// detailsHeldUntil is the first instant at which the store may have expired the
+// details of an event that occurred at t: before it the store holds them. The
+// store expires details by the day of the event, so the count starts at the
+// start of its UTC day, which no adapter beats: BigQuery drops a day partition
+// once its day's start plus the retention has passed, and a ClickHouse TTL does
+// not fire before the event plus the retention. It is a function of the
+// retention itself, not of a fixed span cut from the window, so a short
+// retention keeps its requirement: with one day, every event of today is held.
+func (c *AuditHistoryCopy) detailsHeldUntil(t time.Time) time.Time {
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).Add(c.cfg.ContentRetention)
 }
 
 // drop checks that nothing changed since verification and drops the verified

@@ -38,22 +38,52 @@ are not verified before new rows are written. A verification failure leaves the
 partitions in place.
 
 An event is appended when the warehouse holds none of it, and again when it holds
-it without details that verification requires and a write supplies: a content-class
-event inside the content window whose details row is not there. Both adapters write
-an event's events row before its details row, so a run whose details write failed
-leaves exactly that behind, and the next run appends the event again, events row
-and details row. The details are attached to every copy of the event by its id, so
-the copy already in the warehouse is complete too. A text-mode run counts these as
-`rewritten` in its progress lines, apart from the events `copied`. Content-class
-events older than the content window may have no details (the warehouse expired
-them) and are not appended.
+it without the details of a content-class event. Both adapters write an event's
+events row before its details row, so a run whose details write failed leaves
+exactly that behind, and the next run appends the event again, events row and
+details row. The details are attached to every copy of the event by its id, so the
+copy already in the warehouse is complete too. A text-mode run counts these as
+`rewritten` in its progress lines, apart from the events `copied`.
+
+The warehouse expires details by the UTC day of the event, so it is certain to hold
+an event's details until the start of that day plus `AUDIT_CONTENT_RETENTION_DAYS`.
+Until then an event without them fails verification, whatever the retention: with
+1 day, the events of today are still required. For the two days after that
+instant the warehouse may still hold them: the event is appended to supply them
+and never fails for lacking them. After that it is neither appended nor required
+to have them.
+
+An event is appended again for missing details **once**. When the warehouse holds
+more than one copy of an event and still no details, an earlier write did not
+supply them (the warehouse refused the row, or accepted it and does not show it),
+and another would add an events row and an archive object and change nothing. The
+event stays a verification failure, and the report says how many copies the
+warehouse holds. An event written in a run is never written again in that run,
+whatever the read-back shows.
+
+An event whose row the warehouse refuses for good (a row too large, a value its
+column cannot hold) fails verification **by itself**: the rest of its batch and of
+the run are copied, and the report names the event (the warehouse's own message is
+not printed). If the events row was refused, nothing of the event is stored and
+every run tries it again, archiving that event alone each time. If only the details
+row was refused, the next run writes the event once more and later runs do not.
+Either way the partitions are not dropped: the command has no way to skip an event.
+
+Each write archives its batch again: the archive never overwrites an object, so a
+rewrite adds one that holds the event a second time. That is safe because archive
+readers deduplicate by event id, as the warehouse's readers do.
 
 A copy that is wrong in itself is **not** appended again: the warehouse is
 append-only and every copy is verified, so the wrong copy would stay. These are
-verification failures for the operator to look at: a copy stored under another
-deployment id, with an envelope or retention class the row does not have, with a
-details hash that is not the row's, or a security-class copy without its details
-(they live in that copy's own row).
+verification failures for the operator to look at: a copy with an envelope or
+retention class the row does not have, with a details hash that is not the row's,
+or a security-class copy without its details (they live in that copy's own row). A
+copy stored under another deployment id fails in the same way, but both readers
+read this deployment's rows only, so it does not occur with them. The service's
+warehouse user cannot delete or alter rows (ClickHouse grants no `ALTER`/`DELETE`;
+BigQuery no DML), so neither can this command: the warehouse administrator removes
+the wrong copy with credentials of their own, and `-verify-only` then checks the
+partition again. Until that is done the partition stays undroppable.
 
 ### Which partitions
 
