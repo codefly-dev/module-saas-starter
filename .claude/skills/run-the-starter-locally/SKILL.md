@@ -18,13 +18,13 @@ codefly run service --fixture dev-admin
 - No TTY (CI, pipes, MCP) auto-enables `--headless`.
 - Docker must be running. `codefly doctor` checks prerequisites; `codefly clear`
   reaps stray processes and containers between runs.
-- A local run has no cell collector, and the module ships none. The `observability`
-  group (`configurations/local/observability.env`) says so — `TELEMETRY_STATE=absent`
-  with a reason — and accounts and auth-gateway log the reason once, send traces to
-  wool's stdout tracer and export no metrics. They refuse to start, naming
-  `TELEMETRY_STATE`, when that group did not arrive: a composing workspace that
-  overrode it without the keys, or a `local-dogfood` run without its copied
-  `observability.env`.
+- A local run has no cell collector, and the module ships none. The module's
+  `configurations/local/observability.env` supplies a reason but no
+  `TELEMETRY_STATE`: those defaults also reach deployed cells. Only a runtime the
+  SDK identifies as local infers `absent` when the state is missing, logs the
+  reason once, sends traces to wool's stdout tracer and exports no metrics.
+  Outside that runtime, a missing state refuses startup. The `local-dogfood`
+  profile must still copy its explicit state from `observability.env.example`.
 
 For a real external identity provider and the production-grade provider stack,
 use the `local-dogfood` environment and its configuration groups:

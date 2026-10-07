@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -21,9 +22,56 @@ func group(values map[string]string) func(string) string {
 
 const collector = "http://otel-collector.otel-collector.svc.cluster.local:4317"
 
+// Module defaults are also inherited by cells. They must not supply the state
+// that only the platform can declare for a deployed workload.
+func TestTelemetryDestinationShippedDefaultsCannotMaskMissingCellState(t *testing.T) {
+	contents, err := os.ReadFile("../../../configurations/local/observability.env")
+	require.NoError(t, err)
+	values := map[string]string{}
+	for _, line := range strings.Split(string(contents), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		require.True(t, ok)
+		values[key] = value
+	}
+	_, err = resolveTelemetryDestination(false, group(values))
+	require.ErrorContains(t, err, "TELEMETRY_STATE is not set")
+	destination, err := resolveTelemetryDestination(true, group(values))
+	require.NoError(t, err)
+	require.False(t, destination.Available())
+	require.NotEmpty(t, destination.AbsentReason)
+}
+
+func TestTelemetryDestinationMissingStateDefaultsOnlyInLocalRuntime(t *testing.T) {
+	for _, values := range []map[string]string{
+		{},
+		{"TELEMETRY_STATE": "  "},
+		{"TELEMETRY_ABSENT_REASON": "local defaults inherited by a cell"},
+		{"OTEL_EXPORTER_OTLP_ENDPOINT": collector},
+	} {
+		_, err := resolveTelemetryDestination(false, group(values))
+		require.ErrorContains(t, err, "TELEMETRY_STATE is not set")
+		destination, err := resolveTelemetryDestination(true, group(values))
+		require.NoError(t, err)
+		require.False(t, destination.Available())
+		require.NotEmpty(t, destination.AbsentReason)
+	}
+	for _, values := range []map[string]string{
+		{"TELEMETRY_STATE": "unknown"},
+		{"TELEMETRY_STATE": "available"},
+		{"TELEMETRY_STATE": "absent"},
+	} {
+		_, err := resolveTelemetryDestination(true, group(values))
+		require.Error(t, err, "an explicit state must be valid and complete even locally")
+	}
+}
+
 // The first outcome: the platform delivered a collector.
 func TestTelemetryDestinationAvailableExportsToTheEndpoint(t *testing.T) {
-	destination, err := resolveTelemetryDestination(group(map[string]string{
+	destination, err := resolveTelemetryDestination(false, group(map[string]string{
 		"TELEMETRY_STATE":             "available",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": collector,
 	}))
@@ -56,7 +104,7 @@ func TestTelemetryDestinationReadsTransportFromTheScheme(t *testing.T) {
 		"https://10.0.0.7:4317":              {"https://10.0.0.7:4317", "10.0.0.7:4317", false},
 		"http://otel-collector.ns.svc:4317/": {"http://otel-collector.ns.svc:4317", "otel-collector.ns.svc:4317", true},
 	} {
-		destination, err := resolveTelemetryDestination(group(map[string]string{
+		destination, err := resolveTelemetryDestination(false, group(map[string]string{
 			"TELEMETRY_STATE":             "available",
 			"OTEL_EXPORTER_OTLP_ENDPOINT": endpoint,
 		}))
@@ -70,7 +118,7 @@ func TestTelemetryDestinationReadsTransportFromTheScheme(t *testing.T) {
 // The second outcome: the cell has no collector, and says why. The process boots
 // and exports nothing.
 func TestTelemetryDestinationAbsentCarriesTheReason(t *testing.T) {
-	destination, err := resolveTelemetryDestination(group(map[string]string{
+	destination, err := resolveTelemetryDestination(false, group(map[string]string{
 		"TELEMETRY_STATE":         "absent",
 		"TELEMETRY_ABSENT_REASON": "This cell's bucket has no ops cell, so no collector is rendered.",
 	}))
@@ -85,7 +133,7 @@ func TestTelemetryDestinationAbsentCarriesTheReason(t *testing.T) {
 
 // The reason is operator-written free text that reaches a log line.
 func TestTelemetryDestinationAbsentReasonIsOneBoundedLine(t *testing.T) {
-	destination, err := resolveTelemetryDestination(group(map[string]string{
+	destination, err := resolveTelemetryDestination(false, group(map[string]string{
 		"TELEMETRY_STATE":         "absent",
 		"TELEMETRY_ABSENT_REASON": "no collector\n2026-01-01 FORGED entry\r\n" + strings.Repeat("x", 1000),
 	}))
@@ -170,7 +218,7 @@ func TestTelemetryDestinationRefusesEverythingElse(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			destination, err := resolveTelemetryDestination(group(tc.values))
+			destination, err := resolveTelemetryDestination(false, group(tc.values))
 			require.Error(t, err)
 			require.ErrorContains(t, err, tc.want)
 			require.False(t, destination.Available(), "a refusal must never read as a usable destination")
@@ -184,7 +232,7 @@ func TestTelemetryDestinationRefusesEverythingElse(t *testing.T) {
 // cell beside the reason the local profile left behind. That is not a
 // contradiction to refuse: the reason is ignored, and said so once.
 func TestTelemetryDestinationAvailableIgnoresALeftoverReason(t *testing.T) {
-	destination, err := resolveTelemetryDestination(group(map[string]string{
+	destination, err := resolveTelemetryDestination(false, group(map[string]string{
 		"TELEMETRY_STATE":             "available",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": collector,
 		"TELEMETRY_ABSENT_REASON":     "A local run has no cell collector.",
@@ -210,7 +258,7 @@ func TestTelemetryDestinationAbsentIgnoresALeftoverEndpoint(t *testing.T) {
 		"an unreadable endpoint":  "http://[::1",
 	} {
 		t.Run(name, func(t *testing.T) {
-			destination, err := resolveTelemetryDestination(group(map[string]string{
+			destination, err := resolveTelemetryDestination(false, group(map[string]string{
 				"TELEMETRY_STATE":             "absent",
 				"TELEMETRY_ABSENT_REASON":     "This cell has no ops cell.",
 				"OTEL_EXPORTER_OTLP_ENDPOINT": leftover,
@@ -230,13 +278,13 @@ func TestTelemetryDestinationAbsentIgnoresALeftoverEndpoint(t *testing.T) {
 
 // A blank leftover is nothing left over.
 func TestTelemetryDestinationBlankLeftoversAreNotNoticed(t *testing.T) {
-	available, err := resolveTelemetryDestination(group(map[string]string{
+	available, err := resolveTelemetryDestination(false, group(map[string]string{
 		"TELEMETRY_STATE": "available", "OTEL_EXPORTER_OTLP_ENDPOINT": collector, "TELEMETRY_ABSENT_REASON": " \n ",
 	}))
 	require.NoError(t, err)
 	require.Empty(t, available.IgnoredNotice())
 
-	absent, err := resolveTelemetryDestination(group(map[string]string{
+	absent, err := resolveTelemetryDestination(false, group(map[string]string{
 		"TELEMETRY_STATE": "absent", "TELEMETRY_ABSENT_REASON": "no collector", "OTEL_EXPORTER_OTLP_ENDPOINT": "   ",
 	}))
 	require.NoError(t, err)
@@ -266,7 +314,7 @@ func TestTelemetryDestinationTheCellOverridesTheModuleDefaults(t *testing.T) {
 	}
 
 	t.Run("a cell with a collector overrides the local absent default", func(t *testing.T) {
-		destination, err := resolveTelemetryDestination(layered(moduleDefault, map[string]string{
+		destination, err := resolveTelemetryDestination(false, layered(moduleDefault, map[string]string{
 			"TELEMETRY_STATE":             "available",
 			"OTEL_EXPORTER_OTLP_ENDPOINT": collector,
 		}))
@@ -278,7 +326,7 @@ func TestTelemetryDestinationTheCellOverridesTheModuleDefaults(t *testing.T) {
 	})
 
 	t.Run("a cell with no collector, over a default that had an endpoint, is absent", func(t *testing.T) {
-		destination, err := resolveTelemetryDestination(layered(
+		destination, err := resolveTelemetryDestination(false, layered(
 			map[string]string{"TELEMETRY_STATE": "available", "OTEL_EXPORTER_OTLP_ENDPOINT": collector},
 			map[string]string{"TELEMETRY_STATE": "absent", "TELEMETRY_ABSENT_REASON": "This cell has no ops cell."},
 		))
@@ -289,11 +337,11 @@ func TestTelemetryDestinationTheCellOverridesTheModuleDefaults(t *testing.T) {
 	})
 
 	t.Run("a cell that overrides only the state still has to supply what it requires", func(t *testing.T) {
-		_, err := resolveTelemetryDestination(layered(moduleDefault, map[string]string{"TELEMETRY_STATE": "available"}))
+		_, err := resolveTelemetryDestination(false, layered(moduleDefault, map[string]string{"TELEMETRY_STATE": "available"}))
 		require.ErrorContains(t, err, "OTEL_EXPORTER_OTLP_ENDPOINT is not set",
 			"the module default's reason is not an endpoint")
 
-		_, err = resolveTelemetryDestination(layered(
+		_, err = resolveTelemetryDestination(false, layered(
 			map[string]string{"TELEMETRY_STATE": "available", "OTEL_EXPORTER_OTLP_ENDPOINT": collector},
 			map[string]string{"TELEMETRY_STATE": "absent"},
 		))
@@ -304,7 +352,7 @@ func TestTelemetryDestinationTheCellOverridesTheModuleDefaults(t *testing.T) {
 
 // A refusal quotes no part of an endpoint, which may carry credentials.
 func TestTelemetryDestinationRefusalDoesNotEchoCredentials(t *testing.T) {
-	_, err := resolveTelemetryDestination(group(map[string]string{
+	_, err := resolveTelemetryDestination(false, group(map[string]string{
 		"TELEMETRY_STATE":             "available",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://user:hunter2@collector.example:4317",
 	}))
@@ -322,20 +370,24 @@ func TestConfiguredTelemetryDestinationReadsTheObservabilityGroup(t *testing.T) 
 		t.Setenv(prefix+key, "")
 	}
 
-	_, err := configuredTelemetryDestination()
+	localDestination, err := configuredTelemetryDestination(true)
+	require.NoError(t, err)
+	require.False(t, localDestination.Available())
+	require.NotEmpty(t, localDestination.AbsentReason)
+	_, err = configuredTelemetryDestination(false)
 	require.ErrorContains(t, err, "TELEMETRY_STATE is not set")
 
 	// Ambient variables a shell or a pod may carry are not the group.
 	t.Setenv("TELEMETRY_STATE", "available")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://ambient.example:4318")
-	_, err = configuredTelemetryDestination()
+	_, err = configuredTelemetryDestination(false)
 	require.ErrorContains(t, err, "TELEMETRY_STATE is not set")
 	t.Setenv("TELEMETRY_STATE", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 
 	t.Setenv(prefix+"TELEMETRY_STATE", "available")
 	t.Setenv(prefix+"OTEL_EXPORTER_OTLP_ENDPOINT", collector)
-	destination, err := configuredTelemetryDestination()
+	destination, err := configuredTelemetryDestination(false)
 	require.NoError(t, err)
 	require.Equal(t, "otel-collector.otel-collector.svc.cluster.local:4317", destination.Endpoint)
 	require.True(t, destination.Insecure)
@@ -343,7 +395,7 @@ func TestConfiguredTelemetryDestinationReadsTheObservabilityGroup(t *testing.T) 
 	t.Setenv(prefix+"TELEMETRY_STATE", "absent")
 	t.Setenv(prefix+"OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv(prefix+"TELEMETRY_ABSENT_REASON", "a local run has no cell collector")
-	destination, err = configuredTelemetryDestination()
+	destination, err = configuredTelemetryDestination(false)
 	require.NoError(t, err)
 	require.False(t, destination.Available())
 	require.Equal(t, "a local run has no cell collector", destination.AbsentReason)
@@ -358,7 +410,7 @@ func TestConfiguredTelemetryDestinationStateDecidesAcrossLayers(t *testing.T) {
 	t.Setenv(prefix+"OTEL_EXPORTER_OTLP_ENDPOINT", collector)
 	t.Setenv(prefix+"TELEMETRY_ABSENT_REASON", "A local run has no cell collector.")
 
-	destination, err := configuredTelemetryDestination()
+	destination, err := configuredTelemetryDestination(false)
 	require.NoError(t, err)
 	require.True(t, destination.Available())
 	require.Equal(t, collector, destination.URL)
@@ -366,8 +418,8 @@ func TestConfiguredTelemetryDestinationStateDecidesAcrossLayers(t *testing.T) {
 }
 
 // Configuration that cannot work is refused before the process acquires
-// anything, including in a local run: a group that did not arrive is not a cell
-// without a collector anywhere.
+// anything: a group that did not arrive is not a cell without a collector.
+// Only a local runtime can infer an absent collector from the missing state.
 func TestStartupRefusesAnObservabilityGroupThatDidNotArrive(t *testing.T) {
 	const prefix = "CODEFLY__WORKSPACE_CONFIGURATION__OBSERVABILITY__"
 	for _, key := range []string{"TELEMETRY_STATE", "OTEL_EXPORTER_OTLP_ENDPOINT", "TELEMETRY_ABSENT_REASON"} {
@@ -376,9 +428,8 @@ func TestStartupRefusesAnObservabilityGroupThatDidNotArrive(t *testing.T) {
 	// The key-custody requirement answers first outside a local run; satisfy it
 	// so the observability requirement is what is under test.
 	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_KEY_CUSTODY", "seed-signing-key")
-	for _, local := range []bool{true, false} {
-		require.ErrorContains(t, requireStartupConfiguration(local), "TELEMETRY_STATE is not set", "local=%v", local)
-	}
+	require.NoError(t, requireStartupConfiguration(true))
+	require.ErrorContains(t, requireStartupConfiguration(false), "TELEMETRY_STATE is not set")
 
 	t.Setenv(prefix+"TELEMETRY_STATE", "absent")
 	t.Setenv(prefix+"TELEMETRY_ABSENT_REASON", "a local run has no cell collector")

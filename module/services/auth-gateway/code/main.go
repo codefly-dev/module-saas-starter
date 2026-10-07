@@ -35,8 +35,8 @@ func main() {
 
 	// The cell's collector is delivered in the `observability` configuration
 	// group, or the group says the cell has none. A group that did not arrive is
-	// neither, so it is refused before anything else starts.
-	telemetryDestination, err := configuredTelemetryDestination()
+	// neither, so it is refused outside a local runtime before anything else starts.
+	telemetryDestination, err := configuredTelemetryDestination(codefly.IsLocal())
 	if err != nil {
 		panic(err)
 	}

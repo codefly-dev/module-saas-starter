@@ -655,7 +655,7 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `TELEMETRY_STATE`              | `observability` group, delivered by the platform: `available` or `absent`, never empty; accounts and auth-gateway refuse to start without it |
+| `TELEMETRY_STATE`              | `observability` group, delivered by the platform: `available` or `absent`; missing state refuses startup except in a local runtime, where it means `absent` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`  | `observability` group: the cell collector's OTLP/gRPC address, required when `available` and ignored when `absent`; `http://` is plaintext on the wire because the mesh supplies mTLS, `https://` is TLS |
 | `TELEMETRY_ABSENT_REASON`      | `observability` group: why the cell has no collector, required when `absent` and ignored when `available`; logged once at startup |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
@@ -672,9 +672,12 @@ then uses wool's stdout tracer for traces. The state decides: a cell's values
 override the module's local defaults one key at a time, so a deployed cell that
 says `available` with an endpoint can still carry the `absent` reason the local
 profile left behind. The key the state does not use is ignored, and a startup
-warning names it once. Anything else — the state missing or unknown, `available`
-without an endpoint, or `absent` without a reason — refuses to start, because a
-group that did not arrive is not a cell without a collector. An `https://`
+warning names it once. Module defaults never declare `TELEMETRY_STATE`, because
+they also reach deployed cells. Only a local runtime infers `absent` from a
+missing state; elsewhere missing state refuses startup, because a group that
+did not arrive is not a cell without a collector. Unknown state, `available`
+without an endpoint, or explicit `absent` without a reason also refuses startup,
+including locally. An `https://`
 endpoint is refused at startup for now: wool's OTLP tracer dials plaintext only,
 so it would be sent in the clear and reported as TLS.
 Metrics leave by OTLP push alone — decided 2026-10-06, because the cell's

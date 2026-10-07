@@ -42,7 +42,8 @@ import (
 // A group that did not arrive is not a cell without a backend. Reading the first
 // as the second would leave a deployment that converges green and exports
 // nothing, so a missing or unknown state, or the key the state requires being
-// absent, refuses to start, naming what is missing.
+// absent, refuses to start, naming what is missing. Only a local runtime may
+// infer `absent` when the state is missing; module defaults never declare it.
 //
 // This file exists byte for byte in services/accounts/code and
 // services/auth-gateway/code: the two services are independent Go modules with
@@ -124,17 +125,23 @@ func observabilityValue(key string) string {
 
 // configuredTelemetryDestination resolves the destination from the
 // `observability` group.
-func configuredTelemetryDestination() (telemetryDestination, error) {
-	return resolveTelemetryDestination(observabilityValue)
+func configuredTelemetryDestination(local bool) (telemetryDestination, error) {
+	return resolveTelemetryDestination(local, observabilityValue)
 }
 
 // resolveTelemetryDestination is the whole decision, over any reader of the
 // group's keys so a test can reach every outcome with nothing running.
-func resolveTelemetryDestination(read func(key string) string) (telemetryDestination, error) {
+func resolveTelemetryDestination(local bool, read func(key string) string) (telemetryDestination, error) {
 	state := strings.TrimSpace(read(telemetryStateKey))
 	endpoint := strings.TrimSpace(read(telemetryEndpointKey))
 	reason := boundedLine(read(telemetryAbsentReasonKey), maxAbsentReasonLength)
 
+	if state == "" && local {
+		state = telemetryStateAbsent
+		if reason == "" {
+			reason = "A local run has no cell collector; traces go to the stdout tracer and metrics are not exported."
+		}
+	}
 	if state == "" {
 		return telemetryDestination{}, errors.New(
 			"observability: " + telemetryStateKey + " is not set in the `observability` configuration group. " +

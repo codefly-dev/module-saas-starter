@@ -116,7 +116,7 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 // it really receives rather than a hand-built struct.
 func availableAt(t *testing.T, scheme, hostPort string) telemetryDestination {
 	t.Helper()
-	destination, err := resolveTelemetryDestination(group(map[string]string{
+	destination, err := resolveTelemetryDestination(false, group(map[string]string{
 		"TELEMETRY_STATE":             "available",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": scheme + "://" + hostPort,
 	}))

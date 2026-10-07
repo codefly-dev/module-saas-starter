@@ -86,7 +86,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	// delivers in the `observability` configuration group — or the group says the
 	// cell has none. Either answer was already required before anything was
 	// acquired (requireStartupConfiguration); this reads it again to act on it.
-	telemetryDestination, err := configuredTelemetryDestination()
+	telemetryDestination, err := configuredTelemetryDestination(codefly.IsLocal())
 	if err != nil {
 		return nil, err
 	}
@@ -2227,17 +2227,17 @@ func requireStartupConfiguration(isLocal bool) error {
 	if err := requireKeyCustody(isLocal); err != nil {
 		return err
 	}
-	return requireTelemetryConfiguration()
+	return requireTelemetryConfiguration(isLocal)
 }
 
 // requireTelemetryConfiguration refuses to start unless the `observability`
 // group says where the cell's collector is, or that the cell has none. It only
 // checks: doWork reads the same answer again to act on it. A group that did not
-// arrive is refused here, before the database or Vault is touched, because
-// reading it as "no collector" would leave a cell exporting nothing while it
-// converges green.
-func requireTelemetryConfiguration() error {
-	_, err := configuredTelemetryDestination()
+// arrive is refused outside the local runtime, before the database or Vault is
+// touched: reading it as "no collector" would leave a cell exporting nothing
+// while it converges green.
+func requireTelemetryConfiguration(isLocal bool) error {
+	_, err := configuredTelemetryDestination(isLocal)
 	return err
 }
 
