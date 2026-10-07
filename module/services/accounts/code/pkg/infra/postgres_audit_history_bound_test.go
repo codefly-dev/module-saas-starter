@@ -2,9 +2,10 @@ package infra
 
 import (
 	"accounts/pkg/business"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestHistoryPayloadDecodeStopsAtDecodedContainerBudget(t *testing.T) {
