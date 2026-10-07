@@ -188,6 +188,81 @@ func (s *historyStore) copies() map[string]int {
 	return out
 }
 
+// historyDetailsRow is one row of a split store's details table.
+type historyDetailsRow struct {
+	eventID, sha256, text string
+}
+
+// splitHistoryStore is a store of record as both adapters keep one: an events
+// row for every record — carrying its details when the event is security-class —
+// and, written after the events rows, a details row for each content-class
+// record. A read attaches the details to every events row of the event by its
+// id, and when the details rows disagree reports one whose hash is not the
+// event's, as the adapters' readers do. failDetails makes the details write of
+// that (1-based) append fail after its events rows landed: the partial write
+// either adapter can leave.
+type splitHistoryStore struct {
+	events      []StoredAuditEvent // a content-class row carries no details
+	details     []historyDetailsRow
+	appends     int
+	failDetails int
+}
+
+func (s *splitHistoryStore) AppendAuditBatch(_ context.Context, batch AuditBatch) error {
+	s.appends++
+	for _, record := range batch.Records {
+		entry := record.Entry
+		entry.Payload = nil
+		event := StoredAuditEvent{
+			DeploymentID: batch.DeploymentID, Entry: entry, Retention: record.Retention, DetailsSHA256: record.DetailsSHA256,
+		}
+		if record.Retention == RetentionSecurity {
+			event.Details, event.HasDetails = record.Details, true
+		}
+		s.events = append(s.events, event)
+	}
+	if s.appends == s.failDetails {
+		return errors.New("details write failed")
+	}
+	for _, record := range batch.Records {
+		if record.Retention != RetentionSecurity {
+			s.details = append(s.details, historyDetailsRow{record.Entry.ID, record.DetailsSHA256, record.Details})
+		}
+	}
+	return nil
+}
+
+func (s *splitHistoryStore) ReadStoredAuditEvents(_ context.Context, from, to time.Time, visit func(StoredAuditEvent) error) error {
+	for _, event := range s.events {
+		if event.Entry.CreatedAt.Before(from) || !event.Entry.CreatedAt.Before(to) {
+			continue
+		}
+		if event.Retention != RetentionSecurity {
+			for _, row := range s.details {
+				if row.eventID != event.Entry.ID {
+					continue
+				}
+				event.Details, event.HasDetails = row.text, true
+				if row.sha256 != event.DetailsSHA256 {
+					break
+				}
+			}
+		}
+		if err := visit(event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *splitHistoryStore) copies() map[string]int {
+	out := map[string]int{}
+	for _, event := range s.events {
+		out[event.Entry.ID]++
+	}
+	return out
+}
+
 type historyArchive struct{ batches []AuditBatch }
 
 func (a *historyArchive) WriteAuditBatch(_ context.Context, batch AuditBatch) error {
@@ -217,6 +292,9 @@ type historyFixture struct {
 	source  *historySource
 	store   *historyStore
 	archive *historyArchive
+	// split, when set, is the store of record in place of store: one that keeps
+	// a content-class event's details in a table of their own, as the adapters do.
+	split *splitHistoryStore
 }
 
 func newHistoryFixture() *historyFixture {
@@ -239,6 +317,9 @@ func newHistoryFixture() *historyFixture {
 func (f *historyFixture) copier(t *testing.T, cfg AuditHistoryCopyConfig) *AuditHistoryCopy {
 	t.Helper()
 	cfg.Source, cfg.Store, cfg.Archive, cfg.ReadBack = f.source, f.store, f.archive, f.store
+	if f.split != nil {
+		cfg.Store, cfg.ReadBack = f.split, f.split
+	}
 	if cfg.Through == nil && len(f.source.partitions) > 0 {
 		through := f.source.partitions[len(f.source.partitions)-1].To
 		cfg.Through = &through
@@ -748,6 +829,242 @@ func TestAuditHistoryDuplicateIDsFailVerificationWithinAWindow(t *testing.T) {
 				problems = append(problems, partition.Problems...)
 			}
 			require.Contains(t, problems[0], "stored envelope differs from the row")
+		})
+	}
+}
+
+// Both adapters write an event's events row before its details row, so a
+// details write that fails leaves the events row behind. The copy decides what
+// to write from what verification would conclude, not from the id being in the
+// store: the next run writes the event again, its details land, and they attach
+// to the events row already there.
+func TestAuditHistoryRewritesEventsWhoseDetailsWriteFailed(t *testing.T) {
+	f := newHistoryFixture()
+	f.split = &splitHistoryStore{failDetails: 1}
+	_, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.ErrorContains(t, err, "details write failed")
+	require.Empty(t, f.split.details, "the failed append left events rows and no details")
+	require.Len(t, f.split.events, 4, "the first batch's events rows landed")
+	var landed []string // the ids of the content-class events whose details are missing
+	for _, event := range f.split.events {
+		if event.Retention == RetentionContent {
+			landed = append(landed, event.Entry.ID)
+		}
+	}
+	require.Len(t, landed, 3)
+
+	f.split.failDetails = 0
+	report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	require.True(t, report.Verified)
+	var copied, rewritten int
+	for _, partition := range report.Partitions {
+		copied += partition.Copied
+		rewritten += partition.Rewritten
+		require.Zero(t, partition.Failures)
+	}
+	require.Equal(t, 3, rewritten, "the content events whose details were lost are written again")
+	require.Equal(t, len(f.source.rows)-4, copied, "the events the first run never reached are copied")
+
+	copies := f.split.copies()
+	for _, id := range landed {
+		require.Equal(t, 2, copies[id], "the events row of the failed write and the one written again: %s", id)
+	}
+	// Every copy a read-back returns carries its details, so every copy passes
+	// the verification the run just made.
+	require.NoError(t, f.split.ReadStoredAuditEvents(context.Background(), time.Time{}, historyNow, func(event StoredAuditEvent) error {
+		require.True(t, event.HasDetails, "event %s", event.Entry.ID)
+		require.Equal(t, event.DetailsSHA256, AuditDetailsSHA256(event.Details))
+		return nil
+	}))
+
+	// A run after that one finds nothing to write, and drops what was verified.
+	appends := f.split.appends
+	report, err = f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{}))
+	require.NoError(t, err)
+	require.Equal(t, appends, f.split.appends)
+	require.Equal(t, int64(3), report.Dropped)
+	for _, partition := range report.Partitions {
+		require.Zero(t, partition.Copied+partition.Rewritten)
+	}
+}
+
+// A content-class event past the content window may have no details — the
+// warehouse expired them — so verification does not ask for them and the copy
+// does not write the event again to supply them.
+func TestAuditHistoryDoesNotRewriteContentEventsPastTheWindow(t *testing.T) {
+	f := newHistoryFixture()
+	f.split = &splitHistoryStore{failDetails: 1}
+	config := AuditHistoryCopyConfig{ContentRetention: 7 * 24 * time.Hour}
+	_, err := f.copier(t, config).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.ErrorContains(t, err, "details write failed")
+
+	f.split.failDetails = 0
+	report, err := f.copier(t, config).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	require.True(t, report.Verified)
+	for _, partition := range report.Partitions {
+		require.Zero(t, partition.Rewritten)
+	}
+	for id, n := range f.split.copies() {
+		require.Equal(t, 1, n, "event %s is in the store once", id)
+	}
+}
+
+// A write appends a copy; it removes nothing. So an event whose stored copy is
+// wrong in itself is left alone — written again, the wrong copy would still be
+// there, and still fail verification — and stays a verification failure.
+func TestAuditHistoryDoesNotRewriteWhatAWriteCannotFix(t *testing.T) {
+	const content, security = 0, 2 // indexes of rows of the fixture
+	for name, tc := range map[string]struct {
+		row    int
+		tamper func(*StoredAuditEvent)
+		want   string
+	}{
+		"a copy under another deployment": {
+			row:    content,
+			tamper: func(e *StoredAuditEvent) { e.DeploymentID = "deployment-2" },
+			want:   "stored under deployment",
+		},
+		"an envelope that differs": {
+			row:    content,
+			tamper: func(e *StoredAuditEvent) { e.Entry.OrgID = "cccccccc-0000-4000-8000-000000000003" },
+			want:   "envelope differs",
+		},
+		"a retention class that differs": {
+			row:    content,
+			tamper: func(e *StoredAuditEvent) { e.Retention = RetentionSecurity },
+			want:   "stored as security, classified content",
+		},
+		"a details hash that differs": {
+			row:    content,
+			tamper: func(e *StoredAuditEvent) { e.DetailsSHA256 = AuditDetailsSHA256("{}") },
+			want:   "details hash differs",
+		},
+		"details that do not hash to the row's hash": {
+			row:    content,
+			tamper: func(e *StoredAuditEvent) { e.Details = `{"n":0}` },
+			want:   "do not hash",
+		},
+		"details missing under a hash that differs": {
+			row: content,
+			tamper: func(e *StoredAuditEvent) {
+				e.DetailsSHA256, e.Details, e.HasDetails = AuditDetailsSHA256("{}"), "", false
+			},
+			want: "details hash differs",
+		},
+		"security-class details missing": {
+			row:    security,
+			tamper: func(e *StoredAuditEvent) { e.Details, e.HasDetails = "", false },
+			want:   "security-class details are missing",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newHistoryFixture()
+			bad := f.source.rows[tc.row].ID
+			f.store.tamper = func(e *StoredAuditEvent) {
+				if e.Entry.ID == bad {
+					tc.tamper(e)
+				}
+			}
+			_, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+			require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+			appends, archived := f.store.appends, len(f.archive.batches)
+
+			// The run that follows would append a good copy beside the bad one
+			// if it wrote at all: the tamper is gone, and nothing is appended.
+			f.store.tamper = nil
+			report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+			require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+			require.False(t, report.Verified)
+			require.Equal(t, appends, f.store.appends, "nothing is appended")
+			require.Len(t, f.archive.batches, archived, "nothing is archived")
+			require.Equal(t, 1, f.store.copies()[bad])
+			var problems []string
+			for _, partition := range report.Partitions {
+				require.Zero(t, partition.Copied+partition.Rewritten)
+				problems = append(problems, partition.Problems...)
+			}
+			require.Len(t, problems, 1)
+			require.Contains(t, problems[0], bad)
+			require.Contains(t, problems[0], tc.want)
+		})
+	}
+}
+
+// What the copy writes and what verification reports are one rule, applied to
+// every copy of the event: a write is for the failure it removes, and when a
+// copy is wrong in a way no write removes, that is what is reported.
+func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
+	copier, err := NewAuditHistoryCopy(AuditHistoryCopyConfig{
+		Source: &historySource{}, Store: &historyStore{}, Archive: &historyArchive{}, ReadBack: &historyStore{},
+		DeploymentID: "deployment-1", ContentRetention: 7 * 24 * time.Hour,
+		Now: func() time.Time { return historyNow },
+	})
+	require.NoError(t, err)
+	recent, old := historyNow.Add(-24*time.Hour), historyNow.Add(-30*24*time.Hour)
+	recordOf := func(n int, eventType EventType, at time.Time) AuditRecord {
+		resolved, err := NewAuditEventResolver(nil).Resolve(context.Background(), eventType)
+		require.NoError(t, err)
+		record, err := NewAuditRecord(historyRow(n, "", eventType, at), resolved.RetentionClass())
+		require.NoError(t, err)
+		return record
+	}
+	storedOf := func(record AuditRecord, change func(*StoredAuditEvent)) StoredAuditEvent {
+		entry := record.Entry
+		entry.Payload = nil
+		stored := StoredAuditEvent{DeploymentID: "deployment-1", Entry: entry, Retention: record.Retention, DetailsSHA256: record.DetailsSHA256}
+		if record.Retention == RetentionSecurity {
+			stored.Details, stored.HasDetails = record.Details, true
+		}
+		if change != nil {
+			change(&stored)
+		}
+		return stored
+	}
+	hasDetails := func(record AuditRecord) func(*StoredAuditEvent) {
+		return func(e *StoredAuditEvent) { e.Details, e.HasDetails = record.Details, true }
+	}
+	otherOrg := func(e *StoredAuditEvent) { e.Entry.OrgID = "cccccccc-0000-4000-8000-000000000003" }
+	noDetails := func(e *StoredAuditEvent) { e.Details, e.HasDetails = "", false }
+
+	inside, outside := recordOf(1, EventDatasourceSourceSynced, recent), recordOf(2, EventDatasourceSourceSynced, old)
+	login := recordOf(3, EventAuthLogin, recent)
+	for name, tc := range map[string]struct {
+		record   AuditRecord
+		copies   []StoredAuditEvent
+		problem  string
+		writable bool
+	}{
+		"no copy":         {record: inside, problem: "missing from the store", writable: true},
+		"a complete copy": {record: inside, copies: []StoredAuditEvent{storedOf(inside, hasDetails(inside))}},
+		"content details missing inside the window": {
+			record: inside, copies: []StoredAuditEvent{storedOf(inside, nil)},
+			problem: "content details are missing inside the content window", writable: true,
+		},
+		"content details missing past the window": {record: outside, copies: []StoredAuditEvent{storedOf(outside, nil)}},
+		"security details missing": {
+			record: login, copies: []StoredAuditEvent{storedOf(login, noDetails)},
+			problem: "security-class details are missing",
+		},
+		"one copy missing details, the other differing, in either order": {
+			record: inside, copies: []StoredAuditEvent{storedOf(inside, nil), storedOf(inside, func(e *StoredAuditEvent) { otherOrg(e); hasDetails(inside)(e) })},
+			problem: "stored envelope differs from the row",
+		},
+		"one copy differing, the other missing details": {
+			record: inside, copies: []StoredAuditEvent{storedOf(inside, func(e *StoredAuditEvent) { otherOrg(e); hasDetails(inside)(e) }), storedOf(inside, nil)},
+			problem: "stored envelope differs from the row",
+		},
+		"every copy missing details": {
+			record: inside, copies: []StoredAuditEvent{storedOf(inside, nil), storedOf(inside, nil)},
+			problem: "content details are missing inside the content window", writable: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			problem, writable := copier.inspect(tc.record, tc.copies)
+			require.Equal(t, tc.problem, problem)
+			require.Equal(t, tc.writable, writable)
+			require.Equal(t, tc.problem, copier.verify(tc.record, tc.copies), "verification reports what inspect found")
 		})
 	}
 }

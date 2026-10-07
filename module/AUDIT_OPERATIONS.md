@@ -31,10 +31,29 @@ cannot drop. `-verify-only` writes nothing.
 
 The run is resumable. For each day-long window of each partition it reads the
 source rows, reads back what the warehouse holds for that window, appends only the
-events missing from it, reads the window back again, and then verifies every source
-row against every stored copy of its id. Existing copies are therefore verified
-**after** the append, in the same pass; an earlier run's copies are not verified
-before new rows are written. A verification failure leaves the partitions in place.
+events whose stored copies are not complete, reads the window back again, and then
+verifies every source row against every stored copy of its id. Existing copies are
+therefore verified **after** the append, in the same pass; an earlier run's copies
+are not verified before new rows are written. A verification failure leaves the
+partitions in place.
+
+An event is appended when the warehouse holds none of it, and again when it holds
+it without details that verification requires and a write supplies: a content-class
+event inside the content window whose details row is not there. Both adapters write
+an event's events row before its details row, so a run whose details write failed
+leaves exactly that behind, and the next run appends the event again, events row
+and details row. The details are attached to every copy of the event by its id, so
+the copy already in the warehouse is complete too. A text-mode run counts these as
+`rewritten` in its progress lines, apart from the events `copied`. Content-class
+events older than the content window may have no details (the warehouse expired
+them) and are not appended.
+
+A copy that is wrong in itself is **not** appended again: the warehouse is
+append-only and every copy is verified, so the wrong copy would stay. These are
+verification failures for the operator to look at: a copy stored under another
+deployment id, with an envelope or retention class the row does not have, with a
+details hash that is not the row's, or a security-class copy without its details
+(they live in that copy's own row).
 
 ### Which partitions
 

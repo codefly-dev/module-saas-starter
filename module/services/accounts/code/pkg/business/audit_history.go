@@ -164,8 +164,14 @@ type AuditHistoryPartitionReport struct {
 	Partition AuditHistoryPartition
 	// EventsSHA256 binds the source event envelopes, classes and details hashes.
 	EventsSHA256 string
-	// Copied is how many events this run wrote; the rest were already there.
+	// Copied is how many events this run wrote because the store held none of
+	// them.
 	Copied int
+	// Rewritten is how many events this run wrote again because the store held
+	// them without details that verification requires and that a write supplies
+	// (a content-class event whose details write was lost); the rest were
+	// already complete.
+	Rewritten int
 	// Orgs counts the partition's events per organization ("" is the
 	// platform's).
 	Orgs map[string]AuditHistoryOrgCount
@@ -267,9 +273,11 @@ func NewAuditHistoryCopy(cfg AuditHistoryCopyConfig) (*AuditHistoryCopy, error) 
 
 // Run copies, verifies and — when confirmed and verified — drops. It is
 // resumable: a run reads each window's rows, reads back what the store already
-// holds, appends only the events missing from it, reads the window back again
-// and verifies every event, so a run after an interrupted one finishes what
-// that one started. A verification failure blocks the drop and returns
+// holds, appends only the events whose stored copies are not complete — the
+// events the store lacks, and those it holds without the details a write
+// supplies — reads the window back again and verifies every event, so a run
+// after an interrupted one finishes what that one started, a failed details
+// write included. A verification failure blocks the drop and returns
 // ErrAuditHistoryUnverified; a run with nothing to verify returns
 // ErrAuditHistoryNothingToVerify; a drop that does not happen returns
 // ErrAuditHistoryDropRefused with the reason.
@@ -445,13 +453,13 @@ func (c *AuditHistoryCopy) copyPartition(ctx context.Context, resolver *AuditEve
 		rows += count.Postgres
 		verified += count.Verified
 	}
-	c.cfg.Progress(fmt.Sprintf("%s: %d events, %d copied by this run, %d verified, %d problems",
-		partition.Name, rows, report.Copied, verified, report.Failures))
+	c.cfg.Progress(fmt.Sprintf("%s: %d events, %d copied and %d rewritten by this run, %d verified, %d problems",
+		partition.Name, rows, report.Copied, report.Rewritten, verified, report.Failures))
 	return report, nil
 }
 
 // copyWindow reads a window's rows, reads back what the store holds of it,
-// writes what is missing, and verifies every row.
+// writes what is missing or incomplete, and verifies every row.
 func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventResolver, from, to time.Time, opts AuditHistoryCopyOptions, report *AuditHistoryPartitionReport, digest hash.Hash) error {
 	records, err := c.readWindow(ctx, resolver, from, to)
 	if err != nil {
@@ -465,19 +473,33 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 		return err
 	}
 	if !opts.VerifyOnly {
-		var missing []AuditRecord
+		// An event is written when verification would fail for want of a write:
+		// the store holds none of it, or holds it without details a write
+		// supplies. The id being in the store says nothing: both adapters write
+		// an event's row before its details, so a failed details write leaves
+		// the row behind, and skipping on its id would block verification for
+		// good.
+		var pending []AuditRecord
+		var rewrite []bool // parallel to pending: the store already held the event
 		for _, record := range records {
-			if len(stored[record.Entry.ID]) == 0 {
-				missing = append(missing, record)
+			copies := stored[record.Entry.ID]
+			if problem, writable := c.inspect(record, copies); problem != "" && writable {
+				pending, rewrite = append(pending, record), append(rewrite, len(copies) > 0)
 			}
 		}
-		if len(missing) > 0 {
-			for start := 0; start < len(missing); start += c.cfg.BatchSize {
-				end := min(start+c.cfg.BatchSize, len(missing))
-				if err := c.write(ctx, missing[start:end]); err != nil {
+		if len(pending) > 0 {
+			for start := 0; start < len(pending); start += c.cfg.BatchSize {
+				end := min(start+c.cfg.BatchSize, len(pending))
+				if err := c.write(ctx, pending[start:end]); err != nil {
 					return err
 				}
-				report.Copied += end - start
+				for _, again := range rewrite[start:end] {
+					if again {
+						report.Rewritten++
+					} else {
+						report.Copied++
+					}
+				}
 			}
 			if stored, err = c.readBack(ctx, from, to); err != nil {
 				return err
@@ -582,34 +604,70 @@ func (c *AuditHistoryCopy) write(ctx context.Context, records []AuditRecord) err
 // event's details must be there, and a content-class event's while it is
 // inside the content window.
 func (c *AuditHistoryCopy) verify(record AuditRecord, copies []StoredAuditEvent) string {
+	problem, _ := c.inspect(record, copies)
+	return problem
+}
+
+// inspect is the one rule for the store's copies of record, shared by what
+// writes and what verifies: what verification finds wrong with them, and
+// whether writing the event again would remove it.
+//
+// A write does when the store holds none of the event, or holds it without the
+// details of a content-class event inside the content window: both adapters
+// keep those in the details table and attach them to every copy of the event by
+// its id, so one more details row completes the copies already there, and the
+// events row the write appends beside them carries the same envelope.
+//
+// A write does not when a copy is wrong in itself — stored under another
+// deployment, with an envelope or a retention class the row does not have, with a
+// details hash that is not the row's, or with details that do not hash to it —
+// because the store is append-only and every copy is verified, so the wrong copy
+// would still be there, and a read of the event may return it. Nor when a
+// security-class copy lacks its details: they live in that copy's own row, which
+// a new row does not complete. Such a copy is a verification failure for an
+// operator to look at. When copies differ in what is wrong, the reason that no
+// write removes is the one returned.
+func (c *AuditHistoryCopy) inspect(record AuditRecord, copies []StoredAuditEvent) (problem string, writable bool) {
 	if len(copies) == 0 {
-		return "missing from the store"
+		return "missing from the store", true
 	}
-	want := record.Entry
 	for _, stored := range copies {
-		got := stored.Entry
+		reason, fixable := c.inspectCopy(record, stored)
 		switch {
-		case stored.DeploymentID != c.cfg.DeploymentID:
-			return fmt.Sprintf("stored under deployment %q", stored.DeploymentID)
-		case got.OrgID != want.OrgID || got.ActorID != want.ActorID || got.ActorType != want.ActorType ||
-			got.EventType != want.EventType || got.SchemaVersion != want.SchemaVersion ||
-			got.Resource != want.Resource || got.ResourceID != want.ResourceID || got.IPAddress != want.IPAddress ||
-			got.ImpersonatedBy != want.ImpersonatedBy || got.IsImpersonated != want.IsImpersonated ||
-			got.ClientID != want.ClientID || !got.CreatedAt.Equal(want.CreatedAt):
-			return "stored envelope differs from the row"
-		case stored.Retention != record.Retention:
-			return fmt.Sprintf("stored as %s, classified %s", stored.Retention, record.Retention)
-		case stored.DetailsSHA256 != record.DetailsSHA256:
-			return "stored details hash differs from the row's"
-		case stored.HasDetails && AuditDetailsSHA256(stored.Details) != record.DetailsSHA256:
-			return "stored details do not hash to the row's hash"
-		case !stored.HasDetails && record.Retention == RetentionSecurity:
-			return "security-class details are missing"
-		case !stored.HasDetails && want.CreatedAt.After(c.cfg.Now().Add(-c.cfg.ContentRetention+auditHistoryDetailsMargin)):
-			return "content details are missing inside the content window"
+		case reason == "":
+		case !fixable:
+			return reason, false
+		case problem == "":
+			problem = reason
 		}
 	}
-	return ""
+	return problem, problem != ""
+}
+
+// inspectCopy is inspect for one stored copy.
+func (c *AuditHistoryCopy) inspectCopy(record AuditRecord, stored StoredAuditEvent) (problem string, writable bool) {
+	want, got := record.Entry, stored.Entry
+	switch {
+	case stored.DeploymentID != c.cfg.DeploymentID:
+		return fmt.Sprintf("stored under deployment %q", stored.DeploymentID), false
+	case got.OrgID != want.OrgID || got.ActorID != want.ActorID || got.ActorType != want.ActorType ||
+		got.EventType != want.EventType || got.SchemaVersion != want.SchemaVersion ||
+		got.Resource != want.Resource || got.ResourceID != want.ResourceID || got.IPAddress != want.IPAddress ||
+		got.ImpersonatedBy != want.ImpersonatedBy || got.IsImpersonated != want.IsImpersonated ||
+		got.ClientID != want.ClientID || !got.CreatedAt.Equal(want.CreatedAt):
+		return "stored envelope differs from the row", false
+	case stored.Retention != record.Retention:
+		return fmt.Sprintf("stored as %s, classified %s", stored.Retention, record.Retention), false
+	case stored.DetailsSHA256 != record.DetailsSHA256:
+		return "stored details hash differs from the row's", false
+	case stored.HasDetails && AuditDetailsSHA256(stored.Details) != record.DetailsSHA256:
+		return "stored details do not hash to the row's hash", false
+	case !stored.HasDetails && record.Retention == RetentionSecurity:
+		return "security-class details are missing", false
+	case !stored.HasDetails && want.CreatedAt.After(c.cfg.Now().Add(-c.cfg.ContentRetention+auditHistoryDetailsMargin)):
+		return "content details are missing inside the content window", true
+	}
+	return "", false
 }
 
 // drop checks that nothing changed since verification and drops the verified

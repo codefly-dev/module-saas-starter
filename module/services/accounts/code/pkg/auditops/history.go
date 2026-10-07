@@ -22,10 +22,12 @@
 // app_control_plane, the authority retention runs under.
 //
 // It is resumable: a run reads each window's rows, reads back what the store
-// holds, appends only the events missing from it, reads the window back again
-// and verifies every event, so a run after an interrupted one copies only what
-// is missing. -verify-only copies nothing, for a re-check once the store has
-// caught up.
+// holds, appends only the events whose stored copies are not complete — those
+// the store lacks, and those it holds without details a write supplies, such as
+// a content-class event whose details write failed — reads the window back again
+// and verifies every event, so a run after an interrupted one finishes what it
+// left. -verify-only copies nothing, for a re-check once the store has caught
+// up.
 //
 // Exit status:
 //

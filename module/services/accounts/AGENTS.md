@@ -116,7 +116,9 @@ survives a restart and reaches every replica, and is only served when it is
   a deployment switching to a swap value copies its `audit_events` rows into the
   store of record and the archive — classified and hashed as the relay does a
   live event — and verifies them by reading them back. It reads back before it
-  writes, so a rerun finishes an interrupted run. Only with `-confirm-drop`,
+  writes, and writes an event again when the store holds it without details a
+  write supplies (`inspect`, the one rule `verify` shares), so a rerun finishes
+  an interrupted run, a failed details write included. Only with `-confirm-drop`,
   after a verification pass in the same run and a recount showing nothing
   changed, does it drop the copied partitions, named one by one through
   `audit_events_drop_verified_partitions` (migration 22), which recounts each
