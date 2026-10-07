@@ -733,6 +733,9 @@ func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in 
 	if !ValidNotificationType(in.Type) {
 		return ModuleNotifyUserResult{}, status.Errorf(codes.InvalidArgument, "invalid notification type %q: must be one of %v", in.Type, NotificationTypes)
 	}
+	if !ValidNotificationActionURL(in.ActionURL) {
+		return ModuleNotifyUserResult{}, status.Errorf(codes.InvalidArgument, "invalid notification action URL %q: must be a same-origin relative path", in.ActionURL)
+	}
 	if err := s.requireTenantMember(ctx, in.Tenant, in.UserID); err != nil {
 		return ModuleNotifyUserResult{}, err
 	}
@@ -792,6 +795,9 @@ func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller
 	}
 	if !ValidNotificationType(in.Type) {
 		return false, status.Errorf(codes.InvalidArgument, "invalid notification type %q: must be one of %v", in.Type, NotificationTypes)
+	}
+	if !ValidNotificationActionURL(in.ActionURL) {
+		return false, status.Errorf(codes.InvalidArgument, "invalid notification action URL %q: must be a same-origin relative path", in.ActionURL)
 	}
 	var members []*gen.OrgMembership
 	if err := s.store.WithOrgTx(ctx, in.Tenant, func(ctx context.Context) error {
