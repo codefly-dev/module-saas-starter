@@ -280,7 +280,9 @@ Postgres transaction.
      warehouse. On ClickHouse, `AUDIT_EVENTS_RETENTION_DAYS` sets the table's
      TTL. On BigQuery the kit creates the events table with no partition
      expiration, and refuses at startup an events table whose partitions expire,
-     since its identity holds no `bigquery.tables.update` to change one;
+     since its identity holds no `bigquery.tables.update` to change one. Both
+     tables must use daily partitions and have no whole-table expiration,
+     including expiration inherited from the dataset when they are created;
    - a **details** table holding the full details of content-class types, kept
      for the shorter content window, `AUDIT_CONTENT_RETENTION_DAYS` — a
      partition expiration on BigQuery, a table TTL on ClickHouse.
@@ -309,15 +311,16 @@ Postgres transaction.
 6. **ClickHouse operating requirements.**
    - Inserts are batched: one insert per table per relay batch. A single-row
      insert creates a data part per insert and ends in too-many-parts errors.
-     `async_insert` is not used and must not be enabled for the adapter's user or
-     profile: the relay deletes a queue row on the insert's acknowledgement, and
+     Every insert explicitly sets `async_insert=0` and
+     `wait_for_async_insert=1`, overriding DSN and user-profile defaults: the
+     relay deletes a queue row on the insert's acknowledgement, and
      an insert acknowledged before its data is stored would let the relay delete
      the only copy.
    - A single-node deployment uses MergeTree and sends neither the quorum nor
      the sequential-read setting below. When `AUDIT_CLICKHOUSE_CLUSTER` is set,
      tables are created `ON CLUSTER` as `ReplicatedMergeTree` with ClickHouse
      Keeper; the cluster must exist before the adapter starts, and a table that
-     already exists must be a `Replicated*MergeTree` as well: a `MergeTree` table
+     already exists must be `ReplicatedMergeTree` as well: a `MergeTree` table
      lives on one node, where no quorum can make an insert durable, so startup
      refuses it by naming the table and its engine rather than accepting it for
      its columns and TTL. Every insert then
@@ -330,6 +333,11 @@ Postgres transaction.
      so on a two-replica cluster one replica down stops appends: the insert fails
      at the quorum timeout, the relay retries with backoff, and the queue grows
      until the replica returns.
+   - Existing tables must use `MergeTree` or `ReplicatedMergeTree`; a declared
+     cluster requires the latter. Engines that sum, collapse, aggregate or
+     replace rows are refused on both deployment shapes:
+     merges must preserve every audit envelope and its details hash, including
+     duplicate rows left by redelivery.
    - The adapter's ClickHouse user holds `CREATE TABLE`, `INSERT` and `SELECT` on
      the database and no `ALTER`, `DELETE`, `UPDATE`, `TRUNCATE` or `DROP`, so it
      cannot rewrite the store of record.
@@ -353,6 +361,10 @@ Postgres transaction.
    the deployment's events in memory at a time, outside the read budget of
    item 4. From then on `audit_events` receives no new rows, and Postgres holds
    only the queue.
+   Missing content details get one repair attempt per event per run, even after
+   several partial writes: duplicate events rows are not evidence of permanent
+   refusal. Verification still checks every copy and blocks removal while any
+   required details are missing or differ.
 
 8. **Conformance.** Every adapter passes one shared test suite: read
    deduplication (after a batch is appended twice, every read returns each

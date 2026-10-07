@@ -408,7 +408,7 @@ func TestATimeBoundOutsideTheColumnRangeIsClamped(t *testing.T) {
 func TestAClusterInsertsWithAQuorumAndReadsSequentially(t *testing.T) {
 	single, err := New(panicConn{}, validConfig())
 	require.NoError(t, err)
-	require.Empty(t, single.writeSettings)
+	require.NotContains(t, single.writeSettings, "insert_quorum")
 	require.NotContains(t, single.readSettings, "select_sequential_consistency")
 
 	cfg := validConfig()
@@ -424,6 +424,10 @@ func TestAClusterInsertsWithAQuorumAndReadsSequentially(t *testing.T) {
 	require.Less(t, time.Duration(timeout)*time.Millisecond, 2*time.Minute, "the quorum gives up before the relay's own attempt does")
 	for name, value := range single.readSettings {
 		require.Equal(t, value, clustered.readSettings[name], "the pinned reading settings are the same on a cluster: %s", name)
+	}
+	for _, store := range []*Store{single, clustered} {
+		require.Equal(t, 0, store.writeSettings["async_insert"], "an acknowledgment must mean the rows reached storage, even under an async user profile")
+		require.Equal(t, 1, store.writeSettings["wait_for_async_insert"], "an insert must never acknowledge buffering alone")
 	}
 }
 
@@ -543,7 +547,7 @@ func same(engine string) func(string) string { return func(string) string { retu
 // A cluster's inserts are made durable by insert_quorum, which counts replicas;
 // a MergeTree table lives on one node and has none to count. The relay deletes
 // its queue rows on the acknowledgement, so a table found on a cluster that is
-// not a Replicated*MergeTree is refused, naming the table and its engine, rather
+// not ReplicatedMergeTree is refused, naming the table and its engine, rather
 // than accepted for having the right columns and TTL.
 func TestEnsureOnAClusterRequiresEveryTableToBeReplicated(t *testing.T) {
 	clustered := validConfig()
@@ -556,7 +560,7 @@ func TestEnsureOnAClusterRequiresEveryTableToBeReplicated(t *testing.T) {
 	}{
 		"a cluster refuses a MergeTree events table": {
 			cfg: clustered, engines: same("MergeTree"),
-			refuse: []string{"table audit.audit_events", "engine MergeTree", `cluster "audit_cluster"`, "Replicated*MergeTree"},
+			refuse: []string{"table audit.audit_events", "engine MergeTree", `cluster "audit_cluster"`, "ReplicatedMergeTree"},
 		},
 		"a cluster refuses a MergeTree details table beside a replicated events table": {
 			cfg: clustered,
@@ -576,10 +580,13 @@ func TestEnsureOnAClusterRequiresEveryTableToBeReplicated(t *testing.T) {
 			cfg: clustered, engines: same("Memory"),
 			refuse: []string{"table audit.audit_events", "engine Memory"},
 		},
-		"a cluster accepts ReplicatedMergeTree":          {cfg: clustered, engines: same("ReplicatedMergeTree")},
-		"a cluster accepts another Replicated MergeTree": {cfg: clustered, engines: same("ReplicatedReplacingMergeTree")},
-		"one server accepts MergeTree":                   {cfg: validConfig(), engines: same("MergeTree")},
-		"one server keeps accepting a replicated table":  {cfg: validConfig(), engines: same("ReplicatedMergeTree")},
+		"a cluster accepts ReplicatedMergeTree": {cfg: clustered, engines: same("ReplicatedMergeTree")},
+		"a cluster refuses ReplicatedReplacingMergeTree": {
+			cfg: clustered, engines: same("ReplicatedReplacingMergeTree"),
+			refuse: []string{"table audit.audit_events", "engine ReplicatedReplacingMergeTree"},
+		},
+		"one server accepts MergeTree":                  {cfg: validConfig(), engines: same("MergeTree")},
+		"one server keeps accepting a replicated table": {cfg: validConfig(), engines: same("ReplicatedMergeTree")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			store, err := New(panicConn{}, tc.cfg)
@@ -598,5 +605,32 @@ func TestEnsureOnAClusterRequiresEveryTableToBeReplicated(t *testing.T) {
 			}
 			require.Empty(t, conn.executed, "a table that exists is never created over")
 		})
+	}
+}
+
+func TestEnsureRejectsTransformingEnginesForEitherTable(t *testing.T) {
+	for _, cluster := range []string{"", "audit_cluster"} {
+		for _, engine := range []string{"ReplacingMergeTree", "SummingMergeTree", "AggregatingMergeTree", "CollapsingMergeTree", "VersionedCollapsingMergeTree"} {
+			for _, prefix := range []string{"", "Replicated"} {
+				for _, table := range []string{EventsTable, DetailsTable} {
+					t.Run(cluster+"/"+prefix+engine+"/"+table, func(t *testing.T) {
+						cfg := validConfig()
+						cfg.Cluster = cluster
+						store, err := New(panicConn{}, cfg)
+						require.NoError(t, err)
+						conn := existingTables(store, func(name string) string {
+							if name == table {
+								return prefix + engine
+							}
+							return "ReplicatedMergeTree"
+						})
+						store.conn = conn
+						err = store.Ensure(context.Background())
+						require.ErrorContains(t, err, "table audit."+table+": engine "+prefix+engine)
+						require.Empty(t, conn.executed)
+					})
+				}
+			}
+		}
 	}
 }

@@ -78,6 +78,58 @@ func TestServerEnsureRefusesAMissingDatabase(t *testing.T) {
 	require.ErrorContains(t, store.Ensure(context.Background()), "does not exist; the deployment creates it")
 }
 
+func TestServerAppendOverridesFireAndForgetProfile(t *testing.T) {
+	_, database := serverDatabase(t)
+	options, err := clickhouse.ParseDSN(os.Getenv("AUDIT_CLICKHOUSE_TEST_DSN"))
+	require.NoError(t, err)
+	options.Auth.Database = database
+	if options.Settings == nil {
+		options.Settings = clickhouse.Settings{}
+	}
+	options.Settings["async_insert"] = 1
+	options.Settings["wait_for_async_insert"] = 0
+	options.Settings["async_insert_use_adaptive_busy_timeout"] = 0
+	options.Settings["async_insert_busy_timeout_ms"] = 60_000
+	conn, err := clickhouse.Open(options)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	store := serverStore(t, conn, database)
+	ctx := context.Background()
+	require.NoError(t, store.Ensure(ctx))
+	org, actor := uuid.NewString(), uuid.NewString()
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	appendBatch(t, store, testDeployment,
+		newRecord(t, org, actor, business.EventAuthLogin, "", at, business.RetentionSecurity, map[string]any{"method": "password"}),
+		newRecord(t, org, actor, business.EventDocumentRead, "doc-1", at.Add(-time.Second), business.RetentionContent, map[string]any{"boundary": "b-1"}),
+	)
+	read := business.AuditRead{Scope: business.OrganizationAuditScope(org), Query: business.AuditQuery{OrgID: org}}
+	listed, _, err := store.ListAuditEvents(ctx, read)
+	require.NoError(t, err)
+	require.Len(t, listed, 2, "acknowledged events must already be stored, rather than waiting in an async buffer")
+	require.Equal(t, map[string]any{"boundary": "b-1"}, listed[1].Payload, "the content details insert must also be synchronous")
+}
+
+func TestServerEnsureRejectsTransformingEngines(t *testing.T) {
+	for _, engine := range []string{"ReplacingMergeTree", "SummingMergeTree", "AggregatingMergeTree"} {
+		for _, table := range []string{EventsTable, DetailsTable} {
+			t.Run(engine+"/"+table, func(t *testing.T) {
+				conn, database := serverDatabase(t)
+				store := serverStore(t, conn, database)
+				ctx := context.Background()
+				for _, spec := range store.tableSpecs() {
+					statement := store.createStatement(spec)
+					if spec.name == table {
+						statement = strings.Replace(statement, "ENGINE = MergeTree", "ENGINE = "+engine, 1)
+						statement = strings.Replace(statement, "ORDER BY (deployment_id, org_id, occurred_at, event_id)", "ORDER BY (deployment_id, org_id)", 1)
+					}
+					require.NoError(t, conn.Exec(ctx, statement))
+				}
+				require.ErrorContains(t, store.Ensure(ctx), "table "+database+"."+table+": engine "+engine)
+			})
+		}
+	}
+}
+
 func TestServerEnsureCreatesBothTablesOnceAndRefusesAMismatch(t *testing.T) {
 	conn, database := serverDatabase(t)
 	ctx := context.Background()

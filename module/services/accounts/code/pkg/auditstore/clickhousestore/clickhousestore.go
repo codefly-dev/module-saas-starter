@@ -114,8 +114,8 @@ type Store struct {
 	exportMaxBytes int64
 	// aggregateMaxBytes is the most state an aggregation keeps before it gives up.
 	aggregateMaxBytes int64
-	// writeSettings are sent with every insert: on a cluster, the quorum that
-	// makes an acknowledgement durable.
+	// writeSettings are sent with every insert: synchronous storage acknowledgment
+	// and, on a cluster, the quorum that makes it durable across replicas.
 	writeSettings clickhouse.Settings
 	// inService, when set, is told each time an aggregation is evaluated in the
 	// service rather than in ClickHouse; tests use it to prove which ran.
@@ -179,6 +179,11 @@ func New(conn Conn, cfg Config) (*Store, error) {
 			// An unmatched details row reads as '' — no details — not NULL.
 			"join_use_nulls": 0,
 		},
+		// The relay removes queued rows after an acknowledged insert. A DSN or
+		// user profile enabling fire-and-forget async inserts must not turn that
+		// acknowledgment into "buffered in memory", where a crash or failed flush
+		// could lose the rows without a retry. The relay already batches writes.
+		writeSettings: clickhouse.Settings{"async_insert": 0, "wait_for_async_insert": 1},
 	}
 	if cfg.Cluster != "" {
 		// An insert is acknowledged by the replica that took it unless told to
@@ -190,11 +195,9 @@ func New(conn Conn, cfg Config) (*Store, error) {
 		// can then be read as complete against), and gives up before the
 		// relay's own attempt does. A retried block is the same block, which a
 		// replicated table recognizes and does not store twice.
-		store.writeSettings = clickhouse.Settings{
-			"insert_quorum":          "auto",
-			"insert_quorum_parallel": 0,
-			"insert_quorum_timeout":  insertQuorumTimeoutMillis,
-		}
+		store.writeSettings["insert_quorum"] = "auto"
+		store.writeSettings["insert_quorum_parallel"] = 0
+		store.writeSettings["insert_quorum_timeout"] = insertQuorumTimeoutMillis
 		// A read is served only by a replica that holds every quorum insert, so
 		// an event the relay was told is stored is never missing from a read,
 		// and one that never reached the quorum is never in it. A replica that
@@ -348,8 +351,9 @@ const unknownDatabase = 81
 // and refuses a table it finds that does not match: the service's user holds
 // no ALTER, so a mismatch is the deployment's to fix, and a table expiring at
 // a window other than the configured one would keep events or content longer
-// or shorter than the deployment declared. On a cluster it also refuses a table
-// that is not a Replicated*MergeTree, whatever its columns and window: a table
+// or shorter than the deployment declared. Every table must preserve individual
+// rows: only MergeTree and ReplicatedMergeTree are accepted. On a cluster it
+// also refuses a table that is not ReplicatedMergeTree: a table
 // on one node cannot hold a quorum insert, and the relay deletes its queue rows
 // on the insert's acknowledgement.
 func (s *Store) Ensure(ctx context.Context) error {
@@ -381,6 +385,9 @@ func (s *Store) Ensure(ctx context.Context) error {
 			if existing == nil {
 				return fmt.Errorf("clickhouse audit store: table %s.%s was not created", s.database, spec.name)
 			}
+		}
+		if err := rowPreserving(existing); err != nil {
+			return fmt.Errorf("clickhouse audit store: table %s.%s: %w", s.database, spec.name, err)
 		}
 		if s.cluster != "" {
 			if err := replicated(s.cluster, existing); err != nil {
@@ -449,19 +456,31 @@ func (s *Store) describe(ctx context.Context, table string) (*tableShape, error)
 	return shape, nil
 }
 
-// replicated reports why an existing table cannot serve a cluster: its engine
-// is not one of the Replicated*MergeTree engines (ReplicatedMergeTree,
-// ReplicatedReplacingMergeTree, ...). A MergeTree table lives on the one node
-// that holds it, so insert_quorum has no replicas to wait for and an
+// rowPreserving refuses engines that replace, combine or collapse rows during
+// merges. The store verifies columns and TTL, but not the key or extra columns
+// those engines would need to preserve every audit event; having the expected
+// schema alone therefore cannot make them safe as the store of record.
+func rowPreserving(existing *tableShape) error {
+	switch existing.engine {
+	case "MergeTree", "ReplicatedMergeTree":
+		return nil
+	default:
+		return fmt.Errorf("engine %s is not supported for individual audit records; use MergeTree or ReplicatedMergeTree", existing.engine)
+	}
+}
+
+// replicated reports why an existing row-preserving table cannot serve a
+// cluster: its engine is not ReplicatedMergeTree. A MergeTree table lives on
+// the one node that holds it, so insert_quorum has no replicas to wait for and an
 // acknowledged insert is stored once; the relay deletes its queue row on that
 // acknowledgement. The service's user holds no DROP or ALTER, so the
 // deployment replaces the table; the store creates it replicated when it is
 // missing.
 func replicated(cluster string, existing *tableShape) error {
-	if strings.HasPrefix(existing.engine, "Replicated") && strings.HasSuffix(existing.engine, "MergeTree") {
+	if existing.engine == "ReplicatedMergeTree" {
 		return nil
 	}
-	return fmt.Errorf("engine %s is not replicated, and cluster %q is configured: a cluster needs a Replicated*MergeTree table, because a quorum insert cannot be made durable on one node; replace the table with a ReplicatedMergeTree one", existing.engine, cluster)
+	return fmt.Errorf("engine %s is not replicated, and cluster %q is configured: a cluster needs a ReplicatedMergeTree table, because a quorum insert cannot be made durable on one node; replace the table with a ReplicatedMergeTree one", existing.engine, cluster)
 }
 
 // ttlClause is the TTL clause of an engine_full, up to its SETTINGS.

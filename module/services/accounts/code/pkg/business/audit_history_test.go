@@ -1077,6 +1077,35 @@ func historyInspector(t *testing.T, retention time.Duration, now time.Time) *Aud
 	return copier
 }
 
+// Repeated transient failures can leave several events rows before any details
+// row lands. A healthy run must still supply the details to all those copies.
+func TestAuditHistoryResumesAfterConsecutiveDetailsWriteFailures(t *testing.T) {
+	f := newHistoryFixture()
+	f.split = &splitHistoryStore{}
+	bad := f.source.rows[0].ID
+	for range 2 {
+		f.split.failDetails = f.split.appends + 1
+		report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+		require.ErrorContains(t, err, "details write failed")
+		require.False(t, report.Verified)
+		require.Empty(t, f.source.drops)
+	}
+	require.Equal(t, 2, f.split.copies()[bad])
+
+	f.split.failDetails = 0
+	report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	require.True(t, report.Verified)
+	require.Equal(t, int64(len(f.source.rows)), totalsOf(report).verified)
+	require.Equal(t, 3, f.split.copies()[bad], "the healthy repair completes every earlier events row")
+	require.Empty(t, f.source.drops, "repair alone never authorizes removal")
+
+	appends := f.split.appends
+	_, err = f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	require.Equal(t, appends, f.split.appends, "complete events are not written again")
+}
+
 func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
 	copier := historyInspector(t, 7*24*time.Hour, historyNow)
 	// recent is held; margin is a day the store may have expired a few hours ago
@@ -1125,14 +1154,12 @@ func TestAuditHistoryInspectSaysWhatAWriteRemoves(t *testing.T) {
 			record: inside, copies: []StoredAuditEvent{storedOf(inside, func(e *StoredAuditEvent) { otherOrg(e); hasDetails(inside)(e) }), storedOf(inside, nil)},
 			problem: "stored envelope differs from the row",
 		},
-		// A write for missing details is made once: a second copy of the event
-		// beside the first is the proof that one was made.
-		"every copy missing details, so a write was made": {
+		"several incomplete copies can still be repaired": {
 			record: inside, copies: []StoredAuditEvent{storedOf(inside, nil), storedOf(inside, nil)},
-			problem: "content details are missing inside the content window; the store holds 2 copies, so an earlier write did not supply them, and the event is not written again",
+			problem: "content details are missing inside the content window", writable: true,
 		},
-		"every copy missing details in the margin, so a write was made": {
-			record: inMargin, copies: []StoredAuditEvent{storedOf(inMargin, nil), storedOf(inMargin, nil)},
+		"several incomplete copies in the margin can still be repaired": {
+			record: inMargin, copies: []StoredAuditEvent{storedOf(inMargin, nil), storedOf(inMargin, nil)}, writable: true,
 		},
 		"two copies, the details attached": {
 			record: inside, copies: []StoredAuditEvent{storedOf(inside, hasDetails(inside)), storedOf(inside, hasDetails(inside))},
@@ -1173,9 +1200,9 @@ func totalsOf(report AuditHistoryReport) historyTotals {
 // landed — as ClickHouse does when its isolation finds the row, and as BigQuery
 // does when it reports the row invalid (and the rest of that request stopped).
 // That event is a verification failure of its own. It does not stop the copy of
-// the others, and it is not written again on every run: a write for missing
-// details is made once, and the run that finds one already made says so.
-func TestAuditHistoryAPermanentlyRefusedDetailsRowStopsNothingAndIsNotRepeated(t *testing.T) {
+// the others. Each run tries the incomplete event once and keeps verification
+// false while the row is refused; it never loops on that event within the run.
+func TestAuditHistoryAPermanentlyRefusedDetailsRowStopsNothingAndRetriesOncePerRun(t *testing.T) {
 	for name, stopRest := range map[string]bool{"the rest written around the refused row": false, "the rest of the request stopped": true} {
 		t.Run(name, func(t *testing.T) {
 			f := newHistoryFixture()
@@ -1208,8 +1235,8 @@ func TestAuditHistoryAPermanentlyRefusedDetailsRowStopsNothingAndIsNotRepeated(t
 			require.Zero(t, september.Failures)
 			events, archived := len(f.split.events), len(f.archive.batches)
 
-			// The next run makes the one write for the details it is missing and is
-			// refused again; nothing else is written.
+			// The next run attempts the missing details once and is refused again;
+			// nothing else is written.
 			_, totals = run()
 			require.Zero(t, totals.copied+totals.rewritten)
 			require.Equal(t, 2, f.split.attempts[bad])
@@ -1219,17 +1246,18 @@ func TestAuditHistoryAPermanentlyRefusedDetailsRowStopsNothingAndIsNotRepeated(t
 			require.Equal(t, []string{bad}, historyRecordIDs(f.archive.batches[len(f.archive.batches)-1].Records))
 			require.Contains(t, totals.problems[0], "the store refused the event's row for good")
 
-			// Neither this run nor the ones after it write or archive anything.
-			appends := f.split.appends
-			for range 3 {
+			// Duplicate events rows do not disable future repair attempts. Each
+			// bounded run tries only the incomplete event, then fails verification.
+			for retry := range 3 {
+				appends := f.split.appends
+				objects := len(f.archive.batches)
 				_, totals = run()
 				require.Zero(t, totals.copied+totals.rewritten)
-				require.Equal(t, appends, f.split.appends, "nothing is appended")
-				require.Equal(t, events+1, len(f.split.events))
-				require.Len(t, f.archive.batches, archived+1, "nothing is archived")
-				require.Equal(t, 2, f.split.attempts[bad])
-				require.Contains(t, totals.problems[0], "the store holds 2 copies")
-				require.Contains(t, totals.problems[0], "not written again")
+				require.Equal(t, appends+1, f.split.appends, "one attempt per run")
+				require.Equal(t, events+2+retry, len(f.split.events))
+				require.Len(t, f.archive.batches, objects+1, "only the incomplete event is archived")
+				require.Equal(t, 3+retry, f.split.attempts[bad])
+				require.Contains(t, totals.problems[0], "the store refused the event's row for good")
 			}
 		})
 	}
@@ -1300,10 +1328,9 @@ func (s *refusingHistoryStore) AppendAuditBatch(context.Context, AuditBatch) err
 	return s.err
 }
 
-// A write whose details the store accepts and then never shows is made once in a
-// run, once more by the next, and not again: the run that finds the second copy
-// says that a write was made and did not supply them.
-func TestAuditHistoryDetailsWrittenButNeverReadableAreNotWrittenAgainAndAgain(t *testing.T) {
+// Details the store accepts but does not yet show cause at most one repair
+// attempt per run. The event remains unverified until its details are readable.
+func TestAuditHistoryUnreadableDetailsAreRetriedOncePerRun(t *testing.T) {
 	f := newHistoryFixture()
 	bad := f.source.rows[0].ID
 	f.split = &splitHistoryStore{unreadable: map[string]bool{bad: true}}
@@ -1328,14 +1355,21 @@ func TestAuditHistoryDetailsWrittenButNeverReadableAreNotWrittenAgainAndAgain(t 
 	require.Equal(t, 2, f.split.attempts[bad])
 	require.Contains(t, totals.problems[0], "written by this run, but the read-back finds it incomplete")
 
-	appends, archived := f.split.appends, len(f.archive.batches)
 	for range 2 {
+		appends, archived := f.split.appends, len(f.archive.batches)
 		totals = run()
-		require.Zero(t, totals.copied+totals.rewritten)
-		require.Equal(t, appends, f.split.appends)
-		require.Len(t, f.archive.batches, archived)
-		require.Contains(t, totals.problems[0], "an earlier write did not supply them")
+		require.Equal(t, 1, totals.rewritten)
+		require.Zero(t, totals.copied)
+		require.Equal(t, appends+1, f.split.appends)
+		require.Len(t, f.archive.batches, archived+1)
+		require.Contains(t, totals.problems[0], "written by this run, but the read-back finds it incomplete")
 	}
+	delete(f.split.unreadable, bad)
+	appends := f.split.appends
+	report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	require.True(t, report.Verified)
+	require.Equal(t, appends, f.split.appends, "readable details complete every copy without another write")
 }
 
 // The rule for the details of a content-class event, at the instants where it
@@ -1433,11 +1467,11 @@ func TestAuditHistoryContentDetailsInTheMarginAreWrittenForAndNeverFailed(t *tes
 	for id, attempts := range map[string]int{past: 1, margin1: 2, margin2: 2, held: 2} {
 		require.Equal(t, attempts, f.split.attempts[id], id)
 	}
-	appends := f.split.appends
 	for range 2 {
 		totals = run()
-		require.Zero(t, totals.copied+totals.rewritten)
-		require.Equal(t, appends, f.split.appends)
+		require.Zero(t, totals.copied)
+		require.Equal(t, 3, totals.rewritten, "the held event and both margin events remain eligible for a bounded repair")
+		require.Equal(t, 1, f.split.attempts[past], "expired details are not rewritten")
 	}
 }
 

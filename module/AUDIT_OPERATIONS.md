@@ -53,21 +53,22 @@ instant the warehouse may still hold them: the event is appended to supply them
 and never fails for lacking them. After that it is neither appended nor required
 to have them.
 
-An event is appended again for missing details **once**. When the warehouse holds
-more than one copy of an event and still no details, an earlier write did not
-supply them (the warehouse refused the row, or accepted it and does not show it),
-and another would add an events row and an archive object and change nothing. The
-event stays a verification failure, and the report says how many copies the
-warehouse holds. An event written in a run is never written again in that run,
-whatever the read-back shows.
+An incomplete event gets at most **one repair attempt per run**, however many
+copies the warehouse already holds. Repeated temporary failures can write the
+events row each time without writing its details; the number of copies does not
+establish a permanent refusal. A later run can supply the missing details to all
+copies once the warehouse recovers. Missing details inside the content window
+continue to fail verification. An event written in a run is never written again
+in that run, whatever the read-back shows.
 
 An event whose row the warehouse refuses for good (a row too large, a value its
 column cannot hold) fails verification **by itself**: the rest of its batch and of
 the run are copied, and the report names the event (the warehouse's own message is
 not printed). If the events row was refused, nothing of the event is stored and
 every run tries it again, archiving that event alone each time. If only the details
-row was refused, the next run writes the event once more and later runs do not.
-Either way the partitions are not dropped: the command has no way to skip an event.
+row was refused, each later run attempts to supply it once more. Either way the
+partitions are not dropped while verification fails: the command has no way to
+skip an event.
 
 Each write archives its batch again: the archive never overwrites an object, so a
 rewrite adds one that holds the event a second time. That is safe because archive

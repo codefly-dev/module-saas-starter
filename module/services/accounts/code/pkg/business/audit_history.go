@@ -172,10 +172,10 @@ type AuditHistoryPartitionReport struct {
 	// Rewritten is how many events this run wrote again because the store held
 	// them without details that a write supplies (a content-class event whose
 	// details write was lost); the rest were already complete. An event is
-	// written again only while the store holds one copy of it, so a rewrite that
-	// does not supply the details is made once, not on every run. Events the
-	// store refused for good are in neither Copied nor Rewritten: they are
-	// problems.
+	// written at most once by this run, whatever the number of earlier copies:
+	// repeated transient details failures can leave several events rows behind.
+	// Events the store refused for good are in neither Copied nor Rewritten:
+	// they are problems.
 	Rewritten int
 	// Orgs counts the partition's events per organization ("" is the
 	// platform's).
@@ -699,11 +699,11 @@ func (c *AuditHistoryCopy) verify(record AuditRecord, copies []StoredAuditEvent)
 // operator to look at. When copies differ in what is wrong, the reason that no
 // write removes is the one returned.
 //
-// A write for missing details is made once: when the store holds more than one
-// copy of the event, a write has already been made and did not supply them
-// (refused for good, or written and not readable), and another would add a copy
-// and an archive object and conclude the same. The failure stays, with the count
-// of copies as its reason.
+// Earlier copies do not establish why details are missing: each can come from a
+// transient failure after its events row landed. Every run gets one write pass
+// for incomplete events, even after several failures. A permanent row refusal
+// ends that event's write attempt in this run; missing details still prevent
+// verification and removal, and a later run can repair them after recovery.
 func (c *AuditHistoryCopy) inspect(record AuditRecord, copies []StoredAuditEvent) (problem string, writable bool) {
 	if len(copies) == 0 {
 		return "missing from the store", true
@@ -719,12 +719,6 @@ func (c *AuditHistoryCopy) inspect(record AuditRecord, copies []StoredAuditEvent
 				problem = reason
 			}
 		}
-	}
-	if writable && len(copies) > 1 {
-		if problem != "" {
-			problem = fmt.Sprintf("%s; the store holds %d copies, so an earlier write did not supply them, and the event is not written again", problem, len(copies))
-		}
-		return problem, false
 	}
 	return problem, writable
 }

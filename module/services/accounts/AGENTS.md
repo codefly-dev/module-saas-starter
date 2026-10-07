@@ -118,8 +118,9 @@ survives a restart and reaches every replica, and is only served when it is
   live event — and verifies them by reading them back. It reads back before it
   writes, and writes an event again when the store holds it without details a
   write supplies (`inspect`, the one rule `verify` shares), so a rerun finishes
-  an interrupted run, a failed details write included. That rewrite is made once
-  per event (a second copy in the store means it was), and an event the store
+  an interrupted run, repeated failed details writes included. That rewrite is
+  made at most once per event per run; earlier copies never prove a permanent
+  refusal. An event the store
   refuses for good fails verification alone, as the relay sets one row aside. Only with `-confirm-drop`,
   after a verification pass in the same run and a recount showing nothing
   changed, does it drop the copied partitions, named one by one through

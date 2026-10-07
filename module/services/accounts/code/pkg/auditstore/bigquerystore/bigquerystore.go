@@ -265,7 +265,9 @@ func metadataFor(spec tableSpec) *bigquery.TableMetadata {
 // refuses a table it finds that does not match: the writer holds no
 // bigquery.tables.update, so a mismatch is the deployment's to fix, and a
 // details table expiring at a window other than the configured one would keep
-// content longer or shorter than the deployment declared.
+// content longer or shorter than the deployment declared. Whole-table expiry
+// is refused too, including expiry inherited from the dataset when a table is
+// created: it deletes every partition regardless of the configured window.
 func (s *Store) Ensure(ctx context.Context) error {
 	dataset := s.client.Dataset(s.dataset)
 	if _, err := dataset.Metadata(ctx); err != nil {
@@ -297,9 +299,15 @@ func (s *Store) Ensure(ctx context.Context) error {
 
 // conforms reports how an existing table differs from what the store writes.
 func conforms(spec tableSpec, existing *bigquery.TableMetadata) error {
+	if !existing.ExpirationTime.IsZero() {
+		return fmt.Errorf("table expires at %s; whole-table expiration must be disabled", existing.ExpirationTime.UTC().Format(time.RFC3339))
+	}
 	partitioning := existing.TimePartitioning
 	if partitioning == nil || partitioning.Field != "occurred_at" {
 		return errors.New("is not partitioned on occurred_at")
+	}
+	if partitioning.Type != bigquery.DayPartitioningType {
+		return fmt.Errorf("partitions use %q granularity, want DAY on occurred_at", partitioning.Type)
 	}
 	if partitioning.Expiration != spec.expiration {
 		return fmt.Errorf("partitions expire after %s, the configured window is %s", partitioning.Expiration, spec.expiration)
