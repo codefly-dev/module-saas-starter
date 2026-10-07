@@ -2,6 +2,28 @@ package keyservice
 
 // GCP Cloud KMS, the first `kms` backend.
 //
+// LABELLED STOPGAP — this file names a cloud vendor, and a service should not.
+//
+// Everywhere else in this host, "where a dependency lives" is resolved by the
+// platform: accounts declares that it needs a `vault` and reads its address
+// through the Codefly projection, so it never hardcodes one. This file breaks
+// that rule on purpose and visibly: the Cloud KMS endpoint and the metadata
+// server are hardcoded below, and the resource-name grammar, purposes and
+// algorithms are Google's. Adding AWS or Azure therefore means editing accounts,
+// which is the opposite of what a key-service seam is for.
+//
+// It is here because there is nothing to resolve yet. Codefly can express "this
+// cell runs a Vault" (`kind: cell-vault`, module/deployment/README.md) but has no
+// equivalent for "this cell has a key service", so there is no projection for
+// accounts to read and no agent that owns the driver — the way `service-vault`
+// owns Vault's. The gap is filed against the CLI, and when a key-service
+// dependency kind exists this driver moves below the seam and nothing above it
+// changes: the envelope framing, the purpose binding, the cutover and the
+// re-seal sweep are all vendor-neutral already.
+//
+// Do not add a second cloud's driver here. Adding one would make this the place
+// cloud drivers live, which is the state this comment exists to prevent.
+//
 // A hosted cell already runs a managed key service, so accounts does not need a
 // stateful secrets store to hold two keys. What the configuration carries is key
 // NAMES — values, no files, no stored credential — and the workload

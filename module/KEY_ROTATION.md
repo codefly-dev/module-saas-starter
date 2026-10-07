@@ -55,6 +55,16 @@ TTL — or within TTL + grace if accounts is unreachable for the whole window.
 
 ## The key service
 
+> **Where the cloud driver lives is a labelled stopgap.** accounts holds the GCP
+> Cloud KMS driver itself — the endpoint, the metadata server, Google's
+> resource-name grammar — because Codefly can express "this cell runs a Vault"
+> (`kind: cell-vault`) but has no equivalent for "this cell has a key service",
+> so there is no projection to read and no agent that owns the driver the way
+> `service-vault` owns Vault's. Filed as codefly-dev/cli#924. Everything above
+> the seam is already vendor-neutral, so when that kind exists the driver moves
+> below it and nothing here changes.
+
+
 Two backends, selected per key family in the `key-service` group
 (`module/configurations/local/key-service.env` carries the full binding):
 
