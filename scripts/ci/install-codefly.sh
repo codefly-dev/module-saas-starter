@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.179}"
+version="${CODEFLY_VERSION:-0.1.180}"
 case "${version}" in
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
@@ -68,6 +68,27 @@ case "${version}" in
     # resolver registered where every command's context is born) only helps a
     # solution composed against this host resolve.
     checksum=6e7666ef095815a77c10fb1644c69e17b0e8869476c18713bfaa496971b5c45f
+    ;;
+  0.1.180)
+    # THE FIRST RELEASE THAT VENDORS CORE v0.14.0 (cli#914, tag bb5b14f5).
+    #
+    # It is what makes the declarations this repository now authors loadable at
+    # all: v0.14.0 refuses `allow-modules` on an export by name — an allow-list is
+    # derived from the consumers' declared service dependencies, never written by
+    # the module it would grant — and requires `exposure` on a public endpoint.
+    #
+    # IT MOVES IN ITS OWN PR, AFTER the declarations, and the order is forced.
+    # `codefly ci plan` runs with `--base ${CODEFLY_BASE}` and at this version
+    # loads the BASE revision's workspace as well as the head, so while the base
+    # still authored the nine wildcards the plan step failed on the BASE whatever
+    # the head looked like. The declarations had to reach main first; only then do
+    # base and head both load under v0.14.0 and the gate pass.
+    #
+    # Verified rather than taken from the release notes: `go version -m` on this
+    # exact archive reports `codefly-dev/core v0.14.0` and
+    # `sdk-go/workcontext v0.0.0-20261007042459-a9cae91487bc`, and the checksum
+    # below is the line in the release's own checksums.txt.
+    checksum=af63538645fe092dfcf2fdec3887532db1bd58507295d1f126ddec4fa351c6db
     ;;
   *)
     echo "Unsupported Codefly CI version: ${version}" >&2
