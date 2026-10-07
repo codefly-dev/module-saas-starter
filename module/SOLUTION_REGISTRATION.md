@@ -113,6 +113,17 @@ place only: the gateway's `ext_authz`, read through
 `lib/auth-session.ts` decodes an access token without verifying it, so an
 organization taken from there is one the caller chose.
 
+`GET /api/solutions/<id>/installation` is the third projection, and the one
+a solution PAGE consumes. It answers the verified viewer organization's active
+installation of the routed solution (`{installationId, healthy}`), through the same
+`entitledSolutions` join as the menu, and `404` for a solution that is not
+registered or not entitled to the viewer alike. The solution outlet reads it with
+the viewer's session and hands the id to the page as `SolutionBinding.installationId`.
+A page never names an installation itself: one it chose could be another
+organization's. The gateway's `/solutions/_entitlements` entries carry
+`installationId` for this; the authority already returned it and the gateway used
+to drop it.
+
 The authority answer is `SolutionEntitlementService.ListSolutionEntitlements`,
 which reads the installation set and the scope grant + share union in **one**
 transaction, so the two can never describe different moments. The join key is the

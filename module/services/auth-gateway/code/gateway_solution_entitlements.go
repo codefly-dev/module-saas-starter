@@ -157,6 +157,12 @@ type solutionEntitlementEntry struct {
 	// The boundary that admitted it, so a consumer can say WHICH grant made a
 	// solution visible without a second authority call.
 	ScopeNodeID string `json:"scopeNodeId"`
+	// The organization's active installation of this target, the one the grant
+	// above was issued in. A solution acting in it (an agent module binds every
+	// turn to one) needs it handed to the page by the host: resolved here from
+	// the verified viewer, never named by the page, which could otherwise name
+	// another organization's installation.
+	InstallationID string `json:"installationId"`
 }
 
 // handleSolutionEntitlements answers what the calling viewer may use.
@@ -294,9 +300,10 @@ func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer s
 		}
 		for _, entitlement := range resp.GetEntitlements() {
 			entries = append(entries, solutionEntitlementEntry{
-				TargetID:    entitlement.GetTargetId(),
-				Healthy:     entitlement.GetHealthy(),
-				ScopeNodeID: entitlement.GetRootScopeNodeId(),
+				TargetID:       entitlement.GetTargetId(),
+				Healthy:        entitlement.GetHealthy(),
+				ScopeNodeID:    entitlement.GetRootScopeNodeId(),
+				InstallationID: entitlement.GetInstallationId(),
 			})
 		}
 		token = resp.GetNextPageToken()

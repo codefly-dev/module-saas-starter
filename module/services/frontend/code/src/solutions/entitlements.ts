@@ -49,6 +49,12 @@ export interface SolutionEntitlement {
 	healthy: boolean;
 	/** The scope node whose grant admitted it. */
 	scopeNodeId: string;
+	/**
+	 * The organization's active installation of this target. Empty when the
+	 * gateway did not say (an older gateway): absence is "not told", never a
+	 * value a consumer may substitute for.
+	 */
+	installationId: string;
 }
 
 /** The verified viewer, and everything that viewer may use. */
@@ -146,6 +152,7 @@ interface GatewayEntitlementEntry {
 	targetId?: unknown;
 	healthy?: unknown;
 	scopeNodeId?: unknown;
+	installationId?: unknown;
 }
 
 /**
@@ -162,7 +169,7 @@ function entitlementRevision(entitlements: SolutionEntitlement[]): string {
 	const canonical = entitlements
 		.map(
 			(entitlement) =>
-				`${entitlement.targetId}\u0000${entitlement.scopeNodeId}\u0000${entitlement.healthy ? "1" : "0"}`,
+				`${entitlement.targetId}\u0000${entitlement.scopeNodeId}\u0000${entitlement.installationId}\u0000${entitlement.healthy ? "1" : "0"}`,
 		)
 		.sort()
 		.join("\u0001");
@@ -204,6 +211,8 @@ function parseEntitlements(body: unknown): ViewerEntitlements | null {
 			healthy: entry.healthy,
 			scopeNodeId:
 				typeof entry.scopeNodeId === "string" ? entry.scopeNodeId : "",
+			installationId:
+				typeof entry.installationId === "string" ? entry.installationId : "",
 		});
 	}
 	return {
