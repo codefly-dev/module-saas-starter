@@ -150,6 +150,8 @@ pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthLookupTx: withCon
 pkg/infra/postgres_client_authorization.go: (*PostgresStore).ConsumeClientAuthorizationCode: WithControlPlane
 pkg/infra/postgres_datasource_sources.go: (*PostgresStore).GetDatasourceSourceByID: WithControlPlane
 pkg/infra/postgres_installations.go: (*PostgresStore).ResolveInstallationAuthority: WithControlPlane
+pkg/infra/postgres_keyservice_reseal.go: (*PostgresStore).resealColumn: WithControlPlane
+pkg/infra/postgres_keyservice_reseal.go: (*PostgresStore).resealColumn: WithControlPlane
 pkg/infra/postgres_membership_diagnostic.go: (*PostgresStore).ListMembershipIntegrityFindings: WithControlPlane
 pkg/infra/postgres_membership_diagnostic.go: (*PostgresStore).RecordMembershipIntegrityFindings: WithControlPlane
 pkg/infra/postgres_mfa.go: (*PostgresStore).MigrateLegacyMFASecrets: WithControlPlane

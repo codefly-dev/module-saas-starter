@@ -64,7 +64,7 @@ func (s *PostgresStore) MigrateLegacyMFASecrets(ctx context.Context, cipher busi
 		if _, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(item.plaintext)); err != nil {
 			return migrated, fmt.Errorf("legacy MFA secret %s is not valid base32: %w", item.id, err)
 		}
-		envelope, err := cipher.EncryptSecret(ctx, "mfa-totp", item.plaintext)
+		envelope, err := cipher.EncryptSecret(ctx, business.MFATOTPPurpose, item.plaintext)
 		if err != nil {
 			return migrated, fmt.Errorf("encrypt legacy MFA secret %s: %w", item.id, err)
 		}

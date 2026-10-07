@@ -373,6 +373,35 @@ func doWork(ctx context.Context) (Clean, error) {
 			wool.Field("count", migrated),
 			wool.Field("disabled_empty_secret_endpoints", disabled))
 	}
+	// A key-service cutover: re-seal every enveloped column under the selected
+	// backend, and report what still references the one being migrated away
+	// from. This runs only while a previous backend is configured, which is
+	// exactly the cutover window — a settled deployment does no work here.
+	//
+	// Reads already work from the moment both backends are bound, because every
+	// envelope names the backend that sealed it. This exists for the other half:
+	// withdrawing the outgoing backend is safe only once nothing references it,
+	// and the remaining count is what an operator reads to know that. The sweep
+	// is restart-safe and idempotent, so an interrupted run resumes and two
+	// replicas cannot fight over a row.
+	if previous := cipher.PreviousTag(); previous != "" {
+		outcomes, err := store.ResealEnvelopes(ctx, cipher)
+		resealed, remaining, detail := infra.ResealReport(outcomes)
+		if err != nil {
+			return nil, fmt.Errorf("re-seal stored credentials under the selected key service: %w", err)
+		}
+		w.Info("re-sealed stored credentials under the selected key service",
+			wool.Field("resealed", resealed),
+			wool.Field("previous_backend", previous),
+			wool.Field("still_referencing_another_backend", len(remaining) > 0))
+		if len(remaining) > 0 {
+			// Named, not merely counted: an operator who withdraws the previous
+			// backend now makes these unreadable, and "which rows" is the
+			// difference between a retry and an incident.
+			w.Warn("stored credentials still reference a key service other than the selected one — do not withdraw it yet",
+				wool.Field("columns", strings.Join(detail, "; ")))
+		}
+	}
 
 	// Auth pipeline: IdentityResolver + JWTMinter + optional provider
 	// validator/exchanger chain for the OAuth code flow.
