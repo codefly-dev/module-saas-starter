@@ -110,6 +110,12 @@ func TestModuleNotifyUser_StoresAndResolvesASameOriginDestination(t *testing.T) 
 	require.NoError(t, err)
 	backend := &fakeJobBackend{}
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{modulePrincSvc: {}})
+	// Every capability path re-reads LIVE module authority before it acts, so a
+	// service with no live read authorizes nothing at all rather than deciding on
+	// the declared ceiling alone. This test arrived against the older contract,
+	// where each path read only the declared grant; wiring the live read is the
+	// same one line every other capability test here carries.
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
 
 	const destination = "/documents/doc-7/comments/3?page=2#reply"
