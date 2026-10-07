@@ -48,9 +48,15 @@ type Aggregator struct {
 }
 
 // What the state of an aggregation costs, counted rather than measured so the
-// bound is one number the deployment chose. The figures err high: a bucket's
-// cost includes the bucket it is answered as, and a sample's the 8 bytes of its
-// float, not the capacity a slice that grows by doubling may hold past it.
+// bound is one number the deployment chose. A bucket's cost includes the bucket
+// it is answered as. A sample is counted at the 8 bytes of its float, not at the
+// capacity of the slice that holds a group's samples: append leaves that slice
+// up to a quarter larger than what it holds once a group has a few hundred
+// samples (up to twice before), and keeps the slice it replaces beside it while
+// it copies, so what a percentile really holds is up to about two and a quarter
+// times what is counted, and the bound is set with that in mind. A store that
+// receives its samples as a block counts them at what it really holds
+// (clickhousestore's scannedSampleBytes).
 const (
 	// bucketBytes is a bucket's own: the group, its entries in the map and the
 	// ordered list, and the answer built from it.
@@ -78,7 +84,9 @@ func BucketBytes(keys []string, metrics int) int64 {
 	return n
 }
 
-// SampleBytes is the state of n percentile inputs.
+// SampleBytes is the state of n percentile inputs: the 8 bytes of each float64
+// in the slice that holds them. The percentile is taken by sorting that slice
+// in place (PercentileContInPlace), so it costs no second copy.
 func SampleBytes(n int) int64 { return int64(n) * sampleBytes }
 
 // StateBudget counts the bytes an aggregation retains across every window it
@@ -106,9 +114,16 @@ func NewStateBudget(limit int64) (*StateBudget, error) {
 func (b *StateBudget) Take(n int64) error {
 	b.held += n
 	if b.held > b.limit {
-		return fmt.Errorf("%w (the bound is %d bytes)", business.ErrAuditAggregateTooLarge, b.limit)
+		return b.Exceeded()
 	}
 	return nil
+}
+
+// Exceeded is the refusal Take reports once the limit is passed. A store that
+// learns the bound was passed without holding the bytes to count (a statement
+// that withheld its rows because they would pass it) reports the same one.
+func (b *StateBudget) Exceeded() error {
+	return fmt.Errorf("%w (the bound is %d bytes)", business.ErrAuditAggregateTooLarge, b.limit)
 }
 
 // Held is the bytes counted so far.
@@ -371,7 +386,10 @@ func (a *Aggregator) Buckets() []business.AuditAggregateBucket {
 			case "max":
 				bucket.Metrics[alias] = acc.max
 			case "percentile":
-				bucket.Metrics[alias] = PercentileCont(acc.values, metric.Percentile)
+				// The state is the aggregation's own and is never read in order,
+				// so it is sorted where it lies: a copy would hold every sample
+				// twice, once more than the budget counts.
+				bucket.Metrics[alias] = PercentileContInPlace(acc.values, metric.Percentile)
 			}
 		}
 		for _, derived := range a.spec.Derived {
@@ -398,12 +416,19 @@ func (a *Aggregator) Buckets() []business.AuditAggregateBucket {
 // does on baseline amd64, so the result matches the Postgres of the same
 // architecture to the last bit. Forcing either rounding would match only one.
 func PercentileCont(values []float64, p float64) float64 {
-	sorted := append([]float64(nil), values...)
-	sort.Float64s(sorted)
-	position := p * float64(len(sorted)-1)
+	return PercentileContInPlace(append([]float64(nil), values...), p)
+}
+
+// PercentileContInPlace is PercentileCont for a caller that owns values and
+// does not need their order: it sorts them where they lie instead of holding
+// a second copy of every sample, which a budget that counts one copy would not
+// have counted. values must not be empty.
+func PercentileContInPlace(values []float64, p float64) float64 {
+	sort.Float64s(values)
+	position := p * float64(len(values)-1)
 	first := math.Floor(position)
 	second := math.Ceil(position)
-	low, high := sorted[int(first)], sorted[int(second)]
+	low, high := values[int(first)], values[int(second)]
 	if first == second {
 		return low
 	}

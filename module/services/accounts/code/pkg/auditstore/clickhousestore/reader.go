@@ -322,11 +322,12 @@ func (s *Store) ExportAuditEvents(ctx context.Context, read business.AuditRead) 
 // AggregateAuditEvents implements business.AuditReader: one GROUP BY in
 // ClickHouse when it is exact for this read (aggregate.go), and otherwise the
 // deduplicated, matched events aggregated in the service. Either way the state
-// the service keeps for the answer (the buckets, and in the second the
-// percentile samples and distinct values) is counted against the store's
-// aggregation bound, and the read gives up with
-// business.ErrAuditAggregateTooLarge, never a partial answer, as soon as it
-// passes it.
+// the service holds for the answer (the buckets and the percentile samples, and
+// in the second the distinct values) is counted against the store's aggregation
+// bound, and the read gives up with business.ErrAuditAggregateTooLarge, never a
+// partial answer, as soon as it passes it. In the first, ClickHouse itself
+// withholds the keys and samples of a read that would pass the bound, so the
+// service never receives them to count (aggregate.go).
 func (s *Store) AggregateAuditEvents(ctx context.Context, read business.AuditRead, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
 	m, err := auditeval.NewMatcher(read)
 	if err != nil {
@@ -364,21 +365,25 @@ func (s *Store) AggregateAuditEvents(ctx context.Context, read business.AuditRea
 
 // aggregateInClickHouse runs the aggregation statement. exact is false when a
 // row it grouped is one ClickHouse cannot read as Postgres does, and the
-// buckets are then discarded. Each bucket it keeps is counted against state.
+// buckets are then discarded. Each bucket it keeps, and each percentile input it
+// receives, is counted against state; the statement itself returns nothing once
+// the read would pass the state's limit (aggregate.go), so the service neither
+// holds nor sorts more than the limit before it refuses.
 func (s *Store) aggregateInClickHouse(ctx context.Context, pl plan, spec business.AuditAggregationSpec, types business.AuditEventTypeIndex, state *auditeval.StateBudget) ([]business.AuditAggregateBucket, bool, error) {
 	agg, ok, err := s.buildAggregation(pl, spec, types)
 	if err != nil || !ok {
 		return nil, err == nil, err
 	}
 	var out []business.AuditAggregateBucket
-	var inexact uint64
+	inexact := false
 	err = s.scan(ctx, agg.statement, agg.args, func(rows driver.Rows) (bool, error) {
 		keys := make([]string, agg.dims)
-		var count, rowInexact uint64
+		var count, readInexact uint64
+		var over uint8
 		values := make([]float64, len(agg.metrics))
 		arrays := make([][]float64, len(agg.metrics))
 		samples := make([]uint64, len(agg.metrics))
-		dest := make([]any, 0, agg.dims+2+2*len(agg.metrics))
+		dest := make([]any, 0, agg.dims+3+2*len(agg.metrics))
 		for i := range keys {
 			dest = append(dest, &keys[i])
 		}
@@ -393,15 +398,37 @@ func (s *Store) aggregateInClickHouse(ctx context.Context, pl plan, spec busines
 		for i := range samples {
 			dest = append(dest, &samples[i])
 		}
-		dest = append(dest, &rowInexact)
+		dest = append(dest, &readInexact, &over)
 		if err := rows.Scan(dest...); err != nil {
 			return false, fmt.Errorf("clickhouse audit store: read aggregation: %w", err)
 		}
-		inexact += rowInexact
-		if inexact > 0 {
+		// Both are totals of the whole read, repeated on every row, so the first
+		// row decides. An inexact row is the service's to evaluate, whatever the
+		// bound says of this statement's own state; the statement has withheld
+		// its keys and arrays in either case, and neither is read.
+		if readInexact > 0 {
+			inexact = true
 			return false, nil
 		}
-		if err := state.Take(auditeval.BucketBytes(keys, len(agg.metrics))); err != nil {
+		if over > 0 {
+			return false, state.Exceeded()
+		}
+		held := auditeval.BucketBytes(keys, len(agg.metrics))
+		for i, metric := range agg.metrics {
+			if metric.Op != "percentile" {
+				continue
+			}
+			// A count past the most inputs the budget holds is past it alone,
+			// and keeps the products below in range.
+			if samples[i] > uint64(s.maxSamples()) {
+				return false, state.Exceeded()
+			}
+			if uint64(len(arrays[i])) != samples[i] {
+				return false, fmt.Errorf("clickhouse audit store: read aggregation: %d percentile inputs returned of %d counted", len(arrays[i]), samples[i])
+			}
+			held += int64(samples[i]) * scannedSampleBytes
+		}
+		if err := state.Take(held); err != nil {
 			return false, err
 		}
 		bucket := business.AuditAggregateBucket{
@@ -418,7 +445,9 @@ func (s *Store) aggregateInClickHouse(ctx context.Context, pl plan, spec busines
 				continue
 			}
 			if metric.Op == "percentile" {
-				bucket.Metrics[alias] = auditeval.PercentileCont(arrays[i], metric.Percentile)
+				// Sorted where it lies: the slice is this row's own, and a copy
+				// would hold every input once more than state counted.
+				bucket.Metrics[alias] = auditeval.PercentileContInPlace(arrays[i], metric.Percentile)
 			} else {
 				bucket.Metrics[alias] = values[i]
 			}
@@ -436,7 +465,7 @@ func (s *Store) aggregateInClickHouse(ctx context.Context, pl plan, spec busines
 	if err != nil {
 		return nil, false, err
 	}
-	if inexact > 0 {
+	if inexact {
 		return nil, false, nil
 	}
 	return out, true, nil

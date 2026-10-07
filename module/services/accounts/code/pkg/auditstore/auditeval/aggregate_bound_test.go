@@ -3,6 +3,7 @@ package auditeval
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"testing"
 	"time"
 
@@ -139,4 +140,43 @@ func TestABucketsStateCountsItsKeysAndMetrics(t *testing.T) {
 	require.Equal(t, BucketBytes([]string{"x"}, 0)+2*100, BucketBytes([]string{string(make([]byte, 101))}, 0),
 		"a key's text is held twice, in the bucket and in its identity")
 	require.Equal(t, int64(8000), SampleBytes(1000))
+}
+
+func TestAPercentileIsTakenWithoutACopyOfItsInputs(t *testing.T) {
+	// The inputs of a percentile are counted once, at 8 bytes each; taking the
+	// percentile must not hold them a second time.
+	values := []float64{9, 1, 5, 3, 7}
+	require.Equal(t, 5.0, PercentileCont(values, 0.5))
+	require.Equal(t, []float64{9, 1, 5, 3, 7}, values, "PercentileCont leaves its argument alone")
+	require.Equal(t, 5.0, PercentileContInPlace(values, 0.5))
+	require.Equal(t, []float64{1, 3, 5, 7, 9}, values, "PercentileContInPlace sorts where the inputs lie")
+	require.Equal(t, 6.0, PercentileContInPlace(values, 0.625))
+
+	const n = 20000
+	aggregator, err := NewAggregator(business.AuditAggregationSpec{
+		Metrics: []business.AuditMetric{{Op: "percentile", Field: "payload:n", Percentile: 0.5, Alias: "p50"}},
+	}, nil, 0)
+	require.NoError(t, err)
+	require.NoError(t, offerWindow(aggregator, 0, n))
+	held := aggregator.state.Held()
+	require.GreaterOrEqual(t, held, SampleBytes(n))
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	buckets := aggregator.Buckets()
+	runtime.ReadMemStats(&after)
+	require.Equal(t, 9999.5, buckets[0].Metrics["p50"])
+	require.Less(t, int64(after.TotalAlloc-before.TotalAlloc), SampleBytes(n)/4, "no copy of the %d inputs was made", n)
+	require.Equal(t, buckets, aggregator.Buckets(), "and the answer is the same asked again")
+	require.Equal(t, held, aggregator.state.Held())
+}
+
+func TestTheRefusalOfAStateBudgetNamesItsBound(t *testing.T) {
+	budget, err := NewStateBudget(1000)
+	require.NoError(t, err)
+	err = budget.Exceeded()
+	require.ErrorIs(t, err, business.ErrAuditAggregateTooLarge)
+	require.ErrorContains(t, err, "the bound is 1000 bytes")
+	require.Zero(t, budget.Held(), "a refusal is not a count")
+	require.ErrorContains(t, budget.Take(1001), "the bound is 1000 bytes", "Take reports the same one")
 }

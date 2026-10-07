@@ -226,8 +226,12 @@ Postgres transaction.
      (`AuditAggregateMaxBytes`, `ReadConfig.AggregateMaxBytes` and
      `clickhousestore.Config.AggregateMaxBytes`), and the read is refused with
      `ResourceExhausted` (`ErrAuditAggregateTooLarge`) as soon as it passes it,
-     never answered in part. A time range, an actor or an event type narrows it,
-     as does grouping by fewer dimensions.
+     never answered in part. The ClickHouse statement counts the same state
+     itself and returns neither keys nor percentile inputs once it would pass the
+     bound (the service holds each input twice while it reads one, so there it is
+     16 bytes), so the service never receives what it could not keep. A time
+     range, an actor or an event type narrows it, as does grouping by fewer
+     dimensions.
    - The history copy (item 7) reads and holds a whole window of the store at a
      time outside this budget.
 

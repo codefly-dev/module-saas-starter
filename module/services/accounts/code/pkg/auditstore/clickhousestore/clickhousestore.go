@@ -85,10 +85,11 @@ type Config struct {
 	// ExportMaxBytes bounds the events one export gathers, counted by their
 	// text (auditeval.Event.Size). Zero is business.AuditExportMaxBytes.
 	ExportMaxBytes int64
-	// AggregateMaxBytes bounds the state one aggregation keeps in the service —
-	// its buckets, and the samples and distinct values of the aggregation the
-	// service evaluates itself — counted by auditeval.StateBudget. Zero is
-	// business.AuditAggregateMaxBytes.
+	// AggregateMaxBytes bounds the state one aggregation holds in the service —
+	// its buckets, its percentile samples, and the distinct values of the
+	// aggregation the service evaluates itself — counted by
+	// auditeval.StateBudget. The statement ClickHouse runs for the aggregation
+	// returns no more than this either. Zero is business.AuditAggregateMaxBytes.
 	AggregateMaxBytes int64
 }
 
