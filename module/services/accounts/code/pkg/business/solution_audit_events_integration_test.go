@@ -26,16 +26,37 @@ import (
 // database is reused across runs without truncation and audit rows are
 // append-only, so every run declares a fresh namespace.
 
+func testSolutionID(t *testing.T) string {
+	t.Helper()
+	return "sol" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
+}
+
 func freshAuditNamespace(t *testing.T) string {
 	t.Helper()
 	return "acme_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 }
 
-func declaringFrontendWrite(id, namespace string) business.SolutionRegistrationWrite {
-	return frontendWrite(id, "publisher-"+id, `{"id":"`+id+`","dashboard":{"events":[`+
-		`{"name":"created","type":"`+namespace+`.item.created","description":"An item was created.",`+
-		`"fields":[{"name":"count","kind":"int"},{"name":"score","kind":"number"},{"name":"stage","kind":"enum","values":["draft","final"]}]},`+
-		`{"name":"login","type":"saas.auth.login"}],"metrics":[],"dashboards":[]}}`)
+func declaringManifestFor(id, namespace string) string {
+	return `{"id":"` + id + `","dashboard":{"events":[` +
+		`{"name":"created","type":"` + namespace + `.item.created","description":"An item was created.",` +
+		`"fields":[{"name":"count","kind":"int"},{"name":"score","kind":"number"},{"name":"stage","kind":"enum","values":["draft","final"]}]}]}}`
+}
+
+func declareAuditManifest(svc *business.Service, id, manifest string) error {
+	parsed, err := business.ParseDeclaredAuditEventTypes(id, manifest)
+	if err != nil {
+		return err
+	}
+	var declarations []business.AuditEventTypeDeclaration
+	for _, typ := range parsed {
+		declaration := business.AuditEventTypeDeclaration{Type: string(typ.Type), Description: typ.Description, Visibility: typ.Visibility}
+		for _, field := range typ.Fields {
+			declaration.Fields = append(declaration.Fields, business.AuditFieldDeclaration{Name: field.Name, Kind: string(field.Kind), Values: field.Enum, PII: field.PII})
+		}
+		declarations = append(declarations, declaration)
+	}
+	_, _, err = svc.ModuleDeclareAuditEventTypes(testCtx, business.ModuleCaller{PrincipalID: business.ModulePrincipalID(id)}, id, declarations)
+	return err
 }
 
 // declaringService is a service over the package store whose operator binding
@@ -47,20 +68,22 @@ func declaringService(t *testing.T, bound map[string][]string) *business.Service
 	require.NoError(t, err)
 	registry := business.ModulePrincipalRegistry{}
 	for solution, namespaces := range bound {
-		registry[business.ModulePrincipalID(solution)] = business.ModulePrincipalGrant{Prefix: solution, Namespaces: namespaces}
+		registry[business.ModulePrincipalID(solution)] = business.ModulePrincipalGrant{Prefix: solution, Namespaces: namespaces, CrossTenant: true}
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModulePrincipals(registry)
 	return svc
 }
 
-func TestSolutionAuditEvents_AdmittedAtRegistrationAndEmitted(t *testing.T) {
+func TestSolutionAuditEvents_DeclaredAndEmitted(t *testing.T) {
 	clearData(t)
 	namespace := freshAuditNamespace(t)
 	solution := testSolutionID(t)
 	eventType := business.EventType(namespace + ".item.created")
 
 	registrar := declaringService(t, map[string][]string{solution: {namespace}})
-	_, err := registrar.PutSolutionRegistration(testCtx, declaringFrontendWrite(solution, namespace))
+	err := declareAuditManifest(registrar, solution, declaringManifestFor(solution, namespace))
 	require.NoError(t, err, "register a solution declaring a typed event")
 
 	var admitted *business.DeclaredAuditEventType
@@ -118,6 +141,7 @@ func TestSolutionAuditEvents_AdmittedAtRegistrationAndEmitted(t *testing.T) {
 	require.NoError(t, err)
 	svc.SetAuditEmitter(emitter)
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Namespaces: []string{namespace}},
 	})
@@ -152,11 +176,11 @@ func TestSolutionAuditEvents_NamespaceBelongsToOneSolution(t *testing.T) {
 	// namespace while its binding stands.
 	registrar := declaringService(t, map[string][]string{first: {namespace}, second: {namespace}})
 
-	_, err := registrar.PutSolutionRegistration(testCtx, declaringFrontendWrite(first, namespace))
+	err := declareAuditManifest(registrar, first, declaringManifestFor(first, namespace))
 	require.NoError(t, err)
 
-	_, err = registrar.PutSolutionRegistration(testCtx, declaringFrontendWrite(second, namespace))
-	require.True(t, errors.Is(err, business.ErrSolutionAuditNamespaceOwned), "err = %v, want the namespace refused", err)
+	err = declareAuditManifest(registrar, second, declaringManifestFor(second, namespace))
+	require.Equal(t, codes.InvalidArgument, status.Code(err), "namespace admission must fail")
 
 	// The refusal rolled the whole write back: the second solution has no record.
 	records, _, err := testService.ListSolutionRegistrations(testCtx, true)
@@ -165,26 +189,12 @@ func TestSolutionAuditEvents_NamespaceBelongsToOneSolution(t *testing.T) {
 		require.NotEqual(t, second, record.SolutionID, "a refused declaration must not store the registration")
 	}
 
-	// Re-registering the owner's identical declaration in a changed manifest is
-	// idempotent, and a field-dropping change is refused.
-	var current *business.SolutionRegistration
-	for _, record := range records {
-		if record.SolutionID == first {
-			current = record
-		}
-	}
-	require.NotNil(t, current)
-	renamed := declaringFrontendWrite(first, namespace)
-	renamed.Frontend.Manifest = strings.Replace(renamed.Frontend.Manifest, `"id":"`+first+`"`, `"id":"`+first+`","schemaVersion":1`, 1)
-	renamed.ExpectedRevision = &current.Revision
-	current, err = registrar.PutSolutionRegistration(testCtx, renamed)
-	require.NoError(t, err, "an identical declaration in a changed manifest")
+	// An identical declaration is idempotent; a field-dropping change is refused.
+	require.NoError(t, declareAuditManifest(registrar, first, declaringManifestFor(first, namespace)))
+	dropping := `{"id":"` + first + `","dashboard":{"events":[{"name":"created","type":"` + namespace + `.item.created","fields":[{"name":"count","kind":"int"}]}]}}`
+	err = declareAuditManifest(registrar, first, dropping)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 
-	dropping := frontendWrite(first, "publisher-"+first, `{"id":"`+first+`","dashboard":{"events":[`+
-		`{"name":"created","type":"`+namespace+`.item.created","fields":[{"name":"count","kind":"int"}]}],"metrics":[],"dashboards":[]}}`)
-	dropping.ExpectedRevision = &current.Revision
-	_, err = registrar.PutSolutionRegistration(testCtx, dropping)
-	require.True(t, errors.Is(err, business.ErrSolutionAuditDeclarationRejected), "err = %v, want a refused change", err)
 }
 
 // The operator's release path against Postgres: unbinding the namespace from
@@ -195,12 +205,10 @@ func TestSolutionAuditEvents_RebindingTransfersTheNamespace(t *testing.T) {
 	holder, successor := testSolutionID(t), testSolutionID(t)
 	eventType := business.EventType(namespace + ".item.created")
 
-	_, err := declaringService(t, map[string][]string{holder: {namespace}}).
-		PutSolutionRegistration(testCtx, declaringFrontendWrite(holder, namespace))
+	err := declareAuditManifest(declaringService(t, map[string][]string{holder: {namespace}}), holder, declaringManifestFor(holder, namespace))
 	require.NoError(t, err)
 
-	_, err = declaringService(t, map[string][]string{successor: {namespace}}).
-		PutSolutionRegistration(testCtx, declaringFrontendWrite(successor, namespace))
+	err = declareAuditManifest(declaringService(t, map[string][]string{successor: {namespace}}), successor, declaringManifestFor(successor, namespace))
 	require.NoError(t, err, "the successor takes over a namespace its holder is no longer bound to")
 
 	var admitted *business.DeclaredAuditEventType
@@ -219,8 +227,7 @@ func TestSolutionAuditEvents_CatalogCollisionFailsTheSync(t *testing.T) {
 	namespace := freshAuditNamespace(t)
 	solution := testSolutionID(t)
 	eventType := business.EventType(namespace + ".item.created")
-	_, err := declaringService(t, map[string][]string{solution: {namespace}}).
-		PutSolutionRegistration(testCtx, declaringFrontendWrite(solution, namespace))
+	err := declareAuditManifest(declaringService(t, map[string][]string{solution: {namespace}}), solution, declaringManifestFor(solution, namespace))
 	require.NoError(t, err)
 
 	for name, colliding := range map[string]business.EventType{

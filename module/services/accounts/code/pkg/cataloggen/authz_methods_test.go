@@ -41,8 +41,11 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 		}
 	}
 	// Artifact approval/authorization/revocation and current installation lookup
-	// are internal module capabilities, never public caller endpoints.
-	require.Equal(t, 53, internalCount)
+	// are internal module capabilities, never public caller endpoints; so is the
+	// declared-presence RPC this branch adds. Base 49, main +4, this branch +1 —
+	// picking either side's number would be silently wrong, so this is read off
+	// the regenerated generated/authz-methods.json.
+	require.Equal(t, 54, internalCount)
 	require.Equal(t, 17, failClosedCount)
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(

@@ -31,7 +31,7 @@ running queries.
 - ✅ Empty-orgID guard.
 - ✅ Connection-level role downgrade (`BeforeAcquire` SET ROLE
   app_tenant) — un-wrapped Store calls return zero rows by default.
-- ✅ Phase 1 — `audit_export_configs` (migration 23).
+- ✅ Phase 1 — `audit_export_configs` (migration 25).
 - ✅ Phase 2A — `webhook_subscriptions`, `webhook_deliveries` (27),
   `api_keys` (28).
 - ✅ Phase 2B — `org_settings`, `invitations`, `organization_members`,

@@ -155,13 +155,12 @@ export function registrationView(entry: CatalogueEntry): FactView {
 				tone: "warning",
 				detail: "A half has never registered.",
 			};
-		case SolutionRegistrationStatus.EXPIRED:
-			return {
-				kind: "value",
-				text: "Expired",
-				tone: "warning",
-				detail: "A half's lease lapsed: its deployment stopped renewing.",
-			};
+		// No EXPIRED case: this host has no lease to lapse. Status is derived
+		// from declared state and complete, compatible observations, so
+		// "a half's lease lapsed" is not a thing the registry can report any
+		// more — the enum dropped the value with the lease itself. A record
+		// whose halves disagree is INCOMPATIBLE and one whose removal applied
+		// is TOMBSTONED; neither is an expiry.
 		case SolutionRegistrationStatus.INCOMPATIBLE:
 			return {
 				kind: "value",

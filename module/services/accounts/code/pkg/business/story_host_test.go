@@ -55,6 +55,14 @@ func TestStory_HOST_ID_001(t *testing.T) {
 	// admission guard on this path — authentication, membership, the actor
 	// ceiling — unexercised.
 	adapters.WithService(testService)
+	// The audience this story mints for is a declared MODULE prefix, and the mint
+	// now holds every audience to the host's derived vocabulary (issue #952). A
+	// deployment declares it through the principal registry; so does the story.
+	previousPrincipals := testService.ModulePrincipals()
+	testService.SetModulePrincipals(business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("documents"): {Prefix: "documents"},
+	})
+	t.Cleanup(func() { testService.SetModulePrincipals(previousPrincipals) })
 	issuer := &adapters.WorkContextAuthorityServer{}
 	issuer.Configure(adapters.WorkContextAuthorityConfiguration{
 		Issuer:     storyWorkContextIssuer,
@@ -166,6 +174,7 @@ func TestStory_HOST_AUD_001(t *testing.T) {
 	jobPool, err := infra.NewJobWorkerPool(ctx)
 	require.NoError(t, err)
 	t.Cleanup(jobPool.Close)
+	modules.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	modules.SetModuleCapabilities(testStore, infra.NewPostgresJobStore(jobPool), business.ModulePrincipalRegistry{
 		modulePrincipal: {Queues: []string{"documents"}},
 	})

@@ -20,25 +20,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SolutionRegistryService_PutSolutionRegistration_FullMethodName    = "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
-	SolutionRegistryService_DeleteSolutionRegistration_FullMethodName = "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration"
-	SolutionRegistryService_ListSolutionRegistrations_FullMethodName  = "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
+	SolutionRegistryService_ListSolutionHostBindings_FullMethodName  = "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings"
+	SolutionRegistryService_ListSolutionRegistrations_FullMethodName = "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
 )
 
 // SolutionRegistryServiceClient is the client API for SolutionRegistryService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// SolutionRegistryService is the durable authority behind both self-registration
-// surfaces. Every method is internal: the gateway is the only client, and it
-// brokers the frontend's half as well as its own.
+// Internal read service for declared solution state. The gateway is the client
+// and brokers the registry projection to the frontend.
 type SolutionRegistryServiceClient interface {
-	// PutSolutionRegistration writes or renews one half of a solution's
-	// registration under compare-and-swap revision semantics.
-	PutSolutionRegistration(ctx context.Context, in *PutSolutionRegistrationRequest, opts ...grpc.CallOption) (*SolutionRegistration, error)
-	// DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
-	// a later heartbeat from the retired deployment cannot resurrect.
-	DeleteSolutionRegistration(ctx context.Context, in *DeleteSolutionRegistrationRequest, opts ...grpc.CallOption) (*SolutionRegistration, error)
+	// ListSolutionHostBindings returns the declared bindings: what delivery has
+	// shown this host, what the host applied, and why a desired generation is not
+	// the applied one (issue #952). It is the answer to "is this solution missing,
+	// or declared and unhealthy?", which neither the registry snapshot nor a health
+	// probe can give on its own.
+	ListSolutionHostBindings(ctx context.Context, in *ListSolutionHostBindingsRequest, opts ...grpc.CallOption) (*ListSolutionHostBindingsResponse, error)
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(ctx context.Context, in *ListSolutionRegistrationsRequest, opts ...grpc.CallOption) (*ListSolutionRegistrationsResponse, error)
@@ -52,20 +50,10 @@ func NewSolutionRegistryServiceClient(cc grpc.ClientConnInterface) SolutionRegis
 	return &solutionRegistryServiceClient{cc}
 }
 
-func (c *solutionRegistryServiceClient) PutSolutionRegistration(ctx context.Context, in *PutSolutionRegistrationRequest, opts ...grpc.CallOption) (*SolutionRegistration, error) {
+func (c *solutionRegistryServiceClient) ListSolutionHostBindings(ctx context.Context, in *ListSolutionHostBindingsRequest, opts ...grpc.CallOption) (*ListSolutionHostBindingsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SolutionRegistration)
-	err := c.cc.Invoke(ctx, SolutionRegistryService_PutSolutionRegistration_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *solutionRegistryServiceClient) DeleteSolutionRegistration(ctx context.Context, in *DeleteSolutionRegistrationRequest, opts ...grpc.CallOption) (*SolutionRegistration, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SolutionRegistration)
-	err := c.cc.Invoke(ctx, SolutionRegistryService_DeleteSolutionRegistration_FullMethodName, in, out, cOpts...)
+	out := new(ListSolutionHostBindingsResponse)
+	err := c.cc.Invoke(ctx, SolutionRegistryService_ListSolutionHostBindings_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -86,16 +74,15 @@ func (c *solutionRegistryServiceClient) ListSolutionRegistrations(ctx context.Co
 // All implementations must embed UnimplementedSolutionRegistryServiceServer
 // for forward compatibility.
 //
-// SolutionRegistryService is the durable authority behind both self-registration
-// surfaces. Every method is internal: the gateway is the only client, and it
-// brokers the frontend's half as well as its own.
+// Internal read service for declared solution state. The gateway is the client
+// and brokers the registry projection to the frontend.
 type SolutionRegistryServiceServer interface {
-	// PutSolutionRegistration writes or renews one half of a solution's
-	// registration under compare-and-swap revision semantics.
-	PutSolutionRegistration(context.Context, *PutSolutionRegistrationRequest) (*SolutionRegistration, error)
-	// DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
-	// a later heartbeat from the retired deployment cannot resurrect.
-	DeleteSolutionRegistration(context.Context, *DeleteSolutionRegistrationRequest) (*SolutionRegistration, error)
+	// ListSolutionHostBindings returns the declared bindings: what delivery has
+	// shown this host, what the host applied, and why a desired generation is not
+	// the applied one (issue #952). It is the answer to "is this solution missing,
+	// or declared and unhealthy?", which neither the registry snapshot nor a health
+	// probe can give on its own.
+	ListSolutionHostBindings(context.Context, *ListSolutionHostBindingsRequest) (*ListSolutionHostBindingsResponse, error)
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(context.Context, *ListSolutionRegistrationsRequest) (*ListSolutionRegistrationsResponse, error)
@@ -109,11 +96,8 @@ type SolutionRegistryServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedSolutionRegistryServiceServer struct{}
 
-func (UnimplementedSolutionRegistryServiceServer) PutSolutionRegistration(context.Context, *PutSolutionRegistrationRequest) (*SolutionRegistration, error) {
-	return nil, status.Error(codes.Unimplemented, "method PutSolutionRegistration not implemented")
-}
-func (UnimplementedSolutionRegistryServiceServer) DeleteSolutionRegistration(context.Context, *DeleteSolutionRegistrationRequest) (*SolutionRegistration, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteSolutionRegistration not implemented")
+func (UnimplementedSolutionRegistryServiceServer) ListSolutionHostBindings(context.Context, *ListSolutionHostBindingsRequest) (*ListSolutionHostBindingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSolutionHostBindings not implemented")
 }
 func (UnimplementedSolutionRegistryServiceServer) ListSolutionRegistrations(context.Context, *ListSolutionRegistrationsRequest) (*ListSolutionRegistrationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSolutionRegistrations not implemented")
@@ -140,38 +124,20 @@ func RegisterSolutionRegistryServiceServer(s grpc.ServiceRegistrar, srv Solution
 	s.RegisterService(&SolutionRegistryService_ServiceDesc, srv)
 }
 
-func _SolutionRegistryService_PutSolutionRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PutSolutionRegistrationRequest)
+func _SolutionRegistryService_ListSolutionHostBindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSolutionHostBindingsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SolutionRegistryServiceServer).PutSolutionRegistration(ctx, in)
+		return srv.(SolutionRegistryServiceServer).ListSolutionHostBindings(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SolutionRegistryService_PutSolutionRegistration_FullMethodName,
+		FullMethod: SolutionRegistryService_ListSolutionHostBindings_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SolutionRegistryServiceServer).PutSolutionRegistration(ctx, req.(*PutSolutionRegistrationRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _SolutionRegistryService_DeleteSolutionRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteSolutionRegistrationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SolutionRegistryServiceServer).DeleteSolutionRegistration(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SolutionRegistryService_DeleteSolutionRegistration_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SolutionRegistryServiceServer).DeleteSolutionRegistration(ctx, req.(*DeleteSolutionRegistrationRequest))
+		return srv.(SolutionRegistryServiceServer).ListSolutionHostBindings(ctx, req.(*ListSolutionHostBindingsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -202,12 +168,8 @@ var SolutionRegistryService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*SolutionRegistryServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "PutSolutionRegistration",
-			Handler:    _SolutionRegistryService_PutSolutionRegistration_Handler,
-		},
-		{
-			MethodName: "DeleteSolutionRegistration",
-			Handler:    _SolutionRegistryService_DeleteSolutionRegistration_Handler,
+			MethodName: "ListSolutionHostBindings",
+			Handler:    _SolutionRegistryService_ListSolutionHostBindings_Handler,
 		},
 		{
 			MethodName: "ListSolutionRegistrations",

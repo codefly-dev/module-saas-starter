@@ -32,7 +32,10 @@ import (
 
 func boundedInstallationFixture(t *testing.T) *business.InstallSolutionParams {
 	org, owner, role, _, _ := installFixture(t, "documents", "read")
-	return &business.InstallSolutionParams{OrgID: org, OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, AgentIdentifier: "acme.example/repeatable:1.0.0", SolutionIdentifier: "repeatable", AllowedAudiences: []string{"example.api"}, AllowedScopes: []string{"documents"}, InstallerPrincipalID: business.ModulePrincipalID("example-installer")}
+	// Its own declared presence: this is a SECOND installation in the same org,
+	// so it must be a different target from the fixture's.
+	alias := uniqueAlias("repeatable")
+	return &business.InstallSolutionParams{OrgID: org, OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, AgentIdentifier: "acme.example/repeatable:1.0.0", TargetID: declarePresence(t, "acme.test."+alias, alias), RouteAlias: alias, AllowedAudiences: []string{"example.api"}, AllowedScopes: []string{"documents"}, InstallerPrincipalID: business.ModulePrincipalID("example-installer")}
 }
 func boundedReconcile(p *business.InstallSolutionParams, apply bool) (out *business.ModuleInstallationResult, err error) {
 	err = testStore.WithOrgTx(testCtx, p.OrgID, func(ctx context.Context) error {
@@ -146,13 +149,14 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NoError(t, err)
 	svc := auditedService(t, emitter)
 	svc.SetModuleIdentitySecrets(map[string][sha256.Size]byte{"example-installer": sha256.Sum256([]byte("local-fixture-secret"))})
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{p.InstallerPrincipalID: {Prefix: "example-installer", Tenant: p.OrgID}})
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	previousAuthority := *adapters.WorkContextSingleton()
 	t.Cleanup(func() { *adapters.WorkContextSingleton() = previousAuthority })
 	adapters.WorkContextSingleton().Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "installer-test", PrivateKey: private, Authority: testStore})
-	policy := business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{{Prefix: "example-installer", OrganizationID: p.OrgID, ModuleID: "acme.example/repeatable", AgentIdentifiers: []string{p.AgentIdentifier}, SolutionIdentifier: p.SolutionIdentifier, RoleID: p.RoleID, RolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes, OwnerPrincipalID: p.OwnerPrincipalID, ExpiresAt: time.Now().Add(time.Hour)}}}
+	policy := business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{{Prefix: "example-installer", OrganizationID: p.OrgID, ModuleID: "acme.example/repeatable", AgentIdentifiers: []string{p.AgentIdentifier}, TargetID: p.TargetID, RoleID: p.RoleID, RolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes, OwnerPrincipalID: p.OwnerPrincipalID, ExpiresAt: time.Now().Add(time.Hour)}}}
 	path := filepath.Join(t.TempDir(), "policy.json")
 	raw, err := json.Marshal(policy)
 	require.NoError(t, err)
@@ -188,14 +192,14 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &issued))
 	require.NotEmpty(t, issued.Token)
 	require.WithinDuration(t, time.Now().Add(15*time.Minute), issued.ExpiresAt, 5*time.Second)
-	request := business.ModuleInstallationRequest{DisplayName: "Example Repeatable", RootScopeLabel: "Example Repeatable", ModuleID: "acme.example/repeatable", OrganizationSlug: "org-" + p.OrgID, AgentIdentifier: p.AgentIdentifier, SolutionIdentifier: p.SolutionIdentifier, RoleID: p.RoleID, ExpectedRolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes}
+	request := business.ModuleInstallationRequest{DisplayName: "Example Repeatable", RootScopeLabel: "Example Repeatable", ModuleID: "acme.example/repeatable", OrganizationSlug: "org-" + p.OrgID, AgentIdentifier: p.AgentIdentifier, TargetID: p.TargetID, RoleID: p.RoleID, ExpectedRolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes}
 
 	if script := os.Getenv("MODULE_INSTALLER_CLIENT_SCRIPT"); script != "" {
 		dir := t.TempDir()
 		caFile, credentialFile, scenarioFile := filepath.Join(dir, "ca.pem"), filepath.Join(dir, "credential"), filepath.Join(dir, "scenario.json")
 		require.NoError(t, os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600))
 		require.NoError(t, os.WriteFile(credentialFile, []byte("local-fixture-secret"), 0600))
-		scenario := map[string]any{"accounts_url": server.URL, "ca_file": caFile, "credential_file": credentialFile, "installer_prefix": "example-installer", "organization_slug": request.OrganizationSlug, "organization_id": p.OrgID, "role_id": p.RoleID, "expected_role_permissions": request.ExpectedRolePermissions, "module_id": request.ModuleID, "agent_identifier": request.AgentIdentifier, "solution_identifier": request.SolutionIdentifier, "allowed_audiences": request.AllowedAudiences, "allowed_scopes": request.AllowedScopes, "display_name": request.DisplayName, "root_scope_label": request.RootScopeLabel}
+		scenario := map[string]any{"accounts_url": server.URL, "ca_file": caFile, "credential_file": credentialFile, "installer_prefix": "example-installer", "organization_slug": request.OrganizationSlug, "organization_id": p.OrgID, "role_id": p.RoleID, "expected_role_permissions": request.ExpectedRolePermissions, "module_id": request.ModuleID, "agent_identifier": request.AgentIdentifier, "target_id": request.TargetID, "allowed_audiences": request.AllowedAudiences, "allowed_scopes": request.AllowedScopes, "display_name": request.DisplayName, "root_scope_label": request.RootScopeLabel}
 		raw, err := json.Marshal(scenario)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(scenarioFile, raw, 0600))

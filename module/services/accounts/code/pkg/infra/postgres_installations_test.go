@@ -38,18 +38,25 @@ func installFixture(t *testing.T, resourceKind, action string) (orgID, ownerID, 
 		})
 	}))
 
+	// The install names a solution TARGET, so presence has to be declared
+	// first: there is no free-text identifier a test can invent any more. The
+	// alias is unique per fixture because the open-target alias index is unique
+	// and this package shares one database.
+	alias := uniqueAlias("acme-solution")
+	targetID := declarePresence(t, "acme.test."+alias, alias)
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		var err error
 		installation, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
-			OrgID:              orgID,
-			AgentIdentifier:    "acme.example/solution:1.0.0",
-			SolutionIdentifier: "acme.example/solution",
-			RootScopeLabel:     "Acme Solution",
-			RoleID:             roleID,
-			OwnerPrincipalID:   ownerID,
-			AllowedAudiences:   []string{"acme.collection"},
-			AllowedScopes:      []string{resourceKind},
-			GrantedBy:          ownerID,
+			OrgID:            orgID,
+			AgentIdentifier:  "acme.example/solution:1.0.0",
+			TargetID:         targetID,
+			RouteAlias:       alias,
+			RootScopeLabel:   "Acme Solution",
+			RoleID:           roleID,
+			OwnerPrincipalID: ownerID,
+			AllowedAudiences: []string{"acme.collection"},
+			AllowedScopes:    []string{resourceKind},
+			GrantedBy:        ownerID,
 		})
 		return err
 	}))
@@ -145,12 +152,12 @@ func TestInstallSolutionIsIdempotentPerSolution(t *testing.T) {
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		var err error
 		second, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
-			OrgID:              orgID,
-			AgentIdentifier:    "acme.example/solution:1.0.0",
-			SolutionIdentifier: "acme.example/solution",
-			RootScopeLabel:     "Acme Solution",
-			RoleID:             roleID,
-			OwnerPrincipalID:   ownerID,
+			OrgID:            orgID,
+			AgentIdentifier:  "acme.example/solution:1.0.0",
+			TargetID:         first.GetTargetId(),
+			RootScopeLabel:   "Acme Solution",
+			RoleID:           roleID,
+			OwnerPrincipalID: ownerID,
 			// Same authority envelope as installFixture: an identical re-install
 			// reconciles to a no-op and returns the existing row.
 			AllowedAudiences: []string{"acme.collection"},
@@ -166,16 +173,16 @@ func TestInstallSolutionIsIdempotentPerSolution(t *testing.T) {
 // return the old row; it fails closed so the change is applied deliberately
 // (uninstall + reinstall), not lost.
 func TestInstallSolutionRejectsChangedCeilingOnReinstall(t *testing.T) {
-	orgID, ownerID, roleID, _, _ := installFixture(t, "doc", "write")
+	orgID, ownerID, roleID, installed, _ := installFixture(t, "doc", "write")
 
 	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		_, e := testStore.InstallSolution(ctx, &business.InstallSolutionParams{
-			OrgID:              orgID,
-			AgentIdentifier:    "acme.example/solution:1.0.0",
-			SolutionIdentifier: "acme.example/solution",
-			RootScopeLabel:     "Acme Solution",
-			RoleID:             roleID,
-			OwnerPrincipalID:   ownerID,
+			OrgID:            orgID,
+			AgentIdentifier:  "acme.example/solution:1.0.0",
+			TargetID:         installed.GetTargetId(),
+			RootScopeLabel:   "Acme Solution",
+			RoleID:           roleID,
+			OwnerPrincipalID: ownerID,
 			// installFixture granted ["doc"]; narrowing to nothing must be rejected.
 			AllowedAudiences: []string{"acme.collection"},
 			AllowedScopes:    nil,
@@ -199,15 +206,15 @@ func TestInstallSolutionReinstallWithRevokedStandingGrantConflicts(t *testing.T)
 
 	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		_, e := testStore.InstallSolution(ctx, &business.InstallSolutionParams{
-			OrgID:              orgID,
-			AgentIdentifier:    "acme.example/solution:1.0.0",
-			SolutionIdentifier: "acme.example/solution",
-			RootScopeLabel:     "Acme Solution",
-			RoleID:             roleID,
-			OwnerPrincipalID:   ownerID,
-			AllowedAudiences:   []string{"acme.collection"},
-			AllowedScopes:      []string{"doc"},
-			GrantedBy:          ownerID,
+			OrgID:            orgID,
+			AgentIdentifier:  "acme.example/solution:1.0.0",
+			TargetID:         installation.GetTargetId(),
+			RootScopeLabel:   "Acme Solution",
+			RoleID:           roleID,
+			OwnerPrincipalID: ownerID,
+			AllowedAudiences: []string{"acme.collection"},
+			AllowedScopes:    []string{"doc"},
+			GrantedBy:        ownerID,
 		})
 		return e
 	})
@@ -459,13 +466,17 @@ func TestInstallSolutionReusesRootNodeOnReinstall(t *testing.T) {
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		var err error
 		second, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
-			OrgID:              orgID,
-			AgentIdentifier:    "acme.example/solution:2.0.0",
-			SolutionIdentifier: "acme.example/solution",
-			RootScopeLabel:     "Acme Solution",
-			RoleID:             roleID,
-			OwnerPrincipalID:   ownerID,
-			GrantedBy:          ownerID,
+			OrgID:           orgID,
+			AgentIdentifier: "acme.example/solution:2.0.0",
+			// The SAME target. Reinstalling the same presence reuses its
+			// authority-root node; a REPLACEMENT presence is a different target
+			// and must not, which is what stops a predecessor's team grants
+			// from reaching it.
+			TargetID:         first.GetTargetId(),
+			RootScopeLabel:   "Acme Solution",
+			RoleID:           roleID,
+			OwnerPrincipalID: ownerID,
+			GrantedBy:        ownerID,
 		})
 		return err
 	}))

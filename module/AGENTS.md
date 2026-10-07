@@ -13,7 +13,7 @@ Read the repository-root `AGENTS.md` first for ownership, boundaries and the
 behavioural rules (in a consumer, read your own).
 [SERVICE_CATALOG.md](./SERVICE_CATALOG.md) and
 [DEPLOYMENT_TOPOLOGY.md](./DEPLOYMENT_TOPOLOGY.md) describe the graph;
-[services/README.md](./services/README.md) introduces the eight services.
+[services/README.md](./services/README.md) introduces the services; `module.codefly.yaml` is the inventory they are counted from, so neither doc states a number.
 
 
 ## Generated files are never edited by hand

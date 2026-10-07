@@ -81,7 +81,7 @@ type DatasourceFile struct {
 // otherwise the whole call is refused before visit is first called.
 func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleCaller, sourceID, version string, refs []DatasourceFileRequest, visit func(DatasourceFile, io.Reader) error) error {
 	w := wool.Get(ctx).In("ModuleFetchDatasourceFiles")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
