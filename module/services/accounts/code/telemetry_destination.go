@@ -32,10 +32,17 @@ import (
 // collector: the cell does, and a workload that cannot find it does not
 // substitute one.
 //
+// The state decides. The group is layered: the cell's values override the
+// module's local defaults one key at a time, so a deployed workload sees the
+// cell's `available` and endpoint beside the `absent` reason the module's local
+// profile left behind. The key that does not belong to the state is therefore
+// ignored, not refused, and reported once through IgnoredNotice. What each state
+// requires is unchanged: `available` needs an endpoint, `absent` needs a reason.
+//
 // A group that did not arrive is not a cell without a backend. Reading the first
 // as the second would leave a deployment that converges green and exports
-// nothing, so anything that is not exactly one of the two answers above refuses
-// to start, naming what is missing.
+// nothing, so a missing or unknown state, or the key the state requires being
+// absent, refuses to start, naming what is missing.
 //
 // This file exists byte for byte in services/accounts/code and
 // services/auth-gateway/code: the two services are independent Go modules with
@@ -56,22 +63,50 @@ const (
 	maxAbsentReasonLength = 300
 )
 
-// telemetryDestination is the resolved answer. Exactly one of Endpoint and
+// telemetryDestination is the resolved answer. Exactly one of URL and
 // AbsentReason is set.
 type telemetryDestination struct {
-	// Endpoint is the collector's OTLP/gRPC address as host:port, the form the
-	// exporters take. Empty when the cell has no collector.
+	// URL is the collector's origin as scheme://host:port, the port always
+	// explicit, which is the form otlpmetricgrpc.WithEndpointURL takes: the
+	// exporter reads its transport off the scheme. Empty when the cell has no
+	// collector.
+	URL string
+	// Endpoint is the same address as host:port. wool's tracer takes it in this
+	// form and has no option that reads a URL. Empty when the cell has no
+	// collector.
 	Endpoint string
 	// Insecure is true when the endpoint was http://, which the mesh protects.
-	// It is derived from the endpoint's scheme and never assumed.
+	// wool's tracer needs it spelled out; it is derived from the endpoint's
+	// scheme and never assumed.
 	Insecure bool
-	// AbsentReason says why the cell has no collector. Empty when Endpoint is set.
+	// AbsentReason says why the cell has no collector. Empty when URL is set.
 	AbsentReason string
+	// Ignored names the key the group carried that has no meaning for the state
+	// that decided: the absent reason under `available`, the endpoint under
+	// `absent`. Empty when the group carried nothing extra.
+	Ignored string
 }
 
 // Available reports whether the cell has a collector to export to.
 func (d telemetryDestination) Available() bool {
 	return d.Endpoint != ""
+}
+
+// IgnoredNotice is the one line to log, once, when the group carried a key the
+// state does not use. It is empty otherwise. It names the key and never its
+// value: a leftover endpoint may carry credentials, and a leftover reason is
+// free text.
+func (d telemetryDestination) IgnoredNotice() string {
+	if d.Ignored == "" {
+		return ""
+	}
+	state := telemetryStateAbsent
+	if d.Available() {
+		state = telemetryStateAvailable
+	}
+	return fmt.Sprintf(
+		"observability: %s is set but %s is `%s`, which decides; %s is ignored (a leftover from a lower layer of the group)",
+		d.Ignored, telemetryStateKey, state, d.Ignored)
 }
 
 // observabilityValue reads one key of the `observability` group through the
@@ -112,13 +147,11 @@ func resolveTelemetryDestination(read func(key string) string) (telemetryDestina
 			"observability: %s is %q in the `observability` configuration group; it must be `%s` or `%s`",
 			telemetryStateKey, state, telemetryStateAvailable, telemetryStateAbsent)
 	}
-	if endpoint != "" && reason != "" {
-		return telemetryDestination{}, fmt.Errorf(
-			"observability: the `observability` configuration group sets both %s and %s; "+
-				"a cell either has a collector or says why it has none",
-			telemetryEndpointKey, telemetryAbsentReasonKey)
-	}
 
+	// The state decides: the key that belongs to the other state is a leftover
+	// of a lower layer and is neither read nor refused. The endpoint under
+	// `absent` is not even parsed, so a stale one cannot stop a cell that says
+	// it has no collector.
 	if state == telemetryStateAbsent {
 		if reason == "" {
 			return telemetryDestination{}, fmt.Errorf(
@@ -126,7 +159,11 @@ func resolveTelemetryDestination(read func(key string) string) (telemetryDestina
 					"an absent collector must say why",
 				telemetryStateKey, telemetryStateAbsent, telemetryAbsentReasonKey)
 		}
-		return telemetryDestination{AbsentReason: reason}, nil
+		destination := telemetryDestination{AbsentReason: reason}
+		if endpoint != "" {
+			destination.Ignored = telemetryEndpointKey
+		}
+		return destination, nil
 	}
 
 	if endpoint == "" {
@@ -134,39 +171,46 @@ func resolveTelemetryDestination(read func(key string) string) (telemetryDestina
 			"observability: %s is `%s` but %s is not set in the `observability` configuration group",
 			telemetryStateKey, telemetryStateAvailable, telemetryEndpointKey)
 	}
-	hostPort, insecure, err := parseCollectorEndpoint(endpoint)
+	origin, hostPort, insecure, err := parseCollectorEndpoint(endpoint)
 	if err != nil {
 		return telemetryDestination{}, fmt.Errorf("observability: %s: %w", telemetryEndpointKey, err)
 	}
-	return telemetryDestination{Endpoint: hostPort, Insecure: insecure}, nil
+	destination := telemetryDestination{URL: origin, Endpoint: hostPort, Insecure: insecure}
+	if reason != "" {
+		destination.Ignored = telemetryAbsentReasonKey
+	}
+	return destination, nil
 }
 
-// parseCollectorEndpoint turns the delivered URL into the host:port the OTLP
-// gRPC exporters take, and reads the transport off its scheme. The URL is never
-// echoed back: a malformed one may carry credentials.
-func parseCollectorEndpoint(raw string) (hostPort string, insecure bool, err error) {
+// parseCollectorEndpoint turns the delivered URL into the two forms the
+// exporters take — the origin with an explicit port, and host:port — and reads
+// the transport off its scheme. The URL is never echoed back: a malformed one
+// may carry credentials.
+func parseCollectorEndpoint(raw string) (origin, hostPort string, insecure bool, err error) {
 	parsed, parseErr := url.Parse(raw)
 	if parseErr != nil {
-		return "", false, errors.New("is not a URL; expected http://host:port or https://host:port")
+		return "", "", false, errors.New("is not a URL; expected http://host:port or https://host:port")
 	}
 	switch parsed.Scheme {
 	case "http":
 		insecure = true
 	case "https":
 	default:
-		return "", false, fmt.Errorf("must start with http:// or https://, got scheme %q", parsed.Scheme)
+		return "", "", false, fmt.Errorf("must start with http:// or https://, got scheme %q", parsed.Scheme)
 	}
 	if parsed.Hostname() == "" {
-		return "", false, errors.New("has no host")
+		return "", "", false, errors.New("has no host")
 	}
 	if parsed.User != nil {
-		return "", false, errors.New("must not carry credentials")
+		return "", "", false, errors.New("must not carry credentials")
 	}
 	// OTLP/gRPC addresses a collector, not a path: a path or a query is the
 	// OTLP/HTTP form (/v1/traces), which this exporter does not speak.
 	if (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", false, errors.New("must be the collector's origin only, with no path, query or fragment")
+		return "", "", false, errors.New("must be the collector's origin only, with no path, query or fragment")
 	}
+	// The port is made explicit because gRPC would otherwise dial 443 whatever
+	// the scheme, and a plaintext http:// collector with no port is not on 443.
 	port := parsed.Port()
 	if port == "" {
 		port = "80"
@@ -174,7 +218,8 @@ func parseCollectorEndpoint(raw string) (hostPort string, insecure bool, err err
 			port = "443"
 		}
 	}
-	return net.JoinHostPort(parsed.Hostname(), port), insecure, nil
+	hostPort = net.JoinHostPort(parsed.Hostname(), port)
+	return parsed.Scheme + "://" + hostPort, hostPort, insecure, nil
 }
 
 // boundedLine collapses a free-text value to one bounded line.

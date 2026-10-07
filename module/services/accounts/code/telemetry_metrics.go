@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	runtimemetrics "runtime/metrics"
 	"time"
 
@@ -20,17 +21,21 @@ type otelMetrics struct {
 }
 
 func enableOTELMetrics(ctx context.Context, destination telemetryDestination) (*otelMetrics, error) {
-	options := []otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpoint(destination.Endpoint)}
-	if destination.Insecure {
-		// http://: plaintext on the wire, because the mesh supplies mTLS. An
-		// https:// endpoint takes the exporter's default, TLS.
-		options = append(options, otlpmetricgrpc.WithInsecure())
+	if destination.URL == "" {
+		// WithEndpointURL("") would fall back to the exporter's own default,
+		// localhost:4317: a process that exports to nowhere and reports success.
+		return nil, errors.New("telemetry: no collector URL to export metrics to")
 	}
-	exporter, err := otlpmetricgrpc.New(ctx, options...)
+	// The resource comes before the exporter, so a failure here leaves nothing
+	// to shut down: an exporter holds a client connection that only Shutdown
+	// releases.
+	res, err := currentTelemetryResource(ctx)
 	if err != nil {
 		return nil, err
 	}
-	res, err := currentTelemetryResource(ctx)
+	// The exporter reads the transport off the URL's scheme itself: http:// is
+	// plaintext on the wire, because the mesh supplies mTLS, and https:// is TLS.
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(destination.URL))
 	if err != nil {
 		return nil, err
 	}

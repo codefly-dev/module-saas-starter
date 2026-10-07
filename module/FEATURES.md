@@ -656,8 +656,8 @@ Environment variables consumed by the api:
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
 | `TELEMETRY_STATE`              | `observability` group, delivered by the platform: `available` or `absent`, never empty; accounts and auth-gateway refuse to start without it |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`  | `observability` group: the cell collector's OTLP/gRPC address, present only when `available`; `http://` is plaintext on the wire because the mesh supplies mTLS, `https://` is TLS |
-| `TELEMETRY_ABSENT_REASON`      | `observability` group: why the cell has no collector, present only when `absent`; logged once at startup |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | `observability` group: the cell collector's OTLP/gRPC address, required when `available` and ignored when `absent`; `http://` is plaintext on the wire because the mesh supplies mTLS, `https://` is TLS |
+| `TELEMETRY_ABSENT_REASON`      | `observability` group: why the cell has no collector, required when `absent` and ignored when `available`; logged once at startup |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
 | `TURNSTILE_SECRET_KEY`         | Server-only Siteverify credential                            |
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
@@ -668,11 +668,15 @@ export traces and unsampled request and Go runtime metrics over OTLP/gRPC to the
 cell's collector at `OTEL_EXPORTER_OTLP_ENDPOINT`. The auth-gateway covers both its
 HTTP gateway and gRPC ext_authz authorization service. When it is `absent`, they
 export nothing over OTLP, log `TELEMETRY_ABSENT_REASON` once and boot; a local run
-then uses wool's stdout tracer for traces. Anything else — the state missing or
-unknown, `available` without an endpoint, `absent` without a reason, or both
-set — refuses to start, because a group that did not arrive is not a cell without
-a collector. An `https://` endpoint is refused at startup for now: wool's OTLP
-tracer dials plaintext only, so it would be sent in the clear and reported as TLS.
+then uses wool's stdout tracer for traces. The state decides: a cell's values
+override the module's local defaults one key at a time, so a deployed cell that
+says `available` with an endpoint can still carry the `absent` reason the local
+profile left behind. The key the state does not use is ignored, and a startup
+warning names it once. Anything else — the state missing or unknown, `available`
+without an endpoint, or `absent` without a reason — refuses to start, because a
+group that did not arrive is not a cell without a collector. An `https://`
+endpoint is refused at startup for now: wool's OTLP tracer dials plaintext only,
+so it would be sent in the clear and reported as TLS.
 Metrics leave by OTLP push alone — decided 2026-10-06, because the cell's
 collector is the record for traces and metrics take the same path — so neither
 service serves a scrape endpoint. `service.name` comes from `OTEL_SERVICE_NAME` or

@@ -66,6 +66,10 @@ func main() {
 	} else {
 		log.Printf("OTEL export disabled: the cell has no collector: %s", telemetryDestination.AbsentReason)
 	}
+	// The state decided; a key it does not use is a leftover, reported here once.
+	if notice := telemetryDestination.IgnoredNotice(); notice != "" {
+		log.Print(notice)
+	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

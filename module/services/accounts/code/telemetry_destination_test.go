@@ -29,32 +29,39 @@ func TestTelemetryDestinationAvailableExportsToTheEndpoint(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	require.True(t, destination.Available())
+	require.Equal(t, collector, destination.URL, "the metrics exporter reads its transport off this URL")
 	require.Equal(t, "otel-collector.otel-collector.svc.cluster.local:4317", destination.Endpoint)
 	require.True(t, destination.Insecure, "http:// is plaintext on the wire; the mesh supplies mTLS")
 	require.Empty(t, destination.AbsentReason)
+	require.Empty(t, destination.Ignored)
+	require.Empty(t, destination.IgnoredNotice())
 }
 
-// The transport comes from the endpoint's scheme, never from a constant.
+// The transport comes from the endpoint's scheme, never from a constant, and
+// the URL handed to the metrics exporter always carries an explicit port: gRPC
+// would otherwise dial 443 whatever the scheme.
 func TestTelemetryDestinationReadsTransportFromTheScheme(t *testing.T) {
 	for endpoint, want := range map[string]struct {
+		url      string
 		hostPort string
 		insecure bool
 	}{
-		"http://collector.example:4317":      {"collector.example:4317", true},
-		"https://collector.example:4317":     {"collector.example:4317", false},
-		"https://collector.example":          {"collector.example:443", false},
-		"http://collector.example":           {"collector.example:80", true},
-		"http://collector.example:4317/":     {"collector.example:4317", true},
-		"  http://collector.example:4317  ":  {"collector.example:4317", true},
-		"http://[2001:db8::1]:4317":          {"[2001:db8::1]:4317", true},
-		"https://10.0.0.7:4317":              {"10.0.0.7:4317", false},
-		"http://otel-collector.ns.svc:4317/": {"otel-collector.ns.svc:4317", true},
+		"http://collector.example:4317":      {"http://collector.example:4317", "collector.example:4317", true},
+		"https://collector.example:4317":     {"https://collector.example:4317", "collector.example:4317", false},
+		"https://collector.example":          {"https://collector.example:443", "collector.example:443", false},
+		"http://collector.example":           {"http://collector.example:80", "collector.example:80", true},
+		"http://collector.example:4317/":     {"http://collector.example:4317", "collector.example:4317", true},
+		"  http://collector.example:4317  ":  {"http://collector.example:4317", "collector.example:4317", true},
+		"http://[2001:db8::1]:4317":          {"http://[2001:db8::1]:4317", "[2001:db8::1]:4317", true},
+		"https://10.0.0.7:4317":              {"https://10.0.0.7:4317", "10.0.0.7:4317", false},
+		"http://otel-collector.ns.svc:4317/": {"http://otel-collector.ns.svc:4317", "otel-collector.ns.svc:4317", true},
 	} {
 		destination, err := resolveTelemetryDestination(group(map[string]string{
 			"TELEMETRY_STATE":             "available",
 			"OTEL_EXPORTER_OTLP_ENDPOINT": endpoint,
 		}))
 		require.NoError(t, err, endpoint)
+		require.Equal(t, want.url, destination.URL, endpoint)
 		require.Equal(t, want.hostPort, destination.Endpoint, endpoint)
 		require.Equal(t, want.insecure, destination.Insecure, endpoint)
 	}
@@ -69,8 +76,11 @@ func TestTelemetryDestinationAbsentCarriesTheReason(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	require.False(t, destination.Available())
+	require.Empty(t, destination.URL)
 	require.Empty(t, destination.Endpoint)
 	require.Equal(t, "This cell's bucket has no ops cell, so no collector is rendered.", destination.AbsentReason)
+	require.Empty(t, destination.Ignored)
+	require.Empty(t, destination.IgnoredNotice())
 }
 
 // The reason is operator-written free text that reaches a log line.
@@ -86,7 +96,9 @@ func TestTelemetryDestinationAbsentReasonIsOneBoundedLine(t *testing.T) {
 }
 
 // The third outcome: anything else refuses to start, naming what is wrong.
-// Configuration that did not arrive is never read as "no collector".
+// Configuration that did not arrive is never read as "no collector". A key the
+// state does not use is not a refusal — it is ignored, below — but a key the
+// state requires, missing, always is.
 func TestTelemetryDestinationRefusesEverythingElse(t *testing.T) {
 	for name, tc := range map[string]struct {
 		values map[string]string
@@ -136,20 +148,6 @@ func TestTelemetryDestinationRefusesEverythingElse(t *testing.T) {
 			values: map[string]string{"TELEMETRY_STATE": "absent", "OTEL_EXPORTER_OTLP_ENDPOINT": collector},
 			want:   "TELEMETRY_ABSENT_REASON is not set",
 		},
-		"available with both an endpoint and a reason": {
-			values: map[string]string{
-				"TELEMETRY_STATE": "available", "OTEL_EXPORTER_OTLP_ENDPOINT": collector,
-				"TELEMETRY_ABSENT_REASON": "no collector",
-			},
-			want: "sets both OTEL_EXPORTER_OTLP_ENDPOINT and TELEMETRY_ABSENT_REASON",
-		},
-		"absent with both an endpoint and a reason": {
-			values: map[string]string{
-				"TELEMETRY_STATE": "absent", "OTEL_EXPORTER_OTLP_ENDPOINT": collector,
-				"TELEMETRY_ABSENT_REASON": "no collector",
-			},
-			want: "sets both OTEL_EXPORTER_OTLP_ENDPOINT and TELEMETRY_ABSENT_REASON",
-		},
 		"endpoint without a scheme": {
 			values: map[string]string{"TELEMETRY_STATE": "available", "OTEL_EXPORTER_OTLP_ENDPOINT": "otel-collector.ns.svc:4317"},
 			want:   "must start with http:// or https://",
@@ -179,6 +177,129 @@ func TestTelemetryDestinationRefusesEverythingElse(t *testing.T) {
 			require.Empty(t, destination.AbsentReason, "a refusal must never read as an absent collector")
 		})
 	}
+}
+
+// The state decides. The cell's values override the module's local defaults one
+// key at a time, so a deployed producer sees `available` and an endpoint from the
+// cell beside the reason the local profile left behind. That is not a
+// contradiction to refuse: the reason is ignored, and said so once.
+func TestTelemetryDestinationAvailableIgnoresALeftoverReason(t *testing.T) {
+	destination, err := resolveTelemetryDestination(group(map[string]string{
+		"TELEMETRY_STATE":             "available",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": collector,
+		"TELEMETRY_ABSENT_REASON":     "A local run has no cell collector.",
+	}))
+	require.NoError(t, err)
+	require.True(t, destination.Available())
+	require.Equal(t, collector, destination.URL)
+	require.Empty(t, destination.AbsentReason, "a leftover reason must not turn an available collector into an absent one")
+	require.Equal(t, "TELEMETRY_ABSENT_REASON", destination.Ignored)
+	notice := destination.IgnoredNotice()
+	require.Contains(t, notice, "TELEMETRY_ABSENT_REASON is set but TELEMETRY_STATE is `available`")
+	require.NotContains(t, notice, "A local run", "the notice names the key, never its free-text value")
+}
+
+// ... and the other way round: a cell that says it has no collector is not
+// refused for an endpoint a lower layer left behind, and that endpoint is not
+// even parsed.
+func TestTelemetryDestinationAbsentIgnoresALeftoverEndpoint(t *testing.T) {
+	for name, leftover := range map[string]string{
+		"a usable endpoint":       collector,
+		"a malformed endpoint":    "otel-collector.ns.svc:4317",
+		"an endpoint with a user": "http://user:hunter2@collector.example:4317",
+		"an unreadable endpoint":  "http://[::1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			destination, err := resolveTelemetryDestination(group(map[string]string{
+				"TELEMETRY_STATE":             "absent",
+				"TELEMETRY_ABSENT_REASON":     "This cell has no ops cell.",
+				"OTEL_EXPORTER_OTLP_ENDPOINT": leftover,
+			}))
+			require.NoError(t, err)
+			require.False(t, destination.Available(), "a leftover endpoint must not turn an absent collector into an available one")
+			require.Empty(t, destination.URL)
+			require.Empty(t, destination.Endpoint)
+			require.Equal(t, "This cell has no ops cell.", destination.AbsentReason)
+			require.Equal(t, "OTEL_EXPORTER_OTLP_ENDPOINT", destination.Ignored)
+			notice := destination.IgnoredNotice()
+			require.Contains(t, notice, "OTEL_EXPORTER_OTLP_ENDPOINT is set but TELEMETRY_STATE is `absent`")
+			require.NotContains(t, notice, "hunter2", "the notice names the key, never its value")
+		})
+	}
+}
+
+// A blank leftover is nothing left over.
+func TestTelemetryDestinationBlankLeftoversAreNotNoticed(t *testing.T) {
+	available, err := resolveTelemetryDestination(group(map[string]string{
+		"TELEMETRY_STATE": "available", "OTEL_EXPORTER_OTLP_ENDPOINT": collector, "TELEMETRY_ABSENT_REASON": " \n ",
+	}))
+	require.NoError(t, err)
+	require.Empty(t, available.IgnoredNotice())
+
+	absent, err := resolveTelemetryDestination(group(map[string]string{
+		"TELEMETRY_STATE": "absent", "TELEMETRY_ABSENT_REASON": "no collector", "OTEL_EXPORTER_OTLP_ENDPOINT": "   ",
+	}))
+	require.NoError(t, err)
+	require.Empty(t, absent.IgnoredNotice())
+}
+
+// layered is what the platform hands a workload: each layer overrides the one
+// below it key by key, so a key a higher layer does not set survives from the
+// lower one.
+func layered(layers ...map[string]string) func(string) string {
+	merged := map[string]string{}
+	for _, layer := range layers {
+		for key, value := range layer {
+			merged[key] = value
+		}
+	}
+	return group(merged)
+}
+
+// The case this exists for: the module's local profile defaults to `absent` with
+// a reason, and a deployed cell overrides the state and the endpoint but not the
+// reason. The cell's answer wins, whichever way it points.
+func TestTelemetryDestinationTheCellOverridesTheModuleDefaults(t *testing.T) {
+	moduleDefault := map[string]string{
+		"TELEMETRY_STATE":         "absent",
+		"TELEMETRY_ABSENT_REASON": "A local run has no cell collector.",
+	}
+
+	t.Run("a cell with a collector overrides the local absent default", func(t *testing.T) {
+		destination, err := resolveTelemetryDestination(layered(moduleDefault, map[string]string{
+			"TELEMETRY_STATE":             "available",
+			"OTEL_EXPORTER_OTLP_ENDPOINT": collector,
+		}))
+		require.NoError(t, err)
+		require.True(t, destination.Available())
+		require.Equal(t, collector, destination.URL)
+		require.Empty(t, destination.AbsentReason)
+		require.Equal(t, "TELEMETRY_ABSENT_REASON", destination.Ignored)
+	})
+
+	t.Run("a cell with no collector, over a default that had an endpoint, is absent", func(t *testing.T) {
+		destination, err := resolveTelemetryDestination(layered(
+			map[string]string{"TELEMETRY_STATE": "available", "OTEL_EXPORTER_OTLP_ENDPOINT": collector},
+			map[string]string{"TELEMETRY_STATE": "absent", "TELEMETRY_ABSENT_REASON": "This cell has no ops cell."},
+		))
+		require.NoError(t, err)
+		require.False(t, destination.Available())
+		require.Equal(t, "This cell has no ops cell.", destination.AbsentReason)
+		require.Equal(t, "OTEL_EXPORTER_OTLP_ENDPOINT", destination.Ignored)
+	})
+
+	t.Run("a cell that overrides only the state still has to supply what it requires", func(t *testing.T) {
+		_, err := resolveTelemetryDestination(layered(moduleDefault, map[string]string{"TELEMETRY_STATE": "available"}))
+		require.ErrorContains(t, err, "OTEL_EXPORTER_OTLP_ENDPOINT is not set",
+			"the module default's reason is not an endpoint")
+
+		_, err = resolveTelemetryDestination(layered(
+			map[string]string{"TELEMETRY_STATE": "available", "OTEL_EXPORTER_OTLP_ENDPOINT": collector},
+			map[string]string{"TELEMETRY_STATE": "absent"},
+		))
+		require.ErrorContains(t, err, "TELEMETRY_ABSENT_REASON is not set",
+			"the module default's endpoint is not a reason")
+	})
 }
 
 // A refusal quotes no part of an endpoint, which may carry credentials.
@@ -226,6 +347,22 @@ func TestConfiguredTelemetryDestinationReadsTheObservabilityGroup(t *testing.T) 
 	require.NoError(t, err)
 	require.False(t, destination.Available())
 	require.Equal(t, "a local run has no cell collector", destination.AbsentReason)
+}
+
+// Through the SDK's lookup, with the keys exactly as a deployed cell delivers
+// them after the layers merge: the cell's state and endpoint, and the reason the
+// module's local profile left behind.
+func TestConfiguredTelemetryDestinationStateDecidesAcrossLayers(t *testing.T) {
+	const prefix = "CODEFLY__WORKSPACE_CONFIGURATION__OBSERVABILITY__"
+	t.Setenv(prefix+"TELEMETRY_STATE", "available")
+	t.Setenv(prefix+"OTEL_EXPORTER_OTLP_ENDPOINT", collector)
+	t.Setenv(prefix+"TELEMETRY_ABSENT_REASON", "A local run has no cell collector.")
+
+	destination, err := configuredTelemetryDestination()
+	require.NoError(t, err)
+	require.True(t, destination.Available())
+	require.Equal(t, collector, destination.URL)
+	require.NotEmpty(t, destination.IgnoredNotice())
 }
 
 // Configuration that cannot work is refused before the process acquires

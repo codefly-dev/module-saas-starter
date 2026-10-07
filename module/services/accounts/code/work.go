@@ -112,6 +112,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		w.Info("OTEL export disabled: the cell has no collector",
 			wool.Field("reason", telemetryDestination.AbsentReason))
 	}
+	// The state decided; a key it does not use is a leftover, reported here once.
+	// requireStartupConfiguration reads the group too, but only to refuse.
+	if notice := telemetryDestination.IgnoredNotice(); notice != "" {
+		w.Warn(notice)
+	}
 
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
