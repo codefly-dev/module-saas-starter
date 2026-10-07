@@ -279,6 +279,41 @@ Its authority is declared in the `module-capabilities` group's
 
 **Unset means no module may call the surface.**
 
+### A non-member person is not a refusal of the module
+
+Every refusal of the **caller** on this surface is `Unauthenticated` or
+`PERMISSION_DENIED` and names no reason: an identity it cannot prove, a prefix
+no composition registered, a tenant it is not bound to, a queue or namespace
+outside its grant, and — from the mesh, before accounts is reached at all — a
+procedure the authority endpoint does not serve. A **person** the surface is
+asked to act on who is not a member of the named tenant is instead
+`FAILED_PRECONDITION`. That holds on each surface that takes a person:
+`NotifyUser`, subject-scoped `EnqueueJob` and `ListSubjectVisibility`.
+
+The split is what lets a module drive the surface from a journal with retries. A
+departed person is final for that person and nothing a retry resolves, while a
+composition missing its `MODULE_PRINCIPALS` entry or holding a rotated identity
+secret is an operator's to fix and its work is worth holding; conflated under
+one code a consumer has to choose which of the two it silently gets wrong.
+
+**The code alone is not the discriminator — the reason is.** This surface
+answers `FAILED_PRECONDITION` to several unrelated facts, so a consumer reads
+the `google.rpc.ErrorInfo` reason and never the code or the message text. On
+the notify and subject-visibility methods every `FAILED_PRECONDITION` names
+one, under domain `saas.accounts.v1`:
+
+| Reason | Fact | Whose to fix |
+| --- | --- | --- |
+| `TENANT_MEMBERSHIP_MISSING` (`business.ModuleTenantMembershipMissingReason`) | the person named is not a member of the tenant | nobody's — final for that person |
+| `NOTIFICATION_IDEMPOTENCY_CONFLICT` (`business.ModuleNotificationIdempotencyConflictReason`) | the idempotency key was used for different content | the calling module's; a retry never clears it |
+| `SUBJECT_VISIBILITY_SET_TOO_LARGE` (`business.ModuleSubjectVisibilitySetTooLargeReason`) | the viewer's set exceeds `ModuleSubjectVisibilityMaxSet` | an administrator's, by changing the hierarchy |
+
+A reason is only meaningful together with the domain the same call answered
+with: the `Mint*` exchanges' refusals carry theirs under
+`accounts.saas.codefly.dev` (`adapters.SolutionRegistryErrorDomain`, see
+[Source delegations](#source-delegations-a-sync-runs-with-the-connecting-persons-authority)),
+so matching on a bare reason across the whole service is wrong.
+
 ## Minting a module Work Context
 
 The identity itself is a **Work Context**. The auth-gateway brokers the exchange

@@ -5,6 +5,17 @@ its registered backend principal; the host checks the declared tenant and the
 recipient's membership. The response's `delivered` flag means an **in-app row**
 was written, not that an email, Slack message, or text message was sent.
 
+A recipient who is not a member answers `FAILED_PRECONDITION` with the
+`google.rpc.ErrorInfo` reason `TENANT_MEMBERSHIP_MISSING`, separate from the
+`PERMISSION_DENIED` every refusal of the calling module carries, so a sender
+driving the call from a journal can drop the notice for a departed person
+without dropping it for a module whose principal or identity secret is wrong.
+**Key on that reason, never on the code:** `NotifyUser` and `NotifyOrgAdmins`
+also answer `FAILED_PRECONDITION` with reason
+`NOTIFICATION_IDEMPOTENCY_CONFLICT` when an idempotency key was already used
+for different content, which is the sender's own bug and must not be dropped as
+a departed recipient.
+
 The host shell renders the bell, SSE unread updates, inbox and banner. The
 banner requests unread items in the active organization before pagination and
 continues through pages removed by resource-visibility checks. Dismissing it

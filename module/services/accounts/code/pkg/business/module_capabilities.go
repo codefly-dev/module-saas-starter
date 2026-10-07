@@ -36,6 +36,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -340,12 +341,58 @@ func authorizeTenant(caller ModuleCaller, grant ModulePrincipalGrant, requested 
 	return status.Errorf(codes.PermissionDenied, "principal %s may not act on tenant %s", caller.PrincipalID, requested)
 }
 
+// The google.rpc.ErrorInfo reasons this surface's FailedPrecondition refusals
+// carry, under accountsErrorDomain. They are a wire contract with consuming
+// modules: the message is prose, and a refusal's code is NOT on its own a
+// discriminator — FailedPrecondition is the answer to several unrelated facts
+// here — so a consumer deciding what to do keys on the reason.
+//
+// Every FailedPrecondition the notify and subject-visibility surfaces answer
+// names one of these. That is what lets a consumer treat "carries
+// TENANT_MEMBERSHIP_MISSING" as final for one person and everything else as
+// its own problem, rather than reading one code as two different facts.
+const (
+	// ModuleTenantMembershipMissingReason: the person the call names is not a
+	// member of the tenant. Final for that person; nobody else's to fix.
+	ModuleTenantMembershipMissingReason = "TENANT_MEMBERSHIP_MISSING"
+	// ModuleNotificationIdempotencyConflictReason: the idempotency key was
+	// already used for a notification with different content. The caller's bug,
+	// not a fact about the recipient, and a retry of the same call never clears
+	// it.
+	ModuleNotificationIdempotencyConflictReason = "NOTIFICATION_IDEMPOTENCY_CONFLICT"
+	// ModuleSubjectVisibilitySetTooLargeReason: the viewer's set is larger than
+	// the surface can serve whole. A fact about the tenant's hierarchy, which an
+	// administrator can change — never a statement about the viewer.
+	ModuleSubjectVisibilitySetTooLargeReason = "SUBJECT_VISIBILITY_SET_TOO_LARGE"
+)
+
+// moduleRefusal types a refusal of this surface with the reason a consumer keys
+// on, since the message text is not a contract it may match.
+func moduleRefusal(code codes.Code, reason, message string) error {
+	refused := status.New(code, message)
+	detailed, err := refused.WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: accountsErrorDomain})
+	if err != nil {
+		return refused.Err()
+	}
+	return detailed.Err()
+}
+
 // requireTenantMember verifies a user/subject actually belongs to the named
 // tenant before the surface acts on it, so a module bound to tenant A cannot
 // target a user or subject in tenant B (which the tenant guard alone does not
 // prevent — org membership is a separate fact). The membership read runs under
 // the control-plane role because organization_members is RLS-scoped and the
 // caller carries no tenant GUC of its own.
+//
+// A non-member is FailedPrecondition, never PermissionDenied: the caller's
+// credential, principal and grant are all in order, and what refuses the call
+// is a fact about the tenant's membership that a person can change. Every
+// module-side refusal on this surface stays PermissionDenied, so a consumer
+// driving this surface from a journal can tell a departed person — final for
+// that person, and nothing the module may retry its way out of — from a
+// composition whose MODULE_PRINCIPALS entry or identity secret is wrong, which
+// is an operator's to fix and whose work is worth holding. The audit surface's
+// own member check already answers this way (resolveModuleAuditActor).
 func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string) error {
 	var member bool
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -356,7 +403,8 @@ func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string
 		return status.Error(codes.Internal, err.Error())
 	}
 	if !member {
-		return status.Errorf(codes.PermissionDenied, "user %s is not a member of tenant %s", userID, tenant)
+		return moduleRefusal(codes.FailedPrecondition, ModuleTenantMembershipMissingReason,
+			fmt.Sprintf("user %s is not a member of tenant %s", userID, tenant))
 	}
 	return nil
 }
@@ -602,7 +650,8 @@ func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in 
 	})
 	if err != nil {
 		if errors.Is(err, ErrNotificationIdempotencyConflict) {
-			return ModuleNotifyUserResult{}, status.Error(codes.FailedPrecondition, "idempotency key already used for a different notification")
+			return ModuleNotifyUserResult{}, moduleRefusal(codes.FailedPrecondition,
+				ModuleNotificationIdempotencyConflictReason, "idempotency key already used for a different notification")
 		}
 		return ModuleNotifyUserResult{}, err
 	}
@@ -674,7 +723,8 @@ func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller
 		})
 		if err != nil {
 			if errors.Is(err, ErrNotificationIdempotencyConflict) {
-				return false, status.Error(codes.FailedPrecondition, "idempotency key already used for a different notification")
+				return false, moduleRefusal(codes.FailedPrecondition,
+					ModuleNotificationIdempotencyConflictReason, "idempotency key already used for a different notification")
 			}
 			return false, status.Error(codes.Internal, "cannot notify the tenant's administrators")
 		}
@@ -1206,9 +1256,9 @@ func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller Module
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if len(subjects) > ModuleSubjectVisibilityMaxSet {
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"viewer %s sees more than %d subjects in tenant %s; the per-viewer visibility set cannot be served whole",
-			viewer, ModuleSubjectVisibilityMaxSet, tenant)
+		return nil, moduleRefusal(codes.FailedPrecondition, ModuleSubjectVisibilitySetTooLargeReason,
+			fmt.Sprintf("viewer %s sees more than %d subjects in tenant %s; the per-viewer visibility set cannot be served whole",
+				viewer, ModuleSubjectVisibilityMaxSet, tenant))
 	}
 
 	grants := make([]ModuleSubjectVisibilityGrant, 0, len(subjects))
