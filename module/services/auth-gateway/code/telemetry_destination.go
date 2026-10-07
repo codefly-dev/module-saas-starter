@@ -32,18 +32,19 @@ import (
 // collector: the cell does, and a workload that cannot find it does not
 // substitute one.
 //
-// The state decides. The group is layered: the cell's values override the
-// module's local defaults one key at a time, so a deployed workload sees the
-// cell's `available` and endpoint beside the `absent` reason the module's local
-// profile left behind. The key that does not belong to the state is therefore
-// ignored, not refused, and reported once through IgnoredNotice. What each state
-// requires is unchanged: `available` needs an endpoint, `absent` needs a reason.
+// The state decides. The group is layered, so a key the state does not use can
+// still arrive from a lower layer: it is ignored, not refused, and reported once
+// through IgnoredNotice. What each state requires is unchanged: `available` needs
+// an endpoint, `absent` needs a reason. The module's own profile ships neither
+// the state nor the reason, so a cell that delivers `available` carries no
+// leftover and a cell that delivers `absent` without a reason is refused.
 //
 // A group that did not arrive is not a cell without a backend. Reading the first
 // as the second would leave a deployment that converges green and exports
 // nothing, so a missing or unknown state, or the key the state requires being
 // absent, refuses to start, naming what is missing. Only a local runtime may
-// infer `absent` when the state is missing; module defaults never declare it.
+// infer `absent` when the state is missing, and it supplies the reason itself
+// (localAbsentReason): module defaults declare neither.
 //
 // This file exists byte for byte in services/accounts/code and
 // services/auth-gateway/code: the two services are independent Go modules with
@@ -62,6 +63,12 @@ const (
 	// a log line: an unbounded value from configuration would otherwise let
 	// whoever writes the group forge log entries around it.
 	maxAbsentReasonLength = 300
+
+	// localAbsentReason is the reason a local run gives for having no collector.
+	// It lives in code, and is used only when the process is local, because the
+	// module's configuration profile is inherited by deployed cells: a reason
+	// shipped there would reach a cell that sent `absent` without saying why.
+	localAbsentReason = "A local run has no cell collector; traces go to the stdout tracer and metrics are not exported."
 )
 
 // telemetryDestination is the resolved answer. Exactly one of URL and
@@ -139,7 +146,7 @@ func resolveTelemetryDestination(local bool, read func(key string) string) (tele
 	if state == "" && local {
 		state = telemetryStateAbsent
 		if reason == "" {
-			reason = "A local run has no cell collector; traces go to the stdout tracer and metrics are not exported."
+			reason = localAbsentReason
 		}
 	}
 	if state == "" {

@@ -62,9 +62,11 @@ committed default to fall back on. Codefly skips a declared group whose files ar
 absent rather than failing, and both services refuse to start without an explicit
 `TELEMETRY_STATE` — a group that did not arrive is not a cell without a collector,
 and they will not guess. Copy `observability.env.example` as it is to run with
-none: `TELEMETRY_STATE=absent` and its reason, traces on wool's stdout tracer,
-metrics not exported. To export to a collector this machine can reach, set
-`TELEMETRY_STATE=available` and `OTEL_EXPORTER_OTLP_ENDPOINT` as the example says.
+none: `TELEMETRY_STATE=absent` and its reason. Traces and metrics are then not
+exported at all (logs still go to stdout): `local-dogfood` is not the `local`
+runtime, and wool's stdout tracer belongs to that runtime alone. To export to a
+collector this machine can reach, set `TELEMETRY_STATE=available` and
+`OTEL_EXPORTER_OTLP_ENDPOINT` as the example says.
 
 `email` is required because this profile is not the `local` environment, and
 accounts refuses to start there without an explicit `EMAIL_PROVIDER`: `resend`

@@ -665,7 +665,7 @@ Environment variables consumed by the api:
 | `AUDIT_RELAY_BATCH_SIZE`, `AUDIT_RELAY_MAX_WAIT` | Optional under a swap value: events per delivery (default 500, at most 5000) and how long a partial batch waits (default `5s`, at most `60s`: a longer wait would reach the five-minute relay-lag alert on a healthy relay, so a larger value is refused) |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `TELEMETRY_STATE`              | `observability` group, delivered by the platform: `available` or `absent`; missing state refuses startup except in a local runtime, where it means `absent` |
+| `TELEMETRY_STATE`              | `observability` group, delivered by the platform: `available` or `absent`; missing state refuses startup except in the `local` runtime, where it means `absent` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`  | `observability` group: the cell collector's OTLP/gRPC address, required when `available` and ignored when `absent`; `http://` is plaintext on the wire because the mesh supplies mTLS, `https://` is TLS |
 | `TELEMETRY_ABSENT_REASON`      | `observability` group: why the cell has no collector, required when `absent` and ignored when `available`; logged once at startup |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
@@ -677,17 +677,20 @@ When `TELEMETRY_STATE` is `available`, the accounts service and the auth-gateway
 export traces and unsampled request and Go runtime metrics over OTLP/gRPC to the
 cell's collector at `OTEL_EXPORTER_OTLP_ENDPOINT`. The auth-gateway covers both its
 HTTP gateway and gRPC ext_authz authorization service. When it is `absent`, they
-export nothing over OTLP, log `TELEMETRY_ABSENT_REASON` once and boot; a local run
-then uses wool's stdout tracer for traces. The state decides: a cell's values
-override the module's local defaults one key at a time, so a deployed cell that
-says `available` with an endpoint can still carry the `absent` reason the local
-profile left behind. The key the state does not use is ignored, and a startup
-warning names it once. Module defaults never declare `TELEMETRY_STATE`, because
-they also reach deployed cells. Only a local runtime infers `absent` from a
-missing state; elsewhere missing state refuses startup, because a group that
-did not arrive is not a cell without a collector. Unknown state, `available`
-without an endpoint, or explicit `absent` without a reason also refuses startup,
-including locally. An `https://`
+export nothing over OTLP, log `TELEMETRY_ABSENT_REASON` once and boot. A local
+runtime, meaning the Codefly environment named `local` and no other, then uses
+wool's stdout tracer for traces; `local-dogfood` is not that runtime, so it exports
+no traces either. The state decides: the group is layered, so a key the state does
+not use can still arrive from a lower layer, and is ignored, with a startup warning
+that names it once. The module's own profile declares neither `TELEMETRY_STATE`
+nor `TELEMETRY_ABSENT_REASON`, because module defaults also reach deployed cells: a
+healthy `available` cell would warn on every boot about a reason it never set,
+and a cell that sent `absent` without a reason would pass with one written for a
+laptop. Only a local runtime infers `absent` from a missing state, and it
+supplies that state and its reason in code; elsewhere missing state refuses
+startup, because a group that did not arrive is not a cell without a collector.
+Unknown state, `available` without an endpoint, or explicit `absent` without a
+reason also refuses startup, including locally. An `https://`
 endpoint is refused at startup for now: wool's OTLP tracer dials plaintext only,
 so it would be sent in the clear and reported as TLS.
 Metrics leave by OTLP push alone — decided 2026-10-06, because the cell's
