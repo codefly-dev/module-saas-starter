@@ -29,23 +29,52 @@ func mintRequest(t *testing.T, priv ed25519.PrivateKey) *http.Request {
 	return req
 }
 
+// accountsSolutionIdentityHeader and accountsSolutionPublisherHeader are
+// ACCOUNTS' spellings, written here as literals ON PURPOSE. The point of this
+// file is to check the gateway against what accounts reads, so it must not share
+// a symbol with the gateway: an earlier version of this test set and asserted
+// `x-codefly-solution-identity`, the same near-miss the strip list carried, so
+// the test and the hole agreed and the suite was green while any authenticated
+// caller could assert any solution's identity to accounts. A test that borrows
+// the constant it is checking cannot catch a wrong constant.
+//
+// They are accounts' `connect_auth_interceptor.go` constants, lowercased, which
+// is the form `http.Header.Del` and gRPC metadata both use.
+const (
+	accountsSolutionIdentityHeader  = "x-codefly-solution-id"
+	accountsSolutionPublisherHeader = "x-codefly-solution-publisher"
+)
+
+// The gateway's strip constants must BE accounts' spellings. `http.Header.Del`
+// canonicalises its argument, so a near-miss deletes a header nobody sends and
+// leaves the real one in place, with no error anywhere.
+func TestSolutionStripConstantsAreTheHeadersAccountsReads(t *testing.T) {
+	require.Equal(t, accountsSolutionIdentityHeader, solutionIdentityHeader)
+	require.Equal(t, accountsSolutionPublisherHeader, solutionPublisherHeader)
+}
+
 // A caller that simply asserts the header gets it stripped, in both spellings
 // an upstream could read one under. This is the whole cross-solution property:
 // without the strip, any authenticated viewer could mint under any solution's
-// boundary by typing its id.
+// boundary by typing its id. Asserted on what the UPSTREAM received, because
+// that is the only place the question is answered.
 func TestGateway_WorkContextMint_StripsACallerAssertedSolution(t *testing.T) {
 	gw, apiFake, _, priv := newGatewayHarness(t)
 
 	req := mintRequest(t, priv)
-	req.Header.Set("x-codefly-solution-identity", "audit")
-	req.Header.Set("x-codefly-solution-publisher", "solution:audit")
+	req.Header.Set(accountsSolutionIdentityHeader, "audit")
+	req.Header.Set(accountsSolutionPublisherHeader, "solution:audit")
+	// The canonical-cased spelling too: a caller controls the case on the wire,
+	// and Del is case-insensitive, so both must go.
+	req.Header.Set("X-Codefly-Solution-Id", "audit")
 	req.Header.Set("Grpc-Metadata-X-Codefly-Solution-Id", "audit")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Empty(t, apiFake.lastHeaders.Get("x-codefly-solution-identity"))
-	require.Empty(t, apiFake.lastHeaders.Get("x-codefly-solution-publisher"))
+	require.Empty(t, apiFake.lastHeaders.Get(accountsSolutionIdentityHeader),
+		"a caller-asserted solution identity reached the upstream: accounts trusts this header beside a valid gateway token, so it would mint under that solution's boundary")
+	require.Empty(t, apiFake.lastHeaders.Get(accountsSolutionPublisherHeader))
 	requireNoGRPCMetadataHeaders(t, apiFake.lastHeaders)
 }
 

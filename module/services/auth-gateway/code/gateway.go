@@ -244,9 +244,12 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// runtime boundary from it.
 	//
 	// The gateway therefore asserts no solution identity. Both headers are
-	// still STRIPPED below (see strippedIdentityHeaders) so a caller cannot
-	// supply what the gateway no longer stamps; they are simply never
-	// restamped.
+	// still STRIPPED below — they are in `untrustedAuthHeaders`, under the
+	// `solutionIdentityHeader` / `solutionPublisherHeader` constants, which carry
+	// the exact spellings accounts reads — so a caller cannot supply what the
+	// gateway no longer stamps; they are simply never restamped. Accounts does
+	// not merely distrust them either: it REFUSES a request that carries one,
+	// because nothing on this host can prove the claim.
 
 	// Identity and trust credentials are never accepted from the public side
 	// of the gateway. ExtAuthz.Check only sees the caller's real credential
@@ -665,10 +668,33 @@ var untrustedAuthHeaders = []string{
 	// registration credential they were proved from is deleted — but they stay
 	// on this list, because stripping them is what stops a caller supplying
 	// them, and that matters more now than when something restamped them.
-	"x-codefly-solution-identity",
-	"x-codefly-solution-publisher",
+	//
+	// Written as the CONSTANTS, never as literals. A literal here was wrong once:
+	// `"x-codefly-solution-identity"` was spelled for a header accounts does not
+	// read, so `x-codefly-solution-id` passed the strip untouched and a caller
+	// through this gateway could assert any solution's identity to accounts,
+	// which trusts the header beside a valid gateway token.
+	solutionIdentityHeader,
+	solutionPublisherHeader,
 	clientIDHeader,
 }
+
+// solutionIdentityHeader and solutionPublisherHeader are the headers accounts
+// reads to decide which registered solution a Work Context mint is for. This
+// gateway stamps NEITHER — the credential it proved them from is deleted — and
+// they exist here for exactly one purpose: to be stripped, under the spelling
+// accounts actually reads.
+//
+// They MUST stay byte-identical to accounts'
+// `connect_auth_interceptor.go` constants, lowercased. `http.Header.Del`
+// canonicalises its argument, so a near-miss spelling deletes a header nobody
+// sends and silently leaves the real one in place: the strip reports no error
+// and the hole is invisible. `TestSolutionIdentityHeadersAreStripped` is what
+// holds the spelling, by asserting on the value the upstream receives.
+const (
+	solutionIdentityHeader  = "x-codefly-solution-id"
+	solutionPublisherHeader = "x-codefly-solution-publisher"
+)
 
 // httpError writes a plain-text error response. Bodies are short,
 // machine-readable errors — no leaking of implementation details.

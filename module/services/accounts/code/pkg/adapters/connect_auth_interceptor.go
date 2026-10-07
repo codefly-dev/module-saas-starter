@@ -37,6 +37,24 @@ var forwardedIdentityHeaders = []string{
 
 const publicOriginHeader = "X-Codefly-Public-Origin"
 
+// errSolutionAttestationNotDelivered refuses a request that asserts a solution
+// identity. Nothing on this host can prove such a claim: the gateway stamps
+// neither header, and the attestation that would replace the deleted
+// registration credential is not delivered yet. Named rather than generic so a
+// composed solution's runtime reads why it cannot mint, instead of discovering
+// that it silently received a capability for something else.
+var errSolutionAttestationNotDelivered = errors.New(
+	"solution attestation is not delivered on this host: a solution-scoped Work Context requires the delivered workload-certificate attestation at the mint hop, which is blocked on the core workcontext cutover (the Seals/Revisions sources both entrypoints require, and the JSON-versus-deterministic-protobuf token encoding)",
+)
+
+// solutionIdentityAsserted reports whether a request claims a solution identity
+// at all. Either header alone is a claim: the publisher without the id still
+// asserts something this host cannot prove, and refusing only the pair would
+// make the refusal depend on how completely a caller lied.
+func solutionIdentityAsserted(headers http.Header) bool {
+	return headers.Get(solutionIdentityHeader) != "" || headers.Get(solutionPublisherHeader) != ""
+}
+
 // restIdentityHeaderMatcher forwards the caller's bearer credential and the
 // canonical identity headers across the REST transcoding hop into gRPC
 // metadata, so a request that arrives over REST reaches this interceptor
@@ -191,6 +209,18 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	if trustedForwarded && forwardedIdentityAmbiguous(headers.Values) {
 		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("forwarded identity is ambiguous"))
 	}
+	// Refused here, and not inside stampForwardedHTTPIdentity, for two reasons:
+	// that function's caller rewrites every error into "forwarded identity is
+	// malformed", which would bury the one thing a miswired runtime needs to
+	// read; and it only runs when X-User-Id is also present, while this claim
+	// must be refused however little else arrives with it.
+	//
+	// Scoped to a trusted forward because that is the only way it can arrive
+	// and be believed: without a valid gateway token these headers are deleted
+	// a few lines below, which is the right answer for an anonymous prober.
+	if trustedForwarded && solutionIdentityAsserted(headers) {
+		return ctx, connect.NewError(connect.CodePermissionDenied, errSolutionAttestationNotDelivered)
+	}
 	forwardedPublicOrigin := headers.Get(publicOriginHeader)
 	if !trustedForwarded {
 		for _, header := range forwardedIdentityHeaders {
@@ -287,12 +317,6 @@ func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) (conte
 	ctx = withCredentialKind(ctx, headers.Get("X-Credential-Kind"))
 	if scopedRoles := headers.Get("X-Scoped-Roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
-	}
-	if solution := headers.Get(solutionIdentityHeader); solution != "" {
-		ctx, err = auth.WithVerifiedSolution(ctx, solution, headers.Get(solutionPublisherHeader))
-		if err != nil {
-			return ctx, err
-		}
 	}
 	return withScopedRolesTruncated(ctx, headers.Get("X-Scoped-Roles-Truncated") == "true"), nil
 }

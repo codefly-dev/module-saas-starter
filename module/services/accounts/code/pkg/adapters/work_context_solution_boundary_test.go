@@ -19,6 +19,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"io/fs"
+	"os"
+	"path/filepath"
 )
 
 // The host assigns a solution's runtime boundary (issue #1015).
@@ -352,16 +355,28 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 	})
 }
 
-// The solution identity reaches a handler only from a trusted forwarder, on
-// both transports. Without that, an authenticated viewer could name any
-// solution and mint under its boundary — the cross-boundary access the host
-// assigns the boundary to prevent.
-func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
+// NOTHING ON THE WIRE SETS A VERIFIED SOLUTION, and a request that claims one
+// is REFUSED BY NAME.
+//
+// This test asserted the opposite until the cutover: that the solution identity
+// is trusted from a trusted forwarder. That was correct while the gateway proved
+// the claim from a solution's registration credential. Runtime
+// self-registration is deleted, so the gateway stamps neither header and there
+// is nothing left to prove it from — which turns "trusted from the gateway"
+// into "trusted from whoever reached the gateway", i.e. any authenticated
+// viewer naming any solution.
+//
+// Refused rather than ignored: a miswired runtime that silently received an
+// ordinary capability would look like it worked, and would read nothing of the
+// solution's runs. The message names the prerequisite instead.
+func TestAClaimedSolutionIdentityIsRefusedByNameAndNeverTrusted(t *testing.T) {
 	previousGateway := gatewayToken
 	SetGatewayToken("test-gateway-token")
 	t.Cleanup(func() { SetGatewayToken(previousGateway) })
 
-	trustedConnect, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
+	// Behind a VALID gateway token — the trusted path, which is exactly where
+	// the old contract believed the claim.
+	_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
 		context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", http.Header{
 			"X-Codefly-Gateway-Token":      []string{"test-gateway-token"},
 			"X-Credential-Kind":            []string{credentialKindSession},
@@ -371,9 +386,11 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 			"X-Codefly-Solution-Id":        []string{boundarySolutionA},
 			"X-Codefly-Solution-Publisher": []string{boundaryPublisher},
 		})
-	require.NoError(t, err)
+	require.Error(t, err, "a claimed solution identity behind the gateway token must be refused")
+	require.Contains(t, err.Error(), "solution attestation is not delivered on this host",
+		"the refusal must name the missing attestation, not a generic forwarded-identity error")
 
-	trustedGRPC, err := (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
+	_, err = (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
 		metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 			"x-codefly-gateway-token", "test-gateway-token",
 			"x-credential-kind", credentialKindSession,
@@ -383,18 +400,30 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 			"x-codefly-solution-id", boundarySolutionA,
 			"x-codefly-solution-publisher", boundaryPublisher,
 		)), "/saas.accounts.v1.WorkContextService/StartTask")
-	require.NoError(t, err)
+	require.Error(t, err, "same claim over gRPC metadata")
+	require.Contains(t, err.Error(), "solution attestation is not delivered on this host")
 
-	for name, ctx := range map[string]context.Context{
-		"gateway to Connect": trustedConnect,
-		"gateway to gRPC":    trustedGRPC,
+	// Either header ALONE is a claim. Refusing only the complete pair would
+	// make the refusal depend on how completely a caller lied.
+	for name, headers := range map[string]http.Header{
+		"id alone":        {"X-Codefly-Solution-Id": []string{boundarySolutionA}},
+		"publisher alone": {"X-Codefly-Solution-Publisher": []string{boundaryPublisher}},
 	} {
-		identity, ok := accountsauth.VerifiedSolution(ctx)
-		require.True(t, ok, name)
-		require.Equal(t, boundarySolutionA, identity.SolutionID, name)
-		require.Equal(t, boundaryPublisher, identity.Publisher, name)
+		t.Run(name, func(t *testing.T) {
+			headers.Set("X-Codefly-Gateway-Token", "test-gateway-token")
+			headers.Set("X-Credential-Kind", credentialKindSession)
+			headers.Set("X-Scopes", "")
+			headers.Set("X-User-Id", renewActorID)
+			_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
+				context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", headers)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "solution attestation is not delivered on this host")
+		})
 	}
 
+	// WITHOUT a gateway token the headers are deleted rather than refused: an
+	// anonymous prober gets the ordinary answer for its credential, not a
+	// signal that these headers mean something. Either way no solution is set.
 	minter := func() accountsauth.JWTMinter {
 		return &fixedAccessMinter{identity: &accountsauth.Identity{
 			UserID:    uuid.MustParse(renewActorID),
@@ -420,31 +449,30 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 	require.NoError(t, err)
 	_, ok = accountsauth.VerifiedSolution(forgedGRPC)
 	require.False(t, ok)
+}
 
-	// A trusted forwarder's value that is not a catalog identity is refused
-	// rather than dropped: minting with it would seal a boundary nobody owns.
-	// So is an id with no publisher — the gateway stamps both from the same
-	// claims, so an assertion carrying one lost half of itself, and admitting it
-	// would skip the ownership check entirely.
-	for name, headers := range map[string]http.Header{
-		"not a catalog identity": {
-			"X-Codefly-Solution-Id":        []string{"Not A Solution"},
-			"X-Codefly-Solution-Publisher": []string{boundaryPublisher},
-		},
-		"no publisher": {
-			"X-Codefly-Solution-Id": []string{boundarySolutionA},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			headers.Set("X-Codefly-Gateway-Token", "test-gateway-token")
-			headers.Set("X-Credential-Kind", credentialKindSession)
-			headers.Set("X-Scopes", "")
-			headers.Set("X-User-Id", renewActorID)
-			_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
-				context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", headers)
-			require.Error(t, err)
-		})
-	}
+// The source-level half of the same promise: no non-test code may put a
+// verified solution into a context. A refusal in the interceptors is only as
+// good as the absence of another writer, and an interceptor is easy to add.
+func TestNoProductionCodeSetsAVerifiedSolution(t *testing.T) {
+	root := ".."
+	var writers []string
+	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(body), "WithVerifiedSolution(") &&
+			!strings.HasSuffix(path, "solution_identity.go") {
+			writers = append(writers, path)
+		}
+		return nil
+	}))
+	require.Empty(t, writers,
+		"WithVerifiedSolution is called outside its own declaration: a solution identity can only come from a delivered attestation, which does not exist on this host yet")
 }
 
 // The hole this closes (issue #1015, BLOCKER of the PR #1017 review). A
