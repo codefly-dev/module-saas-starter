@@ -41,7 +41,13 @@ func main() {
 		panic(err)
 	}
 
-	grpcPort := codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port
+	// The SDK resolves an endpoint from the carrier the runtime injected or, in a
+	// local run, from the workspace's endpoint map, and never invents a port.
+	grpcNet, grpcNetErr := codefly.For(ctx).API(standards.GRPC).ResolveNetworkInstance()
+	if grpcNetErr != nil || grpcNet == nil {
+		panic(fmt.Sprintf("Codefly gRPC endpoint is unavailable: %v", grpcNetErr))
+	}
+	grpcPort := grpcNet.Port
 	var httpPort uint16
 	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
 	if httpNetErr != nil || httpNet == nil {
