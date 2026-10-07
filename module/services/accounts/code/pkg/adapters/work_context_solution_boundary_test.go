@@ -36,8 +36,10 @@ import (
 const (
 	boundarySolutionA = "example-solution-a"
 	boundarySolutionB = "example-solution-b"
-	boundarySeedA     = "019f6c01-aaaa-7aaa-8aaa-aaaaaaaaaa01"
-	boundarySeedB     = "019f6c01-bbbb-7bbb-8bbb-bbbbbbbbbb02"
+	// Binding ids, not UUIDs: the boundary is derived from the declared
+	// presence binding, and a binding id may carry characters a UUID may not.
+	boundarySeedA     = "binding-solution-a-0001"
+	boundarySeedB     = "binding-solution-b-0002"
 	boundaryPublisher = "solution:example"
 	// A second organization, to show one tenant's boundary is not another's.
 	boundaryOtherOrg = "019f6bf7-5b4b-74e5-8c17-092259bb1672"
@@ -79,10 +81,15 @@ func (f *solutionBoundaryAuthorityFake) SolutionRuntimeBoundarySeed(
 	if !ok {
 		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationNotFound
 	}
+	missing := ""
+	if f.backendStopped {
+		missing = "backend_revision and backend_upstream"
+	}
 	return business.SolutionBoundarySeed{
-		Seed:           seed,
-		Publisher:      f.publisher,
-		BackendServing: !f.backendStopped,
+		BindingID:          seed,
+		MissingBackendHalf: missing,
+		Publisher:          f.publisher,
+		BackendServing:     !f.backendStopped,
 	}, nil
 }
 
@@ -456,10 +463,16 @@ func TestOrdinaryMintRefusesARegisteredSolutionsBoundary(t *testing.T) {
 	solutionBoundaryService(t)
 	server, authority := newSolutionBoundaryServer(t)
 
+	// The BINDING ID behind a boundary is no longer in this set, and that is a
+	// consequence of the re-key rather than a gap. A task_id is a UUID; a
+	// binding id is not, and is refused on shape before this check is reached —
+	// so asserting the boundary message here would assert the wrong refusal.
+	// TestNamingABindingIDAsATaskIDIsRefused keeps that case covered on its own
+	// terms, and the derived boundaries below are the values a caller could
+	// actually guess at.
 	for name, taskID := range map[string]string{
 		"another solution's derived boundary": derivedBoundary(t, boundarySeedA, renewOrgID),
 		"its own derived boundary":            derivedBoundary(t, boundarySeedB, renewOrgID),
-		"the seed behind one":                 boundarySeedA,
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := boundaryMintRequest("runtime.tasks")
@@ -600,4 +613,70 @@ func TestRegisteredBoundaryRefusalCoversEverySpellingThatReachesIt(t *testing.T)
 				"the schema must refuse this spelling, so the guard never sees it")
 		})
 	}
+}
+
+// TestNamingABindingIDAsATaskIDIsRefused keeps the case the boundary table
+// above gave up when the seed stopped being a UUID.
+//
+// A declared presence binding id is not a task_id and never was; what changed
+// is that it is now the boundary's INPUT, so a caller who learned one might try
+// naming it. It is refused — and the assertion is only that it is refused and
+// that the message names no solution, because the reason is a shape refusal
+// rather than the boundary collision, and pinning it to the collision's wording
+// would be asserting a path this value cannot reach.
+func TestNamingABindingIDAsATaskIDIsRefused(t *testing.T) {
+	solutionBoundaryService(t)
+	server, _ := newSolutionBoundaryServer(t)
+
+	request := boundaryMintRequest("runtime.tasks")
+	request.TaskId = boundarySeedA
+
+	_, err := server.StartTask(boundaryCaller(), request)
+	require.Error(t, err)
+	require.NotContains(t, status.Convert(err).Message(), boundarySolutionA)
+	require.NotContains(t, status.Convert(err).Message(), boundarySolutionB)
+}
+
+// TestTheSealedClaimIsTheBindingIDsDerivationAndTheRefusalNamesTheMissingHalf
+// holds the two halves of the serving ruling, on the FAKE-backed path so it
+// runs in CI rather than skipping on a missing DSN — which is how the mint's
+// total break reached a pushed head in the first place.
+//
+// Half one: the boundary a mint seals is the derivation of the declared
+// presence BINDING ID, not of a per-registration random. Asserted by value
+// against business.SolutionRuntimeBoundary rather than by re-deriving inside
+// the test, so a change to the derivation moves both sides and this still
+// compares the sealed claim to the binding id's answer.
+//
+// Half two: a declared row with no backend half refuses "not serving" AND
+// names the columns it read. A refusal that only says "not serving" sends an
+// operator to look for a lease that no longer exists.
+func TestTheSealedClaimIsTheBindingIDsDerivationAndTheRefusalNamesTheMissingHalf(t *testing.T) {
+	solutionBoundaryService(t)
+	server, authority := newSolutionBoundaryServer(t)
+
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
+	require.NoError(t, err)
+
+	issued, err := server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
+	require.NoError(t, err)
+	want, err := business.SolutionRuntimeBoundary(boundarySeedA, renewOrgID)
+	require.NoError(t, err)
+	// Read off the SIGNED capability, not the response field: a consumer
+	// verifies the first.
+	require.Equal(t, want, boundaryOf(t, server, "runtime.tasks", issued),
+		"the sealed claim must be the BINDING ID's derivation")
+	require.NotEqual(t, boundarySeedA, issued.GetTaskId(),
+		"the binding id itself is the input, never the sealed value")
+
+	// The backend half stops being delivered: no lease lapses, the declaration
+	// simply no longer carries it.
+	authority.backendStopped = true
+	_, err = server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	message := status.Convert(err).Message()
+	require.Contains(t, message, "not serving")
+	require.Contains(t, message, "backend_revision")
+	require.Contains(t, message, "backend_upstream")
+	require.NotContains(t, message, "lease", "a lapsed lease is not why a declaration is absent")
 }

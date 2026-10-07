@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -259,20 +260,49 @@ func (s *PostgresStore) ListSolutionRegistrations(
 // "Serving" is the backend half alone, not the record's derived status: the
 // backend is the half that mints, and a solution whose page has not registered
 // yet is still entitled to a boundary for the calls its own backend makes.
+// missingBackendHalf names which of the backend half's two columns is absent,
+// for a refusal that says what it read rather than only "not serving". The
+// schema's whole-or-absent CHECK means they move together, so one message
+// covers both; naming them is what makes an operator's next step obvious.
+func missingBackendHalf(revision *int64, upstream *string) string {
+	switch {
+	case revision == nil && upstream == nil:
+		return "backend_revision and backend_upstream"
+	case revision == nil:
+		return "backend_revision"
+	case upstream == nil || strings.TrimSpace(*upstream) == "":
+		return "backend_upstream"
+	}
+	return ""
+}
+
 func (s *PostgresStore) SolutionRuntimeBoundarySeed(
 	ctx context.Context, solutionID string,
 ) (business.SolutionBoundarySeed, error) {
 	var (
-		seed         string
-		publisher    string
-		tombstonedAt *time.Time
-		backendLease *time.Time
+		bindingID       *string
+		publisher       string
+		tombstonedAt    *time.Time
+		backendRevision *int64
+		backendUpstream *string
 	)
+	// Read the DECLARED row, on every mint. This selected
+	// `runtime_boundary, …, backend_lease_expires_at` — and migration 26 DROPS
+	// that column, so the statement did not return a stale value, it failed
+	// outright: every solution-scoped mint errored on `column
+	// backend_lease_expires_at does not exist`. Nothing caught it because the
+	// suites that reach this path are DSN-gated and skip.
+	//
+	// Serving is now delivered presence: a non-tombstoned declared row whose
+	// applied generation carries a backend half. There is no lease to renew —
+	// the renewal path is deleted — so revocation reaches a capability through
+	// THIS read, which the mint and the gateway perform per request under the
+	// existing 120s cache bound, never from an unbounded snapshot.
 	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.getQueryExecutor(ctx).QueryRow(ctx,
-			`SELECT runtime_boundary, publisher, tombstoned_at, backend_lease_expires_at
+			`SELECT declared_binding_id, publisher, tombstoned_at, backend_revision, backend_upstream
 			 FROM public.solution_registrations WHERE solution_id = $1`, solutionID).
-			Scan(&seed, &publisher, &tombstonedAt, &backendLease)
+			Scan(&bindingID, &publisher, &tombstonedAt, &backendRevision, &backendUpstream)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationNotFound
@@ -283,10 +313,17 @@ func (s *PostgresStore) SolutionRuntimeBoundarySeed(
 	if tombstonedAt != nil {
 		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationTombstoned
 	}
+	// A row with no declared binding is not a declared presence at all: the
+	// cutover's own constraint makes an undeclared row a withdrawn one.
+	if bindingID == nil || strings.TrimSpace(*bindingID) == "" {
+		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationTombstoned
+	}
+	missing := missingBackendHalf(backendRevision, backendUpstream)
 	return business.SolutionBoundarySeed{
-		Seed:           seed,
-		Publisher:      publisher,
-		BackendServing: backendLease != nil && backendLease.After(time.Now().UTC()),
+		BindingID:          *bindingID,
+		Publisher:          publisher,
+		BackendServing:     missing == "",
+		MissingBackendHalf: missing,
 	}, nil
 }
 
@@ -297,8 +334,13 @@ func (s *PostgresStore) SolutionRuntimeBoundarySeed(
 func (s *PostgresStore) SolutionRuntimeBoundarySeeds(ctx context.Context) ([]string, error) {
 	var seeds []string
 	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
+		// Binding ids, not the dropped `runtime_boundary` column: the collision
+		// check refuses a caller-named task_id that is any solution's boundary,
+		// and a boundary is now derived from the binding. Tombstones included —
+		// a withdrawn solution's runs may still be executing.
 		rows, err := s.getQueryExecutor(ctx).Query(ctx,
-			`SELECT runtime_boundary FROM public.solution_registrations`)
+			`SELECT declared_binding_id FROM public.solution_registrations
+			 WHERE declared_binding_id IS NOT NULL`)
 		if err != nil {
 			return err
 		}

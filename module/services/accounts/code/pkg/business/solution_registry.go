@@ -121,10 +121,22 @@ type SolutionRuntimeBoundarySeedStore interface {
 // SolutionBoundarySeed is what the mint reads about one registration: the seed
 // its boundary is derived from, the publisher of record, and whether the half
 // that mints is currently serving.
+// SolutionBoundarySeed is what the mint reads about one declared solution.
+//
+// BindingID replaced an opaque `Seed` read off the registration row: the
+// boundary is derived from the declared presence binding, not from a
+// per-registration random.
+//
+// BackendServing is DELIVERED presence, never a heartbeat or a lease. The
+// branch deleted the renewal path, so a row is serving when its applied
+// declared generation carries a backend half; MissingBackendHalf says so for
+// the refusal, which names the two columns it read rather than saying only
+// "not serving".
 type SolutionBoundarySeed struct {
-	Seed           string
-	Publisher      string
-	BackendServing bool
+	BindingID          string
+	Publisher          string
+	BackendServing     bool
+	MissingBackendHalf string
 }
 
 // SolutionRuntimeBoundary derives the boundary a solution's Work Context is
@@ -140,14 +152,40 @@ type SolutionBoundarySeed struct {
 // Rotation is deliberately coarse: the seed is the only input, so replacing it
 // moves every organization's boundary at once and orphans whatever is still
 // executing under the old one. SOLUTION_REGISTRATION.md §6 states that cost.
-func SolutionRuntimeBoundary(seed, orgID string) (string, error) {
-	namespace, err := uuid.Parse(seed)
-	if err != nil {
-		return "", fmt.Errorf("solution runtime boundary seed is not a UUID: %w", err)
+// solutionBoundaryNamespace is the fixed namespace the BINDING ID is hashed
+// under to produce a per-binding namespace. It is a constant of this host, not
+// a secret: unguessability comes from the org derivation below plus the fact
+// that a boundary is never returned on a readable record, not from hiding this.
+var solutionBoundaryNamespace = uuid.MustParse("6f1b1f3e-7c4a-5c2b-9e55-1a2b3c4d5e6f")
+
+// SolutionRuntimeBoundary derives one organization's boundary for a solution
+// from the DECLARED PRESENCE BINDING ID.
+//
+// It used to take the `runtime_boundary` column, a per-registration
+// `gen_random_uuid()` default. That was wrong in a way nothing caught: the
+// column is per REGISTRATION, so a solution withdrawn and re-registered took a
+// fresh random and every run filed under the old boundary was orphaned, while a
+// binding that never moved could still have its boundary replaced by a write it
+// did not make. The binding id is the identity that survives re-registration
+// and is terminal with its tombstone, which is exactly the lifetime a boundary
+// must have.
+//
+// The binding id is NOT a UUID — a binding may carry characters a path segment
+// may not — so it is hashed under this host's namespace to get one, and the org
+// derivation then runs unchanged. Two steps, because one boundary per solution
+// would make every tenant of a solution share one.
+//
+// Rotation is coarse by construction: the binding id is the only input, so a
+// boundary moves exactly when the binding does. SOLUTION_REGISTRATION.md §6
+// states that cost.
+func SolutionRuntimeBoundary(bindingID, orgID string) (string, error) {
+	if strings.TrimSpace(bindingID) == "" {
+		return "", errors.New("solution runtime boundary needs a declared binding id")
 	}
 	if orgID == "" {
 		return "", errors.New("solution runtime boundary needs an organization")
 	}
+	namespace := uuid.NewSHA1(solutionBoundaryNamespace, []byte(bindingID))
 	return uuid.NewSHA1(namespace, []byte(orgID)).String(), nil
 }
 
