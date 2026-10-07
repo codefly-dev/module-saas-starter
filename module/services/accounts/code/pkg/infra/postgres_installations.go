@@ -848,7 +848,12 @@ func (s *PostgresStore) ListCatalogueInstallations(ctx context.Context) ([]*busi
 		        JOIN organizations o ON o.id = i.org_id
 		        LEFT JOIN principals p ON p.id = i.agent_principal_id
 		       WHERE i.status = 'active') installations
-		ORDER BY solution_identifier, org_name, id`)
+		-- target_id, because migration 22 DROPPED solution_identifier. An
+		-- installation names the immutable target now, and ordering by a
+		-- column that no longer exists is a hard query error on every fresh
+		-- database — which is what CI installs, and what a worktree whose
+		-- pgdata predates the migration does not.
+		ORDER BY target_id, org_name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list catalogue installations: %w", err)
 	}

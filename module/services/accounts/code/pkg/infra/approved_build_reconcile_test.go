@@ -46,11 +46,21 @@ import (
 func TestDeliveredAuthorityPopulatesTheApprovedBuildView(t *testing.T) {
 	scenario := newApprovedBuildScenario(t, "abv")
 
-	// Before any pass: unknown, not "bears none". A host that has reconciled
-	// nothing refuses rather than minting unbound capabilities for everyone.
+	// Before any pass: REFUSED, and refused as "no pass has completed" rather
+	// than as "unknown principal". A host that has reconciled nothing must not
+	// mint unbound capabilities for anyone, which is unchanged; what changed is
+	// that it no longer reports a cold start as a principal it has never heard
+	// of, because that sends an operator to correct a declaration that is
+	// already right.
+	//
+	// ADAPTED, not reverted: this is a DB-gated test, so it did not run when
+	// the distinction was introduced, and it is the test that proves the new
+	// sentinel reaches the real reconciler rather than only the constructed one.
 	_, _, err := scenario.reconciler.ApprovedBuild(testCtx, scenario.principal)
-	require.ErrorIs(t, err, business.ErrUnknownExecutionPrincipal,
+	require.ErrorIs(t, err, business.ErrExecutionAuthorityUnreconciled,
 		"an unreconciled host must refuse, because an unbound capability for an unknown identity is the permissive answer")
+	require.NotErrorIs(t, err, business.ErrUnknownExecutionPrincipal,
+		"and it must not blame the principal for the host still starting")
 
 	scenario.deliverAuthority(t, scenario.authority(t, "a", 3, false, scenario.principal))
 	scenario.runPass(t)
