@@ -93,6 +93,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
 	"membership_integrity_findings":        {}, // operator repair evidence; no request-traffic authority at all
 	"org_generic_settings":                 {selectRows: true, insertRows: true, updateRows: true},
+	"org_key_bindings":                     {selectRows: true}, // platform provisioning; a tenant reads its own binding and writes none
 	"org_identity_providers":               {selectRows: true, insertRows: true, updateRows: true},
 	"org_settings":                         {selectRows: true, insertRows: true, updateRows: true},
 	"organization_activations":             {selectRows: true, insertRows: true, updateRows: true},
@@ -536,6 +537,15 @@ func TestWebhookProjectionRoleHasProjectionOnlyAuthority(t *testing.T) {
 	expected := map[string]relationPrivileges{
 		"webhook_subscriptions": {selectRows: true},
 		"webhook_deliveries":    {selectRows: true},
+		// The projection reads a subscription's sealed signing secret, so it
+		// must also resolve which key opens it. A binding readable by fewer
+		// roles than the secret it unlocks fails at delivery time rather than at
+		// boot, and this role already reads the secret itself above.
+		//
+		// Still read-only, and still only these three relations: the role cannot
+		// write a binding, so it cannot point a subscription at another
+		// organization's key.
+		"org_key_bindings": {selectRows: true},
 	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := storetx.Tx(ctx)

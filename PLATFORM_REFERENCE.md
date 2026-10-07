@@ -136,7 +136,7 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
 | Connector management | 🟡 | SSO connector setup only (`/admin/sso`); no general third-party-connector/manifest framework. |
 | Per-tenant config | ✅ | `/admin/organizations/settings` (`org_settings`), `/admin/entitlements`. |
 | Background-agent ops / kill switch | 🟡 | `/admin/platform/jobs` gives payload-free queue/lifecycle + MFA-gated dead-letter replay; `RevokePrincipal` revokes an agent. No dedicated per-tenant agent kill switch — but note the audit's lesson: make any kill switch **per-tenant**, not deployment-global. |
-| Partner API keys | 🟡 | Org API keys `cfly_sk_…` (hashed via Vault transit HMAC, scoped, `/admin/api-keys`, `pkg/business/api_keys.go` + `pkg/infra/vault.go`); no separate partner tier and no 404-not-403 concealment of a staff-only surface yet. |
+| Partner API keys | 🟡 | Org API keys `cfly_sk_…` (keyed hash from the selected key service, scoped, `/admin/api-keys`, `pkg/business/api_keys.go` + `pkg/keyservice`); no separate partner tier and no 404-not-403 concealment of a staff-only surface yet. |
 | Audit viewer + compliance export | ✅ | `/admin/audit-log` (`QueryAuditLog`) + on-demand CSV/JSON download (`AuditService/ExportAuditLog`, `pkg/business/audit_export.go`). The former per-org S3 JSONL sink (`AuditExportService`) was removed with the object-storage service. |
 
 ### 1.6 Support access / impersonation — ✅ (with a role-model divergence)

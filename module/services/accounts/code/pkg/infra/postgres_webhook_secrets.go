@@ -11,9 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
+	"accounts/pkg/keyservice"
 )
-
-const vaultSecretEnvelopePrefix = "cfs1:vault-transit:"
 
 // MigrateLegacyWebhookSecrets upgrades pre-migration plaintext keys before the
 // server accepts requests. Empty legacy keys came from the old broken create
@@ -32,7 +31,7 @@ func (s *PostgresStore) MigrateLegacyWebhookSecrets(ctx context.Context, cipher 
 		rows, err := s.getQueryExecutor(ctx).Query(ctx, `
 			SELECT id::text, org_id::text, secret_encrypted, active
 			FROM webhook_subscriptions
-			WHERE secret_encrypted NOT LIKE $1`, vaultSecretEnvelopePrefix+"%")
+			WHERE secret_encrypted NOT LIKE 'cfs%'`)
 		if err != nil {
 			return err
 		}
@@ -50,6 +49,16 @@ func (s *PostgresStore) MigrateLegacyWebhookSecrets(ctx context.Context, cipher 
 	}
 
 	for _, item := range legacy {
+		// The SQL predicate above narrows; this decides. A value already sealed
+		// by ANY backend or framing is not legacy plaintext. Without this guard
+		// a deployment that selected a different key service would have every
+		// webhook signing secret re-sealed as though the envelope string were
+		// the secret — unreadable afterwards, counted as success, and wrapped
+		// once more on every restart. The secret is shared with the consumer, so
+		// the host cannot regenerate it.
+		if keyservice.IsEnvelopeFraming(item.plaintext) {
+			continue
+		}
 		plaintext := item.plaintext
 		shouldDisable := strings.TrimSpace(plaintext) == ""
 		if shouldDisable {

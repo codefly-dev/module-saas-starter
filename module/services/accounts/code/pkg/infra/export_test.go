@@ -267,3 +267,23 @@ type testingT interface {
 	TempDir() string
 	Fatalf(string, ...any)
 }
+
+// EnvelopedColumn is one enveloped column as the re-seal inventory declares it.
+// Exposed so a database-backed test can hold the inventory against the live
+// schema: the crypto-shredding guard keys off OrgColumn, so an entry that omits
+// it on a table that HAS an org_id is swept for an organization that holds its
+// own key.
+type EnvelopedColumn struct {
+	Table, Column, OrgColumn string
+}
+
+// EnvelopedColumns is the re-seal inventory, for that test.
+func EnvelopedColumns() []EnvelopedColumn {
+	out := make([]EnvelopedColumn, 0, len(envelopedColumns))
+	for _, column := range envelopedColumns {
+		out = append(out, EnvelopedColumn{
+			Table: column.table, Column: column.column, OrgColumn: column.orgColumn,
+		})
+	}
+	return out
+}
