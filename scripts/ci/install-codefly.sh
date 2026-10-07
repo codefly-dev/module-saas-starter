@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.180}"
+version="${CODEFLY_VERSION:-0.1.179}"
 case "${version}" in
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
@@ -68,25 +68,6 @@ case "${version}" in
     # resolver registered where every command's context is born) only helps a
     # solution composed against this host resolve.
     checksum=6e7666ef095815a77c10fb1644c69e17b0e8869476c18713bfaa496971b5c45f
-    ;;
-  0.1.180)
-    # THE FIRST RELEASE THAT VENDORS CORE v0.14.0 (cli#914, tag bb5b14f5), and
-    # the reason this tree can delete the nine `allow-modules: ["*"]` wildcards
-    # at all: v0.14.0 refuses that key on an export by name — "an allow-list is
-    # derived from the consumers' declared service dependencies, never written by
-    # the module it would grant" — and requires `exposure` on a public endpoint.
-    #
-    # Those eleven declaration sites had no head that was valid on both sides:
-    # with the wildcards present v0.14.0 refuses the module, and with them gone
-    # core v0.8.1 drops module reach SILENTLY while v0.13.0 refuses outright. So
-    # the pin and the eleven move together, in one change, and this release is
-    # what makes the pair loadable.
-    #
-    # Verified rather than taken from the release notes: `go version -m` on this
-    # exact archive reports `codefly-dev/core v0.14.0` and
-    # `sdk-go/workcontext v0.0.0-20261007042459-a9cae91487bc`, and the checksum
-    # below is the one in the release's own checksums.txt.
-    checksum=af63538645fe092dfcf2fdec3887532db1bd58507295d1f126ddec4fa351c6db
     ;;
   *)
     echo "Unsupported Codefly CI version: ${version}" >&2
