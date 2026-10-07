@@ -10,6 +10,10 @@ import (
 	"testing"
 
 	accountsauth "accounts/pkg/auth"
+	"io/fs"
+	"os"
+	"path/filepath"
+
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -19,9 +23,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"io/fs"
-	"os"
-	"path/filepath"
 )
 
 // The host assigns a solution's runtime boundary (issue #1015).
@@ -139,14 +140,48 @@ func newSolutionBoundaryServer(t *testing.T) (*WorkContextAuthorityServer, *solu
 	return server, authority
 }
 
-// solutionBoundaryService installs the membership store requireOrgMember reads.
+// solutionBoundaryService installs the membership store requireOrgMember reads,
+// plus the audience vocabulary every mint resolves.
 func solutionBoundaryService(t *testing.T) {
 	t.Helper()
 	previous := service
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
+}
+
+// declareTestAudiences declares the module prefixes the mint tests address, the
+// way a deployment declares them: through the MODULE_PRINCIPALS registry, which is
+// where the vocabulary's third member comes from.
+//
+// Without this every mint in these files refuses with "not an audience this host
+// serves" — correctly, because an audience naming no declared consumer is exactly
+// what the closed set exists to refuse. Declaring them here keeps each test about
+// what it is about while still exercising the real rule: an audience NOT declared
+// here is still refused, which TestTheMintAudienceVocabularyIsClosedAndDerived
+// asserts directly.
+// It MERGES rather than replaces: a test that declared its own grant — with the
+// permission resources its content is governed by — must keep it, or the content
+// surface starts answering "declares no module content" for a reason that has
+// nothing to do with what the test is about.
+func declareTestAudiences(svc *business.Service) {
+	registry := svc.ModulePrincipals()
+	if registry == nil {
+		registry = business.ModulePrincipalRegistry{}
+	}
+	for _, prefix := range []string{
+		"runtime.tasks", "runtime.operations", "tool.test", "consumer.test",
+		"acme.collection", "rows", "documents", "example", "example-producer",
+	} {
+		id := business.ModulePrincipalID(prefix)
+		if _, declared := registry[id]; declared {
+			continue
+		}
+		registry[id] = business.ModulePrincipalGrant{Prefix: prefix}
+	}
+	svc.SetModulePrincipals(registry)
 }
 
 // boundaryCaller is the viewer behind the passthrough: the person whose bearer

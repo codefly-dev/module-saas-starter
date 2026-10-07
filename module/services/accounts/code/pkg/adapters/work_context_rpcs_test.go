@@ -416,6 +416,23 @@ func (renewMembershipStore) WithOrgTx(ctx context.Context, _ string, fn func(con
 	return fn(ctx)
 }
 
+// The host's audience vocabulary is derived, and every mint now resolves it
+// (business.RequireHostAudience), so a Store that cannot answer this read fails
+// every mint closed — which is the right production behaviour and would make these
+// tests fail on the vocabulary instead of on the mint they are about.
+//
+// This store declares NO solution bindings. The audiences these tests mint for are
+// declared MODULE prefixes, the set's third member, installed by
+// declareTestAudiences below — which is what they are in a real deployment too:
+// a forwarded viewer context names the module it was minted for.
+func (renewMembershipStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (renewMembershipStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+	return nil, nil
+}
+
 func (renewMembershipStore) GetPlatformRole(context.Context, string) (string, error) {
 	return "", nil
 }
@@ -488,6 +505,7 @@ func TestRenewWorkContextExtendsDelegatedAuthorityForCurrentActor(t *testing.T) 
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
 
 	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
@@ -529,6 +547,7 @@ func TestRenewWorkContextRejectsScopeWidening(t *testing.T) {
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
 
 	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
@@ -572,6 +591,7 @@ func TestRenewWorkContextRejectsAudienceOutsideActorCeiling(t *testing.T) {
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
 
 	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
@@ -628,6 +648,7 @@ func TestRenewWorkContextRejectsScopeOutsideActorCeiling(t *testing.T) {
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
 
 	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
@@ -684,6 +705,7 @@ func TestRenewWorkContextPreservesSingleUseReplayPolicy(t *testing.T) {
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
 
 	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
@@ -753,6 +775,7 @@ func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
 
 	request := func(sessionID string) *gen.StartTaskWorkContextRequest {
@@ -838,6 +861,7 @@ func TestStartRootSessionGeneratesFreshRootSession(t *testing.T) {
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
 	service = svc
+	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
 
 	request := func(parent workcontext.WorkContextToken, sessionID string) *gen.StartRootSessionWorkContextRequest {

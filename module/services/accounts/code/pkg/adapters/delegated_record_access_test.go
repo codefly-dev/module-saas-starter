@@ -21,6 +21,17 @@ type exactRecordStore struct {
 	after    func()
 }
 
+// The audience vocabulary's one read. It declares NO solution bindings: the
+// audiences these tests address are declared MODULE prefixes, installed through
+// the principal registry, which is where a deployment declares them too.
+func (*exactRecordStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (*exactRecordStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+	return nil, nil
+}
+
 func (s *exactRecordStore) WithOrgTx(ctx context.Context, org string, run func(context.Context) error) error {
 	if err := auth.RequireVerifiedDatabaseScope(ctx, org, readOwner); err != nil {
 		return err
@@ -51,6 +62,7 @@ func TestExactRecordOracleRequiresSignedCurrentAttenuatedAuthority(t *testing.T)
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
+	declareTestAudiences(svc)
 	token := mint("rows", "rows", "read")
 	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))
 	require.NoError(t, err)
@@ -107,6 +119,7 @@ func TestExactRecordOracleRefusesModuleIdentityCapability(t *testing.T) {
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
+	declareTestAudiences(svc)
 	module := business.ModulePrincipalID("rows")
 	identity, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: module, Tenant: readOrg})
 	require.NoError(t, err)
@@ -142,6 +155,7 @@ func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
+	declareTestAudiences(svc)
 	// The sealed revision must equal what the oracle re-resolves, or the mint would
 	// be refused as stale before the intersection this test is about is reached.
 	facts.installationFcts = &business.InstallationAuthorityFacts{
@@ -197,6 +211,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 		business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}},
 	})
 	service = svc
+	declareTestAudiences(svc)
 	journal := &exactChainJournal{}
 	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
 	workContextSingleton.journal = journal
@@ -284,6 +299,7 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
+	declareTestAudiences(svc)
 	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
 	journal := &exactChainJournal{}
 	workContextSingleton.journal = journal

@@ -84,6 +84,12 @@ func isDisallowedRegisteredUpstreamHost(host string) bool {
 	return true
 }
 
+// modulePrefix is the path prefix of the module credential exchanges. They run
+// before routing because the internal-token header they authenticate on has not
+// been stripped yet, so a capability presented to one of them is verified against
+// this prefix rather than against a resolved route.
+const modulePrefix = "/modules/"
+
 // moduleSecretHeader carries the module identity secret to accounts.
 const moduleSecretHeader = "X-Codefly-Module-Secret"
 

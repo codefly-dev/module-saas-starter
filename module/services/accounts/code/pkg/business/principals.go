@@ -392,6 +392,14 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 		}
 	}
 
+	// The agent ceiling may only name audiences this host serves (issue #952), for
+	// the same reason an installation's may not: an audience nothing serves is a
+	// capability pointing at no consumer. Refused at write and narrowed at read —
+	// see Service.RequireHostAudiences.
+	if err := s.RequireHostAudiences(ctx, req.AllowedAudiences); err != nil {
+		return nil, NewStoreError(err, ErrTypeValidation)
+	}
+
 	// Generate ID server-side. We don't reuse user/api_key IDs for
 	// agents — agents are net-new principals.
 	p := &Principal{

@@ -172,11 +172,27 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // Unlisted paths are rejected with 404. Every request must match an explicit
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// A presented Work Context is verified before any routing so a forged,
-	// expired, or unattenuated capability is rejected at the edge rather than
-	// forwarded to a callee. Absent header: nothing to verify, carry on.
-	if g.rejectInvalidWorkContext(w, r) {
-		return
+	// A presented Work Context is verified at the edge, but NOT here: it is
+	// verified against the audience of the route it was presented to, so the route
+	// has to be resolved first. Each routing destination below calls
+	// rejectInvalidWorkContext with the audience its own resolution produced, and a
+	// path that resolves to no route reaches the 404 with the verifier never
+	// called.
+	//
+	// This used to run before any routing with no audience expectation at all,
+	// which meant a capability minted for one solution verified cleanly on another
+	// solution's route and was forwarded there: the callee was the only thing that
+	// could notice, and it was the callee's own audience check that had to.
+
+	// The module credential exchanges and the CORS preflight run before routing by
+	// design (the internal-token header has not been stripped yet), so a capability
+	// presented to one of them is checked with NO audience expectation: their
+	// destination is accounts, one of this host's own services. The preflight
+	// carries no credential at all.
+	if strings.HasPrefix(r.URL.Path, modulePrefix) {
+		if g.rejectInvalidWorkContext(w, r, "") {
+			return
+		}
 	}
 
 	// A registered client's browser asks permission before it may call at all.
@@ -229,8 +245,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if g.handleDeclaredModule(w, r) {
 			return
 		}
+		// NO ROUTE RESOLVED, so the verifier was never called: a forged capability
+		// on a path this host does not expose is answered as the unexposed path it
+		// is, without a JWKS fetch or a signature check.
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
+		return
+	}
+	// A catalog route's destination is one of this host's own services, which has
+	// no audience of its own — the hop's name is never one — so the token is held
+	// to its signature and window and nothing more.
+	if g.rejectInvalidWorkContext(w, r, "") {
 		return
 	}
 	if labeler, ok := otelhttp.LabelerFromContext(r.Context()); ok {
@@ -608,11 +633,28 @@ func injectHeaders(r *http.Request, headers []*corev3.HeaderValueOption) {
 	}
 }
 
-// rejectInvalidWorkContext fails closed on a presented-but-invalid Work Context.
+// rejectInvalidWorkContext fails closed on a presented-but-invalid Work Context,
+// against the audience of the ROUTE it was presented to.
+//
 // It returns true when it has answered the request (401), which the caller must
 // treat as terminal. A request without the header, or with a header the edge is
 // not configured to verify, is left untouched for the normal routing path.
-func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Request) bool {
+//
+// THE ROUTE IS RESOLVED BEFORE THE TOKEN IS JUDGED, which is why `expected` is a
+// parameter rather than something this function works out. Every call site passes
+// the audience its own resolution produced:
+//
+//   - a solution route passes `solution:<binding-id>` of the binding the route
+//     resolved to, from the SAME carried resolution that chose the upstream;
+//   - a declared module route passes the module capability audience;
+//   - a catalog route passes EMPTY — its destination is one of this host's own
+//     services, and the hop's own name is never an audience;
+//   - a path that resolves to NO route never reaches here at all, so the verifier
+//     is never called for a request that was going to be a 404.
+//
+// A-for-B therefore refuses with the audience error rather than with a 404: the
+// route resolves, and the capability presented to it names another consumer.
+func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Request, expected string) bool {
 	if g.workContext == nil {
 		return false
 	}
@@ -622,7 +664,7 @@ func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Reques
 	}
 	token, err := workcontext.ParseWorkContextToken(raw)
 	if err == nil {
-		err = g.workContext.Verify(r.Context(), token)
+		err = g.workContext.Verify(r.Context(), token, expected)
 	}
 	if err != nil {
 		// Log the cause (not the token) so a wall of 401s can be told apart:

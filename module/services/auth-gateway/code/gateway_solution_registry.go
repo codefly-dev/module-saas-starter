@@ -313,6 +313,12 @@ type solutionRouting struct {
 	// TargetID is the immutable solution target this alias resolves to, empty
 	// for a registration no declaration opened a target for.
 	TargetID string
+	// BindingID is the declared binding this alias resolves to. It is carried on
+	// the SAME resolution as TargetID and Upstream, for the same reason they are:
+	// the audience a presented capability is checked against is derived from it
+	// (`solution:<binding-id>`), and a second read could judge a token against the
+	// predecessor's audience while traffic went to the replacement's address.
+	BindingID string
 	// Upstream is the same record's backend address, normalised to scheme+host.
 	Upstream *url.URL
 }
@@ -417,8 +423,9 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 		return nil, solutionNotActive
 	}
 	return &solutionRouting{
-		TargetID: record.GetDeclared().GetTargetId(),
-		Upstream: &url.URL{Scheme: upstream.Scheme, Host: upstream.Host},
+		TargetID:  record.GetDeclared().GetTargetId(),
+		BindingID: record.GetDeclared().GetBindingId(),
+		Upstream:  &url.URL{Scheme: upstream.Scheme, Host: upstream.Host},
 	}, solutionRoutable
 }
 

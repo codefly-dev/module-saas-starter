@@ -31,6 +31,12 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+// moduleCapabilitiesAudience mirrors business.ModuleCapabilitiesAudience in
+// accounts — the audience a capability addressed to the module capability surface
+// carries. The gateway cannot import it (separate Go modules), so the two are
+// pinned to each other by a test rather than left to agree by eye.
+const moduleCapabilitiesAudience = "module-capabilities"
+
 // moduleServicePrefix marks the RouteEntry.Service of a declared module route.
 // It is a pseudo-service name, so isAccountsRoute stays false and no
 // gateway/public-origin credential is stamped for a module upstream.
@@ -128,6 +134,14 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 	// a half-served prefix.
 	if _, reserved := g.matcher.ReservedV1Prefixes()[alias]; reserved {
 		httpError(w, http.StatusForbidden, "module alias is owned by this host's own catalog")
+		return true
+	}
+
+	// THE ROUTE IS RESOLVED, SO THE AUDIENCE IS KNOWN. A module route's target is
+	// the module capability surface, so that is what a capability presented here
+	// must name — the same derivation as a solution route, with the audience the
+	// host's vocabulary gives this kind.
+	if g.rejectInvalidWorkContext(w, r, moduleCapabilitiesAudience) {
 		return true
 	}
 

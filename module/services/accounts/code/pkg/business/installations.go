@@ -119,6 +119,19 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		return nil, err
 	}
 	params.RouteAlias = alias
+	// The ceiling may only name audiences this host actually serves (issue #952).
+	// `allowed_audiences` used to be free text, so an installation could name a
+	// consumer that does not exist and then mint for it — the audience is what
+	// decides which consumer a capability is good at, so a value nothing serves is
+	// a capability pointing nowhere that still passes every other check.
+	//
+	// Refused HERE as well as narrowed at read, and both are needed: this catches
+	// a typo at the moment someone can fix it, and the read-time narrowing catches
+	// the set SHRINKING later, when delivery withdraws a solution long after any
+	// write.
+	if err := s.RequireHostAudiences(ctx, params.AllowedAudiences); err != nil {
+		return nil, NewStoreError(err, ErrTypeValidation)
+	}
 	actorType := s.actorTypeForCreator(ctx, actorID)
 	var installation *gen.Installation
 	if err := s.store.WithOrgTx(ctx, params.OrgID, func(ctx context.Context) error {

@@ -367,7 +367,47 @@ func (s *PostgresStore) SolutionRuntimeBoundarySeeds(ctx context.Context) ([]str
 // write — but only from the delivered declaration, never from a registrant's
 // request. A boundary a caller could name would let one solution mint for
 // another's and read, answer and recover its runs.
+// LiveDeclaredSolutionBindingIDs returns the binding id of every DECLARED,
+// NON-TOMBSTONED registration. It is what the host's audience vocabulary is
+// derived from (issue #952).
+//
+// Tombstones are EXCLUDED here, which is the one difference from
+// SolutionRuntimeBoundarySeeds above, which includes them. The two want different
+// rows for opposite reasons: a withdrawn solution's runs may still be executing,
+// so its boundary still has to be protected from a caller naming it — but its
+// audience must not survive the withdrawal that took the consumer away, or a
+// capability could be minted for a solution delivery has removed.
+func (s *PostgresStore) LiveDeclaredSolutionBindingIDs(ctx context.Context) ([]string, error) {
+	var bindings []string
+	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
+		rows, err := s.getQueryExecutor(ctx).Query(ctx,
+			`SELECT declared_binding_id FROM public.solution_registrations
+			 WHERE declared_binding_id IS NOT NULL AND tombstoned_at IS NULL`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var binding string
+			if err := rows.Scan(&binding); err != nil {
+				return err
+			}
+			bindings = append(bindings, binding)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return bindings, nil
+}
+
 // Asserted at compile time, because the only other consumer is a type assertion
 // that discards its error. Without this line, deleting any method above is a
 // silent downgrade rather than a build failure.
 var _ business.SolutionRuntimeBoundarySeedStore = (*PostgresStore)(nil)
+
+// Likewise for the audience vocabulary's reader: Service resolves it with a
+// discarded-error type assertion too, so without this line deleting the method
+// above would leave the host refusing every mint at runtime, build green.
+var _ business.DeclaredSolutionBindingStore = (*PostgresStore)(nil)

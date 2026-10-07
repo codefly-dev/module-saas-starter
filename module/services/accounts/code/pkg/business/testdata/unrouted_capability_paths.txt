@@ -55,6 +55,25 @@ executable_artifacts.go:ExecutableArtifactPolicyFor
 service.go:ModulePrincipals
 layered_access.go:ListCollectionAccess
 module_capabilities.go:ModuleContentResources
+# HostAudiences resolves the host's AUDIENCE VOCABULARY — the closed set of
+# strings this deployment serves a capability to (issue #952). A declared module
+# prefix is one of its three members, which is why it reads the registry.
+#
+# It is group C's shape and not group A's, and the reason is sharper than
+# "accessor": there is no authority decision here to route, because there is no
+# CALLER in it. It answers "is this string one this host serves", a question with
+# no tenant, no installation and no principal — asked BEFORE any authority is
+# resolved, by requireVocabularyAudience, whose own caller then makes the
+# authority decision with the live re-reads that belong to it
+# (enforceActorCeiling, resolveAuthority). Routing it would need a caller it does
+# not have.
+#
+# "Re-read it live" has no meaning for the registry half either: which modules a
+# composition declares is a deployment fact, like group D's workload binding. The
+# half that DOES move at runtime — the declared, non-tombstoned solution bindings
+# — is read live from the database on every call, deliberately uncached, so a
+# withdrawn solution leaves the vocabulary at once.
+work_context_audience.go:HostAudiences
 # ListPlatformCatalogue reads the registry to LIST the modules it knows, for a
 # platform administrator's catalogue. It is group C's shape — an accessor, not a
 # decision — and it is authorised upstream as a platform-admin RPC.

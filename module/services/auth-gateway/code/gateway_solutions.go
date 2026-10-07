@@ -22,6 +22,32 @@ const (
 	solutionRegistrySegment = "_registry"
 )
 
+// solutionRouteAudience is the audience a capability presented to a solution route
+// must name: the host's `solution:<binding-id>` vocabulary entry for the binding
+// that route resolved to.
+//
+// The BINDING, not the alias. An alias is deliberately reusable, so an audience
+// keyed on it would let a replacement binding under the same route be addressed as
+// its predecessor — the same reuse hole the artifact-approval authority and the
+// boundary derivation both had to close.
+//
+// An empty binding id yields an empty expectation, which means "do not compare".
+// That case is unreachable from here: a record with no declaration is refused
+// before this, and a routable resolution always carries a binding. It is written
+// this way rather than defended with a panic because the surrounding refusals are
+// the real guarantee, and a nil-safe accessor beside them is not a second one.
+func solutionRouteAudience(bindingID string) string {
+	if bindingID == "" {
+		return ""
+	}
+	return solutionAudiencePrefix + bindingID
+}
+
+// solutionAudiencePrefix mirrors business.SolutionAudiencePrefix in accounts. The
+// gateway cannot import it — separate Go modules — so the two are pinned to each
+// other by a test rather than left to agree by eye.
+const solutionAudiencePrefix = "solution:"
+
 // solutionIDPattern mirrors the identity rule the registry validates: one
 // lowercase segment usable as a path element and a routing key.
 var solutionIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$`)
@@ -88,6 +114,18 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		// No snapshot has ever loaded, so this replica cannot tell an
 		// unregistered solution from a registered one. Fail closed and say so.
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
+		return true
+	}
+
+	// THE ROUTE IS RESOLVED, SO THE AUDIENCE IS KNOWN: a capability presented to
+	// this route must name THIS binding. Derived from the same carried resolution
+	// that chose the upstream, so the token cannot be judged against one binding
+	// while traffic goes to another's address.
+	//
+	// This is what makes A-for-B a 403-with-the-audience-error rather than a
+	// forward: a capability minted for `solution:<other-binding>` verified cleanly
+	// here before, and only the callee could notice.
+	if g.rejectInvalidWorkContext(w, r, solutionRouteAudience(routing.BindingID)) {
 		return true
 	}
 
