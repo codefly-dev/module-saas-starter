@@ -4639,10 +4639,6 @@
         "contractVersion": {
           "type": "string"
         },
-        "leaseExpiresAt": {
-          "format": "date-time",
-          "type": "string"
-        },
         "revision": {
           "format": "int64",
           "type": "string"
@@ -4656,14 +4652,33 @@
       },
       "type": "object"
     },
-    "v1SolutionFrontendBinding": {
-      "description": "SolutionFrontendBinding is the stored frontend half. manifest is the document\nthe frontend validated before handing it over; this service persists it\nverbatim and never reinterprets it, so the host keeps sole ownership of what\na manifest may contain.",
+    "v1SolutionDeclaredBinding": {
+      "description": "SolutionDeclaredBinding identifies the applied declaration and target.",
       "properties": {
-        "contractVersion": {
+        "bindingId": {
+          "description": "Stable ID of the deployment instance that declared this record. It is not\nthe solution id: a binding ID identifies one instance and may carry\ncharacters a path segment may not.",
           "type": "string"
         },
-        "leaseExpiresAt": {
-          "format": "date-time",
+        "generation": {
+          "description": "The generation of that binding the host applied into this record.",
+          "format": "uint64",
+          "type": "string"
+        },
+        "release": {
+          "description": "publisher/name@version of the applied generation.",
+          "type": "string"
+        },
+        "targetId": {
+          "description": "The immutable solution target this declaration opened — the identity an\ninstallation names. It is carried on the registration record so a consumer\nthat was asked about a ROUTE ALIAS can resolve it to the target that\ncurrently serves it and compare identities.\n\nThat resolution is the whole admission mechanism: a replacement binding\nwhich claimed a withdrawn alias resolves to its own target, which no\ninstallation of its predecessor names. A record with no declaration carries\nno target and is therefore admissible to nobody, which is the fail-closed\nanswer and the direction of the cutover.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1SolutionFrontendBinding": {
+      "description": "SolutionFrontendBinding is the stored frontend half. manifest is the document\nthe frontend validates while reading the projection; accounts stores it\nverbatim and keeps presence authority separate from runtime compatibility.",
+      "properties": {
+        "contractVersion": {
           "type": "string"
         },
         "manifest": {
@@ -4682,19 +4697,19 @@
         "backend": {
           "$ref": "#/definitions/v1SolutionBackendBinding"
         },
+        "declared": {
+          "$ref": "#/definitions/v1SolutionDeclaredBinding",
+          "description": "The binding and immutable target that declared this record."
+        },
         "frontend": {
           "$ref": "#/definitions/v1SolutionFrontendBinding"
         },
         "publisher": {
-          "description": "Owner of record. First claim binds it; a registration naming a different\npublisher is refused rather than overwriting.",
+          "description": "Canonical publisher attribution of the declared record.",
           "type": "string"
         },
         "revision": {
           "format": "int64",
-          "type": "string"
-        },
-        "runtimeBoundary": {
-          "description": "The seed a solution's runtime boundary is derived from (issue #1015).\n\nALWAYS EMPTY on the wire, on every response, deliberately. The seed is\nassigned by this service when the record is created and never again, and it\nis the only input to the per-organization boundary every Work Context\nminted for that solution is sealed under — so it is what stands between one\nsolution's runs and another's. No registrant needs it: accounts derives and\nseals the boundary from the credential the solution already presents.\n\nThe field is kept rather than removed so this promise is testable: a change\nthat starts populating it fails a test instead of shipping.",
           "type": "string"
         },
         "solutionId": {
@@ -4716,12 +4731,11 @@
     },
     "v1SolutionRegistrationStatus": {
       "default": "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
-      "description": "SolutionRegistrationStatus is derived at read time from the stored record; it\nis never a stored column. It is what lets an operator tell a registration\nthat was never completed from one whose publisher stopped renewing, and both\nfrom one that was deliberately removed.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Both halves are present, their leases are live, and their declared contract\nversions agree. This is the only status either surface serves.\n - SOLUTION_REGISTRATION_STATUS_PENDING: A half has never registered. The record is durable but incomplete, so no\npage advertises it and the gateway has nothing to route to.\n - SOLUTION_REGISTRATION_STATUS_EXPIRED: Both halves registered, but at least one lease lapsed: the deployment that\nowns it stopped renewing. The intent survives; the endpoint is not live.\n - SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE: The two halves declare different contract versions, so activating them\ntogether would serve a page against a backend it was not built for.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: The registration was deregistered. The row survives as a tombstone so a\ndelayed heartbeat from a retiring deployment cannot recreate it.",
+      "description": "SolutionRegistrationStatus is derived from declared state and complete,\ncompatible frontend/backend observations, never from an expiring lease.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Both halves are present and their declared contract\nversions agree. This is the only status either surface serves.\n - SOLUTION_REGISTRATION_STATUS_PENDING: A half has not been observed. The record is durable but incomplete, so no\npage advertises it and the gateway has nothing to route to.\n - SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE: The two halves declare different contract versions, so activating them\ntogether would serve a page against a backend it was not built for.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: An applied removal keeps the declaration as a tombstone.",
       "enum": [
         "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
         "SOLUTION_REGISTRATION_STATUS_ACTIVE",
         "SOLUTION_REGISTRATION_STATUS_PENDING",
-        "SOLUTION_REGISTRATION_STATUS_EXPIRED",
         "SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE",
         "SOLUTION_REGISTRATION_STATUS_TOMBSTONED"
       ],

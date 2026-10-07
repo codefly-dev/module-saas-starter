@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/reflect/protoreflect"

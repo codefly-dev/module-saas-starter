@@ -87,12 +87,12 @@ type artifactDecisionStore struct {
 	// targets is the host's presence state the guard resolves through: the
 	// installation names a target id, the target names the binding. Keyed by
 	// target id, exactly as GetSolutionTarget is asked.
-	targets      map[string]*SolutionTarget
-	member       bool
-	admin        bool
-	permission   bool
-	puts         int
-	tenant       string
+	targets    map[string]*SolutionTarget
+	member     bool
+	admin      bool
+	permission bool
+	puts       int
+	tenant     string
 }
 
 func (s *artifactDecisionStore) WithOrgTx(ctx context.Context, tenant string, fn func(context.Context) error) error {
@@ -102,6 +102,7 @@ func (s *artifactDecisionStore) WithOrgTx(ctx context.Context, tenant string, fn
 func (s *artifactDecisionStore) GetInstallation(context.Context, string, string) (*gen.Installation, gen.InstallationHealth, error) {
 	return s.installation, gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY, nil
 }
+
 // WithControlPlane runs the body as the control plane. The target read is
 // control-plane because solution_targets is global with exact grants.
 func (s *artifactDecisionStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {

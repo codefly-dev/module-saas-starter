@@ -28,7 +28,15 @@ func TestModuleCurrentInstallationTenantMembershipAndRevocation(t *testing.T) {
 	// binding whose presence it records. Not the route alias, which a later
 	// binding may take.
 	require.Equal(t, installed.TargetId, out.TargetId)
-	consented, err := testStore.GetSolutionTarget(testCtx, installed.TargetId)
+	// On the control plane, like the service path: solution_targets is a
+	// global relation with exact grants, so a bare read is permission-denied
+	// (SQLSTATE 42501) — the identities the response carries is only readable there.
+	var consented *business.SolutionTarget
+	err = testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var e error
+		consented, e = testStore.GetSolutionTarget(ctx, installed.TargetId)
+		return e
+	})
 	require.NoError(t, err)
 	require.NotNil(t, consented)
 	require.Equal(t, consented.BindingID, out.BindingId)

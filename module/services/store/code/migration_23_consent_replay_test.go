@@ -23,8 +23,8 @@ import (
 // edit.
 //
 // This test therefore drops nothing and reuses nothing: it starts a throwaway
-// PostgreSQL 16, applies migrations 1..19, stages the rows that only exist
-// BEFORE the cutover, then applies 20 alone and reads the disposition back.
+// PostgreSQL 16, applies migrations 1..22, stages the rows that only exist
+// BEFORE the cutover, then applies 23 alone and reads the disposition back.
 //
 // WHAT IT PROVES. The backfill matched `solution_targets.solution_id =
 // installations.solution_identifier` on any LIVE target. A route alias is a
@@ -49,20 +49,25 @@ import (
 // into it. Erring the other way (a carry that should have been a revoke) is not
 // detectable from this schema at all, and the fail-closed second statement is
 // the only answer to it.
-func TestMigration22DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
+func TestMigration23DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
 	db, url := throwawayPostgres(t)
 
-	// Two ledgers: 1..19, then 1..20. The second CONTAINS the first, because the
+	// Two ledgers: 1..22, then 1..23. The second CONTAINS the first, because the
 	// runner reads the database's current version and requires that migration's
-	// file to be present in the source — a directory holding only 20 is refused
-	// with "database is at migration 21, which this ledger does not contain",
+	// file to be present in the source — a directory holding only 23 is refused
+	// with "database is at migration 22, which this ledger does not contain",
 	// which the third run of this test discovered. Containing it is also what a
-	// real upgrade looks like: the runner skips what is applied and runs 20.
+	// real upgrade looks like: the runner skips what is applied and runs 23.
 	//
-	// Nothing past 20 is copied. 21 and 22 are irrelevant here and applying them
+	// Nothing past 23 is copied. 24 and 25 are irrelevant here and applying them
 	// would widen what a failure could mean.
-	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 21), url); err != nil {
-		t.Fatalf("apply migrations 1..19: %v", err)
+	//
+	// These numbers moved TWICE: the prose still said 1..19/1..20 while the code
+	// read 21/22, drift from the renumber before this one. They are now the same
+	// numbers the code uses, because a comment naming a different version than
+	// the call beneath it is worse than none.
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 22), url); err != nil {
+		t.Fatalf("apply migrations 1..22: %v", err)
 	}
 
 	// Stage the alias reuse. One alias, two periods: the first target closed,
@@ -97,8 +102,8 @@ func TestMigration22DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
 	kept := stageInstallation(t, db, alias, "now() - interval '1 day'",
 		lateOrg, lateAgent, lateOwner, lateNode)
 
-	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 22), url); err != nil {
-		t.Fatalf("apply migration 22: %v", err)
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 23), url); err != nil {
+		t.Fatalf("apply migration 23: %v", err)
 	}
 
 	// `kept` carries over to the live target it was created under.
