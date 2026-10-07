@@ -87,7 +87,7 @@ survives a restart and reaches every replica, and is only served when it is
   `pkg/business/audit_store_parity_test.go` holds every store to one fixture
   (ClickHouse joins when `AUDIT_CLICKHOUSE_TEST_DSN` names a server).
 - **Audit relay and queue** (ADR 0009, `pkg/business/audit_relay.go`,
-  `pkg/infra/postgres_audit_queue.go`, migrations 19 and 22). Under a swap value
+  `pkg/infra/postgres_audit_queue.go`, migrations 20 and 23). Under a swap value
   `EmitTx` writes a short-lived `audit_event_queue` row on the caller's
   transaction; the relay drains it to the archive and then the warehouse and
   deletes the row only after both acknowledged. It is at-least-once, so every
@@ -119,7 +119,7 @@ survives a restart and reaches every replica, and is only served when it is
   writes, so a rerun finishes an interrupted run. Only with `-confirm-drop`,
   after a verification pass in the same run and a recount showing nothing
   changed, does it drop the copied partitions, named one by one through
-  `audit_events_drop_verified_partitions` (migration 21), which recounts each
+  `audit_events_drop_verified_partitions` (migration 22), which recounts each
   under a lock and drops exactly those; retention's
   `audit_events_drop_partitions_before` is not used. It never deletes a row.
   Its exit statuses (2 usage, 3 unverified, 4 drop refused, 5 nothing to verify)

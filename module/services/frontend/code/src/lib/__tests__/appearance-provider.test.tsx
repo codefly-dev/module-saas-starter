@@ -1,4 +1,4 @@
-import { defineFrontend } from "@codefly/saas-plugin-contract";
+import { defineFrontend } from "@codefly-dev/saas-plugin-contract";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";

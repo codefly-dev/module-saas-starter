@@ -138,7 +138,13 @@ release. The package's `exports` map may not name a subpath into the generated
 tree: a consumer imports the SDK's own surface, never a stub path
 (`publish-frontend-kit.test.mjs` enforces it). See the `cut-a-release` skill.
 
-`@codefly-dev/ui` and `@codefly-dev/saas-ui` publish beside it. The kit owns its
+`@codefly-dev/ui`, `@codefly-dev/saas-ui`, `@codefly-dev/saas-plugin-contract`
+and `@codefly-dev/saas-plugin-react` publish beside it, in dependency order. Plugin
+peers use required semver ranges: GitHub Packages omits optional-peer metadata.
+Every plugin entry point is a host-shared singleton; UI wrapper imports and
+direct plugin imports must resolve the same runtime context. The release runs
+`node scripts/test-registry-ui.mjs --registry` from a fresh consumer after
+publication; the pre-release proof simulates the registry metadata omission. The kit owns its
 token layer (`packages/codefly-ui/src/skin/theme.css`: token → utility, the
 light/dark binding, the custom variants); `src/app/globals.css` only imports it,
 so a new appearance token is bound there, not here. The kit also ships

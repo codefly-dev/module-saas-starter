@@ -279,3 +279,115 @@ receipts. New consumers require the supported authority response and refuse a
 missing or unknown version; old servers reject the new request field. Adopting
 this response does not itself migrate an existing consumer, validate software
 compatibility or qualify an installed rollout.
+
+## Exact executable artifact consent
+
+A consuming module can ask the internal `ModuleCapabilitiesService` to
+`ApproveExecutableArtifact`, `AuthorizeExecutableArtifact`, or
+`RevokeExecutableArtifact`. All three authenticate the module and independently
+verify a current signed parent Work Context addressed to that module. Approval
+and revocation require a person-present current organization administrator and
+the installed activation permission. A delegated actor may check a prior
+approval, but cannot turn the owner's identity into consent.
+
+The composition declares `MODULE_PRINCIPALS[<module>].artifact_policies[<id>]`:
+
+```json
+{
+  "schema": "example.artifact/v1",
+  "sources": {"acme.example": "acme/example"},
+  "activate": {"resource": "definitions", "action": "configure"},
+  "run": {"resource": "definitions", "action": "run"},
+  "contracts": [
+    {"kind": "engine", "name": "example/engine", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  ],
+  "required_kinds": ["engine"]
+}
+```
+
+These are exact ceilings, without wildcards. `sources` maps the exported source
+identity to the installation's actual solution identifier; an event namespace
+never establishes source ownership. Each requested contract must be one of the
+installed exact kind/name/digest triples, and every required kind must appear.
+The module's compiler owns completeness of its dependency list and its versioned
+subject encoding. The host owns approval and checks the declared ceilings; it
+does not interpret another module's configuration or attest to a compiler hash.
+
+The request names the installation and installed policy, then supplies
+`identity {schema, source, subject, contracts, expected_revision}`. `subject` is
+bounded to 65,536 bytes: the complete canonical exported identity under `schema`,
+including all transitive content references and execution identities, never
+prompts, executable bytes, bearer tokens, or service addresses. It is a protobuf
+`bytes` field, represented as base64 in JSON. The module must specify one
+canonical encoding, including empty arrays and declaration order. The host
+preserves those bytes exactly. `expected_revision` is an int64 in both request
+and response and is never decoded through a floating-point JSON value.
+
+The host hashes its own versioned envelope containing tenant, module principal,
+installation, policy ID and full policy, exact subject, ordered contracts and
+revision. The response `schema_version` is `host.executable-artifact/v1`;
+`qualified_name` names the immutable approval row and `digest` identifies that
+whole envelope. This is explicit administrative approval, not publisher
+attestation. The consuming module compares the returned revision, records the
+Ref, and owns its activation compare-and-swap. An approval left by a failed
+activation does not move any pointer or execute anything.
+
+`AuthorizeExecutableArtifact` never inserts. Every call checks current parent
+authority and permission, active healthy installation, exact source ownership,
+current policy/contract ceilings, the exact approved row and revocation.
+Approval is a durable tenant administrative decision, not an ongoing delegation
+from its approver: administrator turnover does not invalidate committed consent.
+The approver remains immutable audit attribution. A policy
+change therefore invalidates existing consent. Explicitly re-approving an
+already approved identity returns the same Ref after a lost response; replay
+never revives a revoked identity. Approving again requires a new exact identity
+(for example a new content version or activation revision), not replaying the
+revoked one. Approval records are tenant-scoped, immutable
+apart from terminal revocation, and survive independently of the consumer's DB.
+They confer no dispatch, credential, artifact-read or sandbox authority.
+
+Migration `19_executable_artifact_approvals` uses FORCE RLS with only tenant
+access, column-limited revocation writes, and no delete privilege. Its down
+migration refuses to erase retained approvals. Approval/revocation audit records
+commit in the same transaction as the change. Real database coverage, including
+concurrent retries, tenant isolation and terminal revocation, runs with:
+
+```sh
+python3 module/services/accounts/code/tools/test_module_installer.py --run '^TestExecutableArtifactPostgres'
+```
+
+Revocation takes `ModuleRevokeExecutableArtifactRequest` with
+`parent_work_context_token`, `installation_id` and `approval_id` (the UUID at the
+end of the returned qualified name). It looks up that retained row directly,
+checks its original activation permission against the current parent and current
+administrator, and revokes it even if its installation or policy is now disabled.
+It does not require the old content graph to remain executable.
+
+## Current installation identity for a module
+
+`ModuleCapabilitiesService/GetCurrentInstallation` is an internal authority-port
+read. Its only selector is `installation_id`; `parent_work_context_token` is
+proof, not a source or tenant selector. The module presents its own Work Context
+and the internal transport credential independently. The host verifies the
+parent signature, issuer, expiry, current owner/actor authority revision and
+live delegation revocation, then requires its audience to match the authenticated
+module's installed prefix and its tenant to fit that module's grant.
+
+This preserves `GetInstallation`'s organization-member metadata-read rule.
+It introduces no permission vocabulary, operation binding, scope alias or token
+mint. The owner must still be a current member. The tenant and owner come only
+from the verified parent. The tenant-scoped store must return the exact requested
+installation and tenant, ACTIVE with no revocation timestamp. Success contains
+only `installation_id`, `tenant_id` and the exact host `solution_identifier`.
+Absent, inactive, revoked or mismatched rows are refused. No requested source,
+configuration, graph, grant or model identity is accepted or returned.
+
+A success is a current observation, not a durable liveness proof or approval to
+execute anything. Consumers retain their own operation authorization and re-read
+on subsequent requests. This read neither consumes nor extends a parent replay
+witness and never substitutes a viewer bearer or remints missing authority.
+
+The TypeScript SDK includes this contract starting with package version
+`0.3.17`. Artifact decision events are also part of the declared module
+generator chain: regenerate the complete package projections when changing
+these authority contracts, including the event catalog and communication docs.

@@ -43,7 +43,7 @@ function declaredModuleExports(source: string): string[] {
 
 describe("public React plugin import map", () => {
 	it("matches the active package barrel exactly", () => {
-		const declaration = publicApi.packages["@codefly/saas-plugin-react"];
+		const declaration = publicApi.packages["@codefly-dev/saas-plugin-react"];
 		expect(declaration.status).toBe("active");
 		expect(declaration.entrypoints).toEqual([".", "./runtime", "./ui"]);
 		expect(declaration.reservedEntrypoints).toBeUndefined();
@@ -72,8 +72,8 @@ describe("public React plugin import map", () => {
 			version: string;
 			exports: Record<string, unknown>;
 		};
-		const declaration = publicApi.packages["@codefly/saas-plugin-react"];
-		expect(packageJSON.name).toBe("@codefly/saas-plugin-react");
+		const declaration = publicApi.packages["@codefly-dev/saas-plugin-react"];
+		expect(packageJSON.name).toBe("@codefly-dev/saas-plugin-react");
 		expect(packageJSON.version).toBe(declaration.packageVersion);
 		expect(Object.keys(packageJSON.exports)).toEqual([
 			".",
@@ -92,8 +92,6 @@ describe("public React plugin import map", () => {
 		]
 			.map((name) => readFileSync(join(packageDir, "src", name), "utf8"))
 			.join("\n");
-		expect(source).not.toMatch(
-			/(?:from\s+["']@\/|next\/|token-store)/,
-		);
+		expect(source).not.toMatch(/(?:from\s+["']@\/|next\/|token-store)/);
 	});
 });

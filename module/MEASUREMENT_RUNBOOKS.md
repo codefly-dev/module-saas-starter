@@ -122,8 +122,8 @@ an error with the number of queued events, and the depth and age series keep
 reporting them. To roll back for good, first restore the warehouse sink and let
 the relay drain the queue to zero.
 
-Migration 19's down refuses (`audit_event_queue still holds N queued audit
-events`) while any row is queued, and migration 22's down refuses while any row
+Migration 20's down refuses (`audit_event_queue still holds N queued audit
+events`) while any row is queued, and migration 23's down refuses while any row
 is quarantined: rolling the schema back would drop the only copy of those events.
 Do not work around the refusal by deleting rows.
 

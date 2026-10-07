@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:6e7facb4e1e7ca5ac2dd7bdcc4cf1b76a62c82bc81f71b8eb3b08104a56db63c",
+      "digest": "sha256:47a89c1fd378e81ac4f5d838a7c9d561a1321d26256d03410d8a6eceb745782a",
       "services": [
         {
           "name": "APIKeyService",
@@ -216,6 +216,8 @@
           "fullName": "saas.accounts.v1.ModuleCapabilitiesService",
           "procedures": [
             "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
+            "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
             "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
@@ -227,6 +229,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
@@ -243,6 +246,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
             "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
           ]

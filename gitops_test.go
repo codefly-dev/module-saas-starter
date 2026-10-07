@@ -1990,7 +1990,7 @@ func TestRegenerateServiceManifestsIncludesFrontendPluginDependencies(t *testing
 `,
 	)
 	writeTestFile(t, filepath.Join(moduleDir, "services", "frontend", "service.codefly.yaml"),
-		serviceManifestFixture("frontend", "http", "http", "module", 3000, "", "", ""))
+		serviceManifestFixture("frontend", "http", "http", "internal", 3000, "", "", ""))
 	manifest := moduleManifest{Name: "users", Services: []serviceReference{{Name: "frontend"}}}
 
 	if err := regenerateServiceManifests(moduleDir, manifest); err != nil {
@@ -2390,6 +2390,9 @@ func serviceManifestFixture(name, endpoint, api, visibility string, port int, to
 	}
 	if visibility != "private" {
 		manifest.WriteString("    visibility: " + visibility + "\n")
+		if visibility == "internal" {
+			manifest.WriteString("    allow-modules: [\"*\"]\n")
+		}
 	}
 	manifest.WriteString("spec:\n")
 	manifest.WriteString(spec)
@@ -2444,7 +2447,6 @@ func writeTestFile(t *testing.T, file, content string) {
 		t.Fatal(err)
 	}
 }
-
 
 // cellVaultFixture builds a two-service module whose accounts depends on vault,
 // and points its hosted environment at a Vault the cell runs in a namespace of

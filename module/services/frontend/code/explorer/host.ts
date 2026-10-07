@@ -1,4 +1,4 @@
-import { resolveFrontendAppearance } from "@codefly/saas-plugin-contract";
+import { resolveFrontendAppearance } from "@codefly-dev/saas-plugin-contract";
 import type { RawSkinDescriptor } from "@codefly-dev/ui/skin";
 import { appearanceStyleProperties } from "@/lib/appearance";
 

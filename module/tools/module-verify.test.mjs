@@ -39,7 +39,7 @@ function fixture() {
   const productManifest = {
     name: "@product/frontend-plugin",
     version: "1.0.0",
-    dependencies: { "@codefly/saas-plugin-contract": "1.2.0" },
+    dependencies: { "@codefly-dev/saas-plugin-contract": "1.2.0" },
     peerDependencies: { react: ">=19.2 <20" },
   };
   const lock = {
@@ -109,7 +109,7 @@ test("verifyErrors enforces the frontend lock", (t) => {
   const productManifest = {
     name: "@product/frontend-plugin",
     version: "1.0.0",
-    dependencies: { "@codefly/saas-plugin-contract": "1.2.0" },
+    dependencies: { "@codefly-dev/saas-plugin-contract": "1.2.0" },
     peerDependencies: { react: ">=19.2 <20" },
   };
   // A lock missing the workspace link — the stale shape #359 shipped.
@@ -132,7 +132,7 @@ test("rejects stale product metadata and missing workspace links", (t) => {
 
   writeJSON(join(packageRoot, "package.json"), {
     ...productManifest,
-    dependencies: { "@codefly/saas-plugin-contract": "2.0.0" },
+    dependencies: { "@codefly-dev/saas-plugin-contract": "2.0.0" },
   });
   assert.ok(
     workspaceInstallGraphErrors(root).some((error) => error.includes("metadata is stale")),

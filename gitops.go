@@ -252,9 +252,10 @@ type topologyModule struct {
 }
 
 type topologyInterface struct {
-	Service    string `yaml:"service"`
-	Endpoint   string `yaml:"endpoint"`
-	Visibility string `yaml:"visibility"`
+	Service      string   `yaml:"service"`
+	Endpoint     string   `yaml:"endpoint"`
+	Visibility   string   `yaml:"visibility"`
+	AllowModules []string `yaml:"allow-modules,omitempty"`
 }
 
 type topologyService struct {

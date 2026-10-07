@@ -22,9 +22,11 @@ agent:
 endpoints:
   - name: authority
     api: grpc
-    visibility: module
+    visibility: internal
+    allow-modules: ["*"]
   - name: connect
-    visibility: module
+    visibility: internal
+    allow-modules: ["*"]
   - name: grpc
   - name: rest
 spec:

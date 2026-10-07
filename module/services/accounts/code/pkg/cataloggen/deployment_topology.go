@@ -70,9 +70,10 @@ type deploymentModuleBinding struct {
 }
 
 type deploymentInterfaceBinding struct {
-	Service    string `yaml:"service"`
-	Endpoint   string `yaml:"endpoint"`
-	Visibility string `yaml:"visibility"`
+	Service      string   `yaml:"service"`
+	Endpoint     string   `yaml:"endpoint"`
+	Visibility   string   `yaml:"visibility"`
+	AllowModules []string `yaml:"allow-modules,omitempty"`
 }
 
 type deploymentServiceBinding struct {
@@ -733,9 +734,11 @@ type manifestEndpointReference struct {
 }
 
 type manifestEndpoint struct {
-	Name       string `yaml:"name"`
-	Visibility string `yaml:"visibility,omitempty"`
-	API        string `yaml:"api,omitempty"`
+	Name         string   `yaml:"name"`
+	Visibility   string   `yaml:"visibility,omitempty"`
+	API          string   `yaml:"api,omitempty"`
+	AllowModules []string `yaml:"allow-modules,omitempty"`
+	Location     string   `yaml:"location,omitempty"`
 }
 
 func marshalGeneratedYAML(source string, value any) ([]byte, error) {
