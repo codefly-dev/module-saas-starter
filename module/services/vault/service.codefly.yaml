@@ -12,7 +12,6 @@ secret-service-configurations:
 endpoints:
     - name: http
       visibility: internal
-      allow-modules: ["*"]
 spec:
     transit-key: api-keys
     deployment:

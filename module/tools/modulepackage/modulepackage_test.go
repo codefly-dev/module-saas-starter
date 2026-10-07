@@ -26,9 +26,19 @@ func TestStarterManifestIsTheCoreV2Contract(t *testing.T) {
 	if manifest.ID != "codefly/saas-starter" || manifest.Version != "0.1.0" {
 		t.Fatalf("unexpected package identity: %s@%s", manifest.ID, manifest.Version)
 	}
-	if len(manifest.Services) != 8 {
-		t.Fatalf("provided service count = %d, want 8", len(manifest.Services))
-	}
+	// THE SERVICE SET IS DERIVED, NOT COUNTED. This pinned the number 8, and a
+	// pinned count is the failure AGENTS.md names outright: two branches that
+	// each add a service each bump 8 to 9, both are "correct" against their own
+	// tree, and they merge cleanly into a 9 that is silently one short. The
+	// count also said nothing about WHICH services — a manifest that dropped
+	// `store` and added something else passed it exactly.
+	//
+	// `module/module.codefly.yaml` is the inventory this module composes from,
+	// so the package manifest must provide exactly those services. Checked in
+	// BOTH directions: a service in the inventory and not the package is one
+	// consumers cannot compose, and a service in the package and not the
+	// inventory is one this module does not build.
+	requireServicesMatchTheModuleInventory(t, moduleRoot, manifest)
 	for _, contract := range []string{"composition", "frontendPlugin", "settings", "permissions", "fixtures"} {
 		if manifest.Contracts[contract] == "" {
 			t.Errorf("package manifest does not declare Core contract %q", contract)
@@ -475,5 +485,44 @@ func findModuleRoot(t *testing.T) string {
 			t.Fatal("module root not found")
 		}
 		directory = parent
+	}
+}
+
+// requireServicesMatchTheModuleInventory holds the package manifest's provided
+// services to the module's own inventory, in both directions.
+func requireServicesMatchTheModuleInventory(t *testing.T, moduleRoot string, manifest Manifest) {
+	t.Helper()
+	var module struct {
+		Services []struct {
+			Name string `yaml:"name"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(mustRead(t, filepath.Join(moduleRoot, "module.codefly.yaml")), &module); err != nil {
+		t.Fatalf("read the module inventory: %v", err)
+	}
+	if len(module.Services) == 0 {
+		t.Fatal("module.codefly.yaml declares no services, so this check would pass against an empty package manifest")
+	}
+
+	inventory := map[string]bool{}
+	for _, service := range module.Services {
+		inventory[service.Name] = true
+	}
+	provided := map[string]bool{}
+	for _, service := range manifest.Services {
+		provided[service.Name] = true
+	}
+
+	for name := range inventory {
+		if !provided[name] {
+			t.Errorf("module.codefly.yaml builds %q and the package manifest does not provide it, "+
+				"so a consumer composing this module cannot reach it", name)
+		}
+	}
+	for name := range provided {
+		if !inventory[name] {
+			t.Errorf("the package manifest provides %q and module.codefly.yaml does not build it, "+
+				"so consumers are promised a service this module does not ship", name)
+		}
 	}
 }

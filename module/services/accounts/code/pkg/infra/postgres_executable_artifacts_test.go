@@ -18,7 +18,23 @@ import (
 
 func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T) {
 	org, owner, role, installation, _ := installFixture(t, "definitions", "configure")
-	policy := business.ExecutableArtifactPolicy{Schema: "example.artifact/v1", Sources: map[string]string{"acme.example.solution": installation.SolutionIdentifier}, Activate: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Run: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Contracts: []business.ArtifactContract{{Kind: "model", Name: "example/profile", Digest: "sha256:" + strings.Repeat("a", 64)}}, RequiredKinds: []string{"model"}}
+	// Sources names the BINDING the consented target records, not the route
+	// alias: an alias is reusable, so keying on one would let a replacement
+	// binding inherit this installation's approvals. Read it off the target the
+	// installation names rather than restating it, so the fixture and the policy
+	// cannot drift apart.
+	// On the control plane, like the service path: solution_targets is a
+	// global relation with exact grants, so a bare read is permission-denied
+	// (SQLSTATE 42501) — the binding the policy installs is only readable there.
+	var consented *business.SolutionTarget
+	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var e error
+		consented, e = testStore.GetSolutionTarget(ctx, installation.TargetId)
+		return e
+	})
+	require.NoError(t, err)
+	require.NotNil(t, consented, "the fixture's installation must name a live target")
+	policy := business.ExecutableArtifactPolicy{Schema: "example.artifact/v1", Sources: map[string]string{"acme.example.solution": consented.BindingID}, Activate: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Run: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Contracts: []business.ArtifactContract{{Kind: "model", Name: "example/profile", Digest: "sha256:" + strings.Repeat("a", 64)}}, RequiredKinds: []string{"model"}}
 	caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID("example"), BoundOrg: org}
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)

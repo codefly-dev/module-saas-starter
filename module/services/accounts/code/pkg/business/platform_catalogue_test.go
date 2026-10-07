@@ -320,7 +320,12 @@ func TestCatalogueReadBoundaryWithholdsUnsupportedAffirmativeVerdict(t *testing.
 func catalogueTestInstallation(id, solution, org, agent string) *CatalogueInstallationRecord {
 	return &CatalogueInstallationRecord{
 		Installation: &gen.Installation{
-			Id: id, OrgId: org + "-id", SolutionIdentifier: solution,
+			// An installation names the immutable solution TARGET, never a
+			// solution id: `solution_identifier` went with the runtime
+			// registration writer. The projection resolves target -> solution
+			// through the declared record, so a target with no declaring
+			// registration resolves to nothing — which is the `i3` case below.
+			Id: id, OrgId: org + "-id", TargetId: solution + "-target",
 			Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE,
 		},
 		OrgName:         org,
@@ -350,11 +355,24 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 		ModulePrincipalID("zeta"):  {Prefix: "zeta"},
 		ModulePrincipalID("alpha"): {Prefix: "alpha"},
 	}
+	// Each registration declares the target it opened. That is what maps an
+	// installation back to a solution now, so a registration without it is
+	// invisible to the installation loop.
+	declared := func(solution string) *SolutionDeclaredBinding {
+		return &SolutionDeclaredBinding{
+			BindingID: "acme.test." + solution, Generation: 1,
+			Release: "acme/" + solution + "@1.0.0", TargetID: solution + "-target",
+		}
+	}
 	registrations := []*SolutionRegistration{
-		{SolutionID: "registered", Publisher: "solution:registered", Revision: 4},
-		{SolutionID: "installed", Publisher: "solution:installed", Revision: 7},
-		{SolutionID: "retired", Publisher: "solution:retired", Revision: 9, TombstonedAt: &now},
-		{SolutionID: "retired-but-installed", Publisher: "solution:retired-but-installed", Revision: 11, TombstonedAt: &now},
+		{SolutionID: "registered", Publisher: "solution:registered", Revision: 4,
+			Declared: declared("registered")},
+		{SolutionID: "installed", Publisher: "solution:installed", Revision: 7,
+			Declared: declared("installed")},
+		{SolutionID: "retired", Publisher: "solution:retired", Revision: 9, TombstonedAt: &now,
+			Declared: declared("retired")},
+		{SolutionID: "retired-but-installed", Publisher: "solution:retired-but-installed", Revision: 11,
+			TombstonedAt: &now, Declared: declared("retired-but-installed")},
 	}
 	installations := []*CatalogueInstallationRecord{
 		catalogueTestInstallation("i1", "installed", "Acme", "example/installed:1.2.0"),
@@ -370,7 +388,11 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 		"CATALOGUE_ENTRY_KIND_SOLUTION:installed",
 		"CATALOGUE_ENTRY_KIND_SOLUTION:registered",
 		"CATALOGUE_ENTRY_KIND_SOLUTION:retired-but-installed",
-		"CATALOGUE_ENTRY_KIND_SOLUTION:unregistered",
+		// No registration declares this target, so the row is keyed by the
+		// TARGET rather than forced into some solution's. That keeps the
+		// entry honest: it is an installation of something this registry
+		// has no record of.
+		"CATALOGUE_ENTRY_KIND_SOLUTION:unregistered-target",
 	}, catalogueEntryNames(entries), "modules first, then solutions, each by name; an uninstalled tombstone is omitted")
 
 	byName := make(map[string]*PlatformCatalogueEntry)
@@ -425,7 +447,7 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 	require.Equal(t, "Org team i1", first.GetInheritedTeams()[0].GetSubjectLabel(), "inherited reach is carried apart from what was granted here")
 	require.Equal(t, "1.3.0", installed.Entry.GetInstallations()[1].GetAgentRelease().GetVersion())
 
-	unregistered := byName["unregistered"]
+	unregistered := byName["unregistered-target"]
 	require.Nil(t, unregistered.Registration)
 	require.Equal(t, gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, unregistered.Entry.GetPublisherGap().GetReason())
 	require.Contains(t, unregistered.Entry.GetPublisherGap().GetDetail(), "No registration")

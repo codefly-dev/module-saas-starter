@@ -1615,6 +1615,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.solution.host_binding_applied": {
+      "address": "saas.solution.host_binding_applied",
+      "title": "saas.solution.host_binding_applied",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.solution.host_binding_applied"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.solution.registration_deleted": {
       "address": "saas.solution.registration_deleted",
       "title": "saas.solution.registration_deleted",
@@ -1632,17 +1643,6 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.solution.registration_minted"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
-    "saas.solution.registration_updated": {
-      "address": "saas.solution.registration_updated",
-      "title": "saas.solution.registration_updated",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.solution.registration_updated"
         }
       },
       "x-visibility": "external",
@@ -3045,6 +3045,13 @@
       },
       "title": "saas publishes saas.settings.updated"
     },
+    "send:saas.solution.host_binding_applied": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.solution.host_binding_applied"
+      },
+      "title": "saas publishes saas.solution.host_binding_applied"
+    },
     "send:saas.solution.registration_deleted": {
       "action": "send",
       "channel": {
@@ -3058,13 +3065,6 @@
         "$ref": "#/channels/saas.solution.registration_minted"
       },
       "title": "saas publishes saas.solution.registration_minted"
-    },
-    "send:saas.solution.registration_updated": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.solution.registration_updated"
-      },
-      "title": "saas publishes saas.solution.registration_updated"
     },
     "send:saas.sso.disabled": {
       "action": "send",
@@ -4322,6 +4322,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.solution.host_binding_applied": {
+        "name": "saas.solution.host_binding_applied",
+        "title": "saas.solution.host_binding_applied",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.solution.registration_deleted": {
         "name": "saas.solution.registration_deleted",
         "title": "saas.solution.registration_deleted",
@@ -4332,13 +4339,6 @@
       "saas.solution.registration_minted": {
         "name": "saas.solution.registration_minted",
         "title": "saas.solution.registration_minted",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
-      "saas.solution.registration_updated": {
-        "name": "saas.solution.registration_updated",
-        "title": "saas.solution.registration_updated",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

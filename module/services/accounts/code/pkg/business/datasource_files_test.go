@@ -167,6 +167,7 @@ func filesService(t *testing.T, gh *fakeGitHub, queues []string) (*business.Serv
 func filesServiceWithAudit(t *testing.T, gh *fakeGitHub, queues []string) (*business.Service, *business.DatasourceSource, *recordingAudit) {
 	t.Helper()
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, gh)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(&fakeJobBackend{}, &fakeJobBackend{}, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Queues: queues, CrossTenant: true},
 	})

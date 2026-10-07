@@ -57,10 +57,38 @@ func (v *workContextVerifier) Refresh(ctx context.Context) error {
 	return v.cache.refresh(ctx)
 }
 
-// Verify establishes trust for a presented Work Context. It confirms the
-// signature, freshness, and attenuation of the token against the published
-// keys; audience and scope are the callee's concern and are not asserted here.
-func (v *workContextVerifier) Verify(ctx context.Context, token workcontext.WorkContextToken) error {
+// gatewayAudience is the name a capability may NEVER be addressed to.
+//
+// This gateway is a forwarding hop: it inspects a presented capability and never
+// consumes one. A token addressed to the hop itself is therefore a token nobody
+// will ever consume — and worse, it is what a caller would mint to get the hop to
+// treat a capability as its own rather than as something to forward. There is no
+// legitimate producer of such a token, so it is refused by name rather than
+// forwarded and left for a callee to puzzle over.
+const gatewayAudience = "auth-gateway"
+
+// Verify establishes trust for a presented Work Context against the route it was
+// presented TO.
+//
+// `expected` is the audience derived from the resolved route — `solution:<binding
+// id>` for a solution route, the module capability audience for a declared module
+// route, and EMPTY for a catalog route, whose destination is this host's own
+// service and therefore has no audience of its own (see gatewayAudience: the hop's
+// name is never one).
+//
+// An empty `expected` means "do not compare", and that is sdk-go's own sentinel
+// (`check.want != ""` in workcontext/work_context.go), not a choice made here. It
+// is load-bearing that this is the ONLY place that relies on it and that the
+// reliance is explicit: for the two surfaces where an audience IS derivable, a
+// value is always passed, so a capability minted for one solution cannot be spent
+// on another's route.
+//
+// What is checked here is the signature, the window and the audience. Scope and
+// consumption stay the callee's: this hop never consumes a nonce, never reads
+// seals, and never grants.
+func (v *workContextVerifier) Verify(
+	ctx context.Context, token workcontext.WorkContextToken, expected string,
+) error {
 	keyID, err := workContextTokenKeyID(token)
 	if err != nil {
 		return err
@@ -69,8 +97,16 @@ func (v *workContextVerifier) Verify(ctx context.Context, token workcontext.Work
 	if err != nil {
 		return err
 	}
-	if _, err := verifier.Verify(token, workcontext.WorkContextExpectations{}); err != nil {
+	claims, err := verifier.Verify(token, workcontext.WorkContextExpectations{Audience: expected})
+	if err != nil {
 		return invalidWorkContext(err)
+	}
+	// Refused AFTER the signature check, deliberately: an unsigned token claiming
+	// the hop's audience is an invalid token, not a routing question, and answering
+	// the audience refusal first would tell an unauthenticated caller which
+	// audience the hop answers to.
+	if claims.GetAudience() == gatewayAudience {
+		return fmt.Errorf("%w: a capability addressed to this forwarding hop is never consumed by it", workcontext.ErrWorkContextInvalid)
 	}
 	return nil
 }

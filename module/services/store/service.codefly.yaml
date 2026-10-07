@@ -10,8 +10,21 @@ agent:
     publisher: codefly.dev
 endpoints:
     - name: tcp
+      # No `location: external`. Location says the endpoint lives OUTSIDE the
+      # system, resolved by DNS rather than allocated an address — and that is
+      # false here: the render gives this store a ClusterIP Service and a
+      # cluster-internal address, and the generated topology already carries an
+      # allocated 5432. `location: external` was inherited from the deprecated
+      # `visibility: external`, which conflated reach with location; dropping it
+      # is the correction, measured against the staging render rather than
+      # reasoned from the word.
+      #
+      # NOT VERIFIED BY A BOOT: under core v0.8.1 (the CLI CI runs) this flips
+      # `Endpoint.External()` from true to false, so how `codefly run` resolves
+      # the address for accounts locally is asserted from the render, not from a
+      # graph that came up. Reach is unchanged — private, same module only — on
+      # v0.8.1, v0.13.0 and v0.14.0, each measured through core's own loader.
       visibility: private
-      location: external
 spec:
     database-name: users
     debug: false

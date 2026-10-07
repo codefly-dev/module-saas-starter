@@ -436,9 +436,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		"/v1/auth/.well-known/jwks.json",
 		adapters.NewJWKSHTTPHandler(service),
 	)
-	// Composed-module REST federation: the gateway admits a registration only
-	// against a token signed here, so a module exchanges its composition-declared
-	// registration secret for one. Unset means no module may federate.
+	// TODO(#952, Unit D): remove the registration-secret configuration together
+	// with the mint handlers in pkg/adapters/module_capabilities_server.go, which
+	// is protected from edits in this unit. Gateway token exchanges are deleted.
+	// The remaining mint RPC still consumes this declaration. Its credential has
+	// no gateway registration endpoint to admit it after the cold cutover.
 	moduleRegistrationSecrets, err := business.ParseRegistrationSecrets(
 		workspaceEnv("federation", "MODULE_REGISTRATION_SECRETS"))
 	if err != nil {
@@ -449,16 +451,8 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// Solution registration: the same issuer, a separate declaration. A solution
-	// remote executes in the host origin with the viewer's credentials, so who
-	// may publish one is stated on its own key rather than inherited from the
-	// module list. Unset means no solution may register.
-	//
-	// The declaration is handed over as a reader, not as a parsed map: unlike a
-	// module, a solution mounts against a host that is already serving, so
-	// authorizing or withdrawing one must not wait for this service to restart.
-	// It is still parsed once here, so a malformed declaration refuses to boot
-	// rather than silently denying every registration at runtime.
+	// Keep the remaining solution mint's reader until its protected handler is
+	// removed in the same change. Validate configuration before serving it.
 	solutionRegistrationSecrets := func() string {
 		return workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS")
 	}
@@ -466,6 +460,70 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("read solution registration secrets: %w", err)
 	}
 	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
+
+	// Declared solution presence (issue #952). Delivery POSTs one signed
+	// SolutionHostBinding carrier per solution instance to the delivery
+	// endpoint; this host verifies it on receipt and persists it, and the
+	// reconciler reads its desired set from that durable inbox on every pass,
+	// asks Core whether each document may be applied, and reconciles what it
+	// admits into the durable declaration registry.
+	//
+	// Unset SOLUTION_HOST_COORDINATE leaves the whole surface off — no
+	// reconciler and no delivery endpoint — and nothing on this host is
+	// declared. A coordinate lets this host refuse a document delivered to the wrong
+	// place, and core's check is the only thing standing between this host and
+	// another host's desired state.
+	solutionHostBindingReconciler, err := configuredSolutionHostBindingReconciler(service, store)
+	if err != nil {
+		return nil, fmt.Errorf("configure solution host binding reconciler: %w", err)
+	}
+
+	// The policy log: append → receipt → commit, before authority is narrowed.
+	//
+	// THIS DEPLOYMENT HAS NO LOG TRANSPORT, and that is stated by wiring none
+	// rather than by wiring something that refuses. The difference matters now
+	// that the serving gate is on the request path: a host holding a log it can
+	// never reach never refreshes `reached_at`, so the staleness window closes
+	// and the host stops answering anything — a total outage dressed as
+	// fail-closed. A host holding NO log has nothing unreconciled to honour, so
+	// `MayServe` admits and the host serves.
+	//
+	// What it cannot do is NARROW authority. `WithPolicyLoggedNarrowing` refuses
+	// outright, so uninstalling a solution, closing a withdrawn solution
+	// target, revoking a scope grant and removing a team membership all refuse
+	// with ErrPolicyLogUnreachable until a transport exists. That is the
+	// protocol's own answer — a narrowing nothing witnessed is one a restore
+	// silently undoes — and it is loud rather than silent, below.
+	//
+	// WHY THERE IS NO TRANSPORT. The warehouse the log lives in cannot issue the
+	// receipt the protocol requires. `PolicyLog.Append` must return a token the
+	// LOG minted and a monotonic sequence the LOG assigned, because the receipt
+	// is what separates "the log witnessed this" from "this host decided it". A
+	// BigQuery dataset assigns neither to a writer: the non-job write paths
+	// return no ordinal, ingestion time is not readable until the streaming
+	// buffer flushes, and the writer role deliberately holds no read and no
+	// job-creation permission, so it cannot read its own row back to learn
+	// either. Closing that needs a receipt-issuing appender inside the
+	// warehouse's trust domain, which is infrastructure this service does not
+	// own. Anything else would be this host minting its own receipt — the exact
+	// tautology the protocol exists to prevent.
+	service.SetPolicyLog(nil, nil)
+	w.Warn("no policy log transport is configured: this host SERVES normally and REFUSES every " +
+		"narrowing of authority (solution uninstall, solution-target close, scope-grant revocation, " +
+		"team-membership removal), because a narrowing nothing witnessed is one a restore undoes silently")
+
+	// The serving gate, on the request path. Registered for both transports'
+	// authorization interceptors; with no log wired it admits, which is what
+	// MayServe answers for a host that has narrowed nothing through the
+	// protocol.
+	adapters.RegisterPolicyLogServingGate(service.RequireServing)
+
+	// Enforcement at use. Every module capability path re-reads the live
+	// installation, producer epoch and binding revision through these, and
+	// AuthorizeModuleCapability refuses outright when they are absent — a host
+	// that cannot re-read cannot honour a narrowing, so it must not fall back to
+	// the declared ceiling alone.
+	service.SetModuleAuthorityReads(store, nil)
 
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is
@@ -1171,6 +1229,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if jobOperationsMonitor != nil {
 		jobOperationsMonitor.Start(ctx)
 	}
+	if solutionHostBindingReconciler != nil {
+		solutionHostBindingReconciler.Start(ctx)
+	}
 	if analyticsWorker != nil {
 		analyticsWorker.Start(ctx)
 	}
@@ -1219,6 +1280,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if err := jobOperationsMonitor.Shutdown(shutdownCtx); err != nil {
 				sw.Warn("job metrics monitor shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if solutionHostBindingReconciler != nil {
+			sw.Info("stopping solution host binding reconciler")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := solutionHostBindingReconciler.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("solution host binding reconciler shutdown timed out", wool.ErrField(err))
 			}
 			cancel()
 		}
@@ -1657,6 +1726,214 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 // workspaceEnv reads a key from a named Codefly workspace configuration,
 // including its secret namespace, and falls back to a plain process variable
 // for deployments that do not use Codefly's configuration provider.
+// configuredSolutionHostBindingReconciler builds the declared-presence
+// reconciler and mounts the delivery endpoint, or returns nil when this host
+// answers for no coordinate (issue #952).
+//
+// SOLUTION_HOST_COORDINATE is the ONE declaration that turns the surface on,
+// and it is the coordinate the operator declared on the environment the renderer
+// read. It is never derived here, because a coordinate this host invented would
+// match nothing delivery ever wrote. With no coordinate there is no
+// declared-presence surface at all: no reconciler, no delivery endpoint, and
+// no new solution presence can be reconciled.
+//
+// THE SOURCE IS THE DURABLE INBOX AND NOTHING ELSE. It was a directory — a
+// projected ConfigMap volume named by a workspace setting — and both that gate
+// and the directory reader are gone. The directory could not be the desired set, for a
+// reason that is a defect rather than a preference: a mount is the CURRENT set,
+// so a document that arrived, was recorded as desired, failed to apply and then
+// disappeared from the mount was never retried. The host had recorded that
+// delivery wanted something and had no way to want it again. The mount also
+// dropped the carrier, so a restore could not re-verify what it had accepted.
+//
+// Worse, while the gate existed the inbox was DEAD CODE in every deployment:
+// unset meant no reconciler, no verifier and no delivery endpoint, and set meant
+// the source was the mount — so the table migration 24 creates was written by
+// the endpoint and read by nothing. Deleting the gate is what makes the inbox
+// the only path, and there is now exactly one: a carrier is POSTed, verified on
+// receipt, persisted, and re-verified by every reconcile pass that reads it.
+//
+// SOLUTION_HOST_BINDING_INTERVAL is optional and exists for a deployment that
+// wants a tighter convergence bound than the default.
+//
+// WHERE the trust root and the allowlist are read from is NOT configurable. It
+// is `infra.SolutionHostTrustAnchorPath`, a constant, and there is deliberately
+// no environment value for it — see that constant for why an env var was a hole
+// rather than a convenience. In short: workspace environment is delivered by the
+// composition, so an overridable path lets a composition choose the anchor its
+// own documents are checked against, and no amount of checking downstream
+// recovers from that.
+//
+// The allowlist and the domains it grants come from ONE document at that path.
+// When the domains lived in this environment instead, a deployer who could set
+// the environment could widen what an accepted signer speaks for without
+// touching the policy that was supposed to be independent of them.
+func configuredSolutionHostBindingReconciler(
+	service *business.Service, store *infra.PostgresStore,
+) (*business.SolutionHostBindingReconciler, error) {
+	coordinate := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_COORDINATE"))
+	if coordinate == "" {
+		// NO DECLARED-PRESENCE SURFACE ALSO MEANS NO EXECUTION BINDING, and
+		// that is the coherent answer rather than an oversight. The approved
+		// build is read from delivered authority documents, and a host with no
+		// coordinate has no delivery endpoint to receive one — so it approves
+		// nothing, `SetExecutionBinding` is never called, and `BindExecution`
+		// answers ErrExecutionUnbound for every caller. A module cannot mint
+		// here, which is the fail-closed direction: the alternative is a host
+		// that cannot establish what anyone is running and mints anyway.
+		return nil, nil
+	}
+	// The ownership domains this host accepts delivery from. Required with the
+	// coordinate for the same reason the coordinate is: Core refuses a document
+	// from an unstated domain, and without the declaration any delivery could
+	// claim an unseen binding ID under a domain of its own choosing and own it
+	// from then on — the applied record cannot bound a binding's FIRST
+	// generation, because there is nothing yet to compare against.
+	var domains []string
+	for _, domain := range strings.Split(workspaceEnv("federation", "SOLUTION_HOST_OWNERSHIP_DOMAINS"), ",") {
+		if domain = strings.TrimSpace(domain); domain != "" {
+			domains = append(domains, domain)
+		}
+	}
+	if len(domains) == 0 {
+		return nil, fmt.Errorf("SOLUTION_HOST_COORDINATE is declared without SOLUTION_HOST_OWNERSHIP_DOMAINS, so this host would accept a binding claimed under any domain a writer chose")
+	}
+	// THE TRUST ANCHOR MUST BE THERE, and its absence refuses the boot.
+	//
+	// Checked by name, first, and before anything else about verification is
+	// read. A host that cannot verify a carrier must not start and claim to be
+	// verifying: refusing per document instead makes "this host has no trust
+	// root" and "delivery is shipping something bad" the same observable, and
+	// those are the two facts an operator most needs to tell apart.
+	//
+	// First rather than somewhere inside the verifier, because the refusal an
+	// operator reads has to name the thing that is missing. A policy value read
+	// before this answered "SOLUTION_HOST_TRUST_POLICY is required" for a host
+	// whose real problem was an unmounted anchor.
+	if err := infra.RequireSolutionHostTrustAnchor(); err != nil {
+		return nil, err
+	}
+	// The verifier owns the signer-to-domain mapping, and that is a change from
+	// reading it out of SOLUTION_HOST_SIGNER_DOMAINS.
+	//
+	// Two reasons, both of which the adversarial reviews named. The env var's
+	// key was a bare certificate SAN — no issuer, no repository, no ref — which
+	// bakes a weaker allowlist shape into configuration: a SAN alone is accepted
+	// from any issuer, and the same workflow path exists in every fork. And the
+	// allowlist and the thing it authorizes were separable, so a deployer who
+	// could set the environment could widen what an accepted signer speaks for
+	// without touching the independently-delivered policy at all.
+	//
+	// Now both come from one document at a FIXED path, which a platform-owned
+	// delivery path writes and neither delivery writer can.
+	verifier, err := infra.NewSolutionHostBundleVerifier(
+		infra.SolutionHostTrustPolicy(strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_POLICY"))))
+	if err != nil {
+		return nil, err
+	}
+	// Every domain the policy grants a signer must be one this host accepts at
+	// all. Refused BY NAME rather than intersected silently: a policy naming a
+	// domain SOLUTION_HOST_OWNERSHIP_DOMAINS does not list is a disagreement
+	// between two independently delivered documents, and quietly dropping the
+	// entry reads exactly like a policy that works until the binding it was
+	// meant to admit is withheld.
+	domainsBySigner := verifier.SignerDomains()
+	accepted := make(map[string]bool, len(domains))
+	for _, domain := range domains {
+		accepted[domain] = true
+	}
+	for signer, granted := range domainsBySigner {
+		for _, domain := range granted {
+			if !accepted[domain] {
+				return nil, fmt.Errorf(
+					"the verification policy lets signer %q deliver under ownership domain %q, which SOLUTION_HOST_OWNERSHIP_DOMAINS does not accept",
+					signer, domain)
+			}
+		}
+	}
+	interval := business.SolutionHostBindingReconcileInterval
+	if raw := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_BINDING_INTERVAL")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 {
+			return nil, fmt.Errorf("SOLUTION_HOST_BINDING_INTERVAL %q is not a positive duration", raw)
+		}
+		interval = parsed
+	}
+	// The ONLY way a document reaches this host is the delivery endpoint, so a
+	// host that cannot review a carrier's credential has no input at all.
+	// Saying so at boot beats a reconciler that polls an inbox nothing can ever
+	// write to.
+	kubernetes, err := infra.NewKubernetesClient()
+	if err != nil {
+		return nil, fmt.Errorf("the declared-presence surface has no input: a delivered carrier is authorised by TokenReview, and this host cannot reach its api server: %w", err)
+	}
+	service.SetSolutionDelivery(verifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	// Deliberately not routed at the gateway, and the asymmetry with the
+	// credential mint is the reason. `POST /platform/_credential` is brokered by
+	// the gateway because a solution runtime is an independently deployed
+	// workload that must not reach accounts' internal listener. A delivery Job
+	// is not that: it runs in-cluster as one of two known service accounts, so
+	// routing it through the edge would put accounts-audience tokens across the
+	// perimeter for no gain.
+	//
+	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
+	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
+
+	// The AUTHORITY CEILING, from the same platform-owned anchor as the trust
+	// root and for the same two reasons: a document must never carry its own
+	// ceiling, and a ceiling the composition could point at is a ceiling the
+	// composition chose.
+	//
+	// Absence and damage are different answers. No envelope delivered is a
+	// complete deployment that answers no authority question — presence
+	// reconciles and every activation refuses by name — while an envelope that
+	// IS delivered and cannot be read refuses the boot, because reading a
+	// damaged ceiling as "no ceiling" turns a corrupted file into a silently
+	// narrower system and reading it permissively turns it into a wider one.
+	envelope, _, err := infra.ReadSolutionAuthorityEnvelope()
+	if err != nil {
+		return nil, err
+	}
+	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
+		Source:          business.NewDeliveredSolutionHostBindings(service),
+		Verifier:        verifier,
+		Coordinate:      coordinate,
+		Domains:         domains,
+		DomainsBySigner: domainsBySigner,
+		Interval:        interval,
+		Envelope:        envelope,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// EXECUTION-BOUND MINTING, wired here because this is where both of its
+	// independent sources exist.
+	//
+	// THIS IS THE LINE THAT WAS MISSING. `BindExecution`, the three digest
+	// types, the monotonicity guard and the TokenReview client were all built,
+	// guarded and unit-tested, and `SetExecutionBinding` was called from
+	// nowhere — so on a running host the reviewer was nil, `BindExecution`
+	// answered ErrExecutionUnbound for every caller, and the whole mechanism was
+	// unreachable. A check nothing calls is indistinguishable from a check that
+	// passes, which is why this is wired rather than merely available.
+	//
+	// THE TWO SOURCES ARE DELIBERATELY DIFFERENT ONES, and that is the entire
+	// design. The reviewer is the Kubernetes API, keyed by a pod UID that came
+	// from a TokenReview of a token the caller could not forge: it answers what
+	// the caller IS RUNNING. The authority answers what THIS HOST APPROVES, read
+	// from signed documents the caller has no influence over. Filling both sides
+	// from one source compares a value to itself and passes for every caller,
+	// including the superseded pod the check exists to refuse.
+	//
+	// It is the SAME client that reviews a delivery carrier, which is right
+	// rather than merely convenient: one api server, one in-cluster credential,
+	// one place a lost credential stops both halves at once instead of leaving
+	// one of them silently answering.
+	service.SetExecutionBinding(kubernetes, reconciler.ApprovedBuilds())
+	return reconciler, nil
+}
+
 func workspaceEnv(configuration, key string) string {
 	if value, err := codefly.For(codefly.Context()).WorkspaceValue(configuration, key); err == nil && value != "" {
 		return value

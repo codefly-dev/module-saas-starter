@@ -60,16 +60,16 @@ func delegationRegistryWith(t *testing.T, otherTenant string, crossTenant bool) 
 		cross = `"cross_tenant":true,`
 	}
 	registry, err := business.ParseModulePrincipalRegistry(`{` +
-		`"` + delegationModule + `":{"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
+		`"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read","write"]}]}}},` +
-		`"` + runtimeModule + `":{"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
+		`"` + runtimeModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
 		`"ingest":{"audience":"docstore-ingest",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}]}}},` +
-		`"` + otherModule + `":{"tenant":"` + otherTenant + `","operation_audiences":{` +
+		`"` + otherModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `","operation_audiences":{` +
 		`"sync":{"audience":"reportservice",` +
 		`"invoke_scopes":[{"resource_kind":"reports","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"reports","actions":["read"]}],` +
@@ -168,10 +168,14 @@ func (w *delegationWorld) service(t *testing.T, registry business.ModulePrincipa
 	t.Helper()
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
 	secrets, err := business.ParseRegistrationSecrets(delegationModule + ":" + delegationDigest(delegationModuleSecret) +
 		"," + otherModule + ":" + delegationDigest(otherModuleSecret))
 	require.NoError(t, err)
 	svc.SetModuleIdentitySecrets(secrets)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
 	svc.SetDatasourceConnector(delegationCipher{}, delegationProducer{}, "")
@@ -548,7 +552,7 @@ func TestSourceDelegation_BindingChanged(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
-	widened, err := business.ParseModulePrincipalRegistry(`{"` + delegationModule + `":{"tenant":"` + w.otherOrg + `","operation_audiences":{` +
+	widened, err := business.ParseModulePrincipalRegistry(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + w.otherOrg + `","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +

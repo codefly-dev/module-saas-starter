@@ -489,6 +489,16 @@ func (s *Service) GrantPlatformRole(ctx context.Context, actorID string, req *ge
 }
 
 // RevokePlatformRole removes a user's platform admin status (super_admin only).
+//
+// The widest authority this host grants, so it is the narrowing the log exists
+// for most: appended to the external record and receipted BEFORE the row goes,
+// with the delete and the receipt's commit in one transaction. A host that
+// cannot witness the append refuses — a platform role restored by a database
+// restore is an administrator nobody revoked.
+//
+// The caller's own authorisation is checked BEFORE the append, so a refused
+// request appends nothing: an entry for an operation that was never permitted
+// would be a revocation in the record that did not happen.
 func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *gen.RevokePlatformRoleRequest) error {
 	w := wool.Get(ctx).In("RevokePlatformRole")
 
@@ -496,12 +506,14 @@ func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *g
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
-			return err
-		}
-		return s.emitTx(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
-	}); err != nil {
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		revokePlatformRolePolicyLogEntry(actorID, req.UserId),
+		func(ctx context.Context) error {
+			if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
+				return err
+			}
+			return s.emitTx(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
+		}); err != nil {
 		return w.Wrapf(err, "cannot revoke platform role")
 	}
 	return nil
