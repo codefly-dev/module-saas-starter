@@ -2390,9 +2390,6 @@ func serviceManifestFixture(name, endpoint, api, visibility string, port int, to
 	}
 	if visibility != "private" {
 		manifest.WriteString("    visibility: " + visibility + "\n")
-		if visibility == "internal" {
-			manifest.WriteString("    allow-modules: [\"*\"]\n")
-		}
 	}
 	manifest.WriteString("spec:\n")
 	manifest.WriteString(spec)

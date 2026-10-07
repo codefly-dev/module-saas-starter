@@ -64,11 +64,12 @@ func TestVaultEndpointIsPrivateAndResolvesOnlyWithinItsModule(t *testing.T) {
 		Endpoints: []*resources.EndpointReference{{Name: "http"}},
 	}}
 	mappings := []*basev0.NetworkMapping{{Endpoint: declaration}}
-	resolved, err := resources.ResolveDependencyNetworkMappings("saas-starter", dependencies, mappings)
+	composition := &resources.Workspace{Name: "example-workspace", Modules: []*resources.ModuleReference{{Name: "saas-starter"}, {Name: "example"}}}
+	resolved, err := resources.ResolveDependencyNetworkMappings(composition, "saas-starter", dependencies, mappings)
 	if err != nil || len(resolved) != 1 {
 		t.Fatalf("same-module vault dependency: resolved %d mappings, error %v", len(resolved), err)
 	}
-	if _, err := resources.ResolveDependencyNetworkMappings("example", dependencies, mappings); err == nil {
+	if _, err := resources.ResolveDependencyNetworkMappings(composition, "example", dependencies, mappings); err == nil {
 		t.Fatal("vault/http was handed to a different module")
 	}
 }

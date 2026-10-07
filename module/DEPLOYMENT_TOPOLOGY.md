@@ -49,6 +49,26 @@ module-visible without a public ingress route.
 
 ## Network-policy model
 
+Authored endpoints and module-interface exports declare `visibility: internal`
+without `allow-modules`. Core derives the modules that can reach an internal
+endpoint from the consumers' declared runtime dependencies. A target never
+lists its consumers. Interface visibility defaults to internal; a service
+endpoint still defaults to private. The catalog retains its `MODULE` enum for
+internal reach, while network and mesh policies admit only declared dependency
+edges. Public frontend and marketing endpoints explicitly declare
+`exposure: public`, preserving their existing public addresses.
+
+Promotion requires a released CLI with Core's consumer-derived allow-list
+support and the audit promotion driver from
+[CLI PR 919](https://github.com/codefly-dev/cli/pull/919). Merge the CLI change,
+release that compatible CLI, then promote this kit cutover. The module agent,
+accounts catalog generator, and module tools require stable Core 0.14 or later,
+which accepts these declarations and derives consumer access. Core 0.13 refuses
+internal interface exports without an authored list. The CI pin at CLI 0.1.171
+still loads the module with its older Core 0.7, but does not derive cross-module
+access: an internal endpoint with no authored list denies other modules. It is
+not a compatible promotion driver for this declaration model.
+
 The topology-policy golden contains 18 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
@@ -60,6 +80,11 @@ The topology-policy golden contains 18 `NetworkPolicy` resources:
 There is no `allow-intra-namespace` rule. Adding a service dependency or port
 requires changing the topology binding and reviewing both generated directions
 of the edge.
+
+Store bootstrap ingress and egress select the agent's stable
+`codefly.dev/bootstrap-service: store` pod label. Postgres names the immutable
+migration Job with a digest of its rendered pod template, so its Kubernetes
+`job-name` changes with the image or inputs and cannot be a fixed selector.
 
 Pod selectors use the `app: <service>` labels emitted by the pinned Codefly
 agents. Services whose agent uses a different Kubernetes identity declare its

@@ -22,6 +22,7 @@ workspace-configuration-dependencies:
 endpoints:
     - name: http
       visibility: public
+      exposure: public
 spec:
     build-args:
         FRONTEND_SKIN_RUNTIME: "1"

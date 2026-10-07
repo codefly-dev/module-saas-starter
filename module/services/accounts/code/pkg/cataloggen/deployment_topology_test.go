@@ -150,31 +150,30 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.NotContains(t, string(first.NetworkPolicy), "name: allow-auth-gateway-public-egress")
 	require.NotContains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-auth-gateway")
 	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
+	require.NotContains(t, string(first.NetworkPolicy), "job-name:", "bootstrap Job names contain a content digest; policies select the stable service label")
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
 }
 
-// MODULE is the catalog category for every composed module, not a license to
-// erase a narrower authored allow-list. Legacy Codefly spellings also refuse.
+// Legacy reach spellings and authored consumer lists refuse. MODULE remains
+// a catalog category; declared dependencies determine which callers reach it.
 func TestDeploymentTopologyRefusesUnrepresentableEndpointPolicies(t *testing.T) {
 	catalog := readFixture(t, "../../../generated/service-catalog.json")
 	documents := readDeploymentDocuments(t)
 	for _, policy := range []string{
 		"visibility: module",
 		"visibility: internal\n          allow-modules: [example]",
-		"visibility: internal",
 		"visibility: public\n          allow-modules: [example]",
 	} {
-		changed := withModule(t, documents, "visibility: internal\n          allow-modules: [\"*\"]", policy)
+		changed := withModule(t, documents, "visibility: internal", policy)
 		_, err := cataloggen.BuildDeploymentArtifacts(catalog, changed)
 		require.Error(t, err, policy)
 	}
 	for _, policy := range []string{
 		"visibility: module",
 		"visibility: internal\n      allow-modules: [example]",
-		"visibility: internal",
 	} {
-		changed := withService(t, documents, "accounts", "visibility: internal\n      allow-modules: [\"*\"]", policy)
+		changed := withService(t, documents, "accounts", "visibility: internal", policy)
 		_, err := cataloggen.BuildDeploymentArtifacts(catalog, changed)
 		require.Error(t, err, policy)
 	}
@@ -786,10 +785,10 @@ func TestDeploymentTopologyRequiresTheModuleAuthorityEndpoint(t *testing.T) {
 	documents := readDeploymentDocuments(t)
 
 	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n          allow-modules: [\"*\"]\n", ""))
+		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n", ""))
 	require.ErrorContains(t, err, "module interface must export accounts/authority")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "accounts", "    - name: authority\n      api: grpc\n      visibility: internal\n      allow-modules: [\"*\"]\n", "    - name: authority\n      api: rest\n      visibility: internal\n      allow-modules: [\"*\"]\n"))
+		withService(t, documents, "accounts", "    - name: authority\n      api: grpc\n      visibility: internal\n", "    - name: authority\n      api: rest\n      visibility: internal\n"))
 	require.ErrorContains(t, err, "must be a gRPC endpoint at module visibility")
 }

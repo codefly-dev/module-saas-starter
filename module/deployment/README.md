@@ -68,15 +68,13 @@ transport configuration).
 ## Deploy Jobs
 
 A `deploy_jobs` topology entry is a required store-writing one-shot for a
-job-capable promotion driver. **Automatic catalog promotion remains blocked:**
-the Codefly CLI currently has no deploy-job execution or dependency migration
-barrier. It must reject this bundle rather than silently omit the import. Service
-environment defaults alone do not provide job execution. Driver support must
-mount the catalog, use the running service's immutable image and identity,
-resolve the write credential (including managed IAM), inherit the effective
-service environment, and fail promotion unless each `after` dependency's
-migration and the import complete. Sync-wave annotations on independently
-reconciling Argo Applications do not enforce that dependency barrier.
+job-capable promotion driver. The Codefly GitOps driver projects these entries
+as Sync-hook Jobs inside one Application with the module's workloads. Its
+resource waves order dependency readiness, migration Jobs, the import and then
+the dependent workload. A failed import blocks rollout. This requires a CLI
+release containing deploy-job support; a driver lacking it must refuse the
+required step rather than silently omit it. Sync-wave annotations on independent
+Argo Applications do not enforce that barrier.
 
 Unlike a service's self-serving `bootstrap_job_endpoints` Job —
 which reaches only the service's own endpoints — a deploy Job runs one service's
@@ -97,8 +95,14 @@ CLI-owned `spec.environment-defaults` declares `AUDIT_SINK: postgres`, so the
 service has an explicit value to inherit after deployment projection. The
 environment's `service-config` or explicit secret reference overrides that
 default; a warehouse deployment's Job must inherit its resolved warehouse mode.
-This requires a CLI release that projects service environment defaults and,
-for automatic promotion, implements the job contract above. Re-running an
+This requires a CLI release that projects service environment defaults and
+the job contract above. The driver preserves resolved credentials, their
+refresh containers and proxy mounts; the importer initializes Codefly runtime
+configuration and opens the same scoped store capabilities as accounts. The
+catalog is mounted from an immutable ConfigMap named by its content digest.
+The Job retains the accounts image's entrypoint and passes
+`role-catalog-import -catalog <mounted path> -force`. Explicit operator
+`-database-url` use remains available. Re-running an
 unchanged catalog is an empty no-op, so the step is idempotent. Generation rejects
 a deploy Job whose catalog artifact is absent, whose write target is not a
 declared dependency of the
@@ -108,6 +112,25 @@ migration-bearing target (`bootstrap_job_endpoints`) without ordering `after` it
 yet exist. In an environment where the target is a managed handoff the driver
 owns the out-of-cluster reach, so no in-cluster reach policy is rendered —
 mirroring the store's own bootstrap authority.
+
+The supported target is Kubernetes 1.33 or newer with native sidecars and an
+Istio injector supporting `sidecar.istio.io/nativeSidecar`. The driver converts
+ordinary proxy containers into restartable init containers and requests native
+mesh injection, so their lifetime cannot hold a completed import open. Pod
+policy and identity labels remain intact; a driver-owned workload-role label
+excludes import pods from service endpoint selection. Argo observes Sync-hook
+completion before cleanup and recreates the idempotent jobs at the next sync.
+An `after` managed service without a rendered migration Job is refused.
+
+The aggregate Application boundary supports new installations and upgrades
+already using that boundary. Existing deployments using separate unit
+Applications require a governed ownership migration: preserve resources while
+retiring the old owners without cascading deletion, prevent competing
+reconciliation, and verify the aggregate owner has adopted resource tracking.
+The CLI refuses publication across that boundary and does not yet execute or
+admit the migration. Do not remove finalizers or rewrite inventory to bypass
+the guard; an existing cell needs the supported migration prerequisite before
+promotion with this bundle.
 
 The bundle is transport-neutral, but the driver honours a small contract the
 generated reach policies assume. The Job pod runs under the **running service's**

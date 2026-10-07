@@ -7,19 +7,15 @@ interface:
         - service: accounts
           endpoint: authority
           visibility: internal
-          allow-modules: ["*"]
         - service: accounts
           endpoint: connect
           visibility: internal
-          allow-modules: ["*"]
         - service: auth-gateway
           endpoint: grpc
           visibility: internal
-          allow-modules: ["*"]
         - service: auth-gateway
           endpoint: rest
           visibility: internal
-          allow-modules: ["*"]
         - service: frontend
           endpoint: http
           visibility: public

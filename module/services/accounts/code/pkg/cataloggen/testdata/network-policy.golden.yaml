@@ -315,7 +315,6 @@ spec:
         - podSelector:
             matchLabels:
               codefly.dev/bootstrap-service: store
-              job-name: store
       ports:
         - protocol: TCP
           port: 5432
@@ -329,7 +328,6 @@ spec:
   podSelector:
     matchLabels:
       codefly.dev/bootstrap-service: store
-      job-name: store
   policyTypes:
     - Egress
   egress:
