@@ -28,6 +28,19 @@ func commandContext(ctx context.Context) (context.Context, error) {
 	}
 	return provider.WithLogger(quietLog{}).Inject(ctx), nil
 }
+
+// OpenDeployedStore opens the same projected Postgres capabilities and rotating
+// credentials as the accounts service. Deploy commands must initialize the
+// Codefly context before resolving the store's secrets; a raw operator URL is
+// deliberately handled separately by NewPostgresStoreFromURL.
+func OpenDeployedStore(ctx context.Context) (*infra.PostgresStore, error) {
+	ctx, err := commandContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return infra.NewPostgresStore(ctx)
+}
+
 func openStore(ctx context.Context, testURL string) (*infra.PostgresStore, error) {
 	if testURL != "" {
 		return infra.NewPostgresStoreFromURL(ctx, testURL)

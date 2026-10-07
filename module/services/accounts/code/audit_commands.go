@@ -2,6 +2,7 @@ package main
 
 import (
 	"accounts/pkg/auditops"
+	"accounts/pkg/rolecatalogimport"
 	"os"
 )
 
@@ -13,6 +14,8 @@ func init() {
 		return
 	}
 	switch os.Args[1] {
+	case "role-catalog-import":
+		os.Exit(rolecatalogimport.Run(os.Args[2:], os.Stdout, os.Stderr))
 	case "audit-history-copy":
 		os.Exit(auditops.RunHistory(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
 	case "audit-qualify":

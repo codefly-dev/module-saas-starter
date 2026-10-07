@@ -198,6 +198,36 @@ the adapters' `markContentReads`):
   `CheckAuthorizationRevision` catches it because it re-resolves every
   permission before it compares revisions at all.
 
+## Built-in role catalog import
+
+The accounts executable ships `role-catalog-import` as an authored subcommand:
+
+```sh
+./app role-catalog-import -catalog /catalog/roles.json [-dry-run] [-force]
+```
+
+Without `-database-url` or `DATABASE_URL`, it initializes the same Codefly
+configuration as accounts and opens the store's projected read-only, request and
+control-plane capabilities. The existing Postgres credential provider selects
+and refreshes each login's projected token (`POSTGRES_TOKEN_FILES`, or the single
+`POSTGRES_TOKEN_FILE` where the deployment uses one). A deploy Job therefore runs
+the immutable accounts image with its resolved configuration, identity and
+credential mounts; it needs no synthesized database URL or migration credential.
+The import writes built-in roles on the control-plane transaction and leaves
+tenant-defined custom roles alone.
+
+For a standalone operator invocation, `-database-url` overrides `DATABASE_URL`.
+That explicit URL keeps its supplied credential and is not replaced by a
+deployment token file. Its principal must have membership in both `app_tenant`
+and `app_control_plane`, as required by the shared tooling-store constructor.
+
+Every invocation requires the deployment's nonblank `AUDIT_SINK`, either in its
+environment or explicitly as `-audit-sink`; this is checked before resolving
+credentials. Warehouse modes record platform audit events in the transactional
+queue for the accounts relay. `-dry-run` prints the plan without applying it;
+`-force` permits removals that delete assignments or remove the whole catalog.
+An unchanged catalog remains a no-op.
+
 ## Deferred
 
 Boundary-level RLS inside module stores (an `app.current_boundaries` GUC) stays
