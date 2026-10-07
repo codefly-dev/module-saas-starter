@@ -136,6 +136,22 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 			installerError(w, http.StatusConflict, se.Error())
 			return
 		}
+		// A ceiling naming an audience this host does not serve is the CALLER'S
+		// request being wrong, not this host being unavailable, and the two send an
+		// installer to opposite places: a 503 says "the host is broken, retry" and
+		// invites exactly the retry loop that will never succeed, while this says
+		// "the audience you asked for is not one I serve" and names the entries.
+		//
+		// It is mapped explicitly because the fall-through below is 503, so the
+		// refusal RequireHostAudiences added would otherwise arrive as "persistence
+		// unavailable" — the same misleading-cause failure the write-time check was
+		// added to end, moved one layer out. The message is the error's own: it
+		// echoes back the entries the caller supplied plus a constant shape, so it
+		// reveals no part of the host's vocabulary.
+		if errors.Is(err, business.ErrAudienceNotInHostVocabulary) {
+			installerError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		installerError(w, http.StatusServiceUnavailable, "installation prerequisite or persistence unavailable")
 		return
 	}

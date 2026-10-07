@@ -35,6 +35,9 @@ func boundedInstallationFixture(t *testing.T) *business.InstallSolutionParams {
 	// Its own declared presence: this is a SECOND installation in the same org,
 	// so it must be a different target from the fixture's.
 	alias := uniqueAlias("repeatable")
+	// `example.api` is a declared MODULE prefix: a ceiling may only name audiences
+	// this host serves (issue #952), and the installer's path validates it like
+	// every other write path. installerTestService declares it.
 	return &business.InstallSolutionParams{OrgID: org, OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, AgentIdentifier: "acme.example/repeatable:1.0.0", TargetID: declarePresence(t, "acme.test."+alias, alias), RouteAlias: alias, AllowedAudiences: []string{"example.api"}, AllowedScopes: []string{"documents"}, InstallerPrincipalID: business.ModulePrincipalID("example-installer")}
 }
 func boundedReconcile(p *business.InstallSolutionParams, apply bool) (out *business.ModuleInstallationResult, err error) {
@@ -150,7 +153,14 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	svc := auditedService(t, emitter)
 	svc.SetModuleIdentitySecrets(map[string][sha256.Size]byte{"example-installer": sha256.Sum256([]byte("local-fixture-secret"))})
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
-	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{p.InstallerPrincipalID: {Prefix: "example-installer", Tenant: p.OrgID}})
+	// The installer's own principal, plus the audiences its ceiling names: a
+	// ceiling may only name values this host's vocabulary holds, and the installer
+	// path validates it like every other write path (issue #952). Declaring
+	// `example.api` here is how a composition declares it.
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		p.InstallerPrincipalID:                    {Prefix: "example-installer", Tenant: p.OrgID},
+		business.ModulePrincipalID("example.api"): {Prefix: "example.api"},
+	})
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	previousAuthority := *adapters.WorkContextSingleton()
@@ -193,6 +203,59 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NotEmpty(t, issued.Token)
 	require.WithinDuration(t, time.Now().Add(15*time.Minute), issued.ExpiresAt, 5*time.Second)
 	request := business.ModuleInstallationRequest{DisplayName: "Example Repeatable", RootScopeLabel: "Example Repeatable", ModuleID: "acme.example/repeatable", OrganizationSlug: "org-" + p.OrgID, AgentIdentifier: p.AgentIdentifier, TargetID: p.TargetID, RoleID: p.RoleID, ExpectedRolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes}
+
+	// A ceiling naming an audience this host does not serve is REFUSED AS A
+	// FORBIDDEN REQUEST, not as an unavailable host, and the refusal names the
+	// entry.
+	//
+	// This is the test the mapping needed. The write-time check (issue #952) is a
+	// plain error, and this handler's fall-through is 503 "installation
+	// prerequisite or persistence unavailable" — so without an explicit branch the
+	// refusal reached the installer as "the host is broken, retry", inviting a
+	// retry loop that can never succeed and reproducing, one layer out, exactly the
+	// misleading-cause failure the write-time check exists to end. 503 is also the
+	// wrong class: the request is what is wrong.
+	// The DELEGATION AND THE REQUEST AGREE on the unserved audience, which is the
+	// only shape that reaches this check. With them disagreeing, the delegation
+	// comparison refuses first with "installer delegation denied" — a 403 for an
+	// entirely different reason, and a test that accepted it would pass without
+	// ever exercising the vocabulary. It is also the real-world shape: f2's
+	// evidence was that `exactSet` CONFIRMS the ceiling against the delegation and
+	// the write then succeeds.
+	unserved := request
+	unserved.AllowedAudiences = []string{"example.api", "nothing-serves-this"}
+	unservedPolicy := policy
+	unservedPolicy.Delegations = []business.InstallerDelegation{policy.Delegations[0]}
+	unservedPolicy.Delegations[0].AllowedAudiences = unserved.AllowedAudiences
+	unservedPath := filepath.Join(t.TempDir(), "unserved-policy.json")
+	unservedRaw, err := json.Marshal(unservedPolicy)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(unservedPath, unservedRaw, 0600))
+	unservedHandler, err := adapters.NewModuleInstallationHTTPHandler(svc, unservedPath)
+	require.NoError(t, err)
+	unservedServer := httptest.NewTLSServer(unservedHandler)
+	defer unservedServer.Close()
+
+	// `inspect` is the dry run, and the check runs there too: the ceiling is
+	// validated before the transaction opens, so it refuses without writing.
+	unservedBody, err := json.Marshal(unserved)
+	require.NoError(t, err)
+	unservedReq, err := http.NewRequest(http.MethodPost, unservedServer.URL+"/v1/module-installations/inspect", bytes.NewReader(unservedBody))
+	require.NoError(t, err)
+	unservedReq.Header.Set("content-type", "application/json")
+	unservedReq.Header.Set("X-Codefly-Work-Context", issued.Token)
+	unservedResponse, err := unservedServer.Client().Do(unservedReq)
+	require.NoError(t, err)
+	defer unservedResponse.Body.Close()
+	refusal, err := io.ReadAll(unservedResponse.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusForbidden, unservedResponse.StatusCode, string(refusal))
+	require.Contains(t, string(refusal), "nothing-serves-this",
+		"the refusal must name the entry an installer has to fix")
+	require.NotContains(t, string(refusal), "persistence unavailable",
+		"a caller's wrong ceiling must never read as this host being unavailable")
+	require.NotContains(t, string(refusal), "delegation denied",
+		"an earlier guard firing would make this pass without exercising the vocabulary")
 
 	if script := os.Getenv("MODULE_INSTALLER_CLIENT_SCRIPT"); script != "" {
 		dir := t.TempDir()
