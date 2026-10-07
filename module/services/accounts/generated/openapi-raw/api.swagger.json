@@ -10731,9 +10731,23 @@
         "targetId": {
           "type": "string",
           "description": "The immutable solution target this declaration opened — the identity an\ninstallation names. It is carried on the registration record so a consumer\nthat was asked about a ROUTE ALIAS can resolve it to the target that\ncurrently serves it and compare identities.\n\nThat resolution is the whole admission mechanism: a replacement binding\nwhich claimed a withdrawn alias resolves to its own target, which no\ninstallation of its predecessor names. A record with no declaration carries\nno target and is therefore admissible to nobody, which is the fail-closed\nanswer and the direction of the cutover."
+        },
+        "kind": {
+          "$ref": "#/definitions/v1SolutionDeclaredKind",
+          "description": "What the declaration declared the presence of. It decides which routing\nsurface serves this record, so it is carried rather than inferred: a host\nthat read the kind off the shape of a record — a publisher prefix, an alias\nconvention — would be guessing at exactly the question that separates a\nsurface with per-viewer admission from one without."
         }
       },
       "description": "SolutionDeclaredBinding identifies the applied declaration and target."
+    },
+    "v1SolutionDeclaredKind": {
+      "type": "string",
+      "enum": [
+        "SOLUTION_DECLARED_KIND_UNSPECIFIED",
+        "SOLUTION_DECLARED_KIND_SOLUTION",
+        "SOLUTION_DECLARED_KIND_MODULE"
+      ],
+      "default": "SOLUTION_DECLARED_KIND_UNSPECIFIED",
+      "description": "SolutionDeclaredKind is what a declaration declares the presence of.\n\nCore requires it on every presence document and refuses any other value, so\nevery admitted declaration has exactly one of the two. The host used to drop\nit on reconcile, which left the registry unable to say whether a record was a\nsolution or a module — and the two are routed on different surfaces with\ndifferent admission, so a host that cannot tell them apart must either serve\nboth from one surface or serve neither.\n\nUNSPECIFIED is not a third kind and is never a default. It is what a reader\ndecodes from a writer that did not set the field, and both routing surfaces\nrefuse it by name rather than picking the kind that happens to be more\npermissive.\n\n - SOLUTION_DECLARED_KIND_SOLUTION: A composed solution instance, routed at /solutions/\u003calias\u003e/* with\nper-viewer installation admission.\n - SOLUTION_DECLARED_KIND_MODULE: One module instance, routed at /v1/\u003calias\u003e/* with the ordinary\nauthenticated pipeline."
     },
     "v1SolutionFrontendBinding": {
       "type": "object",
