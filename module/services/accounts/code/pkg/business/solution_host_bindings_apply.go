@@ -490,6 +490,11 @@ func (s *Service) declareSolutionRegistration(
 	if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
 		return 0, err
 	}
+	// The declared set just changed, so the audience vocabulary's snapshot is
+	// stale. Invalidating here rather than waiting out HostAudienceCacheBound is
+	// what makes a declaration this replica applied addressable on the very next
+	// mint; another replica's reaches us within the bound.
+	s.InvalidateHostAudiences()
 	return revision, nil
 }
 
@@ -526,6 +531,15 @@ func (s *Service) withdrawDeclaredSolutionRegistration(
 	if current.TombstonedAt != nil {
 		return 0, nil
 	}
+	kind := SolutionDeclaredKind(document.Kind)
+	if !kind.Valid() {
+		// Same refusal as the declare path, for the same reason, and reached on
+		// the same documents: a removal whose kind this host cannot route would
+		// write a row the CHECK refuses, which surfaces as an opaque constraint
+		// violation instead of a refusal naming the binding.
+		return 0, fmt.Errorf("%w: binding %q declares kind %q",
+			ErrSolutionHostBindingKindNotRoutable, document.Binding, document.Kind)
+	}
 	revision, err := s.store.NextSolutionRegistryRevision(ctx)
 	if err != nil {
 		return 0, err
@@ -544,11 +558,24 @@ func (s *Service) withdrawDeclaredSolutionRegistration(
 			// The target the withdrawal closed, kept on the tombstone: the
 			// record stays attributable to the identity whose consent ended.
 			TargetID: closedTargetID,
+			// And the KIND the withdrawn declaration declared. A tombstone is a
+			// complete declaration, not a partial one: the whole-or-absent CHECK
+			// admits five columns or none, and `declared_kind` is constrained to
+			// the two values core admits — so an empty one is refused by the
+			// database rather than stored. Taken from the document being applied,
+			// which is the removal's own generation and therefore states the kind
+			// of the thing being withdrawn.
+			Kind: kind,
 		},
 	}
 	if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
 		return 0, err
 	}
+	// A WITHDRAWAL is the direction that matters: it REMOVES an audience, so a
+	// stale snapshot would keep a withdrawn solution addressable for up to the
+	// bound. Invalidated inside the transaction on purpose — a rollback then costs
+	// one extra read, which is the only direction worth erring in.
+	s.InvalidateHostAudiences()
 	if err := s.emitTx(ctx, "solution:"+solutionID, "system",
 		EventSolutionRegistrationDeleted, "solution", solutionID, "",
 		map[string]any{

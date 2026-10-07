@@ -35,6 +35,13 @@ func (s *authorityInstallationStore) WithOrgTx(ctx context.Context, _ string, fn
 func (s *authorityInstallationStore) GetOrganizationBySlug(context.Context, string) (*gen.Organization, error) {
 	return &gen.Organization{Id: s.result.OrganizationID}, nil
 }
+
+// The audience vocabulary's one read. This store declares NO solution bindings:
+// the ceiling these tests install names declared MODULE prefixes, which the
+// fixture declares through the principal registry below.
+func (s *authorityInstallationStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+	return nil, nil
+}
 func (s *authorityInstallationStore) ReconcileModuleInstallation(context.Context, *business.InstallSolutionParams, []string, bool) (*business.ModuleInstallationResult, error) {
 	s.calls++
 	result := s.result
@@ -65,7 +72,52 @@ func authorityInstallationFixture(t *testing.T, module string) (*business.Servic
 	}}
 	service, err := business.NewService(store)
 	require.NoError(t, err)
+	// The ceiling may only name audiences this host SERVES (issue #952), and the
+	// installer's path validates it like every other write path. These two are
+	// declared module prefixes, declared the way a composition declares them.
+	service.SetModulePrincipals(business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("example.api"):    {Prefix: "example.api"},
+		business.ModulePrincipalID("example.worker"): {Prefix: "example.worker"},
+	})
 	return service, store, caller, &business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{d}}, req
+}
+
+// THE MODULE INSTALLER'S PATH validates the ceiling too, and that was the gap.
+//
+// The write-time rule reached InstallSolution and CreateAgentPrincipal and missed
+// ReconcileModuleInstallation — the one path a caller the host does not control
+// reaches. The consequence was not a silent grant but a MISLEADING one: the write
+// succeeded, the installation read as configured, and every later mint was refused
+// with "outside allowed audiences this host still serves", which asserts the
+// audience WAS served and has been withdrawn. An operator then hunts a withdrawal
+// that never happened.
+//
+// Asserted on the REFUSAL NAMING THE VALUE, and on the store never being reached:
+// a refusal after the write would leave the dead ceiling behind.
+func TestTheModuleInstallerPathRefusesAnAudienceThisHostDoesNotServe(t *testing.T) {
+	svc, store, caller, policy, req := authorityInstallationFixture(t, "installer-audience")
+	req.AllowedAudiences = []string{"example.api", "nothing-serves-this"}
+	// The delegation must agree with the request, or the refusal could come from
+	// the ceiling comparison instead of from the vocabulary.
+	policy.Delegations[0].AllowedAudiences = slices.Clone(req.AllowedAudiences)
+
+	_, err := svc.ReconcileModuleInstallation(context.Background(), caller, policy, req, true)
+	require.Error(t, err)
+	require.ErrorIs(t, err, business.ErrAudienceNotInHostVocabulary)
+	require.Contains(t, err.Error(), "nothing-serves-this",
+		"the refusal must name the entry an operator has to fix")
+	require.NotContains(t, err.Error(), "withdrawn",
+		"an audience that was never served must not be reported as withdrawn")
+	require.Zero(t, store.calls,
+		"the refusal must precede the write, or the dead ceiling is stored anyway")
+
+	// And the same request with every entry served is accepted, so the case above
+	// is not the fixture refusing everything.
+	req.AllowedAudiences = []string{"example.api", "example.worker"}
+	policy.Delegations[0].AllowedAudiences = slices.Clone(req.AllowedAudiences)
+	_, err = svc.ReconcileModuleInstallation(context.Background(), caller, policy, req, true)
+	require.NoError(t, err)
+	require.Equal(t, 1, store.calls)
 }
 func verifiedAuthority(t *testing.T, svc *business.Service, caller business.ModuleCaller, policy *business.InstallerPolicy, req business.ModuleInstallationRequest) *business.ModuleInstallationAuthorityReference {
 	t.Helper()

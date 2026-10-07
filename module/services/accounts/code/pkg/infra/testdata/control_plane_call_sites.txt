@@ -156,7 +156,7 @@ pkg/business/waitlist.go: (*Service).ReviewWaitlist: As(System())
 pkg/business/waitlist.go: (*Service).VerifyWaitlist: As(System())
 pkg/business/waitlist.go: (*Service).authorizeAccountCreation: As(System())
 pkg/business/waitlist.go: (*Service).convertWaitlistLead: As(System())
-pkg/business/work_context_audience.go: (*Service).HostAudiences: WithControlPlane
+pkg/business/work_context_audience.go: (*Service).declaredAudienceBindingIDs: WithControlPlane
 pkg/infra/postgres.go: (*PostgresStore).ClearAll: WithControlPlane
 pkg/infra/postgres.go: (*PostgresStore).LinkIdentity: txbind.BindRequest
 pkg/infra/postgres.go: (*PostgresStore).RegisterUser: pgx.BeginTxFunc(controlPlane)

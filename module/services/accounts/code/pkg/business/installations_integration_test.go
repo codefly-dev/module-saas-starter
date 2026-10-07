@@ -34,6 +34,18 @@ func TestInstallSolutionEmitsAuditWithGrantorAndCeiling(t *testing.T) {
 	}))
 
 	targetID, _ := declarePresence(t, "acme-solution")
+	// The ceiling may only name audiences this host SERVES (issue #952): an
+	// audience outside the derived vocabulary is refused at install, because a
+	// ceiling naming a consumer that does not exist grants a capability pointing
+	// nowhere. `acme.collection` is a declared MODULE prefix, which is the set's
+	// member a forwarded viewer context names — declared here the way a
+	// composition declares it, through the principal registry.
+	previousPrincipals := testService.ModulePrincipals()
+	testService.SetModulePrincipals(business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("acme.collection"): {Prefix: "acme.collection"},
+	})
+	t.Cleanup(func() { testService.SetModulePrincipals(previousPrincipals) })
+
 	installation, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
 		OrgID:            orgID,
 		AgentIdentifier:  "acme.example/solution:1.0.0",

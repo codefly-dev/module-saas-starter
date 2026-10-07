@@ -132,6 +132,19 @@ type Service struct {
 	// test could hold.
 	modulePrincipals atomic.Pointer[ModulePrincipalRegistry]
 
+	// declaredAudienceBindings caches the DECLARED, NON-TOMBSTONED solution
+	// binding ids the host's audience vocabulary is derived from
+	// (work_context_audience.go). Only this half is cached: the module-prefix half
+	// comes from modulePrincipals above, which is already an in-memory atomic
+	// pointer, so composing the set per call keeps it current with no invalidation
+	// hook on SetModulePrincipals.
+	declaredAudienceBindings atomic.Pointer[declaredAudienceSnapshot]
+	// audienceClock is the cache's clock. Overridable because a bound no test can
+	// move is a bound no test can prove: without it the only way to exercise
+	// expiry is to sleep for two minutes, which nobody does, so the bound would be
+	// asserted by its constant rather than by its behaviour.
+	audienceClock func() time.Time
+
 	// The delivery inbox's wiring. All three or none: ReceiveSolutionDelivery
 	// fails closed and names the gap when any is absent, because a deployment
 	// that mounted the endpoint without a verifier must not accept documents.

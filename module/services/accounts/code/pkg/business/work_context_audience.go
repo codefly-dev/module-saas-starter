@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // THE HOST'S AUDIENCE VOCABULARY (issue #952).
@@ -76,18 +77,59 @@ type DeclaredSolutionBindingStore interface {
 	LiveDeclaredSolutionBindingIDs(ctx context.Context) ([]string, error)
 }
 
-// HostAudiences is the closed set, resolved now.
+// HostAudienceCacheBound is how long a resolved set of declared solution bindings
+// may be served before it is re-read.
 //
-// It is read per call rather than cached. The set is small (one host holds tens
-// of bindings), and the alternative is a cache whose staleness decides whether a
-// withdrawn solution can still be addressed — the same mistake as an unbounded
-// registry snapshot, in a place where the consequence is a capability.
-func (s *Service) HostAudiences(ctx context.Context) (map[string]struct{}, error) {
-	if s == nil || s.store == nil {
-		// A deployment with no service wired cannot answer what it serves, and must
-		// not answer "nothing" either: every mint refuses, loudly, rather than
-		// panicking on a nil store three frames deeper.
-		return nil, fmt.Errorf("cannot resolve the host audience vocabulary: accounts service is not configured")
+// It is the SAME bound the gateway reads the same registry under, and that is
+// deliberate: the host and the edge must agree on how long a withdrawal may take
+// to reach a decision, and two different numbers would make the answer depend on
+// which one a request happened to hit. It is also four times the reconciler's own
+// interval (SolutionHostBindingReconcileInterval), so a withdrawal this replica
+// applies itself is visible at once through invalidation, and one ANOTHER replica
+// applied is visible within the bound.
+const HostAudienceCacheBound = 120 * time.Second
+
+// declaredAudienceSnapshot is one resolved read of the declared binding ids, with
+// the time it was taken. Stored behind an atomic pointer and never mutated, so a
+// reader either sees a whole previous snapshot or a whole newer one.
+type declaredAudienceSnapshot struct {
+	bindings []string
+	at       time.Time
+}
+
+// InvalidateHostAudiences drops the cached binding ids, so the next resolution
+// re-reads them.
+//
+// Called by the apply path whenever a declaration changes the declared set — a
+// record declared or withdrawn — which is what makes a withdrawal this replica
+// performed visible to the very next mint rather than up to the bound later. It is
+// called after the write inside the apply transaction, so a transaction that later
+// rolls back costs one extra read and never serves a stale set: the conservative
+// direction is the only one worth having here.
+func (s *Service) InvalidateHostAudiences() {
+	if s == nil {
+		return
+	}
+	s.declaredAudienceBindings.Store(nil)
+}
+
+// declaredAudienceBindingIDs resolves the declared binding ids, from the cache
+// when it is inside the bound and from the control plane when it is not.
+//
+// Caching THIS half is what keeps the vocabulary off the per-mint hot path. It
+// used to open a control-plane transaction on every call — twice per mint, since
+// the mint checks the audience and then narrows the actor's ceiling — on a pool
+// whose MaxConns is the pgx default and which every other control-plane capability
+// shares, including the delivery reconciler. A mint storm therefore queued
+// delivery, which is the mechanism that withdraws a compromised solution.
+func (s *Service) declaredAudienceBindingIDs(ctx context.Context) ([]string, error) {
+	now := time.Now
+	if s.audienceClock != nil {
+		now = s.audienceClock
+	}
+	if snapshot := s.declaredAudienceBindings.Load(); snapshot != nil &&
+		now().Sub(snapshot.at) < HostAudienceCacheBound {
+		return snapshot.bindings, nil
 	}
 	store, ok := s.store.(DeclaredSolutionBindingStore)
 	if !ok {
@@ -102,7 +144,31 @@ func (s *Service) HostAudiences(ctx context.Context) (map[string]struct{}, error
 		bindings, err = store.LiveDeclaredSolutionBindingIDs(ctx)
 		return err
 	}); err != nil {
+		// A failed read does NOT replace the snapshot: an outage must not install an
+		// empty set that then reads as "this host serves no solutions" for a whole
+		// bound. The caller fails closed on the error instead.
 		return nil, fmt.Errorf("cannot resolve the host audience vocabulary: %w", err)
+	}
+	s.declaredAudienceBindings.Store(&declaredAudienceSnapshot{bindings: bindings, at: now()})
+	return bindings, nil
+}
+
+// HostAudiences is the closed set.
+//
+// The solution half is served from a snapshot bounded by HostAudienceCacheBound
+// and invalidated by the apply path; the module half is composed fresh from the
+// in-memory principal registry on every call, so declaring a module takes effect
+// at once and needs no invalidation hook.
+func (s *Service) HostAudiences(ctx context.Context) (map[string]struct{}, error) {
+	if s == nil || s.store == nil {
+		// A deployment with no service wired cannot answer what it serves, and must
+		// not answer "nothing" either: every mint refuses, loudly, rather than
+		// panicking on a nil store three frames deeper.
+		return nil, fmt.Errorf("cannot resolve the host audience vocabulary: accounts service is not configured")
+	}
+	bindings, err := s.declaredAudienceBindingIDs(ctx)
+	if err != nil {
+		return nil, err
 	}
 	modules := s.declaredModules()
 	set := make(map[string]struct{}, len(bindings)+len(modules)+1)
@@ -141,27 +207,28 @@ func (s *Service) RequireHostAudience(ctx context.Context, audience string) erro
 	if _, ok := set[audience]; ok {
 		return nil
 	}
-	return fmt.Errorf("%w: %q (this host serves %s)",
-		ErrAudienceNotInHostVocabulary, audience, describeHostAudiences(set))
+	return fmt.Errorf("%w: %q (%s)", ErrAudienceNotInHostVocabulary, audience, hostAudienceShapes)
 }
 
-// describeHostAudiences renders the set for a refusal.
+// hostAudienceShapes names what this host serves, for a refusal. It is a CONSTANT:
+// the same sentence whatever the set contains.
 //
-// It names the MODULE audience in full and counts the solution ones rather than
-// listing them: the set is derived from delivered presence, so spelling it out
-// would turn one refused mint into a listing of every solution this deployment
-// runs — which the registration surface takes constant-time care never to reveal.
-func describeHostAudiences(set map[string]struct{}) string {
-	solutions := 0
-	for audience := range set {
-		if strings.HasPrefix(audience, SolutionAudiencePrefix) {
-			solutions++
-		}
-	}
-	modules := len(set) - solutions - 1 // minus the module capability audience itself
-	return fmt.Sprintf("%q, %d declared solution binding audience(s) of the form %q, and %d declared module prefix(es)",
-		ModuleCapabilitiesAudience, solutions, SolutionAudiencePrefix+"<binding-id>", modules)
-}
+// An earlier version counted the members — "%d declared solution binding
+// audience(s)" — on the reasoning that counting is not listing. That was wrong in
+// its own terms: a count is information about the same secret, so one refused mint
+// told any caller how many solutions this deployment runs, and repeating the probe
+// told them when that changed, which is to say when a solution was installed or
+// withdrawn. The registration surface takes constant-time care never to reveal
+// which modules a composition declares; a cardinality channel beside it gives that
+// away more slowly and just as surely.
+//
+// Deleting the counts also deletes the arithmetic that produced them. It derived
+// one cardinality by subtracting another from the deduplicated set, so a module
+// whose prefix WAS "module-capabilities" reported zero module prefixes when there
+// was one, and a prefix beginning "solution:" was counted as a solution.
+const hostAudienceShapes = "this host serves " + `"` + ModuleCapabilitiesAudience + `"` +
+	", an audience of the form \"" + SolutionAudiencePrefix + "<binding-id>\" for a declared solution binding" +
+	", or a declared module prefix"
 
 // RequireHostAudiences refuses a LIST, naming every entry outside the set.
 //
@@ -190,8 +257,8 @@ func (s *Service) RequireHostAudiences(ctx context.Context, audiences []string) 
 		return nil
 	}
 	sort.Strings(rejected)
-	return fmt.Errorf("%w: %s (this host serves %s)",
-		ErrAudienceNotInHostVocabulary, strings.Join(rejected, ", "), describeHostAudiences(set))
+	return fmt.Errorf("%w: %s (%s)",
+		ErrAudienceNotInHostVocabulary, strings.Join(rejected, ", "), hostAudienceShapes)
 }
 
 // LiveHostAudiences narrows a stored ceiling to the audiences the host still
@@ -221,3 +288,7 @@ func (s *Service) LiveHostAudiences(ctx context.Context, audiences []string) ([]
 	}
 	return live, nil
 }
+
+// SetAudienceClockForTest moves the vocabulary cache's clock. Test-only, named so,
+// and the only way to prove the bound expires without sleeping it out.
+func (s *Service) SetAudienceClockForTest(now func() time.Time) { s.audienceClock = now }

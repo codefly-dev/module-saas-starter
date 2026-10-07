@@ -192,6 +192,22 @@ func (s *Service) ReconcileModuleInstallation(ctx context.Context, caller Module
 	if !ok {
 		return nil, errors.New("installer persistence unavailable")
 	}
+	// The ceiling may only name audiences this host SERVES (issue #952), and this
+	// is the THIRD write path for it — the module installer's, reached by a caller
+	// the host does not control, unlike InstallSolution and CreateAgentPrincipal.
+	// It was missed, and the consequence was not a silent grant but a MISLEADING
+	// one: the write succeeded, the installation read as configured, and every
+	// later mint was refused with "outside allowed audiences this host still
+	// serves" — which asserts the audience WAS served and has been withdrawn, so
+	// an operator went looking for a withdrawal that never happened.
+	//
+	// Checked BEFORE the tenant transaction opens, for the same reason
+	// resolveInstallableTarget is hoisted in installations.go: the vocabulary's
+	// solution half is a control-plane read, and the request role holds no grant on
+	// the presence relations.
+	if err := s.RequireHostAudiences(ctx, req.AllowedAudiences); err != nil {
+		return nil, err
+	}
 	var result *ModuleInstallationResult
 	err = s.store.WithOrgTx(ctx, org.Id, func(ctx context.Context) error {
 		var err error

@@ -117,3 +117,86 @@ func TestADeclaredKindThisHostDoesNotRouteIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// countingDeclarationStore is declarationProjectionStore plus the audience
+// vocabulary's read, counted.
+type countingDeclarationStore struct {
+	declarationProjectionStore
+	reads int
+}
+
+func (s *countingDeclarationStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *countingDeclarationStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+	s.reads++
+	return nil, nil
+}
+
+// THE APPLY PATH INVALIDATES THE VOCABULARY SNAPSHOT — asserted by driving the
+// apply, not by calling the invalidator.
+//
+// The first version of this test called Service.InvalidateHostAudiences() itself
+// and passed with the invalidation deleted from both apply paths: it proved the
+// mechanism worked and nothing about whether the reconciler used it. A fake for the
+// thing under test proves nothing about the thing under test.
+//
+// Both directions, because they are different facts and only one of them is
+// dangerous: a declaration ADDS an audience (a stale snapshot merely delays a new
+// solution becoming addressable), and a withdrawal REMOVES one (a stale snapshot
+// keeps a withdrawn solution addressable for up to the bound).
+func TestTheApplyPathInvalidatesTheAudienceSnapshot(t *testing.T) {
+	document := func(kind solutionhost.Kind) *solutionhost.SolutionHostBinding {
+		return &solutionhost.SolutionHostBinding{
+			Binding: "acme.test.example", Generation: 2, Kind: kind,
+			Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
+		}
+	}
+
+	t.Run("declaring invalidates", func(t *testing.T) {
+		store := &countingDeclarationStore{}
+		svc := &Service{store: store}
+		_, err := svc.HostAudiences(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 1, store.reads)
+		_, err = svc.HostAudiences(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 1, store.reads, "the snapshot serves inside the bound")
+
+		_, err = svc.declareSolutionRegistration(
+			context.Background(), document(solutionhost.KindSolution), "example", "target", time.Now())
+		require.NoError(t, err)
+
+		_, err = svc.HostAudiences(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 2, store.reads, "applying a declaration must drop the snapshot")
+	})
+
+	t.Run("withdrawing invalidates", func(t *testing.T) {
+		store := &countingDeclarationStore{}
+		store.current = &SolutionRegistration{
+			SolutionID: "example", Publisher: "solution:example",
+			Declared: &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "target", Kind: SolutionDeclaredKindSolution},
+		}
+		// emitTx returns nil when no audit emitter is wired, so the withdrawal's own
+		// audit write is not what this test is about.
+		svc := &Service{store: store}
+		_, err := svc.HostAudiences(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 1, store.reads)
+
+		record := &SolutionHostBindingRecord{
+			BindingID: "acme.test.example",
+			Applied:   &SolutionHostBindingApplied{SolutionID: "example"},
+		}
+		_, err = svc.withdrawDeclaredSolutionRegistration(
+			context.Background(), record, document(solutionhost.KindSolution), "target", time.Now())
+		require.NoError(t, err)
+
+		_, err = svc.HostAudiences(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 2, store.reads,
+			"applying a withdrawal must drop the snapshot: a stale one keeps a withdrawn solution addressable")
+	})
+}

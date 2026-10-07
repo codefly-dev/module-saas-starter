@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"testing"
+	"time"
 
 	"accounts/pkg/business"
 
@@ -113,14 +114,16 @@ func TestTheMintAudienceVocabularyIsClosedAndDerived(t *testing.T) {
 		err := requireVocabularyAudience(ctx, business.SolutionAudience("acme.test.never-declared"))
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
-	t.Run("the refusal does not enumerate the deployment's solutions", func(t *testing.T) {
-		// It counts them instead. Spelling them out would turn one refused mint
-		// into a listing of every solution this deployment runs, which the
-		// registration surface takes constant-time care never to reveal.
+	t.Run("the refusal names no binding and no cardinality", func(t *testing.T) {
+		// It names the SHAPE and nothing else. Listing the members would report
+		// every solution this deployment runs, and COUNTING them reports how many
+		// — the same secret at lower resolution, and one a caller can watch change
+		// by repeating the probe. TestTheRefusalCarriesNoCardinality holds the
+		// count half across set sizes.
 		err := requireVocabularyAudience(ctx, "example-consumer")
 		require.NotContains(t, err.Error(), "acme.test.example")
 		require.NotContains(t, err.Error(), "acme.test.other")
-		require.Contains(t, err.Error(), "2 declared solution binding audience(s)")
+		require.Contains(t, err.Error(), business.SolutionAudiencePrefix+"<binding-id>")
 	})
 }
 
@@ -198,4 +201,150 @@ func TestNoHostAudienceIsEverEmpty(t *testing.T) {
 	// at all, so it holds even when the registry cannot be read.
 	require.Error(t, requireMintableAudience(""))
 	require.Error(t, requireMintableAudience("   "))
+}
+
+// countingAudienceStore records how many control-plane reads the vocabulary makes,
+// which is the only way to prove the mint is off the hot path: a passing mint says
+// nothing about how many transactions it opened.
+type countingAudienceStore struct {
+	hostAudienceStore
+	reads int
+}
+
+func (s *countingAudienceStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+	s.reads++
+	return s.bindings, s.err
+}
+
+func withCountingHostAudiences(t *testing.T, bindings ...string) *countingAudienceStore {
+	t.Helper()
+	store := &countingAudienceStore{hostAudienceStore: hostAudienceStore{bindings: bindings}}
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+	previous := service
+	service = svc
+	t.Cleanup(func() { service = previous })
+	return store
+}
+
+// The vocabulary is read from a BOUNDED SNAPSHOT, not on every call.
+//
+// It used to open a control-plane transaction per call — twice per mint, since the
+// mint checks the audience and then narrows the actor's ceiling — on a pool whose
+// MaxConns is the pgx default and which every other control-plane capability
+// shares, the delivery reconciler among them. A mint storm therefore queued
+// delivery: the mechanism that withdraws a compromised solution.
+//
+// Asserted on the READ COUNT, because that is the defect. A latency assertion
+// would be flaky and a passing mint proves nothing about transactions opened.
+func TestTheAudienceVocabularyIsReadFromABoundedSnapshot(t *testing.T) {
+	store := withCountingHostAudiences(t, "acme.test.example")
+	ctx := context.Background()
+	audience := business.SolutionAudience("acme.test.example")
+
+	require.NoError(t, requireVocabularyAudience(ctx, audience))
+	require.Equal(t, 1, store.reads, "the first resolution reads")
+
+	for range 50 {
+		require.NoError(t, requireVocabularyAudience(ctx, audience))
+		_, err := service.LiveHostAudiences(ctx, []string{audience})
+		require.NoError(t, err)
+	}
+	require.Equal(t, 1, store.reads,
+		"a hundred further resolutions inside the bound must open no further control-plane transaction")
+}
+
+// The bound EXPIRES, so another replica's withdrawal reaches this one.
+//
+// Proved by moving the clock rather than by sleeping it out: a bound no test can
+// move is a bound asserted by its constant instead of by its behaviour.
+func TestTheAudienceSnapshotExpiresAtTheBound(t *testing.T) {
+	store := withCountingHostAudiences(t, "acme.test.example")
+	now := time.Now()
+	service.SetAudienceClockForTest(func() time.Time { return now })
+	ctx := context.Background()
+	audience := business.SolutionAudience("acme.test.example")
+
+	require.NoError(t, requireVocabularyAudience(ctx, audience))
+	require.Equal(t, 1, store.reads)
+
+	now = now.Add(business.HostAudienceCacheBound - time.Second)
+	require.NoError(t, requireVocabularyAudience(ctx, audience))
+	require.Equal(t, 1, store.reads, "inside the bound the snapshot still serves")
+
+	now = now.Add(2 * time.Second)
+	require.NoError(t, requireVocabularyAudience(ctx, audience))
+	require.Equal(t, 2, store.reads, "past the bound it re-reads")
+
+	// And the re-read is what carries another replica's withdrawal: the same
+	// audience is refused once the registry no longer holds the binding.
+	store.bindings = nil
+	now = now.Add(business.HostAudienceCacheBound + time.Second)
+	err := requireVocabularyAudience(ctx, audience)
+	require.Equal(t, codes.PermissionDenied, status.Code(err),
+		"a withdrawal another replica applied must reach this one at the bound")
+}
+
+// A FAILED read does not install an empty snapshot.
+//
+// This is the direction that would be catastrophic and quiet: an outage during a
+// refresh installing "this host serves no solutions" would refuse every solution
+// mint for a whole bound, and look exactly like a vocabulary decision.
+func TestAFailedVocabularyReadDoesNotPoisonTheSnapshot(t *testing.T) {
+	store := withCountingHostAudiences(t, "acme.test.example")
+	now := time.Now()
+	service.SetAudienceClockForTest(func() time.Time { return now })
+	ctx := context.Background()
+	audience := business.SolutionAudience("acme.test.example")
+	require.NoError(t, requireVocabularyAudience(ctx, audience))
+
+	now = now.Add(business.HostAudienceCacheBound + time.Second)
+	store.err = context.DeadlineExceeded
+	require.Equal(t, codes.Unavailable, status.Code(requireVocabularyAudience(ctx, audience)),
+		"the refresh failed, so the mint fails closed")
+
+	store.err = nil
+	require.NoError(t, requireVocabularyAudience(ctx, audience),
+		"and once the read recovers the audience is served again, not refused from a poisoned snapshot")
+}
+
+// Invalidation makes THIS replica's withdrawal visible to the very next mint,
+// without waiting out the bound.
+func TestInvalidationMakesAWithdrawalVisibleAtOnce(t *testing.T) {
+	store := withCountingHostAudiences(t, "acme.test.example")
+	now := time.Now()
+	service.SetAudienceClockForTest(func() time.Time { return now })
+	ctx := context.Background()
+	audience := business.SolutionAudience("acme.test.example")
+	require.NoError(t, requireVocabularyAudience(ctx, audience))
+
+	store.bindings = nil
+	require.NoError(t, requireVocabularyAudience(ctx, audience),
+		"without invalidation the snapshot still serves inside the bound")
+
+	service.InvalidateHostAudiences()
+	require.Equal(t, codes.PermissionDenied, status.Code(requireVocabularyAudience(ctx, audience)),
+		"the apply path invalidates, so the next mint sees the withdrawal")
+}
+
+// The refusal is a CONSTANT shape and carries no cardinality.
+//
+// An earlier version counted the members on the reasoning that counting is not
+// listing. A count is information about the same secret: one refused mint told any
+// caller how many solutions this deployment runs, and repeating the probe told them
+// when a solution was installed or withdrawn.
+func TestTheRefusalCarriesNoCardinality(t *testing.T) {
+	ctx := context.Background()
+	for _, bindings := range [][]string{
+		{"acme.test.one"},
+		{"acme.test.one", "acme.test.two", "acme.test.three", "acme.test.four"},
+	} {
+		withHostAudiences(t, bindings...)
+		err := requireVocabularyAudience(ctx, "nothing-serves-this")
+		require.Error(t, err)
+		require.NotRegexp(t, `[0-9]`, err.Error(),
+			"a digit in the refusal is a cardinality channel: %s", err.Error())
+		require.Contains(t, err.Error(), business.SolutionAudiencePrefix+"<binding-id>",
+			"it names the SHAPE instead")
+	}
 }
