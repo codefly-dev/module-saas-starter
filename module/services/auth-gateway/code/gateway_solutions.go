@@ -125,6 +125,16 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// This is what makes A-for-B a 403-with-the-audience-error rather than a
 	// forward: a capability minted for `solution:<other-binding>` verified cleanly
 	// here before, and only the callee could notice.
+	//
+	// IT IS NOT AN AUTHORITY CHECK, and the per-viewer installation admission below
+	// stays load-bearing. The mint holds a requested audience to the host's closed
+	// vocabulary, which makes an audience PLAUSIBLE — but it ties it to the caller
+	// only when that caller carries an audience ceiling, and accounts'
+	// enforceActorAudience treats an empty ceiling as unrestricted while the actor
+	// is nil for every owner-only mint. So a viewer can hold a capability naming a
+	// binding it was never installed against, and what refuses the request is the
+	// admission call, not this comparison. Deleting that admission because "the
+	// audience already covers it" would remove the only check that does.
 	if g.rejectInvalidWorkContext(w, r, solutionRouteAudience(routing.BindingID)) {
 		return true
 	}

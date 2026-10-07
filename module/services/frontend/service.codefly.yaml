@@ -22,15 +22,8 @@ workspace-configuration-dependencies:
 endpoints:
     - name: http
       visibility: public
-      # Required at core v0.14.0: "a public endpoint never omits it, so a
-      # manifest written when public meant an address fails here instead of
-      # losing it". `public` is the value this endpoint already has in effect —
-      # v0.13.0's `visibility == public` is precisely the condition v0.14.0
-      # moves to `exposure`, and today's render of this endpoint is a plain
-      # ClusterIP Service with no Ingress, HTTPRoute, LoadBalancer or NodePort
-      # anywhere under deployments/. `none` is the risky half, not this one: it
-      # could take the local ingress binding away. The key is DROPPED by core
-      # v0.8.1 and v0.13.0, so it is inert on every CLI that ships today.
+      # Required at core v0.14.0; both values are decisions, recorded in
+      # ../../deployment/AGENTS.md under "`exposure` on a public endpoint".
       exposure: public
 spec:
     build-args:
