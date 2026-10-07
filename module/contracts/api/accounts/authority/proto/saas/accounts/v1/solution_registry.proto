@@ -113,6 +113,29 @@ message ListSolutionRegistrationsResponse {
 // wrong.
 // ============================================================================
 
+// SolutionDeclaredKind is what a declaration declares the presence of.
+//
+// Core requires it on every presence document and refuses any other value, so
+// every admitted declaration has exactly one of the two. The host used to drop
+// it on reconcile, which left the registry unable to say whether a record was a
+// solution or a module — and the two are routed on different surfaces with
+// different admission, so a host that cannot tell them apart must either serve
+// both from one surface or serve neither.
+//
+// UNSPECIFIED is not a third kind and is never a default. It is what a reader
+// decodes from a writer that did not set the field, and both routing surfaces
+// refuse it by name rather than picking the kind that happens to be more
+// permissive.
+enum SolutionDeclaredKind {
+  SOLUTION_DECLARED_KIND_UNSPECIFIED = 0;
+  // A composed solution instance, routed at /solutions/<alias>/* with
+  // per-viewer installation admission.
+  SOLUTION_DECLARED_KIND_SOLUTION = 1;
+  // One module instance, routed at /v1/<alias>/* with the ordinary
+  // authenticated pipeline.
+  SOLUTION_DECLARED_KIND_MODULE = 2;
+}
+
 // SolutionDeclaredBinding identifies the applied declaration and target.
 message SolutionDeclaredBinding {
   // Stable ID of the deployment instance that declared this record. It is not
@@ -134,6 +157,12 @@ message SolutionDeclaredBinding {
   // no target and is therefore admissible to nobody, which is the fail-closed
   // answer and the direction of the cutover.
   string target_id = 4;
+  // What the declaration declared the presence of. It decides which routing
+  // surface serves this record, so it is carried rather than inferred: a host
+  // that read the kind off the shape of a record — a publisher prefix, an alias
+  // convention — would be guessing at exactly the question that separates a
+  // surface with per-viewer admission from one without.
+  SolutionDeclaredKind kind = 5;
 }
 
 // SolutionHostBindingGeneration is one generation of one document. The document

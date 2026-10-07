@@ -457,11 +457,22 @@ func (s *Service) declareSolutionRegistration(
 	if err != nil {
 		return 0, err
 	}
+	kind := SolutionDeclaredKind(document.Kind)
+	if !kind.Valid() {
+		// Core refuses any kind outside its own two before a document is
+		// admitted, so reaching this means core's vocabulary grew and this host
+		// has no surface for the new value. Refusing names the binding and leaves
+		// the generation it had applied running; writing the record anyway would
+		// produce a row no routing surface serves and no operator can explain.
+		return 0, fmt.Errorf("%w: binding %q declares kind %q",
+			ErrSolutionHostBindingKindNotRoutable, document.Binding, document.Kind)
+	}
 	declared := &SolutionDeclaredBinding{
 		BindingID:  document.Binding,
 		Generation: document.Generation,
 		Release:    document.Release.Identity(),
 		TargetID:   targetID,
+		Kind:       kind,
 	}
 	next := &SolutionRegistration{
 		SolutionID: solutionID,

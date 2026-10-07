@@ -444,6 +444,9 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	if err := requireMintableAudience(req.GetAudience()); err != nil {
+		return nil, err
+	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
 	if err != nil {
 		return nil, err
@@ -519,6 +522,9 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
+	if err := requireMintableAudience(req.GetAudience()); err != nil {
+		return nil, err
+	}
 	if s == nil || s.configureErr != nil || s.signer == nil || s.authority == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
 	}
@@ -585,6 +591,50 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 // another service non-interchangeable even though one key signs both.
 const ModuleWorkContextAudience = "module-capabilities"
 
+// requireMintableAudience is the audience rule EVERY mint runs, and the reason it
+// is one function rather than a line repeated at each site.
+//
+// Two refusals, each naming what it refused:
+//
+//  1. EMPTY. An audience is what makes two capabilities signed by one key
+//     non-interchangeable, so a token stamped with none is good at whichever
+//     consumer will take it. It was legal on every caller-supplied mint, and the
+//     verifier could not make up the difference: the expectation check treats an
+//     empty EXPECTED audience as "do not check" (sdk-go
+//     workcontext/work_context.go:570, `check.want != ""`), so a site with no
+//     value to pass and a token with no value to compare agreed, vacuously. The
+//     host's answer is to stamp a value always, which is what makes the sentinel
+//     unreachable from here — see the PR body for the upstream half, which is
+//     sdk-go's to delete and not this repo's to patch.
+//
+//  2. The capability surface's OWN audience. A token addressed to
+//     "module-capabilities" is what that surface accepts as a MODULE'S IDENTITY
+//     (VerifyModuleWorkContext expects exactly this audience and then reads the
+//     principal out of the actor chain). A caller-supplied mint that could name
+//     it would hand any owner a second spelling of a module identity — sealed
+//     with scopes that surface never reads. StartModuleTask stamps it itself;
+//     nothing a caller asks for may.
+//
+// What this does NOT yet do is hold the audience to a CLOSED SET of values this
+// host knows. That is the rest of the ruling and it is not here: the host's only
+// audience vocabularies today are the declared module prefixes and a per-
+// installation `allowed_audiences` list that is free text an organisation
+// supplies, so "the set the host knows" has to be built before it can be
+// enforced. The PR body says so rather than letting a partial check read as the
+// whole rule.
+func requireMintableAudience(audience string) error {
+	if strings.TrimSpace(audience) == "" {
+		return status.Error(codes.InvalidArgument,
+			"a Work Context audience is required: a capability with no audience is good at whichever consumer accepts it")
+	}
+	if audience == ModuleWorkContextAudience {
+		return status.Errorf(codes.PermissionDenied,
+			"audience %q is this host's module capability surface and is never caller-supplied: a context addressed to it is read as a module identity",
+			ModuleWorkContextAudience)
+	}
+	return nil
+}
+
 // ErrWorkContextAuthorityUnconfigured distinguishes a deployment that never
 // wired the signing key from a capability this issuer refused to sign. Both
 // reach the caller as a failure to mint, but only one is the operator's to fix.
@@ -644,10 +694,13 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	if s == nil || s.configureErr != nil || s.signer == nil {
 		return workcontext.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
 	}
-	// A binding addressed to the capability surface itself would yield a token
-	// that surface accepts as the module's own identity, sealed with scopes it
-	// never reads; refuse rather than mint two spellings of one capability.
-	if authority.Audience == "" || authority.Audience == ModuleWorkContextAudience {
+	// The same rule every mint runs, stated once: an empty audience, and the
+	// capability surface's own, are both refused. These two sites were already
+	// fail-closed and are the precedent requireMintableAudience generalises —
+	// consolidated rather than reimplemented, so the rule cannot hold at five
+	// sites and lapse at the sixth. The error KIND stays this path's own
+	// (ErrWorkContextInvalid), because its callers map it.
+	if requireMintableAudience(authority.Audience) != nil {
 		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: operation context audience", workcontext.ErrWorkContextInvalid)
 	}
 	if authority.Revision == 0 {
@@ -750,6 +803,9 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	if err := requireMintableAudience(req.GetAudience()); err != nil {
+		return nil, err
+	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
 	if err != nil {
 		return nil, err
@@ -780,6 +836,9 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	req *gen.ExchangeWorkContextAudienceRequest,
 ) (*gen.IssuedWorkContext, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireMintableAudience(req.GetAudience()); err != nil {
 		return nil, err
 	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
@@ -835,6 +894,9 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	req *gen.StartChildSessionWorkContextRequest,
 ) (*gen.IssuedWorkContext, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireMintableAudience(req.GetAudience()); err != nil {
 		return nil, err
 	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
@@ -929,9 +991,17 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
+	// The tri-state made explicit: a renewal that names no audience INHERITS the
+	// parent's by copying it here, and the resolved value — never the request
+	// field — is what is checked and what is stamped. A parent that somehow
+	// carries no audience therefore refuses the renewal instead of propagating
+	// the emptiness one generation further.
 	audience := req.GetAudience()
 	if audience == "" {
 		audience = parent.GetAudience()
+	}
+	if err := requireMintableAudience(audience); err != nil {
+		return nil, err
 	}
 	// A renewal may re-declare attenuated scopes, so enforce both dimensions of
 	// the actor ceiling — audience and resource kinds — not the audience alone.

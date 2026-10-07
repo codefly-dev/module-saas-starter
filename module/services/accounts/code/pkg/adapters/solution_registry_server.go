@@ -49,6 +49,15 @@ var solutionRegistrationStatusProto = map[business.SolutionRegistrationStatus]ge
 	business.SolutionRegistrationTombstoned:   gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED,
 }
 
+// solutionDeclaredKindProto maps the stored kind onto the wire. A kind the map
+// does not hold projects as UNSPECIFIED, which both routing surfaces refuse by
+// name: the zero value is not a kind, so a record carrying one is unroutable
+// rather than routed as whichever kind needs the least authority.
+var solutionDeclaredKindProto = map[business.SolutionDeclaredKind]gen.SolutionDeclaredKind{
+	business.SolutionDeclaredKindSolution: gen.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
+	business.SolutionDeclaredKindModule:   gen.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE,
+}
+
 // solutionRegistrationProto serializes the derived declaration status.
 func solutionRegistrationProto(record *business.SolutionRegistration) *gen.SolutionRegistration {
 	out := &gen.SolutionRegistration{
@@ -82,6 +91,7 @@ func solutionRegistrationProto(record *business.SolutionRegistration) *gen.Solut
 			Generation: declared.Generation,
 			Release:    declared.Release,
 			TargetId:   declared.TargetID,
+			Kind:       solutionDeclaredKindProto[declared.Kind],
 		}
 	}
 	return out

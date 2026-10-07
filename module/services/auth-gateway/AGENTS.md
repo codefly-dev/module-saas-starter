@@ -23,9 +23,36 @@ Only public `/assets` and `/.well-known` paths accept unauthenticated GET/HEAD.
 
 ## Composed-module REST routes
 
-Composed-module REST traffic is served only through the generated and explicit
-route catalogs. Unknown paths return 404. The gateway holds no process-local
-module upstream registry.
+A composed module is reached at `/v1/<alias>/*`, and the alias comes from the same
+place a solution's does: the declared registry. The gateway holds **no
+process-local module upstream registry** and nothing self-registers — main's
+`/modules/_register`, where a module POSTed its own upstream and the gateway
+believed it, is deleted.
+
+The **catalog always wins**: `handleDeclaredModule` is consulted only after the
+generated and explicit catalogs found no route, so a declared alias can never
+shadow one. An alias nothing declares falls through to the ordinary 404, which is
+what keeps the surface from being a probe for which modules a deployment runs. An
+alias the catalog *owns* is refused outright rather than half-served — the matcher
+takes only the paths it matches, so serving the rest would split one prefix
+between two authorities.
+
+Beyond that it is the **solution shape, with one deliberate difference**: the same
+cache, the same single carried resolution, the same upstream URL policy, the same
+guarded (resolve-revalidating) transport, the same tombstone rule, the same 120 s
+revocation bound — and **no per-viewer installation admission**, because a module
+is part of the composition rather than something an organisation installs. The
+path is forwarded **unchanged** (a module owns its own `/v1/<alias>` surface),
+where a solution's prefix is stripped.
+
+That asymmetry is why the registry carries `SolutionDeclaredBinding.kind` and why
+neither surface guesses: routing a solution here would put its upstream behind no
+installation check. Each surface requires its own kind positively and answers a
+403 verdict for the other — `module is not declared on this host`, or `solution is
+not declared on this host`. `SOLUTION_DECLARED_KIND_UNSPECIFIED` is refused by
+**both**: it is what a reader decodes from a writer that did not set the field, not
+a third kind, so such a record is served by neither surface rather than by the one
+needing less authority.
 
 Module identity exchanges are described below; accounts owns their authority.
 
@@ -56,7 +83,7 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
   passes through whatever route matched it: a token naming a client must arrive
   from an origin that client registered, or it is refused before it reaches any
   upstream. A token issued to one client is therefore useless from another's
-  page, on catalog, solution, and federated-module routes alike.
+  page, on catalog, solution, and declared-module routes alike.
 - `X-Codefly-Public-Origin` — the WebAuthn relying party, the origin an OAuth
   start is validated against — is derived from that registration. The frontend's
   internal-token path still establishes it too; the registration is the stronger

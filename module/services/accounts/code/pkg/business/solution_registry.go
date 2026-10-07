@@ -60,6 +60,33 @@ type SolutionBackendHalf struct {
 	ContractVersion string
 }
 
+// SolutionDeclaredKind is what a declaration declares the presence of. Core
+// requires it on every presence document and refuses any other value
+// (solutionhost.Kind), so every admitted declaration has exactly one of these
+// two and the host never has to infer it.
+//
+// There is no third value and no zero value with a meaning. A record whose kind
+// is the empty string is a record this host cannot route, and both surfaces
+// refuse it by name rather than falling back to the kind that happens to be more
+// permissive — the module surface, which carries no per-viewer admission.
+type SolutionDeclaredKind string
+
+const (
+	// SolutionDeclaredKindSolution is a composed solution instance, routed at
+	// /solutions/<alias>/* behind per-viewer installation admission.
+	SolutionDeclaredKindSolution SolutionDeclaredKind = "solution"
+	// SolutionDeclaredKindModule is one module instance, routed at /v1/<alias>/*
+	// through the ordinary authenticated pipeline.
+	SolutionDeclaredKindModule SolutionDeclaredKind = "module"
+)
+
+// Valid reports whether a kind is one this host routes. Checked where a
+// declaration becomes a record, so an unknown kind is a refusal naming the
+// binding rather than a row no surface will serve.
+func (kind SolutionDeclaredKind) Valid() bool {
+	return kind == SolutionDeclaredKindSolution || kind == SolutionDeclaredKindModule
+}
+
 // SolutionDeclaredBinding is the declaration that produced this record: the
 // SolutionHostBinding delivery handed the host, and the generation of it the
 // host applied (solution_host_bindings.go, issue #952).
@@ -74,6 +101,9 @@ type SolutionDeclaredBinding struct {
 	// route alias can resolve it to a target and compare identities rather than
 	// strings.
 	TargetID string
+	// Kind is what the declaration declared the presence of, copied from the
+	// applied document. It decides which routing surface serves this record.
+	Kind SolutionDeclaredKind
 }
 
 // SolutionRegistration is the canonical record for one solution.
@@ -229,10 +259,30 @@ func IsSolutionRuntimeBoundary(seeds []string, candidate, orgID string) bool {
 }
 
 // Status reports declared availability, independent of a runtime clock.
+//
+// WHICH HALVES ARE REQUIRED DEPENDS ON THE KIND, and that is not a relaxation.
+// A solution serves a page and a backend, so both halves and agreeing contract
+// versions are what make it usable. A module has no browser remote at all: it is
+// reached at /v1/<alias>/*, nothing loads a manifest for it, and demanding a
+// frontend half would leave every module PENDING for ever — serving traffic the
+// gateway refuses while the registry reports it as waiting for a deployment that
+// is not coming. The incompatible case needs two contract versions to disagree,
+// so it cannot arise for a module either.
+//
+// A record with no declaration keeps the solution reading. It is the stricter of
+// the two, and an undeclared record is withdrawn by the cutover's own constraint
+// anyway, so this is the fail-closed direction.
 func (r *SolutionRegistration) Status() SolutionRegistrationStatus {
-	switch {
-	case r.TombstonedAt != nil:
+	if r.TombstonedAt != nil {
 		return SolutionRegistrationTombstoned
+	}
+	if r.Declared != nil && r.Declared.Kind == SolutionDeclaredKindModule {
+		if r.Backend == nil {
+			return SolutionRegistrationPending
+		}
+		return SolutionRegistrationActive
+	}
+	switch {
 	case r.Frontend != nil && r.Backend != nil &&
 		r.Frontend.ContractVersion != "" && r.Backend.ContractVersion != "" &&
 		r.Frontend.ContractVersion != r.Backend.ContractVersion:

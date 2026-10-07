@@ -37,8 +37,9 @@ func TestDeclaredSolutionUpstreamReadPreservesURLAdmission(t *testing.T) {
 			registry := newFakeSolutionRegistry()
 			registry.records["example"] = &accountsv1.SolutionRegistration{
 				SolutionId: "example", Frontend: &accountsv1.SolutionFrontendBinding{},
-				Backend:  &accountsv1.SolutionBackendBinding{Upstream: upstream},
-				Declared: &accountsv1.SolutionDeclaredBinding{TargetId: "example-target"},
+				Backend: &accountsv1.SolutionBackendBinding{Upstream: upstream},
+				Declared: &accountsv1.SolutionDeclaredBinding{TargetId: "example-target",
+					Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION},
 			}
 			cache := newSolutionRegistryCache(registry)
 			require.NoError(t, cache.refresh(context.Background()))

@@ -20,6 +20,7 @@ const solutionRegistrationColumns = `solution_id, publisher, revision, tombstone
 	frontend_revision, frontend_manifest, frontend_contract_version,
 	backend_revision, backend_upstream, backend_service_alias, backend_contract_version,
 	declared_binding_id, declared_generation, declared_release, declared_target_id::text,
+	declared_kind,
 	updated_at`
 
 func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, error) {
@@ -37,12 +38,14 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 		declaredTarget  *string
 		declaredGen     *int64
 		declaredRelease *string
+		declaredKind    *string
 	)
 	if err := row.Scan(
 		&record.SolutionID, &record.Publisher, &record.Revision, &tombstonedAt,
 		&frontRevision, &frontManifest, &frontContract,
 		&backendRevision, &backendUpstream, &backendAlias, &backendContract,
 		&declaredBinding, &declaredGen, &declaredRelease, &declaredTarget,
+		&declaredKind,
 		&record.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -65,14 +68,15 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 			ContractVersion: derefString(backendContract),
 		}
 	}
-	// The cold-cutover schema requires the declared binding, generation, release
-	// and target as one complete declaration.
+	// The cold-cutover schema requires the declared binding, generation, release,
+	// target and kind as one complete declaration.
 	if declaredBinding != nil {
 		record.Declared = &business.SolutionDeclaredBinding{
 			BindingID:  *declaredBinding,
 			TargetID:   derefString(declaredTarget),
 			Generation: uint64(*declaredGen),
 			Release:    derefString(declaredRelease),
+			Kind:       business.SolutionDeclaredKind(derefString(declaredKind)),
 		}
 	}
 	return &record, nil
@@ -142,11 +146,14 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 		declaredTarget  string
 		declaredGen     *int64
 		declaredRelease *string
+		declaredKind    *string
 	)
 	if declared := record.Declared; declared != nil {
 		generation := int64(declared.Generation)
 		declaredBinding, declaredGen, declaredRelease = &declared.BindingID, &generation, &declared.Release
 		declaredTarget = declared.TargetID
+		kind := string(declared.Kind)
+		declaredKind = &kind
 	}
 	if half := record.Frontend; half != nil {
 		frontRevision, frontManifest = &half.Revision, &half.Manifest
@@ -162,8 +169,9 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 			frontend_revision, frontend_manifest, frontend_contract_version,
 			backend_revision, backend_upstream, backend_service_alias, backend_contract_version,
 			declared_binding_id, declared_generation, declared_release, declared_target_id,
+			declared_kind,
 			updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15, '')::uuid, $16)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15, '')::uuid, $16, $17)
 		ON CONFLICT (solution_id) DO UPDATE SET
 			publisher = EXCLUDED.publisher,
 			revision = EXCLUDED.revision,
@@ -179,11 +187,13 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 			declared_generation = EXCLUDED.declared_generation,
 			declared_release = EXCLUDED.declared_release,
 			declared_target_id = EXCLUDED.declared_target_id,
+			declared_kind = EXCLUDED.declared_kind,
 			updated_at = EXCLUDED.updated_at`,
 		record.SolutionID, record.Publisher, record.Revision, record.TombstonedAt,
 		frontRevision, frontManifest, frontContract,
 		backendRevision, backendUpstream, backendAlias, backendContract,
 		declaredBinding, declaredGen, declaredRelease, declaredTarget,
+		declaredKind,
 		record.UpdatedAt)
 	return err
 }

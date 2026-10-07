@@ -75,6 +75,15 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		// misbehaving one.
 		httpError(w, http.StatusServiceUnavailable, "solution registration not active")
 		return true
+	case solutionWrongKind:
+		// The alias is declared, and not as a SOLUTION — a module, or a record
+		// whose kind this gateway cannot read. Same answer and same code as a
+		// record nothing declared, for the same reason: from this surface it is
+		// not a solution this host declares, and no later read changes that. A
+		// module is reached at /v1/<alias>/*, which is where its own refusal is
+		// worded.
+		httpError(w, http.StatusForbidden, "solution is not declared on this host")
+		return true
 	case solutionRegistryUnavailable:
 		// No snapshot has ever loaded, so this replica cannot tell an
 		// unregistered solution from a registered one. Fail closed and say so.

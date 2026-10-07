@@ -221,6 +221,35 @@ func (m *RouteMatcher) RequiredArtifactUpstreams() []routeArtifactUpstream {
 	return result
 }
 
+// ReservedV1Prefixes returns the set of `/v1/<prefix>` first segments owned by
+// the loaded catalog (generated + explicit extensions).
+//
+// A declared module whose route alias is one of these cannot be served: the
+// matcher runs first and takes every path it matches, so the module would serve
+// only the paths the catalog happens not to match — one prefix split between two
+// authorities. handleDeclaredModule refuses such an alias rather than serving
+// half of it. main used this set to refuse the claim when a module registered
+// itself; with declaration there is no registration to refuse at this edge, so
+// the refusal here is the backstop and what a delivery may declare is the
+// upstream question.
+func (m *RouteMatcher) ReservedV1Prefixes() map[string]struct{} {
+	reserved := make(map[string]struct{})
+	collect := func(path string) {
+		if prefix, ok := v1Prefix(path); ok {
+			reserved[prefix] = struct{}{}
+		}
+	}
+	for _, routes := range m.restRoutes {
+		for _, route := range routes {
+			collect(route.entry.Path)
+		}
+	}
+	for _, entry := range m.connectRoutes {
+		collect(entry.Path)
+	}
+	return reserved
+}
+
 // MatchREST looks up a REST route by HTTP method and path.
 func (m *RouteMatcher) MatchREST(method, path string) *RouteEntry {
 	method = strings.ToUpper(method)

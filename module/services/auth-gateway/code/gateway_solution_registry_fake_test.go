@@ -7,6 +7,8 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -59,6 +61,10 @@ func (f *fakeSolutionRegistry) seedDeclared(alias, upstream string) {
 			Generation: 1,
 			Release:    "acme/" + alias + "@1.0.0",
 			TargetId:   fakeSolutionTarget(alias),
+			// Every declaration states a kind: core requires it and refuses any
+			// other value, so a fake record without one models a state delivery
+			// cannot produce — and would quietly stop being routed at all.
+			Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
 		},
 		Frontend: &accountsv1.SolutionFrontendBinding{
 			Revision: f.revision, Manifest: `{"id":"` + alias + `"}`, ContractVersion: "v1",
@@ -87,7 +93,23 @@ func (f *fakeSolutionRegistry) declareTarget(alias, bindingID, targetID string) 
 		Generation: 1,
 		Release:    "acme/" + alias + "@2.0.0",
 		TargetId:   targetID,
+		Kind:       accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
 	}
+}
+
+// tombstone applies a withdrawal to a record, which is how a declared presence
+// stops being served: the row stays in the snapshot so diagnostics can see it,
+// and routing treats it exactly like an alias nothing ever declared.
+func (f *fakeSolutionRegistry) tombstone(alias string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	record := f.records[alias]
+	if record == nil {
+		return
+	}
+	f.revision++
+	record.Revision = f.revision
+	record.TombstonedAt = timestamppb.Now()
 }
 
 // repointUpstream changes a declared record's observed endpoint to model a
@@ -143,8 +165,20 @@ func (f *fakeSolutionRegistry) List(
 // pending, so a half that stopped renewing reads as dead rather than waiting.
 // A fake that ranks these differently hands tests a status the real registry
 // would never produce.
+//
+// The module arm mirrors it too: a module has no browser remote, so a frontend
+// half is not something it is waiting for. A fake that left modules PENDING would
+// make every module-routing test fail for a reason the real registry does not
+// have.
 func fakeSolutionStatus(record *accountsv1.SolutionRegistration, now time.Time) accountsv1.SolutionRegistrationStatus {
 	front, backend := record.GetFrontend(), record.GetBackend()
+	if record.GetTombstonedAt() == nil &&
+		record.GetDeclared().GetKind() == accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE {
+		if backend == nil {
+			return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
+		}
+		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
+	}
 	switch {
 	case record.GetTombstonedAt() != nil:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED

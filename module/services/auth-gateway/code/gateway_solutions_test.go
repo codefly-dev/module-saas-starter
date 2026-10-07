@@ -47,7 +47,8 @@ func registerSolutionHalves(t *testing.T, gw *Gateway, id, upstream string) {
 		SolutionId: id, Publisher: "solution:" + id, Revision: registry.revision,
 		Frontend: &accountsv1.SolutionFrontendBinding{Manifest: `{"id":"` + id + `"}`},
 		Backend:  &accountsv1.SolutionBackendBinding{Upstream: upstream, ServiceAlias: id},
-		Declared: &accountsv1.SolutionDeclaredBinding{BindingId: "acme.test." + id, Generation: 1, Release: "acme/" + id + "@1.0.0", TargetId: fakeSolutionTarget(id)},
+		Declared: &accountsv1.SolutionDeclaredBinding{BindingId: "acme.test." + id, Generation: 1, Release: "acme/" + id + "@1.0.0", TargetId: fakeSolutionTarget(id),
+			Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION},
 	}
 	registry.mu.Unlock()
 	require.NoError(t, gw.solutions.refresh(context.Background()))

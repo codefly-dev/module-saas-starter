@@ -77,6 +77,13 @@ const (
 	solutionUnregistered
 	solutionNotActive
 	solutionRegistryUnavailable
+	// solutionWrongKind: the alias IS declared, and as the other kind — or with a
+	// kind this gateway cannot read. Each surface answers it as its own 403.
+	//
+	// Distinct from solutionUnregistered because the two are different facts: one
+	// is an unexposed path, the other a verdict about a record that is here. And
+	// distinct from solutionNotActive because no deployment arriving changes it.
+	solutionWrongKind
 )
 
 // errSolutionRegistryUnconfigured is what a registry call returns when the
@@ -239,11 +246,18 @@ type solutionLookup struct {
 // registration, carried in every snapshot for exactly that reason — so a failed
 // refresh must not convert a deliberate removal into an outage, which would
 // answer 503 forever for something that is permanently gone.
-func (c *solutionRegistryCache) conclusive(record *accountsv1.SolutionRegistration, found bool) bool {
+//
+// The surface is carried in because what counts as "serving, so stop asking" is
+// per-surface: a record with a backend half and no frontend is settled for a
+// module and NOT settled for a solution, which should still refresh in case the
+// frontend half is about to arrive.
+func (c *solutionRegistryCache) conclusive(
+	record *accountsv1.SolutionRegistration, found bool, surface routingSurface,
+) bool {
 	if !found {
 		return false
 	}
-	return record.GetTombstonedAt() != nil || solutionRecordActive(record)
+	return record.GetTombstonedAt() != nil || solutionRecordActive(record, surface)
 }
 
 // lookupFresh reads the snapshot, issuing at most one on-demand registry read
@@ -256,9 +270,11 @@ func (c *solutionRegistryCache) conclusive(record *accountsv1.SolutionRegistrati
 // proxy answered "solution not registered" and admission answered "your
 // organization did not install this" because accounts was down. An authority
 // that cannot be asked must never read as an answer from it.
-func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solutionLookup {
+func (c *solutionRegistryCache) lookupFresh(
+	ctx context.Context, id string, surface routingSurface,
+) solutionLookup {
 	record, found, loaded := c.lookup(id)
-	if c.conclusive(record, found) {
+	if c.conclusive(record, found, surface) {
 		return solutionLookup{record: record, found: found, loaded: loaded}
 	}
 	refreshErr := c.refreshIfStale(ctx)
@@ -270,7 +286,7 @@ func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solu
 		record:      record,
 		found:       found,
 		loaded:      loaded,
-		undecidable: refreshErr != nil && !c.conclusive(record, found),
+		undecidable: refreshErr != nil && !c.conclusive(record, found, surface),
 	}
 }
 
@@ -319,17 +335,75 @@ func (r *solutionRouting) GetTargetID() string {
 // replica reconciled a moment ago is reachable here without waiting out the reconcile
 // interval.
 func (c *solutionRegistryCache) resolveRouting(ctx context.Context, id string) (*solutionRouting, solutionResolution) {
-	read := c.lookupFresh(ctx, id)
+	return c.resolveRoutingOfKind(ctx, id, solutionSurface)
+}
+
+// resolveModuleRouting is the same resolution for the /v1/<alias>/* surface. It
+// is the same function because the two surfaces must not drift: one lookup, one
+// carried resolution, one upstream policy, one tombstone rule, one 120 s
+// revocation bound. The only difference is the kind each surface serves.
+func (c *solutionRegistryCache) resolveModuleRouting(ctx context.Context, alias string) (*solutionRouting, solutionResolution) {
+	return c.resolveRoutingOfKind(ctx, alias, moduleSurface)
+}
+
+// routingSurface is which surface is asking. It exists so the kind check is a
+// parameter of one resolution rather than a second copy of it.
+type routingSurface int
+
+const (
+	solutionSurface routingSurface = iota
+	moduleSurface
+)
+
+func (c *solutionRegistryCache) resolveRoutingOfKind(
+	ctx context.Context, id string, surface routingSurface,
+) (*solutionRouting, solutionResolution) {
+	read := c.lookupFresh(ctx, id, surface)
 	record, found := read.record, read.found
 	if !read.loaded || read.undecidable {
 		return nil, solutionRegistryUnavailable
 	}
 	// A tombstoned record is in the snapshot so declaration reconciliation and diagnostics
-	// can see it, but it routes exactly like an id that never registered.
+	// can see it, but it routes exactly like an id that never registered. This is
+	// also how a module stops being routed: carrier deletion is not revocation,
+	// the applied tombstone is, and it reaches this read within the cache bound.
 	if !found || record.GetTombstonedAt() != nil {
 		return nil, solutionUnregistered
 	}
-	if !solutionRecordActive(record) {
+	// The kind the record's DECLARATION states, before anything else about it is
+	// read. A record declared as the other kind is a verdict on this surface, not
+	// a missing route: the module surface carries no per-viewer admission, so
+	// serving a solution here would drop its installation check entirely, and
+	// serving a module on the solution surface would ask for a consent no
+	// organisation gives a composed module.
+	//
+	// UNSPECIFIED fails BOTH checks. It is not a third kind — it is what a reader
+	// decodes from a writer that did not set the field — so a record carrying it
+	// is served by neither surface rather than by the one that needs less
+	// authority. accounts and this gateway ship as one module package at one
+	// version, which is what makes that refusal a deployment invariant rather
+	// than an outage waiting for a rolling update.
+	switch surface {
+	case moduleSurface:
+		// A record with NO declaration fails this too, and must: the module
+		// surface has no admission layer behind it, so the kind check is the only
+		// place such a record can be refused.
+		if !declaredModuleKind(record) {
+			return nil, solutionWrongKind
+		}
+	default:
+		// Only a record that IS declared, and declared as the other kind, is
+		// refused here. Presence NOTHING declared keeps its existing path: it
+		// resolves to no target, and per-viewer admission refuses it with the
+		// entitlement refusal header that tells an operator which of the three
+		// layers said no. Short-circuiting it here would answer the same 403 while
+		// losing that, and "nothing declared this" is a different fact from "a
+		// module is declared here".
+		if record.GetDeclared() != nil && !declaredSolutionKind(record) {
+			return nil, solutionWrongKind
+		}
+	}
+	if !solutionRecordActive(record, surface) {
 		return nil, solutionNotActive
 	}
 	upstream, err := url.Parse(record.GetBackend().GetUpstream())
@@ -348,11 +422,28 @@ func (c *solutionRegistryCache) resolveRouting(ctx context.Context, id string) (
 	}, solutionRoutable
 }
 
-// solutionRecordActive reads the availability accounts derived from the declaration.
-func solutionRecordActive(record *accountsv1.SolutionRegistration) bool {
-	return record != nil && record.GetTombstonedAt() == nil &&
-		record.GetFrontend() != nil && record.GetBackend() != nil &&
-		record.GetStatus() == accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
+// solutionRecordActive reads the availability accounts derived from the
+// declaration, and checks the halves the SURFACE needs for itself.
+//
+// Both: the derived status is the authority's answer, and the structural check
+// beside it is this gateway refusing to proxy to a half it does not have in hand
+// — one read, two reasons, and neither inferred from the other.
+//
+// The halves differ by kind. A solution serves a page and a backend; a module has
+// no browser remote at all, is reached at /v1/<alias>/*, and nothing loads a
+// manifest for it — so requiring a frontend half there would leave every module
+// permanently unroutable. accounts derives the same distinction in
+// SolutionRegistration.Status, which is why the status check below still holds
+// for both.
+func solutionRecordActive(record *accountsv1.SolutionRegistration, surface routingSurface) bool {
+	if record == nil || record.GetTombstonedAt() != nil ||
+		record.GetStatus() != accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE {
+		return false
+	}
+	if record.GetBackend() == nil {
+		return false
+	}
+	return surface == moduleSurface || record.GetFrontend() != nil
 }
 
 // snapshot returns the cached records ordered by id, along with the registry

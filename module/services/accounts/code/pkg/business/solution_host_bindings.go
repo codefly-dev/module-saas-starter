@@ -51,6 +51,12 @@ var (
 	// alias is not a registry solution id: core's alias vocabulary admits dots
 	// and slashes, and a registry key is one lowercase path segment.
 	ErrSolutionHostBindingRouteNotAddressable = errors.New("solution host binding route alias is not an addressable solution id")
+	// ErrSolutionHostBindingKindNotRoutable is returned when a present generation
+	// declares a kind this host has no routing surface for. core admits only
+	// "solution" and "module", so this is reachable only from a core whose
+	// vocabulary grew past this host's — and the answer is a refusal that leaves
+	// the running generation alone, not a record no surface serves.
+	ErrSolutionHostBindingKindNotRoutable = errors.New("solution host binding declares a kind this host does not route")
 	// ErrSolutionHostBindingRouteHeld is returned when the registry record the
 	// alias resolves to is live and declared by another binding. core's
 	// collision check refuses this before a generation applies; this is the

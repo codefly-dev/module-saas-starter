@@ -221,6 +221,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {
+		// The generated + explicit catalog is the authority and always wins: a
+		// declared module's /v1/<alias>/* surface is tried ONLY once the catalog
+		// has no match, so a declared alias can never shadow a catalog route. An
+		// alias nothing declared falls through to the 404 below, which is what
+		// keeps the surface from being a probe for which modules run here.
+		if g.handleDeclaredModule(w, r) {
+			return
+		}
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
 		return

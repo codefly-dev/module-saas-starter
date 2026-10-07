@@ -87,6 +87,72 @@ func (SolutionRegistrationStatus) EnumDescriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{0}
 }
 
+// SolutionDeclaredKind is what a declaration declares the presence of.
+//
+// Core requires it on every presence document and refuses any other value, so
+// every admitted declaration has exactly one of the two. The host used to drop
+// it on reconcile, which left the registry unable to say whether a record was a
+// solution or a module — and the two are routed on different surfaces with
+// different admission, so a host that cannot tell them apart must either serve
+// both from one surface or serve neither.
+//
+// UNSPECIFIED is not a third kind and is never a default. It is what a reader
+// decodes from a writer that did not set the field, and both routing surfaces
+// refuse it by name rather than picking the kind that happens to be more
+// permissive.
+type SolutionDeclaredKind int32
+
+const (
+	SolutionDeclaredKind_SOLUTION_DECLARED_KIND_UNSPECIFIED SolutionDeclaredKind = 0
+	// A composed solution instance, routed at /solutions/<alias>/* with
+	// per-viewer installation admission.
+	SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION SolutionDeclaredKind = 1
+	// One module instance, routed at /v1/<alias>/* with the ordinary
+	// authenticated pipeline.
+	SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE SolutionDeclaredKind = 2
+)
+
+// Enum value maps for SolutionDeclaredKind.
+var (
+	SolutionDeclaredKind_name = map[int32]string{
+		0: "SOLUTION_DECLARED_KIND_UNSPECIFIED",
+		1: "SOLUTION_DECLARED_KIND_SOLUTION",
+		2: "SOLUTION_DECLARED_KIND_MODULE",
+	}
+	SolutionDeclaredKind_value = map[string]int32{
+		"SOLUTION_DECLARED_KIND_UNSPECIFIED": 0,
+		"SOLUTION_DECLARED_KIND_SOLUTION":    1,
+		"SOLUTION_DECLARED_KIND_MODULE":      2,
+	}
+)
+
+func (x SolutionDeclaredKind) Enum() *SolutionDeclaredKind {
+	p := new(SolutionDeclaredKind)
+	*p = x
+	return p
+}
+
+func (x SolutionDeclaredKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SolutionDeclaredKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_solution_registry_proto_enumTypes[1].Descriptor()
+}
+
+func (SolutionDeclaredKind) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_solution_registry_proto_enumTypes[1]
+}
+
+func (x SolutionDeclaredKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SolutionDeclaredKind.Descriptor instead.
+func (SolutionDeclaredKind) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{1}
+}
+
 // SolutionFrontendBinding is the stored frontend half. manifest is the document
 // the frontend validates while reading the projection; accounts stores it
 // verbatim and keeps presence authority separate from runtime compatibility.
@@ -457,7 +523,13 @@ type SolutionDeclaredBinding struct {
 	// installation of its predecessor names. A record with no declaration carries
 	// no target and is therefore admissible to nobody, which is the fail-closed
 	// answer and the direction of the cutover.
-	TargetId      string `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	TargetId string `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	// What the declaration declared the presence of. It decides which routing
+	// surface serves this record, so it is carried rather than inferred: a host
+	// that read the kind off the shape of a record — a publisher prefix, an alias
+	// convention — would be guessing at exactly the question that separates a
+	// surface with per-viewer admission from one without.
+	Kind          SolutionDeclaredKind `protobuf:"varint,5,opt,name=kind,proto3,enum=saas.accounts.v1.SolutionDeclaredKind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -518,6 +590,13 @@ func (x *SolutionDeclaredBinding) GetTargetId() string {
 		return x.TargetId
 	}
 	return ""
+}
+
+func (x *SolutionDeclaredBinding) GetKind() SolutionDeclaredKind {
+	if x != nil {
+		return x.Kind
+	}
+	return SolutionDeclaredKind_SOLUTION_DECLARED_KIND_UNSPECIFIED
 }
 
 // SolutionHostBindingGeneration is one generation of one document. The document
@@ -925,7 +1004,7 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\x12include_tombstoned\x18\x01 \x01(\bR\x11includeTombstoned\"\x9e\x01\n" +
 	"!ListSolutionRegistrationsResponse\x12L\n" +
 	"\rregistrations\x18\x01 \x03(\v2&.saas.accounts.v1.SolutionRegistrationR\rregistrations\x12+\n" +
-	"\x11registry_revision\x18\x02 \x01(\x03R\x10registryRevision\"\x8f\x01\n" +
+	"\x11registry_revision\x18\x02 \x01(\x03R\x10registryRevision\"\xcb\x01\n" +
 	"\x17SolutionDeclaredBinding\x12\x1d\n" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tR\tbindingId\x12\x1e\n" +
@@ -933,7 +1012,8 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"generation\x18\x02 \x01(\x04R\n" +
 	"generation\x12\x18\n" +
 	"\arelease\x18\x03 \x01(\tR\arelease\x12\x1b\n" +
-	"\ttarget_id\x18\x04 \x01(\tR\btargetId\"\x9f\x01\n" +
+	"\ttarget_id\x18\x04 \x01(\tR\btargetId\x12:\n" +
+	"\x04kind\x18\x05 \x01(\x0e2&.saas.accounts.v1.SolutionDeclaredKindR\x04kind\"\x9f\x01\n" +
 	"\x1dSolutionHostBindingGeneration\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
@@ -978,7 +1058,11 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"#SOLUTION_REGISTRATION_STATUS_ACTIVE\x10\x01\x12(\n" +
 	"$SOLUTION_REGISTRATION_STATUS_PENDING\x10\x02\x12-\n" +
 	")SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE\x10\x04\x12+\n" +
-	"'SOLUTION_REGISTRATION_STATUS_TOMBSTONED\x10\x05\"\x04\b\x03\x10\x03*$SOLUTION_REGISTRATION_STATUS_EXPIREDB\xc1\x01\n" +
+	"'SOLUTION_REGISTRATION_STATUS_TOMBSTONED\x10\x05\"\x04\b\x03\x10\x03*$SOLUTION_REGISTRATION_STATUS_EXPIRED*\x86\x01\n" +
+	"\x14SolutionDeclaredKind\x12&\n" +
+	"\"SOLUTION_DECLARED_KIND_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fSOLUTION_DECLARED_KIND_SOLUTION\x10\x01\x12!\n" +
+	"\x1dSOLUTION_DECLARED_KIND_MODULE\x10\x02B\xc1\x01\n" +
 	"\x14com.saas.accounts.v1B\x15SolutionRegistryProtoP\x01Z0auth-gateway/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -993,44 +1077,46 @@ func file_saas_accounts_v1_solution_registry_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_solution_registry_proto_rawDescData
 }
 
-var file_saas_accounts_v1_solution_registry_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_saas_accounts_v1_solution_registry_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_saas_accounts_v1_solution_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_saas_accounts_v1_solution_registry_proto_goTypes = []any{
 	(SolutionRegistrationStatus)(0),              // 0: saas.accounts.v1.SolutionRegistrationStatus
-	(*SolutionFrontendBinding)(nil),              // 1: saas.accounts.v1.SolutionFrontendBinding
-	(*SolutionBackendBinding)(nil),               // 2: saas.accounts.v1.SolutionBackendBinding
-	(*SolutionRegistration)(nil),                 // 3: saas.accounts.v1.SolutionRegistration
-	(*ListSolutionRegistrationsRequest)(nil),     // 4: saas.accounts.v1.ListSolutionRegistrationsRequest
-	(*ListSolutionRegistrationsResponse)(nil),    // 5: saas.accounts.v1.ListSolutionRegistrationsResponse
-	(*SolutionDeclaredBinding)(nil),              // 6: saas.accounts.v1.SolutionDeclaredBinding
-	(*SolutionHostBindingGeneration)(nil),        // 7: saas.accounts.v1.SolutionHostBindingGeneration
-	(*SolutionHostBindingAppliedGeneration)(nil), // 8: saas.accounts.v1.SolutionHostBindingAppliedGeneration
-	(*SolutionHostBindingState)(nil),             // 9: saas.accounts.v1.SolutionHostBindingState
-	(*ListSolutionHostBindingsRequest)(nil),      // 10: saas.accounts.v1.ListSolutionHostBindingsRequest
-	(*ListSolutionHostBindingsResponse)(nil),     // 11: saas.accounts.v1.ListSolutionHostBindingsResponse
-	(*timestamppb.Timestamp)(nil),                // 12: google.protobuf.Timestamp
+	(SolutionDeclaredKind)(0),                    // 1: saas.accounts.v1.SolutionDeclaredKind
+	(*SolutionFrontendBinding)(nil),              // 2: saas.accounts.v1.SolutionFrontendBinding
+	(*SolutionBackendBinding)(nil),               // 3: saas.accounts.v1.SolutionBackendBinding
+	(*SolutionRegistration)(nil),                 // 4: saas.accounts.v1.SolutionRegistration
+	(*ListSolutionRegistrationsRequest)(nil),     // 5: saas.accounts.v1.ListSolutionRegistrationsRequest
+	(*ListSolutionRegistrationsResponse)(nil),    // 6: saas.accounts.v1.ListSolutionRegistrationsResponse
+	(*SolutionDeclaredBinding)(nil),              // 7: saas.accounts.v1.SolutionDeclaredBinding
+	(*SolutionHostBindingGeneration)(nil),        // 8: saas.accounts.v1.SolutionHostBindingGeneration
+	(*SolutionHostBindingAppliedGeneration)(nil), // 9: saas.accounts.v1.SolutionHostBindingAppliedGeneration
+	(*SolutionHostBindingState)(nil),             // 10: saas.accounts.v1.SolutionHostBindingState
+	(*ListSolutionHostBindingsRequest)(nil),      // 11: saas.accounts.v1.ListSolutionHostBindingsRequest
+	(*ListSolutionHostBindingsResponse)(nil),     // 12: saas.accounts.v1.ListSolutionHostBindingsResponse
+	(*timestamppb.Timestamp)(nil),                // 13: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_solution_registry_proto_depIdxs = []int32{
 	0,  // 0: saas.accounts.v1.SolutionRegistration.status:type_name -> saas.accounts.v1.SolutionRegistrationStatus
-	1,  // 1: saas.accounts.v1.SolutionRegistration.frontend:type_name -> saas.accounts.v1.SolutionFrontendBinding
-	2,  // 2: saas.accounts.v1.SolutionRegistration.backend:type_name -> saas.accounts.v1.SolutionBackendBinding
-	12, // 3: saas.accounts.v1.SolutionRegistration.updated_at:type_name -> google.protobuf.Timestamp
-	12, // 4: saas.accounts.v1.SolutionRegistration.tombstoned_at:type_name -> google.protobuf.Timestamp
-	6,  // 5: saas.accounts.v1.SolutionRegistration.declared:type_name -> saas.accounts.v1.SolutionDeclaredBinding
-	3,  // 6: saas.accounts.v1.ListSolutionRegistrationsResponse.registrations:type_name -> saas.accounts.v1.SolutionRegistration
-	12, // 7: saas.accounts.v1.SolutionHostBindingGeneration.at:type_name -> google.protobuf.Timestamp
-	7,  // 8: saas.accounts.v1.SolutionHostBindingAppliedGeneration.generation:type_name -> saas.accounts.v1.SolutionHostBindingGeneration
-	7,  // 9: saas.accounts.v1.SolutionHostBindingState.desired:type_name -> saas.accounts.v1.SolutionHostBindingGeneration
-	8,  // 10: saas.accounts.v1.SolutionHostBindingState.applied:type_name -> saas.accounts.v1.SolutionHostBindingAppliedGeneration
-	12, // 11: saas.accounts.v1.SolutionHostBindingState.pending_since:type_name -> google.protobuf.Timestamp
-	3,  // 12: saas.accounts.v1.SolutionHostBindingState.registration:type_name -> saas.accounts.v1.SolutionRegistration
-	12, // 13: saas.accounts.v1.SolutionHostBindingState.updated_at:type_name -> google.protobuf.Timestamp
-	9,  // 14: saas.accounts.v1.ListSolutionHostBindingsResponse.bindings:type_name -> saas.accounts.v1.SolutionHostBindingState
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	2,  // 1: saas.accounts.v1.SolutionRegistration.frontend:type_name -> saas.accounts.v1.SolutionFrontendBinding
+	3,  // 2: saas.accounts.v1.SolutionRegistration.backend:type_name -> saas.accounts.v1.SolutionBackendBinding
+	13, // 3: saas.accounts.v1.SolutionRegistration.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 4: saas.accounts.v1.SolutionRegistration.tombstoned_at:type_name -> google.protobuf.Timestamp
+	7,  // 5: saas.accounts.v1.SolutionRegistration.declared:type_name -> saas.accounts.v1.SolutionDeclaredBinding
+	4,  // 6: saas.accounts.v1.ListSolutionRegistrationsResponse.registrations:type_name -> saas.accounts.v1.SolutionRegistration
+	1,  // 7: saas.accounts.v1.SolutionDeclaredBinding.kind:type_name -> saas.accounts.v1.SolutionDeclaredKind
+	13, // 8: saas.accounts.v1.SolutionHostBindingGeneration.at:type_name -> google.protobuf.Timestamp
+	8,  // 9: saas.accounts.v1.SolutionHostBindingAppliedGeneration.generation:type_name -> saas.accounts.v1.SolutionHostBindingGeneration
+	8,  // 10: saas.accounts.v1.SolutionHostBindingState.desired:type_name -> saas.accounts.v1.SolutionHostBindingGeneration
+	9,  // 11: saas.accounts.v1.SolutionHostBindingState.applied:type_name -> saas.accounts.v1.SolutionHostBindingAppliedGeneration
+	13, // 12: saas.accounts.v1.SolutionHostBindingState.pending_since:type_name -> google.protobuf.Timestamp
+	4,  // 13: saas.accounts.v1.SolutionHostBindingState.registration:type_name -> saas.accounts.v1.SolutionRegistration
+	13, // 14: saas.accounts.v1.SolutionHostBindingState.updated_at:type_name -> google.protobuf.Timestamp
+	10, // 15: saas.accounts.v1.ListSolutionHostBindingsResponse.bindings:type_name -> saas.accounts.v1.SolutionHostBindingState
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_solution_registry_proto_init() }
@@ -1045,7 +1131,7 @@ func file_saas_accounts_v1_solution_registry_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_solution_registry_proto_rawDesc), len(file_saas_accounts_v1_solution_registry_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
