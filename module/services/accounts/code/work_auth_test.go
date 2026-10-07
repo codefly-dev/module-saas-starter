@@ -68,6 +68,7 @@ func clearVaultBinding(t *testing.T) {
 	for _, key := range []string{
 		"KEY_SERVICE_BACKEND", "KEY_SERVICE_PREVIOUS_BACKEND", "KEY_SERVICE_SIGNING_BACKEND",
 		"KEY_SERVICE_KMS_ENVELOPE_KEY", "KEY_SERVICE_KMS_MAC_KEY",
+		"KEY_SERVICE_KMS_SIGNING_WRAP_KEY", "KEY_SERVICE_SIGNING_KEY_WRAPPED",
 	} {
 		t.Setenv(key, "")
 		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__KEY_SERVICE__"+key, "")
@@ -608,8 +609,10 @@ func TestStartupRefusesACloudKMSSigningBackend(t *testing.T) {
 
 	_, err := doWork(context.Background())
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "KEY_SERVICE_SIGNING_BACKEND=kms is not supported")
+	require.Contains(t, err.Error(), "KEY_SERVICE_SIGNING_BACKEND=kms is not supported yet")
 	require.Contains(t, err.Error(), "crypto.Signer")
+	require.Contains(t, err.Error(), "kms-wrapped",
+		"the refusal must name the shape that DOES run with no secrets store today")
 }
 
 // The call site, not just the helper. The helper's own test stays green when

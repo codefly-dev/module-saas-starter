@@ -42,6 +42,7 @@ package keyservice
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -84,6 +85,11 @@ type KMSConfig struct {
 	EnvelopeKey string
 	// MACKey is the HMAC cryptoKeyVERSION behind API-key lookup.
 	MACKey string
+	// SigningWrapKey is the symmetric cryptoKey that unwraps the Ed25519 signing
+	// key. A key of its own rather than the envelope key: destroying an envelope
+	// key version would otherwise take the host's ability to boot with it, and
+	// the two rotate on unrelated schedules.
+	SigningWrapKey string
 	// apiBase and metadataBase are unexported and set only by this package's
 	// own tests, so the conformance suite can run the real request and response
 	// handling against a fake while production has one hard-coded endpoint
@@ -268,7 +274,8 @@ func NewKMSSealer(ctx context.Context, config KMSConfig) (*KMSSealer, error) {
 		return nil, fmt.Errorf("key service: KEY_SERVICE_KMS_MAC_KEY must be a Cloud KMS cryptoKeyVersion resource name (…/cryptoKeys/<key>/cryptoKeyVersions/<n>), got %q — the keyed hash behind API-key lookup is pinned to one version because moving it stops every API key already stored from matching", config.MACKey)
 	}
 	client := newKMSClient(config)
-	if err := requireCryptoKey(ctx, client, config.EnvelopeKey, purposeEncryptDecrypt, algorithmSymmetric); err != nil {
+	sealer, err := newKMSEnvelope(ctx, client, config.EnvelopeKey)
+	if err != nil {
 		return nil, err
 	}
 	var macKey kmsCryptoKeyVersion
@@ -281,25 +288,33 @@ func NewKMSSealer(ctx context.Context, config KMSConfig) (*KMSSealer, error) {
 	if macKey.State != versionStateEnabled {
 		return nil, fmt.Errorf("key service: cloud kms key version %s is %s, not %s", config.MACKey, macKey.State, versionStateEnabled)
 	}
-	sealer := &KMSSealer{
-		client: client, envelopeKey: config.EnvelopeKey, macVersion: config.MACKey,
-		fingerprint: keyFingerprint(config.EnvelopeKey),
+	sealer.macVersion = config.MACKey
+	return sealer, nil
+}
+
+// newKMSEnvelope validates a symmetric key and proves it works, returning a
+// sealer with no MAC key bound. Shared by the envelope key and the key-wrapping
+// key, because both need exactly these checks.
+func newKMSEnvelope(ctx context.Context, client *kmsClient, keyName string) (*KMSSealer, error) {
+	if err := requireCryptoKey(ctx, client, keyName, purposeEncryptDecrypt, algorithmSymmetric); err != nil {
+		return nil, err
 	}
+	sealer := &KMSSealer{client: client, envelopeKey: keyName, fingerprint: keyFingerprint(keyName)}
 	// A seal/open round trip at boot, because every static check above passes on
 	// a key that is perfectly well-formed and simply is not the one that sealed
-	// this deployment's data. Doing it here makes a wrong KEY_SERVICE_KMS_ENVELOPE_KEY
-	// a startup refusal, while the deployment can still be fixed, rather than a
+	// this deployment's data. Doing it here makes a wrong key name a startup
+	// refusal, while the deployment can still be fixed, rather than a
 	// per-credential 400 discovered during a sync.
 	payload, err := sealer.Seal(ctx, kmsProbePurpose, kmsProbePlaintext)
 	if err != nil {
-		return nil, fmt.Errorf("key service: cloud kms key %s cannot seal: %w", config.EnvelopeKey, err)
+		return nil, fmt.Errorf("key service: cloud kms key %s cannot seal: %w", keyName, err)
 	}
 	opened, err := sealer.Open(ctx, kmsProbePurpose, payload)
 	if err != nil {
-		return nil, fmt.Errorf("key service: cloud kms key %s cannot open what it sealed: %w", config.EnvelopeKey, err)
+		return nil, fmt.Errorf("key service: cloud kms key %s cannot open what it sealed: %w", keyName, err)
 	}
 	if opened != kmsProbePlaintext {
-		return nil, fmt.Errorf("key service: cloud kms key %s round-tripped a different value", config.EnvelopeKey)
+		return nil, fmt.Errorf("key service: cloud kms key %s round-tripped a different value", keyName)
 	}
 	return sealer, nil
 }
@@ -478,4 +493,67 @@ func (k *KMSSealer) MAC(ctx context.Context, plaintext string) (string, error) {
 		Backend: TagGCPKMS,
 		Payload: strconv.Itoa(versionOrdinal(k.macVersion)) + ":" + k.fingerprint + ":" + result.MAC,
 	}.String(), nil
+}
+
+// The associated data every wrapped signing key is bound to. A wrapped key is
+// not interchangeable with a sealed credential: binding the purpose means a
+// stored credential's ciphertext cannot be presented as a signing key, and a
+// wrapped signing key cannot be opened through the stored-credential path.
+const signingKeyWrapPurpose = "signing-key-wrap"
+
+// KMSKeyWrap is a Cloud KMS symmetric key used only to unwrap the Ed25519
+// signing key.
+//
+// This is the weaker of the two `kms` shapes and exists because the key material
+// is still needed in process: the Work Context signer, the delegation minter and
+// the OAuth state signer are each HANDED the key rather than being given a
+// signer to call, so until they accept an injected signer the key cannot stay
+// inside the key service. What this does buy is the rest of the goal — no
+// secrets store to run, unseal, back up and credential, and nothing stored that
+// is a credential on its own: the wrapped key is inert without the Cloud KMS key
+// and the workload identity that reaches it.
+type KMSKeyWrap struct {
+	wrap *KMSSealer
+	// name is kept for refusals, which have to say WHICH key could not unwrap.
+	name string
+}
+
+// NewKMSKeyWrap validates the wrapping key the same way the envelope key is
+// validated, including the boot round trip.
+func NewKMSKeyWrap(ctx context.Context, config KMSConfig) (*KMSKeyWrap, error) {
+	if !cryptoKeyName.MatchString(config.SigningWrapKey) {
+		return nil, fmt.Errorf("key service: %s must be a Cloud KMS cryptoKey resource name (projects/<project>/locations/<location>/keyRings/<ring>/cryptoKeys/<key>), got %q", KMSSigningWrapKeyKey, config.SigningWrapKey)
+	}
+	wrap, err := newKMSEnvelope(ctx, newKMSClient(config), config.SigningWrapKey)
+	if err != nil {
+		return nil, err
+	}
+	return &KMSKeyWrap{wrap: wrap, name: config.SigningWrapKey}, nil
+}
+
+// UnwrapSigningKey turns the configured ciphertext into the Ed25519 private key.
+//
+// The wrapped value is an envelope in the same framing as a stored credential,
+// so it records the Cloud KMS key that produced it and a value wrapped by a
+// different key is refused by name rather than read as corrupt.
+func (w *KMSKeyWrap) UnwrapSigningKey(ctx context.Context, wrapped string) (ed25519.PrivateKey, error) {
+	envelope, err := ParseEnvelope(strings.TrimSpace(wrapped))
+	if err != nil {
+		return nil, fmt.Errorf("%s is not a key-service envelope: %w — wrap the Ed25519 seed with the Cloud KMS key named in %s, under the associated data %q", SigningKeyWrappedKey, err, KMSSigningWrapKeyKey, signingKeyWrapPurpose)
+	}
+	if !w.wrap.Accepts(envelope) {
+		return nil, fmt.Errorf("%s was wrapped by a different Cloud KMS key than %s names (%s): bind the key that wrapped it, or re-wrap the seed with this one", SigningKeyWrappedKey, KMSSigningWrapKeyKey, w.name)
+	}
+	encoded, err := w.wrap.Open(ctx, signingKeyWrapPurpose, envelope.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("unwrap the signing key with cloud kms key %s: %w", w.name, err)
+	}
+	seed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("key service: the unwrapped signing key is not base64: %w", err)
+	}
+	if len(seed) != ed25519.SeedSize {
+		return nil, fmt.Errorf("key service: the unwrapped signing key is %d bytes, want an %d-byte Ed25519 seed", len(seed), ed25519.SeedSize)
+	}
+	return ed25519.NewKeyFromSeed(seed), nil
 }

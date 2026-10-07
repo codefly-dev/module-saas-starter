@@ -7,6 +7,8 @@ package keyservice
 // cannot be read after a cutover.
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -517,4 +519,106 @@ func TestIsEnvelopeFramingAcceptsFramingsThisBuildCannotOpen(t *testing.T) {
 	} {
 		require.False(t, IsEnvelopeFraming(plaintext), "%q is not an application envelope", plaintext)
 	}
+}
+
+// The `kms-wrapped` signing backend: a hosted cell runs with no secrets store at
+// all, because the signing key is a ciphertext in configuration that only the
+// cell's Cloud KMS key and its workload identity can turn back into a key.
+func TestKMSWrappedSigningKeyRoundTrips(t *testing.T) {
+	fake := newFakeKMS(t)
+	config := fake.config()
+	config.SigningWrapKey = fake.addSymmetricKey(t, testKeyName("signing-wrap"))
+
+	wrap, err := NewKMSKeyWrap(t.Context(), config)
+	require.NoError(t, err)
+
+	seed := make([]byte, ed25519.SeedSize)
+	for i := range seed {
+		seed[i] = byte(i + 1)
+	}
+	wrapped := wrapSigningSeed(t, wrap, seed)
+
+	private, err := wrap.UnwrapSigningKey(t.Context(), wrapped)
+	require.NoError(t, err)
+	require.Equal(t, ed25519.NewKeyFromSeed(seed), private)
+
+	// The same ciphertext must always yield the same key: every replica and
+	// every restart has to sign identically, and the `kid` the gateway pinned
+	// cannot move.
+	again, err := wrap.UnwrapSigningKey(t.Context(), wrapped)
+	require.NoError(t, err)
+	require.Equal(t, private, again)
+}
+
+// A wrapped key is not interchangeable with a sealed credential: the associated
+// data differs, so a stored credential's ciphertext cannot be presented as a
+// signing key.
+func TestKMSWrappedSigningKeyIsBoundToItsOwnPurpose(t *testing.T) {
+	fake := newFakeKMS(t)
+	config := fake.config()
+	config.SigningWrapKey = fake.addSymmetricKey(t, testKeyName("signing-wrap"))
+	wrap, err := NewKMSKeyWrap(t.Context(), config)
+	require.NoError(t, err)
+
+	// Sealed under a stored-credential purpose on the very same key.
+	payload, err := wrap.wrap.Seal(t.Context(), "mfa-totp",
+		base64.StdEncoding.EncodeToString(make([]byte, ed25519.SeedSize)))
+	require.NoError(t, err)
+
+	_, err = wrap.UnwrapSigningKey(t.Context(),
+		Envelope{Backend: TagGCPKMS, Payload: payload}.String())
+	require.Error(t, err, "a credential sealed under another purpose must not unwrap as a signing key")
+}
+
+func TestKMSWrappedSigningKeyRefusesByName(t *testing.T) {
+	fake := newFakeKMS(t)
+	config := fake.config()
+	config.SigningWrapKey = fake.addSymmetricKey(t, testKeyName("signing-wrap"))
+	wrap, err := NewKMSKeyWrap(t.Context(), config)
+	require.NoError(t, err)
+
+	t.Run("a value that is not an envelope", func(t *testing.T) {
+		_, err := wrap.UnwrapSigningKey(t.Context(), "just-a-base64-seed")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), SigningKeyWrappedKey)
+		require.Contains(t, err.Error(), KMSSigningWrapKeyKey, "the refusal must say how to produce the value")
+	})
+
+	t.Run("wrapped by a different key", func(t *testing.T) {
+		other := fake.config()
+		other.SigningWrapKey = fake.addSymmetricKey(t, testKeyName("someone-elses-wrap"))
+		otherWrap, err := NewKMSKeyWrap(t.Context(), other)
+		require.NoError(t, err)
+		foreign := wrapSigningSeed(t, otherWrap, make([]byte, ed25519.SeedSize))
+
+		_, err = wrap.UnwrapSigningKey(t.Context(), foreign)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "wrapped by a different Cloud KMS key")
+	})
+
+	t.Run("the wrapped value is the wrong size", func(t *testing.T) {
+		short := wrapSigningSeed(t, wrap, []byte("too-short"))
+		_, err := wrap.UnwrapSigningKey(t.Context(), short)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Ed25519 seed")
+	})
+
+	t.Run("the wrap key is not a resource name", func(t *testing.T) {
+		bad := fake.config()
+		bad.SigningWrapKey = "signing-wrap"
+		_, err := NewKMSKeyWrap(t.Context(), bad)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), KMSSigningWrapKeyKey)
+	})
+}
+
+// wrapSigningSeed produces what the cell's provisioning would: the base64 seed,
+// sealed by the wrapping key under the signing-key purpose, in the stored
+// envelope framing.
+func wrapSigningSeed(t *testing.T, wrap *KMSKeyWrap, seed []byte) string {
+	t.Helper()
+	payload, err := wrap.wrap.Seal(t.Context(), signingKeyWrapPurpose,
+		base64.StdEncoding.EncodeToString(seed))
+	require.NoError(t, err)
+	return Envelope{Backend: TagGCPKMS, Payload: payload}.String()
 }

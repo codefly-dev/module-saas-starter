@@ -64,7 +64,7 @@ Two backends, selected per key family in the `key-service` group
 | How accounts authenticates | an AppRole credential the `vault` secret group delivers | the workload's own cloud identity — on GCP the metadata server, against the service account bound to the pod |
 | What the configuration carries | an address and a credential | key **names** only: no credential, no file |
 | What the cell operates | a stateful store to run, unseal, back up and credential | nothing; keys are cloud resources |
-| Can hold the signing key | yes | **no, today** — see below |
+| Can hold the signing key | yes | **wrapped, yes; natively, not yet** — see below |
 | Can hold the envelope key | yes | yes |
 
 `KEY_SERVICE_BACKEND` selects the backend that seals stored credentials and
@@ -81,7 +81,36 @@ Outside the local environment an unselected backend **refuses to start, by
 name**. The two shapes have opposite custody models, so inheriting either by
 default would mean reaching a key service nobody chose.
 
-### Why `kms` cannot hold the signing key yet
+### The signing key's three homes
+
+| `KEY_SERVICE_SIGNING_BACKEND` | Where the key is | Secrets store | Key material in process |
+| --- | --- | --- | --- |
+| `vault` | Vault KV v2, read at boot | yes — a Vault to run, unseal, back up, credential | yes |
+| `kms-wrapped` | a ciphertext in `KEY_SERVICE_SIGNING_KEY_WRAPPED`, unwrapped at boot by a Cloud KMS key | **none** | yes |
+| `kms` | inside Cloud KMS; every signature is a request | **none** | **no** |
+
+`kms-wrapped` is what lets a hosted cell run with **no secrets store at all**
+today. The wrapped value is a ciphertext carried as a configuration value, inert
+without the Cloud KMS key named in `KEY_SERVICE_KMS_SIGNING_WRAP_KEY` and the
+workload identity that reaches it — so nothing stored is a credential on its own,
+and there is no store to operate. What it does not give you is non-exportability
+*in use*: the unwrapped key lives in process memory, so it is non-exportable at
+rest only. That is a weaker property than `kms`, which is why it is a backend of
+its own rather than a fallback inside `kms` — an operator chooses it knowingly
+instead of landing on it by default.
+
+The wrapping key is deliberately **not** the envelope key: destroying an
+envelope-key version would otherwise take away the host's ability to boot, and
+the two rotate on unrelated schedules.
+
+The wrapped value is the host's identity, so it must be identical across every
+replica and every restart — the `kid` the gateway pinned moves if it changes.
+Producing it is the cell's provisioning, from the cell's durable seed, exactly as
+seeding Vault is on the `vault` backend; this module names no command of its own.
+accounts refuses a value wrapped by a different key, of the wrong size, or not in
+the envelope framing, each by name.
+
+### Why `kms` cannot hold the signing key natively yet
 
 A Cloud KMS key cannot be exported, and three consumers are handed the signing
 key rather than signing through the key service:
@@ -92,13 +121,16 @@ key rather than signing through the key service:
 | the delegation minter | `github.com/codefly-dev/core`, `policy.MintEd25519` |
 | the OAuth state signer's seed | `pkg/auth/oauth_state.go` |
 
-Each would have to accept a `crypto.Signer` first. Until then
-`KEY_SERVICE_SIGNING_BACKEND=kms` is refused by name at startup rather than
-left to surface as a Work Context authority that answers every RPC with a
-configuration error and a delegation minter that silently falls back to its v1
-HMAC. **A hosted cell therefore runs `kms` for stored credentials with the
-signing key still on `vault`**, so it is not yet free of a secrets store for
-both keys.
+This is a dependency-injection problem, not a cryptography one: each of those
+constructors takes the key *material* where it should take an injected signer.
+Once they accept a `crypto.Signer`, accounts hands them the key service and the
+key never leaves Cloud KMS.
+
+Until then `KEY_SERVICE_SIGNING_BACKEND=kms` is refused by name at startup,
+rather than left to surface as a Work Context authority that answers every RPC
+with a configuration error and a delegation minter that silently falls back to
+its v1 HMAC. The refusal names `kms-wrapped` as the shape that runs with no
+secrets store today.
 
 ## Custody of the signing key
 

@@ -38,6 +38,15 @@ const (
 
 	KMSEnvelopeKeyKey = "KEY_SERVICE_KMS_ENVELOPE_KEY"
 	KMSMACKeyKey      = "KEY_SERVICE_KMS_MAC_KEY"
+	// KMSSigningWrapKeyKey names the symmetric key that unwraps the signing key
+	// on the `kms-wrapped` signing backend.
+	KMSSigningWrapKeyKey = "KEY_SERVICE_KMS_SIGNING_WRAP_KEY"
+	// SigningKeyWrappedKey carries the wrapped signing key itself, as a VALUE.
+	// It is a ciphertext, inert without the Cloud KMS key above and the workload
+	// identity that reaches it, so it is not a credential delivered to the pod —
+	// which is the whole point: no secrets store, and nothing stored that is a
+	// secret on its own.
+	SigningKeyWrappedKey = "KEY_SERVICE_SIGNING_KEY_WRAPPED"
 )
 
 // Binding is the key service this deployment resolved: the cipher every
@@ -59,6 +68,10 @@ type Binding struct {
 	VaultHealth func(ctx context.Context) error
 
 	kms KMSConfig
+	// wrappedSigningKey is the configured ciphertext, read once at selection so
+	// a missing one refuses with every other configuration problem rather than
+	// after a key service has already been reached.
+	wrappedSigningKey string
 }
 
 // Selected is what the `key-service` group says, with nothing bound yet.
@@ -93,8 +106,8 @@ func Selection(ctx context.Context, local bool) (Selected, error) {
 		// answering every RPC with a configuration error and the delegation
 		// minter silently falling back to its v1 HMAC. Refusing the selection
 		// is the honest answer until those accept a crypto.Signer.
-		return Selected{}, fmt.Errorf("%s=%s is not supported: a Cloud KMS key cannot be exported, and the Work Context signer (github.com/codefly-dev/sdk-go/workcontext), the delegation minter (github.com/codefly-dev/core policy.MintEd25519) and the OAuth state signer are each handed the signing key itself rather than signing through the key service, so each would need to accept a crypto.Signer first. Leave %s unset or %s while %s=%s seals stored credentials; the two keys are selected separately for exactly this reason",
-			SigningBackendKey, BackendKMS, SigningBackendKey, BackendVault, BackendKey, BackendKMS)
+		return Selected{}, fmt.Errorf("%s=%s is not supported yet: a Cloud KMS key cannot be exported, and the Work Context signer (github.com/codefly-dev/sdk-go/workcontext), the delegation minter (github.com/codefly-dev/core policy.MintEd25519) and the OAuth state signer are each HANDED the signing key rather than being given a signer to call, so each has to accept an injected crypto.Signer first. Use %s=%s to run with no secrets store today — the key is wrapped by a Cloud KMS key and unwrapped at boot, which is non-exportable at rest rather than in use — or %s=%s to keep it in Vault",
+			SigningBackendKey, BackendKMS, SigningBackendKey, BackendKMSWrapped, SigningBackendKey, BackendVault)
 	}
 	if named := groupValue(ctx, PreviousBackendKey); named != "" {
 		if selection.Previous, err = ParseBackend(named); err != nil {
@@ -120,9 +133,12 @@ func Load(ctx context.Context) (*Binding, error) {
 	}
 	backend, previous, signing := selection.Backend, selection.Previous, selection.SigningBackend
 
-	binding := &Binding{Backend: backend, Previous: previous, SigningBackend: signing}
-	if backend == BackendKMS || previous == BackendKMS {
-		if binding.kms, err = kmsConfig(ctx, backend, previous); err != nil {
+	binding := &Binding{
+		Backend: backend, Previous: previous, SigningBackend: signing,
+		wrappedSigningKey: groupValue(ctx, SigningKeyWrappedKey),
+	}
+	if backend == BackendKMS || previous == BackendKMS || signing == BackendKMSWrapped {
+		if binding.kms, err = kmsConfig(ctx, backend, previous, signing); err != nil {
 			return nil, err
 		}
 	}
@@ -191,6 +207,17 @@ func (b *Binding) vaultConnection(ctx context.Context) (*vaultconnection.Connect
 // differently, break every existing session, and desynchronise the `kid` the
 // gateway pinned.
 func (b *Binding) SigningKey(ctx context.Context, ephemeral bool) (ed25519.PrivateKey, error) {
+	if b.SigningBackend == BackendKMSWrapped {
+		wrap, err := NewKMSKeyWrap(ctx, b.kms)
+		if err != nil {
+			return nil, err
+		}
+		// No ephemeral fallback here even locally: the wrapped key and the key
+		// that unwraps it are both configuration, so a failure is a
+		// configuration answer the operator can act on, not an absent dependency
+		// a developer machine might legitimately lack.
+		return wrap.UnwrapSigningKey(ctx, b.wrappedSigningKey)
+	}
 	if b.SigningBackend != BackendVault {
 		return nil, fmt.Errorf("unsupported key-service signing backend %q", b.SigningBackend)
 	}
@@ -241,12 +268,21 @@ func selectedBackend(ctx context.Context, key string, local bool) (Backend, erro
 	return backend, nil
 }
 
-func kmsConfig(ctx context.Context, backend, previous Backend) (KMSConfig, error) {
+func kmsConfig(ctx context.Context, backend, previous, signing Backend) (KMSConfig, error) {
 	config := KMSConfig{
-		EnvelopeKey: groupValue(ctx, KMSEnvelopeKeyKey),
-		MACKey:      groupValue(ctx, KMSMACKeyKey),
+		EnvelopeKey:    groupValue(ctx, KMSEnvelopeKeyKey),
+		MACKey:         groupValue(ctx, KMSMACKeyKey),
+		SigningWrapKey: groupValue(ctx, KMSSigningWrapKeyKey),
 	}
 	var missing []string
+	if signing == BackendKMSWrapped {
+		if config.SigningWrapKey == "" {
+			missing = append(missing, KMSSigningWrapKeyKey)
+		}
+		if strings.TrimSpace(groupValue(ctx, SigningKeyWrappedKey)) == "" {
+			missing = append(missing, SigningKeyWrappedKey)
+		}
+	}
 	if (backend == BackendKMS || previous == BackendKMS) && config.EnvelopeKey == "" {
 		missing = append(missing, KMSEnvelopeKeyKey)
 	}

@@ -37,18 +37,28 @@ const (
 	// the envelope key and the keyed hash, reached with an AppRole credential.
 	BackendVault Backend = "vault"
 	// BackendKMS is the deployment's cloud key-management service, reached with
-	// the workload's cloud identity.
+	// the workload's cloud identity. The key is never exportable: every
+	// operation is a request.
 	BackendKMS Backend = "kms"
+	// BackendKMSWrapped holds a key as a ciphertext the cloud key service can
+	// unwrap, rather than as a key the service operates on.
+	//
+	// It is a SEPARATE backend rather than a fallback inside BackendKMS because
+	// it is a weaker property and an operator must choose it knowingly: the
+	// unwrapped key exists in process memory, so it is non-exportable at rest
+	// and not non-exportable in use. Collapsing the two would make the weaker
+	// one the state a deployment lands in by accident.
+	BackendKMSWrapped Backend = "kms-wrapped"
 )
 
 // Backends is every backend a deployment may select, in the order a refusal
 // lists them.
-var Backends = []Backend{BackendVault, BackendKMS}
+var Backends = []Backend{BackendVault, BackendKMS, BackendKMSWrapped}
 
 // ParseBackend resolves a configured value, naming what was wrong.
 func ParseBackend(value string) (Backend, error) {
 	switch candidate := Backend(strings.TrimSpace(value)); candidate {
-	case BackendVault, BackendKMS:
+	case BackendVault, BackendKMS, BackendKMSWrapped:
 		return candidate, nil
 	case "":
 		return "", errors.New("no key-service backend is selected")
