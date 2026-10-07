@@ -2,24 +2,27 @@ kind: module
 name: saas-starter
 description: SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit
 service-entry: frontend
+# An interface entry EXPORTS an endpoint; it does not grant reach to it. The
+# `allow-modules` wildcards that used to sit on these four entries are deleted,
+# because core v0.14.0 refuses the key here by name: "an allow-list is derived
+# from the consumers' declared service dependencies, never written by the module
+# it would grant — a module asks for what it consumes, and the target names
+# nobody". A host writing `["*"]` was answering a question that is not its to
+# answer, and the wildcard made it unanswerable besides.
 interface:
     endpoints:
         - service: accounts
           endpoint: authority
           visibility: internal
-          allow-modules: ["*"]
         - service: accounts
           endpoint: connect
           visibility: internal
-          allow-modules: ["*"]
         - service: auth-gateway
           endpoint: grpc
           visibility: internal
-          allow-modules: ["*"]
         - service: auth-gateway
           endpoint: rest
           visibility: internal
-          allow-modules: ["*"]
         - service: frontend
           endpoint: http
           visibility: public

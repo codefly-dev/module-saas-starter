@@ -63,9 +63,10 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
 // Declared here as well as in `scripts/ci/install-codefly.sh` on purpose: the
 // duplicate is the friction that makes moving the pin a deliberate edit in both
 // places, and it is what caught this branch moving the installer to 0.1.179
+// and then to 0.1.180, the first release vendoring core v0.14.0
 // while this constant still said 0.1.171. Deriving it from the installer would
 // make the second assertion below tautological and lose that.
-const DEFAULT_CODEFLY_VERSION = '0.1.179';
+const DEFAULT_CODEFLY_VERSION = '0.1.180';
 
 // The planner's selection and every phase's execution must come from one
 // CLI: the plan-only 0.1.151 override (#743) existed while the published
