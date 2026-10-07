@@ -101,7 +101,10 @@ const (
 // What a window retains is counted, not measured, so the bound is one number
 // the deployment chose: a joined details row costs its text and the map entry
 // around it; an event the window buffers costs auditeval.Event.Size plus its
-// entry in the set that deduplicates it.
+// entry in the set that deduplicates it. What is counted is what is kept: the
+// relay delivers at least once, so the tables may hold an event, and its
+// details, several times over, and a copy the window already holds costs
+// nothing.
 const (
 	detailRowOverheadBytes = 160
 	dedupeEntryBytes       = 64
@@ -394,7 +397,7 @@ func (r *Reader) candidates(m *auditeval.Matcher, q business.AuditQuery, w windo
 // joined to its content details from details (when it is not nil) and handed to
 // visit (serially). A row of another deployment is never handed on, whatever
 // the session returned.
-func (r *Reader) readEvents(ctx context.Context, m *auditeval.Matcher, q business.AuditQuery, w window, details map[string]storedDetail, visit func(*auditeval.Event) error) error {
+func (r *Reader) readEvents(ctx context.Context, m *auditeval.Matcher, q business.AuditQuery, w window, details map[detailKey]string, visit func(*auditeval.Event) error) error {
 	where, ok := r.candidates(m, q, w)
 	if !ok {
 		return nil
@@ -409,8 +412,8 @@ func (r *Reader) readEvents(ctx context.Context, m *auditeval.Matcher, q busines
 		}
 		event := stored.event()
 		if details != nil && stored.retentionClass != string(business.RetentionSecurity) {
-			if detail, ok := details[event.Entry.ID]; ok && detail.sha256 == stored.detailsSHA256 {
-				event.Details, event.HasDetails = detail.details, true
+			if text, ok := details[detailKey{eventID: event.Entry.ID, sha256: stored.detailsSHA256}]; ok {
+				event.Details, event.HasDetails = text, true
 			}
 		}
 		return visit(event)
@@ -419,12 +422,12 @@ func (r *Reader) readEvents(ctx context.Context, m *auditeval.Matcher, q busines
 
 // windowDetails reads the content details of every candidate event in a
 // window, counting them against b: errWindowTooLarge when they pass it.
-func (r *Reader) windowDetails(ctx context.Context, m *auditeval.Matcher, w window, b *budget) (map[string]storedDetail, error) {
+func (r *Reader) windowDetails(ctx context.Context, m *auditeval.Matcher, w window, b *budget) (map[detailKey]string, error) {
 	where := r.scope(m.Scope())
 	w.restrict(where)
 	if types, restricted := m.EventTypes(); restricted {
 		if len(types) == 0 {
-			return map[string]storedDetail{}, nil
+			return map[detailKey]string{}, nil
 		}
 		if len(types) == 1 {
 			where.eq("event_type", types[0])
@@ -432,21 +435,45 @@ func (r *Reader) windowDetails(ctx context.Context, m *auditeval.Matcher, w wind
 			where.in("event_type", types)
 		}
 	}
-	return r.readDetails(ctx, where, b)
+	return r.readDetails(ctx, where, b, nil)
 }
 
 // storedDetail is one details-table row: the canonical details of a
-// content-class event and their hash.
+// content-class event and their hash. The history read-back keeps every one.
 type storedDetail struct {
 	sha256  string
 	details string
 }
 
-// readDetails reads the details rows a restriction admits, counting each
-// against b (nil counts nothing, for a read the caller has bounded by the ids
-// it names).
-func (r *Reader) readDetails(ctx context.Context, where *restriction, b *budget) (map[string]storedDetail, error) {
-	details := map[string]storedDetail{}
+// detailKey names the details of a content-class event the way the event does:
+// by its id and the hash its details carry. A read joins an event to the copy
+// under its own hash, as the ClickHouse store does (it groups the details table
+// by id and hash and joins on both).
+type detailKey struct {
+	eventID string
+	sha256  string
+}
+
+// readDetails reads the details rows a restriction admits and keeps one text
+// per event id and hash, counting each text kept against b. A nil b counts
+// nothing, and then keep must bound what is kept (a nil keep keeps every copy
+// the restriction admits): it is asked of each id and hash, and a copy it
+// refuses is skipped.
+//
+// The relay delivers at least once, so the table may hold the details of an
+// event any number of times. Every copy of an event shares its occurrence, so
+// they all land in one window and no narrower window can shed them; counting
+// them all would make a window that fits its unique details unreadable. A copy
+// of an id and hash already kept is therefore neither counted nor kept: it is
+// the same text, which the hash makes provable, and the first copy stays.
+//
+// Two copies of one event id that carry different hashes disagree, which the
+// history verification reports. Here each hash is a copy of its own, counted
+// because it is kept, and the event is joined to the copy under the hash its
+// own row carries. A copy no event row names is never shown, and no stream
+// order decides which copy an event gets.
+func (r *Reader) readDetails(ctx context.Context, where *restriction, b *budget, keep func(detailKey) bool) (map[detailKey]string, error) {
+	details := map[detailKey]string{}
 	err := r.scan(ctx, DetailsTable, detailFields, where, func(row arrowRow) error {
 		eventID, err := row.str("event_id")
 		if err != nil {
@@ -463,6 +490,10 @@ func (r *Reader) readDetails(ctx context.Context, where *restriction, b *budget)
 		if err != nil {
 			return err
 		}
+		key := detailKey{eventID: eventID, sha256: sha}
+		if _, kept := details[key]; kept || (keep != nil && !keep(key)) {
+			return nil
+		}
 		text, err := row.str("details")
 		if err != nil {
 			return err
@@ -472,7 +503,7 @@ func (r *Reader) readDetails(ctx context.Context, where *restriction, b *budget)
 		}
 		// Copies, so what is kept is the text alone and not the record batch
 		// it was decoded from.
-		details[strings.Clone(eventID)] = storedDetail{sha256: strings.Clone(sha), details: strings.Clone(text)}
+		details[detailKey{eventID: strings.Clone(key.eventID), sha256: strings.Clone(key.sha256)}] = strings.Clone(text)
 		return nil
 	})
 	return details, err
@@ -487,7 +518,7 @@ func (r *Reader) readDetails(ctx context.Context, where *restriction, b *budget)
 // copies.
 func (r *Reader) loadWindow(ctx context.Context, m *auditeval.Matcher, q business.AuditQuery, w window, withDetails bool) ([]*auditeval.Event, error) {
 	b := r.newBudget()
-	var details map[string]storedDetail
+	var details map[detailKey]string
 	if withDetails {
 		var err error
 		if details, err = r.windowDetails(ctx, m, w, b); err != nil {
@@ -519,7 +550,28 @@ func (r *Reader) loadWindow(ctx context.Context, m *auditeval.Matcher, q busines
 // one session bounded by their occurrences and ids. An event whose details are
 // past the content window keeps none.
 func (r *Reader) joinDetails(ctx context.Context, scope business.AuditReadScope, events []*auditeval.Event) error {
+	details, err := r.pageDetails(ctx, scope, events)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		if event.HasDetails {
+			continue
+		}
+		if text, ok := details[detailKey{eventID: event.Entry.ID, sha256: event.DetailsSHA256}]; ok {
+			event.Details, event.HasDetails = text, true
+		}
+	}
+	return nil
+}
+
+// pageDetails reads the details the given events that have none yet name, each
+// under the hash its event carries. What it keeps is bounded by the page, not
+// by the copies the table holds: the ids it names are a page's, and a copy
+// under another hash is skipped, not kept.
+func (r *Reader) pageDetails(ctx context.Context, scope business.AuditReadScope, events []*auditeval.Event) (map[detailKey]string, error) {
 	var ids []string
+	wanted := map[detailKey]bool{}
 	var lo, hi time.Time
 	for _, event := range events {
 		if event.HasDetails {
@@ -533,27 +585,15 @@ func (r *Reader) joinDetails(ctx context.Context, scope business.AuditReadScope,
 			hi = at
 		}
 		ids = append(ids, event.Entry.ID)
+		wanted[detailKey{eventID: event.Entry.ID, sha256: event.DetailsSHA256}] = true
 	}
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
 	where := r.scope(scope)
 	window{lo: &lo, hi: &hi}.restrict(where)
 	where.in("event_id", ids)
-	// Bounded by the ids it names, which are a page's.
-	details, err := r.readDetails(ctx, where, nil)
-	if err != nil {
-		return err
-	}
-	for _, event := range events {
-		if event.HasDetails {
-			continue
-		}
-		if detail, ok := details[event.Entry.ID]; ok && detail.sha256 == event.DetailsSHA256 {
-			event.Details, event.HasDetails = detail.details, true
-		}
-	}
-	return nil
+	return r.readDetails(ctx, where, nil, func(key detailKey) bool { return wanted[key] })
 }
 
 // ListAuditEvents implements business.AuditReader: the newest windows first,
@@ -577,7 +617,7 @@ func (r *Reader) ListAuditEvents(ctx context.Context, read business.AuditRead) (
 	// and nothing but the page is held at all.
 	withDetails := m.NeedsPayload()
 	err = r.newestFirst(upper, m.From(), withDetails, func(w window) (bool, error) {
-		var details map[string]storedDetail
+		var details map[detailKey]string
 		if withDetails {
 			var err error
 			if details, err = r.windowDetails(ctx, m, w, r.newBudget()); err != nil {

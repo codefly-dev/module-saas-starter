@@ -205,9 +205,12 @@ Postgres transaction.
    it joins and, for a read that must see every event of the window before it can
    answer (an aggregation, an export), the events and the set that deduplicates
    them — against a byte budget, `ReadConfig.WindowBytes` (64 MiB by default; the
-   service exposes no setting for it). A window that passes the budget is read
-   again as two halves. What outlives a window is the answer: a page, an
-   aggregation's buckets, an export's events. Four limits remain:
+   service exposes no setting for it). What is counted is what is kept, once per
+   event however many copies a redelivery left in the tables: the copies of an
+   event share its occurrence, so no narrower window could shed them. A window
+   that passes the budget is read again as two halves. What outlives a window is
+   the answer: a page, an aggregation's buckets, an export's events. Four limits
+   remain:
    - A read whose events at a single instant alone pass the budget cannot be
      split further and fails (`ErrReadTooDense`).
    - An export is the one answer as large as the history it matches. One export
