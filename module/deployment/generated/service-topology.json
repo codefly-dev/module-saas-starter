@@ -45,12 +45,6 @@
           ]
         },
         {
-          "service": "telemetry",
-          "endpoints": [
-            "grpc"
-          ]
-        },
-        {
           "service": "vault",
           "endpoints": [
             "http"
@@ -87,12 +81,6 @@
           "service": "cache",
           "endpoints": [
             "write"
-          ]
-        },
-        {
-          "service": "telemetry",
-          "endpoints": [
-            "grpc"
           ]
         }
       ]
@@ -156,23 +144,12 @@
       ]
     },
     {
-      "name": "telemetry",
-      "endpoints": [
-        {
-          "name": "grpc",
-          "api": "CODEFLY_API_GRPC",
-          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
-          "port": 9090
-        }
-      ]
-    },
-    {
       "name": "vault",
       "endpoints": [
         {
           "name": "http",
           "api": "CODEFLY_API_HTTP",
-          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
           "port": 8200
         }
       ]
@@ -225,12 +202,6 @@
     },
     {
       "service": "marketing",
-      "ports": [
-        443
-      ]
-    },
-    {
-      "service": "telemetry",
       "ports": [
         443
       ]

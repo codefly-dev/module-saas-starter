@@ -2,59 +2,46 @@ package main
 
 import (
 	"context"
-	"net/http"
+	"errors"
 	runtimemetrics "runtime/metrics"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	otelruntime "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
 )
 
+// otelMetrics owns the process's MeterProvider. Metrics leave by one path only:
+// an OTLP push to the cell's collector, which is the record for traces and
+// metrics alike. There is no scrape endpoint to mount, expose or exempt.
 type otelMetrics struct {
 	provider *metric.MeterProvider
-	handler  http.Handler
 }
 
-func enableOTELMetrics(ctx context.Context, serviceName, endpoint string) (*otelMetrics, error) {
-	exporter, err := otlpmetricgrpc.New(
-		ctx,
-		otlpmetricgrpc.WithEndpoint(endpoint),
-		otlpmetricgrpc.WithInsecure(),
-	)
+func enableOTELMetrics(ctx context.Context, destination telemetryDestination) (*otelMetrics, error) {
+	if destination.URL == "" {
+		// WithEndpointURL("") would fall back to the exporter's own default,
+		// localhost:4317: a process that exports to nowhere and reports success.
+		return nil, errors.New("telemetry: no collector URL to export metrics to")
+	}
+	// The resource comes before the exporter, so a failure here leaves nothing
+	// to shut down: an exporter holds a client connection that only Shutdown
+	// releases.
+	res, err := currentTelemetryResource(ctx)
 	if err != nil {
 		return nil, err
 	}
-	registry := prometheus.NewRegistry()
-	scrapeExporter, err := otelprometheus.New(
-		otelprometheus.WithRegisterer(registry),
-		otelprometheus.WithResourceAsConstantLabels(
-			attribute.NewAllowKeysFilter("service.name"),
-		),
-	)
-	if err != nil {
-		return nil, err
-	}
-	res, err := resource.New(
-		ctx,
-		resource.WithService(),
-		resource.WithFromEnv(),
-		resource.WithAttributes(attribute.String("service.name", serviceName)),
-	)
+	// The exporter reads the transport off the URL's scheme itself: http:// is
+	// plaintext on the wire, because the mesh supplies mTLS, and https:// is TLS.
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(destination.URL))
 	if err != nil {
 		return nil, err
 	}
 	provider := metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(metric.NewPeriodicReader(exporter, metric.WithInterval(30*time.Second))),
-		metric.WithReader(scrapeExporter),
 	)
 	if err := otelruntime.Start(otelruntime.WithMeterProvider(provider)); err != nil {
 		_ = provider.Shutdown(ctx)
@@ -65,10 +52,7 @@ func enableOTELMetrics(ctx context.Context, serviceName, endpoint string) (*otel
 		return nil, err
 	}
 	otel.SetMeterProvider(provider)
-	return &otelMetrics{
-		provider: provider,
-		handler:  promhttp.HandlerFor(registry, promhttp.HandlerOpts{}),
-	}, nil
+	return &otelMetrics{provider: provider}, nil
 }
 
 func startGCActivityMetrics(provider *metric.MeterProvider) error {
@@ -100,10 +84,6 @@ func startGCActivityMetrics(provider *metric.MeterProvider) error {
 		return nil
 	}, cycleCount, pauseCPUTime)
 	return err
-}
-
-func (m *otelMetrics) Handler() http.Handler {
-	return m.handler
 }
 
 func (m *otelMetrics) Shutdown(ctx context.Context) error {

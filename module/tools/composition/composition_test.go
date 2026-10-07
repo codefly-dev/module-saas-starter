@@ -329,11 +329,18 @@ permissions:
 
 func writeCoreInput(t *testing.T, fixture *coreCompositionFixture) {
 	t.Helper()
+	// The input names the package release it was made for, which the generator
+	// holds to the package it runs inside: the version is the manifest's, not a
+	// literal that every release would have to chase.
+	manifest, err := corecomposition.LoadPackageManifest(findModuleRoot(t))
+	if err != nil {
+		t.Fatalf("load package manifest: %v", err)
+	}
 	input := corecomposition.CompositionInput{
 		Schema:       "codefly/composition-input/v2",
 		Module:       fixture.descriptor.Name,
 		Package:      "codefly/saas-starter",
-		Version:      "0.1.0",
+		Version:      manifest.Version,
 		ConsumerRoot: fixture.consumerRoot,
 		Projection:   fixture.projection,
 		Contracts: map[string]string{

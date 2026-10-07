@@ -49,8 +49,8 @@ the auth-gateway in front so this code path isn't reached.
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything is orchestrated by Codefly: `codefly run service --fixture
-dev-admin` resolves the module's service graph and brings up all eight
-services—Postgres + Vault + Redis + object storage + telemetry + Accounts +
+dev-admin` resolves the module's service graph and brings up its
+services—Postgres + Vault + Redis + object storage + Accounts +
 the private auth gateway + frontend—with seed data in one command. Marketing
 remains a separate runtime and may be started, deployed, rolled back, or
 disabled without changing the authenticated product.
@@ -496,8 +496,8 @@ extraction contracts.
 |----------------|--------|-----------------------------------------------------------------|
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
-| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and an in-graph OTLP gateway |
-| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint and exports OTLP for the designated SigNoz backend |
+| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and Go runtime and request metrics pushed over OTLP to the cell's collector |
+| Tracing        | ✅    | Accounts and auth-gateway export OTLP to the cell's collector, whose address the platform delivers in the `observability` group, for the designated SigNoz backend |
 | Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser errors; trace sampling is fixed at zero |
 | Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; [SigNoz provisioning remains unsupported pending a pinned service qualification](SIGNOZ_PROVISIONING.md) |
 
@@ -665,20 +665,36 @@ Environment variables consumed by the api:
 | `AUDIT_RELAY_BATCH_SIZE`, `AUDIT_RELAY_MAX_WAIT` | Optional under a swap value: events per delivery (default 500, at most 5000) and how long a partial batch waits (default `5s`, at most `60s`: a longer wait would reach the five-minute relay-lag alert on a healthy relay, so a larger value is refused) |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `OBSERVABILITY_EXPORTER`       | Required in-graph collector output: `debug` or `otlphttp`; the collector refuses to start when it is unset |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`  | External OTLP/HTTP destination used only by the collector    |
-| `OTEL_EXPORTER_OTLP_HEADERS`   | Secret external collector headers                            |
+| `TELEMETRY_STATE`              | `observability` group, delivered by the platform: `available` or `absent`; missing state refuses startup except in a local runtime, where it means `absent` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | `observability` group: the cell collector's OTLP/gRPC address, required when `available` and ignored when `absent`; `http://` is plaintext on the wire because the mesh supplies mTLS, `https://` is TLS |
+| `TELEMETRY_ABSENT_REASON`      | `observability` group: why the cell has no collector, required when `absent` and ignored when `available`; logged once at startup |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
 | `TURNSTILE_SECRET_KEY`         | Server-only Siteverify credential                            |
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and the
-auth-gateway export unsampled request and Go runtime metrics through the in-graph
-OpenTelemetry collector. The auth-gateway covers both its HTTP gateway and gRPC ext_authz
-authorization service. Prometheus can alternatively scrape `/metrics` on each
-service's private REST endpoint; neither route is a module or public interface
-endpoint.
+When `TELEMETRY_STATE` is `available`, the accounts service and the auth-gateway
+export traces and unsampled request and Go runtime metrics over OTLP/gRPC to the
+cell's collector at `OTEL_EXPORTER_OTLP_ENDPOINT`. The auth-gateway covers both its
+HTTP gateway and gRPC ext_authz authorization service. When it is `absent`, they
+export nothing over OTLP, log `TELEMETRY_ABSENT_REASON` once and boot; a local run
+then uses wool's stdout tracer for traces. The state decides: a cell's values
+override the module's local defaults one key at a time, so a deployed cell that
+says `available` with an endpoint can still carry the `absent` reason the local
+profile left behind. The key the state does not use is ignored, and a startup
+warning names it once. Module defaults never declare `TELEMETRY_STATE`, because
+they also reach deployed cells. Only a local runtime infers `absent` from a
+missing state; elsewhere missing state refuses startup, because a group that
+did not arrive is not a cell without a collector. Unknown state, `available`
+without an endpoint, or explicit `absent` without a reason also refuses startup,
+including locally. An `https://`
+endpoint is refused at startup for now: wool's OTLP tracer dials plaintext only,
+so it would be sent in the clear and reported as TLS.
+Metrics leave by OTLP push alone — decided 2026-10-06, because the cell's
+collector is the record for traces and metrics take the same path — so neither
+service serves a scrape endpoint. `service.name` comes from `OTEL_SERVICE_NAME` or
+`OTEL_RESOURCE_ATTRIBUTES` when the platform sets it, else the service's own
+Codefly identity (`module/service`, the one wool puts on its log lines).
 
 Frontend browser configuration. The server reads each value from its Codefly group per
 request (`identity`, `legal`, `product-features`, `product-analytics`, `error-tracking`,

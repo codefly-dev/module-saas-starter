@@ -21,8 +21,8 @@ anywhere else.
 | `services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml` | Test-only mesh-policy golden (STRICT mTLS + the internal-authority and internal-HTTP AuthorizationPolicies + waypoint); mirrors those resources from the per-environment GitOps mesh baseline, not the whole of it — the namespace `default-deny` and the L4 internal policies are rendered there only. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
-The normalized inventory currently contains eight services, twelve endpoints,
-eight dependency edges, four module-interface endpoints, and four explicit
+The normalized inventory currently contains seven services, twelve endpoints,
+six dependency edges, six module-interface endpoints, and three explicit
 public-egress grants (`deployment_topology_test.go` pins the counts). The accounts descriptor catalog is an input: if its RPCs
 use gRPC, Connect, or REST without a corresponding accounts endpoint,
 generation fails.
@@ -33,7 +33,6 @@ generation fails.
 | --- | --- | --- |
 | `accounts` | `cache/read`, `cache/write` | TCP 6379 |
 | `accounts` | `store/tcp` | TCP 5432 |
-| `accounts` | `telemetry/grpc` | Codefly-assigned OTLP gRPC port |
 | `accounts` | `vault/http` | TCP 8200 |
 | `auth-gateway` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
 | `auth-gateway` | `cache/write` | TCP 6379 |
@@ -42,21 +41,21 @@ generation fails.
 The Codefly module interface exposes the public `frontend/http` and
 `marketing/http` endpoints; the auth-gateway gRPC ext-authz endpoint has module
 visibility. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
-`frontend/http`. Accounts, frontend, marketing, and telemetry may reach
-public IP space only over TCP 443. The public rules exclude private, loopback,
+`frontend/http`. Accounts, frontend, and marketing may reach
+public IP space only over TCP 443; `auth-gateway` has no public egress. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other
 special-purpose IPv4/IPv6 ranges. Temporal's gRPC frontend and HTTP UI remain
 module-visible without a public ingress route.
 
 ## Network-policy model
 
-The topology-policy golden contains 25 `NetworkPolicy` resources:
+The topology-policy golden contains 18 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
 - Istio ingress only to the public frontend and marketing HTTP ports;
 - target ingress and caller egress policies for every declared dependency;
-- HTTPS public egress only for accounts, frontend, marketing, and telemetry.
+- HTTPS public egress only for accounts, frontend, and marketing.
 
 There is no `allow-intra-namespace` rule. Adding a service dependency or port
 requires changing the topology binding and reviewing both generated directions
@@ -71,10 +70,14 @@ topology binding in the same change; pinned deployment schema/render validation
 is tracked by `P1-CI-004`.
 
 The generated Codefly dependency declarations contain exact endpoint
-references. Accounts resolves `telemetry/grpc` through the SDK and passes that
-exact Codefly-owned address to both tracing and metrics; no product
-configuration owns a local collector port. The generated NetworkPolicy remains
-the hard endpoint/port enforcement boundary.
+references. The module owns no collector: accounts and auth-gateway export traces
+and metrics to the cell's, whose address the platform delivers in the
+`observability` configuration group (`TELEMETRY_STATE`, with
+`OTEL_EXPORTER_OTLP_ENDPOINT` when the cell has a collector and
+`TELEMETRY_ABSENT_REASON` when it does not), so neither service needs public
+egress to reach a telemetry backend and no product configuration owns a collector
+port. The generated NetworkPolicy remains the hard endpoint/port enforcement
+boundary for the services the module declares.
 
 The AWS overlay replaces stateful services with managed dependencies. A
 pod-selector rule cannot authorize an RDS, ElastiCache, external Vault, or S3
@@ -271,7 +274,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-25 NetworkPolicy golden documents. After the module generator creates the
+18 NetworkPolicy golden documents. After the module generator creates the
 consumer-owned GitOps tree, render an environment with:
 
 ```sh

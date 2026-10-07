@@ -5,8 +5,8 @@ description: Boot this module's whole service graph on a developer machine — w
 
 # Running the starter locally
 
-The graph is vault → store → cache → telemetry → accounts → auth-gateway →
-frontend, plus marketing. One command boots all of it with a fake-auth fixture:
+The graph is vault → store → cache → accounts → auth-gateway → frontend, plus
+marketing. One command boots all of it with a fake-auth fixture:
 
 ```bash
 codefly run service --fixture dev-admin
@@ -18,6 +18,13 @@ codefly run service --fixture dev-admin
 - No TTY (CI, pipes, MCP) auto-enables `--headless`.
 - Docker must be running. `codefly doctor` checks prerequisites; `codefly clear`
   reaps stray processes and containers between runs.
+- A local run has no cell collector, and the module ships none. The module's
+  `configurations/local/observability.env` supplies a reason but no
+  `TELEMETRY_STATE`: those defaults also reach deployed cells. Only a runtime the
+  SDK identifies as local infers `absent` when the state is missing, logs the
+  reason once, sends traces to wool's stdout tracer and exports no metrics.
+  Outside that runtime, a missing state refuses startup. The `local-dogfood`
+  profile must still copy its explicit state from `observability.env.example`.
 
 For a real external identity provider and the production-grade provider stack,
 use the `local-dogfood` environment and its configuration groups:

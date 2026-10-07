@@ -23,8 +23,8 @@ The default `go test ./...` and `codefly ci run` retain all existing default tes
 The pure command is an additional fast check, not a replacement release gate.
 Database targets also retain their package's pure tests. They serialize setup,
 execution and teardown through the existing package lock. Business tests use
-Vault for hashing and encrypted credentials. None of them uses telemetry, and
-only the Redis target starts the `cache` service: it proves the org-membership
+Vault for hashing and encrypted credentials. Only the Redis target starts the
+`cache` service: it proves the org-membership
 cache stack across two instances and the Redis-held revocation, nonce and
 rate-limit state against the real server. Dependency exclusions prevent every
 other service from building or starting.

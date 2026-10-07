@@ -46,7 +46,6 @@ module/services/*/nix/
 /configurations/local-dogfood/error-tracking.env
 /configurations/local-dogfood/error-tracking.secret.env
 /configurations/local-dogfood/observability.env
-/configurations/local-dogfood/observability.secret.env
 /configurations/local-dogfood/abuse-protection.env
 /configurations/local-dogfood/abuse-protection.secret.env
 /configurations/local-dogfood/legal.env

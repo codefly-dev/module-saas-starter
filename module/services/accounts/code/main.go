@@ -34,6 +34,22 @@ import (
 	codefly "github.com/codefly-dev/sdk-go"
 )
 
+// resolvedPort is the port of one of this service's own endpoints, or nil when
+// it does not resolve. A nil port serves no listener for the endpoint and says
+// so loudly; it does not substitute a default one.
+func resolvedPort(ctx context.Context, api string) *uint16 {
+	instance, err := codefly.For(ctx).API(api).ResolveNetworkInstance()
+	if err != nil {
+		wool.Get(ctx).In("main").Error(
+			"the endpoint did not resolve; no listener is served for it",
+			wool.Field("endpoint", api),
+			wool.ErrField(err),
+		)
+		return nil
+	}
+	return shared.Pointer(instance.Port)
+}
+
 type Clean func()
 type Work func(ctx context.Context) (Clean, error)
 
@@ -55,14 +71,19 @@ func main() {
 
 	defer codefly.CatchPanic(ctx)
 
+	// The SDK resolves an endpoint from the carrier the runtime injected or, in a
+	// local run, from the workspace's endpoint map, and never invents a port: an
+	// address that does not resolve is an error here, not a default.
+	//
+	// gRPC is what this process is. Without it there is nothing to start.
+	grpcNet, grpcErr := codefly.For(ctx).API(standards.GRPC).ResolveNetworkInstance()
+	if grpcErr != nil || grpcNet == nil {
+		panic(fmt.Sprintf("Codefly gRPC endpoint is unavailable: %v", grpcErr))
+	}
 	config := &adapters.Configuration{
-		EndpointGrpcPort: codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port,
-	}
-	if net := codefly.For(ctx).WithDefaultNetwork().API(standards.REST).NetworkInstance(); net != nil {
-		config.EndpointHttpPort = shared.Pointer(net.Port)
-	}
-	if net := codefly.For(ctx).WithDefaultNetwork().API(standards.CONNECT).NetworkInstance(); net != nil {
-		config.EndpointConnectPort = shared.Pointer(net.Port)
+		EndpointGrpcPort:    grpcNet.Port,
+		EndpointHttpPort:    resolvedPort(ctx, standards.REST),
+		EndpointConnectPort: resolvedPort(ctx, standards.CONNECT),
 	}
 	// The module authority endpoint is declared in service.codefly.yaml, and a
 	// topology that omits it — or gives it a port another listener already
@@ -76,9 +97,8 @@ func main() {
 	// accounts would crashloop and take the tenant surfaces, the internal tier
 	// and every service that authenticates through them down with it.
 	//
-	// This query deliberately does not use WithDefaultNetwork(), so resolution
-	// never invents a port; the only outcomes are the injected address or this
-	// error path.
+	// Like the two above, this query never invents a port: the only outcomes are
+	// the injected address or this error path.
 	if authority, resolveErr := codefly.For(ctx).Endpoint(business.ModuleAuthorityEndpoint).API(standards.GRPC).ResolveNetworkInstance(); resolveErr != nil {
 		wool.Get(ctx).In("main").Error(
 			"the module authority endpoint did not resolve; no module authority listener is served",
