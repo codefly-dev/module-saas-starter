@@ -16,7 +16,7 @@ import (
 // therefore assume the caller opened a WithControlPlane transaction, which
 // getQueryExecutor picks up from ctx.
 
-const solutionRegistrationColumns = `solution_id, publisher, revision, runtime_boundary, tombstoned_at,
+const solutionRegistrationColumns = `solution_id, publisher, revision, tombstoned_at,
 	frontend_revision, frontend_manifest, frontend_contract_version,
 	backend_revision, backend_upstream, backend_service_alias, backend_contract_version,
 	declared_binding_id, declared_generation, declared_release, declared_target_id::text,
@@ -39,7 +39,7 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 		declaredRelease *string
 	)
 	if err := row.Scan(
-		&record.SolutionID, &record.Publisher, &record.Revision, &record.RuntimeBoundary, &tombstonedAt,
+		&record.SolutionID, &record.Publisher, &record.Revision, &tombstonedAt,
 		&frontRevision, &frontManifest, &frontContract,
 		&backendRevision, &backendUpstream, &backendAlias, &backendContract,
 		&declaredBinding, &declaredGen, &declaredRelease, &declaredTarget,
@@ -120,25 +120,15 @@ func (s *PostgresStore) NextSolutionRegistryRevision(ctx context.Context) (int64
 // SaveSolutionRegistration writes the whole record. Every half column is
 // written on every save, so tombstoning — which passes a record with no halves
 // — clears the endpoints in the same statement that records the deletion.
-// runtime_boundary is the one column this statement will not write, and that
-// property moved here from the runtime self-registration writer this branch
-// deletes (main's #1015/#1017). It is absent from the INSERT, so a new row takes
-// the column's gen_random_uuid() default; absent from the ON CONFLICT DO UPDATE,
-// so an existing row keeps what it was given — through a replaced half, a
-// tombstone and a reactivation alike; and RETURNING reports whichever happened,
-// so the caller's record is corrected from the database rather than the reverse.
 //
-// THE POINT IS THAT NOTHING ABOVE HERE MAY CHOOSE ONE. A boundary a caller
-// could name would let one solution mint for another's and read, answer and
-// recover its runs. A value invented above this statement is discarded rather
-// than stored, and that is a property of the SQL rather than of any check — the
-// column simply never appears on a write path.
-//
-// It is load-bearing that this survived the deletion. Resolving a
-// modify-vs-delete by taking the delete leaves no compiler error and no failing
-// test behind it, so the regression would have been silent;
-// TestRuntimeBoundaryIsAssignedByTheDatabaseAndSurvivesEveryDeclaredWrite is
-// what catches it.
+// NOTHING ABOVE HERE MAY CHOOSE A RUNTIME BOUNDARY, and migration 28 is what
+// makes that structural rather than a property of this statement's column list.
+// The boundary used to be derived from a stored per-registration seed this
+// statement deliberately omitted from both the INSERT and the ON CONFLICT DO
+// UPDATE; it is now derived from `declared_binding_id`, which this statement DOES
+// write — but only from the delivered declaration, never from a registrant's
+// request. A boundary a caller could name would let one solution mint for
+// another's and read, answer and recover its runs.
 func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *business.SolutionRegistration) error {
 	var (
 		frontRevision   *int64
@@ -166,8 +156,7 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 		backendRevision, backendUpstream = &half.Revision, &half.Upstream
 		backendAlias, backendContract = &half.ServiceAlias, &half.ContractVersion
 	}
-	var boundary string
-	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO public.solution_registrations (
 			solution_id, publisher, revision, tombstoned_at,
 			frontend_revision, frontend_manifest, frontend_contract_version,
@@ -190,18 +179,13 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 			declared_generation = EXCLUDED.declared_generation,
 			declared_release = EXCLUDED.declared_release,
 			declared_target_id = EXCLUDED.declared_target_id,
-			updated_at = EXCLUDED.updated_at
-		RETURNING runtime_boundary`,
+			updated_at = EXCLUDED.updated_at`,
 		record.SolutionID, record.Publisher, record.Revision, record.TombstonedAt,
 		frontRevision, frontManifest, frontContract,
 		backendRevision, backendUpstream, backendAlias, backendContract,
 		declaredBinding, declaredGen, declaredRelease, declaredTarget,
-		record.UpdatedAt).Scan(&boundary)
-	if err != nil {
-		return err
-	}
-	record.RuntimeBoundary = boundary
-	return nil
+		record.UpdatedAt)
+	return err
 }
 
 // ListSolutionRegistrations returns the registry snapshot ordered by solution
@@ -288,10 +272,11 @@ func (s *PostgresStore) SolutionRuntimeBoundarySeed(
 	)
 	// Read the DECLARED row, on every mint. This selected
 	// `runtime_boundary, …, backend_lease_expires_at` — and migration 26 DROPS
-	// that column, so the statement did not return a stale value, it failed
+	// the lease column, so the statement did not return a stale value, it failed
 	// outright: every solution-scoped mint errored on `column
 	// backend_lease_expires_at does not exist`. Nothing caught it because the
-	// suites that reach this path are DSN-gated and skip.
+	// suites that reach this path are DSN-gated and skip. `runtime_boundary` is
+	// dropped in its turn by migration 28; the binding id read below is the seed.
 	//
 	// Serving is now delivered presence: a non-tombstoned declared row whose
 	// applied generation carries a backend half. There is no lease to renew —
@@ -334,7 +319,7 @@ func (s *PostgresStore) SolutionRuntimeBoundarySeed(
 func (s *PostgresStore) SolutionRuntimeBoundarySeeds(ctx context.Context) ([]string, error) {
 	var seeds []string
 	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
-		// Binding ids, not the dropped `runtime_boundary` column: the collision
+		// Binding ids, not the `runtime_boundary` column migration 28 drops: the collision
 		// check refuses a caller-named task_id that is any solution's boundary,
 		// and a boundary is now derived from the binding. Tombstones included —
 		// a withdrawn solution's runs may still be executing.
@@ -360,28 +345,18 @@ func (s *PostgresStore) SolutionRuntimeBoundarySeeds(ctx context.Context) ([]str
 	return seeds, nil
 }
 
-// ListSolutionRegistrations returns the registry snapshot ordered by solution
-// id, plus the highest revision in the whole registry. The revision is computed
-// over every row including tombstones, so a deregistration still advances what
-// consumers converge on.
-// ForceSolutionRuntimeBoundarySeedForTest writes a seed directly, bypassing
-// every rule above it. It exists so the UNIQUE constraint on the column can be
-// proved: nothing in the service writes that column, so there is no legitimate
-// path that could ever collide, and a constraint no test can reach is a
-// constraint nobody knows still exists. It is never called outside a test —
-// `_ForTest` is what says so, and the control-plane call-site golden records
-// the authority it reaches.
-func (s *PostgresStore) ForceSolutionRuntimeBoundarySeedForTest(
-	ctx context.Context, solutionID, seed string,
-) error {
-	return s.WithControlPlane(ctx, func(ctx context.Context) error {
-		_, err := s.getQueryExecutor(ctx).Exec(ctx,
-			`UPDATE public.solution_registrations SET runtime_boundary = $2 WHERE solution_id = $1`,
-			solutionID, seed)
-		return err
-	})
-}
-
+// SaveSolutionRegistration writes the whole record. Every half column is
+// written on every save, so tombstoning — which passes a record with no halves
+// — clears the endpoints in the same statement that records the deletion.
+//
+// NOTHING ABOVE HERE MAY CHOOSE A RUNTIME BOUNDARY, and migration 28 is what
+// makes that structural rather than a property of this statement's column list.
+// The boundary used to be derived from a stored per-registration seed this
+// statement deliberately omitted from both the INSERT and the ON CONFLICT DO
+// UPDATE; it is now derived from `declared_binding_id`, which this statement DOES
+// write — but only from the delivered declaration, never from a registrant's
+// request. A boundary a caller could name would let one solution mint for
+// another's and read, answer and recover its runs.
 // Asserted at compile time, because the only other consumer is a type assertion
 // that discards its error. Without this line, deleting any method above is a
 // silent downgrade rather than a build failure.

@@ -11,6 +11,12 @@ import (
 // Like the migration-22 replay, install the proposed ledger from zero, stage
 // pre-cutover rows, then apply only the new version. The URL must name a fresh,
 // disposable PostgreSQL 16+ cluster: migration 1 also requires absent app roles.
+//
+// This stops at version 26 on purpose, so the `runtime_boundary` assertions below
+// read the column as it existed THERE. Migration 28 drops it — the boundary is
+// derived from `declared_binding_id` at the head — and that does not weaken what
+// this proves: the cutover had to withdraw rather than delete, and comparing the
+// seed across migration 26 is the only thing that shows a delete.
 func TestMigration26ColdCutoverFromZero(t *testing.T) {
 	raw := os.Getenv("ACCOUNTS_INSTALLER_TEST_DATABASE_URL")
 	if raw == "" {

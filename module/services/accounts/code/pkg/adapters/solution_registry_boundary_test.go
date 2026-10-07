@@ -22,12 +22,11 @@ import (
 // accounts derives and seals the boundary from the credential the solution
 // already presents.
 //
-// This drives the registry server with a store that DOES hold a boundary, so
-// the assertion is about what accounts chooses to send rather than about a fake
-// that cleared the field itself. Making solutionRegistrationProto set
-// RuntimeBoundary fails every case below.
-
-const boundaryStoredSeed = "019f6c02-cccc-7ccc-8ccc-cccccccccc03"
+// The assertion below is over the wire DESCRIPTOR, so it does not depend on a
+// store holding a seed — and since migration 28 no store can. `business.
+// SolutionRegistration` has no boundary field and `solution_registrations` has no
+// boundary column, so there is no value for a projection to leak by accident;
+// what this guards is a later change reintroducing the FIELD.
 
 // boundaryRegistryStore is the registry the server reads, holding one record
 // with a seed. Only the registry methods are implemented; every other Store
@@ -56,9 +55,6 @@ func (s *boundaryRegistryStore) NextSolutionRegistryRevision(_ context.Context) 
 func (s *boundaryRegistryStore) SaveSolutionRegistration(
 	_ context.Context, record *business.SolutionRegistration,
 ) error {
-	// The relation reports back whatever it holds, which is how the seed stays
-	// the host's. Mirror that: a save never loses it.
-	record.RuntimeBoundary = boundaryStoredSeed
 	s.saved = record
 	return nil
 }
@@ -72,10 +68,9 @@ func (s *boundaryRegistryStore) ListSolutionRegistrations(
 func newBoundaryRegistryService(t *testing.T) *boundaryRegistryStore {
 	t.Helper()
 	store := &boundaryRegistryStore{record: &business.SolutionRegistration{
-		SolutionID:      "example-solution",
-		Publisher:       "solution:example-solution",
-		Revision:        7,
-		RuntimeBoundary: boundaryStoredSeed,
+		SolutionID: "example-solution",
+		Publisher:  "solution:example-solution",
+		Revision:   7,
 		Frontend: &business.SolutionFrontendHalf{
 			Revision: 7, Manifest: `{"id":"example-solution"}`,
 		},

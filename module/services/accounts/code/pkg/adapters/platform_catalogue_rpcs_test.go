@@ -41,17 +41,15 @@ func (s *catalogueStore) ListCatalogueInstallations(context.Context) ([]*busines
 }
 
 // The Catalogue is a browser-facing projection of the registry, so it withholds
-// the topology every other browser projection withholds — and the runtime
-// boundary every response withholds — while keeping what the derived status is
-// read from.
+// the topology every other browser projection withholds — and carries no runtime
+// boundary field at all — while keeping what the derived status is read from.
 func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 	store := &catalogueStore{
 		role: "super_admin",
 		registrations: []*business.SolutionRegistration{{
-			SolutionID:      "example-solution",
-			Publisher:       "solution:example-solution",
-			Revision:        12,
-			RuntimeBoundary: boundaryStoredSeed,
+			SolutionID: "example-solution",
+			Publisher:  "solution:example-solution",
+			Revision:   12,
 			Frontend: &business.SolutionFrontendHalf{
 				Revision: 11, Manifest: `{"id":"example-solution"}`, ContractVersion: "v1",
 			},

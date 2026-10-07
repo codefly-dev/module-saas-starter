@@ -78,21 +78,18 @@ type SolutionDeclaredBinding struct {
 
 // SolutionRegistration is the canonical record for one solution.
 //
-// RuntimeBoundary is the opaque id every Work Context minted for this solution
-// is sealed under (issue #1015). The store assigns it when the record is
-// created and no path here ever writes it again, which is what makes it the
-// host's and not the solution's: see SolutionRuntimeBoundaryStore.
+// It carries NO runtime-boundary seed. There used to be a `RuntimeBoundary`
+// field holding the stored per-registration random (issue #1015); migration 28
+// drops the column, and the boundary is derived from Declared.BindingID per
+// organization instead (SolutionRuntimeBoundary). A field no store can populate
+// would read as "this solution has no boundary" at every call site that found it
+// empty, which is the opposite of the truth.
 type SolutionRegistration struct {
 	SolutionID string
 	Publisher  string
 	Revision   int64
-	// RuntimeBoundary is assigned by the database and never written from here.
-	// It survives this branch's deletion of the runtime registration writer by
-	// living in the save statement's omissions rather than in any planner; see
-	// PostgresStore.SaveSolutionRegistration.
-	RuntimeBoundary string
-	Frontend        *SolutionFrontendHalf
-	Backend         *SolutionBackendHalf
+	Frontend   *SolutionFrontendHalf
+	Backend    *SolutionBackendHalf
 	// Declared is the binding that declared this record, or nil when the record
 	// has not been reconciled from a declaration.
 	Declared     *SolutionDeclaredBinding

@@ -60,54 +60,79 @@ below supplies declared authority to capability checks only.
 See [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence)
 for the trust model, field ownership and delivery configuration.
 
-## The record carries the solution's runtime boundary seed
+## The solution's runtime boundary is derived from its delivered binding
 
 A runtime task is reachable only under the boundary of the Work Context that
-admitted it — the context's `task_id`.
-`solution_registrations.runtime_boundary` (migration
-`17_solution_runtime_boundary`) is the **seed** that boundary is derived from,
-so a run a page admits stays reachable across the mints of one session rather
-than only under the one context that admitted it.
+admitted it — the context's `task_id`. A solution's boundary is derived from the
+**delivered presence binding** (`solution_registrations.declared_binding_id`), so
+a run a page admits stays reachable across the mints of one session rather than
+only under the one context that admitted it.
 
-**The boundary is derived per organization**, not stored: a UUIDv5 of the seed
-and the org id (`business.SolutionRuntimeBoundary`). A run is filed under
-(tenant, boundary), so a single per-solution value would make every tenant of a
-solution share one. The seed never leaves this host.
+**The binding id is the seed because it has the lifetime a boundary needs.** It
+survives a withdrawal and a re-approval, and it is terminal with its tombstone.
+The seed used to be `solution_registrations.runtime_boundary`, a
+per-REGISTRATION `gen_random_uuid()` from migration
+`17_solution_runtime_boundary` — the wrong lifetime twice over: a solution
+withdrawn and registered afresh drew a new value and orphaned every run filed
+under the old one, while a binding that never moved could have its value replaced
+by a write it did not make. **Migration 28 drops that column and its UNIQUE
+constraint**, and `business.SolutionRegistration` carries no boundary field: a
+field no store can populate would read as "this solution has no boundary"
+wherever it was found empty.
 
-**The host assigns it and nothing else can.** The column's `gen_random_uuid()`
-default fires on insert; the registry's upsert deliberately omits the column
-from its `ON CONFLICT … DO UPDATE`, and `RETURNING` makes the stored value the
-one the caller gets back. A UNIQUE constraint keeps two registrations from
-sharing a seed. So no request field reaches it, no write replaces it, and it
-survives a tombstone — a reactivated registration keeps naming the runs it
-already admitted.
+**The boundary is derived per organization**, not stored: a UUIDv5 of a namespace
+derived from the binding id, then of the org id
+(`business.SolutionRuntimeBoundary`). A run is filed under (tenant, boundary), so
+a single per-solution value would make every tenant of a solution share one. Two
+steps, because a binding id is not a UUID — it may carry characters a path
+segment may not, so `uuid.Parse` on it fails. `solutionBoundaryNamespace` is a
+constant of this host and not a secret: unguessability comes from the per-org
+derivation and from the boundary never appearing on a readable record.
 
-**No response carries a seed.** `solutionRegistrationProto` never sets the
-field, on any path: not a listing, not a deregistration, not either half's own
-write. Nothing above this service needs one, because accounts derives and seals
-the boundary itself. `TestSolutionRegistrationResponsesCarryNoRuntimeBoundary`
-holds every response to that.
+**Nothing above this service may choose one.** `declared_binding_id` is written
+only from the delivered declaration, never from a registrant's request, so the
+boundary moves when the host's own reconciliation moves it and at no other time.
 
-**The mint** reads the seed through
+**No response carries a boundary.** `solutionRegistrationProto` sets no such
+field on any path, and there is no field to set: field 9 is reserved on
+`saas.accounts.v1.SolutionRegistration` and
+`TestSolutionRegistrationResponsesCarryNoRuntimeBoundary` asserts over the
+DESCRIPTOR, so reintroducing the field fails rather than only a value happening
+to be empty.
+
+**The mint** reads the binding through
 `business.SolutionRuntimeBoundarySeedStore`, which also reports the publisher of
 record and whether the backend half is serving, and refuses a missing record and
-a tombstone separately. Which solution is asking comes from
-`auth.VerifiedSolution`, stamped from the `X-Codefly-Solution-Id` and
-`X-Codefly-Solution-Publisher` the gateway proved from that solution's
-registration credential (`../auth-gateway/AGENTS.md`); both are forwarded
-identity headers, so they are stripped from any caller arriving without a valid
-gateway token. Before deriving anything the mint checks the publisher equals the
-credential's and the backend half is serving — the half that mints — and a
-caller-supplied `task_id` is **refused**, not ignored.
+a tombstone separately. A row with no `declared_binding_id` answers the
+tombstoned error: the cutover's own constraint makes an undeclared row a
+withdrawn one. **Serving is delivered presence**, not an asserted lease — a
+non-tombstoned declared row whose applied generation carries a backend half
+(`backend_revision` and `backend_upstream`) — and the refusal names both columns.
+Revocation reaches a capability through that per-mint read, under the existing
+120 s cache bound: carrier deletion is not revocation, the applied tombstone is.
 
-**And every other mint refuses a `task_id` that is somebody's boundary.** A
+Which solution is asking comes from `auth.VerifiedSolution`, and **nothing on the
+wire sets it**: a request carrying `X-Codefly-Solution-Id` or
+`X-Codefly-Solution-Publisher` behind a valid gateway token is **refused by
+name** (`errSolutionAttestationNotDelivered`) rather than believed, because this
+host has no delivered attestation to check such a claim against; without a
+gateway token the headers are stripped. Either header alone is a claim.
+`WithVerifiedSolution` is kept as that attestation's landing site and has no
+non-test caller, which `TestNoProductionCodeSetsAVerifiedSolution` holds. So
+solution-scoped minting does not work on this host until the attestation lands —
+stated as the follow-up rather than left to be discovered. Before deriving
+anything the mint checks the publisher equals the credential's and the backend
+half is serving — the half that mints — and a caller-supplied `task_id` is
+**refused**, not ignored.
+
+**And every other mint refuses a `task_id` that is any solution's boundary.** A
 boundary is not a secret a consumer keeps: a consuming module that serves
 durable runs reports, on a run it lets a person read, the Work Context task it
 was admitted under, so one read any caller is entitled to would otherwise hand
 them a stable value to name on an ordinary mint. `StartTask`'s ordinary path and
 `StartInstallationTask` both run `refuseRegisteredBoundary`, which compares the
-caller's `task_id` against every stored seed and the boundary derived from each
-for the organization named in the request — tombstones included, because a
+caller's `task_id` against every stored binding id and the boundary derived from
+each for the organization named in the request — tombstones included, because a
 removed solution's runs may still be executing. It fails **closed**: a registry
 that cannot answer refuses the mint, because the capability cannot then be shown
 not to be a solution's. Otherwise mints are unchanged: a request with no
@@ -228,8 +253,8 @@ and each value case joins its `oneof` when that record exists, read in
 
 **The registration it returns withholds topology**: `catalogueRegistrationProto`
 blanks the frontend manifest, backend upstream and service alias, as every other
-browser-facing projection of the registry does, and the runtime-boundary seed is
-withheld as on every response.
+browser-facing projection of the registry does; there is no runtime-boundary
+field for it to withhold.
 
 ## The composed-module service principal
 
