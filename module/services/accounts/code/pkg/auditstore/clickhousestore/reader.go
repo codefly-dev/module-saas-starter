@@ -522,24 +522,53 @@ func (s *Store) LatestSourceSyncEvents(ctx context.Context, scope business.Audit
 // ReadStoredAuditEvents implements business.AuditHistoryReader: every copy of
 // every event of this deployment in [from, to), each with the details its
 // store holds. A content-class event's details come from the details table;
-// when the copies there disagree, a copy whose hash does not match the
-// event's is the one reported, so the disagreement is what verification sees.
+// identical detail copies are deduped, while a disagreeing hash is reported and
+// text inconsistent with its declared hash fails the read. Detail rows are streamed individually and charged
+// before retention, never collected into an unbounded array by the server. A
+// window that exceeds the bound returns ErrAuditHistoryWindowTooLarge so the
+// caller can split it; envelope copies are streamed to the caller for inspection.
 func (s *Store) ReadStoredAuditEvents(ctx context.Context, from, to time.Time, visit func(business.StoredAuditEvent) error) error {
-	p := &sqlParams{}
-	window := func() string {
+	window := func(p *sqlParams) string {
 		return "deployment_id = " + p.text(s.deploymentID) + " AND occurred_at >= " + p.instant(from) + " AND occurred_at < " + p.instant(to)
 	}
-	events := window()
-	details := window()
-	statement := "SELECT e.deployment_id, e.event_id, e.org_id, e.actor_id, e.actor_type, e.event_type, e.schema_version, e.resource, " +
-		"e.resource_id, e.occurred_at, e.ip_address, e.impersonated_by, e.is_impersonated, e.client_id, e.retention_class, " +
-		"e.details_sha256, e.details, arrayMap(c -> c.1, d.copies), arrayMap(c -> c.2, d.copies) " +
-		"FROM (SELECT " + eventColumns + " FROM " + EventsTable + " WHERE " + events + ") AS e " +
-		"LEFT JOIN (SELECT event_id, groupArray((details_sha256, details)) AS copies FROM " + DetailsTable +
-		" WHERE " + details + " GROUP BY event_id) AS d ON e.event_id = d.event_id"
+	type detail struct{ sha, text string }
+	copies := map[string]map[detail]struct{}{}
+	limit := min(s.exportMaxBytes, business.DefaultAuditHistoryWindowBytes)
+	var held int64
+	p := &sqlParams{}
+	statement := "SELECT event_id, details_sha256, details FROM " + DetailsTable + " WHERE " + window(p)
+	err := s.scan(ctx, statement, p.args, func(rows driver.Rows) (bool, error) {
+		var id string
+		var copy detail
+		if err := rows.Scan(&id, &copy.sha, &copy.text); err != nil {
+			return false, fmt.Errorf("clickhouse audit store: read %s: %w", DetailsTable, err)
+		}
+		if _, identical := copies[id][copy]; identical {
+			return true, nil
+		}
+		if business.AuditDetailsSHA256(copy.text) != copy.sha {
+			return false, fmt.Errorf("clickhouse audit store: history details of event %s do not match their stored hash", id)
+		}
+		// Conservatively includes the nested map and its key for each unique copy. The
+		// strings returned by this native driver own their decoded text.
+		cost := int64(384 + len(id) + len(copy.sha) + len(copy.text))
+		if cost > limit-held {
+			return false, business.ErrAuditHistoryWindowTooLarge
+		}
+		held += cost
+		if copies[id] == nil {
+			copies[id] = map[detail]struct{}{}
+		}
+		copies[id][copy] = struct{}{}
+		return true, nil
+	})
+	if err != nil {
+		return err
+	}
+	p = &sqlParams{}
+	statement = "SELECT " + eventColumns + " FROM " + EventsTable + " WHERE " + window(p)
 	return s.scan(ctx, statement, p.args, func(rows driver.Rows) (bool, error) {
-		var hashes, texts []string
-		row, err := scanStored(rows, &hashes, &texts)
+		row, err := scanStored(rows)
 		if err != nil {
 			return false, fmt.Errorf("clickhouse audit store: read %s: %w", EventsTable, err)
 		}
@@ -556,9 +585,9 @@ func (s *Store) ReadStoredAuditEvents(ctx context.Context, from, to time.Time, v
 		}
 		if event.Retention != business.RetentionSecurity {
 			event.Details, event.HasDetails = "", false
-			for i, text := range texts {
-				event.Details, event.HasDetails = text, true
-				if hashes[i] != row.detailsSHA256 {
+			for copy := range copies[row.entry.ID] {
+				event.Details, event.HasDetails = copy.text, true
+				if copy.sha != row.detailsSHA256 {
 					break
 				}
 			}

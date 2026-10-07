@@ -32,6 +32,7 @@ pkg/business/audit.go: (*DurableAuditEmitter).Emit: WithControlPlane
 pkg/business/audit_history.go: (*AuditHistoryCopy).drop: WithControlPlane
 pkg/business/audit_history.go: (*AuditHistoryCopy).partitions: WithControlPlane
 pkg/business/audit_history.go: (*AuditHistoryCopy).readWindow: WithControlPlane
+pkg/business/audit_history.go: (*AuditHistoryCopy).readWindow: WithControlPlane
 pkg/business/audit_history.go: (*AuditHistoryCopy).uncovered: WithControlPlane
 pkg/business/audit_store_read.go: (postgresAuditReader).within: WithControlPlane
 pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithControlPlane

@@ -235,8 +235,9 @@ Postgres transaction.
      16 bytes), so the service never receives what it could not keep. A time
      range, an actor or an event type narrows it, as does grouping by fewer
      dimensions.
-   - The history copy (item 7) reads and holds a whole window of the store at a
-     time outside this budget.
+   - The history copy (item 7) applies its own 32 MiB source budget and bounded
+     warehouse details joins, splitting busy windows before writes. It streams
+     every stored event copy through verification instead of retaining copies.
 
    The reason is the grants. The service that reads is the service that
    appends, so it holds `bigquery.tables.updateData`. With
@@ -282,7 +283,10 @@ Postgres transaction.
      expiration, and refuses at startup an events table whose partitions expire,
      since its identity holds no `bigquery.tables.update` to change one. Both
      tables must use daily partitions and have no whole-table expiration,
-     including expiration inherited from the dataset when they are created;
+     including expiration inherited from the dataset when they are created.
+     Startup also rejects `REQUIRED` columns where the writer can supply NULL,
+     and extra `REQUIRED` columns without defaults. Nullable extensions and
+     omitted extra columns with defaults remain compatible;
    - a **details** table holding the full details of content-class types, kept
      for the shorter content window, `AUDIT_CONTENT_RETENTION_DAYS` — a
      partition expiration on BigQuery, a table TTL on ClickHouse.
@@ -357,9 +361,15 @@ Postgres transaction.
    verified partitions, locks them, re-counts each against the count that was
    verified, and refuses on any mismatch — a partition that gained a row since
    verification is never dropped. `-through`, the cutoff of the copy, accepts
-   completed months (UTC) only. The copy and its read-back hold one UTC day of
-   the deployment's events in memory at a time, outside the read budget of
-   item 4. From then on `audit_events` receives no new rows, and Postgres holds
+   completed months (UTC) only. The copy starts with UTC-day windows, halves
+   them when source records or warehouse details would exceed their byte
+   budgets, and refuses an instant that cannot fit. Source records retain
+   canonical text alone after counting the current decoded payload; read-back
+   retains bounded unique details and verifies stored event copies as they
+   stream in. Response blocks and one current row also consume memory. Windows
+   are visited oldest first, so splitting never changes the source digest.
+   A post-append overflow ends the run safely and is resumed by the next run.
+   From then on `audit_events` receives no new rows, and Postgres holds
    only the queue.
    Missing content details get one repair attempt per event per run, even after
    several partial writes: duplicate events rows are not evidence of permanent

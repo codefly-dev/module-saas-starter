@@ -1,7 +1,9 @@
 package infra
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -81,12 +83,33 @@ func (s *PostgresStore) ReadAuditHistory(ctx context.Context, from, to time.Time
 	}
 	query += fmt.Sprintf(` ORDER BY created_at, id LIMIT $%d`, len(args)+1)
 	args = append(args, limit)
-	rows, err := s.getQueryExecutor(ctx).Query(ctx, query, args...)
+	var out []business.AuditEntry
+	err := s.visitAuditHistory(ctx, query, args, 0, func(entry business.AuditEntry) error {
+		out = append(out, entry)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
+	return out, err
+}
+
+// StreamAuditHistory hands rows on in source digest order without retaining a
+// decoded page. A busy window can stop the scan immediately and be retried as
+// halves; even one row's decoded containers are bounded before allocation.
+func (s *PostgresStore) StreamAuditHistory(ctx context.Context, from, to time.Time, maxBytes int64, visit func(business.AuditEntry) error) error {
+	if maxBytes <= 0 {
+		return errors.New("audit history: streaming byte budget must be positive")
+	}
+	return s.visitAuditHistory(ctx, auditHistorySelectSQL+` ORDER BY created_at, id`, []any{from, to}, maxBytes, visit)
+}
+
+func (s *PostgresStore) visitAuditHistory(ctx context.Context, query string, args []any, maxBytes int64, visit func(business.AuditEntry) error) error {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, query, args...)
+	if err != nil {
+		return err
+	}
 	defer rows.Close()
-	var out []business.AuditEntry
 	for rows.Next() {
 		var entry business.AuditEntry
 		var eventType string
@@ -99,16 +122,121 @@ func (s *PostgresStore) ReadAuditHistory(ctx context.Context, from, to time.Time
 			&entry.ImpersonatedBy, &entry.IsImpersonated,
 			&entry.ClientID,
 		); err != nil {
-			return nil, err
+			return err
 		}
 		entry.EventType = business.EventType(eventType)
 		entry.CreatedAt = entry.CreatedAt.UTC()
-		if entry.Payload, err = decodeQueuedPayload(payload); err != nil {
-			return nil, fmt.Errorf("audit history: payload of event %s: %w", entry.ID, err)
+		if maxBytes > 0 {
+			remaining := maxBytes - business.AuditHistoryEntryBytes(entry)
+			entry.Payload, err = decodeBoundedHistoryPayload(payload, remaining)
+		} else {
+			entry.Payload, err = decodeQueuedPayload(payload)
 		}
-		out = append(out, entry)
+		if err != nil {
+			return fmt.Errorf("audit history: payload of event %s: %w", entry.ID, err)
+		}
+		if err := visit(entry); err != nil {
+			return err
+		}
 	}
-	return out, rows.Err()
+	return rows.Err()
+}
+
+// decodeBoundedHistoryPayload counts the raw row and decoded container entries
+// as it decodes. Checking only raw JSON length misses small JSON arrays that
+// allocate many maps or interfaces; checking after Decode is too late.
+func decodeBoundedHistoryPayload(raw []byte, limit int64) (map[string]any, error) {
+	held := int64(len(raw))
+	take := func(n int64) error {
+		held += n
+		if held > limit {
+			return business.ErrAuditHistoryWindowTooLarge
+		}
+		return nil
+	}
+	if err := take(0); err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value func() (any, error)
+	value = func() (any, error) {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		if delimiter, ok := token.(json.Delim); ok {
+			switch delimiter {
+			case '{':
+				if err := take(64); err != nil {
+					return nil, err
+				}
+				object := map[string]any{}
+				for decoder.More() {
+					key, err := decoder.Token()
+					if err != nil {
+						return nil, err
+					}
+					text, ok := key.(string)
+					if !ok {
+						return nil, errors.New("audit history: expected a JSON object key")
+					}
+					if err := take(64 + int64(len(text))); err != nil {
+						return nil, err
+					}
+					item, err := value()
+					if err != nil {
+						return nil, err
+					}
+					object[text] = item
+				}
+				_, err := decoder.Token()
+				return object, err
+			case '[':
+				if err := take(24); err != nil {
+					return nil, err
+				}
+				var array []any
+				for decoder.More() {
+					if err := take(16); err != nil {
+						return nil, err
+					}
+					item, err := value()
+					if err != nil {
+						return nil, err
+					}
+					array = append(array, item)
+				}
+				_, err := decoder.Token()
+				return array, err
+			default:
+				return nil, errors.New("audit history: unexpected JSON delimiter")
+			}
+		}
+		n := int64(16)
+		switch text := token.(type) {
+		case string:
+			n += int64(len(text))
+		case json.Number:
+			n += int64(len(text))
+		}
+		if err := take(n); err != nil {
+			return nil, err
+		}
+		return token, nil
+	}
+	decoded, err := value()
+	if err != nil {
+		return nil, err
+	}
+	if decoded == nil {
+		return nil, nil
+	}
+	payload, ok := decoded.(map[string]any)
+	if !ok {
+		return nil, errors.New("audit history: payload must be a JSON object")
+	}
+	return payload, nil
 }
 
 // CountAuditHistory implements business.AuditHistorySource.
@@ -204,3 +332,4 @@ func (s *PostgresStore) DropVerifiedAuditPartitions(ctx context.Context, cutoff 
 }
 
 var _ business.AuditHistorySource = (*PostgresStore)(nil)
+var _ business.AuditHistoryStreamingSource = (*PostgresStore)(nil)

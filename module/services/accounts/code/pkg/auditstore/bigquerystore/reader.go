@@ -811,14 +811,18 @@ func (r *Reader) LatestSourceSyncEvents(ctx context.Context, scope business.Audi
 // ReadStoredAuditEvents implements business.AuditHistoryReader: one session
 // over each table for the window, every copy of every event of this
 // deployment, with the details each copy has. A content-class event's details
-// come from the details table; when the copies there disagree, a copy whose
-// hash does not match the event's is the one reported, so the disagreement is
-// what verification sees.
+// come from the details table. Only byte-identical detail copies are deduped;
+// a disagreeing hash is reported, and text inconsistent with its declared hash
+// fails the read. The retained
+// details are bounded before they are kept; a window that exceeds the bound
+// returns ErrAuditHistoryWindowTooLarge so the caller can split it.
 func (r *Reader) ReadStoredAuditEvents(ctx context.Context, from, to time.Time, visit func(business.StoredAuditEvent) error) error {
 	w := window{lo: &from, hi: &to, hiExclusive: true}
 	detailsWhere := r.scope(business.PlatformAuditScope())
 	w.restrict(detailsWhere)
-	copies := map[string][]storedDetail{}
+	copies := map[string]map[storedDetail]struct{}{}
+	b := r.newBudget()
+	b.limit = min(b.limit, business.DefaultAuditHistoryWindowBytes)
 	err := r.scan(ctx, DetailsTable, detailFields, detailsWhere, func(row arrowRow) error {
 		var detail storedDetail
 		var eventID, deploymentID string
@@ -832,7 +836,23 @@ func (r *Reader) ReadStoredAuditEvents(ctx context.Context, from, to time.Time, 
 			*into = value
 		}
 		if deploymentID == r.deploymentID {
-			copies[eventID] = append(copies[eventID], detail)
+			if _, identical := copies[eventID][detail]; identical {
+				return nil
+			}
+			if business.AuditDetailsSHA256(detail.details) != detail.sha256 {
+				return fmt.Errorf("bigquery audit store: history details of event %s do not match their stored hash", eventID)
+			}
+			// The nested copy set has more map overhead than an ordinary
+			// id/hash details join. Charge it conservatively for every copy.
+			if err := b.take(384 + len(eventID) + len(detail.sha256) + len(detail.details)); err != nil {
+				return business.ErrAuditHistoryWindowTooLarge
+			}
+			// Arrow strings refer to a decoded record batch. Clone only the
+			// charged strings so one small value cannot retain that whole batch.
+			if copies[eventID] == nil {
+				copies[strings.Clone(eventID)] = map[storedDetail]struct{}{}
+			}
+			copies[eventID][storedDetail{sha256: strings.Clone(detail.sha256), details: strings.Clone(detail.details)}] = struct{}{}
 		}
 		return nil
 	})
@@ -859,15 +879,29 @@ func (r *Reader) ReadStoredAuditEvents(ctx context.Context, from, to time.Time, 
 		}
 		if event.Retention != business.RetentionSecurity {
 			event.Details, event.HasDetails = "", false
-			for _, detail := range copies[stored.entry.ID] {
+			for detail := range copies[stored.entry.ID] {
 				event.Details, event.HasDetails = detail.details, true
 				if detail.sha256 != stored.detailsSHA256 {
 					break
 				}
 			}
 		}
-		return visit(event)
+		return visit(cloneStoredAuditEvent(event))
 	})
+}
+
+// cloneStoredAuditEvent prevents a callback retaining an Arrow record batch
+// through any string in its envelope or security-class details.
+func cloneStoredAuditEvent(event business.StoredAuditEvent) business.StoredAuditEvent {
+	entry := &event.Entry
+	for _, text := range []*string{&event.DeploymentID, &event.DetailsSHA256, &event.Details,
+		&entry.ID, &entry.OrgID, &entry.ActorID, &entry.ActorType, &entry.Resource, &entry.ResourceID,
+		&entry.IPAddress, &entry.ImpersonatedBy, &entry.ClientID} {
+		*text = strings.Clone(*text)
+	}
+	entry.EventType = business.EventType(strings.Clone(string(entry.EventType)))
+	event.Retention = business.AuditRetentionClass(strings.Clone(string(event.Retention)))
+	return event
 }
 
 // scan creates one read session over table and hands every row it returns to

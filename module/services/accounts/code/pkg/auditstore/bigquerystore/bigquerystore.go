@@ -324,6 +324,15 @@ func conforms(spec tableSpec, existing *bigquery.TableMetadata) error {
 		if got.Type != want.Type || got.Repeated {
 			return fmt.Errorf("column %s is %s, want %s", want.Name, got.Type, want.Type)
 		}
+		if got.Required && !want.Required {
+			return fmt.Errorf("column %s is REQUIRED but the writer can supply NULL", want.Name)
+		}
+		delete(columns, want.Name)
+	}
+	for _, field := range existing.Schema {
+		if _, extra := columns[field.Name]; extra && field.Required && strings.TrimSpace(field.DefaultValueExpression) == "" {
+			return fmt.Errorf("extra REQUIRED column %s has no default and is not supplied by the writer", field.Name)
+		}
 	}
 	return nil
 }

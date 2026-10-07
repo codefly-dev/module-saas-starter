@@ -18,10 +18,12 @@ deploy_jobs:
   # writes to. The importer reads it through the same auditsink package as the
   # service but, unlike the service, has no default: if the Job does not receive
   # the variable it exits before touching the store, rather than guess postgres
-  # and write its events where a warehouse deployment never reads them. A
-  # deployment that leaves AUDIT_SINK unset on the service (the default,
-  # postgres) must set AUDIT_SINK=postgres explicitly so that the step has a
-  # value to inherit.
+  # and write its events where a warehouse deployment never reads them. The
+  # accounts service manifest declares the raw default AUDIT_SINK=postgres;
+  # an explicit environment service-config value replaces it for both service
+  # and Job. A driver must resolve service defaults before inheriting them.
+  # Automatic promotion requires deploy-job execution and a migration barrier;
+  # a driver without that support must refuse this required step.
   - name: role-catalog-import
     service: accounts
     command: role-catalog-import

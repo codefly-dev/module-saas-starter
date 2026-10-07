@@ -55,6 +55,11 @@ endpoints:
     - name: grpc
     - name: rest
 spec:
+    # CLI-owned raw, non-secret deployment defaults. The resolved environment's
+    # service-config overrides this value; deploy Jobs inherit the resulting
+    # service value rather than guessing a sink of their own.
+    environment-defaults:
+        AUDIT_SINK: postgres
     connect-endpoint: true
     hot-reload: true
     # The datasource fetch reads a repository over git's smart-HTTP transport by

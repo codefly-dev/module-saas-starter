@@ -406,13 +406,17 @@ func TestAuditHistoryCopyCopiesVerifiesAndDropsOnlyWhenConfirmed(t *testing.T) {
 
 	// Each copy carries the envelope, class and hash a live event of the row gets.
 	resolver := NewAuditEventResolver(nil)
+	sourceRows := map[string]AuditEntry{}
+	for _, row := range f.source.rows {
+		sourceRows[row.ID] = row
+	}
 	for _, batch := range f.archive.batches {
 		require.Equal(t, "deployment-1", batch.DeploymentID)
 		require.LessOrEqual(t, len(batch.Records), 4)
 		for _, record := range batch.Records {
 			resolved, err := resolver.Resolve(context.Background(), record.Entry.EventType)
 			require.NoError(t, err)
-			want, err := NewAuditRecord(record.Entry, resolved.RetentionClass())
+			want, err := NewAuditRecord(sourceRows[record.Entry.ID], resolved.RetentionClass())
 			require.NoError(t, err)
 			require.Equal(t, want.DetailsSHA256, record.DetailsSHA256)
 			require.Equal(t, want.Retention, record.Retention)

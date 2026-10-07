@@ -29,13 +29,28 @@ must be a **completed month in UTC**: the current month and later ones are refus
 as a usage error. Without it the run covers every partition, which can verify but
 cannot drop. `-verify-only` writes nothing.
 
-The run is resumable. For each day-long window of each partition it reads the
+The run is resumable. It starts with day-long windows of each partition and reads the
 source rows, reads back what the warehouse holds for that window, appends only the
 events whose stored copies are not complete, reads the window back again, and then
 verifies every source row against every stored copy of its id. Existing copies are
 therefore verified **after** the append, in the same pass; an earlier run's copies
 are not verified before new rows are written. A verification failure leaves the
 partitions in place.
+
+Busy windows are retried as halves before any writes. Source records and their
+verification state have a 32 MiB budget (`AuditHistoryCopyConfig.WindowBytes`);
+the source streams one row at a time, counts decoded payload containers as well
+as canonical details, and retains the canonical text alone. Warehouse history
+reads independently bound their retained details at at most 32 MiB, deduplicate
+byte-identical detail copies, and stream every event copy through verification
+without retaining all duplicates. These bounds cover retained data; driver
+response blocks and the current row also consume memory. `-batch-size` controls
+write requests, not these byte budgets. A single timestamp whose events cannot
+fit is refused, leaves the run unverified, and removes nothing. If read-back
+grows beyond its budget after an append, the run stops; rerunning resumes from
+the now-existing copies without repeating repairs during the failed run.
+Splits run oldest first, so copy, verification and removal hash the same ordered
+source stream regardless of window sizes.
 
 An event is appended when the warehouse holds none of it, and again when it holds
 it without the details of a content-class event. Both adapters write an event's
@@ -111,9 +126,9 @@ and never `verified`.
 
 The copy and its read-back match events by `id` within a window, while the source
 key is `(id, created_at)`. Two source rows may in principle share an id at different
-instants. When both fall in the same UTC-day window, each is compared with both
+instants. When both fall in the same read window, each is compared with both
 stored copies, one differs from it, and verification fails closed with "stored
-envelope differs from the row"; nothing is dropped. When they fall on different days
+envelope differs from the row"; nothing is dropped. When they fall in different windows
 each copy matches its own row and verification passes, leaving two warehouse rows
 with one id, as the source holds. Deployments that generate ids as UUIDs do not
 produce either.

@@ -67,8 +67,18 @@ transport configuration).
 
 ## Deploy Jobs
 
-A `deploy_jobs` topology entry is a store-writing one-shot the driver runs as a
-deploy step. Unlike a service's self-serving `bootstrap_job_endpoints` Job —
+A `deploy_jobs` topology entry is a required store-writing one-shot for a
+job-capable promotion driver. **Automatic catalog promotion remains blocked:**
+the Codefly CLI currently has no deploy-job execution or dependency migration
+barrier. It must reject this bundle rather than silently omit the import. Service
+environment defaults alone do not provide job execution. Driver support must
+mount the catalog, use the running service's immutable image and identity,
+resolve the write credential (including managed IAM), inherit the effective
+service environment, and fail promotion unless each `after` dependency's
+migration and the import complete. Sync-wave annotations on independently
+reconciling Argo Applications do not enforce that dependency barrier.
+
+Unlike a service's self-serving `bootstrap_job_endpoints` Job —
 which reaches only the service's own endpoints — a deploy Job runs one service's
 image but `writes` to a dependency it declares, consuming a generated artifact.
 The module ships `role-catalog-import`: it runs the `accounts` image but writes
@@ -77,15 +87,21 @@ migration. Each bundle `deployJobs` entry resolves the `catalog` artifact path,
 the target `service`/`endpoint`/`port`, the `force` flag, the ordering, and
 `serviceEnvironment` — the running service's environment variables the Job is
 given with that service's own values in the same environment; the
-driver mounts the catalog, connects the target, sets those variables, runs
-`command`, and fails the promotion if it exits non-zero. `role-catalog-import`
+job-capable driver mounts the catalog, connects the target, sets those variables,
+runs `command`, and fails the promotion if it exits non-zero. `role-catalog-import`
 inherits `AUDIT_SINK`: it records its audit events through the same emitter as
 `accounts`, so under a swap value (ADR 0009) they reach the queue the accounts
 relay delivers instead of `audit_events`. Unlike `accounts`, the importer refuses
-an unset `AUDIT_SINK` rather than default to `postgres`, so a deployment that
-relies on that default must set `AUDIT_SINK=postgres` explicitly. Re-running an unchanged catalog is an empty
-no-op, so the step is idempotent. Generation rejects a deploy Job whose catalog
-artifact is absent, whose write target is not a declared dependency of the
+an unset `AUDIT_SINK` rather than default to `postgres`. The accounts manifest's
+CLI-owned `spec.environment-defaults` declares `AUDIT_SINK: postgres`, so the
+service has an explicit value to inherit after deployment projection. The
+environment's `service-config` or explicit secret reference overrides that
+default; a warehouse deployment's Job must inherit its resolved warehouse mode.
+This requires a CLI release that projects service environment defaults and,
+for automatic promotion, implements the job contract above. Re-running an
+unchanged catalog is an empty no-op, so the step is idempotent. Generation rejects
+a deploy Job whose catalog artifact is absent, whose write target is not a
+declared dependency of the
 running service, that references an undeclared service, or that writes to a
 migration-bearing target (`bootstrap_job_endpoints`) without ordering `after` it
 — an import that races the migration would write against a schema that does not

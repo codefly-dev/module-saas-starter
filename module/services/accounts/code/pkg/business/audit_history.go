@@ -38,6 +38,22 @@ type AuditHistoryReader interface {
 	ReadStoredAuditEvents(ctx context.Context, from, to time.Time, visit func(StoredAuditEvent) error) error
 }
 
+// ErrAuditHistoryWindowTooLarge asks the copier to retry a smaller time span.
+// A reader must stop retaining rows as soon as it reaches its byte budget.
+var ErrAuditHistoryWindowTooLarge = errors.New("audit history copy: window exceeds its memory budget")
+
+// ErrAuditHistoryTooDense refuses events sharing an instant that cannot fit a
+// window. The run stays unverified and cannot remove source partitions.
+var ErrAuditHistoryTooDense = errors.New("audit history copy: events at one instant exceed its memory budget")
+
+const DefaultAuditHistoryWindowBytes int64 = 32 << 20
+
+// AuditHistoryStreamingSource avoids constructing a decoded page before the
+// copier can apply its budget. Production Postgres implements this interface.
+type AuditHistoryStreamingSource interface {
+	StreamAuditHistory(ctx context.Context, from, to time.Time, maxBytes int64, visit func(AuditEntry) error) error
+}
+
 // The one-time history copy of ADR 0009, item 7: switching a deployment from
 // postgres to a swap value copies the audit_events rows it already holds into
 // the store of record and the archive, verifies the copy by reading it back,
@@ -130,6 +146,11 @@ type AuditHistoryCopyConfig struct {
 	// BatchSize is the most events one copied batch carries (default
 	// DefaultAuditRelayBatchSize).
 	BatchSize int
+	// WindowBytes bounds source records and their verification state. A current
+	// decoded row is counted alongside its canonical text before it is retained.
+	// Zero is DefaultAuditHistoryWindowBytes. Warehouses also bound their own
+	// details join, and either side can ask the copy to halve a busy window.
+	WindowBytes int64
 	// Through, when set, limits the copy to the partitions whose bounds end at
 	// or before it, and is the drop's cutoff; a confirmed drop needs it, and
 	// refuses one that has not yet passed. Unset is every partition.
@@ -229,11 +250,8 @@ var ErrAuditHistoryDropRefused = errors.New("audit history copy: drop refused")
 
 const maxAuditHistoryProblems = 20
 
-// auditHistoryPageSize is the rows one read of audit_events returns.
-const auditHistoryPageSize = 1000
-
 // auditHistoryWindow is the span the copy reads, writes and verifies at a
-// time: a day keeps the read-back of a busy deployment in memory.
+// time initially. Busy days are retried as smaller windows.
 const auditHistoryWindow = 24 * time.Hour
 
 // auditHistoryDetailsMargin is how far past the instant the store is certain to
@@ -266,6 +284,12 @@ func NewAuditHistoryCopy(cfg AuditHistoryCopyConfig) (*AuditHistoryCopy, error) 
 	}
 	if cfg.BatchSize < 1 || cfg.BatchSize > MaxAuditRelayBatchSize {
 		return nil, fmt.Errorf("audit history copy: batch size must be between 1 and %d", MaxAuditRelayBatchSize)
+	}
+	if cfg.WindowBytes < 0 {
+		return nil, errors.New("audit history copy: window byte budget cannot be negative")
+	}
+	if cfg.WindowBytes == 0 {
+		cfg.WindowBytes = DefaultAuditHistoryWindowBytes
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -452,7 +476,7 @@ func (c *AuditHistoryCopy) copyPartition(ctx context.Context, resolver *AuditEve
 		if to.After(partition.To) {
 			to = partition.To
 		}
-		if err := c.copyWindow(ctx, resolver, from, to, opts, &report, digest); err != nil {
+		if err := c.copyBoundedWindow(ctx, resolver, from, to, opts, &report, digest); err != nil {
 			return report, fmt.Errorf("audit history copy: %s [%s, %s): %w", partition.Name,
 				from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339), err)
 		}
@@ -467,6 +491,37 @@ func (c *AuditHistoryCopy) copyPartition(ctx context.Context, resolver *AuditEve
 		partition.Name, rows, report.Copied, report.Rewritten, verified, report.Failures))
 	return report, nil
 }
+
+// copyBoundedWindow visits halves oldest first, so window boundaries cannot
+// change the source stream hashed into a copy, verification or drop receipt.
+// Only a successful leaf adds source counts or digest bytes. Once writes have
+// started an overflow fails this run; the next run can split its initial read
+// without repeating a repair or permanent refusal during this run.
+func (c *AuditHistoryCopy) copyBoundedWindow(ctx context.Context, resolver *AuditEventResolver, from, to time.Time, opts AuditHistoryCopyOptions, report *AuditHistoryPartitionReport, digest hash.Hash) error {
+	err := c.copyWindow(ctx, resolver, from, to, opts, report, digest)
+	var afterWrite *auditHistoryAfterWriteError
+	if errors.As(err, &afterWrite) {
+		return err
+	}
+	if !errors.Is(err, ErrAuditHistoryWindowTooLarge) {
+		return err
+	}
+	middle := time.UnixMicro(from.UnixMicro() + (to.UnixMicro()-from.UnixMicro())/2).UTC()
+	if !middle.After(from) || !middle.Before(to) {
+		return ErrAuditHistoryTooDense
+	}
+	if err := c.copyBoundedWindow(ctx, resolver, from, middle, opts, report, digest); err != nil {
+		return err
+	}
+	return c.copyBoundedWindow(ctx, resolver, middle, to, opts, report, digest)
+}
+
+type auditHistoryAfterWriteError struct{ err error }
+
+func (e *auditHistoryAfterWriteError) Error() string {
+	return "audit history copy: read-back after append failed; rerun to resume: " + e.err.Error()
+}
+func (e *auditHistoryAfterWriteError) Unwrap() error { return e.err }
 
 // copyWindow reads a window's rows, reads back what the store holds of it,
 // writes what is missing or incomplete, and verifies every row.
@@ -484,7 +539,7 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 	if len(records) == 0 {
 		return nil
 	}
-	stored, err := c.readBack(ctx, from, to)
+	stored, err := c.readBack(ctx, from, to, records)
 	if err != nil {
 		return err
 	}
@@ -500,9 +555,9 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 		var pending []AuditRecord
 		var rewrite []bool // parallel to pending: the store already held the event
 		for _, record := range records {
-			copies := stored[record.Entry.ID]
-			if _, writable := c.inspect(record, copies); writable {
-				pending, rewrite = append(pending, record), append(rewrite, len(copies) > 0)
+			status := stored[record.Entry.ID]
+			if !status.found || status.writable {
+				pending, rewrite = append(pending, record), append(rewrite, status.found)
 			}
 		}
 		if len(pending) > 0 {
@@ -525,8 +580,8 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 					}
 				}
 			}
-			if stored, err = c.readBack(ctx, from, to); err != nil {
-				return err
+			if stored, err = c.readBack(ctx, from, to, records); err != nil {
+				return &auditHistoryAfterWriteError{err: err}
 			}
 		}
 	}
@@ -545,7 +600,11 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 		count := report.Orgs[org]
 		count.Postgres++
 		id := record.Entry.ID
-		if problem := c.verify(record, stored[id]); problem != "" {
+		problem := stored[id].problem
+		if !stored[id].found {
+			problem = "missing from the store"
+		}
+		if problem != "" {
 			switch {
 			case refused[id]:
 				problem = auditHistoryRefusal + "; " + problem
@@ -568,29 +627,55 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 // classifies and hashes each exactly as the relay does a live event.
 func (c *AuditHistoryCopy) readWindow(ctx context.Context, resolver *AuditEventResolver, from, to time.Time) ([]AuditRecord, error) {
 	var records []AuditRecord
+	var held int64
+	visit := func(entry AuditEntry) error {
+		resolved, err := resolver.Resolve(ctx, entry.EventType)
+		if err != nil {
+			return err
+		}
+		record, err := NewAuditRecord(entry, resolved.RetentionClass())
+		if err != nil {
+			return err
+		}
+		n := AuditHistoryEntryBytes(entry) + int64(len(record.Details)+len(record.DetailsSHA256)) + 128
+		if held+n > c.cfg.WindowBytes {
+			return ErrAuditHistoryWindowTooLarge
+		}
+		// Downstream writers use Details. Keeping the decoded map as well would
+		// retain several times the canonical string's memory for every event.
+		record.Entry.Payload = nil
+		held += AuditHistoryEntryBytes(record.Entry) + int64(len(record.Details)+len(record.DetailsSHA256)) + 128
+		records = append(records, record)
+		return nil
+	}
+	if source, ok := c.cfg.Source.(AuditHistoryStreamingSource); ok {
+		err := c.cfg.Source.WithControlPlane(ctx, func(ctx context.Context) error {
+			return source.StreamAuditHistory(ctx, from, to, c.cfg.WindowBytes, visit)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("read audit_events: %w", err)
+		}
+		return records, nil
+	}
+	// Compatibility sources cannot apply a byte limit before returning a page.
+	// Ask for one row so an arbitrary decoded page cannot precede the budget.
 	var after *AuditHistoryCursor
 	for {
 		var page []AuditEntry
 		err := c.cfg.Source.WithControlPlane(ctx, func(ctx context.Context) error {
 			var err error
-			page, err = c.cfg.Source.ReadAuditHistory(ctx, from, to, after, auditHistoryPageSize)
+			page, err = c.cfg.Source.ReadAuditHistory(ctx, from, to, after, 1)
 			return err
 		})
 		if err != nil {
 			return nil, fmt.Errorf("read audit_events: %w", err)
 		}
 		for _, entry := range page {
-			resolved, err := resolver.Resolve(ctx, entry.EventType)
-			if err != nil {
+			if err := visit(entry); err != nil {
 				return nil, err
 			}
-			record, err := NewAuditRecord(entry, resolved.RetentionClass())
-			if err != nil {
-				return nil, err
-			}
-			records = append(records, record)
 		}
-		if len(page) < auditHistoryPageSize {
+		if len(page) == 0 {
 			return records, nil
 		}
 		last := page[len(page)-1]
@@ -598,11 +683,77 @@ func (c *AuditHistoryCopy) readWindow(ctx context.Context, resolver *AuditEventR
 	}
 }
 
-// readBack reads every copy the store holds of the window's events.
-func (c *AuditHistoryCopy) readBack(ctx context.Context, from, to time.Time) (map[string][]StoredAuditEvent, error) {
-	stored := map[string][]StoredAuditEvent{}
+// AuditHistoryEntryBytes counts an envelope and its decoded payload. The count
+// includes container entries, not just JSON text, and is also used before the
+// production source retains a decoded row.
+func AuditHistoryEntryBytes(entry AuditEntry) int64 {
+	n := int64(512 + len(entry.ID) + len(entry.OrgID) + len(entry.ActorID) + len(entry.ActorType) + len(entry.EventType) + len(entry.Resource) + len(entry.ResourceID) + len(entry.IPAddress) + len(entry.ImpersonatedBy) + len(entry.ClientID) + len(entry.IdempotencyKey))
+	var payloadBytes func(any) int64
+	payloadBytes = func(value any) int64 {
+		switch v := value.(type) {
+		case map[string]any:
+			n := int64(64)
+			for key, value := range v {
+				n += 64 + int64(len(key)) + payloadBytes(value)
+			}
+			return n
+		case []any:
+			n := int64(24 + len(v)*16)
+			for _, value := range v {
+				n += payloadBytes(value)
+			}
+			return n
+		case string:
+			return 16 + int64(len(v))
+		case json.Number:
+			return 16 + int64(len(v))
+		default:
+			return 16
+		}
+	}
+	if entry.Payload != nil {
+		n += payloadBytes(entry.Payload)
+	}
+	return n
+}
+
+type auditHistoryStatus struct {
+	found, writable bool
+	problem         string
+}
+
+// readBack checks every stored copy while streaming it, retaining one status
+// per source event rather than all warehouse duplicates and their payloads.
+func (c *AuditHistoryCopy) readBack(ctx context.Context, from, to time.Time, records []AuditRecord) (map[string]auditHistoryStatus, error) {
+	stored := map[string]auditHistoryStatus{}
+	wanted := map[string]AuditRecord{}
+	for _, record := range records {
+		if _, duplicate := wanted[record.Entry.ID]; duplicate {
+			stored[record.Entry.ID] = auditHistoryStatus{found: true, problem: "stored envelope differs from the row"}
+		} else {
+			wanted[record.Entry.ID] = record
+		}
+	}
 	err := c.cfg.ReadBack.ReadStoredAuditEvents(ctx, from, to, func(event StoredAuditEvent) error {
-		stored[event.Entry.ID] = append(stored[event.Entry.ID], event)
+		record, ok := wanted[event.Entry.ID]
+		if !ok {
+			return nil
+		}
+		status := stored[event.Entry.ID]
+		if status.problem != "" && !status.writable {
+			return nil
+		}
+		problem, writable := c.inspectCopy(record, event)
+		status.found = true
+		if problem != "" && !writable {
+			status.problem, status.writable = problem, false
+		} else if writable {
+			status.writable = true
+			if status.problem == "" {
+				status.problem = problem
+			}
+		}
+		stored[event.Entry.ID] = status
 		return nil
 	})
 	if err != nil {
