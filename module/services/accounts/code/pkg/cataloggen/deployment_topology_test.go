@@ -149,28 +149,49 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 
 // MODULE is the catalog category for every composed module, not a license to
 // erase a narrower authored allow-list. Legacy Codefly spellings also refuse.
+//
+// `visibility: internal` WITH NO allow-list has moved OUT of the refused set and
+// is now what the manifests author (issue #952). It is the v0.14.0 spelling of
+// what `internal` plus `allow-modules: ["*"]` said — core refuses the key on an
+// export by name, because an allow-list is derived from the consumers' declared
+// dependencies and never written by the module it would grant — so the two mean
+// the same thing and map to the same category.
+//
+// The narrower cases stay refused, which is the half that matters: `[example]`
+// names SOME modules, and this catalog has no way to express that, so admitting
+// it would silently widen the generated policy to every module. The legacy
+// `visibility: module` stays refused too.
 func TestDeploymentTopologyRefusesUnrepresentableEndpointPolicies(t *testing.T) {
 	catalog := readFixture(t, "../../../generated/service-catalog.json")
 	documents := readDeploymentDocuments(t)
 	for _, policy := range []string{
 		"visibility: module",
 		"visibility: internal\n          allow-modules: [example]",
-		"visibility: internal",
 		"visibility: public\n          allow-modules: [example]",
 	} {
-		changed := withModule(t, documents, "visibility: internal\n          allow-modules: [\"*\"]", policy)
+		changed := withModule(t, documents, "visibility: internal", policy)
 		_, err := cataloggen.BuildDeploymentArtifacts(catalog, changed)
 		require.Error(t, err, policy)
 	}
 	for _, policy := range []string{
 		"visibility: module",
 		"visibility: internal\n      allow-modules: [example]",
-		"visibility: internal",
 	} {
-		changed := withService(t, documents, "accounts", "visibility: internal\n      allow-modules: [\"*\"]", policy)
+		changed := withService(t, documents, "accounts", "visibility: internal", policy)
 		_, err := cataloggen.BuildDeploymentArtifacts(catalog, changed)
 		require.Error(t, err, policy)
 	}
+	// And the authored spelling BUILDS, so the removals above are not this test
+	// quietly accepting everything: an unchanged tree must still produce artifacts.
+	_, err := cataloggen.BuildDeploymentArtifacts(catalog, documents)
+	require.NoError(t, err, "the authored `internal` with no allow-list must build")
+	// The legacy wildcard also still builds, because this generator walks every
+	// composed module's manifests and the fleet has not finished moving.
+	legacy := withService(t, documents, "accounts",
+		"    - name: connect\n      visibility: internal\n",
+		"    - name: connect\n      visibility: internal\n      allow-modules: [\"*\"]\n")
+	_, err = cataloggen.BuildDeploymentArtifacts(catalog, legacy)
+	require.NoError(t, err, "the legacy wildcard must still build while the fleet moves")
 }
 
 // The manifests are the model: a deployment fact lives in the service manifest
@@ -778,10 +799,10 @@ func TestDeploymentTopologyRequiresTheModuleAuthorityEndpoint(t *testing.T) {
 	documents := readDeploymentDocuments(t)
 
 	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n          allow-modules: [\"*\"]\n", ""))
+		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n", ""))
 	require.ErrorContains(t, err, "module interface must export accounts/authority")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "accounts", "    - name: authority\n      api: grpc\n      visibility: internal\n      allow-modules: [\"*\"]\n", "    - name: authority\n      api: rest\n      visibility: internal\n      allow-modules: [\"*\"]\n"))
+		withService(t, documents, "accounts", "    - name: authority\n      api: grpc\n      visibility: internal\n", "    - name: authority\n      api: rest\n      visibility: internal\n"))
 	require.ErrorContains(t, err, "must be a gRPC endpoint at module visibility")
 }
