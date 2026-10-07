@@ -75,36 +75,36 @@ describe("solution installation route", () => {
 	});
 
 	it("answers the viewer organization's installation of the routed target", async () => {
-		vi.stubGlobal("fetch", gatewayServing(["agent-probe", "wiki"], [
-			{ id: "agent-probe", installationId: "inst-probe" },
-			{ id: "wiki", installationId: "inst-wiki" },
+		vi.stubGlobal("fetch", gatewayServing(["solution-a", "solution-b"], [
+			{ id: "solution-a", installationId: "inst-a" },
+			{ id: "solution-b", installationId: "inst-b" },
 		]));
-		const res = await call("agent-probe");
+		const res = await call("solution-a");
 		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ installationId: "inst-probe", healthy: true });
+		expect(await res.json()).toEqual({ installationId: "inst-a", healthy: true });
 	});
 
 	it("answers 404 for a registered solution the viewer is not entitled to", async () => {
-		vi.stubGlobal("fetch", gatewayServing(["agent-probe", "wiki"], [{ id: "wiki", installationId: "inst-wiki" }]));
-		const res = await call("agent-probe");
+		vi.stubGlobal("fetch", gatewayServing(["solution-a", "solution-b"], [{ id: "solution-b", installationId: "inst-b" }]));
+		const res = await call("solution-a");
 		expect(res.status).toBe(404);
 		expect(await res.json()).not.toHaveProperty("installationId");
 	});
 
 	it("answers 404 for an unregistered solution, as for an unentitled one", async () => {
-		vi.stubGlobal("fetch", gatewayServing(["wiki"], [{ id: "wiki", installationId: "inst-wiki" }]));
-		expect((await call("agent-probe")).status).toBe(404);
+		vi.stubGlobal("fetch", gatewayServing(["solution-b"], [{ id: "solution-b", installationId: "inst-b" }]));
+		expect((await call("solution-a")).status).toBe(404);
 	});
 
 	it("answers 404 when an older gateway does not say which installation", async () => {
-		vi.stubGlobal("fetch", gatewayServing(["agent-probe"], [{ id: "agent-probe" }]));
-		expect((await call("agent-probe")).status).toBe(404);
+		vi.stubGlobal("fetch", gatewayServing(["solution-a"], [{ id: "solution-a" }]));
+		expect((await call("solution-a")).status).toBe(404);
 	});
 
 	it("refuses a viewer the gateway did not verify instead of answering", async () => {
-		vi.stubGlobal("fetch", gatewayServing(["agent-probe"], [{ id: "agent-probe", installationId: "inst-probe" }]));
-		const res = await call("agent-probe", "");
+		vi.stubGlobal("fetch", gatewayServing(["solution-a"], [{ id: "solution-a", installationId: "inst-a" }]));
+		const res = await call("solution-a", "");
 		expect(res.status).not.toBe(200);
-		expect(await res.text()).not.toContain("inst-probe");
+		expect(await res.text()).not.toContain("inst-a");
 	});
 });
