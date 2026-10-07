@@ -6,6 +6,8 @@ import {
 	resolveCspInputs,
 } from "./server/security-headers.mjs";
 
+import { developmentOrigins } from "./server/development-origins.mjs";
+
 const workspacePackageNames = readdirSync(
 	new URL("./packages", import.meta.url),
 	{
@@ -49,6 +51,7 @@ const legalDevPlaceholder =
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+	allowedDevOrigins: developmentOrigins(process.env.FRONTEND_ALLOWED_DEV_ORIGINS),
 	output: "standalone",
 	reactCompiler: true,
 	// The dev server prints a line per request. Solutions re-register here on a
