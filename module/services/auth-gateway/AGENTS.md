@@ -1,115 +1,60 @@
 # AGENTS.md — auth-gateway
 
 The single front door. Every request a consumer makes arrives here, gets an
-ext_authz Check, and is proxied to a service — or to a **runtime-registered**
-upstream it learned about with no rebuild. Read
+ext_authz Check, and is proxied to a service — or to a declared solution
+upstream from the durable registry. Read
 [../../GATEWAY_ROUTES.md](../../GATEWAY_ROUTES.md) for the generated route
 inventory and [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md)
-for the trust model behind the registration surfaces below.
+for the trust model behind declared presence.
 
 Nothing here may name a specific solution or composed module: every seam is
 generic, and a registered target is data, never a branch.
 
-## Solution upstream registration
+## Reading declared solution upstreams
 
-`POST /solutions/_register` (`code/gateway_solutions.go`) takes `{id, upstream}`;
-**the gateway supplies the compare-and-swap revision it last saw**, not the
-registrant. `GET /solutions/_registry` returns this replica's snapshot — id,
-publisher, revision, and status (`active` / `pending` / `expired` /
-`incompatible` / `tombstoned`), **never an upstream** — which is both what the
-frontend rebuilds from and what an operator reads to tell those states apart.
+`GET /solutions/_registry` returns this replica's read projection: identity,
+publisher, revision, frontend manifest, declared target and status (`active`,
+`pending`, `incompatible`, `tombstoned`). It never exposes the backend upstream.
+The frontend reads it with the cluster-internal credential.
 
-The gateway then proxies `/solutions/{id}/…` to the registered upstream, running
-**the same ext_authz Check and identity-header discipline as catalog routes**.
-Only the public `/assets` and `/.well-known` sub-paths are served
-unauthenticated, and only for GET/HEAD.
+The gateway proxies `/solutions/{id}/…` using the same verified identity and
+header discipline as catalog routes, with per-viewer installation admission.
+Only public `/assets` and `/.well-known` paths accept unauthenticated GET/HEAD.
 
-## Both registration halves take an owner-bound credential
+## Composed-module REST routes
 
-Neither the gateway half nor the frontend half is gated on the shared
-cluster-internal token. The caller presents a signed, solution-bound
-registration token in `X-Codefly-Solution-Registration`, obtained from `POST
-/solutions/_registration-token` against the solution's own secret
-(`SOLUTION_REGISTRATION_SECRETS` in the `federation` group, declared separately
-from the module secrets). The credential names one solution id and one
-publisher, so a holder can neither claim nor re-point another solution.
+A composed module is reached at `/v1/<alias>/*`, and the alias comes from the same
+place a solution's does: the declared registry. The gateway holds **no
+process-local module upstream registry** and nothing self-registers — main's
+`/modules/_register`, where a module POSTed its own upstream and the gateway
+believed it, is deleted.
 
-## The mint is where a solution's boundary is decided
+The **catalog always wins**: `handleDeclaredModule` is consulted only after the
+generated and explicit catalogs found no route, so a declared alias can never
+shadow one. An alias nothing declares falls through to the ordinary 404, which is
+what keeps the surface from being a probe for which modules a deployment runs. An
+alias the catalog *owns* is refused outright rather than half-served — the matcher
+takes only the paths it matches, so serving the rest would split one prefix
+between two authorities.
 
-A registered solution's runs are filed under one opaque **runtime boundary**
-accounts assigned at registration (`../accounts/AGENTS.md`), and accounts seals
-it into every Work Context it mints for that solution. It learns which solution
-is asking from one place: the `X-Codefly-Solution-Id` and
-`X-Codefly-Solution-Publisher` this gateway stamps on
-`POST /saas.accounts.v1.WorkContextService/StartTask` (and its REST spelling)
-after verifying the **same** solution-bound registration credential both
-registration halves take. The publisher travels with the id because accounts
-checks it against the publisher of record, so a secret re-provisioned to a
-different publisher cannot mint the boundary of a registration it cannot write.
-Nothing in the request body has a say, and the caller's own spelling of either
-header is stripped like every other canonical identity header — without which
-any authenticated viewer could mint under any solution's boundary by typing its
-id.
+Beyond that it is the **solution shape, with one deliberate difference**: the same
+cache, the same single carried resolution, the same upstream URL policy, the same
+guarded (resolve-revalidating) transport, the same tombstone rule, the same 120 s
+revocation bound — and **no per-viewer installation admission**, because a module
+is part of the composition rather than something an organisation installs. The
+path is forwarded **unchanged** (a module owns its own `/v1/<alias>` surface),
+where a solution's prefix is stripped.
 
-Three deliberate choices:
+That asymmetry is why the registry carries `SolutionDeclaredBinding.kind` and why
+neither surface guesses: routing a solution here would put its upstream behind no
+installation check. Each surface requires its own kind positively and answers a
+403 verdict for the other — `module is not declared on this host`, or `solution is
+not declared on this host`. `SOLUTION_DECLARED_KIND_UNSPECIFIED` is refused by
+**both**: it is what a reader decodes from a writer that did not set the field, not
+a third kind, so such a record is served by neither surface rather than by the one
+needing less authority.
 
-- **Only that procedure.** The credential means nothing on any other route, so
-  what it widens is one mint rather than the whole surface.
-- **A presented credential that does not verify is a 401**, not an ordinary
-  mint. Falling through would answer a forged, expired or malformed credential
-  with a capability under a different boundary — the one outcome worth being
-  loud about. A request presenting none is an ordinary mint and is untouched.
-- **The `jti` is not burned here**, unlike on the registration mutations. That
-  guard stops a captured credential re-pointing a route after the registrant has
-  moved on; a mint steers no state a replay could reach, and a solution's
-  passthrough mints per audience and scope set, so burning it would force a
-  fresh credential exchange — an audited mint on accounts — several times per
-  page. The credential's five-minute life is the bound.
-
-No registration answer carries a boundary, to either half, and neither does the
-`_registry` snapshot: accounts never sends one, because a solution has no use
-for a value it never names.
-
-## Composed-module REST federation
-
-A composed module that serves its own `/v1/<module>/*` surface is federated
-through `POST /modules/_register` (`code/gateway_modules.go`), and the gateway
-proxies that prefix **once the generated catalog has no match**. The registrant
-is the **consuming** backend — the solution that declares the module's API in
-its `api.consumes` — not the module itself: it registers each consumed prefix at
-the address it resolved for the consumed endpoint. Unlike solution registration
-this is **not** gated on the shared internal token: the caller must present a
-signed, prefix-bound registration token in `X-Codefly-Module-Registration`, so
-a holder of the credential for one prefix cannot claim another. The handshake
-is three calls:
-
-1. `POST /modules/_registration-token` on the auth-gateway, with the
-   cluster-internal token in `X-Codefly-Internal-Token` **and** the registration
-   secret for that prefix in `X-Codefly-Module-Secret`, body `{prefix}`.
-2. The gateway brokers to accounts over the internal listener
-   (`ModuleCapabilitiesService/MintModuleRegistration`, `EXPOSURE_INTERNAL`, so
-   the generated mesh policy admits the gateway's service account and denies
-   everyone else). accounts compares the secret against the digest declared for
-   that prefix in the `federation` configuration group's
-   `MODULE_REGISTRATION_SECRETS` and, on a match, mints a 5-minute Ed25519 token
-   (`aud=module-registration`, `sub=module:<prefix>`) with the key the gateway
-   already trusts through JWKS, emitting a `module.registration_minted` audit
-   event. **Unset means no module may federate.**
-3. `POST /modules/_register` with that token and `{prefix, upstream}`.
-
-Composition provisions the pair: the SHA-256 digest into this host's
-`federation` group, and the plaintext **to the consuming backend only** (the
-Codefly CLI hands it over as `CODEFLY__MODULE_REGISTRATION_SECRETS`, a map
-keyed by prefix, which the solution runtime spends). The consumed module itself
-never receives a registration secret: it is given only its **identity** secret,
-which it spends on the Work Context exchange below and which this host checks
-against the separate `MODULE_IDENTITY_SECRETS` digest. Two secrets per prefix
-is what lets this side tell a backend registering a prefix from that prefix's
-own service principal. This host checks only that the secret presented for a
-prefix matches its digest; it neither knows nor cares which process presents
-it. The token is short-lived and fetched **per registration attempt**, not
-cached across a gateway restart. Registration only adds a proxy target — every
-proxied `/v1/<module>/*` request still runs the full ext_authz check.
+Module identity exchanges are described below; accounts owns their authority.
 
 ## A registered client calls without a proxy
 
@@ -138,7 +83,7 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
   passes through whatever route matched it: a token naming a client must arrive
   from an origin that client registered, or it is refused before it reaches any
   upstream. A token issued to one client is therefore useless from another's
-  page, on catalog, solution, and federated-module routes alike.
+  page, on catalog, solution, and declared-module routes alike.
 - `X-Codefly-Public-Origin` — the WebAuthn relying party, the origin an OAuth
   start is validated against — is derived from that registration. The frontend's
   internal-token path still establishes it too; the registration is the stronger
@@ -171,7 +116,7 @@ other drops.
 
 ## Brokering a module's Work Context
 
-`POST /modules/_work-context` mirrors the registration exchange: the
+`POST /modules/_work-context` takes the
 cluster-internal token plus the module's **identity** secret, body `{prefix}`.
 The gateway brokers it to accounts
 (`ModuleCapabilitiesService/MintModuleWorkContext`, `EXPOSURE_INTERNAL`), which

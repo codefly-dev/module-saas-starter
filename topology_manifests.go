@@ -234,6 +234,25 @@ func endpointAPI(name, api string) string {
 // endpointVisibility projects the authored Codefly axes into the host's
 // deployment catalog categories. Its MODULE category means all composed
 // modules, so a narrower allow-list cannot be represented and must refuse.
+//
+// THIS IS THE SECOND COPY OF THIS PROJECTION. The shipped generator holds the
+// other, as manifestCatalogVisibility in
+// module/services/accounts/code/pkg/cataloggen/deployment_model.go, and the two
+// are in separate Go modules so neither can import the other. They must agree,
+// and when they did not the symptom was a CI red nobody expected: this copy still
+// required `allow-modules: ["*"]` after the manifests stopped authoring it, so
+// TestShippedModuleAuthorityPortIsAllocatedNotDeclared failed on a module
+// manifest the other copy accepted. TestEndpointCatalogProjectionPreservesOrRefusesPolicy
+// and the accounts-side table are the pin; a change here needs the same change
+// there.
+//
+// `internal` with NO allow-list is the v0.14.0 spelling of what `internal` plus
+// the wildcard said, and maps to the same category: core refuses that key on an
+// export by name, so the two spellings mean one thing and which modules reach the
+// endpoint is decided by their own declared dependencies either way. The wildcard
+// stays accepted for older heads of this repository; a NARROWER list still
+// refuses, because this catalog cannot express "some modules" and admitting it
+// would silently widen the generated policy to every module.
 func endpointVisibility(visibility, location string, allowed []string) (string, error) {
 	if visibility == "" {
 		visibility = "private"
@@ -251,8 +270,8 @@ func endpointVisibility(visibility, location string, allowed []string) (string, 
 		}
 		return visibility, nil
 	case "internal":
-		if len(allowed) != 1 || allowed[0] != "*" {
-			return "", fmt.Errorf("deployment catalog requires internal visibility with allow-modules [*]; narrower exports need an allow-list-aware catalog")
+		if len(allowed) != 0 && (len(allowed) != 1 || allowed[0] != "*") {
+			return "", fmt.Errorf("deployment catalog accepts internal visibility with no allow-modules, or the legacy [*]; a narrower export needs an allow-list-aware catalog")
 		}
 		return "module", nil
 	default:

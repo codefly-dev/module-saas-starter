@@ -20,7 +20,7 @@ import (
 // headlessPrincipals declares one module with two operation bindings: one whose
 // headless grant pins a single resource its invoke grant leaves kind-wide, and
 // one declared for use on a person's behalf only.
-const headlessPrincipals = `{"documents":{"tenant":"` + moduleWorkContextTenant + `","operation_audiences":{` +
+const headlessPrincipals = `{"documents":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleWorkContextTenant + `","operation_audiences":{` +
 	`"model":{"audience":"modelservice",` +
 	`"invoke_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"]}],` +
 	`"lookup_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"]}],` +

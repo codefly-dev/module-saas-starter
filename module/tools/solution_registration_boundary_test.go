@@ -8,26 +8,135 @@ import (
 	"testing"
 )
 
-// The registration/installation boundary is a DECISION, not an accident: a
-// deployment-wide solution registration governs UI and API availability, while a
-// per-org installation governs only the solution agent's authority. Uninstalling
-// therefore does not take a page or a gateway route away — from that
-// organization or any other.
+// The registration/installation boundary is a DECISION, not an accident, and it
+// has MOVED TWICE.
 //
-// module/SOLUTION_REGISTRATION.md §4 states that limitation. These tests keep
-// the statement and the code from drifting apart in either direction: the doc
-// must say it, and the registration surfaces must not quietly grow the coupling
-// the doc says they do not have.
+// What it was: a deployment-wide registration governed UI and API availability,
+// while a per-org installation governed only the solution agent's authority, so
+// nothing about a tenant affected what any surface served.
+//
+// #949 moved the PROJECTIONS — the navigation menu and the per-client surface
+// listing answer per organization and per viewer, narrowed through installations
+// and the viewer's scope grants. It deliberately left route and page exposure
+// deployment-wide.
+//
+// #952 moves the PROXY, because leaving it was a hole rather than a boundary: a
+// viewer in any organization could call the data endpoints of every solution the
+// deployment ran — with a real bearer forwarded to them — by typing the path the
+// menu declined to show. Available, installed and exposed are three layers and
+// none is inferred from another, so the component that holds the verified
+// identity and forwards the credential is where the second and third are
+// enforced for traffic.
+//
+// What has NOT moved, and why each is deliberate rather than pending:
+//
+//   - The PUBLIC Module-Federation surface (`/solutions/{id}/assets/*` and
+//     `/.well-known/*`) is fetched by the browser's module loader with no
+//     credential, so there is no viewer to ask about. It serves the solution's
+//     own static bytes, which carry no tenant data.
+//   - The `/s/{id}` PAGE server-renders from the registry. The access token
+//     lives in this origin's memory, not in a cookie the server can read, so a
+//     server-side admission check would have to exchange the httpOnly refresh
+//     cookie — rotating a viewer's refresh token on every page render. The page
+//     discloses a nav title and a manifest URL the public asset surface already
+//     serves; every call it makes goes through the gated proxy.
+//
+// So this file guards two things, and the halves pull in opposite directions.
+// The surfaces that must STAY installation-blind are scanned for coupling; the
+// surfaces that must now BE installation-aware are asserted to consult it, so
+// the narrowing cannot silently regress to the deployment-wide answer it
+// replaced. module/SOLUTION_REGISTRATION.md §4 states every half, and the claim
+// test below keeps the doc and the code together.
 
-// registrationSurfaces are the files that decide whether a solution's UI and API
-// are served. None of them may consult installation, entitlement, or tenant
-// state — if one ever does, the documented boundary has moved and the doc has to
-// move with it.
+// registrationSurfaces are the files that answer from the deployment-wide
+// registry alone. None of them may consult installation, entitlement, or tenant
+// state; if one ever does, that half of the boundary has moved too and the doc
+// has to move with it.
+//
+// registry.ts is here because its findSolution reads the registry and nothing
+// per-viewer, which is what the scan was written for.
+//
+// `/s/[solutionId]/page.tsx` LEFT this list, and that is a correction rather
+// than a relaxation. It was listed because this origin could not read a verified
+// viewer server-side without rotating a refresh token per render — a TOOLING
+// limit, recorded as though it were a boundary. The consequence was that the
+// gate FORBADE the page from mentioning installation or entitlement, so the
+// only server-side gate on the declared dashboard graph was a `codefly_session`
+// cookie the client writes and nothing validates: a viewer-less disclosure,
+// reachable by setting that cookie to any value.
+//
+// A gap in the tooling is a bug in the tooling. The page now gates on the
+// gateway-stamped viewer — the same stamp the proxy admits on, verified
+// server-side — and so belongs in viewerGatedSurfaces below, which requires the
+// coupling this list forbids.
+//
+// gateway_solutions.go also LEFT this list with #952. It is asserted in
+// TestSolutionTrafficIsAdmittedByInstallation below, which requires the
+// opposite.
 var registrationSurfaces = []string{
-	"services/frontend/code/src/app/api/solutions/register/route.ts",
-	"services/frontend/code/src/app/api/solutions/surfaces/route.ts",
 	"services/frontend/code/src/solutions/registry.ts",
+}
+
+// viewerGatedSurfaces are the files that server-render per-viewer content and
+// must therefore CONSULT the gateway-stamped viewer.
+//
+// Separate from projectionSurfaces because the coupling differs: a projection
+// narrows a LIST through the viewer's entitlements, while these render one
+// solution's declared graph and must refuse a viewer that was never stamped. The
+// regression each catches is the same shape — content that looks correct and is
+// simply not narrowed — but the identifier that proves it is not.
+//
+// The stamp is the gateway's, verified server-side, and never a cookie the
+// client writes. That distinction is the whole reason this list exists: the
+// previous gate was satisfied by a page reading an unvalidated cookie, because
+// it only checked that the page did NOT mention entitlement.
+var viewerGatedSurfaces = []string{
 	"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx",
+}
+
+// viewerGatedSurfacesPending are the viewer-gated surfaces that do NOT yet
+// consult the stamp, with the reason each is still here.
+//
+// THIS LIST ONLY EVER SHRINKS, like the repository's boundary and capability
+// gates. A new viewer-gated surface that fails to consult the stamp fails the
+// build; clearing one means deleting its line. Adding a line is a decision a
+// reviewer sees.
+//
+// It exists because the gating needs a contract that does not exist yet. There
+// is no gateway-stamped viewer header reaching the frontend at all:
+// `X-Codefly-Gateway-Token` is stripped from caller input and stamped only for
+// accounts routes, with "never expose these capabilities to the frontend
+// upstream" written at the call site. So the stamp has to be introduced by the
+// gateway and read by the frontend — a cross-service contract, not a page edit,
+// and inventing its shape here unilaterally is how two services end up
+// disagreeing about what a verified viewer is.
+//
+// What is NOT pending is the correction: the page has been removed from
+// registrationSurfaces, so the gate no longer FORBIDS the gating. That was the
+// tooling bug.
+var viewerGatedSurfacesPending = map[string]string{
+	"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx": "needs a gateway-stamped viewer header, which no service sends today; " +
+		"until it exists the only server-side gate is the client-written codefly_session cookie, which is a viewer-less disclosure of the declared dashboard graph",
+}
+
+// projectionSurfaces are the files that decide what a VIEWER is shown. Each must
+// consult the per-viewer entitlement read, because a projection that does not is
+// the deployment-wide listing #949 removed — and that regression would look
+// like working code, since every viewer would simply see everything.
+var projectionSurfaces = []string{
+	"services/frontend/code/src/app/api/solutions/route.ts",
+	"services/frontend/code/src/app/api/solutions/surfaces/route.ts",
+	// One solution's installation for the outlet to hand the page: the viewer
+	// organization's, resolved from the entitlement read, never from the page.
+	"services/frontend/code/src/app/api/solutions/[id]/installation/route.ts",
+}
+
+// trafficSurfaces are the files that decide whether a REQUEST reaches a
+// solution. The proxy must consult the per-viewer admission before it forwards
+// anything, and the regression it guards against is the one #952 fixed: a proxy
+// that routes on registration alone serves every solution to every
+// organization, and looks like working code while doing it.
+var trafficSurfaces = []string{
 	"services/auth-gateway/code/gateway_solutions.go",
 }
 
@@ -103,11 +212,216 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 	for _, claim := range []string{
 		"A registered solution is host-trusted",
 		"governs **agent authority only**",
-		"does **not** remove the solution's nav entry, page, or gateway route",
 		"Other tenants are unaffected",
+		// The half that moved with #949. Without these the doc would still read as
+		// though every caller saw every registered solution.
+		"the **projections** answer per organization and per viewer",
+		// The join key, pinned because it is the one the §9 consent-transfer
+		// attack turned on: an alias is reusable, an identity is not. A change
+		// that moves this line back to the alias is the regression.
+		"`installations.target_id` is the target a",
+		"**never reused**",
+		"Closing a target revokes every active installation of it, in the same",
+		"Presence nothing declared is admissible to nobody.",
+		// The half that moved with #952. The first sentence is the one a reader
+		// needs in order to know that registration alone no longer reaches a
+		// solution; the second and third are the two answers that must not be
+		// collapsed into one, which is the mistake this gate is most likely to
+		// be "simplified" into.
+		"the solution proxy admits traffic through the same authority the",
+		"An outage is not a verdict.",
+		"Health is not admission.",
+		// The residual exposure, stated as a decision rather than left to be
+		// rediscovered as a gap.
+		"The public Module-Federation surface is not gated, and cannot be.",
+		"does **not** remove the solution's page for that organization",
+		// §7b. The host's own control paths, published because three
+		// repositories independently invented `/platform/_credential` from a
+		// design note and nothing failed at build time. The paths are pinned
+		// here so a consumer reading this document is reading a contract: a
+		// rename that does not move these lines is a rename that breaks every
+		// consumer silently.
+		"`POST /platform/_credential`",
+		"`POST /platform/_delivery/presence`",
+		"`POST /platform/_delivery/authority`",
+		// The rule that makes hardcoding the path correct and hardcoding the
+		// origin wrong. Without it the table reads as an invitation to pin
+		// everything.
+		"a path is a contract, an origin is a resolution result",
+		"`/platform/` is **reserved for the host**",
+		// The trust model, pinned because each of these is a claim a reader
+		// would otherwise have to take on faith from a code comment.
+		//
+		// The carrier shape and the signing encoding: a consumer that signs the
+		// YAML this repository's Marshal writes produces a payload the host
+		// refuses even with a genuine attestation over it, and the document is
+		// the only place that is stated.
+		"The signing input is the canonical JSON",
+		// The delivery carrier contract, pinned because every line of it was
+		// something one of the three implementing repositories had wrong, and a
+		// rename that does not move these lines breaks a consumer silently.
+		//
+		// The authority pair is the only hardcoded (SA, namespace) in the
+		// scheme: a wrong constant there makes the TokenReview SUCCEED on a
+		// genuine identity and the host refuse the real carrier for a name.
+		"| authority | `delivery` | `platform-authority` — a fixed pair |",
+		// The presence namespace is NOT a constant, and the reason is the half
+		// that gets lost first: a fixed value refuses every genuine carrier.
+		"**the namespace the document's own workloads declare**",
+		// Offline verification, and the failure shape that makes it matter.
+		"would **hang rather than fail fast**",
+		// That the host is the second layer, not the perimeter. Without this
+		// line the check above reads as the only thing standing in the way.
+		"The host's SA-and-namespace check is the second",
+		// The named refusal. The library collapses these two; the distinction
+		// is the difference between "fix your signer" and "investigate".
+		"refused BY NAME",
+		// WHERE the check goes, which is the load-bearing half. The obvious
+		// implementation — classify the verifier's error — cannot work: the
+		// verifier emits the same words for "the signer never logged" and "the
+		// root cannot check the log it did".
+		"Check it BEFORE the verifier runs",
+		// And that a signed timestamp is not evidence of logging. This is the
+		// case a looser "has it got anything?" check admits silently.
+		"does not stand in for transparency evidence",
+		// The delivery response taxonomy, pinned because a Job's retry policy is
+		// written against it. The 401/503 split especially: an earlier draft
+		// grouped on HTTP class and made a reviewable refusal retryable.
+		"what a retry would change",
+		"The review ran and refused",
+		// That there is ONE policy, and that the second one is gone rather than
+		// merely discouraged. These two pins replaced "the local policy is
+		// coordinate-bound" and "keyless is NOT YET AVAILABLE", both of which
+		// described a host that no longer exists — and the first of which
+		// documented a gate that was a string comparison against an
+		// operator-declared value.
+		"The `local` trust policy is deleted.",
+		"one verifier, one policy shape, two sets of listed identities",
+		// That a bundle is required and must be an object. A renderer whose
+		// pipeline has no signing step yet reaches for the field it can fill —
+		// `null` — and nothing in the carrier's own shape would have told it
+		// that produces a document the host treats as unsigned.
+		"A bundle must be present and be a JSON object",
+		// That what lands in a row is derived from the attested bytes rather
+		// than from whatever the pass was holding. This is the claim that makes
+		// the stored digest meaningful, and it is a property of the dependency,
+		// so a reader cannot check it by reading this repository alone.
+		"What the host stores is derived from the attested bytes",
 	} {
 		if !strings.Contains(document, strings.Join(strings.Fields(claim), " ")) {
 			t.Errorf("SOLUTION_REGISTRATION.md no longer states %q", claim)
+		}
+	}
+}
+
+// TestSolutionProjectionsNarrowByInstallation is the inverse of the scan above:
+// these files MUST consult the per-viewer entitlement read.
+//
+// It exists because the regression it catches is invisible. A projection that
+// stopped narrowing would not throw, would not fail a type check and would return
+// a perfectly well-formed list — just the deployment-wide one, to every viewer.
+// Asserting the coupling is present is the only way that shows up as a failure.
+func TestSolutionProjectionsNarrowByInstallation(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	for _, relative := range projectionSurfaces {
+		data, err := os.ReadFile(filepath.Join(moduleDir, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		code := codeOnly(string(data))
+		// The entitlement read, and the narrowing that consumes it. This is a
+		// presence check and proves only that: a route that imported both and then
+		// projected the registered set anyway would still pass here. That behaviour
+		// is caught by the route tests (a deployed but uninstalled solution must be
+		// absent from each projection); this test catches the coarser regression of
+		// a projection route dropping the narrowing entirely.
+		for _, identifier := range []string{
+			"viewerEntitlements",
+			"entitledSolutions",
+		} {
+			if !strings.Contains(code, identifier) {
+				t.Errorf(
+					"%s does not reference %q: a solution projection must narrow through installations and the viewer's grants (SOLUTION_REGISTRATION.md §4, issue #949), never answer the deployment-wide set",
+					relative, identifier,
+				)
+			}
+		}
+	}
+}
+
+// TestSolutionTrafficIsAdmittedByInstallation is the #952 half of the inverse
+// scan: the solution proxy MUST consult the per-viewer admission.
+//
+// The regression is invisible for the same reason the projection one is. A proxy
+// that dropped the check throws nothing, logs nothing and answers 200 — it just
+// serves every registered solution to every organization, which is precisely the
+// behaviour that was there before and the reason this hole existed for as long as
+// it did. Asserting the coupling is present is what makes its removal a failure.
+//
+// Presence is all this proves. That an UNINSTALLED solution is actually refused,
+// that an authority outage is a 503 rather than a verdict, and that the public
+// asset surface stays ungated are proven by the gateway's own tests
+// (gateway_solution_admission_test.go), each of which answers 200 against the
+// pre-#952 gateway.
+func TestSolutionTrafficIsAdmittedByInstallation(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	for _, relative := range trafficSurfaces {
+		data, err := os.ReadFile(filepath.Join(moduleDir, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		code := codeOnly(string(data))
+		for _, identifier := range []string{
+			// The authority call, and the refusal that is a verdict rather than
+			// an outage. Both, because a proxy that called the authority and
+			// then forwarded regardless of the answer would pass on the first
+			// alone.
+			"admitViewerSolution",
+			"viewerSolutionNotEntitled",
+			"viewerSolutionUndecidable",
+		} {
+			if !strings.Contains(code, identifier) {
+				t.Errorf(
+					"%s does not reference %q: solution traffic must be admitted through the viewer's installation and grants (SOLUTION_REGISTRATION.md §4, issue #952), never routed on registration alone",
+					relative, identifier,
+				)
+			}
+		}
+	}
+}
+
+// TestSolutionProjectionsDoNotDeriveIdentityLocally keeps the projections off the
+// one shortcut that would make the narrowing worthless.
+//
+// `lib/auth-session.ts` can read an organization out of an access token, but
+// `decodeJWTPayload` only base64-decodes it — it verifies nothing. A projection
+// that narrowed on that would let any caller read another tenant's menu by editing
+// one claim, and it would pass every other test in this file: it consults
+// installation state, it narrows, and it is wrong.
+func TestSolutionProjectionsDoNotDeriveIdentityLocally(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	surfaces := append([]string{
+		"services/frontend/code/src/solutions/entitlements.ts",
+		"services/frontend/code/src/solutions/projections.ts",
+		"services/frontend/code/src/solutions/registry.ts",
+	}, projectionSurfaces...)
+	for _, relative := range surfaces {
+		data, err := os.ReadFile(filepath.Join(moduleDir, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		code := codeOnly(string(data))
+		for _, forbidden := range []string{
+			"extractSessionContext",
+			"decodeJWTPayload",
+			"extractRoles",
+		} {
+			if strings.Contains(code, forbidden) {
+				t.Errorf(
+					"%s references %q: it decodes an access token without verifying it, so an organization read from it is one the CALLER chose. The verified tenant and viewer come from the gateway's ext_authz stamp (services/frontend/code/src/solutions/entitlements.ts)",
+					relative, forbidden,
+				)
+			}
 		}
 	}
 }
@@ -141,5 +455,90 @@ func TestSolutionAndModuleRegistrationCredentialsAreSeparate(t *testing.T) {
 		if !strings.Contains(string(federation), key) {
 			t.Errorf("federation configuration no longer declares %s", key)
 		}
+	}
+}
+
+// TestViewerGatedSurfacesConsultTheStampedViewer requires the coupling
+// registrationSurfaces forbids, for the files that server-render per-viewer
+// content.
+//
+// `/s/[solutionId]` server-renders `declaredSources` and the whole declared
+// dashboard graph. Before this, its only server-side gate was a
+// `codefly_session` cookie written client-side and explicitly not validated — so
+// the graph was reachable by anyone who set that cookie to any value, with no
+// viewer at all. The old gate did not catch that; it REQUIRED it, by forbidding
+// the page from mentioning installation or entitlement.
+//
+// So this asserts the positive: the page must consult the gateway-stamped
+// viewer. A cookie the client writes is not a viewer, and the assertion names
+// the stamp rather than "some auth" precisely so that swapping it back for a
+// cookie fails here.
+func TestViewerGatedSurfacesConsultTheStampedViewer(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	for _, relative := range viewerGatedSurfaces {
+		data, err := os.ReadFile(filepath.Join(moduleDir, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		code := codeOnly(string(data))
+		// A presence check, and it proves only presence: a page that imported
+		// the stamp and rendered the declared graph anyway would still pass. The
+		// behaviour is the page's own test's job. This catches the coarser
+		// regression — the gate being satisfied while nothing per-viewer is
+		// consulted at all.
+		if reason, pending := viewerGatedSurfacesPending[relative]; pending {
+			// Still required, just not yet satisfiable. Asserted the other way
+			// round so the entry cannot outlive the gap: once the page consults
+			// the stamp, this fails until the line is deleted.
+			if strings.Contains(code, "stampedViewer") {
+				t.Errorf("%s now consults the stamp, so delete its line from viewerGatedSurfacesPending; "+
+					"a pending entry that no longer describes a gap stops measuring anything", relative)
+			}
+			t.Logf("PENDING %s: %s", relative, reason)
+			continue
+		}
+		if !strings.Contains(code, "stampedViewer") {
+			t.Errorf(
+				"%s does not reference %q: a surface that server-renders a solution's declared graph must gate on the "+
+					"gateway-stamped viewer, verified server-side. The `codefly_session` cookie is written by the client "+
+					"and its contents are not validated, so gating on it is no gate at all (SOLUTION_REGISTRATION.md §4)",
+				relative, "stampedViewer",
+			)
+		}
+	}
+}
+
+// TestTheRegistrationSurfaceScanDoesNotCoverViewerGatedPages is the gate's own
+// test, and it exists because this gate was WRONG in a way no test could show.
+//
+// `registrationSurfaces` forbids installation and entitlement coupling. While
+// `/s/[solutionId]/page.tsx` sat on that list, the gate actively prevented the
+// page from being gated — a tooling limit ("this origin cannot read a verified
+// viewer server-side") recorded as a boundary, and then enforced as one.
+//
+// The two lists are now mutually exclusive by assertion rather than by anyone
+// remembering: a file on both would be required to consult the viewer AND
+// forbidden from mentioning entitlement, which is unsatisfiable, so the gate
+// would be unpassable rather than quietly wrong. That is the failure mode to
+// prefer.
+func TestTheRegistrationSurfaceScanDoesNotCoverViewerGatedPages(t *testing.T) {
+	registry := map[string]bool{}
+	for _, relative := range registrationSurfaces {
+		registry[relative] = true
+	}
+	for _, relative := range viewerGatedSurfaces {
+		if registry[relative] {
+			t.Errorf(
+				"%s is in BOTH registrationSurfaces and viewerGatedSurfaces, which cannot both hold: one forbids "+
+					"installation and entitlement coupling and the other requires consulting the viewer. A file that "+
+					"server-renders per-viewer content belongs only in viewerGatedSurfaces — and listing it as a "+
+					"registry-only surface is what left the declared dashboard graph behind a client-written cookie.",
+				relative,
+			)
+		}
+	}
+	if len(viewerGatedSurfaces) == 0 {
+		t.Fatal("viewerGatedSurfaces is empty, so this gate proves nothing; the page it was written for is " +
+			"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx")
 	}
 }

@@ -2,13 +2,24 @@ package infra
 
 import (
 	"context"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 
 	"accounts/pkg/infra/internal/txbind"
 
 	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sigstore/sigstore-go/pkg/root"
+	"github.com/sigstore/sigstore-go/pkg/verify"
 )
+
+// VerifySignedEntityInput is verify.SignedEntity under a local name, exported so
+// an external test can embed it when building a signed entity with one field
+// changed — which is how the transparency-evidence refusal is exercised without
+// hand-assembling a bundle.
+type VerifySignedEntityInput = verify.SignedEntity
 
 // IdentityScopeProbe exposes the scope query ListAdministeredOrganizations runs,
 // so a test can assert what admits a control-plane transaction. Deciding on the
@@ -125,6 +136,136 @@ func OpenScopedBoundaryWithWrites(ctx context.Context, readOnlyConnection, readW
 // supported way to do it.
 func BindControlPlaneTx(ctx context.Context, tx pgx.Tx) context.Context {
 	return txbind.BindControlPlane(ctx, tx)
+}
+
+// ExecAsControlPlane runs one statement inside a real control-plane
+// transaction, for test states no tenant write path produces directly (an
+// expiry that has already passed, a role demoted behind the API's back).
+//
+// It exists because the obvious shortcut is silently wrong. A test outside this
+// package cannot reach the transaction WithControlPlane opens — the binding key
+// is internal by design, so that only the code opening a transaction may say
+// what authority it carries. A test that pulled the transaction out of the
+// context with a plain string key (`ctx.Value("tx").(pgx.Tx)`) worked only for
+// as long as that was the binding, and when the binding moved it did not start
+// failing on a permission: it read nil and panicked, which is the better of the
+// two outcomes. The other, described on BindControlPlaneTx above, is a silent
+// fall back to the request pool.
+//
+// Routing through WithControlPlane keeps the role handling in exactly one
+// place, so a test cannot run as the control plane in a way production never
+// does.
+func (s *PostgresStore) ExecAsControlPlane(ctx context.Context, sql string, args ...any) error {
+	return s.WithControlPlane(ctx, func(ctx context.Context) error {
+		_, err := s.getQueryExecutor(ctx).Exec(ctx, sql, args...)
+		return err
+	})
+}
+
+// ScanAsControlPlane reads one row as the control plane, for a test asserting on
+// a column no store method returns.
+//
+// It goes through WithControlPlane like its Exec counterpart rather than fishing
+// the transaction out of the context: the context key is internal to pkg/infra
+// by design, so a plain-string lookup is not refused — it reads nil, and the
+// query silently falls back to the request pool where it would fail on a
+// permission it should never have lacked.
+func (s *PostgresStore) ScanAsControlPlane(
+	ctx context.Context, sql string, into []any, args ...any,
+) error {
+	return s.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.getQueryExecutor(ctx).QueryRow(ctx, sql, args...).Scan(into...)
+	})
+}
+
+// VerifySignedEntity exposes the keyless verifier's DECISION, so a test can
+// drive it with an in-process Sigstore instead of a hand-assembled bundle
+// document.
+//
+// Exported for tests deliberately rather than testing through VerifyBundle's
+// JSON: the thing worth proving is that the policy accepts and refuses the right
+// identities against a real trust root, and a bundle written by hand proves only
+// that the decoder works. The path under test is the one production takes — the
+// JSON entry point decodes and calls straight into this.
+func VerifySignedEntity(
+	verifier any, entity VerifySignedEntityInput, payload []byte,
+) (string, error) {
+	return verifier.(*keylessBundleVerifier).verifySignedEntity(entity, payload)
+}
+
+// NewKeylessVerifierWithoutPolicyValidation builds the keyless verifier over
+// trust material and a policy WITHOUT running the policy's boot validation.
+//
+// It exists for one reason, and the reason is a limitation worth stating rather
+// than hiding. Production policy hygiene requires every signer to name a source
+// repository or a build config, because a workflow identity alone matches that
+// same workflow path in every fork of a repository. The in-process Sigstore used
+// in tests mints leaf certificates carrying ONLY the OIDC issuer extension — it
+// has no way to emit `SourceRepositoryURI` — so no certificate it can produce
+// satisfies a policy that production would accept.
+//
+// So the accept path is exercised with a policy shape production REFUSES, and
+// the refusal of that shape is asserted separately by the Validate tests. What
+// is genuinely not covered end to end is the extension matching itself: that
+// `SourceRepositoryURI` and `SourceRepositoryRef` are compared at all is
+// delegated to sigstore-go and exercised only by its own suite.
+func NewKeylessVerifierWithoutPolicyValidation(
+	trustedMaterial trustedMaterialForTest, policy *SolutionHostVerificationPolicy,
+) (any, error) {
+	verifier, err := verify.NewVerifier(trustedMaterial,
+		verify.WithTransparencyLog(1),
+		verify.WithObserverTimestamps(1),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &keylessBundleVerifier{verifier: verifier, policy: policy}, nil
+}
+
+// trustedMaterialForTest is root.TrustedMaterial under a local name.
+type trustedMaterialForTest = root.TrustedMaterial
+
+// KeylessSignerDomains reads the signer-to-domain mapping off a verifier built
+// by either constructor, so a test can assert the mapping travels with the
+// policy it came from.
+func KeylessSignerDomains(verifier any) map[string][]string {
+	return verifier.(*keylessBundleVerifier).SignerDomains()
+}
+
+// NewKubernetesClientForTest points the client at a test API server, using a
+// throwaway token file.
+//
+// Exported for tests so the TokenReview path is exercised over real HTTP against
+// a real handler: a fake CLIENT would let the AUDIENCE go unsent and untested
+// while looking identical, and the audience is the thing that stops a token
+// minted for another service authenticating here.
+func NewKubernetesClientForTest(t testingT, server *httptest.Server) *KubernetesClient {
+	t.Helper()
+	directory := t.TempDir()
+	path := filepath.Join(directory, "token")
+	if err := os.WriteFile(path, []byte("host-own-token"), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	return NewKubernetesClientForTestWithToken(t, server, path)
+}
+
+// NewKubernetesClientForTestWithToken is the same with a caller-owned token
+// file, so a test can rotate it mid-run.
+func NewKubernetesClientForTestWithToken(t testingT, server *httptest.Server, tokenPath string) *KubernetesClient {
+	t.Helper()
+	return &KubernetesClient{
+		endpoint:  server.URL,
+		tokenPath: tokenPath,
+		http:      server.Client(),
+	}
+}
+
+// testingT is the sliver of *testing.T these helpers need, so export_test.go
+// does not import testing into the production package's namespace.
+type testingT interface {
+	Helper()
+	TempDir() string
+	Fatalf(string, ...any)
 }
 
 // EnvelopedColumn is one enveloped column as the re-seal inventory declares it.

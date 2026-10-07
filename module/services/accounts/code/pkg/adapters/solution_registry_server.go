@@ -2,23 +2,17 @@ package adapters
 
 import (
 	"context"
-	"errors"
-	"time"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // SolutionRegistryServer serves the durable solution registry (issue #534) on
 // the accounts internal listener. The auth-gateway is its only client: it
-// writes its own backend half, brokers the frontend's half, and reads the
-// snapshot both surfaces rebuild their caches from.
+// reads the snapshot both product surfaces rebuild their caches from.
 type SolutionRegistryServer struct {
 	gen.UnsafeSolutionRegistryServiceServer
 }
@@ -28,89 +22,6 @@ var solutionRegistrySingleton = &SolutionRegistryServer{}
 // SolutionRegistrySingleton returns the shared server instance.
 func SolutionRegistrySingleton() *SolutionRegistryServer { return solutionRegistrySingleton }
 
-// solutionRegistryError maps the registry's refusals onto gRPC codes a client
-// can act on: Aborted means "re-read and retry", FailedPrecondition means "your
-// request cannot be made valid by retrying it as-is".
-func solutionRegistryError(err error) error {
-	switch {
-	case errors.Is(err, business.ErrSolutionRegistrationNotFound):
-		return status.Error(codes.NotFound, "solution registration not found")
-	case errors.Is(err, business.ErrSolutionRegistrationStale):
-		return status.Error(codes.Aborted, "solution registration revision is stale")
-	case errors.Is(err, business.ErrSolutionRegistrationRevisionRequired):
-		// Aborted, not FailedPrecondition: the caller can make this write valid by
-		// re-reading and naming the revision. Sharing a code with the tombstone
-		// refusal — which must never be retried — left a client unable to tell the
-		// recoverable case from the permanent one, so it could retry neither.
-		return status.Error(codes.Aborted, "solution registration revision required")
-	case errors.Is(err, business.ErrSolutionRegistrationTombstoned):
-		return status.Error(codes.FailedPrecondition, "solution registration is tombstoned")
-	case errors.Is(err, business.ErrSolutionPublisherMismatch):
-		return status.Error(codes.PermissionDenied, "solution registration is owned by another publisher")
-	case errors.Is(err, business.ErrSolutionRegistrationHalfMissing):
-		return status.Error(codes.InvalidArgument, "solution registration must carry exactly one half")
-	case errors.Is(err, business.ErrSolutionRegistrationIdentityRequired):
-		return status.Error(codes.InvalidArgument, "solution registration requires a solution id and publisher")
-	case errors.Is(err, business.ErrSolutionAuditDeclarationRejected):
-		// InvalidArgument, not FailedPrecondition or PermissionDenied: the
-		// registrant must change its declaration (or the operator its
-		// binding), and no retry of this manifest — nor a re-read of the
-		// revision — will ever succeed. FailedPrecondition is already the
-		// tombstone refusal, which the gateway relays as a conflict to re-read.
-		// The message names the event and the rule it broke; the ErrorInfo
-		// reason is what a client keys on, since InvalidArgument alone also
-		// covers a malformed write.
-		return solutionAuditDeclarationRejected(err)
-	default:
-		return err
-	}
-}
-
-func (s *SolutionRegistryServer) PutSolutionRegistration(
-	ctx context.Context, req *gen.PutSolutionRegistrationRequest,
-) (*gen.SolutionRegistration, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	write := business.SolutionRegistrationWrite{
-		SolutionID:       req.GetSolutionId(),
-		Publisher:        req.GetPublisher(),
-		ExpectedRevision: req.ExpectedRevision,
-		Lease:            time.Duration(req.GetLeaseSeconds()) * time.Second,
-	}
-	if half := req.GetFrontend(); half != nil {
-		write.Frontend = &business.SolutionFrontendRegistration{
-			Manifest:        half.GetManifest(),
-			ContractVersion: half.GetContractVersion(),
-		}
-	}
-	if half := req.GetBackend(); half != nil {
-		write.Backend = &business.SolutionBackendRegistration{
-			Upstream:        half.GetUpstream(),
-			ServiceAlias:    half.GetServiceAlias(),
-			ContractVersion: half.GetContractVersion(),
-		}
-	}
-	record, err := service.PutSolutionRegistration(ctx, write)
-	if err != nil {
-		return nil, solutionRegistryError(err)
-	}
-	return solutionRegistrationProto(record), nil
-}
-
-func (s *SolutionRegistryServer) DeleteSolutionRegistration(
-	ctx context.Context, req *gen.DeleteSolutionRegistrationRequest,
-) (*gen.SolutionRegistration, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	record, err := service.DeleteSolutionRegistration(ctx, req.GetSolutionId(), req.ExpectedRevision)
-	if err != nil {
-		return nil, solutionRegistryError(err)
-	}
-	return solutionRegistrationProto(record), nil
-}
-
 func (s *SolutionRegistryServer) ListSolutionRegistrations(
 	ctx context.Context, req *gen.ListSolutionRegistrationsRequest,
 ) (*gen.ListSolutionRegistrationsResponse, error) {
@@ -119,7 +30,7 @@ func (s *SolutionRegistryServer) ListSolutionRegistrations(
 	}
 	records, revision, err := service.ListSolutionRegistrations(ctx, req.GetIncludeTombstoned())
 	if err != nil {
-		return nil, solutionRegistryError(err)
+		return nil, err
 	}
 	out := &gen.ListSolutionRegistrationsResponse{
 		Registrations:    make([]*gen.SolutionRegistration, 0, len(records)),
@@ -134,33 +45,26 @@ func (s *SolutionRegistryServer) ListSolutionRegistrations(
 var solutionRegistrationStatusProto = map[business.SolutionRegistrationStatus]gen.SolutionRegistrationStatus{
 	business.SolutionRegistrationActive:       gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE,
 	business.SolutionRegistrationPending:      gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING,
-	business.SolutionRegistrationExpired:      gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_EXPIRED,
 	business.SolutionRegistrationIncompatible: gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE,
 	business.SolutionRegistrationTombstoned:   gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED,
 }
 
-// solutionRegistrationProto resolves the derived status against the server
-// clock as it serializes, so a lease that lapsed since the row was written is
-// reported expired rather than active.
-//
-// It deliberately never sets RuntimeBoundary, and NO path here ever does
-// (issue #1015). Every read of the registry goes through this one function —
-// the whole-registry snapshot the gateway and the frontend cache, a
-// deregistration, and a registrant's own write alike — and the seed behind that
-// boundary is the only thing standing between one solution's runs and another's
-// now that the derived boundary is stable for the life of the registration.
-// A solution does not need it: accounts derives and seals the boundary from the
-// credential the solution already presents, so nothing above this service
-// reads, sends or stores one. The field stays on the message so that
-// TestSolutionRegistrationResponsesCarryNoRuntimeBoundary can hold every
-// response to that, and a change that starts populating it fails rather than
-// ships.
+// solutionDeclaredKindProto maps the stored kind onto the wire. A kind the map
+// does not hold projects as UNSPECIFIED, which both routing surfaces refuse by
+// name: the zero value is not a kind, so a record carrying one is unroutable
+// rather than routed as whichever kind needs the least authority.
+var solutionDeclaredKindProto = map[business.SolutionDeclaredKind]gen.SolutionDeclaredKind{
+	business.SolutionDeclaredKindSolution: gen.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
+	business.SolutionDeclaredKindModule:   gen.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE,
+}
+
+// solutionRegistrationProto serializes the derived declaration status.
 func solutionRegistrationProto(record *business.SolutionRegistration) *gen.SolutionRegistration {
 	out := &gen.SolutionRegistration{
 		SolutionId: record.SolutionID,
 		Publisher:  record.Publisher,
 		Revision:   record.Revision,
-		Status:     solutionRegistrationStatusProto[record.Status(time.Now().UTC())],
+		Status:     solutionRegistrationStatusProto[record.Status()],
 		UpdatedAt:  timestamppb.New(record.UpdatedAt),
 	}
 	if half := record.Frontend; half != nil {
@@ -168,7 +72,6 @@ func solutionRegistrationProto(record *business.SolutionRegistration) *gen.Solut
 			Revision:        half.Revision,
 			Manifest:        half.Manifest,
 			ContractVersion: half.ContractVersion,
-			LeaseExpiresAt:  timestamppb.New(half.LeaseExpiresAt),
 		}
 	}
 	if half := record.Backend; half != nil {
@@ -177,13 +80,104 @@ func solutionRegistrationProto(record *business.SolutionRegistration) *gen.Solut
 			Upstream:        half.Upstream,
 			ServiceAlias:    half.ServiceAlias,
 			ContractVersion: half.ContractVersion,
-			LeaseExpiresAt:  timestamppb.New(half.LeaseExpiresAt),
 		}
 	}
 	if record.TombstonedAt != nil {
 		out.TombstonedAt = timestamppb.New(*record.TombstonedAt)
 	}
+	if declared := record.Declared; declared != nil {
+		out.Declared = &gen.SolutionDeclaredBinding{
+			BindingId:  declared.BindingID,
+			Generation: declared.Generation,
+			Release:    declared.Release,
+			TargetId:   declared.TargetID,
+			Kind:       solutionDeclaredKindProto[declared.Kind],
+		}
+	}
 	return out
+}
+
+// ListSolutionHostBindings serves the declared-presence read surface (issue
+// #952): what delivery has shown this host, what the host applied, and why a
+// desired generation is not the applied one.
+//
+// The observed half is attached from the registry record each binding applied
+// into, so one answer distinguishes a solution that was never declared from one
+// declared and not reporting — which is the distinction an operator cannot draw
+// from the registry snapshot alone, because a binding whose first generation was
+// refused has no registry record at all.
+func (s *SolutionRegistryServer) ListSolutionHostBindings(
+	ctx context.Context, req *gen.ListSolutionHostBindingsRequest,
+) (*gen.ListSolutionHostBindingsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	records, err := service.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registrations, _, err := service.ListSolutionRegistrations(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	bySolution := make(map[string]*business.SolutionRegistration, len(registrations))
+	for _, registration := range registrations {
+		bySolution[registration.SolutionID] = registration
+	}
+	out := &gen.ListSolutionHostBindingsResponse{
+		Bindings: make([]*gen.SolutionHostBindingState, 0, len(records)),
+	}
+	for _, record := range records {
+		out.Bindings = append(out.Bindings, solutionHostBindingStateProto(record, bySolution))
+	}
+	return out, nil
+}
+
+func solutionHostBindingStateProto(
+	record *business.SolutionHostBindingRecord,
+	bySolution map[string]*business.SolutionRegistration,
+) *gen.SolutionHostBindingState {
+	state := &gen.SolutionHostBindingState{
+		BindingId:         record.BindingID,
+		HostCoordinate:    record.HostCoordinate,
+		HostComponent:     record.HostComponent,
+		PendingGeneration: record.PendingGeneration(),
+		PendingReason:     record.PendingReason,
+		UpdatedAt:         timestamppb.New(record.UpdatedAt),
+	}
+	if record.PendingSince != nil {
+		state.PendingSince = timestamppb.New(*record.PendingSince)
+	}
+	if desired := record.Desired; desired != nil {
+		state.Desired = solutionHostBindingGenerationProto(*desired)
+	}
+	if applied := record.Applied; applied != nil {
+		state.Applied = &gen.SolutionHostBindingAppliedGeneration{
+			Generation: solutionHostBindingGenerationProto(applied.SolutionHostBindingGeneration),
+			Removed:    applied.Removed,
+			Routes:     applied.Routes,
+			SolutionId: applied.SolutionID,
+			Release:    applied.Release,
+		}
+		// The observed half. A binding whose applied generation is a tombstone
+		// still names the record it withdrew, and that record's tombstone is the
+		// answer "declared absent" rather than "never registered".
+		if registration, found := bySolution[applied.SolutionID]; found {
+			state.Registration = solutionRegistrationProto(registration)
+		}
+	}
+	return state
+}
+
+func solutionHostBindingGenerationProto(
+	generation business.SolutionHostBindingGeneration,
+) *gen.SolutionHostBindingGeneration {
+	return &gen.SolutionHostBindingGeneration{
+		Generation: generation.Generation,
+		Digest:     generation.Digest,
+		Document:   generation.Document,
+		At:         timestamppb.New(generation.At),
+	}
 }
 
 // solutionRegistryConnectHandler serves the same server over Connect, so both
@@ -192,36 +186,13 @@ type solutionRegistryConnectHandler struct {
 	inner *SolutionRegistryServer
 }
 
-func (h *solutionRegistryConnectHandler) PutSolutionRegistration(ctx context.Context, req *connect.Request[gen.PutSolutionRegistrationRequest]) (*connect.Response[gen.SolutionRegistration], error) {
-	return unary(ctx, req, h.inner.PutSolutionRegistration)
-}
-
-func (h *solutionRegistryConnectHandler) DeleteSolutionRegistration(ctx context.Context, req *connect.Request[gen.DeleteSolutionRegistrationRequest]) (*connect.Response[gen.SolutionRegistration], error) {
-	return unary(ctx, req, h.inner.DeleteSolutionRegistration)
-}
-
 func (h *solutionRegistryConnectHandler) ListSolutionRegistrations(ctx context.Context, req *connect.Request[gen.ListSolutionRegistrationsRequest]) (*connect.Response[gen.ListSolutionRegistrationsResponse], error) {
 	return unary(ctx, req, h.inner.ListSolutionRegistrations)
 }
 
-// SolutionAuditDeclarationRejectedReason is the google.rpc.ErrorInfo reason a
-// refused audit event declaration carries, under SolutionRegistryErrorDomain.
-// The auth-gateway keys its 422 on it — it is the stable signal, where the
-// message is prose for the registrant — so it is a wire contract: the gateway
-// holds the same two strings, and a test on each side pins them.
-const (
-	SolutionAuditDeclarationRejectedReason = "SOLUTION_AUDIT_DECLARATION_REJECTED"
-	SolutionRegistryErrorDomain            = "accounts.saas.codefly.dev"
-)
-
-func solutionAuditDeclarationRejected(err error) error {
-	rejected := status.New(codes.InvalidArgument, err.Error())
-	detailed, detailErr := rejected.WithDetails(&errdetails.ErrorInfo{
-		Reason: SolutionAuditDeclarationRejectedReason,
-		Domain: SolutionRegistryErrorDomain,
-	})
-	if detailErr != nil {
-		return rejected.Err()
-	}
-	return detailed.Err()
+func (h *solutionRegistryConnectHandler) ListSolutionHostBindings(ctx context.Context, req *connect.Request[gen.ListSolutionHostBindingsRequest]) (*connect.Response[gen.ListSolutionHostBindingsResponse], error) {
+	return unary(ctx, req, h.inner.ListSolutionHostBindings)
 }
+
+// SolutionRegistryErrorDomain is also the source-delegation ErrorInfo domain.
+const SolutionRegistryErrorDomain = "accounts.saas.codefly.dev"

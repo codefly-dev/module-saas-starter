@@ -12,6 +12,9 @@ agent:
 endpoints:
     - name: http
       visibility: public
+      # Required at core v0.14.0; both values are decisions, recorded in
+      # ../../deployment/AGENTS.md under "`exposure` on a public endpoint".
+      exposure: public
 spec:
     # Declare the argument at its source so regeneration preserves the opt-in
     # production-readiness gate; an empty default does not force it off.

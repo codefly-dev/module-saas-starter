@@ -126,51 +126,6 @@ export async function POST(request: Request): Promise<Response> {
 	assertProblem(t, scan, "bound to another name rather than called")
 }
 
-// A route is internal because it verifies a credential, not because it verifies
-// one particular credential. Registration moved from the shared cluster-internal
-// token to a signed, solution-bound one; keyed to a single function name, the
-// check read that route as no longer internal while the binding still declared
-// it and the mesh still denied it.
-func TestScanRouteModuleRecognisesEveryCredentialCheck(t *testing.T) {
-	scan := scanRouteModule("route.ts", `
-import {
-	consumeRegistrationToken,
-	SOLUTION_REGISTRATION_HEADER,
-	verifySolutionRegistration,
-} from "@/solutions/registration-authority";
-
-async function authorize(request: Request) {
-	const claims = await verifySolutionRegistration(
-		request.headers.get(SOLUTION_REGISTRATION_HEADER),
-	);
-	if (!claims) {
-		return null;
-	}
-	return consumeRegistrationToken(claims) ? claims : null;
-}
-
-export async function POST(request: Request): Promise<Response> {
-	if (!(await authorize(request))) {
-		return Response.json({ error: "unauthorized" }, { status: 401 });
-	}
-	return Response.json({ ok: true });
-}
-
-export async function DELETE(request: Request): Promise<Response> {
-	if (!(await authorize(request))) {
-		return Response.json({ error: "unauthorized" }, { status: 401 });
-	}
-	return Response.json({ ok: true });
-}
-
-export async function GET(): Promise<Response> {
-	return Response.json({ solutions: [] });
-}
-`)
-	assertNoProblems(t, scan)
-	assertGated(t, scan, "DELETE", "POST")
-}
-
 // An import clause may rename the gate. Matching only the exported name read an
 // aliased gate as absent, and an absent gate is a route nothing requires to be
 // declared — the fail-open this whole check exists to remove, inside the check.

@@ -71,15 +71,15 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/network-policy.golden.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
-	require.Len(t, first.Catalog.GetServices(), 8)
+	require.Len(t, first.Catalog.GetServices(), 9)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 6)
-	require.Len(t, first.Catalog.GetPublicEgress(), 4)
+	require.Len(t, first.Catalog.GetPublicEgress(), 5)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 13, endpointCount)
+	require.Equal(t, 14, endpointCount)
 	require.Equal(t, 8, dependencyCount)
 	// The accounts REST surface is reachable only through the gateway; the
 	// gateway's REST surface is module-visible because composed modules and
@@ -131,7 +131,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.True(t, accountsConnectExposed)
 	require.True(t, accountsAuthorityExposed)
 	require.True(t, gatewayRESTExposed)
-	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 21, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	for _, name := range []string{
 		"allow-accounts-from-dependents", "allow-auth-gateway-from-dependents", "allow-auth-gateway-to-dependencies",
@@ -149,28 +149,49 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 
 // MODULE is the catalog category for every composed module, not a license to
 // erase a narrower authored allow-list. Legacy Codefly spellings also refuse.
+//
+// `visibility: internal` WITH NO allow-list has moved OUT of the refused set and
+// is now what the manifests author (issue #952). It is the v0.14.0 spelling of
+// what `internal` plus `allow-modules: ["*"]` said — core refuses the key on an
+// export by name, because an allow-list is derived from the consumers' declared
+// dependencies and never written by the module it would grant — so the two mean
+// the same thing and map to the same category.
+//
+// The narrower cases stay refused, which is the half that matters: `[example]`
+// names SOME modules, and this catalog has no way to express that, so admitting
+// it would silently widen the generated policy to every module. The legacy
+// `visibility: module` stays refused too.
 func TestDeploymentTopologyRefusesUnrepresentableEndpointPolicies(t *testing.T) {
 	catalog := readFixture(t, "../../../generated/service-catalog.json")
 	documents := readDeploymentDocuments(t)
 	for _, policy := range []string{
 		"visibility: module",
 		"visibility: internal\n          allow-modules: [example]",
-		"visibility: internal",
 		"visibility: public\n          allow-modules: [example]",
 	} {
-		changed := withModule(t, documents, "visibility: internal\n          allow-modules: [\"*\"]", policy)
+		changed := withModule(t, documents, "visibility: internal", policy)
 		_, err := cataloggen.BuildDeploymentArtifacts(catalog, changed)
 		require.Error(t, err, policy)
 	}
 	for _, policy := range []string{
 		"visibility: module",
 		"visibility: internal\n      allow-modules: [example]",
-		"visibility: internal",
 	} {
-		changed := withService(t, documents, "accounts", "visibility: internal\n      allow-modules: [\"*\"]", policy)
+		changed := withService(t, documents, "accounts", "visibility: internal", policy)
 		_, err := cataloggen.BuildDeploymentArtifacts(catalog, changed)
 		require.Error(t, err, policy)
 	}
+	// And the authored spelling BUILDS, so the removals above are not this test
+	// quietly accepting everything: an unchanged tree must still produce artifacts.
+	_, err := cataloggen.BuildDeploymentArtifacts(catalog, documents)
+	require.NoError(t, err, "the authored `internal` with no allow-list must build")
+	// The legacy wildcard also still builds, because this generator walks every
+	// composed module's manifests and the fleet has not finished moving.
+	legacy := withService(t, documents, "accounts",
+		"    - name: connect\n      visibility: internal\n",
+		"    - name: connect\n      visibility: internal\n      allow-modules: [\"*\"]\n")
+	_, err = cataloggen.BuildDeploymentArtifacts(catalog, legacy)
+	require.NoError(t, err, "the legacy wildcard must still build while the fleet moves")
 }
 
 // The manifests are the model: a deployment fact lives in the service manifest
@@ -210,7 +231,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, loadedModule.ValidateInterface(ctx))
 	loadedServices, err := loadedModule.LoadServices(ctx)
 	require.NoError(t, err)
-	require.Len(t, loadedServices, 8)
+	require.Len(t, loadedServices, 9)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
 	var moduleEntry struct {
@@ -222,7 +243,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
 	require.NoError(t, err)
-	require.Len(t, module.ServiceReferences, 8)
+	require.Len(t, module.ServiceReferences, 9)
 
 	for _, reference := range module.ServiceReferences {
 		document := readFixture(t, filepath.Join("../../../../../services", reference.Name, "service.codefly.yaml"))
@@ -264,7 +285,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 20)
+	require.Len(t, names, 21)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
 	require.False(t, names["allow-istio-ingress-to-auth-gateway"])
@@ -389,12 +410,11 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 	const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
 
 	// Every authored route, and the methods that carry internal authority on it.
-	// A GET on /api/solutions/register is the sidebar's unauthenticated nav poll
+	// A GET on /api/solutions is the sidebar's viewer-authenticated nav poll
 	// and must stay reachable; a GET on /api/internal/solutions is the internal
 	// detail read and must not.
 	wantRules := map[string][]any{
 		"/api/internal/solutions": {"GET"},
-		"/api/solutions/register": {"DELETE", "POST"},
 	}
 
 	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/mesh-policy.golden.yaml"))))
@@ -449,7 +469,7 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 				require.True(t, ok)
 				paths := operation["paths"].([]any)
 				// Istio does not merge duplicate slashes by default, so the exact
-				// path alone would let //api/solutions/register reach the handler.
+				// path alone would let //api/internal/solutions reach the handler.
 				require.Len(t, paths, 2, "each route is matched exactly and as a suffix")
 				path := paths[1].(string)
 				require.Equal(t, "*"+path, paths[0])
@@ -543,15 +563,15 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteManifests(t *testing.T) {
 	require.ErrorContains(t, err, "service entry references unknown service")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "                - DELETE\n                - POST", "                - POST\n                - DELETE"))
-	require.ErrorContains(t, err, "internal HTTP route \"/api/solutions/register\" methods are invalid or unsorted")
+		withService(t, documents, "frontend", "                - GET", "                - POST\n                - GET"))
+	require.ErrorContains(t, err, "internal HTTP route \"/api/internal/solutions\" methods are invalid or unsorted")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "            - path: /api/solutions/register", "            - path: api/solutions/register"))
+		withService(t, documents, "frontend", "            - path: /api/internal/solutions", "            - path: api/internal/solutions"))
 	require.ErrorContains(t, err, "internal HTTP routes are invalid or unsorted")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "              methods:\n                - DELETE\n                - POST", "              methods: []"))
+		withService(t, documents, "frontend", "              methods:\n                - GET", "              methods: []"))
 	require.ErrorContains(t, err, "declares no methods")
 
 	// A path policy on a service that speaks TCP matches nothing that will ever
@@ -779,10 +799,10 @@ func TestDeploymentTopologyRequiresTheModuleAuthorityEndpoint(t *testing.T) {
 	documents := readDeploymentDocuments(t)
 
 	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n          allow-modules: [\"*\"]\n", ""))
+		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n", ""))
 	require.ErrorContains(t, err, "module interface must export accounts/authority")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "accounts", "    - name: authority\n      api: grpc\n      visibility: internal\n      allow-modules: [\"*\"]\n", "    - name: authority\n      api: rest\n      visibility: internal\n      allow-modules: [\"*\"]\n"))
+		withService(t, documents, "accounts", "    - name: authority\n      api: grpc\n      visibility: internal\n", "    - name: authority\n      api: rest\n      visibility: internal\n"))
 	require.ErrorContains(t, err, "must be a gRPC endpoint at module visibility")
 }
