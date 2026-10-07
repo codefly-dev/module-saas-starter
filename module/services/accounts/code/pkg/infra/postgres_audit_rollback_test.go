@@ -16,7 +16,7 @@ import (
 	"accounts/pkg/business"
 )
 
-// The queue's and the quarantine's down migrations (20 and 23) drop the only
+// The queue's and the quarantine's down migrations (30 and 33) drop the only
 // copy of whatever rows they hold, so they refuse while any row is there.
 
 // migrationOwner runs fn on a connection with the authority migrations run
@@ -61,7 +61,7 @@ func asRole(t *testing.T, ctx context.Context, tx pgx.Tx, role, sql string, args
 // Rolling the queue's migration back drops the only copy of every event the
 // relay has not delivered, so it must refuse while any row is queued.
 func TestRollingBackTheQueueRefusesWhileEventsAreQueued(t *testing.T) {
-	down := readMigration(t, "20_audit_event_queue.down.sql")
+	down := readMigration(t, "30_audit_event_queue.down.sql")
 	orgID := seedOrg(t, seedUser(t))
 
 	migrationOwner(t, func(ctx context.Context, tx pgx.Tx) {
@@ -88,7 +88,7 @@ func TestRollingBackTheQueueRefusesWhileEventsAreQueued(t *testing.T) {
 }
 
 func TestRollingBackTheQuarantineRefusesWhileRowsAreSetAside(t *testing.T) {
-	down := readMigration(t, "23_audit_event_quarantine.down.sql")
+	down := readMigration(t, "33_audit_event_quarantine.down.sql")
 
 	migrationOwner(t, func(ctx context.Context, tx pgx.Tx) {
 		countQuarantine := func() int {
@@ -154,7 +154,7 @@ func TestRollingBackWaitsForAnInFlightWriterBeforeItCounts(t *testing.T) {
 	}{
 		{
 			name:       "queue",
-			down:       "20_audit_event_queue.down.sql",
+			down:       "30_audit_event_queue.down.sql",
 			table:      "public.audit_event_queue",
 			writerRole: "app_control_plane",
 			insert: `INSERT INTO public.audit_event_queue (id, event_type, schema_version, actor_type, resource, created_at)
@@ -163,7 +163,7 @@ func TestRollingBackWaitsForAnInFlightWriterBeforeItCounts(t *testing.T) {
 		},
 		{
 			name:       "quarantine",
-			down:       "23_audit_event_quarantine.down.sql",
+			down:       "33_audit_event_quarantine.down.sql",
 			table:      "public.audit_event_quarantine",
 			writerRole: "app_job_worker",
 			insert: `INSERT INTO public.audit_event_quarantine (seq, xact_id, id, event_type, schema_version, actor_type, resource, created_at, enqueued_at, error)
