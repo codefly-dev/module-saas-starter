@@ -207,10 +207,13 @@ Postgres transaction.
    them — against a byte budget, `ReadConfig.WindowBytes` (64 MiB by default; the
    service exposes no setting for it). What is counted is what is kept, once per
    event however many copies a redelivery left in the tables: the copies of an
-   event share its occurrence, so no narrower window could shed them. A window
-   that passes the budget is read again as two halves. What outlives a window is
-   the answer: a page, an aggregation's buckets, an export's events. Four limits
-   remain:
+   event share its occurrence, so no narrower window could shed them. An event
+   is kept as its text: the decoded payload a filter or an aggregation reads is
+   several times that text, so it is dropped once the event is kept and decoded
+   again when an aggregation reads it, and the count is what the window holds.
+   A window that passes the budget is read again as two halves. What outlives a
+   window is the answer: a page, an aggregation's buckets, an export's events.
+   Four limits remain:
    - A read whose events at a single instant alone pass the budget cannot be
      split further and fails (`ErrReadTooDense`).
    - An export is the one answer as large as the history it matches. One export

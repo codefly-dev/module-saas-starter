@@ -36,6 +36,10 @@ type Event struct {
 	// kept; a store joins details to the event by it as well as by id.
 	DetailsSHA256 string
 
+	// decoded is the details decoded, left by Match for the aggregation that
+	// reads the event next in a store that streams it. It is scratch for one
+	// visit, never part of what an event holds: Detach and Page.Offer drop it,
+	// and Aggregator.Add never leaves one behind (see payload).
 	decoded    map[string]any
 	decodeErr  error
 	decodedSet bool
@@ -48,7 +52,9 @@ const eventOverheadBytes = 512
 // Size approximates the bytes the event holds in memory: a fixed overhead and
 // the text of its envelope and details. A store that buffers events counts
 // them by it against a budget, so its memory is a number it chose, not a
-// function of how much history it reads.
+// function of how much history it reads. An event holds that and no more once
+// it is detached (Detach): a decoded payload is several times its text, which
+// the count does not include, so a kept event never keeps one.
 func (e *Event) Size() int {
 	entry := &e.Entry
 	return eventOverheadBytes + len(entry.ID) + len(entry.OrgID) + len(entry.ActorID) + len(entry.ActorType) +
@@ -56,12 +62,17 @@ func (e *Event) Size() int {
 		len(entry.ImpersonatedBy) + len(entry.ClientID) + len(e.Details) + len(e.DetailsSHA256)
 }
 
-// Detach copies the text of the event, so that an event kept does not keep
-// alive what it was decoded from. A store that decodes rows out of a shared
-// buffer (an Arrow record batch) hands back strings that point into it: one
-// event kept for the page would hold the whole batch of thousands of rows it
-// came in, and a window's worth of kept events every batch of the window.
+// Detach makes the event hold its text and nothing else, so that an event kept
+// does not keep alive more than Size counts. It copies the text, which a store
+// that decodes rows out of a shared buffer (an Arrow record batch) hands back
+// as strings that point into it: one event kept for the page would hold the
+// whole batch of thousands of rows it came in, and a window's worth of kept
+// events every batch of the window. And it drops the decoded payload a filter
+// left on the event (Match): that is several times the text, and a window that
+// kept it would hold memory its budget never counted. An aggregation that
+// reads the event later decodes it again.
 func (e *Event) Detach() {
+	e.dropDecoded()
 	entry := &e.Entry
 	for _, text := range []*string{
 		&entry.ID, &entry.OrgID, &entry.ActorID, &entry.ActorType, &entry.Resource, &entry.ResourceID,
@@ -72,16 +83,31 @@ func (e *Event) Detach() {
 	entry.EventType = business.EventType(strings.Clone(string(entry.EventType)))
 }
 
+// dropDecoded forgets the decode of the details.
+func (e *Event) dropDecoded() {
+	e.decoded, e.decodeErr, e.decodedSet = nil, nil, false
+}
+
 // payload is the details decoded with json.Number, or nil when there are none.
-func (e *Event) payload() (map[string]any, error) {
+// A decode already made is read again, so that a store that streams an event
+// through a payload filter and then an aggregation decodes it once. A decode
+// that has to be made is remembered only when keep is set (by Match, whose
+// event goes on to the aggregation of a streaming store or is dropped); an
+// aggregation that reads events a store holds for a whole window passes false,
+// so that it leaves none on them: the budget of such a store counts the text of
+// the events it keeps, not a decode several times its size.
+func (e *Event) payload(keep bool) (map[string]any, error) {
 	if !e.HasDetails {
 		return nil, nil
 	}
-	if !e.decodedSet {
-		e.decoded, e.decodeErr = decodeDetails(e.Details)
-		e.decodedSet = true
+	if e.decodedSet {
+		return e.decoded, e.decodeErr
 	}
-	return e.decoded, e.decodeErr
+	decoded, err := decodeDetails(e.Details)
+	if keep {
+		e.decoded, e.decodeErr, e.decodedSet = decoded, err, true
+	}
+	return decoded, err
 }
 
 // Result is the entry a read returns for the event: the envelope with its
@@ -321,7 +347,7 @@ func (m *Matcher) Match(event *Event) (bool, error) {
 		return false, nil
 	}
 	if m.payload != nil {
-		payload, err := event.payload()
+		payload, err := event.payload(true)
 		if err != nil {
 			return false, fmt.Errorf("audit read: details of event %s: %w", entry.ID, err)
 		}

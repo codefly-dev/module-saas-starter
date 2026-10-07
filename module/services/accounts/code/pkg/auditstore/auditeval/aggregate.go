@@ -210,7 +210,9 @@ func payloadKey(field string) (string, bool) {
 
 // Add counts one matching event. The caller offers each event once.
 func (a *Aggregator) Add(event *Event) error {
-	payload, err := event.payload()
+	// Decoded for this event alone: a store that holds a window of events
+	// before it adds them keeps their text, and the budget counts that.
+	payload, err := event.payload(false)
 	if err != nil {
 		return fmt.Errorf("audit read: details of event %s: %w", event.Entry.ID, err)
 	}

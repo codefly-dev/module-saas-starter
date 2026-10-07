@@ -94,6 +94,9 @@ func (p *Page) Offer(event *Event) bool {
 		evicted := heap.Pop(&p.kept).(*Event)
 		delete(p.keptIDs, evicted.Entry.ID)
 	}
+	// A page keeps the event as its text: the list returns the payload decoded
+	// again (Result), so a decode a filter left on it is of no use.
+	event.dropDecoded()
 	heap.Push(&p.kept, event)
 	// The key is its own copy: the event's id may point into a buffer the event
 	// is about to be detached from.
