@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/resources"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,6 +32,46 @@ const (
 	vaultSecretDefaults     = "module/configurations/local/vault.secret.env"
 	meshGroupDefaults       = "module/configurations/local/internal-transport.env"
 )
+
+// Vault is a dependency of accounts within this module, never an exported
+// endpoint. Declare that boundary on the service too: older supported CLIs
+// make an omitted module-interface endpoint private without removing its
+// service's allow-list, which newer SDKs correctly reject as invalid.
+func TestVaultEndpointIsPrivateAndResolvesOnlyWithinItsModule(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(vaultServiceManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var service resources.Service
+	if err := yaml.Unmarshal(data, &service); err != nil {
+		t.Fatal(err)
+	}
+	if len(service.Endpoints) != 1 || service.Endpoints[0].Name != "http" {
+		t.Fatalf("unexpected vault endpoints: %#v", service.Endpoints)
+	}
+	endpoint := service.Endpoints[0]
+	if endpoint.Visibility != resources.VisibilityPrivate || len(endpoint.AllowModules) != 0 {
+		t.Fatalf("vault/http must declare private visibility without allow-modules; got %q, %v", endpoint.Visibility, endpoint.AllowModules)
+	}
+	endpoint.Module, endpoint.Service = "saas-starter", "vault"
+	declaration, err := endpoint.Proto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dependencies := []*resources.ServiceDependency{{
+		Module: "saas-starter", Name: "vault",
+		Endpoints: []*resources.EndpointReference{{Name: "http"}},
+	}}
+	mappings := []*basev0.NetworkMapping{{Endpoint: declaration}}
+	resolved, err := resources.ResolveDependencyNetworkMappings("saas-starter", dependencies, mappings)
+	if err != nil || len(resolved) != 1 {
+		t.Fatalf("same-module vault dependency: resolved %d mappings, error %v", len(resolved), err)
+	}
+	if _, err := resources.ResolveDependencyNetworkMappings("example", dependencies, mappings); err == nil {
+		t.Fatal("vault/http was handed to a different module")
+	}
+}
 
 // vaultDurableRenderFloor is the first vault agent release whose deployed render
 // is durable: `vault server` with integrated raft storage on a retained

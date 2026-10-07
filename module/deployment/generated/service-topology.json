@@ -149,7 +149,7 @@
         {
           "name": "http",
           "api": "CODEFLY_API_HTTP",
-          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
           "port": 8200
         }
       ]

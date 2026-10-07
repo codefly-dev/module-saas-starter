@@ -11,8 +11,7 @@ secret-service-configurations:
         - key: vault_token
 endpoints:
     - name: http
-      visibility: internal
-      allow-modules: ["*"]
+      visibility: private
 spec:
     transit-key: api-keys
     deployment:
