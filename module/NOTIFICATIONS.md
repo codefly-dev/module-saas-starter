@@ -5,6 +5,14 @@ its registered backend principal; the host checks the declared tenant and the
 recipient's membership. The response's `delivered` flag means an **in-app row**
 was written, not that an email, Slack message, or text message was sent.
 
+A module-supplied `action_url` must be a same-origin relative path: one leading
+slash, no authority, no scheme, no backslash, no ASCII control character, no `.`
+or `..` segment. `NotifyUser` and `NotifyOrgAdmins` answer `InvalidArgument` for
+anything else, before the membership read and before any row is written, so a
+module cannot put an off-site link in a member's inbox. The product's own router
+follows whatever `ResolveNotificationAction` returns, and it narrows the answer
+to a same-origin path again before navigating.
+
 The host shell renders the bell, SSE unread updates, inbox and banner. The
 banner requests unread items in the active organization before pagination and
 continues through pages removed by resource-visibility checks. Dismissing it

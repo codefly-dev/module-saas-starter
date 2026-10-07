@@ -771,6 +771,50 @@ func TestModuleNotifyUser_InvalidTypeRejectedBeforeAnyWrite(t *testing.T) {
 	}
 }
 
+// A module-supplied destination that a browser would resolve to another origin
+// never reaches an inbox: both notification capabilities refuse it as the
+// caller's error, before the membership read and before any row is written.
+func TestModuleNotify_OffOriginActionURLRejectedBeforeAnyWrite(t *testing.T) {
+	offOrigin := []string{
+		"https://evil.example/steal",
+		"//evil.example/steal",
+		"/\\evil.example/steal",
+		"/\t/evil.example/steal",
+		"/../../admin/billing",
+		"javascript:alert(document.cookie)",
+	}
+
+	store := &notifyRecordingStore{fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}}}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	for _, actionURL := range offOrigin {
+		_, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+			Tenant: moduleTenantA, UserID: moduleUserA, Title: "Review this", Body: "Body",
+			Type: "info", Category: "product", ActionURL: actionURL,
+		})
+		requireCode(t, err, codes.InvalidArgument)
+
+		_, err = svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), business.ModuleNotifyOrgAdminsInput{
+			Tenant: moduleTenantA, Title: "Review this", Body: "Body",
+			Type: "info", Category: "security", ActionURL: actionURL,
+		})
+		requireCode(t, err, codes.InvalidArgument)
+	}
+	if store.created != 0 || store.membershipReads != 0 {
+		t.Fatalf("a refused destination read %d memberships and wrote %d notifications", store.membershipReads, store.created)
+	}
+
+	result, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+		Tenant: moduleTenantA, UserID: moduleUserA, Title: "Review this", Body: "Body",
+		Type: "info", Category: "security", ActionURL: "/documents/doc-7?comment=3",
+	})
+	if err != nil {
+		t.Fatalf("a same-origin path should be delivered: %v", err)
+	}
+	if !result.Delivered || store.created != 1 {
+		t.Fatalf("delivered = %v after %d writes, want one write", result.Delivered, store.created)
+	}
+}
+
 // notifyRecordingStore counts the membership reads and notification writes a
 // ModuleNotifyUser call makes.
 type notifyRecordingStore struct {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -73,6 +75,45 @@ func ValidNotificationType(t string) bool {
 		}
 	}
 	return false
+}
+
+// ValidNotificationActionURL reports whether actionURL is a destination the
+// product's own router can follow: a same-origin relative path. An empty URL is
+// valid and means the notification has no destination.
+//
+// A module supplies this string and the product later navigates to it, so the
+// shapes refused here are the ones that reach another origin once a browser has
+// parsed them: a scheme or authority of its own, a scheme-relative "//host", a
+// backslash (folded into a slash for a special scheme, so "/\host" reaches
+// "//host"), and an ASCII control character (tab and newline are stripped before
+// parsing, so "/\t/host" reaches it too). Dot segments are refused rather than
+// normalized: a destination that climbs is the caller's mistake, and rewriting it
+// here would hide it from them.
+func ValidNotificationActionURL(actionURL string) bool {
+	if actionURL == "" {
+		return true
+	}
+	if !strings.HasPrefix(actionURL, "/") || strings.HasPrefix(actionURL, "//") {
+		return false
+	}
+	if strings.Contains(actionURL, "\\") {
+		return false
+	}
+	if strings.ContainsFunc(actionURL, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return false
+	}
+	parsed, err := url.Parse(actionURL)
+	if err != nil || parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil {
+		return false
+	}
+	// The decoded path, so a percent-encoded dot segment is the same answer as a
+	// literal one.
+	for _, segment := range strings.Split(parsed.Path, "/") {
+		if segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 var ErrInvalidNotificationFilter = errors.New("invalid notification filter")

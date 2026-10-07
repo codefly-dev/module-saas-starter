@@ -262,11 +262,13 @@ therefore rechecked at **three** points, all through host ports:
    list-objects companion built for exactly this ("pre-filter before loading
    content"), one paged call rather than N point checks. It is capped at 1000
    per page, which bounds the read.
-3. **Deep-link resolution**: the link is re-authorized when followed. Today
-   `action_url` is validated only for shape — `notificationActionUrl`
-   (`features/notifications/model/transforms.ts:7`) accepts only a same-origin
-   absolute path and the panel simply calls `router.push(actionUrl)`. Shape is
-   not authority.
+3. **Deep-link resolution**: the link is re-authorized when followed, by
+   `ResolveNotificationAction`. Shape is settled separately, and on both sides: a
+   module-supplied `action_url` is refused at the write unless it is a
+   same-origin relative path (`ValidNotificationActionURL`,
+   `pkg/business/notifications.go`), and the resolved answer is narrowed to one
+   again before `router.push` (`notificationActionUrl`,
+   `features/notifications/model/transforms.ts`). Shape is not authority.
 
 A follow item's stored `title`/`body` must carry no resource-derived content
 beyond what the recheck re-authorizes, because those columns are a cache that

@@ -529,3 +529,39 @@ func TestResolveNotificationActionFailsClosedWithoutAnOrg(t *testing.T) {
 	require.Zero(t, store.scopeLookups, "an org-less reference is never asked about")
 	require.Zero(t, store.checkAccess)
 }
+
+// A destination is followed by the product's own router, so the shapes that a
+// browser resolves to another origin are not paths at all.
+func TestValidNotificationActionURLAcceptsOnlySameOriginPaths(t *testing.T) {
+	for _, actionURL := range []string{
+		"",
+		"/admin/billing",
+		"/invitations/accept?id=7#top",
+		"/documents/a%2Fb",
+		"/..well-known/x",
+		"/a/..b/c",
+	} {
+		require.True(t, business.ValidNotificationActionURL(actionURL), "%q should be a usable destination", actionURL)
+	}
+
+	for _, actionURL := range []string{
+		"https://evil.example/path",
+		"http://evil.example",
+		"javascript:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"//evil.example/path",
+		"/\\evil.example/path",
+		"/path\\to\\thing",
+		"/\t/evil.example/path",
+		"/\n/evil.example",
+		"/../admin",
+		"/a/../../etc/passwd",
+		"/./admin",
+		"/%2e%2e/admin",
+		"admin/billing",
+		"mailto:user@example.com",
+		"\\\\evil.example\\share",
+	} {
+		require.False(t, business.ValidNotificationActionURL(actionURL), "%q should be refused", actionURL)
+	}
+}
