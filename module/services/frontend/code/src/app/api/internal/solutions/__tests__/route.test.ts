@@ -19,7 +19,9 @@ const GATEWAY = "http://gateway.internal:8080";
 // this process, so the suite stands one in for it.
 function fakeGateway() {
 	const stored = new Map([[MANIFEST.id, JSON.stringify(MANIFEST)]]);
-	let revision = 0;
+	// The cold cutover deleted the registry's writer surface, so the fake serves
+	// one fixed snapshot: nothing left in this suite can advance the revision.
+	const revision = 0;
 	const respond = (body: unknown, status = 200) =>
 		new Response(JSON.stringify(body), {
 			status,

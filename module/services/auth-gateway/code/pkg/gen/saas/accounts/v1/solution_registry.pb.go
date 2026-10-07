@@ -11,7 +11,6 @@ import (
 	sync "sync"
 	unsafe "unsafe"
 
-	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -236,7 +235,7 @@ type SolutionRegistration struct {
 	UpdatedAt    *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	TombstonedAt *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=tombstoned_at,json=tombstonedAt,proto3,oneof" json:"tombstoned_at,omitempty"`
 	// The binding and immutable target that declared this record.
-	Declared      *SolutionDeclaredBinding `protobuf:"bytes,9,opt,name=declared,proto3,oneof" json:"declared,omitempty"`
+	Declared      *SolutionDeclaredBinding `protobuf:"bytes,10,opt,name=declared,proto3,oneof" json:"declared,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -893,16 +892,16 @@ var File_saas_accounts_v1_solution_registry_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\n" +
-	"(saas/accounts/v1/solution_registry.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"|\n" +
+	"(saas/accounts/v1/solution_registry.proto\x12\x10saas.accounts.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x94\x01\n" +
 	"\x17SolutionFrontendBinding\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x03R\brevision\x12\x1a\n" +
 	"\bmanifest\x18\x02 \x01(\tR\bmanifest\x12)\n" +
-	"\x10contract_version\x18\x03 \x01(\tR\x0fcontractVersion\"\xa0\x01\n" +
+	"\x10contract_version\x18\x03 \x01(\tR\x0fcontractVersionJ\x04\b\x04\x10\x05R\x10lease_expires_at\"\xb8\x01\n" +
 	"\x16SolutionBackendBinding\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x03R\brevision\x12\x1a\n" +
 	"\bupstream\x18\x02 \x01(\tR\bupstream\x12#\n" +
 	"\rservice_alias\x18\x03 \x01(\tR\fserviceAlias\x12)\n" +
-	"\x10contract_version\x18\x04 \x01(\tR\x0fcontractVersion\"\xd1\x04\n" +
+	"\x10contract_version\x18\x04 \x01(\tR\x0fcontractVersionJ\x04\b\x05\x10\x06R\x10lease_expires_at\"\xe9\x04\n" +
 	"\x14SolutionRegistration\x12\x1f\n" +
 	"\vsolution_id\x18\x01 \x01(\tR\n" +
 	"solutionId\x12\x1c\n" +
@@ -914,12 +913,14 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12D\n" +
 	"\rtombstoned_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampH\x02R\ftombstonedAt\x88\x01\x01\x12J\n" +
-	"\bdeclared\x18\t \x01(\v2).saas.accounts.v1.SolutionDeclaredBindingH\x03R\bdeclared\x88\x01\x01B\v\n" +
+	"\bdeclared\x18\n" +
+	" \x01(\v2).saas.accounts.v1.SolutionDeclaredBindingH\x03R\bdeclared\x88\x01\x01B\v\n" +
 	"\t_frontendB\n" +
 	"\n" +
 	"\b_backendB\x10\n" +
 	"\x0e_tombstoned_atB\v\n" +
-	"\t_declared\"Q\n" +
+	"\t_declaredJ\x04\b\t\x10\n" +
+	"R\x10runtime_boundary\"Q\n" +
 	" ListSolutionRegistrationsRequest\x12-\n" +
 	"\x12include_tombstoned\x18\x01 \x01(\bR\x11includeTombstoned\"\x9e\x01\n" +
 	"!ListSolutionRegistrationsResponse\x12L\n" +
@@ -971,13 +972,13 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\r_registration\"!\n" +
 	"\x1fListSolutionHostBindingsRequest\"j\n" +
 	" ListSolutionHostBindingsResponse\x12F\n" +
-	"\bbindings\x18\x01 \x03(\v2*.saas.accounts.v1.SolutionHostBindingStateR\bbindings*\xf9\x01\n" +
+	"\bbindings\x18\x01 \x03(\v2*.saas.accounts.v1.SolutionHostBindingStateR\bbindings*\xa5\x02\n" +
 	"\x1aSolutionRegistrationStatus\x12,\n" +
 	"(SOLUTION_REGISTRATION_STATUS_UNSPECIFIED\x10\x00\x12'\n" +
 	"#SOLUTION_REGISTRATION_STATUS_ACTIVE\x10\x01\x12(\n" +
 	"$SOLUTION_REGISTRATION_STATUS_PENDING\x10\x02\x12-\n" +
 	")SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE\x10\x04\x12+\n" +
-	"'SOLUTION_REGISTRATION_STATUS_TOMBSTONED\x10\x05B\xc1\x01\n" +
+	"'SOLUTION_REGISTRATION_STATUS_TOMBSTONED\x10\x05\"\x04\b\x03\x10\x03*$SOLUTION_REGISTRATION_STATUS_EXPIREDB\xc1\x01\n" +
 	"\x14com.saas.accounts.v1B\x15SolutionRegistryProtoP\x01Z0auth-gateway/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

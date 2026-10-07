@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package saas.accounts.v1;
 
-import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 // Read-only projection of the host's declared solution presence. The gateway
@@ -18,6 +17,13 @@ enum SolutionRegistrationStatus {
   // A half has not been observed. The record is durable but incomplete, so no
   // page advertises it and the gateway has nothing to route to.
   SOLUTION_REGISTRATION_STATUS_PENDING = 2;
+  // Was `SOLUTION_REGISTRATION_STATUS_EXPIRED`: both halves registered but a
+  // lease had lapsed. Presence is delivered, never heartbeat-asserted, so there
+  // is no lease to lapse and no status to derive from one. Reserved rather than
+  // reused: an old reader decoding 3 would read "expired" out of whatever
+  // meaning a later value gave the number.
+  reserved 3;
+  reserved "SOLUTION_REGISTRATION_STATUS_EXPIRED";
   // The two halves declare different contract versions, so activating them
   // together would serve a page against a backend it was not built for.
   SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE = 4;
@@ -32,6 +38,11 @@ message SolutionFrontendBinding {
   int64 revision = 1;
   string manifest = 2;
   string contract_version = 3;
+  // Was `google.protobuf.Timestamp lease_expires_at`: the renewal path is
+  // deleted, so a column nothing renews was legacy. Reserved, not reused — a
+  // released number never takes another name or type.
+  reserved 4;
+  reserved "lease_expires_at";
 }
 
 // SolutionBackendBinding is the stored backend half: the upstream the gateway
@@ -41,6 +52,10 @@ message SolutionBackendBinding {
   string upstream = 2;
   string service_alias = 3;
   string contract_version = 4;
+  // Was `google.protobuf.Timestamp lease_expires_at`: see
+  // SolutionFrontendBinding above. Reserved, not reused.
+  reserved 5;
+  reserved "lease_expires_at";
 }
 
 // SolutionRegistration is the canonical record. revision is drawn from one
