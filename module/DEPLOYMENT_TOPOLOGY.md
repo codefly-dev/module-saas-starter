@@ -79,7 +79,7 @@ still loads the module with its older Core 0.7, but does not derive cross-module
 access: an internal endpoint with no authored list denies other modules. It is
 not a compatible promotion driver for this declaration model.
 
-The topology-policy golden contains 18 `NetworkPolicy` resources:
+The topology-policy golden contains 19 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
@@ -310,7 +310,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-18 NetworkPolicy golden documents. After the module generator creates the
+19 NetworkPolicy golden documents. After the module generator creates the
 consumer-owned GitOps tree, render an environment with:
 
 ```sh
