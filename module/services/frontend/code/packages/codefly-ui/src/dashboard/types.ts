@@ -8,6 +8,8 @@
 // own types here is what lets `@codefly-dev/ui` stay a pure component library with no
 // dependency on the SDK's transport stack.
 
+import type { MetricFormat } from "./metric-tiles.js";
+
 /** How a widget draws its series. */
 export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 
@@ -32,9 +34,27 @@ export interface DashboardWidgetView {
 	id: string;
 	visualization: WidgetVisualization;
 	title?: string;
-	series: WidgetSeries;
+	/**
+	 * The resolved series, or `null` while it is still being resolved. A
+	 * renderer draws a placeholder for `null` rather than an empty series,
+	 * because "not yet" and "nothing matched" are different answers and the
+	 * second one is a fact about the data.
+	 */
+	series: WidgetSeries | null;
+	/**
+	 * The series could not be resolved — an error, not an empty result. A
+	 * caller that resolves each widget separately sets it per widget, so one
+	 * failure says so in its own card instead of blanking its siblings.
+	 */
+	failed?: boolean;
 	/** Grid columns this widget spans (1–4); ignored in a stack. */
 	span?: 1 | 2 | 3 | 4;
+	/** How a scalar widget's value is rendered. Defaults to a plain number. */
+	format?: MetricFormat;
+	/** Suffix after a scalar widget's value, e.g. "req/s". */
+	unit?: string;
+	/** When false a rising value reads as bad (an error count). Defaults true. */
+	higherIsBetter?: boolean;
 }
 
 /** The fully-resolved dashboard the renderer paints. */
@@ -57,6 +77,9 @@ interface ResolvedWidgetLike {
 	visualization: WidgetVisualization;
 	title?: string;
 	series: WidgetSeries;
+	format?: MetricFormat;
+	unit?: string;
+	higherIsBetter?: boolean;
 }
 interface DashboardDataLike {
 	title?: string;
@@ -84,6 +107,9 @@ export function fromDashboardData(
 			visualization: widget.visualization,
 			title: widget.title,
 			series: widget.series,
+			format: widget.format,
+			unit: widget.unit,
+			higherIsBetter: widget.higherIsBetter,
 		})),
 	};
 }

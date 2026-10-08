@@ -1,25 +1,23 @@
 "use client";
 
 import type {
-	Dashboard,
+	Dashboard as DashboardDeclaration,
 	DataGraph,
 	MetricWidget,
 } from "@codefly/saas-plugin-manifest";
+import { createSaasClient, runDashboard } from "@codefly-dev/saas-sdk";
+// The dashboard is DRAWN by the shared kit's `<Dashboard>` — the same renderer,
+// from the same package instance, that a solution's own remote mounts and that
+// the host's operations pages are built from. Nothing here re-implements it:
+// this file owns only what is genuinely the host's (the per-widget audit
+// queries, the viewer's saved arrangement of the tiles, and the ⓘ that says
+// where a number comes from) and composes it AROUND the renderer through the
+// renderer's own slots.
 import {
-	createSaasClient,
-	type ResolvedWidget,
-	runDashboard,
-} from "@codefly-dev/saas-sdk";
-// Charts come from the shared kit, not host-internal components: the same
-// primitives a solution's own remote would render with, so host-rendered and
-// solution-rendered dashboards look identical and there is one charting
-// implementation to maintain.
-import {
-	AreaChart,
-	BarList,
-	LineChart,
+	Dashboard,
+	DashboardWidget,
+	type DashboardWidgetView,
 	SortableGrid,
-	StatChart,
 } from "@codefly-dev/ui/dashboard";
 import { useQuery } from "@tanstack/react-query";
 import { GripVertical, Info, Plus, X } from "lucide-react";
@@ -35,10 +33,6 @@ import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import {
 	Button,
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -47,7 +41,6 @@ import {
 	PopoverContent,
 	PopoverTitle,
 	PopoverTrigger,
-	Skeleton,
 } from "@/shared/ui";
 import {
 	addableTiles,
@@ -99,103 +92,35 @@ function singleWidgetGraph(graph: DataGraph, widget: MetricWidget): DataGraph {
 	};
 }
 
-// Render a resolved widget's series in the shape its visualization asks for. A
-// series with no points is "no data yet" for every kind — the audit RPC omits a
-// bucket rather than emitting a zero, so an empty series means nothing matched,
-// not a real zero worth plotting.
-function WidgetBody({ widget }: { widget: ResolvedWidget }) {
-	return (
-		<>
-			{widget.series.coverage === "partial" && (
-				<p className="text-sm text-muted-foreground" role="status">
-					Partial telemetry
-				</p>
-			)}
-			<WidgetValues widget={widget} />
-		</>
-	);
-}
-
-function WidgetValues({ widget }: { widget: ResolvedWidget }) {
-	const { series, visualization } = widget;
-	if (series.points.length === 0) {
-		return (
-			<p className="text-sm text-muted-foreground">
-				{series.coverage === "partial"
-					? "Telemetry unavailable or incomplete."
-					: "No data yet."}
-			</p>
-		);
-	}
-	switch (visualization) {
-		case "line":
-			return (
-				<LineChart points={series.points} className="text-primary/70" axes />
-			);
-		case "area":
-			return (
-				<AreaChart points={series.points} className="text-primary/70" axes />
-			);
-		case "bar":
-			return <BarList points={series.points} />;
-		case "number":
-			return series.total === null ? (
-				<p className="text-sm text-muted-foreground">
-					{series.coverage === "partial"
-						? "Incomplete telemetry; total unavailable."
-						: "Total unavailable across groups."}
-				</p>
-			) : (
-				<StatChart total={series.total} points={series.points} />
-			);
-		case "table":
-			return (
-				<table className="w-full text-sm">
-					<tbody>
-						{series.points.map((point) => (
-							<tr key={point.key} className="border-b last:border-0">
-								<td className="py-1 text-muted-foreground">{point.key}</td>
-								<td className="py-1 text-right font-mono">
-									{point.value.toLocaleString()}
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			);
-		default: {
-			// Compile-time exhaustiveness: a new WidgetVisualization must be
-			// handled here or this assignment fails to type-check.
-			const _exhaustive: never = visualization;
-			return _exhaustive;
-		}
-	}
-}
-
-function WidgetCard({
+// One declared widget, resolved and drawn.
+//
+// The query lives here, in a component of its own, because each widget is
+// resolved in isolation: a widget whose metric's audit query errors fails
+// alone instead of blanking every sibling that would share one batched
+// resolution. React fixes the number of hooks a component may call, so these
+// queries cannot be hoisted into the renderer that takes the whole view —
+// which is why the kit exports `DashboardWidget` beside `<Dashboard>` and this
+// mounts that, rather than drawing a card of its own.
+function SolutionWidget({
 	graph,
 	widget,
 	solutionId,
 	dashboardId,
 	orgId,
-	grip,
-	info,
-	remove,
+	actions,
 }: {
 	graph: DataGraph;
 	widget: MetricWidget;
 	solutionId: string;
 	dashboardId: string;
 	orgId: string;
-	grip: ReactNode;
-	info: ReactNode;
-	remove: ReactNode;
+	actions: ReactNode;
 }) {
 	// The graph is part of the key so a solution that redeploys with a changed
 	// declaration refetches instead of serving another graph's cached series that
 	// happens to share the same solution/dashboard/widget/org ids. Disabled until
 	// the org resolves so the pre-org window reads as loading, never as empty.
-	const { data, isPending, isError } = useQuery({
+	const { data, isError } = useQuery({
 		queryKey: [
 			"solution-widget",
 			solutionId,
@@ -215,26 +140,28 @@ function WidgetCard({
 	});
 
 	return (
-		<Card>
-			<CardHeader className="flex flex-row items-center gap-1 pb-2">
-				{grip}
-				<CardTitle className="min-w-0 flex-1 text-base">
-					{widget.title ?? widget.metric}
-				</CardTitle>
-				{info}
-				{remove}
-			</CardHeader>
-			<CardContent>
-				{isError ? (
-					<p className="text-sm text-destructive">Unable to load.</p>
-				) : isPending || !data ? (
-					<Skeleton className="h-24 w-full" />
-				) : (
-					<WidgetBody widget={data} />
-				)}
-			</CardContent>
-		</Card>
+		<DashboardWidget
+			widget={{
+				...declaredWidget(widget),
+				series: data?.series ?? null,
+				failed: isError,
+			}}
+			actions={actions}
+		/>
 	);
+}
+
+// A declared widget as the renderer's view model, with no series yet. The
+// series is bound by `SolutionWidget`, the one place that has resolved it; a
+// `null` series is the honest value here and the renderer draws it as a wait
+// rather than as an empty result.
+function declaredWidget(widget: MetricWidget): DashboardWidgetView {
+	return {
+		id: widget.id,
+		visualization: widget.visualization,
+		title: widget.title ?? widget.metric,
+		series: null,
+	};
 }
 
 // Reading `window.localStorage` can itself throw: blocked site data or a
@@ -273,7 +200,7 @@ function noSubscription() {
  */
 function useDashboardLayout(
 	storageKey: string,
-	dashboard: Dashboard,
+	dashboard: DashboardDeclaration,
 ): [string[], (next: readonly string[]) => void] {
 	const stored = useSyncExternalStore(
 		noSubscription,
@@ -525,7 +452,7 @@ function SolutionDashboard({
 	solutionId,
 }: {
 	graph: DataGraph;
-	dashboard: Dashboard;
+	dashboard: DashboardDeclaration;
 	solutionId: string;
 }) {
 	const { user, organizationId } = useAuth();
@@ -544,52 +471,45 @@ function SolutionDashboard({
 		const widget = widgets.get(tileId);
 		return widget?.title ?? widget?.metric ?? tileId;
 	};
-	const renderTile = (tileId: string) => {
-		const widget = widgets.get(tileId);
-		if (!widget) return null;
+	// The grip, the ⓘ and the × — the three host-only controls — go into the
+	// renderer's own per-widget actions slot, so they sit in the card header the
+	// kit draws instead of a header this file draws.
+	const controls = (tileId: string) => {
 		const title = titleOf(tileId);
+		const widget = widgets.get(tileId);
 		return (
-			<WidgetCard
-				graph={graph}
-				widget={widget}
-				solutionId={solutionId}
-				dashboardId={dashboard.id}
-				orgId={orgId}
-				grip={
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						className="cursor-grab text-muted-foreground"
-						aria-label={`Move ${title}: drag the tile, or use the arrow keys`}
-						onKeyDown={(event) => {
-							const step = ARROW_STEP[event.key];
-							if (step === undefined) return;
-							event.preventDefault();
-							const grip = event.currentTarget;
-							// Moving a tile can move its DOM node, which drops focus;
-							// commit first so the grip can take focus back.
-							flushSync(() => save(moveBy(layout, tileId, step)));
-							grip.focus();
-						}}
-					>
-						<GripVertical />
-					</Button>
-				}
-				info={<MetricInfo graph={graph} widget={widget} orgId={orgId} />}
-				remove={
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						className="text-muted-foreground"
-						aria-label={`Remove ${title}`}
-						onClick={() => save(removeTile(layout, tileId))}
-					>
-						<X />
-					</Button>
-				}
-			/>
+			<>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-xs"
+					className="cursor-grab text-muted-foreground"
+					aria-label={`Move ${title}: drag the tile, or use the arrow keys`}
+					onKeyDown={(event) => {
+						const step = ARROW_STEP[event.key];
+						if (step === undefined) return;
+						event.preventDefault();
+						const grip = event.currentTarget;
+						// Moving a tile can move its DOM node, which drops focus;
+						// commit first so the grip can take focus back.
+						flushSync(() => save(moveBy(layout, tileId, step)));
+						grip.focus();
+					}}
+				>
+					<GripVertical />
+				</Button>
+				{widget && <MetricInfo graph={graph} widget={widget} orgId={orgId} />}
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-xs"
+					className="text-muted-foreground"
+					aria-label={`Remove ${title}`}
+					onClick={() => save(removeTile(layout, tileId))}
+				>
+					<X />
+				</Button>
+			</>
 		);
 	};
 	// The floating copy while a tile is dragged: the same card, but with no
@@ -612,56 +532,82 @@ function SolutionDashboard({
 		);
 		return (
 			<div inert aria-hidden="true">
-				<WidgetCard
+				<SolutionWidget
 					graph={graph}
 					widget={widget}
 					solutionId={solutionId}
 					dashboardId={dashboard.id}
 					orgId={orgId}
-					grip={glyph(<GripVertical />)}
-					info={glyph(<Info />)}
-					remove={glyph(<X />)}
+					actions={
+						<>
+							{glyph(<GripVertical />)}
+							{glyph(<Info />)}
+							{glyph(<X />)}
+						</>
+					}
 				/>
 			</div>
 		);
 	};
 
 	return (
-		<section className="space-y-4">
-			<div className="flex items-center gap-2">
-				{dashboard.title && (
-					<h2 className="text-lg font-semibold tracking-tight">
-						{dashboard.title}
-					</h2>
-				)}
-				<AddTileMenu
-					label={`Add a widget back to ${dashboard.title ?? "this dashboard"}`}
-					addable={addableTiles(graph, dashboard, layout)}
-					onAdd={(tileId) => save(addTile(layout, tileId))}
-				/>
-			</div>
-			{shown.length === 0 ? (
-				<p className="text-sm text-muted-foreground">
-					No widgets are shown. Add one back with the + button.
-				</p>
-			) : (
-				// The kit's SortableGrid rather than its Grid/Stack: the tiles are
-				// dragged onto each other to swap. The classes are those Grid
-				// cols={2} and Stack draw with.
-				<SortableGrid
-					ids={shown.map(({ tileId }) => tileId)}
-					onSwap={(dragged, target) => save(swapTiles(layout, dragged, target))}
-					itemLabel={titleOf}
-					renderItem={renderTile}
-					renderOverlay={renderDragged}
-					className={
-						dashboard.layout === "stack"
-							? "flex flex-col gap-4"
-							: "grid grid-cols-1 gap-4 sm:grid-cols-2"
-					}
-				/>
-			)}
-		</section>
+		<Dashboard
+			data={{
+				title: dashboard.title,
+				layout: dashboard.layout,
+				widgets: shown.map(({ widget }) => declaredWidget(widget)),
+			}}
+			slots={{
+				actions: (
+					<AddTileMenu
+						label={`Add a widget back to ${dashboard.title ?? "this dashboard"}`}
+						addable={addableTiles(graph, dashboard, layout)}
+						onAdd={(tileId) => save(addTile(layout, tileId))}
+					/>
+				),
+				renderWidget: (view) => {
+					const widget = widgets.get(view.id);
+					if (!widget) return null;
+					return (
+						<SolutionWidget
+							graph={graph}
+							widget={widget}
+							solutionId={solutionId}
+							dashboardId={dashboard.id}
+							orgId={orgId}
+							actions={controls(view.id)}
+						/>
+					);
+				},
+				// The kit's SortableGrid rather than its default grid: the tiles
+				// are dragged onto each other to swap. The classes are those the
+				// kit's grid and stack draw with.
+				layout: (tiles) => {
+					const nodes = new Map(tiles.map((tile) => [tile.id, tile.node]));
+					return (
+						<SortableGrid
+							ids={tiles.map((tile) => tile.id)}
+							onSwap={(dragged, target) =>
+								save(swapTiles(layout, dragged, target))
+							}
+							itemLabel={titleOf}
+							renderItem={(id) => nodes.get(id) ?? null}
+							renderOverlay={renderDragged}
+							className={
+								dashboard.layout === "stack"
+									? "flex flex-col gap-4"
+									: "grid grid-cols-1 gap-4 sm:grid-cols-2"
+							}
+						/>
+					);
+				},
+				empty: (
+					<p className="type-body text-muted-foreground">
+						No widgets are shown. Add one back with the + button.
+					</p>
+				),
+			}}
+		/>
 	);
 }
 

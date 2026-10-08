@@ -295,14 +295,14 @@ function DeliveryDetail({
 			</dl>
 
 			{/* Request payload */}
-			<Section
+			<PayloadBlock
 				title="Request payload"
 				body={delivery.payload || ""}
 				prettyJson
 			/>
 
 			{/* Response body */}
-			<Section
+			<PayloadBlock
 				title="Response body"
 				body={delivery.responseBody || ""}
 				emptyHint="Endpoint returned no body, or no attempt has been made yet."
@@ -311,7 +311,10 @@ function DeliveryDetail({
 	);
 }
 
-function Section({
+// A labelled block of request/response text inside the panel. Named for what
+// it is rather than `Section`, which in the kit is a page section with its own
+// heading and actions row.
+function PayloadBlock({
 	title,
 	body,
 	emptyHint,
