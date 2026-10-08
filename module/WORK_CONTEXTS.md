@@ -227,6 +227,34 @@ what it has installed. The host makes no such check, so a producer that means a
 grant to cover one exact definition enforces that itself: the id here says which
 resource is meant, never which version of it.
 
+## The reserved module audience
+
+`module-capabilities` is the audience a composed module's own capability carries,
+and every peer that verifies it reads a context bearing it as "a module, with no
+person present". That premise is what lets the module-facing surface skip the
+questions it asks of a delegated actor.
+
+So the audience is mintable only from a module identity. **Every mint and
+exchange that takes its audience from a caller's request refuses it** — the task
+mint, the installation mint, a root or child session, the audience exchange and a
+renewal. The refusal is the structural half of `requireMintableAudience`, which
+needs no state and therefore holds through a registry outage.
+
+On the four mints a signed-in person reaches it runs before the caller's
+authority is resolved, so the spelling is unreachable rather than merely
+unreachable for this person. The other two reach it differently, and each for a
+reason that is the point: the installation mint demands an internal service
+credential first, so it is not a person-driven mint at all; and a renewal gates
+the audience it RESOLVES, after authenticating, because a renewal naming none
+inherits the parent's — gating the request field would let the reserved spelling
+travel one generation further while the request named nothing.
+
+The module mints are unaffected: they pass the audience themselves rather than
+reading it off a message, as does the internal delegated-read exchange, whose
+audience comes from a declaration. `TestPersonMintsRefuseTheModuleAudience` and
+`TestEveryRequestSuppliedAudienceRefusesTheReservedOne` hold this, the second so
+a mint added later cannot skip the refusal silently.
+
 ## Operation contexts with no person present
 
 Both exchanges above need a parent: somebody signed in, and the child is
