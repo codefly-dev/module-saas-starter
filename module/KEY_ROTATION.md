@@ -1,9 +1,22 @@
-# Access-token signing-key rotation
+# Key rotation
 
-The Ed25519 keypair accounts holds is the trust anchor for every credential the
-edge verifies locally: access tokens, Work Context capabilities, and
-composed-module registration tokens. This is the runbook for replacing it
-without rejecting credentials that are still valid.
+accounts holds exactly two keys, and they rotate differently enough that
+conflating them is how a rotation takes authentication down:
+
+- the **Ed25519 signing key**, the trust anchor for every credential the edge
+  verifies locally — access tokens, Work Context capabilities, and
+  composed-module registration tokens. Replacing it is a staged overlap, because
+  credentials signed by the outgoing key must keep verifying until they expire.
+- the **envelope key**, which seals every stored credential (source tokens, MFA
+  seeds, WebAuthn credentials, webhook secrets) and computes the keyed hash
+  behind every API key. Rotating it is invisible to users, because each
+  ciphertext records the key version that sealed it — with one exception, the
+  keyed hash, which cannot be re-keyed at all.
+
+Which **service** holds them is a deployment decision, selected in the
+`key-service` configuration group and never inferred. See "The key service"
+below before either runbook: the backend changes who has custody, and for the
+envelope key it changes what rotation even means.
 
 ## What each side does
 
@@ -40,11 +53,101 @@ limited to one per 5 s across all key ids so untrusted token input cannot drive 
 fetch per request. A key that stops being published stops verifying within one
 TTL — or within TTL + grace if accounts is unreachable for the whole window.
 
+## The key service
+
+> **Where the cloud driver lives is a labelled stopgap.** accounts holds the GCP
+> Cloud KMS driver itself — the endpoint, the metadata server, Google's
+> resource-name grammar — because Codefly can express "this cell runs a Vault"
+> (`kind: cell-vault`) but has no equivalent for "this cell has a key service",
+> so there is no projection to read and no agent that owns the driver the way
+> `service-vault` owns Vault's. Filed as codefly-dev/cli#924. Everything above
+> the seam is already vendor-neutral, so when that kind exists the driver moves
+> below it and nothing here changes.
+
+
+Two backends, selected per key family in the `key-service` group
+(`module/configurations/local/key-service.env` carries the full binding):
+
+| | `vault` | `kms` |
+| --- | --- | --- |
+| What it is | a HashiCorp Vault the cell runs: KV v2 for the signing key, Transit for the envelope key and the keyed hash | the cell's cloud key-management service (GCP Cloud KMS first) |
+| How accounts authenticates | an AppRole credential the `vault` secret group delivers | the workload's own cloud identity — on GCP the metadata server, against the service account bound to the pod |
+| What the configuration carries | an address and a credential | key **names** only: no credential, no file |
+| What the cell operates | a stateful store to run, unseal, back up and credential | nothing; keys are cloud resources |
+| Can hold the signing key | yes | **wrapped, yes; natively, not yet** — see below |
+| Can hold the envelope key | yes | yes |
+
+`KEY_SERVICE_BACKEND` selects the backend that seals stored credentials and
+computes the keyed hash. `KEY_SERVICE_SIGNING_BACKEND` selects the one holding
+the signing key, and defaults to `KEY_SERVICE_BACKEND`.
+
+**The two families are selected separately because they move separately.** An
+envelope key is migrated by re-sealing, which is reversible and invisible to
+users. Replacing the signing key either re-logs everyone in or needs both keys
+published across the cutover. A deployment doing one of those this quarter and
+the other next says so.
+
+Outside the local environment an unselected backend **refuses to start, by
+name**. The two shapes have opposite custody models, so inheriting either by
+default would mean reaching a key service nobody chose.
+
+### The signing key's three homes
+
+| `KEY_SERVICE_SIGNING_BACKEND` | Where the key is | Secrets store | Key material in process |
+| --- | --- | --- | --- |
+| `vault` | Vault KV v2, read at boot | yes — a Vault to run, unseal, back up, credential | yes |
+| `kms-wrapped` | a ciphertext in `KEY_SERVICE_SIGNING_KEY_WRAPPED`, unwrapped at boot by a Cloud KMS key | **none** | yes |
+| `kms` | inside Cloud KMS; every signature is a request | **none** | **no** |
+
+`kms-wrapped` is what lets a hosted cell run with **no secrets store at all**
+today. The wrapped value is a ciphertext carried as a configuration value, inert
+without the Cloud KMS key named in `KEY_SERVICE_KMS_SIGNING_WRAP_KEY` and the
+workload identity that reaches it — so nothing stored is a credential on its own,
+and there is no store to operate. What it does not give you is non-exportability
+*in use*: the unwrapped key lives in process memory, so it is non-exportable at
+rest only. That is a weaker property than `kms`, which is why it is a backend of
+its own rather than a fallback inside `kms` — an operator chooses it knowingly
+instead of landing on it by default.
+
+The wrapping key is deliberately **not** the envelope key: destroying an
+envelope-key version would otherwise take away the host's ability to boot, and
+the two rotate on unrelated schedules.
+
+The wrapped value is the host's identity, so it must be identical across every
+replica and every restart — the `kid` the gateway pinned moves if it changes.
+Producing it is the cell's provisioning, from the cell's durable seed, exactly as
+seeding Vault is on the `vault` backend; this module names no command of its own.
+accounts refuses a value wrapped by a different key, of the wrong size, or not in
+the envelope framing, each by name.
+
+### Why `kms` cannot hold the signing key natively yet
+
+A Cloud KMS key cannot be exported, and three consumers are handed the signing
+key rather than signing through the key service:
+
+| Consumer | Where |
+| --- | --- |
+| the Work Context signer | `github.com/codefly-dev/sdk-go/workcontext`, `WorkContextSignerOptions.PrivateKey` |
+| the delegation minter | `github.com/codefly-dev/core`, `policy.MintEd25519` |
+| the OAuth state signer's seed | `pkg/auth/oauth_state.go` |
+
+This is a dependency-injection problem, not a cryptography one: each of those
+constructors takes the key *material* where it should take an injected signer.
+Once they accept a `crypto.Signer`, accounts hands them the key service and the
+key never leaves Cloud KMS.
+
+Until then `KEY_SERVICE_SIGNING_BACKEND=kms` is refused by name at startup,
+rather than left to surface as a Work Context authority that answers every RPC
+with a configuration error and a delegation minter that silently falls back to
+its v1 HMAC. The refusal names `kms-wrapped` as the shape that runs with no
+secrets store today.
+
 ## Custody of the signing key
 
-accounts **reads** the keypair; it never **owns** it. The private half lives in
-Vault KV v2 at `secret/data/jwt-signing-key`, and putting it there is the
-platform's identity-seeding command's job, not this module's:
+accounts **reads** the keypair; it never **owns** it. On the `vault` backend —
+the only one that can hold this key today — the private half lives in Vault KV
+v2 at `secret/data/jwt-signing-key`, and putting it there is the platform's
+identity-seeding command's job, not this module's:
 
 | | |
 | --- | --- |
@@ -61,7 +164,10 @@ bounded and collapsed to one line, so whoever reads the crash loop sees the
 command to run rather than a sentence about one.
 
 **Outside the local environment it is required**, and accounts refuses to start
-without it, by name. A diagnostic that exists only when somebody remembered to
+without it, by name — on the `vault` signing backend. A Cloud KMS key version is
+provisioned as cloud resources and read by name, so there is no key for an
+operator to write and nothing for this diagnostic to quote; insisting on it
+there would be a configuration requirement nobody could satisfy. A diagnostic that exists only when somebody remembered to
 configure it is missing exactly when the incident happens, so the check runs at
 boot — while a deployment can still be fixed — rather than during a crash loop.
 A local run has no cell and no seeding command, so it is optional there and the
@@ -102,7 +208,7 @@ mount. The plaintext in-cluster address is admitted by the composition's
 Service address. See
 [deployment/README.md](./deployment/README.md), "The cell's Vault".
 
-## Rotation
+## Rotating the signing key
 
 Each step is safe to hold indefinitely; only move on once the previous step has
 converged.
@@ -139,6 +245,78 @@ Rotating the gateway and accounts in either order is safe at every step, because
 the gateway never pins a key at boot: a gateway started mid-overlap loads the
 whole published set and accepts both keys regardless of the order the document
 lists them in.
+
+## Rotating the envelope key
+
+Unlike the signing key, this is invisible to users and needs no overlap window:
+**every stored value records the key version that sealed it**, so a rotated key
+never makes an existing ciphertext unreadable. On `vault`, Transit's own
+`vault:v<N>:` prefix carries the version; on `kms`, the stored payload names the
+key version and the key.
+
+Rotate the key in its own service and nothing else is required. Nothing in
+accounts needs restarting, and old ciphertexts keep opening under the versions
+that sealed them.
+
+### The one thing that cannot be re-keyed: the API-key hash
+
+`api_keys.key_hash` is a **keyed hash**, and the plaintext is gone the moment the
+key is issued — so there is nothing to re-hash. Lookup is *by* hash, so a key
+whose hash was computed under a different key simply is not found, which is
+indistinguishable from revoked.
+
+Two consequences:
+
+- **Do not move the MAC key version.** `KEY_SERVICE_KMS_MAC_KEY` names a
+  cryptoKey**Version**, not a key, precisely so this is a deliberate edit with a
+  stated consequence rather than a side effect of rotating. Vault Transit has
+  the same hazard and hides it better: `transit/hmac` follows the key's latest
+  version, so rotating the Transit key breaks API-key lookup there too.
+- **Across a backend cutover, keys issued under the outgoing backend keep
+  working only while it stays bound.** accounts looks a presented key up under
+  both hashes. Once the previous backend is withdrawn, those keys stop
+  authenticating and must be re-issued — so either withdraw after the keys have
+  expired, or re-issue them deliberately.
+
+## Moving the envelope key to another key service
+
+The cutover from one backend to another — `vault` to `kms`, or one Cloud KMS key
+to another. Each step is safe to hold indefinitely.
+
+1. **Bind both.** Set `KEY_SERVICE_BACKEND` to the incoming backend and
+   `KEY_SERVICE_PREVIOUS_BACKEND` to the outgoing one, and restart accounts.
+   Reads work immediately — every envelope names the backend that sealed it — and
+   nothing new is sealed under the outgoing one. Naming the same backend twice is
+   refused: the sweep would be a no-op while reading as progress.
+2. **Re-seal.** The startup sweep rewrites every enveloped column under the
+   incoming backend. It runs only while a previous backend is configured, is
+   restart-safe and idempotent, and does its key-service calls outside the
+   database transactions. An interrupted run resumes; two replicas cannot fight
+   over a row.
+3. **Confirm nothing references the outgoing backend.** The sweep logs
+   `re-sealed stored credentials under the selected key service` with
+   `still_referencing_another_backend`. While that is true it also logs a warning
+   naming the exact columns and counts. **This is the only safe signal to act
+   on** — a count of what the sweep changed cannot tell "finished" from "failed
+   on the first row", which is why the remaining count is reported separately.
+4. **Withdraw.** With nothing remaining, clear
+   `KEY_SERVICE_PREVIOUS_BACKEND` and restart. Only now remove the outgoing
+   service's binding — its address and credential, or its key grant.
+
+**Withdrawing early is the failure this sequence exists to prevent.** A value
+still sealed by a backend the deployment no longer binds is refused by name
+rather than mis-read, so it fails closed; but the credential is unreadable until
+the backend is bound again, and for a webhook signing secret that is
+unrecoverable — the consumer shares it, so the host cannot regenerate it.
+
+**Rollback.** Before step 4, swap the two keys back and restart: the sweep then
+re-seals in the other direction. After step 4 the outgoing backend is no longer
+bound, so rolling back means binding it again as the previous backend first.
+
+**If a row cannot be moved**, the sweep counts it and continues rather than
+aborting, so one unreadable value does not hide the state of every other column.
+Investigate the named column before withdrawing; a row sealed by a *third*
+backend nobody binds is reported as `unparseable` or under its own tag.
 
 ## Availability and security tradeoff
 

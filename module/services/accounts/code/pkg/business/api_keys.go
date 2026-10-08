@@ -20,6 +20,34 @@ type KeyHasher interface {
 	HashKey(ctx context.Context, plaintext string) (string, error)
 }
 
+// MultiKeyHasher is a KeyHasher whose key service is mid-cutover and can
+// therefore produce more than one hash a presented key may already be stored
+// under: the selected backend's, and the one the outgoing backend wrote.
+//
+// A keyed hash cannot be re-keyed — the plaintext is gone once the key is
+// issued — so the re-seal sweep that rewrites every enveloped column cannot
+// touch api_keys.key_hash. Because the lookup is BY hash, a key issued under
+// the outgoing backend is simply not found once the selected one changes, and
+// "not found" is indistinguishable from "revoked" to the caller. Trying each
+// candidate is what keeps existing keys authenticating across a cutover.
+type MultiKeyHasher interface {
+	KeyHasher
+	CandidateHashes(ctx context.Context, plaintext string) ([]string, error)
+}
+
+// candidateHashes is every hash a presented key could be stored under, most
+// likely first. A hasher that is not mid-cutover yields exactly one.
+func (s *Service) candidateHashes(ctx context.Context, plaintextKey string) ([]string, error) {
+	if multi, ok := s.hasher.(MultiKeyHasher); ok {
+		return multi.CandidateHashes(ctx, plaintextKey)
+	}
+	hash, err := s.hasher.HashKey(ctx, plaintextKey)
+	if err != nil {
+		return nil, err
+	}
+	return []string{hash}, nil
+}
+
 // CreateAPIKey generates a new API key, hashes it via vault, and stores the hash.
 func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.CreateAPIKeyRequest) (*gen.CreateAPIKeyResponse, error) {
 	w := wool.Get(ctx).In("CreateAPIKey")
@@ -103,14 +131,20 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 		return nil, w.NewError("key hasher not configured")
 	}
 
-	keyHash, err := s.hasher.HashKey(ctx, plaintextKey)
+	candidates, err := s.candidateHashes(ctx, plaintextKey)
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot hash key")
 	}
 
-	authentication, err := s.store.GetAPIKeyAuthentication(ctx, keyHash)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot look up key")
+	var authentication *APIKeyAuthentication
+	for _, keyHash := range candidates {
+		authentication, err = s.store.GetAPIKeyAuthentication(ctx, keyHash)
+		if err != nil {
+			return nil, w.Wrapf(err, "cannot look up key")
+		}
+		if authentication != nil && authentication.Key != nil {
+			break
+		}
 	}
 	if authentication == nil || authentication.Key == nil {
 		return &gen.ValidateAPIKeyResponse{Valid: false}, nil

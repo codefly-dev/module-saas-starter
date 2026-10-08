@@ -3,6 +3,7 @@
 package business_test
 
 import (
+	"accounts/pkg/keyservice"
 	"crypto/ed25519"
 
 	authcore "accounts/pkg/auth"
@@ -155,13 +156,14 @@ func runBusinessTests(m *testing.M) int {
 	// double (policy_log_production_path_test.go says why).
 	wirePolicyLogForTests(service, store)
 
-	// Wire optional components
-	vaultClient, err := infra.NewVaultClient(ctx)
-	if err == nil {
-		service.SetHasher(vaultClient)
-		service.SetMFASecretCipher(vaultClient)
-		service.SetOrgIdentityProviderCipher(vaultClient)
-		service.SetConnectorCipher(vaultClient)
+	// Wire optional components. The key service is bound exactly as work.go
+	// binds it, so these suites exercise the real stored envelope format rather
+	// than a stand-in that cannot disagree with it.
+	if keys, err := keyservice.Load(ctx); err == nil {
+		service.SetHasher(keys.Cipher)
+		service.SetMFASecretCipher(keys.Cipher)
+		service.SetOrgIdentityProviderCipher(keys.Cipher)
+		service.SetConnectorCipher(keys.Cipher)
 	}
 
 	// New auth pipeline: IdentityResolver + JWTMinter both backed by Postgres.

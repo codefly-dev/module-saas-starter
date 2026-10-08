@@ -288,6 +288,15 @@ connector credential, MFA secret and WebAuthn credential. A product must reach
 that Vault by name rather than inherit whichever one the composition happened to
 render.
 
+**A cell on a cloud key service needs this only for the signing key.** Selecting
+`KEY_SERVICE_BACKEND=kms` in the `key-service` group moves the envelope key and
+the keyed hash to the cell's cloud key-management service — non-exportable keys,
+reached with the workload's own cloud identity, with key names and no credential
+in the configuration. The signing key cannot move there yet, so a hosted cell
+still declares this kind for that one key; `module/KEY_ROTATION.md`, "Why `kms`
+cannot hold the signing key yet", says what has to change upstream first. When it
+does, a cell selecting `kms` for both families declares no `cell-vault` at all.
+
 ```yaml
 managed-services:
   vault:

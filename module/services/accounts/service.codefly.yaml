@@ -32,6 +32,7 @@ workspace-configuration-dependencies:
     - identity
     - internal-auth
     - internal-transport
+    - key-service
     - module-capabilities
     - observability
     - product-analytics

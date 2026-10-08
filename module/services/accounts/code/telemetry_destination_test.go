@@ -466,13 +466,13 @@ func TestStartupRefusesAnObservabilityGroupThatDidNotArrive(t *testing.T) {
 	// The key-custody requirement answers first outside a local run; satisfy it
 	// so the observability requirement is what is under test.
 	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_KEY_CUSTODY", "seed-signing-key")
-	require.NoError(t, requireStartupConfiguration(true))
-	require.ErrorContains(t, requireStartupConfiguration(false), "TELEMETRY_STATE is not set")
+	require.NoError(t, requireStartupConfiguration(t.Context(), true))
+	require.ErrorContains(t, requireStartupConfiguration(t.Context(), false), "TELEMETRY_STATE is not set")
 
 	t.Setenv(prefix+"TELEMETRY_STATE", "absent")
 	t.Setenv(prefix+"TELEMETRY_ABSENT_REASON", "a local run has no cell collector")
-	require.NoError(t, requireStartupConfiguration(true))
-	require.NoError(t, requireStartupConfiguration(false))
+	require.NoError(t, requireStartupConfiguration(t.Context(), true))
+	require.NoError(t, requireStartupConfiguration(t.Context(), false))
 }
 
 // service.name is never a literal typed here: the environment wins, then the

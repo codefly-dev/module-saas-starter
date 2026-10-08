@@ -44,6 +44,7 @@ const granted: SolutionEntitlement = {
   targetId: targetFor("audit"),
   healthy: true,
   scopeNodeId: "11111111-1111-1111-1111-111111111111",
+  installationId: "22222222-2222-2222-2222-222222222222",
 };
 const grantedButUnhealthy: SolutionEntitlement = { ...granted, healthy: false };
 
@@ -892,8 +893,8 @@ describe("entitledSolutions", () => {
     const clerks = entitlements({
       viewer: "viewer-in-clerks",
       solutions: [
-        { targetId: targetFor("ledger"), healthy: true, scopeNodeId: "node-ledger" },
-        { targetId: targetFor("intake"), healthy: true, scopeNodeId: "node-intake" },
+        { targetId: targetFor("ledger"), healthy: true, scopeNodeId: "node-ledger", installationId: "" },
+        { targetId: targetFor("intake"), healthy: true, scopeNodeId: "node-intake", installationId: "" },
       ],
     });
     expect(
@@ -909,7 +910,7 @@ describe("entitledSolutions", () => {
     const before = entitlements({
       solutions: [
         granted,
-        { targetId: targetFor("ledger"), healthy: true, scopeNodeId: "node-ledger" },
+        { targetId: targetFor("ledger"), healthy: true, scopeNodeId: "node-ledger", installationId: "" },
       ],
     });
     expect(entitledSolutions(registered, before)).toHaveLength(2);
@@ -929,7 +930,7 @@ describe("entitledSolutions", () => {
       entitlements({
         solutions: [
           granted,
-          { targetId: targetFor("retired"), healthy: true, scopeNodeId: "node-retired" },
+          { targetId: targetFor("retired"), healthy: true, scopeNodeId: "node-retired", installationId: "" },
         ],
       }),
     );
@@ -1014,6 +1015,7 @@ describe("an entitlement that can never join a registration", () => {
             targetId: "target-not-currently-served",
             healthy: true,
             scopeNodeId: "node-x",
+            installationId: "",
           },
         ],
       });
@@ -1036,7 +1038,7 @@ describe("an entitlement that can never join a registration", () => {
         entitlements({
           solutions: [
             granted,
-            { targetId: targetFor("retired"), healthy: true, scopeNodeId: "node-retired" },
+            { targetId: targetFor("retired"), healthy: true, scopeNodeId: "node-retired", installationId: "" },
           ],
         }),
       );

@@ -94,7 +94,7 @@ func TestGatewaySolutionEntitlements_AsksAboutTheVerifiedIdentity(t *testing.T) 
 	require.Equal(t, body.Viewer, authority.calls[0].GetSubjectId())
 	require.NotEmpty(t, body.Org)
 	require.Equal(t, []solutionEntitlementEntry{
-		{TargetID: fakeSolutionTarget("audit"), Healthy: true, ScopeNodeID: "node-1"},
+		{TargetID: fakeSolutionTarget("audit"), Healthy: true, ScopeNodeID: "node-1", InstallationID: "install-1"},
 	}, body.Usable)
 }
 

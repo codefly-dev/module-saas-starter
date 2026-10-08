@@ -16,8 +16,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/google/uuid"
-
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
@@ -455,12 +453,19 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Co
 func stampRequestIdentity(ctx context.Context, identity auth.RequestIdentity, assurance auth.Assurance) context.Context {
 	subject := identity.EffectiveSubjectID()
 	orgID := identity.OrgID.String()
+	// WithVerifiedDatabaseIdentity binds wool's organization as well as the
+	// database scope, so every verified door carries it — a delegated read, a
+	// module parent and the work-context authority all install a verified
+	// identity without passing through this transport.
+	//
+	// The user id is still stamped HERE, unconditionally, because the two have
+	// different availability: database scope needs BOTH uuids and that function
+	// binds nothing without them, while a verified user who has not selected an
+	// organization yet is an ordinary request whose logs and rate-limit key
+	// should still name them.
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, subject, orgID)
 	ctx = context.WithValue(ctx, wool.UserIDKey, subject)
 	ctx = context.WithValue(ctx, wool.UserAuthIDKey, subject)
-	if identity.OrgID != uuid.Nil {
-		ctx = context.WithValue(ctx, wool.OrgIDKey, orgID)
-	}
 	ctx = auth.WithVerifiedRequestIdentity(ctx, identity)
 	ctx = auth.WithVerifiedActor(ctx, identity.Delegation)
 	ctx = auth.WithVerifiedSessionID(ctx, identity.SessionID)

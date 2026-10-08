@@ -21,11 +21,11 @@ import (
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
+	"accounts/pkg/keyservice"
 	"accounts/pkg/membership"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"accounts/pkg/redisstate"
-	"accounts/pkg/vaultconnection"
 	"context"
 	ed25519core "crypto/ed25519"
 	"encoding/base64"
@@ -55,7 +55,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	// a full bring-up before anyone was told — and made the check unreachable
 	// from a test without standing both of those up, so deleting the call
 	// site was invisible.
-	if err := requireStartupConfiguration(codefly.IsLocal()); err != nil {
+	if err := requireStartupConfiguration(ctx, codefly.IsLocal()); err != nil {
 		return nil, err
 	}
 	w := wool.Get(ctx).In("doWork")
@@ -307,23 +307,27 @@ func doWork(ctx context.Context) (Clean, error) {
 		}
 	}
 
-	// Vault is a required security dependency: API-key HMAC and TOTP seed
-	// encryption must be stable across replicas and fail closed.
-	vaultClient, err := infra.NewVaultClient(ctx)
+	// The key service is a required security dependency: the API-key keyed hash
+	// and every sealed credential must be stable across replicas and fail
+	// closed. Which service holds the keys — Vault in-cluster, the cell's cloud
+	// key service on a hosted deployment — is selected in the `key-service`
+	// configuration group and refused here when it cannot work.
+	keys, err := keyservice.Load(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("configure Vault security services: %w", err)
+		return nil, fmt.Errorf("configure key service: %w", err)
 	}
-	service.SetHasher(vaultClient)
-	service.SetMFASecretCipher(vaultClient)
-	service.SetOrgIdentityProviderCipher(vaultClient)
-	service.SetConnectorCipher(vaultClient)
+	cipher := keys.Cipher
+	service.SetHasher(cipher)
+	service.SetMFASecretCipher(cipher)
+	service.SetOrgIdentityProviderCipher(cipher)
+	service.SetConnectorCipher(cipher)
 	service.SetGitHubConnector(githubconnector.NewConnector(
 		githubconnector.WithBaseURL(os.Getenv("GITHUB_API_BASE_URL"))))
-	// Datasource connector (issue #274): per-source credentials are Vault-transit
-	// encrypted, and pulled files are enqueued onto the durable inbox seam the
+	// Datasource connector (issue #274): per-source credentials are sealed by the
+	// key service, and pulled files are enqueued onto the durable inbox seam the
 	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
 	// GitHub Enterprise or tests.
-	service.SetDatasourceConnector(vaultClient, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
+	service.SetDatasourceConnector(cipher, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
 	// Every provider credential's operations are metered in one window shared by
 	// every replica, so a sync a person starts is served before background work.
 	service.SetDatasourceBudgetStore(store)
@@ -344,7 +348,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		workspaceEnv("github-app", "GITHUB_APP_CLIENT_SECRET"),
 	)
 	webhookPolicy := business.NewWebhookEndpointPolicy()
-	service.SetWebhookSecurity(vaultClient, webhookPolicy)
+	service.SetWebhookSecurity(cipher, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
 	if err != nil {
 		return nil, fmt.Errorf("configure WebAuthn: %w", err)
@@ -354,17 +358,46 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	service.SetWebAuthnEngine(webAuthnEngine)
-	if migrated, err := store.MigrateLegacyMFASecrets(ctx, vaultClient); err != nil {
+	if migrated, err := store.MigrateLegacyMFASecrets(ctx, cipher); err != nil {
 		return nil, fmt.Errorf("migrate legacy MFA secrets: %w", err)
 	} else if migrated > 0 {
 		w.Info("encrypted legacy MFA secrets", wool.Field("count", migrated))
 	}
-	if migrated, disabled, err := store.MigrateLegacyWebhookSecrets(ctx, vaultClient); err != nil {
+	if migrated, disabled, err := store.MigrateLegacyWebhookSecrets(ctx, cipher); err != nil {
 		return nil, fmt.Errorf("migrate legacy webhook secrets: %w", err)
 	} else if migrated > 0 {
 		w.Info("encrypted legacy webhook secrets",
 			wool.Field("count", migrated),
 			wool.Field("disabled_empty_secret_endpoints", disabled))
+	}
+	// A key-service cutover: re-seal every enveloped column under the selected
+	// backend, and report what still references the one being migrated away
+	// from. This runs only while a previous backend is configured, which is
+	// exactly the cutover window — a settled deployment does no work here.
+	//
+	// Reads already work from the moment both backends are bound, because every
+	// envelope names the backend that sealed it. This exists for the other half:
+	// withdrawing the outgoing backend is safe only once nothing references it,
+	// and the remaining count is what an operator reads to know that. The sweep
+	// is restart-safe and idempotent, so an interrupted run resumes and two
+	// replicas cannot fight over a row.
+	if previous := cipher.PreviousTag(); previous != "" {
+		outcomes, err := store.ResealEnvelopes(ctx, cipher)
+		resealed, remaining, detail := infra.ResealReport(outcomes)
+		if err != nil {
+			return nil, fmt.Errorf("re-seal stored credentials under the selected key service: %w", err)
+		}
+		w.Info("re-sealed stored credentials under the selected key service",
+			wool.Field("resealed", resealed),
+			wool.Field("previous_backend", previous),
+			wool.Field("still_referencing_another_backend", len(remaining) > 0))
+		if len(remaining) > 0 {
+			// Named, not merely counted: an operator who withdraws the previous
+			// backend now makes these unreadable, and "which rows" is the
+			// difference between a retry and an incident.
+			w.Warn("stored credentials still reference a key service other than the selected one — do not withdraw it yet",
+				wool.Field("columns", strings.Join(detail, "; ")))
+		}
 	}
 
 	// Auth pipeline: IdentityResolver + JWTMinter + optional provider
@@ -384,7 +417,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err := requireLocalForDevFixtureProvider(authProvider, codefly.IsLocal()); err != nil {
 		return nil, err
 	}
-	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider), codefly.IsLocal())
+	priv, err := loadSigningKey(ctx, keys, devFixtureAuthProvider(authProvider), codefly.IsLocal())
 	if err != nil {
 		return nil, err
 	}
@@ -639,7 +672,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		// org falls back to this global default (v, ex). Stacks build lazily on
 		// first use and are cache-invalidated when their configuration changes.
 		service.SetIdentityProviderRegistry(
-			newIdentityProviderRegistry(store, vaultClient, authProvider, v, ex))
+			newIdentityProviderRegistry(store, cipher, authProvider, v, ex))
 	}
 
 	// Audit persistence and matching webhook fan-out share one database
@@ -749,7 +782,7 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Every outbound path shares the generated generic job runtime. This
 	// separate pool can only read endpoint configuration and project outcomes.
-	webhookSender := business.NewWebhookSender(vaultClient, webhookPolicy)
+	webhookSender := business.NewWebhookSender(cipher, webhookPolicy)
 	webhookProjectionPool, err := infra.NewWebhookProjectionPool(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("configure outbound webhook projection database pool: %w", err)
@@ -874,10 +907,13 @@ func doWork(ctx context.Context) (Clean, error) {
 			return store.Pool().Ping(ctx)
 		},
 	})
-	if vaultClient != nil {
+	// A deployment on the cloud key service has no Vault at all, so there is no
+	// probe to register: registering one that always failed would report a
+	// dependency this deployment deliberately does not have.
+	if keys.VaultHealth != nil {
 		adapters.RegisterStatusProbe(adapters.StatusProbe{
 			Name:  "vault",
-			Check: vaultClient.Health,
+			Check: keys.VaultHealth,
 		})
 	}
 	adapters.RegisterHTTPRoute("/v1/status", adapters.NewStatusHTTPHandler(service))
@@ -2449,62 +2485,63 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 	return nil
 }
 
-// loadSigningKey returns the Ed25519 private key used to sign access and
-// refresh tokens.
+// loadSigningKey returns the host's Ed25519 access-token signing key, from
+// whichever backend the `key-service` group selected for it.
 //
 // The key must persist across restarts and be identical across replicas: it
 // signs JWTs, seeds the OAuth-state signer, and is the public key the gateway's
-// ext_authz check and permissions plugin pin. Production loads it from Vault KV v2 and refuses
-// to boot if that load fails — an ephemeral key would make each replica sign
+// ext_authz check and permissions plugin pin. A deployed environment refuses to
+// boot if the load fails — an ephemeral key would make each replica sign
 // differently, break existing sessions, and desynchronise the pinned key. This
 // fails closed rather than fail-open-to-broken.
 //
-// The key's custody is the cell's, never accounts': the platform's
-// identity-seeding command writes the keypair to Vault once, create-only, from
-// the cell's durable seed, so a re-seed restores the *same* keypair and the
-// `kid` the gateway pinned does not move (module/KEY_ROTATION.md, "Custody of
-// the signing key"). accounts therefore never generates one outside the local
-// environment: a self-minted key would silently diverge from that seed,
-// invalidating every live session and leaving two cells signing differently.
+// On the `vault` backend the key's custody is the cell's, never accounts': the
+// platform's identity-seeding command writes the keypair to Vault once,
+// create-only, from the cell's durable seed, so a re-seed restores the *same*
+// keypair and the `kid` the gateway pinned does not move
+// (module/KEY_ROTATION.md, "Custody of the signing key"). accounts therefore
+// never generates one outside the local environment: a self-minted key would
+// silently diverge from that seed, invalidating every live session and leaving
+// two cells signing differently.
 //
 // The refusal quotes VAULT_KEY_CUSTODY from the `vault` configuration group
 // when the cell sets it, so the operator reading a crash loop sees their own
 // seeding command rather than a sentence about one. This module never names
 // that command itself: a module names nothing above it.
 //
+// The `kms` backend cannot hold this key at all, and keyservice.Selection
+// refuses it there by name: its material never leaves the service, while the
+// Work Context signer, the delegation minter and the OAuth state signer are each
+// handed the key itself. So there is no custody command to name on that backend
+// because the backend is not reachable for this key — see ReadVaultSigningKey.
+//
 // allowEphemeral is set only in dev/fixture mode, where a freshly generated key
 // lets `codefly run service frontend --fixture dev-admin` work on a machine with
 // no Vault. The fallback logs a warning. isLocal is checked here as well as at
 // the provider gate: the two conditions are enforced in different functions, and
 // an argument that spans two functions is one a later edit can quietly break.
-func loadSigningKey(ctx context.Context, allowEphemeral, isLocal bool) (ed25519core.PrivateKey, error) {
+func loadSigningKey(
+	ctx context.Context,
+	keys *keyservice.Binding,
+	allowEphemeral, isLocal bool,
+) (ed25519core.PrivateKey, error) {
 	ephemeral := allowEphemeral && isLocal
-	connection, connectionErr := vaultconnection.Load(ctx)
-	if connectionErr == nil {
-		vaultToken, tokenErr := connection.Token()
-		if tokenErr != nil {
-			return nil, tokenErr
-		}
-		// The connection already resolved and enforced the mesh assertion for
-		// this address; passing it on keeps the loader's own check consistent
-		// with the one that admitted the connection rather than re-deriving it
-		// from configuration a second time.
-		priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
-			Address: connection.Address, Token: vaultToken, HTTPClient: connection.Client,
-			MeshProtected: connection.MeshProtected,
-		})
-		if err == nil {
-			return priv, nil
-		}
-		if !ephemeral {
-			return nil, fmt.Errorf("load signing key from Vault at secret/data/jwt-signing-key: %w — seed it from the cell's durable identity seed%s; accounts never mints its own outside the local environment", err, keyCustodyHint())
-		}
-		wool.Get(ctx).In("loadSigningKey").Warn("could not load signing key from Vault — falling back to ephemeral", wool.ErrField(err))
-	} else if !ephemeral {
-		return nil, fmt.Errorf("load signing key: no usable Vault binding for secret/data/jwt-signing-key: %w — name the cell's Vault in the `vault` configuration group, then seed the key from the cell's durable identity seed%s", connectionErr, keyCustodyHint())
+	key, err := keys.SigningKey(ctx, ephemeral)
+	switch {
+	case err == nil:
+		return key, nil
+	case errors.Is(err, keyservice.ErrNoSigningKey):
+		// The cause travels with the sentinel, so a local developer whose Vault
+		// is misconfigured is told WHY it did not answer rather than being left
+		// to guess from "no signing key is bound".
+		wool.Get(ctx).In("loadSigningKey").Warn(
+			"could not load the signing key — falling back to ephemeral", wool.ErrField(err))
+		return keyservice.GenerateSigningKey()
+	case keys.SigningBackend == keyservice.BackendVault:
+		return nil, fmt.Errorf("%w — seed it from the cell's durable identity seed%s; accounts never mints its own outside the local environment", err, keyCustodyHint())
+	default:
+		return nil, err
 	}
-	_, priv, err := ed25519minter.GenerateKey()
-	return priv, err
 }
 
 // requireStartupConfiguration refuses to start on configuration that cannot
@@ -2512,8 +2549,12 @@ func loadSigningKey(ctx context.Context, allowEphemeral, isLocal bool) (ed25519c
 // configuration requirement is registered, so each is enforced at a moment a
 // deployment can still be fixed rather than discovered from a crash loop — and
 // so a test can reach all of them with nothing running.
-func requireStartupConfiguration(isLocal bool) error {
-	if err := requireKeyCustody(isLocal); err != nil {
+func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
+	selection, err := keyservice.Selection(ctx, isLocal)
+	if err != nil {
+		return err
+	}
+	if err := requireKeyCustody(selection.SigningBackend, isLocal); err != nil {
 		return err
 	}
 	return requireTelemetryConfiguration(isLocal)
@@ -2545,8 +2586,16 @@ func requireTelemetryConfiguration(isLocal bool) error {
 // This module cannot name the command itself: it names nothing above it, and
 // the verb belongs to the cell. So the composition supplies it and this only
 // insists that it did.
-func requireKeyCustody(isLocal bool) error {
-	if isLocal || strings.TrimSpace(workspaceEnv("vault", "VAULT_KEY_CUSTODY")) != "" {
+func requireKeyCustody(signingBackend keyservice.Backend, isLocal bool) error {
+	// Only the `vault` backend has a seeding command to name. A Cloud KMS key
+	// version is provisioned as cloud resources and read by name, so there is
+	// no key for an operator to write and nothing for this diagnostic to quote;
+	// insisting on it there would be a configuration requirement that cannot be
+	// satisfied.
+	if isLocal || signingBackend != keyservice.BackendVault {
+		return nil
+	}
+	if strings.TrimSpace(workspaceEnv("vault", "VAULT_KEY_CUSTODY")) != "" {
 		return nil
 	}
 	return fmt.Errorf("vault: VAULT_KEY_CUSTODY is required outside the local environment: set it in the `vault` configuration group to the command this cell uses to seed secret/data/jwt-signing-key, so an operator meeting a missing-key refusal is told what to run rather than left to mint a key by hand (module/KEY_ROTATION.md, \"Custody of the signing key\")")
