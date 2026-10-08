@@ -463,9 +463,11 @@ func TestStartupRefusesAnObservabilityGroupThatDidNotArrive(t *testing.T) {
 	for _, key := range []string{"TELEMETRY_STATE", "OTEL_EXPORTER_OTLP_ENDPOINT", "TELEMETRY_ABSENT_REASON"} {
 		t.Setenv(prefix+key, "")
 	}
-	// The key-custody requirement answers first outside a local run; satisfy it
-	// so the observability requirement is what is under test.
-	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_KEY_CUSTODY", "seed-signing-key")
+	// The key service's requirements answer first outside a local run; satisfy
+	// them so the observability requirement is what is under test.
+	clearVaultBinding(t)
+	keyServiceBackend(t, "vault")
+	keyCustody(t, "seed-signing-key")
 	require.NoError(t, requireStartupConfiguration(t.Context(), true))
 	require.ErrorContains(t, requireStartupConfiguration(t.Context(), false), "TELEMETRY_STATE is not set")
 
