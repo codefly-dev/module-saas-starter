@@ -193,7 +193,7 @@ Agent-generated `module/services/*/builder/Dockerfile` recipes must **not** be
 configured in Dependabot: agents replace them before building. The coverage gate
 rejects those entries. `scripts/ci/build-images.json` records the expected build
 images and the owning agent source for Go,
-Next.js and the Postgres migration builder (including telemetry's generated Go
+Next.js and the Postgres migration builder (including the Go services' generated
 recipe, which is not checked in).
 
 The weekly `build-images.yml` monitor compares registry digests for the effective
@@ -441,7 +441,7 @@ reverse, fails the `release-contract` job.
 | `scoped-pools` | the authority of the pools the store's logins reach: the scoped reader, the scoped writer and the request pool, judged against a native PostgreSQL the suite provisions and widens one grant at a time | `python3 scripts/qualify-scoped-pools.py --postgres-bin "$(pg_config --bindir)"`, which runs `go test -race ./qualification/scopedpools` and fails unless every declared test in that package ran and passed |
 
 Two of those `go test ./...` invocations are worth reading carefully. This
-repository holds **six independent Go modules** — root, `module/tools`, and one
+repository holds **independent Go modules** — root, `module/tools`, and one
 per Go service — with no `go.work`, so `go test ./...` covers only the module it
 is run in. The `sdk-boundary` invocation runs in the root module (the module
 agent, the host, the generated reference composition) and the `module-package`

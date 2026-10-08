@@ -18,9 +18,6 @@ service-dependencies:
     - name: store
       endpoints:
         - name: tcp
-    - name: telemetry
-      endpoints:
-        - name: grpc
     - name: vault
       endpoints:
         - name: http

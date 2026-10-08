@@ -103,7 +103,7 @@ func runPostgresInfraTests(m *testing.M) int {
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
 		sdk.WithSharedControlChannel(),
-		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
+		sdk.WithExcludedDependencies("cache", "vault"),
 		sdk.WithNamingScope("test-infra"),
 		sdk.WithTimeout(90*time.Second),
 		sdk.WithSilence("store"),

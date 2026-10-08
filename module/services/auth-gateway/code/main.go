@@ -33,39 +33,42 @@ func main() {
 		panic(fmt.Sprintf("codefly init failed: %v", err))
 	}
 
-	grpcPort := codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port
+	// The SDK resolves an endpoint from the carrier the runtime injected or, in a
+	// local run, from the workspace's endpoint map, and never invents a port.
+	grpcNet, grpcNetErr := codefly.For(ctx).API(standards.GRPC).ResolveNetworkInstance()
+	if grpcNetErr != nil || grpcNet == nil {
+		panic(fmt.Sprintf("Codefly gRPC endpoint is unavailable: %v", grpcNetErr))
+	}
+	grpcPort := grpcNet.Port
 	var httpPort uint16
 	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
 	if httpNetErr != nil || httpNet == nil {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
 	httpPort = httpNet.Port
-	var otelProvider *wooltel.Provider
+	// Traces and metrics go to the collector OTEL_EXPORTER_OTLP_ENDPOINT names, which
+	// the platform delivers when the cell has one this workload may reach. With none
+	// delivered the process exports nothing over OTLP; a local run's traces go to
+	// wool's own stdout tracer instead. wool/otel reads and validates the variable,
+	// so a value it refuses stops the process here with its reason.
+	otelProvider, err := enableTracing(ctx, codefly.IsLocal())
+	if err != nil {
+		panic(fmt.Sprintf("configure OTEL tracing: %v", err))
+	}
 	var otelMetricProvider *otelMetrics
-	if observabilityEnabled() {
-		collectorNetwork, err := codefly.For(ctx).
-			Service("telemetry").
-			Endpoint("grpc").
-			API("grpc").
-			ResolveNetworkInstance()
+	if otlpEndpointConfigured() {
+		otelMetricProvider, err = enableOTELMetrics(ctx)
 		if err != nil {
-			panic(fmt.Sprintf("resolve telemetry collector through Codefly: %v", err))
-		}
-		otelProvider, err = wooltel.Enable(
-			wooltel.WithServiceName("saas-starter-auth-gateway"),
-			wooltel.WithEndpoint(collectorNetwork.Host),
-			wooltel.WithInsecure(),
-		)
-		if err != nil {
-			panic(fmt.Sprintf("configure OTEL tracing: %v", err))
-		}
-		otelMetricProvider, err = enableOTELMetrics(ctx, "saas-starter-auth-gateway", collectorNetwork.Host)
-		if err != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = otelProvider.Shutdown(shutdownCtx)
-			cancel()
+			if otelProvider != nil {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = otelProvider.Shutdown(shutdownCtx)
+				cancel()
+			}
 			panic(fmt.Sprintf("configure OTEL metrics: %v", err))
 		}
+		log.Print("OTEL export enabled: traces and metrics go to the collector at " + otlpEndpointVariable)
+	} else {
+		log.Print("OTEL export disabled: " + otlpEndpointVariable + " is not set, so nothing is exported over OTLP")
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

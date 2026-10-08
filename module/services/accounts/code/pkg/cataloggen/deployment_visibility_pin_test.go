@@ -3,7 +3,8 @@ package cataloggen
 import "testing"
 
 // The OTHER HALF OF A PIN. The module agent at the repository root holds the same
-// projection as endpointVisibility (topology_manifests.go), in a separate Go module
+// projection as this package's manifestCatalogVisibility (deployment_model.go),
+// in topology_manifests.go and a separate Go module
 // so neither side can import the other, and topology_visibility_test.go carries the
 // matching table.
 //
@@ -16,36 +17,25 @@ import "testing"
 func TestManifestCatalogVisibilityMatchesTheRootProjection(t *testing.T) {
 	for _, tc := range []struct {
 		visibility, location string
-		allowed              []string
+		exported             bool
 		want                 string
 	}{
-		// `internal` with NO allow-list is what the manifests author at core
-		// v0.14.0, and it maps to the same category the legacy wildcard did.
-		{"internal", "", nil, "module"},
-		{"internal", "", []string{}, "module"},
-		{"internal", "", []string{"*"}, "module"},
-		{"private", "external", nil, "external"},
-		{"public", "", nil, "public"},
-		{"", "", nil, "private"},
-		// A NARROWER list still refuses: this catalog cannot express "some
-		// modules", so admitting one would silently widen the generated policy to
-		// every module.
-		{"internal", "", []string{"example"}, ""},
-		{"internal", "", []string{"*", "example"}, ""},
-		{"public", "", []string{"example"}, ""},
-		{"module", "", nil, ""},
-		{"external", "", nil, ""},
-		{"private", "elsewhere", nil, ""},
-		{"internal", "external", []string{"example"}, ""},
+		{"internal", "", false, "module"},
+		{"private", "external", false, "external"},
+		{"public", "", false, "public"},
+		{"", "", false, "private"},
+		{"internal", "", true, "module"},
+		{"module", "", false, ""},
+		{"external", "", false, ""},
+		{"private", "elsewhere", false, ""},
+		{"internal", "external", false, ""},
 	} {
-		got, err := manifestCatalogVisibility(tc.visibility, tc.location, tc.allowed)
+		got, err := manifestCatalogVisibility(tc.visibility, tc.location, tc.exported)
 		if tc.want == "" {
 			if err == nil {
 				t.Errorf("accepted unsupported policy %#v as %q", tc, got)
 			}
-			continue
-		}
-		if err != nil || got != tc.want {
+		} else if err != nil || got != tc.want {
 			t.Errorf("policy %#v: got %q, %v", tc, got, err)
 		}
 	}

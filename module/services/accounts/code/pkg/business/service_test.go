@@ -110,7 +110,7 @@ func runBusinessTests(m *testing.M) int {
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
 		sdk.WithSharedControlChannel(),
-		sdk.WithExcludedDependencies("cache", "telemetry"),
+		sdk.WithExcludedDependencies("cache"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
 		// each short-lived flow temporary host ports; the scope also isolates

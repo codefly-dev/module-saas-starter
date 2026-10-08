@@ -5,8 +5,8 @@ description: Boot this module's whole service graph on a developer machine — w
 
 # Running the starter locally
 
-The graph is vault → store → cache → telemetry → accounts → auth-gateway →
-frontend, plus marketing. One command boots all of it with a fake-auth fixture:
+The graph is vault → store → cache → accounts → auth-gateway → frontend, plus
+marketing. One command boots all of it with a fake-auth fixture:
 
 ```bash
 codefly run service --fixture dev-admin
@@ -18,6 +18,14 @@ codefly run service --fixture dev-admin
 - No TTY (CI, pipes, MCP) auto-enables `--headless`.
 - Docker must be running. `codefly doctor` checks prerequisites; `codefly clear`
   reaps stray processes and containers between runs.
+- A local run has no cell collector, and the module ships none. Traces and
+  metrics follow one standard variable, `OTEL_EXPORTER_OTLP_ENDPOINT`, in the
+  process environment: set it and the services export over OTLP, leave it unset
+  and they export nothing over OTLP. Only the runtime the SDK identifies as
+  `local` sends traces to wool's stdout tracer in that case; the `local-dogfood`
+  profile is not that runtime, so with no endpoint it exports no traces or
+  metrics at all. The module's `configurations/local/observability.env` names no
+  collector and nothing reads it.
 
 For a real external identity provider and the production-grade provider stack,
 use the `local-dogfood` environment and its configuration groups:

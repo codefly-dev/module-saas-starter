@@ -49,8 +49,8 @@ the auth-gateway in front so this code path isn't reached.
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything is orchestrated by Codefly: `codefly run service --fixture
-dev-admin` resolves the module's service graph and brings up all eight
-services—Postgres + Vault + Redis + object storage + telemetry + Accounts +
+dev-admin` resolves the module's service graph and brings up its
+services—Postgres + Vault + Redis + object storage + Accounts +
 the private auth gateway + frontend—with seed data in one command. Marketing
 remains a separate runtime and may be started, deployed, rolled back, or
 disabled without changing the authenticated product.
@@ -495,8 +495,8 @@ extraction contracts.
 |----------------|--------|-----------------------------------------------------------------|
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
-| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and an in-graph OTLP gateway |
-| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint and exports OTLP for the designated SigNoz backend |
+| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and Go runtime and request metrics pushed over OTLP to the cell's collector |
+| Tracing        | ✅    | Accounts and auth-gateway export OTLP to the cell's collector, whose address the platform delivers as `OTEL_EXPORTER_OTLP_ENDPOINT`, for the designated SigNoz backend |
 | Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser errors; trace sampling is fixed at zero |
 | Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; [SigNoz provisioning remains unsupported pending a pinned service qualification](SIGNOZ_PROVISIONING.md) |
 
@@ -655,20 +655,33 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `OBSERVABILITY_EXPORTER`       | Required in-graph collector output: `debug` or `otlphttp`; the collector refuses to start when it is unset |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`  | External OTLP/HTTP destination used only by the collector    |
-| `OTEL_EXPORTER_OTLP_HEADERS`   | Secret external collector headers                            |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | The one telemetry variable, in the process environment: the cell collector's OTLP/gRPC address, delivered by the platform when the cell has a collector the workload may reach. Unset means nothing is exported over OTLP; `http://` is plaintext on the wire because the mesh supplies mTLS, `https://` is TLS |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
 | `TURNSTILE_SECRET_KEY`         | Server-only Siteverify credential                            |
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and the
-auth-gateway export unsampled request and Go runtime metrics through the in-graph
-OpenTelemetry collector. The auth-gateway covers both its HTTP gateway and gRPC ext_authz
-authorization service. Prometheus can alternatively scrape `/metrics` on each
-service's private REST endpoint; neither route is a module or public interface
-endpoint.
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, the accounts service and the
+auth-gateway export traces and unsampled request and Go runtime metrics over
+OTLP/gRPC to the collector it names. The auth-gateway covers both its HTTP gateway
+and gRPC ext_authz authorization service. That variable is the whole contract:
+core's `wool/otel` reads it, tells a URL from a `host:port`, takes the transport
+from the scheme, and refuses a URL with no port or with credentials, and the
+metrics exporter reads it from the same environment. When it is unset the services
+export nothing over OTLP and start normally: no state, reason or protocol is
+delivered or read, and a process that is given no collector does not fail to
+start. A local runtime, meaning the Codefly environment named `local` and no
+other, then uses wool's stdout tracer for traces; `local-dogfood` is not that
+runtime, so it exports no traces either. The endpoint decides, not where the
+process runs: a collector delivered to a pod in an environment named `local` is
+exported to. A value the metrics exporter cannot read (anything but an `http://`
+or `https://` URL, which would otherwise make it dial `localhost:4317` in
+silence) stops the service at startup.
+Metrics leave by OTLP push alone — decided 2026-10-06, because the cell's
+collector is the record for traces and metrics take the same path — so neither
+service serves a scrape endpoint. `service.name` comes from `OTEL_SERVICE_NAME` or
+`OTEL_RESOURCE_ATTRIBUTES` when the platform sets it, else the service's own
+Codefly identity (`module/service`, the one wool puts on its log lines).
 
 Frontend browser configuration. The server reads each value from its Codefly group per
 request (`identity`, `legal`, `product-features`, `product-analytics`, `error-tracking`,

@@ -395,6 +395,11 @@ func (s *approvedBuildScenario) authority(
 		Host:             solutionhost.HostTarget{Coordinate: productionPathCoordinate, Component: "saas-host"},
 		OwnershipDomain:  productionPathDomain,
 		EnvelopeRevision: solutionhost.FixtureEnvelopeRevision,
+		// Core requires the subject module's three declarations on every
+		// generation, [] when it has none: a nil list reads as one a renderer dropped.
+		Queues:        []string{},
+		Namespaces:    []string{},
+		ScopeCeilings: []solutionhost.ScopeCeiling{},
 	}
 	if removed {
 		// A withdrawn generation names no principal, approves no build and is

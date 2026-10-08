@@ -71,16 +71,16 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/network-policy.golden.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
-	require.Len(t, first.Catalog.GetServices(), 9)
+	require.Len(t, first.Catalog.GetServices(), 8)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 6)
-	require.Len(t, first.Catalog.GetPublicEgress(), 5)
+	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 14, endpointCount)
-	require.Equal(t, 8, dependencyCount)
+	require.Equal(t, 13, endpointCount)
+	require.Equal(t, 6, dependencyCount)
 	// The accounts REST surface is reachable only through the gateway; the
 	// gateway's REST surface is module-visible because composed modules and
 	// solutions use it (Work Context minting, solution registration) and the
@@ -90,7 +90,6 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		"auth-gateway": catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_MODULE,
 	}
 	privateREST := map[string]bool{"accounts": false, "auth-gateway": false}
-	authGatewayTelemetry := false
 	for _, service := range first.Catalog.GetServices() {
 		if _, ok := privateREST[service.GetName()]; !ok {
 			continue
@@ -101,17 +100,23 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 				privateREST[service.GetName()] = true
 			}
 		}
-		if service.GetName() == "auth-gateway" {
-			for _, dependency := range service.GetDependencies() {
-				if dependency.GetService() == "telemetry" {
-					require.Equal(t, []string{"grpc"}, dependency.GetEndpoints())
-					authGatewayTelemetry = true
-				}
-			}
-		}
 	}
 	require.Equal(t, map[string]bool{"accounts": true, "auth-gateway": true}, privateREST)
-	require.True(t, authGatewayTelemetry)
+	// The module owns no collector: telemetry is exported to the cell's, which is
+	// reached in-mesh, so no service has a telemetry dependency and the gateway,
+	// whose job is to be the perimeter, has no public egress to reach a backend.
+	for _, service := range first.Catalog.GetServices() {
+		require.NotEqual(t, "telemetry", service.GetName())
+		for _, dependency := range service.GetDependencies() {
+			require.NotEqual(t, "telemetry", dependency.GetService(), "%s depends on a telemetry service", service.GetName())
+		}
+	}
+	egress := map[string]bool{}
+	for _, grant := range first.Catalog.GetPublicEgress() {
+		egress[grant.GetService()] = true
+	}
+	require.Equal(t, map[string]bool{"accounts": true, "frontend": true, "marketing": true, "policy-log": true}, egress)
+	require.False(t, egress["auth-gateway"], "auth-gateway must have no public egress")
 	accountsConnectExposed, accountsAuthorityExposed, gatewayRESTExposed := false, false, false
 	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
 		if endpoint.GetService() == "accounts" && endpoint.GetEndpoint() == "connect" {
@@ -131,36 +136,27 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.True(t, accountsConnectExposed)
 	require.True(t, accountsAuthorityExposed)
 	require.True(t, gatewayRESTExposed)
-	require.Equal(t, 21, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 19, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	for _, name := range []string{
 		"allow-accounts-from-dependents", "allow-auth-gateway-from-dependents", "allow-auth-gateway-to-dependencies",
 		"allow-frontend-to-dependencies", "allow-store-from-bootstrap", "allow-store-bootstrap-to-store",
-		"allow-frontend-public-egress", "allow-marketing-public-egress", "allow-telemetry-from-dependents",
-		"allow-telemetry-public-egress", "allow-istio-ingress-to-marketing", "allow-istio-ingress-to-frontend",
+		"allow-frontend-public-egress", "allow-marketing-public-egress",
+		"allow-istio-ingress-to-marketing", "allow-istio-ingress-to-frontend",
 	} {
 		require.Contains(t, string(first.NetworkPolicy), "name: "+name)
 	}
+	require.NotContains(t, string(first.NetworkPolicy), "telemetry")
+	require.NotContains(t, string(first.NetworkPolicy), "name: allow-auth-gateway-public-egress")
 	require.NotContains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-auth-gateway")
 	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
+	require.NotContains(t, string(first.NetworkPolicy), "job-name:", "bootstrap Job names contain a content digest; policies select the stable service label")
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
 }
 
-// MODULE is the catalog category for every composed module, not a license to
-// erase a narrower authored allow-list. Legacy Codefly spellings also refuse.
-//
-// `visibility: internal` WITH NO allow-list has moved OUT of the refused set and
-// is now what the manifests author (issue #952). It is the v0.14.0 spelling of
-// what `internal` plus `allow-modules: ["*"]` said — core refuses the key on an
-// export by name, because an allow-list is derived from the consumers' declared
-// dependencies and never written by the module it would grant — so the two mean
-// the same thing and map to the same category.
-//
-// The narrower cases stay refused, which is the half that matters: `[example]`
-// names SOME modules, and this catalog has no way to express that, so admitting
-// it would silently widen the generated policy to every module. The legacy
-// `visibility: module` stays refused too.
+// Legacy reach spellings and authored consumer lists refuse. MODULE remains
+// a catalog category; declared dependencies determine which callers reach it.
 func TestDeploymentTopologyRefusesUnrepresentableEndpointPolicies(t *testing.T) {
 	catalog := readFixture(t, "../../../generated/service-catalog.json")
 	documents := readDeploymentDocuments(t)
@@ -185,13 +181,13 @@ func TestDeploymentTopologyRefusesUnrepresentableEndpointPolicies(t *testing.T) 
 	// quietly accepting everything: an unchanged tree must still produce artifacts.
 	_, err := cataloggen.BuildDeploymentArtifacts(catalog, documents)
 	require.NoError(t, err, "the authored `internal` with no allow-list must build")
-	// The legacy wildcard also still builds, because this generator walks every
-	// composed module's manifests and the fleet has not finished moving.
+	// A legacy wildcard is also an authored consumer grant and must refuse,
+	// matching the Core declaration boundary used to load these manifests.
 	legacy := withService(t, documents, "accounts",
 		"    - name: connect\n      visibility: internal\n",
 		"    - name: connect\n      visibility: internal\n      allow-modules: [\"*\"]\n")
 	_, err = cataloggen.BuildDeploymentArtifacts(catalog, legacy)
-	require.NoError(t, err, "the legacy wildcard must still build while the fleet moves")
+	require.ErrorContains(t, err, "derived from consumers", "legacy wildcard grants must refuse")
 }
 
 // The manifests are the model: a deployment fact lives in the service manifest
@@ -212,11 +208,11 @@ func TestDeploymentSpecIsStrictAndComplete(t *testing.T) {
 	require.ErrorContains(t, err, `names unknown endpoint "ghost"`)
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "telemetry", "    deployment:\n", "    deployment-typo:\n"))
+		withService(t, documents, "vault", "    deployment:\n", "    deployment-typo:\n"))
 	require.ErrorContains(t, err, "has no spec.deployment block")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withServiceDocument(documents, "ghost", documents.Services["telemetry"]))
+		withServiceDocument(documents, "ghost", documents.Services["vault"]))
 	require.ErrorContains(t, err, "not declared by module.codefly.yaml")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
@@ -231,7 +227,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, loadedModule.ValidateInterface(ctx))
 	loadedServices, err := loadedModule.LoadServices(ctx)
 	require.NoError(t, err)
-	require.Len(t, loadedServices, 9)
+	require.Len(t, loadedServices, 8)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
 	var moduleEntry struct {
@@ -243,7 +239,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
 	require.NoError(t, err)
-	require.Len(t, module.ServiceReferences, 9)
+	require.Len(t, module.ServiceReferences, 8)
 
 	for _, reference := range module.ServiceReferences {
 		document := readFixture(t, filepath.Join("../../../../../services", reference.Name, "service.codefly.yaml"))
@@ -285,14 +281,14 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 21)
+	require.Len(t, names, 19)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
 	require.False(t, names["allow-istio-ingress-to-auth-gateway"])
 	require.True(t, names["allow-store-from-bootstrap"])
 	require.True(t, names["allow-store-bootstrap-to-store"])
-	require.True(t, names["allow-telemetry-from-dependents"])
-	require.True(t, names["allow-telemetry-public-egress"])
+	require.False(t, names["allow-telemetry-from-dependents"])
+	require.False(t, names["allow-telemetry-public-egress"])
 }
 
 func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T) {
@@ -773,7 +769,7 @@ func TestDeploymentTopologyPodPortIsTheAllocationUnlessDeclared(t *testing.T) {
 	}
 	for endpoint, want := range map[string]uint32{
 		"accounts/connect": 8081, "accounts/grpc": 9090, "accounts/rest": 8080, "accounts/authority": 0,
-		"auth-gateway/grpc": 9090, "auth-gateway/rest": 8080, "telemetry/grpc": 9090,
+		"auth-gateway/grpc": 9090, "auth-gateway/rest": 8080,
 		"cache/read": 6379, "cache/write": 6379, "store/tcp": 5432, "vault/http": 8200,
 		"frontend/http": 3000, "marketing/http": 3000,
 	} {
