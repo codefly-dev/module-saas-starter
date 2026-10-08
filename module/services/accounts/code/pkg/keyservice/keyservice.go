@@ -124,3 +124,44 @@ func (e *statusError) Error() string {
 	return fmt.Sprintf("%s request returned %d", e.service, e.status)
 }
 func (e *statusError) HTTPStatusCode() int { return e.status }
+
+// KeyFactory binds another key of the same key service, named by a reference the
+// platform recorded for an organization.
+//
+// The reference is OPAQUE above this interface: only the backend knows whether
+// it is a Vault transit key name or a cloud resource name, which is what keeps
+// the vendor out of the caller and out of the database.
+type KeyFactory interface {
+	SealerFor(ctx context.Context, keyRef string) (Sealer, error)
+}
+
+// OrgKeyBinding is what the platform recorded about an organization's key.
+type OrgKeyBinding struct {
+	// KeyRef is the key, as the bound backend names one.
+	KeyRef string
+	// CustomerHeld marks a key this deployment does not control.
+	CustomerHeld bool
+	// RevokedReason is set once the key is gone — destroyed on request, or
+	// revoked by the customer. Every credential sealed under it is unreadable
+	// from that moment, which is the point.
+	RevokedReason string
+}
+
+// Revoked reports whether the key is gone.
+func (b OrgKeyBinding) Revoked() bool { return b.RevokedReason != "" }
+
+// OrgKeyBindings answers which key seals an organization's credentials. A nil
+// binding means the organization has none of its own and is sealed under the
+// deployment's key, which is the default and stays the default.
+type OrgKeyBindings interface {
+	OrgKeyBinding(ctx context.Context, orgID string) (*OrgKeyBinding, error)
+}
+
+// ErrKeyRevoked reports that an organization's key is gone, so its credentials
+// are unreadable by design.
+//
+// It is deliberately NOT business.ErrInvalidSecretEnvelope: callers treat that
+// sentinel as a credential the user should re-enter, and telling a customer to
+// reconnect a source whose data they instructed us to destroy is the opposite of
+// what crypto-shredding is for.
+var ErrKeyRevoked = errors.New("key service: the organization's key has been revoked")

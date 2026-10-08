@@ -16,11 +16,16 @@ import (
 	"accounts/pkg/vaultconnection"
 )
 
-// transitKeyName is the Transit key every purpose is sealed and hashed under.
-// It is a single name on purpose: the keyed hash behind API-key lookup must stay
-// comparable with every hash already stored, so the key it is computed under
-// cannot move.
-const transitKeyName = "api-keys"
+// defaultTransitKeyName is the Transit key this deployment seals under when an
+// organization has no key of its own, and the key the keyed hash is ALWAYS
+// computed under.
+//
+// The hash cannot move: API-key lookup is BY that value, so a hash computed
+// under another key stops matching every key already stored. The envelope key
+// can move — per organization, or on a cutover — because every sealed value
+// records which key sealed it. Two different questions, which is why they are
+// two fields on the sealer rather than one name.
+const defaultTransitKeyName = "api-keys"
 
 // VaultSealer is the Vault Transit backend: the AppRole + Transit binding
 // accounts has always used, behind the key-service seam and otherwise
@@ -31,6 +36,10 @@ type VaultSealer struct {
 	token      string
 	connection *vaultconnection.Connection
 	client     *http.Client
+	// envelopeKey seals and opens. Empty means defaultTransitKeyName, and a
+	// value sealed under that key is stored in the pre-per-key payload shape so
+	// nothing already written moves.
+	envelopeKey string
 }
 
 // NewVaultSealer binds the cell's Vault through the `vault` configuration
@@ -52,12 +61,43 @@ func NewVaultSealerDirect(address, token string) *VaultSealer {
 func (v *VaultSealer) Tag() string { return TagVaultTransit }
 
 // Identity is the tag: see Accepts.
-func (v *VaultSealer) Identity() string { return TagVaultTransit }
+func (v *VaultSealer) Identity() string { return TagVaultTransit + ":" + v.transitKey() }
 
-// Accepts needs only the tag: the Transit key is the `api-keys` constant rather
-// than a configured name, so one deployment has exactly one Vault envelope key
-// and nothing to disambiguate.
-func (v *VaultSealer) Accepts(envelope Envelope) bool { return envelope.Backend == TagVaultTransit }
+// transitKey is the Transit key this sealer seals under.
+func (v *VaultSealer) transitKey() string {
+	if v.envelopeKey == "" {
+		return defaultTransitKeyName
+	}
+	return v.envelopeKey
+}
+
+// Accepts requires the tag and the Transit key the payload names.
+//
+// A Vault ciphertext carries its key VERSION (`vault:v<N>:`) and not its key
+// NAME, so the payload has to name the key itself or a per-organization key
+// could not be told from the deployment's on read — and Vault would answer a
+// foreign key's ciphertext with the same failure it gives a corrupt one.
+func (v *VaultSealer) Accepts(envelope Envelope) bool {
+	if envelope.Backend != TagVaultTransit {
+		return false
+	}
+	key, _ := splitVaultPayload(envelope.Payload)
+	return key == v.transitKey()
+}
+
+// splitVaultPayload reads the optional key segment.
+//
+// The pre-per-key shape is a single base64url ciphertext, which belongs to
+// defaultTransitKeyName — that is what every value written before per-organization
+// keys existed looks like, and it keeps opening unchanged. base64url contains no
+// ":", so a payload carrying one is the keyed shape and the two cannot be
+// confused.
+func splitVaultPayload(payload string) (key, ciphertext string) {
+	if name, rest, found := strings.Cut(payload, ":"); found {
+		return name, rest
+	}
+	return defaultTransitKeyName, payload
+}
 
 // Health hits Vault's /v1/sys/health and returns nil only on the canonical
 // 200 / 429 / 472 / 473 codes that signal a reachable and un-sealed Vault. Used
@@ -89,7 +129,8 @@ func (v *VaultSealer) MAC(ctx context.Context, plaintext string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	result, err := v.request(ctx, "/v1/transit/hmac/"+transitKeyName, string(body))
+	// defaultTransitKeyName, never v.transitKey(): see the constant.
+	result, err := v.request(ctx, "/v1/transit/hmac/"+defaultTransitKeyName, string(body))
 	if err != nil {
 		return "", fmt.Errorf("vault hmac request: %w", err)
 	}
@@ -111,7 +152,7 @@ func (v *VaultSealer) Seal(ctx context.Context, purpose, plaintext string) (stri
 	if err != nil {
 		return "", err
 	}
-	result, err := v.request(ctx, "/v1/transit/encrypt/"+transitKeyName, string(body))
+	result, err := v.request(ctx, "/v1/transit/encrypt/"+v.transitKey(), string(body))
 	if err != nil {
 		return "", err
 	}
@@ -119,11 +160,19 @@ func (v *VaultSealer) Seal(ctx context.Context, purpose, plaintext string) (stri
 	if !ok || ciphertext == "" {
 		return "", errors.New("vault transit response missing ciphertext")
 	}
-	return base64.RawURLEncoding.EncodeToString([]byte(ciphertext)), nil
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(ciphertext))
+	if v.envelopeKey == "" {
+		// The deployment's own key keeps the shape it has always written, so a
+		// value sealed before per-organization keys existed and one sealed now
+		// are byte-identical in form.
+		return encoded, nil
+	}
+	return v.envelopeKey + ":" + encoded, nil
 }
 
 func (v *VaultSealer) Open(ctx context.Context, purpose, payload string) (string, error) {
-	ciphertext, err := base64.RawURLEncoding.DecodeString(payload)
+	_, encoded := splitVaultPayload(payload)
+	ciphertext, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil || len(ciphertext) == 0 {
 		return "", fmt.Errorf("invalid secret envelope: %w", business.ErrInvalidSecretEnvelope)
 	}
@@ -131,7 +180,7 @@ func (v *VaultSealer) Open(ctx context.Context, purpose, payload string) (string
 	if err != nil {
 		return "", err
 	}
-	result, err := v.request(ctx, "/v1/transit/decrypt/"+transitKeyName, string(body))
+	result, err := v.request(ctx, "/v1/transit/decrypt/"+v.transitKey(), string(body))
 	if err != nil {
 		return "", err
 	}
@@ -242,4 +291,41 @@ func openPurposeBoundPayload(purpose string, plaintext []byte) (string, error) {
 		return "", fmt.Errorf("secret purpose mismatch: %w", business.ErrInvalidSecretEnvelope)
 	}
 	return payload.Value, nil
+}
+
+// SealerFor binds another Transit key of the same Vault, for an organization
+// whose credentials are sealed under a key of its own.
+//
+// No boot probe here, unlike the Cloud KMS factory: a Transit key is created on
+// first encrypt (when the policy grants it), so probing would either create the
+// key as a side effect of reading a binding or fail on a key that is legitimately
+// not yet used. The first real seal is the check.
+func (v *VaultSealer) SealerFor(_ context.Context, keyRef string) (Sealer, error) {
+	if err := validTransitKeyName(keyRef); err != nil {
+		return nil, err
+	}
+	bound := *v
+	bound.envelopeKey = keyRef
+	return &bound, nil
+}
+
+// validTransitKeyName refuses a name that would change the request path rather
+// than the key: the name is interpolated into /v1/transit/encrypt/<name>, so a
+// slash or a traversal segment would address a different endpoint entirely.
+func validTransitKeyName(name string) error {
+	if name == "" {
+		return errors.New("key service: a Vault transit key name is required")
+	}
+	if name == defaultTransitKeyName {
+		return fmt.Errorf("key service: %q is this deployment's own transit key and cannot be an organization's", name)
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.':
+		default:
+			return fmt.Errorf("key service: invalid Vault transit key name %q: letters, digits, dash, underscore and dot only", name)
+		}
+	}
+	return nil
 }

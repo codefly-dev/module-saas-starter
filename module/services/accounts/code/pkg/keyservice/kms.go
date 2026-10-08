@@ -494,6 +494,9 @@ func (k *KMSSealer) Open(ctx context.Context, purpose, payload string) (string, 
 }
 
 func (k *KMSSealer) MAC(ctx context.Context, plaintext string) (string, error) {
+	if !k.macKeyBound() {
+		return "", errors.New("key service: this sealer is bound to an organization's key and may not compute the keyed hash; API-key lookup is by that hash, so it is always the deployment's own")
+	}
 	var result struct {
 		MAC string `json:"mac"`
 	}
@@ -579,3 +582,35 @@ func (w *KMSKeyWrap) UnwrapSigningKey(ctx context.Context, wrapped string) (ed25
 	}
 	return ed25519.NewKeyFromSeed(seed), nil
 }
+
+// SealerFor binds another Cloud KMS key, for an organization whose credentials
+// are sealed under a key of its own.
+//
+// The key is validated and round-tripped exactly as the deployment's own is:
+// purpose, algorithm, and a seal/open probe. An organization pointed at a key
+// that is well-formed and simply not usable must fail when the binding is read,
+// not at the first credential that needs it.
+func (k *KMSSealer) SealerFor(ctx context.Context, keyRef string) (Sealer, error) {
+	if !cryptoKeyName.MatchString(keyRef) {
+		return nil, fmt.Errorf("key service: an organization's Cloud KMS key must be a cryptoKey resource name (projects/<project>/locations/<location>/keyRings/<ring>/cryptoKeys/<key>), got %q", keyRef)
+	}
+	if keyRef == k.envelopeKey {
+		return nil, fmt.Errorf("key service: %s is this deployment's own envelope key and cannot be an organization's", keyRef)
+	}
+	sealer, err := newKMSEnvelope(ctx, k.client, keyRef)
+	if err != nil {
+		return nil, err
+	}
+	// The keyed hash never moves off the deployment's key, so a per-organization
+	// sealer carries no MAC key and MAC on it is a programming error rather than
+	// a silent hash under the wrong key.
+	return sealer, nil
+}
+
+// MAC refuses on a sealer bound to an organization's key.
+//
+// API-key lookup is BY the hash, so a hash computed under an organization's key
+// could never be found: the lookup happens before the organization is known. The
+// deployment's own sealer is the only one that may compute it, and this refuses
+// rather than quietly producing a value nothing will ever match.
+func (k *KMSSealer) macKeyBound() bool { return k.macVersion != "" }
