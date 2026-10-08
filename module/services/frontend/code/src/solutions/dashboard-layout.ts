@@ -197,6 +197,13 @@ export function parseLayout(
 	) {
 		return fallback;
 	}
+	// An unchanged saved default is not a customization. Rebase it on the
+	// new declaration instead of appending new scalars behind old charts.
+	if (
+		tiles.length === seen.length &&
+		tiles.every((id, index) => id === seen[index])
+	)
+		return fallback;
 	const layout: string[] = [];
 	for (const tileId of tiles) {
 		if (tileWidget(dashboard, tileId) && !layout.includes(tileId)) {

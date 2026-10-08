@@ -340,16 +340,13 @@ describe("the default layout", () => {
 			{ id: "c", title: "C", visualization: "line", series: daily },
 			{ id: "d", title: "D", visualization: "number", series: daily },
 		);
-		// Two tiles, then a chart, then a tile: three runs, the KPI row's own
-		// four-up geometry only around the adjacent pair.
-		const rows = [
-			...container.querySelectorAll('section > div > div[class*="grid"]'),
-		];
-		expect(rows).toHaveLength(3);
-		expect(rows[0].className).toContain("lg:grid-cols-4");
-		expect(rows[0].children).toHaveLength(2);
-		expect(rows[1].className).toContain("sm:grid-cols-2");
-		expect(rows[2].children).toHaveLength(1);
+		const grid = container.querySelector(".grid.items-start");
+		expect(grid?.className).toContain("lg:grid-cols-4");
+		const tiles = [...container.querySelectorAll("[data-dashboard-tile]")];
+		expect(tiles).toHaveLength(4);
+		expect(tiles[2].className).toContain("sm:col-span-2");
+		expect(tiles[2].className).toContain("col-start-1");
+		expect(tiles[3].className).toContain("col-start-1");
 		expect(
 			[...container.querySelectorAll('[data-slot="metric-label"], h3')].map(
 				(node) => node.textContent,
@@ -369,7 +366,7 @@ describe("the default layout", () => {
 				}}
 			/>,
 		);
-		expect(container.querySelector("section > div")?.className).toContain(
+		expect(container.querySelector(".flex.flex-col")?.className).toContain(
 			"flex flex-col",
 		);
 		expect(container.querySelector('[class*="grid-cols-4"]')).toBeNull();

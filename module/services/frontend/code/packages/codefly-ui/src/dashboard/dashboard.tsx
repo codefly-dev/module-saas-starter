@@ -7,7 +7,7 @@
 // package instance. Data resolution (metric → audit query) is the job of
 // `@codefly-dev/saas-sdk`'s `runDashboard`; use `fromDashboardData` to bridge.
 //
-// It paints with the kit's METRIC tier — `StatTile`/`KPIRow` for scalars,
+// It paints with the kit's METRIC tier — `StatTile` rows for scalars,
 // `metric-chart`'s line/area/bar over `ChartSeries` for series — which is the
 // tier the host's own operations pages are drawn with. Before, this renderer
 // and the host's solution dashboard both used the older `charts.tsx` tier, so a
@@ -15,7 +15,7 @@
 // kit, and there were two renderers to keep in step rather than one.
 
 import type * as React from "react";
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Card } from "../layout/card.js";
 import { Section } from "../layout/page.js";
 import { Skeleton } from "../layout/skeleton.js";
@@ -28,7 +28,7 @@ import {
 } from "./metric-chart.js";
 import type { ChartSeries } from "./metric-geometry.js";
 import { type MetricState, MetricStateBadge } from "./metric-state.js";
-import { KPIRow, type Metric, StatTile } from "./metric-tiles.js";
+import { type Metric, StatTile } from "./metric-tiles.js";
 import type {
 	DashboardView,
 	DashboardWidgetView,
@@ -292,72 +292,89 @@ export interface DashboardSlots {
 	 * Lays the tiles out in place of the default grid or stack — for a grid
 	 * whose tiles the viewer can reorder. Tiles arrive in the view's order.
 	 */
-	layout?: (tiles: DashboardTile[]) => ReactNode;
+	layout?: (
+		tiles: DashboardTile[],
+		renderLayout: (nodes: ReadonlyMap<string, ReactNode>) => ReactNode,
+	) => ReactNode;
 	/** Shown in place of the layout when the view holds no widgets. */
 	empty?: ReactNode;
 }
 
-/**
- * Runs of adjacent widgets that are laid out together: consecutive scalars
- * become one `KPIRow`, everything else a grid of cards.
- *
- * Declared order is never rearranged — only adjacent scalars are gathered — so
- * the page shows what the declaration says, in the order it says it. Hoisting
- * every scalar to the top would read better on some dashboards and would also
- * silently overrule a declaration the renderer does not own.
- */
-function layoutRuns(tiles: DashboardTile[]): DashboardTile[][] {
-	const runs: DashboardTile[][] = [];
-	for (const tile of tiles) {
-		const scalar = tile.widget.visualization === "number";
-		const previous = runs[runs.length - 1];
-		const sameKind =
-			previous && (previous[0].widget.visualization === "number") === scalar;
-		if (sameKind) previous.push(tile);
-		else runs.push([tile]);
-	}
-	return runs;
-}
-
-function Tiles({ tiles }: { tiles: DashboardTile[] }) {
-	return (
-		<>
-			{tiles.map((tile) => (
-				<Fragment key={tile.id}>{tile.node}</Fragment>
-			))}
-		</>
-	);
-}
-
+// One geometry for a static dashboard and the host's sortable tiles. Wrappers
+// own spans, including scalar spans; align-start prevents empty cards stretching.
 function DefaultLayout({
 	tiles,
-	columns,
-	grid,
+	data,
 }: {
 	tiles: DashboardTile[];
-	columns: 1 | 2 | 3 | 4;
-	grid: boolean;
+	data: DashboardView;
 }) {
-	if (!grid) {
-		return (
-			<div className="flex flex-col gap-4">
-				<Tiles tiles={tiles} />
-			</div>
-		);
-	}
+	const grid = (data.layout ?? "grid") === "grid";
+	const groups = [
+		{
+			id: undefined,
+			title: undefined,
+			description: undefined,
+			columns: data.columns,
+		},
+		...(data.sections ?? []),
+	];
 	return (
 		<div className="space-y-4">
-			{layoutRuns(tiles).map((run) =>
-				run[0].widget.visualization === "number" ? (
-					<KPIRow key={run[0].id}>
-						<Tiles tiles={run} />
-					</KPIRow>
-				) : (
-					<div key={run[0].id} className={cn("grid gap-4", GRID_COLS[columns])}>
-						<Tiles tiles={run} />
-					</div>
-				),
-			)}
+			{groups.map((group) => {
+				const members = tiles.filter(
+					(tile) => tile.widget.section === group.id,
+				);
+				if (members.length === 0) return null;
+				const columns = group.columns ?? data.columns ?? 4;
+				const automatic =
+					group.columns === undefined && data.columns === undefined;
+				return (
+					<Section
+						key={group.id === undefined ? "ungrouped" : `section:${group.id}`}
+						data-dashboard-section={group.id}
+						title={group.title}
+						description={group.description}
+					>
+						<div
+							className={
+								grid
+									? cn("grid items-start gap-4", GRID_COLS[columns])
+									: "flex flex-col gap-4"
+							}
+						>
+							{members.map((tile, index) => {
+								const scalar = tile.widget.visualization === "number";
+								const previous = members[index - 1];
+								const newBand =
+									previous &&
+									(previous.widget.visualization === "number") !== scalar;
+								const span = Math.min(
+									tile.widget.span ?? (automatic && !scalar ? 2 : 1),
+									columns,
+								) as 1 | 2 | 3 | 4;
+								return (
+									<div
+										key={tile.id}
+										data-dashboard-tile={tile.id}
+										className={
+											grid
+												? cn(
+														COL_SPAN[span],
+														newBand &&
+															"col-start-1 sm:col-start-1 lg:col-start-1",
+													)
+												: undefined
+										}
+									>
+										{tile.node}
+									</div>
+								);
+							})}
+						</div>
+					</Section>
+				);
+			})}
 		</div>
 	);
 }
@@ -376,27 +393,14 @@ export function Dashboard({
 	className?: string;
 	slots?: DashboardSlots;
 }) {
-	const columns = data.columns ?? 2;
 	const style = data.accent
 		? ({ "--primary": data.accent } as React.CSSProperties)
 		: undefined;
-	const isGrid = (data.layout ?? "grid") === "grid";
 
 	const tiles: DashboardTile[] = data.widgets.map((widget) => ({
 		id: widget.id,
 		widget,
-		node: slots?.renderWidget?.(widget) ?? (
-			// A scalar tile sits in a KPIRow, whose own geometry sets its width,
-			// so a span only applies to a card in the grid.
-			<DashboardWidget
-				widget={widget}
-				className={
-					isGrid && widget.visualization !== "number" && widget.span
-						? COL_SPAN[Math.min(widget.span, columns) as 1 | 2 | 3 | 4]
-						: undefined
-				}
-			/>
-		),
+		node: slots?.renderWidget?.(widget) ?? <DashboardWidget widget={widget} />,
 	}));
 
 	return (
@@ -412,9 +416,14 @@ export function Dashboard({
 					<p className="type-body text-muted-foreground">No widgets.</p>
 				))
 			) : slots?.layout ? (
-				slots.layout(tiles)
+				slots.layout(tiles, (nodes) => (
+					<DefaultLayout
+						data={data}
+						tiles={tiles.map((tile) => ({ ...tile, node: nodes.get(tile.id) }))}
+					/>
+				))
 			) : (
-				<DefaultLayout tiles={tiles} columns={columns} grid={isGrid} />
+				<DefaultLayout tiles={tiles} data={data} />
 			)}
 		</Section>
 	);

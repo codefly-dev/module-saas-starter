@@ -1,0 +1,177 @@
+{
+  "dashboards": [
+    {
+      "id": "logins",
+      "layout": "grid",
+      "title": "Sign-ins",
+      "widgets": [
+        {
+          "id": "w_stat_logins",
+          "metric": "total_logins",
+          "title": "Sign-ins",
+          "visualization": "number"
+        },
+        {
+          "id": "w_stat_people",
+          "metric": "total_people",
+          "title": "People",
+          "visualization": "number"
+        },
+        {
+          "id": "w_stat_per_person",
+          "metric": "logins_per_person",
+          "title": "Sign-ins per person",
+          "visualization": "number"
+        },
+        {
+          "id": "w_stat_mfa",
+          "metric": "mfa_completions",
+          "title": "MFA completed",
+          "visualization": "number"
+        },
+        {
+          "id": "w_line_day",
+          "metric": "logins_over_time",
+          "title": "Sign-ins per day",
+          "visualization": "line"
+        },
+        {
+          "id": "w_area_people",
+          "metric": "people_per_day",
+          "title": "People signing in per day",
+          "visualization": "area"
+        },
+        {
+          "id": "w_bar_method",
+          "metric": "logins_by_method",
+          "title": "Sign-in method",
+          "visualization": "bar"
+        },
+        {
+          "id": "w_line_week",
+          "metric": "logins_by_week",
+          "title": "Sign-ins per week",
+          "visualization": "line"
+        },
+        {
+          "id": "w_line_switches",
+          "metric": "org_switches_over_time",
+          "title": "Organisation switches per day",
+          "visualization": "line"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "login",
+      "type": "saas.auth.login"
+    },
+    {
+      "name": "mfa_completed",
+      "type": "saas.auth.mfa_challenge_completed"
+    },
+    {
+      "name": "org_switched",
+      "type": "saas.auth.organization_switched"
+    }
+  ],
+  "metrics": [
+    {
+      "aggregation": "count",
+      "bucket": "day",
+      "filter": {
+        "event": "login"
+      },
+      "groupBy": "time",
+      "id": "logins_over_time",
+      "kind": "source",
+      "title": "Sign-ins per day"
+    },
+    {
+      "aggregation": "count",
+      "bucket": "week",
+      "filter": {
+        "event": "login"
+      },
+      "groupBy": "time",
+      "id": "logins_by_week",
+      "kind": "source",
+      "title": "Sign-ins per week"
+    },
+    {
+      "aggregation": "count_distinct",
+      "bucket": "day",
+      "field": "actor_id",
+      "filter": {
+        "event": "login"
+      },
+      "groupBy": "time",
+      "id": "people_per_day",
+      "kind": "source",
+      "title": "People signing in per day"
+    },
+    {
+      "aggregation": "count",
+      "filter": {
+        "event": "login"
+      },
+      "groupBy": "event_type",
+      "id": "total_logins",
+      "kind": "source",
+      "title": "Sign-ins"
+    },
+    {
+      "aggregation": "count_distinct",
+      "field": "actor_id",
+      "filter": {
+        "event": "login"
+      },
+      "groupBy": "event_type",
+      "id": "total_people",
+      "kind": "source",
+      "title": "People"
+    },
+    {
+      "id": "logins_per_person",
+      "inputs": [
+        "total_logins",
+        "total_people"
+      ],
+      "kind": "derived",
+      "operation": "ratio",
+      "title": "Sign-ins per person"
+    },
+    {
+      "aggregation": "count",
+      "filter": {
+        "event": "login"
+      },
+      "groupBy": "payload:method",
+      "id": "logins_by_method",
+      "kind": "source",
+      "title": "Sign-in method"
+    },
+    {
+      "aggregation": "count",
+      "filter": {
+        "event": "mfa_completed"
+      },
+      "groupBy": "event_type",
+      "id": "mfa_completions",
+      "kind": "source",
+      "title": "MFA challenges completed"
+    },
+    {
+      "aggregation": "count",
+      "bucket": "day",
+      "filter": {
+        "event": "org_switched"
+      },
+      "groupBy": "time",
+      "id": "org_switches_over_time",
+      "kind": "source",
+      "title": "Organisation switches per day"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 import type {
+	DashboardColumns,
 	DashboardLayout,
+	DashboardSection,
 	DataGraph,
 	WidgetVisualization,
 } from "../schema.js";
@@ -25,6 +27,8 @@ export type MetricId<T extends DataGraph> = T["metrics"][number]["id"];
 
 /** A dashboard widget bound to its resolved metric series. */
 export interface ResolvedWidget {
+	span?: DashboardColumns;
+	section?: string;
 	id: string;
 	visualization: WidgetVisualization;
 	title?: string;
@@ -42,6 +46,8 @@ export interface DashboardData<T extends DataGraph = DataGraph> {
 	id: string;
 	title?: string;
 	layout: DashboardLayout;
+	columns?: DashboardColumns;
+	sections?: readonly DashboardSection[];
 	widgets: ResolvedWidget[];
 	byMetric: Record<MetricId<T>, MetricSeries>;
 }
@@ -80,6 +86,8 @@ export async function runDashboard<const T extends DataGraph>(
 		}
 		return {
 			id: widget.id,
+			span: widget.span,
+			section: widget.section,
 			visualization: widget.visualization,
 			title: widget.title,
 			metricId: widget.metric,
@@ -91,6 +99,8 @@ export async function runDashboard<const T extends DataGraph>(
 		id: dashboard.id,
 		title: dashboard.title,
 		layout: dashboard.layout,
+		columns: dashboard.columns,
+		sections: dashboard.sections,
 		widgets,
 		byMetric,
 	};

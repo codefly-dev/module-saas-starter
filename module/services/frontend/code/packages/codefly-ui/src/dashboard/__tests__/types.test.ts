@@ -41,3 +41,24 @@ describe("fromDashboardData", () => {
 		expect(view.widgets).toEqual([]);
 	});
 });
+
+it("preserves sections, columns and widget spans from the SDK", () => {
+	const data = {
+		columns: 3 as const,
+		sections: [{ id: "summary", title: "Summary", columns: 4 as const }],
+		widgets: [
+			{
+				id: "total",
+				visualization: "number" as const,
+				span: 2 as const,
+				section: "summary",
+				series: { points: [], total: 0 },
+			},
+		],
+	};
+	const view = fromDashboardData(data);
+	expect(view.columns).toBe(3);
+	expect(view.sections).toEqual(data.sections);
+	expect(view.widgets[0]).toMatchObject({ span: 2, section: "summary" });
+	expect(fromDashboardData(data, { columns: 1 }).columns).toBe(1);
+});

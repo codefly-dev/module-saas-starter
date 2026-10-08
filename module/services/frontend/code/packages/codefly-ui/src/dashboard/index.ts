@@ -29,7 +29,45 @@ export {
 	scaleY,
 } from "./geometry.js";
 export {
+	AreaChart as MetricAreaChart,
+	BarChart as MetricBarChart,
+	chartSeriesColor,
+	LineChart as MetricLineChart,
+	type MetricChartProps,
+} from "./metric-chart.js";
+export {
+	axisPositions,
+	type ChartDatum,
+	type ChartSeries,
+	type Point,
+	type ResolvedSeries,
+	resolveSeries,
+	type StackedSeries,
+	stackedExtent,
+	stackSeries,
+	unionLabels,
+	valuesExtent,
+} from "./metric-geometry.js";
+export {
+	assertSampleModeAllowed,
+	MetricProvenance,
+	type MetricState,
+	MetricStateBadge,
+} from "./metric-state.js";
+export {
+	formatMetricValue,
+	KPIRow,
+	type Metric,
+	MetricCard,
+	type MetricFormat,
+	StatTile,
+} from "./metric-tiles.js";
+export { SortableGrid, type SortableGridProps } from "./sortable-grid.js";
+export { Sparkline } from "./sparkline.js";
+export { TrendLineChart } from "./trend-line-chart.js";
+export {
 	type DashboardLayoutKind,
+	type DashboardSectionView,
 	type DashboardView,
 	type DashboardWidgetView,
 	fromDashboardData,
@@ -37,45 +75,3 @@ export {
 	type WidgetSeries,
 	type WidgetVisualization,
 } from "./types.js";
-
-export {
-	AreaChart as MetricAreaChart,
-	LineChart as MetricLineChart,
-	BarChart as MetricBarChart,
-	chartSeriesColor,
-	type MetricChartProps,
-} from "./metric-chart.js";
-export {
-	type ChartDatum,
-	type ChartSeries,
-	type ResolvedSeries,
-	type Point,
-	unionLabels,
-	resolveSeries,
-	stackSeries,
-	stackedExtent,
-	type StackedSeries,
-	valuesExtent,
-	axisPositions,
-} from "./metric-geometry.js";
-
-export { Sparkline } from "./sparkline.js";
-export { SortableGrid, type SortableGridProps } from "./sortable-grid.js";
-
-export {
-	MetricProvenance,
-	MetricStateBadge,
-	assertSampleModeAllowed,
-	type MetricState,
-} from "./metric-state.js";
-
-export {
-	MetricCard,
-	StatTile,
-	KPIRow,
-	formatMetricValue,
-	type Metric,
-	type MetricFormat,
-} from "./metric-tiles.js";
-
-export { TrendLineChart } from "./trend-line-chart.js";

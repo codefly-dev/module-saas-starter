@@ -171,9 +171,21 @@ export type Metric = SourceMetric | DerivedMetric;
  * presentation slots contributed to host surfaces; a `MetricWidget` renders a
  * data-graph metric inside a `<Dashboard>`.
  */
+export type DashboardColumns = 1 | 2 | 3 | 4;
+
+/** A named band; widgets refer to its id through `section`. */
+export interface DashboardSection {
+	id: string;
+	title: string;
+	description?: string;
+	columns?: DashboardColumns;
+}
+
 export interface MetricWidget {
 	id: string;
 	metric: string;
+	span?: DashboardColumns;
+	section?: string;
 	visualization: WidgetVisualization;
 	title?: string;
 }
@@ -183,6 +195,8 @@ export interface Dashboard {
 	id: string;
 	title?: string;
 	layout: DashboardLayout;
+	columns?: DashboardColumns;
+	sections?: readonly DashboardSection[];
 	widgets: readonly MetricWidget[];
 }
 
@@ -575,11 +589,11 @@ function validateWidget(
 		isObject(value),
 		`dashboard '${dashboardId}' widget must be an object`,
 	);
-	assertExactKeys(
-		value,
-		["id", "metric", "visualization", "title"],
-		`dashboard '${dashboardId}' widget`,
-	);
+	// Presentation fields are forward-compatible. Validate the vocabulary this
+	// host understands; future layout hints neither grant authority nor query data.
+	assertColumns(value.span, "widget span");
+	if (value.section !== undefined)
+		assertLogicalId(value.section, "widget section");
 	assertLogicalId(value.id, `dashboard '${dashboardId}' widget id`);
 	assertLogicalId(
 		value.metric,
@@ -595,10 +609,39 @@ function validateWidget(
 	);
 }
 
+function assertColumns(value: unknown, context: string): void {
+	assertGraph(
+		value === undefined || [1, 2, 3, 4].includes(value as number),
+		`${context} must be an integer from 1 to 4`,
+	);
+}
+
 function validateDashboard(value: unknown): asserts value is Dashboard {
 	assertGraph(isObject(value), "dashboard must be an object");
-	assertExactKeys(value, ["id", "title", "layout", "widgets"], "dashboard");
+
 	assertLogicalId(value.id, "dashboard id");
+	assertColumns(value.columns, "dashboard columns");
+	if (value.sections !== undefined) {
+		assertGraph(
+			Array.isArray(value.sections),
+			"dashboard sections must be an array",
+		);
+		for (const section of value.sections) {
+			assertGraph(isObject(section), "dashboard section must be an object");
+			assertLogicalId(section.id, "section id");
+			assertGraph(
+				typeof section.title === "string" && section.title.trim().length > 0,
+				"section title must be non-empty",
+			);
+			assertOptionalText(section.description, "section description");
+			assertColumns(section.columns, "section columns");
+		}
+		assertUnique(
+			(value.sections as DashboardSection[]).map((section) => section.id),
+			"section id",
+		);
+	}
+
 	assertGraph(
 		LAYOUT.includes(value.layout as DashboardLayout),
 		`dashboard '${String(value.id)}' layout '${String(value.layout)}' is unsupported`,
@@ -613,6 +656,15 @@ function validateDashboard(value: unknown): asserts value is Dashboard {
 	);
 	for (const widget of value.widgets)
 		validateWidget(widget, value.id as string);
+	for (const widget of value.widgets as MetricWidget[]) {
+		assertGraph(
+			widget.section === undefined ||
+				(value.sections as DashboardSection[] | undefined)?.some(
+					(section) => section.id === widget.section,
+				),
+			`widget '${widget.id}' names an unknown section`,
+		);
+	}
 	assertUnique(
 		(value.widgets as MetricWidget[]).map((widget) => widget.id),
 		`widget id in dashboard '${String(value.id)}'`,

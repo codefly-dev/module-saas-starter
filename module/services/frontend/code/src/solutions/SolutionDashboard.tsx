@@ -161,6 +161,8 @@ function declaredWidget(widget: MetricWidget): DashboardWidgetView {
 		visualization: widget.visualization,
 		title: widget.title ?? widget.metric,
 		series: null,
+		span: widget.span,
+		section: widget.section,
 	};
 }
 
@@ -485,15 +487,32 @@ function SolutionDashboard({
 					size="icon-xs"
 					className="cursor-grab text-muted-foreground"
 					aria-label={`Move ${title}: drag the tile, or use the arrow keys`}
+					data-move-widget={tileId}
 					onKeyDown={(event) => {
 						const step = ARROW_STEP[event.key];
 						if (step === undefined) return;
 						event.preventDefault();
 						const grip = event.currentTarget;
+						const dashboardElement = grip.closest("section");
 						// Moving a tile can move its DOM node, which drops focus;
 						// commit first so the grip can take focus back.
-						flushSync(() => save(moveBy(layout, tileId, step)));
-						grip.focus();
+						const peers = layout.filter(
+							(id) => widgets.get(id)?.section === widget?.section,
+						);
+						const moved = moveBy(peers, tileId, step);
+						let index = 0;
+						flushSync(() =>
+							save(
+								layout.map((id) => (peers.includes(id) ? moved[index++] : id)),
+							),
+						);
+						// Restore focus by widget identity after the layout update.
+						const replacement = [
+							...(dashboardElement?.querySelectorAll<HTMLButtonElement>(
+								"button[data-move-widget]",
+							) ?? []),
+						].find((button) => button.dataset.moveWidget === tileId);
+						(replacement ?? grip).focus();
 					}}
 				>
 					<GripVertical />
@@ -555,6 +574,8 @@ function SolutionDashboard({
 			data={{
 				title: dashboard.title,
 				layout: dashboard.layout,
+				columns: dashboard.columns,
+				sections: dashboard.sections,
 				widgets: shown.map(({ widget }) => declaredWidget(widget)),
 			}}
 			slots={{
@@ -582,7 +603,7 @@ function SolutionDashboard({
 				// The kit's SortableGrid rather than its default grid: the tiles
 				// are dragged onto each other to swap. The classes are those the
 				// kit's grid and stack draw with.
-				layout: (tiles) => {
+				layout: (tiles, renderLayout) => {
 					const nodes = new Map(tiles.map((tile) => [tile.id, tile.node]));
 					return (
 						<SortableGrid
@@ -593,10 +614,9 @@ function SolutionDashboard({
 							itemLabel={titleOf}
 							renderItem={(id) => nodes.get(id) ?? null}
 							renderOverlay={renderDragged}
-							className={
-								dashboard.layout === "stack"
-									? "flex flex-col gap-4"
-									: "grid grid-cols-1 gap-4 sm:grid-cols-2"
+							renderLayout={renderLayout}
+							canSwap={(a, b) =>
+								widgets.get(a)?.section === widgets.get(b)?.section
 							}
 						/>
 					);

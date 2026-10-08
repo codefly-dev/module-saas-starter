@@ -238,10 +238,18 @@ time, that a categorical grouping does not have.
 
 A host composes its own features around that renderer — `<Dashboard>`'s slots
 take header actions, a layout (the host's solution dashboard passes a
-drag-to-reorder grid), a per-widget renderer for a host that resolves each
+drag-to-reorder grid using the kit's shared layout), a per-widget renderer for a host that resolves each
 widget in its own query, and an empty state. A consumer re-implementing any part
 of the drawing is refused by a gate: `src/components/__tests__/kit.test.ts` in
 the frontend.
+
+The declaration can add dashboard `columns`, widget `span`, and named
+`sections` with their own heading and column count. The defaults need none of
+these: adjacent scalar widgets form compact four-column rows, series use two
+columns, and cards keep their natural height. A stack stays single-column.
+Section and widget order come from the declaration until a viewer customizes
+within a section. See [the layout contract](docs/plugin-manifest-schema.md#dashboard-layout)
+for responsive spans, persistence and the compatibility limit of legacy hosts.
 
 ## Independent validation
 

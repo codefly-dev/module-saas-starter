@@ -570,6 +570,10 @@
     order: 9999;
   }
 
+  .col-start-1 {
+    grid-column-start: 1;
+  }
+
   .col-start-2 {
     grid-column-start: 2;
   }
@@ -4430,6 +4434,10 @@
       grid-column: span 2 / span 2;
     }
 
+    .sm\:col-start-1 {
+      grid-column-start: 1;
+    }
+
     .sm\:flex {
       display: flex;
     }
@@ -4551,6 +4559,10 @@
 
     .lg\:col-span-4 {
       grid-column: span 4 / span 4;
+    }
+
+    .lg\:col-start-1 {
+      grid-column-start: 1;
     }
 
     .lg\:grid-cols-3 {

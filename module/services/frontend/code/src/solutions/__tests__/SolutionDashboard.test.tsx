@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { SolutionDashboards } from "../SolutionDashboard";
+import platformSignins from "./fixtures/platform-signins.json";
 
 // Auth state is mutable so a test can drop the org context and assert the
 // pre-org window renders as loading, not as an empty dashboard, or switch the
@@ -420,7 +421,9 @@ describe("a viewer's layout", () => {
 				const index =
 					this.dataset.sortableId === undefined || !this.parentElement
 						? 0
-						: [...this.parentElement.children].indexOf(this);
+						: [...document.querySelectorAll("[data-sortable-id]")].indexOf(
+								this,
+							);
 				const left = (index % 2) * 110;
 				const top = Math.floor(index / 2) * 110;
 				return {
@@ -555,5 +558,102 @@ describe("a viewer's layout", () => {
 			screen.getByRole("button", { name: "Remove Logins over time" }),
 		);
 		expect(tileTitles()).toEqual(["Top event types", "Total logins"]);
+	});
+});
+
+describe("nine-widget layout", () => {
+	it("keeps the supplied declaration order and packs four scalars ahead of five charts", () => {
+		authState.organizationId = undefined;
+		const { container } = renderInApp(
+			<SolutionDashboards
+				graph={platformSignins as DataGraph}
+				solutionId="example"
+			/>,
+		);
+		expect(
+			[...container.querySelectorAll("[data-sortable-id]")].map((el) =>
+				el.getAttribute("data-sortable-id"),
+			),
+		).toEqual(platformSignins.dashboards[0].widgets.map((w) => w.id));
+		const grid = container.querySelector(".grid.items-start");
+		expect(grid?.children).toHaveLength(9);
+		expect(grid?.className).toContain("lg:grid-cols-4");
+		const tiles = [...container.querySelectorAll("[data-dashboard-tile]")];
+		expect(
+			tiles.slice(0, 4).every((tile) => !tile.className.includes("col-span")),
+		).toBe(true);
+		expect(
+			tiles.slice(4).every((tile) => tile.className.includes("sm:col-span-2")),
+		).toBe(true);
+		expect(tiles[4].className).toContain("col-start-1");
+	});
+	it("draws section headings, inherited columns and clamped scalar and series spans", () => {
+		authState.organizationId = undefined;
+		const original = platformSignins as DataGraph;
+		const d = original.dashboards[0];
+		const custom: DataGraph = {
+			...original,
+			dashboards: [
+				{
+					...d,
+					columns: 3,
+					sections: [
+						{ id: "summary", title: "Headline numbers", columns: 4 },
+						{ id: "trends", title: "Over time" },
+					],
+					widgets: d.widgets.map((w) => ({
+						...w,
+						section: w.visualization === "number" ? "summary" : "trends",
+						span: 4,
+					})),
+				},
+			],
+		};
+		const { container } = renderInApp(
+			<SolutionDashboards graph={custom} solutionId="example" />,
+		);
+		expect(
+			screen.getByRole("heading", { name: "Headline numbers" }),
+		).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Over time" })).toBeTruthy();
+		expect(
+			container.querySelector('[data-dashboard-section="summary"] .grid')
+				?.className,
+		).toContain("lg:grid-cols-4");
+		expect(
+			container.querySelector('[data-dashboard-section="trends"] .grid')
+				?.className,
+		).toContain("lg:grid-cols-3");
+		expect(
+			container.querySelector('[data-dashboard-tile="w_stat_logins"]')
+				?.className,
+		).toContain("lg:col-span-4");
+		expect(
+			container.querySelector('[data-dashboard-tile="w_line_day"]')?.className,
+		).toContain("lg:col-span-3");
+	});
+	it("restores keyboard focus by widget id when moving across scalar and chart bands", () => {
+		authState.organizationId = undefined;
+		renderInApp(
+			<SolutionDashboards
+				graph={platformSignins as DataGraph}
+				solutionId="example"
+			/>,
+		);
+		const grip = screen.getByRole("button", {
+			name: "Move MFA completed: drag the tile, or use the arrow keys",
+		});
+		grip.focus();
+		fireEvent.keyDown(grip, { key: "ArrowDown" });
+		const moved = screen.getByRole("button", {
+			name: "Move MFA completed: drag the tile, or use the arrow keys",
+		});
+		expect(document.activeElement).toBe(moved);
+		fireEvent.keyDown(moved, { key: "ArrowUp" });
+		expect(
+			[...document.querySelectorAll("[data-sortable-id]")].map((el) =>
+				el.getAttribute("data-sortable-id"),
+			),
+		).toEqual(platformSignins.dashboards[0].widgets.map((w) => w.id));
 	});
 });
