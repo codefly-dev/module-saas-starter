@@ -3,12 +3,14 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    # A released agent. 0.1.50 is the release that ships the runtime-packages
-    # capability this service's spec declares below, and it also carries #146 (a
-    # port rendered for every declared endpoint), which the dev prerelease this pin
-    # replaced predated. It advertises docker-build-recipe v3, v4 and v5, so it needs
-    # a codefly whose host support reaches v4 — see scripts/ci/install-codefly.sh.
-    version: 0.1.50
+    # A released agent, moved by `codefly update workspace`. The floor is 0.1.50:
+    # the release that ships the runtime-packages capability this service's spec
+    # declares below, and carries #146 (a port rendered for every declared
+    # endpoint). It advertises docker-build-recipe v3, v4 and v5, so it needs a
+    # codefly whose host support reaches v4 — see scripts/ci/install-codefly.sh.
+    # 0.1.53 additionally carries core v0.15.2 and the fix that lets a scaffolded
+    # service resolve its own address (service-go-grpc#165).
+    version: 0.1.53
     publisher: codefly.dev
 service-dependencies:
     - name: cache
