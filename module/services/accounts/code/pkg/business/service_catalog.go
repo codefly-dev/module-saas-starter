@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -13,6 +14,10 @@ import (
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
+
+// Contributions use namespace-qualified logical identifiers, as defined by the
+// module composer. Descriptor policy vocabulary alone excludes those names.
+var contributedPermissionVocabulary = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*:[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
 
 const (
 	// ServiceCatalogSchemaVersion identifies the normalized catalog contract.
@@ -195,7 +200,7 @@ func ValidateServiceCatalog(catalog *catalogv1.ServiceCatalog) error {
 			return fmt.Errorf("permissions are not strictly sorted at %q", permission.GetPermission())
 		}
 		previousPermission = permission.GetPermission()
-		if !policyVocabulary.MatchString(permission.GetPermission()) ||
+		if (!policyVocabulary.MatchString(permission.GetPermission()) && !contributedPermissionVocabulary.MatchString(permission.GetPermission())) ||
 			permission.GetPermission() != permission.GetResource()+":"+permission.GetAction() {
 			return fmt.Errorf("permission definition %q is not canonical", permission.GetPermission())
 		}
