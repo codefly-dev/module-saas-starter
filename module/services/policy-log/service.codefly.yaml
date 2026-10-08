@@ -4,7 +4,7 @@ description: Independent signed witness for authority changes
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.50
+    version: 0.1.53
     publisher: codefly.dev
 workspace-configuration-dependencies:
     - policy-log

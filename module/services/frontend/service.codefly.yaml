@@ -3,9 +3,11 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: nextjs
-    # A released agent. 0.0.162 is the release that ships the builder fix the content
-    # kit needs, replacing the prerelease this pin used to carry.
-    version: 0.0.162
+    # A released agent, moved by `codefly update workspace`. The floor is 0.0.162:
+    # the release that ships the builder fix the content kit needs. 0.0.163 also
+    # carries core v0.15.1's NewAPI fix (an endpoint keeps its exposure and
+    # location) and the ConfigMap quoting fix.
+    version: 0.0.163
     publisher: codefly.dev
 service-dependencies:
     - name: auth-gateway
