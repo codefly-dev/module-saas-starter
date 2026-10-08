@@ -15,8 +15,8 @@
 // workers, so starting the graph per file would start one graph per file.
 //
 // withDependencies passes --exclude-root: it brings up the frontend's
-// dependencies (auth-gateway, Accounts, Postgres, Vault, Redis, storage)
-// without the Next server the frontend itself would run. The
+// dependencies (auth-gateway, Accounts, Postgres, Vault, Redis, storage,
+// telemetry) without the Next server the frontend itself would run. The
 // pipeline tier addresses the gateway directly, so the root service is dead
 // weight — and leaving it out means these tests can run alongside a
 // `codefly run service` dev stack instead of fighting it for the Next dev lock.
@@ -47,7 +47,7 @@ export default async function setup(): Promise<(() => Promise<void>) | void> {
 			readyService: "auth-gateway",
 			scope,
 			fixture: "dev-admin",
-			silents: ["store", "cache"],
+			silents: ["store", "cache", "telemetry"],
 			echo: process.env.CODEFLY_TEST_ECHO === "1",
 		});
 	} catch (error) {

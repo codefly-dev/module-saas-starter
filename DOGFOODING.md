@@ -24,7 +24,7 @@ cd ~/Development/deus/codefly/module-saas-starter
 codefly run service --fixture dev-admin
 ```
 
-Expected graph: `vault + store + cache → accounts →
+Expected graph: `vault + store + cache + telemetry → accounts →
 auth-gateway → frontend` (plus marketing). Independent
 services may start concurrently. If any service
 hangs at "waiting for ready", check that step's `--debug` output.
@@ -219,7 +219,7 @@ the same Codefly-managed graph. For each of `email` (Resend),
 `configurations/local-dogfood/<group>.env.example` and
 `<group>.secret.env.example` to their Git-ignored names and fill them in
 ([LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md#configure-providers-through-codefly)).
-Keep `observability.env.example` as it is for a `local-dogfood` run with no collector (`TELEMETRY_STATE=absent`). The plain `local` runtime infers `absent` when the state is missing, and supplies the reason itself; the module's local defaults declare neither. `local-dogfood` is not that runtime, so a run with no collector exports no traces or metrics.
+Keep `observability.env.example` as it is for local (`debug`) telemetry.
 Turnstile's published test keys drive the three abuse-protection cases:
 
 | Case | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | `TURNSTILE_SECRET_KEY` |
@@ -239,7 +239,7 @@ codefly run service --env local-dogfood
 - [ ] Grant analytics consent, navigate through onboarding, and verify bounded browser plus durable backend events in PostHog.
 - [ ] Withdraw analytics consent or log out. Browser capture stops immediately and identity resets.
 - [ ] Trigger controlled browser and backend errors. Sentry correlates release and environment without creating performance transactions.
-- [ ] With `TELEMETRY_STATE=absent`, check that accounts and auth-gateway log the absent reason once at startup, then exercise login/onboarding; no traces or metrics are exported in `local-dogfood` (wool's stdout tracer is for the plain `local` runtime), so observe the logs on stdout. To see traces, point `OTEL_EXPORTER_OTLP_ENDPOINT` at a collector this machine can reach and set `TELEMETRY_STATE=available`. Remove `TELEMETRY_STATE` in `local-dogfood` and confirm both services refuse to start, naming it. In the plain `local` runtime, a missing state instead starts with an absent collector.
+- [ ] With the `debug` exporter, exercise login/onboarding and observe trace/metric/log summaries from the in-graph telemetry service.
 - [ ] Switch Turnstile to the **fail** keys. Registration and waitlist submission fail without database writes.
 - [ ] Switch Turnstile to the **replay** keys. The first deterministic verification follows Cloudflare's fixture behavior; replay rejection leaves state unchanged.
 

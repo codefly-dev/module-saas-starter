@@ -1,7 +1,7 @@
 schema: codefly/module-package/v2
 kind: module-package
 id: codefly/saas-starter
-version: 0.2.0
+version: 0.1.0
 minimum-codefly-version: ">=0.3.32 <1.0.0"
 artifact-roots:
   - contracts
@@ -42,6 +42,8 @@ services:
     endpoints: [grpc]
   - name: store
     endpoints: [tcp]
+  - name: telemetry
+    endpoints: [grpc]
   - name: vault
     endpoints: [http]
 fixtures:
@@ -100,7 +102,6 @@ migrations:
 breaking-changes:
   - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
   - "Audit event types are namespaced under `saas.*` (`auth.login` -> `saas.auth.login`). The wire value of `audit_events.event_type`, the `X-Webhook-Event` header, and webhook routing keys all change; migration 116 rewrites stored history and existing subscriptions in place, so a live subscriber keeps firing, but a consumer that re-creates a subscription from a hardcoded pre-namespace name, or emits one through `ModuleEmitAuditEvent`, is now rejected. No alias layer."
-  - "The `telemetry` service is removed: the module no longer ships an OTLP gateway, and the cell's collector takes its place. `accounts` and `auth-gateway` read where it is from the `observability` configuration group — `TELEMETRY_STATE` is `available` with `OTEL_EXPORTER_OTLP_ENDPOINT` (an `http://` endpoint is plaintext on the wire because the mesh supplies mTLS; `https://` is TLS), or `absent` with `TELEMETRY_ABSENT_REASON` — and refuse to start outside a local runtime when the group does not say which. Module defaults declare neither TELEMETRY_STATE nor TELEMETRY_ABSENT_REASON, because they also reach deployed cells; only the `local` runtime infers absent when the state is missing, and it supplies the state and its reason in code. `OBSERVABILITY_EXPORTER` and `OTEL_EXPORTER_OTLP_HEADERS` no longer mean anything, the `/metrics` scrape endpoint of both services is gone (metrics leave by OTLP push only), and `service.name` is no longer fixed in code: `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` sets it, else the service's own Codefly identity. A consumer that depended on the `telemetry` service, or that overrides the `observability` group, must move to the keys above."
 reserved-namespaces:
   - "@codefly/saas-"
   - "@codefly-dev/saas-"

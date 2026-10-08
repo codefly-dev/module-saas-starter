@@ -1,6 +1,6 @@
 kind: library
 name: saas-sdk
-version: 0.2.0
+version: 0.1.0
 languages:
     - name: typescript
       path: typescript/
@@ -8,7 +8,7 @@ languages:
         - '@codefly-dev/saas-sdk'
 sources:
     - package: codefly/saas-starter
-      version: 0.2.0
+      version: 0.1.0
       module: saas-starter
       service: accounts
       endpoint: connect

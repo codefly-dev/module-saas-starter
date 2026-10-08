@@ -23,7 +23,7 @@ func TestStarterManifestIsTheCoreV2Contract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.ID != "codefly/saas-starter" || manifest.Version != "0.2.0" {
+	if manifest.ID != "codefly/saas-starter" || manifest.Version != "0.1.0" {
 		t.Fatalf("unexpected package identity: %s@%s", manifest.ID, manifest.Version)
 	}
 	// THE SERVICE SET IS DERIVED, NOT COUNTED. This pinned the number 8, and a

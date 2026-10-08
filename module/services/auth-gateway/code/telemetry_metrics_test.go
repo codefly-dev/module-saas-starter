@@ -39,9 +39,8 @@ func (c *authMetricCapture) Export(
 func TestAuthGatewayTelemetryExportsGatewayAndGRPCRED(t *testing.T) {
 	endpoint, capture := startAuthMetricCapture(t)
 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=auth-test-instance")
-	t.Setenv("OTEL_SERVICE_NAME", "named-by-the-platform")
 	previousMeterProvider := otel.GetMeterProvider()
-	metrics, err := enableOTELMetrics(t.Context(), availableAt(t, "http", endpoint))
+	metrics, err := enableOTELMetrics(t.Context(), "test-auth-gateway", endpoint)
 	require.NoError(t, err)
 	require.NotNil(t, metrics)
 	t.Cleanup(func() {
@@ -58,10 +57,19 @@ func TestAuthGatewayTelemetryExportsGatewayAndGRPCRED(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, getStatus(t, httpServer.URL+"/missing"))
 	runtime.GC()
 
+	response, err := http.Get(httpServer.URL + "/metrics")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = response.Body.Close() })
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	prometheusBody, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(prometheusBody), "http_server_request_duration_seconds_count")
+	require.Contains(t, string(prometheusBody), `http_route="/health"`)
+	require.Contains(t, string(prometheusBody), `service_name="test-auth-gateway"`)
+
 	require.NoError(t, metrics.provider.ForceFlush(t.Context()))
 	request := receiveAuthMetrics(t, capture.requests)
 	require.Equal(t, "auth-test-instance", authResourceAttribute(request, "service.instance.id"))
-	require.Equal(t, "named-by-the-platform", authResourceAttribute(request, "service.name"))
 	metricNames := authExportedMetricNames(request)
 	require.Contains(t, metricNames, "go.goroutine.count")
 	require.Contains(t, metricNames, "go.gc.cycle.count")
@@ -80,26 +88,19 @@ func TestAuthGatewayTelemetryExportsGatewayAndGRPCRED(t *testing.T) {
 	require.Equal(t, uint64(2), httpRoutes["/health"])
 }
 
-// Metrics leave by OTLP push alone: the gateway's listener serves its own routes
-// and no scrape endpoint, whether or not telemetry is on.
-func TestGatewayHandlerHasNoMetricsRoute(t *testing.T) {
+func TestGatewayHandlerHasNoMetricsRouteWhenTelemetryIsDisabled(t *testing.T) {
 	matcher := NewRouteMatcher([]*RouteEntry{{
 		Service: "self",
 		Method:  http.MethodGet,
 		Path:    "/health",
 	}}, nil)
 	gateway := NewGateway(nil, matcher, nil, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
+	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	recorder := httptest.NewRecorder()
 
-	for name, metrics := range map[string]*otelMetrics{
-		"telemetry disabled": nil,
-		"telemetry enabled":  {},
-	} {
-		t.Run(name, func(t *testing.T) {
-			recorder := httptest.NewRecorder()
-			newGatewayHTTPHandler(gateway, metrics).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-			require.Equal(t, http.StatusNotFound, recorder.Code)
-		})
-	}
+	newGatewayHTTPHandler(gateway, nil).ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusNotFound, recorder.Code)
 }
 
 func authInt64SumValue(request *collectormetricsv1.ExportMetricsServiceRequest, name string) int64 {
@@ -132,65 +133,6 @@ func authFloat64SumValue(request *collectormetricsv1.ExportMetricsServiceRequest
 		}
 	}
 	return value
-}
-
-// availableAt resolves the destination the way the process does, from the
-// endpoint the platform would deliver, so these tests hand the exporter the URL
-// it really receives rather than a hand-built struct.
-func availableAt(t *testing.T, scheme, hostPort string) telemetryDestination {
-	t.Helper()
-	destination, err := resolveTelemetryDestination(false, group(map[string]string{
-		"TELEMETRY_STATE":             "available",
-		"OTEL_EXPORTER_OTLP_ENDPOINT": scheme + "://" + hostPort,
-	}))
-	require.NoError(t, err)
-	return destination
-}
-
-// The exporter reads its transport off the URL's scheme, so an https:// URL is
-// TLS and cannot talk to a plaintext receiver. A constant WithInsecure() would
-// have let it.
-func TestEnableOTELMetricsDerivesTransportFromTheURLScheme(t *testing.T) {
-	endpoint, capture := startAuthMetricCapture(t)
-	previousMeterProvider := otel.GetMeterProvider()
-	metrics, err := enableOTELMetrics(t.Context(), availableAt(t, "https", endpoint))
-	require.NoError(t, err)
-	require.NotNil(t, metrics)
-	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_ = metrics.Shutdown(shutdownCtx) // the flush it attempts is the failure under test
-		otel.SetMeterProvider(previousMeterProvider)
-	})
-
-	flushCtx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	require.Error(t, metrics.provider.ForceFlush(flushCtx), "a TLS client cannot export to a plaintext receiver")
-	select {
-	case <-capture.requests:
-		t.Fatal("an https:// destination reached a plaintext receiver")
-	default:
-	}
-}
-
-// A destination with no collector URL is refused. WithEndpointURL("") would
-// otherwise fall back to the exporter's own default, localhost:4317.
-func TestEnableOTELMetricsRefusesADestinationWithoutAURL(t *testing.T) {
-	metrics, err := enableOTELMetrics(t.Context(), telemetryDestination{AbsentReason: "no collector"})
-	require.ErrorContains(t, err, "no collector URL")
-	require.Nil(t, metrics)
-}
-
-// A resource that cannot be built fails the whole call, and the call builds it
-// before it creates the exporter: there is no exporter, and so no client
-// connection, left running behind the failure.
-func TestEnableOTELMetricsFailsWhenTheResourceCannotBeBuilt(t *testing.T) {
-	t.Setenv("OTEL_SERVICE_NAME", "")
-	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "an-attribute-with-no-value")
-	endpoint, _ := startAuthMetricCapture(t)
-	metrics, err := enableOTELMetrics(t.Context(), availableAt(t, "http", endpoint))
-	require.Error(t, err)
-	require.Nil(t, metrics)
 }
 
 func startAuthMetricCapture(t *testing.T) (string, *authMetricCapture) {

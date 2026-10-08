@@ -2,9 +2,14 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	codefly "github.com/codefly-dev/sdk-go"
 )
+
+func observabilityEnabled() bool {
+	return strings.TrimSpace(workspaceEnv("observability", "OTEL_EXPORTER_OTLP_ENDPOINT")) != ""
+}
 
 // workspaceEnv resolves Codefly workspace configuration and secret values
 // before falling back to a raw environment variable. Services must use this

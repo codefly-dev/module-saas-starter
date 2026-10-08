@@ -44,6 +44,7 @@ depend on the database whose authority it witnesses.
 | --- | --- | --- |
 | `accounts` | `cache/read`, `cache/write` | TCP 6379 |
 | `accounts` | `store/tcp` | TCP 5432 |
+| `accounts` | `telemetry/grpc` | Codefly-assigned OTLP gRPC port |
 | `accounts` | `vault/http` | TCP 8200 |
 | `auth-gateway` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
 | `auth-gateway` | `cache/write` | TCP 6379 |
@@ -52,8 +53,8 @@ depend on the database whose authority it witnesses.
 The Codefly module interface exposes the public `frontend/http` and
 `marketing/http` endpoints; the auth-gateway gRPC ext-authz endpoint has module
 visibility. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
-`frontend/http`. Accounts, frontend, and marketing may reach
-public IP space only over TCP 443; `auth-gateway` has no public egress. The public rules exclude private, loopback,
+`frontend/http`. Accounts, frontend, marketing, and telemetry may reach
+public IP space only over TCP 443. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other
 special-purpose IPv4/IPv6 ranges. Temporal's gRPC frontend and HTTP UI remain
 module-visible without a public ingress route.
@@ -81,13 +82,13 @@ still loads the module with its older Core 0.7, but does not derive cross-module
 access: an internal endpoint with no authored list denies other modules. It is
 not a compatible promotion driver for this declaration model.
 
-The topology-policy golden contains 18 `NetworkPolicy` resources:
+The topology-policy golden contains 25 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
 - Istio ingress only to the public frontend and marketing HTTP ports;
 - target ingress and caller egress policies for every declared dependency;
-- HTTPS public egress only for accounts, frontend, and marketing.
+- HTTPS public egress only for accounts, frontend, marketing, and telemetry.
 
 There is no `allow-intra-namespace` rule. Adding a service dependency or port
 requires changing the topology binding and reviewing both generated directions
@@ -107,14 +108,10 @@ topology binding in the same change; pinned deployment schema/render validation
 is tracked by `P1-CI-004`.
 
 The generated Codefly dependency declarations contain exact endpoint
-references. The module owns no collector: accounts and auth-gateway export traces
-and metrics to the cell's, whose address the platform delivers in the
-`observability` configuration group (`TELEMETRY_STATE`, with
-`OTEL_EXPORTER_OTLP_ENDPOINT` when the cell has a collector and
-`TELEMETRY_ABSENT_REASON` when it does not), so neither service needs public
-egress to reach a telemetry backend and no product configuration owns a collector
-port. The generated NetworkPolicy remains the hard endpoint/port enforcement
-boundary for the services the module declares.
+references. Accounts resolves `telemetry/grpc` through the SDK and passes that
+exact Codefly-owned address to both tracing and metrics; no product
+configuration owns a local collector port. The generated NetworkPolicy remains
+the hard endpoint/port enforcement boundary.
 
 The AWS overlay replaces stateful services with managed dependencies. A
 pod-selector rule cannot authorize an RDS, ElastiCache, external Vault, or S3
@@ -312,7 +309,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-18 NetworkPolicy golden documents. After the module generator creates the
+25 NetworkPolicy golden documents. After the module generator creates the
 consumer-owned GitOps tree, render an environment with:
 
 ```sh

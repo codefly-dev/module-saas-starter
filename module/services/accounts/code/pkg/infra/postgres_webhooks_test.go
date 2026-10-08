@@ -104,7 +104,7 @@ func runPostgresInfraTests(m *testing.M) int {
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
 		sdk.WithSharedControlChannel(),
-		sdk.WithExcludedDependencies("cache", "vault"),
+		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
 		// Each run owns a fresh database. A fixed scope can reopen an old
 		// unmerged ledger after migrations are renumbered against current main.
 		sdk.WithNamingScope("test-infra-"+uuid.NewString()[:12]),

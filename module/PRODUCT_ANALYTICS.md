@@ -200,10 +200,9 @@ active organization.
 ## Operational metrics, alerts, and recovery
 
 SigNoz is the single backend for application traces, metrics, and logs. The
-application surface remains standard OpenTelemetry/OTLP to the cell's collector,
-whose address the platform delivers in the `observability` configuration group; an
-optional SigNoz provider may provision dashboards and alerts but does not project
-an application SDK, endpoint, or credential.
+application surface remains standard OpenTelemetry/OTLP through the in-graph
+collector; an optional SigNoz provider may provision dashboards and alerts but
+does not project an application SDK, endpoint, or credential.
 
 Job workers emit OpenTelemetry `saas.jobs.polls`, `claimed`, `active`,
 `completed`, and `duration` instruments. Labels are limited to queue plus

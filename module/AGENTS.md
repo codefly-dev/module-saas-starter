@@ -60,13 +60,11 @@ adding a REST-enabled RPC means editing it. Do not go looking for a generator.
 ## Go suites
 
 Every Go service here carries **its own `go.mod`** — `accounts`, `auth-gateway`,
-`store` and `policy-log` — and `tools` is another, with **no `go.work`** tying them together. So
-`go test ./...` only ever covers the module you run it in, and a service's suite
-is outside whatever you run from the tree root. The canonical repository adds its
-own root module (the module agent, the host, and the generated reference
-composition); a consumer's root module is its own.
-`libraries/source-read-sdk/go` and `qualification/module-authority` are two more
-modules, outside this tree, that CI exercises in steps of their own.
+`store`, `telemetry` — and `tools` is another, with **no `go.work`** tying them
+together. So `go test ./...` only ever covers the module you run it in, and a
+service's suite is outside whatever you run from the tree root. The canonical
+repository adds its own root module (the module agent, the host, and the generated
+reference composition), for six in total; a consumer's root module is its own.
 
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.

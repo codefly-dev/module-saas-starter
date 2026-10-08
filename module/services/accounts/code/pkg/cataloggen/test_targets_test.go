@@ -110,6 +110,7 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 			require.Contains(t, target.Command, "-tags=pure")
 		} else {
 			require.Contains(t, target.RuntimeServices, "store")
+			require.NotContains(t, target.RuntimeServices, "telemetry")
 			if startsCache[target.Suite] {
 				require.Contains(t, target.RuntimeServices, "cache")
 			} else {
