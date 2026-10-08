@@ -43,9 +43,10 @@ type AuditEntry struct {
 	CreatedAt time.Time
 	// IdempotencyKey, when set, deduplicates retried emits: the emitter reserves
 	// (OrgID, EventType, IdempotencyKey) in a guard table inside the same
-	// transaction as the audit write, and a duplicate emit is a no-op success (no
-	// second row, no second webhook fan-out). Empty disables dedup. See
-	// audit_event_idempotency (migration 118).
+	// transaction as the audit write. Only an identical semantic intent is a
+	// no-op success (no second row or webhook fan-out). Changed intent conflicts;
+	// historical key-only guards are unverifiable. Empty disables dedup. See
+	// audit_event_idempotency and its effect receipt binding.
 	IdempotencyKey string
 }
 
@@ -212,14 +213,14 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 		return err
 	}
 	if entry.IdempotencyKey != "" {
-		reserved, err := e.store.ReserveAuditIdempotency(ctx, entry.OrgID, string(entry.EventType), entry.IdempotencyKey)
+		reserved, err := e.store.ReserveAuditEffect(ctx, entry)
 		if err != nil {
 			return err
 		}
 		if !reserved {
 			// A prior emit of this (org, event_type, idempotency_key) already wrote
-			// the event in a committed transaction. Skip the insert and the webhook
-			// fan-out and report success: the intended effect (exactly one audit row
+			// the same semantic event in a committed transaction. Skip the insert
+			// and webhook fan-out and report success: the intended effect (exactly one audit row
 			// and one set of deliveries) is already in place. Reserving inside the
 			// caller's tx keeps the guard row and the audit row atomic, so a rolled
 			// back audit write also frees the key for a genuine retry.

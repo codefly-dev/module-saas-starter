@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var ErrAuditIdempotencyConflict = errors.New("audit key already names a different intent")
@@ -34,4 +37,13 @@ func AuditEffectFingerprint(entry AuditEntry) (string, error) {
 	}
 	sum := sha256.Sum256(raw)
 	return "v1:" + hex.EncodeToString(sum[:]), nil
+}
+
+// A conflicting or historically unverifiable key cannot be retried as though
+// the host merely lost a response. Preserve that distinction at the module API.
+func moduleAuditEffectError(err error) error {
+	if errors.Is(err, ErrAuditIdempotencyConflict) || errors.Is(err, ErrAuditIdempotencyUnverifiable) {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return status.Error(codes.Internal, err.Error())
 }

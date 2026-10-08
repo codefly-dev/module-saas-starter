@@ -3,11 +3,14 @@
 package business_test
 
 import (
+	"context"
 	"testing"
 
 	"accounts/pkg/business"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // TestModuleEmitAuditEventDedupsRetriedTenantEmit exercises the issue #511
@@ -55,6 +58,23 @@ func TestModuleEmitAuditEventDedupsRetriedTenantEmit(t *testing.T) {
 	// already in place — so dedup is observable only in the row count, not here).
 	require.NoError(t, emit(key), "first emit of a key must succeed")
 	require.NoError(t, emit(key), "a retried emit of the same key must still report success")
+
+	// A key is bound to the complete effect, not just its event type. A different
+	// resource under that key must be refused and must not add a row.
+	err = svc.ModuleEmitAuditEvent(testCtx, caller, org, "saas.document.ingested",
+		modulePrincSvc, "sol", "entry-2", key, nil)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.NoError(t, emit(key), "a rejected collision must preserve the original receipt")
+
+	// A key-only reservation from an older deployment has no provable payload.
+	// Retrying must not fabricate a binding or claim that this event was recorded.
+	legacyKey := "legacy-" + business.NewIDString()
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		inserted, err := testStore.ReserveAuditIdempotency(ctx, org, "saas.document.ingested", legacyKey)
+		require.True(t, inserted)
+		return err
+	}))
+	require.Equal(t, codes.FailedPrecondition, status.Code(emit(legacyKey)))
 
 	// A distinct key under the same (org, event_type) is a genuinely different
 	// event and must be written, proving the guard dedups a retry without

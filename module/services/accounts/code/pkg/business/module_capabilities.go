@@ -950,12 +950,12 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	}
 	if tenant == "" {
 		if err := s.store.WithControlPlane(ctx, emit); err != nil {
-			return status.Error(codes.Internal, err.Error())
+			return moduleAuditEffectError(err)
 		}
 		return nil
 	}
 	if err := s.store.WithOrgTx(ctx, tenant, emit); err != nil {
-		return status.Error(codes.Internal, err.Error())
+		return moduleAuditEffectError(err)
 	}
 	return nil
 }
