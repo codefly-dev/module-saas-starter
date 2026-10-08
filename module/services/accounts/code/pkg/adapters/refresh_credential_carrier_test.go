@@ -214,3 +214,68 @@ func TestEveryConnectAuthCompletionRoutesThroughTheLift(t *testing.T) {
 	require.Equal(t, map[string]bool{"ExchangeClientToken": true},
 		connectHandlersExemptFromTheRefreshCookie)
 }
+
+// The response half removed the credential from the Connect body; without a request
+// half a Connect client had nowhere to put it back, so refresh and logout failed
+// field validation before reaching the verifier. A carrier that works in one
+// direction is not a carrier.
+func TestR1019ConnectRefreshConsumesCookie(t *testing.T) {
+	refresh := connect.NewRequest(&gen.RefreshTokenRequest{})
+	refresh.Header().Set("Cookie", refreshTokenCookieName+"=cookie-rt; codefly_session=1")
+	refreshTokenFromCookie(refresh.Header(), refresh.Msg.GetRefreshToken(), func(token string) {
+		refresh.Msg.RefreshToken = token
+	})
+	require.Equal(t, "cookie-rt", refresh.Msg.GetRefreshToken(),
+		"the Connect refresh must take the credential from the cookie")
+
+	logout := connect.NewRequest(&gen.LogoutRequest{})
+	logout.Header().Set("Cookie", refreshTokenCookieName+"=cookie-rt")
+	refreshTokenFromCookie(logout.Header(), logout.Msg.GetRefreshToken(), func(token string) {
+		logout.Msg.RefreshToken = token
+	})
+	require.Equal(t, "cookie-rt", logout.Msg.GetRefreshToken())
+}
+
+// An explicit body credential wins: the cookie is the browser's convenience, not an
+// override — the same precedence the REST middleware uses.
+func TestR1019ConnectBodyCredentialWinsOverTheCookie(t *testing.T) {
+	request := connect.NewRequest(&gen.RefreshTokenRequest{RefreshToken: "body-rt"})
+	request.Header().Set("Cookie", refreshTokenCookieName+"=cookie-rt")
+	refreshTokenFromCookie(request.Header(), request.Msg.GetRefreshToken(), func(token string) {
+		request.Msg.RefreshToken = token
+	})
+	require.Equal(t, "body-rt", request.Msg.GetRefreshToken())
+}
+
+// No cookie and no body leaves the message untouched, so the absence is reported by
+// field validation rather than by an empty credential reaching the verifier.
+func TestR1019ConnectWithNoCarrierIsUnchanged(t *testing.T) {
+	request := connect.NewRequest(&gen.RefreshTokenRequest{})
+	request.Header().Set("Cookie", "codefly_session=1")
+	refreshTokenFromCookie(request.Header(), request.Msg.GetRefreshToken(), func(token string) {
+		request.Msg.RefreshToken = token
+	})
+	require.Empty(t, request.Msg.GetRefreshToken())
+}
+
+// The lift has to run BEFORE the message is validated, or the empty field is
+// rejected before the cookie is ever consulted. The handler is the only place that
+// ordering holds, so it is asserted from the source.
+func TestR1019ConnectRefreshLiftsBeforeValidation(t *testing.T) {
+	source, err := os.ReadFile("connect_handlers.go")
+	require.NoError(t, err)
+	text := string(source)
+
+	for _, method := range []string{"RefreshToken", "Logout"} {
+		pattern := regexp.MustCompile(`func \(h \*authConnectHandler\) ` + method +
+			`\(ctx context\.Context(?s:.*?)\n\}\n`)
+		body := pattern.FindString(text)
+		require.NotEmpty(t, body, method)
+		lift := strings.Index(body, "refreshTokenFromCookie(")
+		dispatch := strings.Index(body, "h.inner.")
+		require.NotEqual(t, -1, lift, "%s must consume the cookie carrier", method)
+		require.Less(t, lift, dispatch,
+			"%s must lift the cookie before dispatching, or validation refuses the empty field first",
+			method)
+	}
+}

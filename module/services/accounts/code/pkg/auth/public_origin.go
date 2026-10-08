@@ -18,8 +18,19 @@ var configuredPublicOrigin string
 
 // SetConfiguredPublicOrigin installs the operator-configured public origin. Call
 // it once from startup, before anything serves.
+//
+// The value is stored CANONICALIZED, through the same function the forwarded origin
+// goes through, so the two sides of the comparison cannot spell one origin two ways.
+// Storing it raw is what made `https://app.example:443` refuse the equivalent origin
+// the frontend forwards. A value that does not canonicalize is stored trimmed, so the
+// comparison refuses it rather than silently matching something.
 func SetConfiguredPublicOrigin(origin string) {
-	configuredPublicOrigin = strings.TrimSuffix(strings.TrimSpace(origin), "/")
+	trimmed := strings.TrimSuffix(strings.TrimSpace(origin), "/")
+	if canonical, err := CanonicalPublicOrigin(trimmed); err == nil {
+		configuredPublicOrigin = canonical
+		return
+	}
+	configuredPublicOrigin = trimmed
 }
 
 // ConfiguredPublicOrigin returns the pinned origin, if there is one.
@@ -47,7 +58,8 @@ func CanonicalPublicOrigin(candidate string) (string, error) {
 		parsed.ForceQuery || parsed.Fragment != "" {
 		return "", fmt.Errorf("public origin must not contain credentials, path, query, or fragment")
 	}
-	switch strings.ToLower(parsed.Scheme) {
+	scheme := strings.ToLower(parsed.Scheme)
+	switch scheme {
 	case "https":
 	case "http":
 		if !isPublicOriginLoopback(parsed.Hostname()) {
@@ -56,7 +68,20 @@ func CanonicalPublicOrigin(candidate string) (string, error) {
 	default:
 		return "", fmt.Errorf("public origin must use HTTP(S)")
 	}
-	return strings.TrimSuffix(candidate, "/"), nil
+	// An explicit DEFAULT port is the same origin as none, and the two sides of the
+	// comparison spell it differently: the browser and the frontend both drop it
+	// (URL.origin does), while a configured value may carry it. Retaining it here
+	// made an operator's `https://app.example:443` refuse the equivalent origin the
+	// frontend forwards. Dropping it is the same rule both sides then follow.
+	host := parsed.Host
+	if port := parsed.Port(); port != "" &&
+		((scheme == "https" && port == "443") || (scheme == "http" && port == "80")) {
+		host = parsed.Hostname()
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]" // an IPv6 literal keeps its brackets
+		}
+	}
+	return scheme + "://" + host, nil
 }
 
 // WithVerifiedPublicOrigin records the origin only after the gateway credential

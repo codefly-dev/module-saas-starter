@@ -204,3 +204,37 @@ func logoutContext() context.Context {
 }
 
 var logoutSessionID = uuid.MustParse("00000000-0000-4000-8000-0000000000c1")
+
+// SP-GW-13: a failed request carries a stable public reason and the cause is logged,
+// not returned. Only the recognized refusals were sanitized, so an injected storage
+// failure returned its internal address and wrapped call chain.
+func TestR1019RefreshFailureHasPublicReason(t *testing.T) {
+	installRefusingRefreshMinter(t, errors.New(
+		"dial tcp 10.4.0.9:5432: connect: connection refused (session_store.RotateRefresh)"))
+
+	_, err := (&AuthServer{}).RefreshToken(context.Background(),
+		&gen.RefreshTokenRequest{RefreshToken: "a-refresh-token"})
+
+	require.Error(t, err)
+	require.Equal(t, codes.Unavailable, status.Code(err),
+		"a host-side failure is retryable, not a credential problem")
+	message := status.Convert(err).Message()
+	require.Equal(t, "refresh temporarily unavailable", message)
+	for _, leak := range []string{"10.4.0.9", "5432", "session_store", "dial tcp", "rpc error"} {
+		require.NotContains(t, message, leak,
+			"the public reason must name no internal address or call chain")
+	}
+}
+
+// A deliberate status from further in keeps its own reason, so the mapping above does
+// not flatten every answer into one.
+func TestR1019RefreshKeepsADeliberateStatus(t *testing.T) {
+	installRefusingRefreshMinter(t,
+		status.Error(codes.FailedPrecondition, "device session is no longer active"))
+
+	_, err := (&AuthServer{}).RefreshToken(context.Background(),
+		&gen.RefreshTokenRequest{RefreshToken: "a-refresh-token"})
+
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Equal(t, "device session is no longer active", status.Convert(err).Message())
+}

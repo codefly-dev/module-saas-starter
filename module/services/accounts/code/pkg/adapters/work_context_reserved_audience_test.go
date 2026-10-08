@@ -163,3 +163,31 @@ const uuidForReservedAudienceTest = "00000000-0000-4000-8000-000000000001"
 func scopesForReservedAudienceTest() []*gen.WorkContextScope {
 	return []*gen.WorkContextScope{{ResourceKind: "records", Actions: []string{"read"}}}
 }
+
+// Renewal's guard at the top of the method sees only what the REQUEST named, so an
+// omitted audience passed it and then inherited the parent's — the one path by which
+// a person-driven renewal could still carry the reserved module audience. The
+// EFFECTIVE value is what gets signed, so the effective value is what is refused.
+func TestR1019RenewInheritedAudience(t *testing.T) {
+	source, err := os.ReadFile("work_context_rpcs.go")
+	require.NoError(t, err)
+	text := string(source)
+
+	body := regexp.MustCompile(
+		`func \(s \*WorkContextAuthorityServer\) RenewWorkContext\((?s:.*?)\n\}\n`).
+		FindString(text)
+	require.NotEmpty(t, body)
+
+	inherit := strings.Index(body, "audience = parent.GetAudience()")
+	require.NotEqual(t, -1, inherit, "renewal still inherits the parent audience")
+
+	// A refusal of the EFFECTIVE audience, after the inheritance and before signing.
+	effective := strings.Index(body, "refuseReservedModuleAudience(audience)")
+	require.NotEqual(t, -1, effective,
+		"renewal must refuse the audience it will actually sign, not only the one requested")
+	require.Less(t, inherit, effective, "the check must follow the inheritance")
+
+	sign := strings.Index(body, "s.signer.")
+	require.NotEqual(t, -1, sign)
+	require.Less(t, effective, sign, "the check must precede signing")
+}

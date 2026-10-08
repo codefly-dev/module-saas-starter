@@ -95,3 +95,51 @@ func pin(t *testing.T, origin string) {
 	t.Cleanup(func() { auth.SetConfiguredPublicOrigin(previous) })
 	auth.SetConfiguredPublicOrigin(origin)
 }
+
+// An explicit DEFAULT port is the same origin as none, and the two sides spell it
+// differently: a browser and the frontend both drop it, while a configured value may
+// carry it. Retaining it made an operator's `https://app.example:443` refuse the
+// equivalent origin the frontend forwards.
+func TestR1019ConfiguredOriginDefaultPorts(t *testing.T) {
+	for _, tc := range []struct{ configured, forwarded string }{
+		{"https://app.cell.example:443", "https://app.cell.example"},
+		{"https://app.cell.example", "https://app.cell.example:443"},
+		{"http://localhost:80", "http://localhost"},
+		{"http://localhost", "http://localhost:80"},
+	} {
+		t.Run(tc.configured+" vs "+tc.forwarded, func(t *testing.T) {
+			pin(t, tc.configured)
+			_, err := auth.WithVerifiedPublicOrigin(context.Background(), tc.forwarded)
+			require.NoError(t, err, "equivalent origins must not disagree over a default port")
+		})
+	}
+}
+
+// A NON-default port is part of the origin and still distinguishes it, so the
+// canonicalization above does not collapse genuinely different origins.
+func TestR1019NonDefaultPortStillDistinguishesAnOrigin(t *testing.T) {
+	pin(t, "https://app.cell.example")
+	_, err := auth.WithVerifiedPublicOrigin(context.Background(), "https://app.cell.example:8443")
+	require.ErrorIs(t, err, auth.ErrPublicOriginNotConfigured)
+
+	pin(t, "https://app.cell.example:8443")
+	_, err = auth.WithVerifiedPublicOrigin(context.Background(), "https://app.cell.example")
+	require.ErrorIs(t, err, auth.ErrPublicOriginNotConfigured)
+}
+
+// CanonicalPublicOrigin returns the canonical spelling, so a caller that stores the
+// result stores one form.
+func TestR1019CanonicalOriginDropsOnlyTheDefaultPort(t *testing.T) {
+	for candidate, want := range map[string]string{
+		"https://app.example:443":  "https://app.example",
+		"https://app.example":      "https://app.example",
+		"https://app.example:8443": "https://app.example:8443",
+		"http://127.0.0.1:80":      "http://127.0.0.1",
+		"http://127.0.0.1:3000":    "http://127.0.0.1:3000",
+		"https://app.example/":     "https://app.example",
+	} {
+		got, err := auth.CanonicalPublicOrigin(candidate)
+		require.NoError(t, err, candidate)
+		require.Equal(t, want, got, candidate)
+	}
+}

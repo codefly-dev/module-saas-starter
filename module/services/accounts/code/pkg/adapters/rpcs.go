@@ -1154,13 +1154,36 @@ func (s *AuthServer) RefreshToken(ctx context.Context, req *gen.RefreshTokenRequ
 // session policy) still passes through unchanged: it is a genuine server-side
 // failure, and reporting it as a credential problem would send an operator
 // looking at the wrong half.
+// innerStatus finds a gRPC status an error carries beneath any wrapping, or nil.
+// status.Convert cannot be used for this: given a wrapped error it builds a status
+// from the whole chain's text, which is the internal detail the caller must not see.
+func innerStatus(err error) *status.Status {
+	var carrier interface{ GRPCStatus() *status.Status }
+	if errors.As(err, &carrier) {
+		return carrier.GRPCStatus()
+	}
+	return nil
+}
+
 func refreshStatusError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, auth.ErrRefreshReuse), errors.Is(err, auth.ErrRefreshRevoked):
 		wool.Get(ctx).In("RefreshToken").Warn("refresh refused", wool.ErrField(err))
 		return status.Error(codes.Unauthenticated, "invalid refresh token")
+	case innerStatus(err) != nil:
+		// A deliberate status from further in — a session that is no longer active, a
+		// policy refusal. Its reason was chosen for the caller, so it is returned
+		// WITHOUT the wrapper: the wrapping is what names the internal call chain,
+		// and returning err unchanged would carry it out with the good reason.
+		return innerStatus(err).Err()
 	default:
-		return err
+		// Anything else is this host failing, and the wrapped chain names the
+		// internal call path and the store's address. SP-GW-13: a refused or failed
+		// request carries a stable public reason and the cause is logged, not
+		// returned. Unavailable rather than Internal because a refresh is worth
+		// retrying.
+		wool.Get(ctx).In("RefreshToken").Error("refresh failed", wool.ErrField(err))
+		return status.Error(codes.Unavailable, "refresh temporarily unavailable")
 	}
 }
 

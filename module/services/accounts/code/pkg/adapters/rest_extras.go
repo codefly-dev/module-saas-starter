@@ -103,6 +103,20 @@ var authenticationCompletingRESTPaths = map[string]bool{
 	"/v1/auth/refresh":               true,
 }
 
+// The refresh cookie is scoped to `/v1/auth`, which is the REST auth surface and
+// NOT the Connect procedure prefix (`/saas.accounts.v1.AuthService/…`). A browser
+// therefore does not attach it to a Connect call, and that is deliberate: the
+// alternative is a cookie scoped to `/`, which would attach the refresh credential
+// to every request this origin serves, including the ones the frontend proxies
+// onward.
+//
+// So the journey for a Connect client is defined rather than accidental:
+// authenticate over Connect (the response sets the cookie and carries no readable
+// token), then REFRESH AND SIGN OUT over REST `/v1/auth/refresh` and
+// `/v1/auth/logout`, where the cookie is in scope. The Connect refresh and logout
+// still work for a caller that supplies the credential itself — in its body, or as
+// an explicit Cookie header — which refreshTokenFromCookie consumes.
+
 // oauthTokenEndpointRESTPath is the one authentication-completing route whose
 // response carries the refresh credential in the body, and must.
 //

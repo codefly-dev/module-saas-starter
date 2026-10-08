@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -96,6 +97,30 @@ func unaryCookieingRefreshToken[Req, Resp any](
 		cookieTheRefreshToken(resp.Header(), message)
 	}
 	return resp, nil
+}
+
+// refreshTokenFromCookie reads the refresh credential out of a Connect request's
+// Cookie header and into the message, when the message does not already carry one.
+//
+// It is the request half of the cookie carrier, and without it the response half is
+// a dead end: authentication stops returning the credential as readable content, so
+// a Connect client has nowhere to read it from, and the refresh and logout calls
+// that need it then fail field validation before reaching the verifier. A carrier
+// that only works in one direction is not a carrier.
+//
+// The body still wins when it carries a token: the cookie is the browser's
+// convenience, not an override of an explicit credential — the same precedence the
+// REST middleware uses.
+func refreshTokenFromCookie(header http.Header, current string, set func(string)) {
+	if strings.TrimSpace(current) != "" {
+		return
+	}
+	for _, cookie := range (&http.Request{Header: header}).Cookies() {
+		if cookie.Name == refreshTokenCookieName && cookie.Value != "" {
+			set(cookie.Value)
+			return
+		}
+	}
 }
 
 // connectHandlersExemptFromTheRefreshCookie are the authentication-completing
@@ -563,12 +588,18 @@ func (h *authConnectHandler) CompleteWebAuthnMFAChallenge(ctx context.Context, r
 	return unaryCookieingRefreshToken(ctx, req, h.inner.CompleteWebAuthnMFAChallenge)
 }
 func (h *authConnectHandler) RefreshToken(ctx context.Context, req *connect.Request[gen.RefreshTokenRequest]) (*connect.Response[gen.RefreshTokenResponse], error) {
+	refreshTokenFromCookie(req.Header(), req.Msg.GetRefreshToken(), func(token string) {
+		req.Msg.RefreshToken = token
+	})
 	return unaryCookieingRefreshToken(ctx, req, h.inner.RefreshToken)
 }
 func (h *authConnectHandler) SwitchOrganization(ctx context.Context, req *connect.Request[gen.SwitchOrganizationRequest]) (*connect.Response[gen.SwitchOrganizationResponse], error) {
 	return unary(ctx, req, h.inner.SwitchOrganization)
 }
 func (h *authConnectHandler) Logout(ctx context.Context, req *connect.Request[gen.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
+	refreshTokenFromCookie(req.Header(), req.Msg.GetRefreshToken(), func(token string) {
+		req.Msg.RefreshToken = token
+	})
 	return unary(ctx, req, h.inner.Logout)
 }
 func (h *authConnectHandler) ValidateClientAuthorization(ctx context.Context, req *connect.Request[gen.ValidateClientAuthorizationRequest]) (*connect.Response[gen.ValidateClientAuthorizationResponse], error) {
