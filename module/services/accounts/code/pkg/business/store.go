@@ -538,6 +538,11 @@ type Store interface {
 	// orgID (system-scoped emit) maps to a sentinel org so system events still
 	// dedup. See audit_event_idempotency (migration 118).
 	ReserveAuditIdempotency(ctx context.Context, orgID, eventType, idempotencyKey string) (bool, error)
+	// ReserveAuditEffect binds a stable key to its complete intent and event ID.
+	// It runs in the same transaction as InsertAuditEvent. A prior unbound key
+	// is unverifiable, not proof of the requested effect. No legacy row is filled
+	// from retry input. The event ID must already be assigned by the emitter.
+	ReserveAuditEffect(ctx context.Context, entry AuditEntry) (bool, error)
 	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error)
 	AggregateAuditLog(ctx context.Context, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error)
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
