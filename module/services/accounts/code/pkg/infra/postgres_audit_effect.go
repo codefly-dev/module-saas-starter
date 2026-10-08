@@ -38,18 +38,44 @@ func (s *PostgresStore) ReserveAuditEffect(ctx context.Context, entry business.A
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return false, err
 	}
-	var priorFingerprint, eventID *string
-	err = q.QueryRow(ctx, `SELECT request_fingerprint, audit_event_id::text
-  FROM audit_event_idempotency WHERE org_id=$1 AND event_type=$2 AND idempotency_key=$3`,
-		org, string(entry.EventType), entry.IdempotencyKey).Scan(&priorFingerprint, &eventID)
+	eventID, err := s.LookupAuditEffect(ctx, entry)
 	if err != nil {
 		return false, err
 	}
-	if priorFingerprint == nil || eventID == nil {
-		return false, business.ErrAuditIdempotencyUnverifiable
-	}
-	if *priorFingerprint != fingerprint {
-		return false, business.ErrAuditIdempotencyConflict
+	if eventID == "" {
+		return false, fmt.Errorf("conflicting audit reservation is not visible")
 	}
 	return false, nil
+}
+
+// LookupAuditEffect never inserts or changes a reservation.
+func (s *PostgresStore) LookupAuditEffect(ctx context.Context, entry business.AuditEntry) (string, error) {
+	if entry.IdempotencyKey == "" {
+		return "", fmt.Errorf("audit receipt requires a key")
+	}
+	fingerprint, err := business.AuditEffectFingerprint(entry)
+	if err != nil {
+		return "", err
+	}
+	org := entry.OrgID
+	if org == "" {
+		org = auditIdempotencySystemOrg
+	}
+	var priorFingerprint, eventID *string
+	err = s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT request_fingerprint, audit_event_id::text
+  FROM audit_event_idempotency WHERE org_id=$1 AND event_type=$2 AND idempotency_key=$3`,
+		org, string(entry.EventType), entry.IdempotencyKey).Scan(&priorFingerprint, &eventID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if priorFingerprint == nil || eventID == nil {
+		return "", business.ErrAuditIdempotencyUnverifiable
+	}
+	if *priorFingerprint != fingerprint {
+		return "", business.ErrAuditIdempotencyConflict
+	}
+	return *eventID, nil
 }

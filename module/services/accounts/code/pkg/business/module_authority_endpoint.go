@@ -94,6 +94,7 @@ var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
 	"/saas.accounts.v1.ModuleCapabilitiesService/DeclareAuditEventTypes",
 	"/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
+	"/saas.accounts.v1.ModuleCapabilitiesService/LookupAuditEvent",
 	"/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",

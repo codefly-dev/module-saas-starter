@@ -543,6 +543,9 @@ type Store interface {
 	// is unverifiable, not proof of the requested effect. No legacy row is filled
 	// from retry input. The event ID must already be assigned by the emitter.
 	ReserveAuditEffect(ctx context.Context, entry AuditEntry) (bool, error)
+	// LookupAuditEffect returns the committed event ID for matching intent, or
+	// empty when no binding is visible. Empty is not proof of no effect.
+	LookupAuditEffect(ctx context.Context, entry AuditEntry) (string, error)
 	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error)
 	AggregateAuditLog(ctx context.Context, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error)
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error

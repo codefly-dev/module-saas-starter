@@ -1664,6 +1664,52 @@ func (x *ModuleCancelApprovalRequest) GetReason() string {
 	return ""
 }
 
+// Receipt for the exact requested audit intent, under current emission authority.
+// Empty event_id means no receipt was visible, not proof that nothing happened.
+type ModuleLookupAuditEventResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModuleLookupAuditEventResponse) Reset() {
+	*x = ModuleLookupAuditEventResponse{}
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModuleLookupAuditEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModuleLookupAuditEventResponse) ProtoMessage() {}
+
+func (x *ModuleLookupAuditEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModuleLookupAuditEventResponse.ProtoReflect.Descriptor instead.
+func (*ModuleLookupAuditEventResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ModuleLookupAuditEventResponse) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
 // ModuleEmitAuditEventRequest emits a registered audit event onto the tenant's
 // single audit spine. event_type must be registered in the code-owned catalog
 // (unregistered types are rejected, not stored free-form). solution names the
@@ -1679,7 +1725,8 @@ type ModuleEmitAuditEventRequest struct {
 	Fields    *structpb.Struct       `protobuf:"bytes,6,opt,name=fields,proto3" json:"fields,omitempty"`
 	// idempotency_key deduplicates retried emits: two emits with the same
 	// (tenant, event_type, idempotency_key) collapse to a single audit row, and
-	// the duplicate returns success without writing again. Empty disables
+	// an identical intent returns success without writing again. Changed intent or
+	// an older key without recorded intent returns FAILED_PRECONDITION. Empty disables
 	// deduplication (every emit is a distinct event). Scoped by tenant so one
 	// tenant's keys can never suppress another's events.
 	IdempotencyKey string `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -1689,7 +1736,7 @@ type ModuleEmitAuditEventRequest struct {
 
 func (x *ModuleEmitAuditEventRequest) Reset() {
 	*x = ModuleEmitAuditEventRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1701,7 +1748,7 @@ func (x *ModuleEmitAuditEventRequest) String() string {
 func (*ModuleEmitAuditEventRequest) ProtoMessage() {}
 
 func (x *ModuleEmitAuditEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1714,7 +1761,7 @@ func (x *ModuleEmitAuditEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleEmitAuditEventRequest.ProtoReflect.Descriptor instead.
 func (*ModuleEmitAuditEventRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{19}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ModuleEmitAuditEventRequest) GetTenant() string {
@@ -1785,7 +1832,7 @@ type ModuleAuditFieldDeclaration struct {
 
 func (x *ModuleAuditFieldDeclaration) Reset() {
 	*x = ModuleAuditFieldDeclaration{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[20]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1797,7 +1844,7 @@ func (x *ModuleAuditFieldDeclaration) String() string {
 func (*ModuleAuditFieldDeclaration) ProtoMessage() {}
 
 func (x *ModuleAuditFieldDeclaration) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[20]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1810,7 +1857,7 @@ func (x *ModuleAuditFieldDeclaration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleAuditFieldDeclaration.ProtoReflect.Descriptor instead.
 func (*ModuleAuditFieldDeclaration) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{20}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ModuleAuditFieldDeclaration) GetName() string {
@@ -1863,7 +1910,7 @@ type ModuleAuditEventTypeDeclaration struct {
 
 func (x *ModuleAuditEventTypeDeclaration) Reset() {
 	*x = ModuleAuditEventTypeDeclaration{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[21]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1875,7 +1922,7 @@ func (x *ModuleAuditEventTypeDeclaration) String() string {
 func (*ModuleAuditEventTypeDeclaration) ProtoMessage() {}
 
 func (x *ModuleAuditEventTypeDeclaration) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[21]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1888,7 +1935,7 @@ func (x *ModuleAuditEventTypeDeclaration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleAuditEventTypeDeclaration.ProtoReflect.Descriptor instead.
 func (*ModuleAuditEventTypeDeclaration) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{21}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ModuleAuditEventTypeDeclaration) GetType() string {
@@ -1938,7 +1985,7 @@ type ModuleDeclareAuditEventTypesRequest struct {
 
 func (x *ModuleDeclareAuditEventTypesRequest) Reset() {
 	*x = ModuleDeclareAuditEventTypesRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[22]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1950,7 +1997,7 @@ func (x *ModuleDeclareAuditEventTypesRequest) String() string {
 func (*ModuleDeclareAuditEventTypesRequest) ProtoMessage() {}
 
 func (x *ModuleDeclareAuditEventTypesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[22]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1963,7 +2010,7 @@ func (x *ModuleDeclareAuditEventTypesRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ModuleDeclareAuditEventTypesRequest.ProtoReflect.Descriptor instead.
 func (*ModuleDeclareAuditEventTypesRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{22}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ModuleDeclareAuditEventTypesRequest) GetPrefix() string {
@@ -1993,7 +2040,7 @@ type ModuleDeclareAuditEventTypesResponse struct {
 
 func (x *ModuleDeclareAuditEventTypesResponse) Reset() {
 	*x = ModuleDeclareAuditEventTypesResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[23]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2005,7 +2052,7 @@ func (x *ModuleDeclareAuditEventTypesResponse) String() string {
 func (*ModuleDeclareAuditEventTypesResponse) ProtoMessage() {}
 
 func (x *ModuleDeclareAuditEventTypesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[23]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2018,7 +2065,7 @@ func (x *ModuleDeclareAuditEventTypesResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ModuleDeclareAuditEventTypesResponse.ProtoReflect.Descriptor instead.
 func (*ModuleDeclareAuditEventTypesResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{23}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ModuleDeclareAuditEventTypesResponse) GetAdmittedTypes() []string {
@@ -2052,7 +2099,7 @@ type SubjectVisibilityGrant struct {
 
 func (x *SubjectVisibilityGrant) Reset() {
 	*x = SubjectVisibilityGrant{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[24]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2064,7 +2111,7 @@ func (x *SubjectVisibilityGrant) String() string {
 func (*SubjectVisibilityGrant) ProtoMessage() {}
 
 func (x *SubjectVisibilityGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[24]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2077,7 +2124,7 @@ func (x *SubjectVisibilityGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubjectVisibilityGrant.ProtoReflect.Descriptor instead.
 func (*SubjectVisibilityGrant) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{24}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SubjectVisibilityGrant) GetVisibleSubjectId() string {
@@ -2115,7 +2162,7 @@ type ModuleListSubjectVisibilityRequest struct {
 
 func (x *ModuleListSubjectVisibilityRequest) Reset() {
 	*x = ModuleListSubjectVisibilityRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[25]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2127,7 +2174,7 @@ func (x *ModuleListSubjectVisibilityRequest) String() string {
 func (*ModuleListSubjectVisibilityRequest) ProtoMessage() {}
 
 func (x *ModuleListSubjectVisibilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[25]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2140,7 +2187,7 @@ func (x *ModuleListSubjectVisibilityRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ModuleListSubjectVisibilityRequest.ProtoReflect.Descriptor instead.
 func (*ModuleListSubjectVisibilityRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{25}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ModuleListSubjectVisibilityRequest) GetTenant() string {
@@ -2179,7 +2226,7 @@ type ModuleListSubjectVisibilityResponse struct {
 
 func (x *ModuleListSubjectVisibilityResponse) Reset() {
 	*x = ModuleListSubjectVisibilityResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[26]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2191,7 +2238,7 @@ func (x *ModuleListSubjectVisibilityResponse) String() string {
 func (*ModuleListSubjectVisibilityResponse) ProtoMessage() {}
 
 func (x *ModuleListSubjectVisibilityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[26]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2204,7 +2251,7 @@ func (x *ModuleListSubjectVisibilityResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ModuleListSubjectVisibilityResponse.ProtoReflect.Descriptor instead.
 func (*ModuleListSubjectVisibilityResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{26}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ModuleListSubjectVisibilityResponse) GetGrants() []*SubjectVisibilityGrant {
@@ -2232,7 +2279,7 @@ type FetchDatasourceBlobRequest struct {
 
 func (x *FetchDatasourceBlobRequest) Reset() {
 	*x = FetchDatasourceBlobRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[27]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2244,7 +2291,7 @@ func (x *FetchDatasourceBlobRequest) String() string {
 func (*FetchDatasourceBlobRequest) ProtoMessage() {}
 
 func (x *FetchDatasourceBlobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[27]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2257,7 +2304,7 @@ func (x *FetchDatasourceBlobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchDatasourceBlobRequest.ProtoReflect.Descriptor instead.
 func (*FetchDatasourceBlobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{27}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *FetchDatasourceBlobRequest) GetSourceId() string {
@@ -2289,7 +2336,7 @@ type FetchDatasourceBlobChunk struct {
 
 func (x *FetchDatasourceBlobChunk) Reset() {
 	*x = FetchDatasourceBlobChunk{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[28]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2301,7 +2348,7 @@ func (x *FetchDatasourceBlobChunk) String() string {
 func (*FetchDatasourceBlobChunk) ProtoMessage() {}
 
 func (x *FetchDatasourceBlobChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[28]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2314,7 +2361,7 @@ func (x *FetchDatasourceBlobChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchDatasourceBlobChunk.ProtoReflect.Descriptor instead.
 func (*FetchDatasourceBlobChunk) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{28}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *FetchDatasourceBlobChunk) GetData() []byte {
@@ -2352,7 +2399,7 @@ type DatasourceFileRef struct {
 
 func (x *DatasourceFileRef) Reset() {
 	*x = DatasourceFileRef{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[29]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2364,7 +2411,7 @@ func (x *DatasourceFileRef) String() string {
 func (*DatasourceFileRef) ProtoMessage() {}
 
 func (x *DatasourceFileRef) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[29]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2377,7 +2424,7 @@ func (x *DatasourceFileRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatasourceFileRef.ProtoReflect.Descriptor instead.
 func (*DatasourceFileRef) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{29}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *DatasourceFileRef) GetItemId() string {
@@ -2413,7 +2460,7 @@ type FetchDatasourceFilesRequest struct {
 
 func (x *FetchDatasourceFilesRequest) Reset() {
 	*x = FetchDatasourceFilesRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[30]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2425,7 +2472,7 @@ func (x *FetchDatasourceFilesRequest) String() string {
 func (*FetchDatasourceFilesRequest) ProtoMessage() {}
 
 func (x *FetchDatasourceFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[30]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2438,7 +2485,7 @@ func (x *FetchDatasourceFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchDatasourceFilesRequest.ProtoReflect.Descriptor instead.
 func (*FetchDatasourceFilesRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{30}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *FetchDatasourceFilesRequest) GetSourceId() string {
@@ -2480,7 +2527,7 @@ type DatasourceProvenance struct {
 
 func (x *DatasourceProvenance) Reset() {
 	*x = DatasourceProvenance{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[31]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2492,7 +2539,7 @@ func (x *DatasourceProvenance) String() string {
 func (*DatasourceProvenance) ProtoMessage() {}
 
 func (x *DatasourceProvenance) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[31]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2505,7 +2552,7 @@ func (x *DatasourceProvenance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatasourceProvenance.ProtoReflect.Descriptor instead.
 func (*DatasourceProvenance) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{31}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DatasourceProvenance) GetSourceId() string {
@@ -2571,7 +2618,7 @@ type DatasourceItemReaders struct {
 
 func (x *DatasourceItemReaders) Reset() {
 	*x = DatasourceItemReaders{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[32]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2583,7 +2630,7 @@ func (x *DatasourceItemReaders) String() string {
 func (*DatasourceItemReaders) ProtoMessage() {}
 
 func (x *DatasourceItemReaders) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[32]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2596,7 +2643,7 @@ func (x *DatasourceItemReaders) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatasourceItemReaders.ProtoReflect.Descriptor instead.
 func (*DatasourceItemReaders) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{32}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *DatasourceItemReaders) GetBasis() DatasourceItemReadersBasis {
@@ -2657,7 +2704,7 @@ type DatasourceFileHeader struct {
 
 func (x *DatasourceFileHeader) Reset() {
 	*x = DatasourceFileHeader{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[33]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2669,7 +2716,7 @@ func (x *DatasourceFileHeader) String() string {
 func (*DatasourceFileHeader) ProtoMessage() {}
 
 func (x *DatasourceFileHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[33]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2682,7 +2729,7 @@ func (x *DatasourceFileHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatasourceFileHeader.ProtoReflect.Descriptor instead.
 func (*DatasourceFileHeader) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{33}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *DatasourceFileHeader) GetProvenance() *DatasourceProvenance {
@@ -2736,7 +2783,7 @@ type FetchDatasourceFilesFrame struct {
 
 func (x *FetchDatasourceFilesFrame) Reset() {
 	*x = FetchDatasourceFilesFrame{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[34]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2748,7 +2795,7 @@ func (x *FetchDatasourceFilesFrame) String() string {
 func (*FetchDatasourceFilesFrame) ProtoMessage() {}
 
 func (x *FetchDatasourceFilesFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[34]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2761,7 +2808,7 @@ func (x *FetchDatasourceFilesFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchDatasourceFilesFrame.ProtoReflect.Descriptor instead.
 func (*FetchDatasourceFilesFrame) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{34}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *FetchDatasourceFilesFrame) GetFrame() isFetchDatasourceFilesFrame_Frame {
@@ -2820,7 +2867,7 @@ type ModulePublishEventRequest struct {
 
 func (x *ModulePublishEventRequest) Reset() {
 	*x = ModulePublishEventRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[35]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2832,7 +2879,7 @@ func (x *ModulePublishEventRequest) String() string {
 func (*ModulePublishEventRequest) ProtoMessage() {}
 
 func (x *ModulePublishEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[35]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2845,7 +2892,7 @@ func (x *ModulePublishEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModulePublishEventRequest.ProtoReflect.Descriptor instead.
 func (*ModulePublishEventRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{35}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ModulePublishEventRequest) GetTenant() string {
@@ -2875,7 +2922,7 @@ type ModulePublishEventResponse struct {
 
 func (x *ModulePublishEventResponse) Reset() {
 	*x = ModulePublishEventResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[36]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2887,7 +2934,7 @@ func (x *ModulePublishEventResponse) String() string {
 func (*ModulePublishEventResponse) ProtoMessage() {}
 
 func (x *ModulePublishEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[36]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2900,7 +2947,7 @@ func (x *ModulePublishEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModulePublishEventResponse.ProtoReflect.Descriptor instead.
 func (*ModulePublishEventResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{36}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ModulePublishEventResponse) GetEventId() string {
@@ -2926,7 +2973,7 @@ type ModuleSubscribeRequest struct {
 
 func (x *ModuleSubscribeRequest) Reset() {
 	*x = ModuleSubscribeRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[37]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2938,7 +2985,7 @@ func (x *ModuleSubscribeRequest) String() string {
 func (*ModuleSubscribeRequest) ProtoMessage() {}
 
 func (x *ModuleSubscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[37]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2951,7 +2998,7 @@ func (x *ModuleSubscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleSubscribeRequest.ProtoReflect.Descriptor instead.
 func (*ModuleSubscribeRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{37}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ModuleSubscribeRequest) GetTypePattern() string {
@@ -2990,7 +3037,7 @@ type ModuleSubscription struct {
 
 func (x *ModuleSubscription) Reset() {
 	*x = ModuleSubscription{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[38]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3002,7 +3049,7 @@ func (x *ModuleSubscription) String() string {
 func (*ModuleSubscription) ProtoMessage() {}
 
 func (x *ModuleSubscription) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[38]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3015,7 +3062,7 @@ func (x *ModuleSubscription) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleSubscription.ProtoReflect.Descriptor instead.
 func (*ModuleSubscription) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{38}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ModuleSubscription) GetId() string {
@@ -3069,7 +3116,7 @@ type ModuleSubscribeResponse struct {
 
 func (x *ModuleSubscribeResponse) Reset() {
 	*x = ModuleSubscribeResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[39]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3081,7 +3128,7 @@ func (x *ModuleSubscribeResponse) String() string {
 func (*ModuleSubscribeResponse) ProtoMessage() {}
 
 func (x *ModuleSubscribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[39]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3094,7 +3141,7 @@ func (x *ModuleSubscribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleSubscribeResponse.ProtoReflect.Descriptor instead.
 func (*ModuleSubscribeResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{39}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ModuleSubscribeResponse) GetSubscription() *ModuleSubscription {
@@ -3114,7 +3161,7 @@ type ModuleUnsubscribeRequest struct {
 
 func (x *ModuleUnsubscribeRequest) Reset() {
 	*x = ModuleUnsubscribeRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[40]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3126,7 +3173,7 @@ func (x *ModuleUnsubscribeRequest) String() string {
 func (*ModuleUnsubscribeRequest) ProtoMessage() {}
 
 func (x *ModuleUnsubscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[40]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3139,7 +3186,7 @@ func (x *ModuleUnsubscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleUnsubscribeRequest.ProtoReflect.Descriptor instead.
 func (*ModuleUnsubscribeRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{40}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ModuleUnsubscribeRequest) GetSubscriptionId() string {
@@ -3159,7 +3206,7 @@ type ModuleListSubscriptionsRequest struct {
 
 func (x *ModuleListSubscriptionsRequest) Reset() {
 	*x = ModuleListSubscriptionsRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[41]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3171,7 +3218,7 @@ func (x *ModuleListSubscriptionsRequest) String() string {
 func (*ModuleListSubscriptionsRequest) ProtoMessage() {}
 
 func (x *ModuleListSubscriptionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[41]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3184,7 +3231,7 @@ func (x *ModuleListSubscriptionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleListSubscriptionsRequest.ProtoReflect.Descriptor instead.
 func (*ModuleListSubscriptionsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{41}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{42}
 }
 
 type ModuleListSubscriptionsResponse struct {
@@ -3196,7 +3243,7 @@ type ModuleListSubscriptionsResponse struct {
 
 func (x *ModuleListSubscriptionsResponse) Reset() {
 	*x = ModuleListSubscriptionsResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[42]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3208,7 +3255,7 @@ func (x *ModuleListSubscriptionsResponse) String() string {
 func (*ModuleListSubscriptionsResponse) ProtoMessage() {}
 
 func (x *ModuleListSubscriptionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[42]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3221,7 +3268,7 @@ func (x *ModuleListSubscriptionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleListSubscriptionsResponse.ProtoReflect.Descriptor instead.
 func (*ModuleListSubscriptionsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{42}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ModuleListSubscriptionsResponse) GetSubscriptions() []*ModuleSubscription {
@@ -3246,7 +3293,7 @@ type ModuleReplayEventsRequest struct {
 
 func (x *ModuleReplayEventsRequest) Reset() {
 	*x = ModuleReplayEventsRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[43]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3258,7 +3305,7 @@ func (x *ModuleReplayEventsRequest) String() string {
 func (*ModuleReplayEventsRequest) ProtoMessage() {}
 
 func (x *ModuleReplayEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[43]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3271,7 +3318,7 @@ func (x *ModuleReplayEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleReplayEventsRequest.ProtoReflect.Descriptor instead.
 func (*ModuleReplayEventsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{43}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ModuleReplayEventsRequest) GetTenant() string {
@@ -3306,7 +3353,7 @@ type ModuleReplayEventsResponse struct {
 
 func (x *ModuleReplayEventsResponse) Reset() {
 	*x = ModuleReplayEventsResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[44]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3318,7 +3365,7 @@ func (x *ModuleReplayEventsResponse) String() string {
 func (*ModuleReplayEventsResponse) ProtoMessage() {}
 
 func (x *ModuleReplayEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[44]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3331,7 +3378,7 @@ func (x *ModuleReplayEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleReplayEventsResponse.ProtoReflect.Descriptor instead.
 func (*ModuleReplayEventsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{44}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ModuleReplayEventsResponse) GetRedelivered() int32 {
@@ -3375,7 +3422,7 @@ type ReadableSourceCollection struct {
 
 func (x *ReadableSourceCollection) Reset() {
 	*x = ReadableSourceCollection{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[45]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3387,7 +3434,7 @@ func (x *ReadableSourceCollection) String() string {
 func (*ReadableSourceCollection) ProtoMessage() {}
 
 func (x *ReadableSourceCollection) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[45]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3400,7 +3447,7 @@ func (x *ReadableSourceCollection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadableSourceCollection.ProtoReflect.Descriptor instead.
 func (*ReadableSourceCollection) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{45}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ReadableSourceCollection) GetSourceId() string {
@@ -3494,7 +3541,7 @@ type ReadableCollectionGrant struct {
 
 func (x *ReadableCollectionGrant) Reset() {
 	*x = ReadableCollectionGrant{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[46]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3506,7 +3553,7 @@ func (x *ReadableCollectionGrant) String() string {
 func (*ReadableCollectionGrant) ProtoMessage() {}
 
 func (x *ReadableCollectionGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[46]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3519,7 +3566,7 @@ func (x *ReadableCollectionGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadableCollectionGrant.ProtoReflect.Descriptor instead.
 func (*ReadableCollectionGrant) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{46}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ReadableCollectionGrant) GetSubjectLabel() string {
@@ -3592,7 +3639,7 @@ type CollectionSyncProvenance struct {
 
 func (x *CollectionSyncProvenance) Reset() {
 	*x = CollectionSyncProvenance{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[47]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3604,7 +3651,7 @@ func (x *CollectionSyncProvenance) String() string {
 func (*CollectionSyncProvenance) ProtoMessage() {}
 
 func (x *CollectionSyncProvenance) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[47]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3617,7 +3664,7 @@ func (x *CollectionSyncProvenance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectionSyncProvenance.ProtoReflect.Descriptor instead.
 func (*CollectionSyncProvenance) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{47}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *CollectionSyncProvenance) GetStage() SourceSyncStage {
@@ -3680,7 +3727,7 @@ type ListReadableSourceCollectionsRequest struct {
 
 func (x *ListReadableSourceCollectionsRequest) Reset() {
 	*x = ListReadableSourceCollectionsRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[48]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3692,7 +3739,7 @@ func (x *ListReadableSourceCollectionsRequest) String() string {
 func (*ListReadableSourceCollectionsRequest) ProtoMessage() {}
 
 func (x *ListReadableSourceCollectionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[48]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3705,7 +3752,7 @@ func (x *ListReadableSourceCollectionsRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ListReadableSourceCollectionsRequest.ProtoReflect.Descriptor instead.
 func (*ListReadableSourceCollectionsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{48}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ListReadableSourceCollectionsRequest) GetPageSize() int32 {
@@ -3732,7 +3779,7 @@ type ListReadableSourceCollectionsResponse struct {
 
 func (x *ListReadableSourceCollectionsResponse) Reset() {
 	*x = ListReadableSourceCollectionsResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[49]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3744,7 +3791,7 @@ func (x *ListReadableSourceCollectionsResponse) String() string {
 func (*ListReadableSourceCollectionsResponse) ProtoMessage() {}
 
 func (x *ListReadableSourceCollectionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[49]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3757,7 +3804,7 @@ func (x *ListReadableSourceCollectionsResponse) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use ListReadableSourceCollectionsResponse.ProtoReflect.Descriptor instead.
 func (*ListReadableSourceCollectionsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{49}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListReadableSourceCollectionsResponse) GetCollections() []*ReadableSourceCollection {
@@ -3801,7 +3848,7 @@ type ModulePlaceRecordRequest struct {
 
 func (x *ModulePlaceRecordRequest) Reset() {
 	*x = ModulePlaceRecordRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[50]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3813,7 +3860,7 @@ func (x *ModulePlaceRecordRequest) String() string {
 func (*ModulePlaceRecordRequest) ProtoMessage() {}
 
 func (x *ModulePlaceRecordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[50]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3826,7 +3873,7 @@ func (x *ModulePlaceRecordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModulePlaceRecordRequest.ProtoReflect.Descriptor instead.
 func (*ModulePlaceRecordRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{50}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ModulePlaceRecordRequest) GetTenant() string {
@@ -3885,7 +3932,7 @@ type ModulePlaceRecordResponse struct {
 
 func (x *ModulePlaceRecordResponse) Reset() {
 	*x = ModulePlaceRecordResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[51]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3897,7 +3944,7 @@ func (x *ModulePlaceRecordResponse) String() string {
 func (*ModulePlaceRecordResponse) ProtoMessage() {}
 
 func (x *ModulePlaceRecordResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[51]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3910,7 +3957,7 @@ func (x *ModulePlaceRecordResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModulePlaceRecordResponse.ProtoReflect.Descriptor instead.
 func (*ModulePlaceRecordResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{51}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ModulePlaceRecordResponse) GetNodeId() string {
@@ -3931,7 +3978,7 @@ type VerifyWorkContextRuntimeBoundaryRequest struct {
 
 func (x *VerifyWorkContextRuntimeBoundaryRequest) Reset() {
 	*x = VerifyWorkContextRuntimeBoundaryRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[52]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3943,7 +3990,7 @@ func (x *VerifyWorkContextRuntimeBoundaryRequest) String() string {
 func (*VerifyWorkContextRuntimeBoundaryRequest) ProtoMessage() {}
 
 func (x *VerifyWorkContextRuntimeBoundaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[52]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3956,7 +4003,7 @@ func (x *VerifyWorkContextRuntimeBoundaryRequest) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use VerifyWorkContextRuntimeBoundaryRequest.ProtoReflect.Descriptor instead.
 func (*VerifyWorkContextRuntimeBoundaryRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{52}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *VerifyWorkContextRuntimeBoundaryRequest) GetForwardedWorkContextToken() string {
@@ -3976,7 +4023,7 @@ type VerifyWorkContextRuntimeBoundaryResponse struct {
 
 func (x *VerifyWorkContextRuntimeBoundaryResponse) Reset() {
 	*x = VerifyWorkContextRuntimeBoundaryResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[53]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3988,7 +4035,7 @@ func (x *VerifyWorkContextRuntimeBoundaryResponse) String() string {
 func (*VerifyWorkContextRuntimeBoundaryResponse) ProtoMessage() {}
 
 func (x *VerifyWorkContextRuntimeBoundaryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[53]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4001,7 +4048,7 @@ func (x *VerifyWorkContextRuntimeBoundaryResponse) ProtoReflect() protoreflect.M
 
 // Deprecated: Use VerifyWorkContextRuntimeBoundaryResponse.ProtoReflect.Descriptor instead.
 func (*VerifyWorkContextRuntimeBoundaryResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{53}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *VerifyWorkContextRuntimeBoundaryResponse) GetTenantId() string {
@@ -4031,7 +4078,7 @@ type CheckWorkContextRecordAccessRequest struct {
 
 func (x *CheckWorkContextRecordAccessRequest) Reset() {
 	*x = CheckWorkContextRecordAccessRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[54]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4043,7 +4090,7 @@ func (x *CheckWorkContextRecordAccessRequest) String() string {
 func (*CheckWorkContextRecordAccessRequest) ProtoMessage() {}
 
 func (x *CheckWorkContextRecordAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[54]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4056,7 +4103,7 @@ func (x *CheckWorkContextRecordAccessRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use CheckWorkContextRecordAccessRequest.ProtoReflect.Descriptor instead.
 func (*CheckWorkContextRecordAccessRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{54}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *CheckWorkContextRecordAccessRequest) GetResourceType() string {
@@ -4092,7 +4139,7 @@ type CheckWorkContextRecordAccessResponse struct {
 
 func (x *CheckWorkContextRecordAccessResponse) Reset() {
 	*x = CheckWorkContextRecordAccessResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[55]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4104,7 +4151,7 @@ func (x *CheckWorkContextRecordAccessResponse) String() string {
 func (*CheckWorkContextRecordAccessResponse) ProtoMessage() {}
 
 func (x *CheckWorkContextRecordAccessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[55]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4117,7 +4164,7 @@ func (x *CheckWorkContextRecordAccessResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use CheckWorkContextRecordAccessResponse.ProtoReflect.Descriptor instead.
 func (*CheckWorkContextRecordAccessResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{55}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *CheckWorkContextRecordAccessResponse) GetAllowed() bool {
@@ -4146,7 +4193,7 @@ type ModuleExchangeDelegatedReadAudienceRequest struct {
 
 func (x *ModuleExchangeDelegatedReadAudienceRequest) Reset() {
 	*x = ModuleExchangeDelegatedReadAudienceRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[56]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4158,7 +4205,7 @@ func (x *ModuleExchangeDelegatedReadAudienceRequest) String() string {
 func (*ModuleExchangeDelegatedReadAudienceRequest) ProtoMessage() {}
 
 func (x *ModuleExchangeDelegatedReadAudienceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[56]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4171,7 +4218,7 @@ func (x *ModuleExchangeDelegatedReadAudienceRequest) ProtoReflect() protoreflect
 
 // Deprecated: Use ModuleExchangeDelegatedReadAudienceRequest.ProtoReflect.Descriptor instead.
 func (*ModuleExchangeDelegatedReadAudienceRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{56}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ModuleExchangeDelegatedReadAudienceRequest) GetBindingId() string {
@@ -4227,7 +4274,7 @@ type ModuleExchangeDelegatedOperationAudienceRequest struct {
 
 func (x *ModuleExchangeDelegatedOperationAudienceRequest) Reset() {
 	*x = ModuleExchangeDelegatedOperationAudienceRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[57]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4239,7 +4286,7 @@ func (x *ModuleExchangeDelegatedOperationAudienceRequest) String() string {
 func (*ModuleExchangeDelegatedOperationAudienceRequest) ProtoMessage() {}
 
 func (x *ModuleExchangeDelegatedOperationAudienceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[57]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4252,7 +4299,7 @@ func (x *ModuleExchangeDelegatedOperationAudienceRequest) ProtoReflect() protore
 
 // Deprecated: Use ModuleExchangeDelegatedOperationAudienceRequest.ProtoReflect.Descriptor instead.
 func (*ModuleExchangeDelegatedOperationAudienceRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{57}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ModuleExchangeDelegatedOperationAudienceRequest) GetBindingId() string {
@@ -4396,7 +4443,9 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x06tenant\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06tenant\x12)\n" +
 	"\vapproval_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\n" +
 	"approvalId\x12 \n" +
-	"\x06reason\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\x06reason\"\xb3\x02\n" +
+	"\x06reason\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\x06reason\";\n" +
+	"\x1eModuleLookupAuditEventResponse\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\"\xb3\x02\n" +
 	"\x1bModuleEmitAuditEventRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12)\n" +
 	"\n" +
@@ -4626,7 +4675,7 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x1cMETADATA_DISCLOSURE_WITHHELD\x10\x02*\\\n" +
 	"\x0fSourceSyncStage\x12!\n" +
 	"\x1dSOURCE_SYNC_STAGE_UNSPECIFIED\x10\x00\x12&\n" +
-	"\"SOURCE_SYNC_STAGE_CHANGES_ENQUEUED\x10\x012\x87%\n" +
+	"\"SOURCE_SYNC_STAGE_CHANGES_ENQUEUED\x10\x012\x97&\n" +
 	"\x19ModuleCapabilitiesService\x12\xc5\x01\n" +
 	"\x1dExchangeDelegatedReadAudience\x12<.saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"A\xc2\xf3\x18=\b\x03\x10\x010\x01:+\n" +
 	"'saas.module.delegated_audience_exchange\x10\x04@\x01H\aP\x04X\x04`\x01\x12\xcf\x01\n" +
@@ -4649,7 +4698,8 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x0fRequestApproval\x12..saas.accounts.v1.ModuleRequestApprovalRequest\x1a/.saas.accounts.v1.ModuleRequestApprovalResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12u\n" +
 	"\vGetApproval\x12*.saas.accounts.v1.ModuleGetApprovalRequest\x1a .saas.accounts.v1.ModuleApproval\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12q\n" +
 	"\x0eCancelApproval\x12-.saas.accounts.v1.ModuleCancelApprovalRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12q\n" +
-	"\x0eEmitAuditEvent\x12-.saas.accounts.v1.ModuleEmitAuditEventRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xc3\x01\n" +
+	"\x0eEmitAuditEvent\x12-.saas.accounts.v1.ModuleEmitAuditEventRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\x8d\x01\n" +
+	"\x10LookupAuditEvent\x12-.saas.accounts.v1.ModuleEmitAuditEventRequest\x1a0.saas.accounts.v1.ModuleLookupAuditEventResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xc3\x01\n" +
 	"\x16DeclareAuditEventTypes\x125.saas.accounts.v1.ModuleDeclareAuditEventTypesRequest\x1a6.saas.accounts.v1.ModuleDeclareAuditEventTypesResponse\":\xc2\xf3\x186\b\x03\x10\x010\x01:$\n" +
 	" saas.module.audit_types_declared\x10\x02@\x01H\aP\x03X\x03`\x01\x12\x9e\x01\n" +
 	"\x15ListSubjectVisibility\x124.saas.accounts.v1.ModuleListSubjectVisibilityRequest\x1a5.saas.accounts.v1.ModuleListSubjectVisibilityResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\x8e\x01\n" +
@@ -4685,7 +4735,7 @@ func file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_module_capabilities_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_saas_accounts_v1_module_capabilities_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
+var file_saas_accounts_v1_module_capabilities_proto_msgTypes = make([]protoimpl.MessageInfo, 59)
 var file_saas_accounts_v1_module_capabilities_proto_goTypes = []any{
 	(ModuleAuditFieldKind)(0),                               // 0: saas.accounts.v1.ModuleAuditFieldKind
 	(ModuleAuditEventVisibility)(0),                         // 1: saas.accounts.v1.ModuleAuditEventVisibility
@@ -4712,125 +4762,126 @@ var file_saas_accounts_v1_module_capabilities_proto_goTypes = []any{
 	(*ModuleGetApprovalRequest)(nil),                        // 22: saas.accounts.v1.ModuleGetApprovalRequest
 	(*ModuleApproval)(nil),                                  // 23: saas.accounts.v1.ModuleApproval
 	(*ModuleCancelApprovalRequest)(nil),                     // 24: saas.accounts.v1.ModuleCancelApprovalRequest
-	(*ModuleEmitAuditEventRequest)(nil),                     // 25: saas.accounts.v1.ModuleEmitAuditEventRequest
-	(*ModuleAuditFieldDeclaration)(nil),                     // 26: saas.accounts.v1.ModuleAuditFieldDeclaration
-	(*ModuleAuditEventTypeDeclaration)(nil),                 // 27: saas.accounts.v1.ModuleAuditEventTypeDeclaration
-	(*ModuleDeclareAuditEventTypesRequest)(nil),             // 28: saas.accounts.v1.ModuleDeclareAuditEventTypesRequest
-	(*ModuleDeclareAuditEventTypesResponse)(nil),            // 29: saas.accounts.v1.ModuleDeclareAuditEventTypesResponse
-	(*SubjectVisibilityGrant)(nil),                          // 30: saas.accounts.v1.SubjectVisibilityGrant
-	(*ModuleListSubjectVisibilityRequest)(nil),              // 31: saas.accounts.v1.ModuleListSubjectVisibilityRequest
-	(*ModuleListSubjectVisibilityResponse)(nil),             // 32: saas.accounts.v1.ModuleListSubjectVisibilityResponse
-	(*FetchDatasourceBlobRequest)(nil),                      // 33: saas.accounts.v1.FetchDatasourceBlobRequest
-	(*FetchDatasourceBlobChunk)(nil),                        // 34: saas.accounts.v1.FetchDatasourceBlobChunk
-	(*DatasourceFileRef)(nil),                               // 35: saas.accounts.v1.DatasourceFileRef
-	(*FetchDatasourceFilesRequest)(nil),                     // 36: saas.accounts.v1.FetchDatasourceFilesRequest
-	(*DatasourceProvenance)(nil),                            // 37: saas.accounts.v1.DatasourceProvenance
-	(*DatasourceItemReaders)(nil),                           // 38: saas.accounts.v1.DatasourceItemReaders
-	(*DatasourceFileHeader)(nil),                            // 39: saas.accounts.v1.DatasourceFileHeader
-	(*FetchDatasourceFilesFrame)(nil),                       // 40: saas.accounts.v1.FetchDatasourceFilesFrame
-	(*ModulePublishEventRequest)(nil),                       // 41: saas.accounts.v1.ModulePublishEventRequest
-	(*ModulePublishEventResponse)(nil),                      // 42: saas.accounts.v1.ModulePublishEventResponse
-	(*ModuleSubscribeRequest)(nil),                          // 43: saas.accounts.v1.ModuleSubscribeRequest
-	(*ModuleSubscription)(nil),                              // 44: saas.accounts.v1.ModuleSubscription
-	(*ModuleSubscribeResponse)(nil),                         // 45: saas.accounts.v1.ModuleSubscribeResponse
-	(*ModuleUnsubscribeRequest)(nil),                        // 46: saas.accounts.v1.ModuleUnsubscribeRequest
-	(*ModuleListSubscriptionsRequest)(nil),                  // 47: saas.accounts.v1.ModuleListSubscriptionsRequest
-	(*ModuleListSubscriptionsResponse)(nil),                 // 48: saas.accounts.v1.ModuleListSubscriptionsResponse
-	(*ModuleReplayEventsRequest)(nil),                       // 49: saas.accounts.v1.ModuleReplayEventsRequest
-	(*ModuleReplayEventsResponse)(nil),                      // 50: saas.accounts.v1.ModuleReplayEventsResponse
-	(*ReadableSourceCollection)(nil),                        // 51: saas.accounts.v1.ReadableSourceCollection
-	(*ReadableCollectionGrant)(nil),                         // 52: saas.accounts.v1.ReadableCollectionGrant
-	(*CollectionSyncProvenance)(nil),                        // 53: saas.accounts.v1.CollectionSyncProvenance
-	(*ListReadableSourceCollectionsRequest)(nil),            // 54: saas.accounts.v1.ListReadableSourceCollectionsRequest
-	(*ListReadableSourceCollectionsResponse)(nil),           // 55: saas.accounts.v1.ListReadableSourceCollectionsResponse
-	(*ModulePlaceRecordRequest)(nil),                        // 56: saas.accounts.v1.ModulePlaceRecordRequest
-	(*ModulePlaceRecordResponse)(nil),                       // 57: saas.accounts.v1.ModulePlaceRecordResponse
-	(*VerifyWorkContextRuntimeBoundaryRequest)(nil),         // 58: saas.accounts.v1.VerifyWorkContextRuntimeBoundaryRequest
-	(*VerifyWorkContextRuntimeBoundaryResponse)(nil),        // 59: saas.accounts.v1.VerifyWorkContextRuntimeBoundaryResponse
-	(*CheckWorkContextRecordAccessRequest)(nil),             // 60: saas.accounts.v1.CheckWorkContextRecordAccessRequest
-	(*CheckWorkContextRecordAccessResponse)(nil),            // 61: saas.accounts.v1.CheckWorkContextRecordAccessResponse
-	(*ModuleExchangeDelegatedReadAudienceRequest)(nil),      // 62: saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
-	(*ModuleExchangeDelegatedOperationAudienceRequest)(nil), // 63: saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
-	(*v1.NewJob)(nil),                                       // 64: saas.jobs.v1.NewJob
-	(v1.JobEnqueueDisposition)(0),                           // 65: saas.jobs.v1.JobEnqueueDisposition
-	(*durationpb.Duration)(nil),                             // 66: google.protobuf.Duration
-	(*v1.JobEnvelope)(nil),                                  // 67: saas.jobs.v1.JobEnvelope
-	(*v1.JobLeaseReference)(nil),                            // 68: saas.jobs.v1.JobLeaseReference
-	(*v1.JobLease)(nil),                                     // 69: saas.jobs.v1.JobLease
-	(*v1.JobFailure)(nil),                                   // 70: saas.jobs.v1.JobFailure
-	(*timestamppb.Timestamp)(nil),                           // 71: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),                                 // 72: google.protobuf.Struct
-	(*v11.EventEnvelope)(nil),                               // 73: saas.events.v1.EventEnvelope
-	(*ModuleMintRegistrationRequest)(nil),                   // 74: saas.accounts.v1.ModuleMintRegistrationRequest
-	(*SolutionMintRegistrationRequest)(nil),                 // 75: saas.accounts.v1.SolutionMintRegistrationRequest
-	(*ModuleMintWorkContextRequest)(nil),                    // 76: saas.accounts.v1.ModuleMintWorkContextRequest
-	(*ModuleMintOperationContextRequest)(nil),               // 77: saas.accounts.v1.ModuleMintOperationContextRequest
-	(*ModuleMintSourceOperationContextRequest)(nil),         // 78: saas.accounts.v1.ModuleMintSourceOperationContextRequest
-	(*IssuedWorkContext)(nil),                               // 79: saas.accounts.v1.IssuedWorkContext
-	(*emptypb.Empty)(nil),                                   // 80: google.protobuf.Empty
-	(*ModuleMintRegistrationResponse)(nil),                  // 81: saas.accounts.v1.ModuleMintRegistrationResponse
-	(*SolutionMintRegistrationResponse)(nil),                // 82: saas.accounts.v1.SolutionMintRegistrationResponse
-	(*ModuleMintWorkContextResponse)(nil),                   // 83: saas.accounts.v1.ModuleMintWorkContextResponse
-	(*ModuleMintOperationContextResponse)(nil),              // 84: saas.accounts.v1.ModuleMintOperationContextResponse
-	(*ModuleMintSourceOperationContextResponse)(nil),        // 85: saas.accounts.v1.ModuleMintSourceOperationContextResponse
+	(*ModuleLookupAuditEventResponse)(nil),                  // 25: saas.accounts.v1.ModuleLookupAuditEventResponse
+	(*ModuleEmitAuditEventRequest)(nil),                     // 26: saas.accounts.v1.ModuleEmitAuditEventRequest
+	(*ModuleAuditFieldDeclaration)(nil),                     // 27: saas.accounts.v1.ModuleAuditFieldDeclaration
+	(*ModuleAuditEventTypeDeclaration)(nil),                 // 28: saas.accounts.v1.ModuleAuditEventTypeDeclaration
+	(*ModuleDeclareAuditEventTypesRequest)(nil),             // 29: saas.accounts.v1.ModuleDeclareAuditEventTypesRequest
+	(*ModuleDeclareAuditEventTypesResponse)(nil),            // 30: saas.accounts.v1.ModuleDeclareAuditEventTypesResponse
+	(*SubjectVisibilityGrant)(nil),                          // 31: saas.accounts.v1.SubjectVisibilityGrant
+	(*ModuleListSubjectVisibilityRequest)(nil),              // 32: saas.accounts.v1.ModuleListSubjectVisibilityRequest
+	(*ModuleListSubjectVisibilityResponse)(nil),             // 33: saas.accounts.v1.ModuleListSubjectVisibilityResponse
+	(*FetchDatasourceBlobRequest)(nil),                      // 34: saas.accounts.v1.FetchDatasourceBlobRequest
+	(*FetchDatasourceBlobChunk)(nil),                        // 35: saas.accounts.v1.FetchDatasourceBlobChunk
+	(*DatasourceFileRef)(nil),                               // 36: saas.accounts.v1.DatasourceFileRef
+	(*FetchDatasourceFilesRequest)(nil),                     // 37: saas.accounts.v1.FetchDatasourceFilesRequest
+	(*DatasourceProvenance)(nil),                            // 38: saas.accounts.v1.DatasourceProvenance
+	(*DatasourceItemReaders)(nil),                           // 39: saas.accounts.v1.DatasourceItemReaders
+	(*DatasourceFileHeader)(nil),                            // 40: saas.accounts.v1.DatasourceFileHeader
+	(*FetchDatasourceFilesFrame)(nil),                       // 41: saas.accounts.v1.FetchDatasourceFilesFrame
+	(*ModulePublishEventRequest)(nil),                       // 42: saas.accounts.v1.ModulePublishEventRequest
+	(*ModulePublishEventResponse)(nil),                      // 43: saas.accounts.v1.ModulePublishEventResponse
+	(*ModuleSubscribeRequest)(nil),                          // 44: saas.accounts.v1.ModuleSubscribeRequest
+	(*ModuleSubscription)(nil),                              // 45: saas.accounts.v1.ModuleSubscription
+	(*ModuleSubscribeResponse)(nil),                         // 46: saas.accounts.v1.ModuleSubscribeResponse
+	(*ModuleUnsubscribeRequest)(nil),                        // 47: saas.accounts.v1.ModuleUnsubscribeRequest
+	(*ModuleListSubscriptionsRequest)(nil),                  // 48: saas.accounts.v1.ModuleListSubscriptionsRequest
+	(*ModuleListSubscriptionsResponse)(nil),                 // 49: saas.accounts.v1.ModuleListSubscriptionsResponse
+	(*ModuleReplayEventsRequest)(nil),                       // 50: saas.accounts.v1.ModuleReplayEventsRequest
+	(*ModuleReplayEventsResponse)(nil),                      // 51: saas.accounts.v1.ModuleReplayEventsResponse
+	(*ReadableSourceCollection)(nil),                        // 52: saas.accounts.v1.ReadableSourceCollection
+	(*ReadableCollectionGrant)(nil),                         // 53: saas.accounts.v1.ReadableCollectionGrant
+	(*CollectionSyncProvenance)(nil),                        // 54: saas.accounts.v1.CollectionSyncProvenance
+	(*ListReadableSourceCollectionsRequest)(nil),            // 55: saas.accounts.v1.ListReadableSourceCollectionsRequest
+	(*ListReadableSourceCollectionsResponse)(nil),           // 56: saas.accounts.v1.ListReadableSourceCollectionsResponse
+	(*ModulePlaceRecordRequest)(nil),                        // 57: saas.accounts.v1.ModulePlaceRecordRequest
+	(*ModulePlaceRecordResponse)(nil),                       // 58: saas.accounts.v1.ModulePlaceRecordResponse
+	(*VerifyWorkContextRuntimeBoundaryRequest)(nil),         // 59: saas.accounts.v1.VerifyWorkContextRuntimeBoundaryRequest
+	(*VerifyWorkContextRuntimeBoundaryResponse)(nil),        // 60: saas.accounts.v1.VerifyWorkContextRuntimeBoundaryResponse
+	(*CheckWorkContextRecordAccessRequest)(nil),             // 61: saas.accounts.v1.CheckWorkContextRecordAccessRequest
+	(*CheckWorkContextRecordAccessResponse)(nil),            // 62: saas.accounts.v1.CheckWorkContextRecordAccessResponse
+	(*ModuleExchangeDelegatedReadAudienceRequest)(nil),      // 63: saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
+	(*ModuleExchangeDelegatedOperationAudienceRequest)(nil), // 64: saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
+	(*v1.NewJob)(nil),                                       // 65: saas.jobs.v1.NewJob
+	(v1.JobEnqueueDisposition)(0),                           // 66: saas.jobs.v1.JobEnqueueDisposition
+	(*durationpb.Duration)(nil),                             // 67: google.protobuf.Duration
+	(*v1.JobEnvelope)(nil),                                  // 68: saas.jobs.v1.JobEnvelope
+	(*v1.JobLeaseReference)(nil),                            // 69: saas.jobs.v1.JobLeaseReference
+	(*v1.JobLease)(nil),                                     // 70: saas.jobs.v1.JobLease
+	(*v1.JobFailure)(nil),                                   // 71: saas.jobs.v1.JobFailure
+	(*timestamppb.Timestamp)(nil),                           // 72: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),                                 // 73: google.protobuf.Struct
+	(*v11.EventEnvelope)(nil),                               // 74: saas.events.v1.EventEnvelope
+	(*ModuleMintRegistrationRequest)(nil),                   // 75: saas.accounts.v1.ModuleMintRegistrationRequest
+	(*SolutionMintRegistrationRequest)(nil),                 // 76: saas.accounts.v1.SolutionMintRegistrationRequest
+	(*ModuleMintWorkContextRequest)(nil),                    // 77: saas.accounts.v1.ModuleMintWorkContextRequest
+	(*ModuleMintOperationContextRequest)(nil),               // 78: saas.accounts.v1.ModuleMintOperationContextRequest
+	(*ModuleMintSourceOperationContextRequest)(nil),         // 79: saas.accounts.v1.ModuleMintSourceOperationContextRequest
+	(*IssuedWorkContext)(nil),                               // 80: saas.accounts.v1.IssuedWorkContext
+	(*emptypb.Empty)(nil),                                   // 81: google.protobuf.Empty
+	(*ModuleMintRegistrationResponse)(nil),                  // 82: saas.accounts.v1.ModuleMintRegistrationResponse
+	(*SolutionMintRegistrationResponse)(nil),                // 83: saas.accounts.v1.SolutionMintRegistrationResponse
+	(*ModuleMintWorkContextResponse)(nil),                   // 84: saas.accounts.v1.ModuleMintWorkContextResponse
+	(*ModuleMintOperationContextResponse)(nil),              // 85: saas.accounts.v1.ModuleMintOperationContextResponse
+	(*ModuleMintSourceOperationContextResponse)(nil),        // 86: saas.accounts.v1.ModuleMintSourceOperationContextResponse
 }
 var file_saas_accounts_v1_module_capabilities_proto_depIdxs = []int32{
-	64, // 0: saas.accounts.v1.ModuleEnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
-	65, // 1: saas.accounts.v1.ModuleEnqueueJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
-	66, // 2: saas.accounts.v1.ModuleClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
-	67, // 3: saas.accounts.v1.ModuleClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
-	68, // 4: saas.accounts.v1.ModuleHeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	66, // 5: saas.accounts.v1.ModuleHeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
-	69, // 6: saas.accounts.v1.ModuleHeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
-	68, // 7: saas.accounts.v1.ModuleAckJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	68, // 8: saas.accounts.v1.ModuleNackJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	70, // 9: saas.accounts.v1.ModuleNackJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
-	71, // 10: saas.accounts.v1.ModuleNackJobRequest.retry_at:type_name -> google.protobuf.Timestamp
-	72, // 11: saas.accounts.v1.ModuleResumeRef.payload:type_name -> google.protobuf.Struct
-	72, // 12: saas.accounts.v1.ModuleRequestApprovalRequest.subject:type_name -> google.protobuf.Struct
+	65, // 0: saas.accounts.v1.ModuleEnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
+	66, // 1: saas.accounts.v1.ModuleEnqueueJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
+	67, // 2: saas.accounts.v1.ModuleClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
+	68, // 3: saas.accounts.v1.ModuleClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
+	69, // 4: saas.accounts.v1.ModuleHeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	67, // 5: saas.accounts.v1.ModuleHeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
+	70, // 6: saas.accounts.v1.ModuleHeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
+	69, // 7: saas.accounts.v1.ModuleAckJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	69, // 8: saas.accounts.v1.ModuleNackJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	71, // 9: saas.accounts.v1.ModuleNackJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
+	72, // 10: saas.accounts.v1.ModuleNackJobRequest.retry_at:type_name -> google.protobuf.Timestamp
+	73, // 11: saas.accounts.v1.ModuleResumeRef.payload:type_name -> google.protobuf.Struct
+	73, // 12: saas.accounts.v1.ModuleRequestApprovalRequest.subject:type_name -> google.protobuf.Struct
 	18, // 13: saas.accounts.v1.ModuleRequestApprovalRequest.policy:type_name -> saas.accounts.v1.ModuleApprovalPolicy
 	19, // 14: saas.accounts.v1.ModuleRequestApprovalRequest.resume_ref:type_name -> saas.accounts.v1.ModuleResumeRef
-	71, // 15: saas.accounts.v1.ModuleRequestApprovalRequest.expires_at:type_name -> google.protobuf.Timestamp
-	71, // 16: saas.accounts.v1.ModuleRequestApprovalRequest.escalate_at:type_name -> google.protobuf.Timestamp
-	72, // 17: saas.accounts.v1.ModuleApproval.subject:type_name -> google.protobuf.Struct
+	72, // 15: saas.accounts.v1.ModuleRequestApprovalRequest.expires_at:type_name -> google.protobuf.Timestamp
+	72, // 16: saas.accounts.v1.ModuleRequestApprovalRequest.escalate_at:type_name -> google.protobuf.Timestamp
+	73, // 17: saas.accounts.v1.ModuleApproval.subject:type_name -> google.protobuf.Struct
 	19, // 18: saas.accounts.v1.ModuleApproval.resume_ref:type_name -> saas.accounts.v1.ModuleResumeRef
-	71, // 19: saas.accounts.v1.ModuleApproval.expires_at:type_name -> google.protobuf.Timestamp
-	71, // 20: saas.accounts.v1.ModuleApproval.escalate_at:type_name -> google.protobuf.Timestamp
-	71, // 21: saas.accounts.v1.ModuleApproval.created_at:type_name -> google.protobuf.Timestamp
-	72, // 22: saas.accounts.v1.ModuleEmitAuditEventRequest.fields:type_name -> google.protobuf.Struct
+	72, // 19: saas.accounts.v1.ModuleApproval.expires_at:type_name -> google.protobuf.Timestamp
+	72, // 20: saas.accounts.v1.ModuleApproval.escalate_at:type_name -> google.protobuf.Timestamp
+	72, // 21: saas.accounts.v1.ModuleApproval.created_at:type_name -> google.protobuf.Timestamp
+	73, // 22: saas.accounts.v1.ModuleEmitAuditEventRequest.fields:type_name -> google.protobuf.Struct
 	0,  // 23: saas.accounts.v1.ModuleAuditFieldDeclaration.kind:type_name -> saas.accounts.v1.ModuleAuditFieldKind
-	26, // 24: saas.accounts.v1.ModuleAuditEventTypeDeclaration.fields:type_name -> saas.accounts.v1.ModuleAuditFieldDeclaration
+	27, // 24: saas.accounts.v1.ModuleAuditEventTypeDeclaration.fields:type_name -> saas.accounts.v1.ModuleAuditFieldDeclaration
 	1,  // 25: saas.accounts.v1.ModuleAuditEventTypeDeclaration.visibility:type_name -> saas.accounts.v1.ModuleAuditEventVisibility
-	27, // 26: saas.accounts.v1.ModuleDeclareAuditEventTypesRequest.types:type_name -> saas.accounts.v1.ModuleAuditEventTypeDeclaration
-	71, // 27: saas.accounts.v1.SubjectVisibilityGrant.expires_at:type_name -> google.protobuf.Timestamp
-	30, // 28: saas.accounts.v1.ModuleListSubjectVisibilityResponse.grants:type_name -> saas.accounts.v1.SubjectVisibilityGrant
-	35, // 29: saas.accounts.v1.FetchDatasourceFilesRequest.files:type_name -> saas.accounts.v1.DatasourceFileRef
+	28, // 26: saas.accounts.v1.ModuleDeclareAuditEventTypesRequest.types:type_name -> saas.accounts.v1.ModuleAuditEventTypeDeclaration
+	72, // 27: saas.accounts.v1.SubjectVisibilityGrant.expires_at:type_name -> google.protobuf.Timestamp
+	31, // 28: saas.accounts.v1.ModuleListSubjectVisibilityResponse.grants:type_name -> saas.accounts.v1.SubjectVisibilityGrant
+	36, // 29: saas.accounts.v1.FetchDatasourceFilesRequest.files:type_name -> saas.accounts.v1.DatasourceFileRef
 	2,  // 30: saas.accounts.v1.DatasourceItemReaders.basis:type_name -> saas.accounts.v1.DatasourceItemReadersBasis
-	37, // 31: saas.accounts.v1.DatasourceFileHeader.provenance:type_name -> saas.accounts.v1.DatasourceProvenance
-	38, // 32: saas.accounts.v1.DatasourceFileHeader.readers:type_name -> saas.accounts.v1.DatasourceItemReaders
-	39, // 33: saas.accounts.v1.FetchDatasourceFilesFrame.header:type_name -> saas.accounts.v1.DatasourceFileHeader
-	73, // 34: saas.accounts.v1.ModulePublishEventRequest.envelope:type_name -> saas.events.v1.EventEnvelope
+	38, // 31: saas.accounts.v1.DatasourceFileHeader.provenance:type_name -> saas.accounts.v1.DatasourceProvenance
+	39, // 32: saas.accounts.v1.DatasourceFileHeader.readers:type_name -> saas.accounts.v1.DatasourceItemReaders
+	40, // 33: saas.accounts.v1.FetchDatasourceFilesFrame.header:type_name -> saas.accounts.v1.DatasourceFileHeader
+	74, // 34: saas.accounts.v1.ModulePublishEventRequest.envelope:type_name -> saas.events.v1.EventEnvelope
 	3,  // 35: saas.accounts.v1.ModuleSubscribeRequest.delivery:type_name -> saas.accounts.v1.EventDelivery
 	3,  // 36: saas.accounts.v1.ModuleSubscription.delivery:type_name -> saas.accounts.v1.EventDelivery
-	71, // 37: saas.accounts.v1.ModuleSubscription.created_at:type_name -> google.protobuf.Timestamp
-	44, // 38: saas.accounts.v1.ModuleSubscribeResponse.subscription:type_name -> saas.accounts.v1.ModuleSubscription
-	44, // 39: saas.accounts.v1.ModuleListSubscriptionsResponse.subscriptions:type_name -> saas.accounts.v1.ModuleSubscription
-	71, // 40: saas.accounts.v1.ModuleReplayEventsRequest.since:type_name -> google.protobuf.Timestamp
+	72, // 37: saas.accounts.v1.ModuleSubscription.created_at:type_name -> google.protobuf.Timestamp
+	45, // 38: saas.accounts.v1.ModuleSubscribeResponse.subscription:type_name -> saas.accounts.v1.ModuleSubscription
+	45, // 39: saas.accounts.v1.ModuleListSubscriptionsResponse.subscriptions:type_name -> saas.accounts.v1.ModuleSubscription
+	72, // 40: saas.accounts.v1.ModuleReplayEventsRequest.since:type_name -> google.protobuf.Timestamp
 	4,  // 41: saas.accounts.v1.ReadableSourceCollection.grant_disclosure:type_name -> saas.accounts.v1.MetadataDisclosure
-	52, // 42: saas.accounts.v1.ReadableSourceCollection.read_grants:type_name -> saas.accounts.v1.ReadableCollectionGrant
-	53, // 43: saas.accounts.v1.ReadableSourceCollection.sync:type_name -> saas.accounts.v1.CollectionSyncProvenance
-	71, // 44: saas.accounts.v1.ReadableCollectionGrant.expires_at:type_name -> google.protobuf.Timestamp
+	53, // 42: saas.accounts.v1.ReadableSourceCollection.read_grants:type_name -> saas.accounts.v1.ReadableCollectionGrant
+	54, // 43: saas.accounts.v1.ReadableSourceCollection.sync:type_name -> saas.accounts.v1.CollectionSyncProvenance
+	72, // 44: saas.accounts.v1.ReadableCollectionGrant.expires_at:type_name -> google.protobuf.Timestamp
 	5,  // 45: saas.accounts.v1.CollectionSyncProvenance.stage:type_name -> saas.accounts.v1.SourceSyncStage
-	71, // 46: saas.accounts.v1.CollectionSyncProvenance.at:type_name -> google.protobuf.Timestamp
+	72, // 46: saas.accounts.v1.CollectionSyncProvenance.at:type_name -> google.protobuf.Timestamp
 	4,  // 47: saas.accounts.v1.CollectionSyncProvenance.requester_disclosure:type_name -> saas.accounts.v1.MetadataDisclosure
-	71, // 48: saas.accounts.v1.CollectionSyncProvenance.requested_at:type_name -> google.protobuf.Timestamp
-	51, // 49: saas.accounts.v1.ListReadableSourceCollectionsResponse.collections:type_name -> saas.accounts.v1.ReadableSourceCollection
-	62, // 50: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
-	63, // 51: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
-	58, // 52: saas.accounts.v1.ModuleCapabilitiesService.VerifyWorkContextRuntimeBoundary:input_type -> saas.accounts.v1.VerifyWorkContextRuntimeBoundaryRequest
-	60, // 53: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:input_type -> saas.accounts.v1.CheckWorkContextRecordAccessRequest
-	54, // 54: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:input_type -> saas.accounts.v1.ListReadableSourceCollectionsRequest
-	56, // 55: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:input_type -> saas.accounts.v1.ModulePlaceRecordRequest
+	72, // 48: saas.accounts.v1.CollectionSyncProvenance.requested_at:type_name -> google.protobuf.Timestamp
+	52, // 49: saas.accounts.v1.ListReadableSourceCollectionsResponse.collections:type_name -> saas.accounts.v1.ReadableSourceCollection
+	63, // 50: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
+	64, // 51: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
+	59, // 52: saas.accounts.v1.ModuleCapabilitiesService.VerifyWorkContextRuntimeBoundary:input_type -> saas.accounts.v1.VerifyWorkContextRuntimeBoundaryRequest
+	61, // 53: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:input_type -> saas.accounts.v1.CheckWorkContextRecordAccessRequest
+	55, // 54: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:input_type -> saas.accounts.v1.ListReadableSourceCollectionsRequest
+	57, // 55: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:input_type -> saas.accounts.v1.ModulePlaceRecordRequest
 	6,  // 56: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:input_type -> saas.accounts.v1.ModuleEnqueueJobRequest
 	8,  // 57: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:input_type -> saas.accounts.v1.ModuleClaimJobsRequest
 	10, // 58: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:input_type -> saas.accounts.v1.ModuleHeartbeatJobRequest
@@ -4841,54 +4892,56 @@ var file_saas_accounts_v1_module_capabilities_proto_depIdxs = []int32{
 	20, // 63: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:input_type -> saas.accounts.v1.ModuleRequestApprovalRequest
 	22, // 64: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:input_type -> saas.accounts.v1.ModuleGetApprovalRequest
 	24, // 65: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:input_type -> saas.accounts.v1.ModuleCancelApprovalRequest
-	25, // 66: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:input_type -> saas.accounts.v1.ModuleEmitAuditEventRequest
-	28, // 67: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:input_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesRequest
-	31, // 68: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:input_type -> saas.accounts.v1.ModuleListSubjectVisibilityRequest
-	33, // 69: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:input_type -> saas.accounts.v1.FetchDatasourceBlobRequest
-	36, // 70: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:input_type -> saas.accounts.v1.FetchDatasourceFilesRequest
-	74, // 71: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:input_type -> saas.accounts.v1.ModuleMintRegistrationRequest
-	75, // 72: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:input_type -> saas.accounts.v1.SolutionMintRegistrationRequest
-	76, // 73: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:input_type -> saas.accounts.v1.ModuleMintWorkContextRequest
-	77, // 74: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:input_type -> saas.accounts.v1.ModuleMintOperationContextRequest
-	78, // 75: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:input_type -> saas.accounts.v1.ModuleMintSourceOperationContextRequest
-	41, // 76: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:input_type -> saas.accounts.v1.ModulePublishEventRequest
-	43, // 77: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:input_type -> saas.accounts.v1.ModuleSubscribeRequest
-	46, // 78: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:input_type -> saas.accounts.v1.ModuleUnsubscribeRequest
-	47, // 79: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:input_type -> saas.accounts.v1.ModuleListSubscriptionsRequest
-	49, // 80: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:input_type -> saas.accounts.v1.ModuleReplayEventsRequest
-	79, // 81: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	79, // 82: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	59, // 83: saas.accounts.v1.ModuleCapabilitiesService.VerifyWorkContextRuntimeBoundary:output_type -> saas.accounts.v1.VerifyWorkContextRuntimeBoundaryResponse
-	61, // 84: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:output_type -> saas.accounts.v1.CheckWorkContextRecordAccessResponse
-	55, // 85: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:output_type -> saas.accounts.v1.ListReadableSourceCollectionsResponse
-	57, // 86: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:output_type -> saas.accounts.v1.ModulePlaceRecordResponse
-	7,  // 87: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:output_type -> saas.accounts.v1.ModuleEnqueueJobResponse
-	9,  // 88: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:output_type -> saas.accounts.v1.ModuleClaimJobsResponse
-	11, // 89: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:output_type -> saas.accounts.v1.ModuleHeartbeatJobResponse
-	80, // 90: saas.accounts.v1.ModuleCapabilitiesService.AckJob:output_type -> google.protobuf.Empty
-	80, // 91: saas.accounts.v1.ModuleCapabilitiesService.NackJob:output_type -> google.protobuf.Empty
-	15, // 92: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:output_type -> saas.accounts.v1.ModuleNotifyUserResponse
-	17, // 93: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:output_type -> saas.accounts.v1.ModuleNotifyOrgAdminsResponse
-	21, // 94: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:output_type -> saas.accounts.v1.ModuleRequestApprovalResponse
-	23, // 95: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:output_type -> saas.accounts.v1.ModuleApproval
-	80, // 96: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:output_type -> google.protobuf.Empty
-	80, // 97: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:output_type -> google.protobuf.Empty
-	29, // 98: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:output_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesResponse
-	32, // 99: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:output_type -> saas.accounts.v1.ModuleListSubjectVisibilityResponse
-	34, // 100: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:output_type -> saas.accounts.v1.FetchDatasourceBlobChunk
-	40, // 101: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:output_type -> saas.accounts.v1.FetchDatasourceFilesFrame
-	81, // 102: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:output_type -> saas.accounts.v1.ModuleMintRegistrationResponse
-	82, // 103: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:output_type -> saas.accounts.v1.SolutionMintRegistrationResponse
-	83, // 104: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:output_type -> saas.accounts.v1.ModuleMintWorkContextResponse
-	84, // 105: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:output_type -> saas.accounts.v1.ModuleMintOperationContextResponse
-	85, // 106: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:output_type -> saas.accounts.v1.ModuleMintSourceOperationContextResponse
-	42, // 107: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:output_type -> saas.accounts.v1.ModulePublishEventResponse
-	45, // 108: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:output_type -> saas.accounts.v1.ModuleSubscribeResponse
-	80, // 109: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:output_type -> google.protobuf.Empty
-	48, // 110: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:output_type -> saas.accounts.v1.ModuleListSubscriptionsResponse
-	50, // 111: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:output_type -> saas.accounts.v1.ModuleReplayEventsResponse
-	81, // [81:112] is the sub-list for method output_type
-	50, // [50:81] is the sub-list for method input_type
+	26, // 66: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:input_type -> saas.accounts.v1.ModuleEmitAuditEventRequest
+	26, // 67: saas.accounts.v1.ModuleCapabilitiesService.LookupAuditEvent:input_type -> saas.accounts.v1.ModuleEmitAuditEventRequest
+	29, // 68: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:input_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesRequest
+	32, // 69: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:input_type -> saas.accounts.v1.ModuleListSubjectVisibilityRequest
+	34, // 70: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:input_type -> saas.accounts.v1.FetchDatasourceBlobRequest
+	37, // 71: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:input_type -> saas.accounts.v1.FetchDatasourceFilesRequest
+	75, // 72: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:input_type -> saas.accounts.v1.ModuleMintRegistrationRequest
+	76, // 73: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:input_type -> saas.accounts.v1.SolutionMintRegistrationRequest
+	77, // 74: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:input_type -> saas.accounts.v1.ModuleMintWorkContextRequest
+	78, // 75: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:input_type -> saas.accounts.v1.ModuleMintOperationContextRequest
+	79, // 76: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:input_type -> saas.accounts.v1.ModuleMintSourceOperationContextRequest
+	42, // 77: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:input_type -> saas.accounts.v1.ModulePublishEventRequest
+	44, // 78: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:input_type -> saas.accounts.v1.ModuleSubscribeRequest
+	47, // 79: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:input_type -> saas.accounts.v1.ModuleUnsubscribeRequest
+	48, // 80: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:input_type -> saas.accounts.v1.ModuleListSubscriptionsRequest
+	50, // 81: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:input_type -> saas.accounts.v1.ModuleReplayEventsRequest
+	80, // 82: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	80, // 83: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	60, // 84: saas.accounts.v1.ModuleCapabilitiesService.VerifyWorkContextRuntimeBoundary:output_type -> saas.accounts.v1.VerifyWorkContextRuntimeBoundaryResponse
+	62, // 85: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:output_type -> saas.accounts.v1.CheckWorkContextRecordAccessResponse
+	56, // 86: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:output_type -> saas.accounts.v1.ListReadableSourceCollectionsResponse
+	58, // 87: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:output_type -> saas.accounts.v1.ModulePlaceRecordResponse
+	7,  // 88: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:output_type -> saas.accounts.v1.ModuleEnqueueJobResponse
+	9,  // 89: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:output_type -> saas.accounts.v1.ModuleClaimJobsResponse
+	11, // 90: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:output_type -> saas.accounts.v1.ModuleHeartbeatJobResponse
+	81, // 91: saas.accounts.v1.ModuleCapabilitiesService.AckJob:output_type -> google.protobuf.Empty
+	81, // 92: saas.accounts.v1.ModuleCapabilitiesService.NackJob:output_type -> google.protobuf.Empty
+	15, // 93: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:output_type -> saas.accounts.v1.ModuleNotifyUserResponse
+	17, // 94: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:output_type -> saas.accounts.v1.ModuleNotifyOrgAdminsResponse
+	21, // 95: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:output_type -> saas.accounts.v1.ModuleRequestApprovalResponse
+	23, // 96: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:output_type -> saas.accounts.v1.ModuleApproval
+	81, // 97: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:output_type -> google.protobuf.Empty
+	81, // 98: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:output_type -> google.protobuf.Empty
+	25, // 99: saas.accounts.v1.ModuleCapabilitiesService.LookupAuditEvent:output_type -> saas.accounts.v1.ModuleLookupAuditEventResponse
+	30, // 100: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:output_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesResponse
+	33, // 101: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:output_type -> saas.accounts.v1.ModuleListSubjectVisibilityResponse
+	35, // 102: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:output_type -> saas.accounts.v1.FetchDatasourceBlobChunk
+	41, // 103: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:output_type -> saas.accounts.v1.FetchDatasourceFilesFrame
+	82, // 104: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:output_type -> saas.accounts.v1.ModuleMintRegistrationResponse
+	83, // 105: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:output_type -> saas.accounts.v1.SolutionMintRegistrationResponse
+	84, // 106: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:output_type -> saas.accounts.v1.ModuleMintWorkContextResponse
+	85, // 107: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:output_type -> saas.accounts.v1.ModuleMintOperationContextResponse
+	86, // 108: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:output_type -> saas.accounts.v1.ModuleMintSourceOperationContextResponse
+	43, // 109: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:output_type -> saas.accounts.v1.ModulePublishEventResponse
+	46, // 110: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:output_type -> saas.accounts.v1.ModuleSubscribeResponse
+	81, // 111: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:output_type -> google.protobuf.Empty
+	49, // 112: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:output_type -> saas.accounts.v1.ModuleListSubscriptionsResponse
+	51, // 113: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:output_type -> saas.accounts.v1.ModuleReplayEventsResponse
+	82, // [82:114] is the sub-list for method output_type
+	50, // [50:82] is the sub-list for method input_type
 	50, // [50:50] is the sub-list for extension type_name
 	50, // [50:50] is the sub-list for extension extendee
 	0,  // [0:50] is the sub-list for field type_name
@@ -4901,7 +4954,7 @@ func file_saas_accounts_v1_module_capabilities_proto_init() {
 	}
 	file_saas_accounts_v1_work_contexts_proto_init()
 	file_saas_accounts_v1_module_registration_proto_init()
-	file_saas_accounts_v1_module_capabilities_proto_msgTypes[34].OneofWrappers = []any{
+	file_saas_accounts_v1_module_capabilities_proto_msgTypes[35].OneofWrappers = []any{
 		(*FetchDatasourceFilesFrame_Header)(nil),
 		(*FetchDatasourceFilesFrame_Data)(nil),
 	}
@@ -4911,7 +4964,7 @@ func file_saas_accounts_v1_module_capabilities_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_module_capabilities_proto_rawDesc), len(file_saas_accounts_v1_module_capabilities_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   58,
+			NumMessages:   59,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

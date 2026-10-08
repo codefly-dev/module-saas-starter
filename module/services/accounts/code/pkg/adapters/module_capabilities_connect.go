@@ -115,3 +115,7 @@ func (h *moduleCapabilitiesConnectHandler) ListSubscriptions(ctx context.Context
 func (h *moduleCapabilitiesConnectHandler) ReplayEvents(ctx context.Context, req *connect.Request[gen.ModuleReplayEventsRequest]) (*connect.Response[gen.ModuleReplayEventsResponse], error) {
 	return unary(ctx, req, h.inner.ReplayEvents)
 }
+
+func (h *moduleCapabilitiesConnectHandler) LookupAuditEvent(ctx context.Context, req *connect.Request[gen.ModuleEmitAuditEventRequest]) (*connect.Response[gen.ModuleLookupAuditEventResponse], error) {
+	return unary(ctx, req, h.inner.LookupAuditEvent)
+}

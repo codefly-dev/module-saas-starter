@@ -892,16 +892,60 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // entryID must be an opaque identifier; one that is a locator is dropped rather
 // than stored, for the reasons opaqueAuditEntryID gives.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
-	grant, err := s.moduleGrant(caller)
+	entry, err := s.prepareModuleAuditEvent(ctx, caller, tenant, eventType, actor, solution, entryID, idempotencyKey, fields)
 	if err != nil {
 		return err
 	}
+	write := func(ctx context.Context) error { return s.emitEntryTx(ctx, entry) }
+	if tenant == "" {
+		err = s.store.WithControlPlane(ctx, write)
+	} else {
+		err = s.store.WithOrgTx(ctx, tenant, write)
+	}
+	if err != nil {
+		return moduleAuditEffectError(err)
+	}
+	return nil
+}
+
+// ModuleLookupAuditEvent checks current emission authority and exact intent without
+// writing. An absent receipt is inconclusive; it never authorizes reinvocation.
+func (s *Service) ModuleLookupAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) (string, error) {
+	if idempotencyKey == "" {
+		return "", status.Error(codes.InvalidArgument, "audit receipt requires an idempotency key")
+	}
+	entry, err := s.prepareModuleAuditEvent(ctx, caller, tenant, eventType, actor, solution, entryID, idempotencyKey, fields)
+	if err != nil {
+		return "", err
+	}
+	var eventID string
+	read := func(ctx context.Context) error {
+		var err error
+		eventID, err = s.store.LookupAuditEffect(ctx, entry)
+		return err
+	}
+	if tenant == "" {
+		err = s.store.WithControlPlane(ctx, read)
+	} else {
+		err = s.store.WithOrgTx(ctx, tenant, read)
+	}
+	if err != nil {
+		return "", moduleAuditEffectError(err)
+	}
+	return eventID, nil
+}
+
+func (s *Service) prepareModuleAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) (AuditEntry, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return AuditEntry{}, err
+	}
 	if tenant == "" {
 		if !grant.CrossTenant {
-			return status.Errorf(codes.PermissionDenied, "principal %s may not emit system-scoped audit events", caller.PrincipalID)
+			return AuditEntry{}, status.Errorf(codes.PermissionDenied, "principal %s may not emit system-scoped audit events", caller.PrincipalID)
 		}
 	} else if err := authorizeTenant(caller, grant, tenant); err != nil {
-		return err
+		return AuditEntry{}, err
 	}
 	payload := make(map[string]any)
 	for k, v := range fields.AsMap() {
@@ -915,7 +959,7 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// registry validation is only advisory; this is where the module's typed-
 	// fields contract is actually enforced.)
 	if err := s.validateModuleAuditEvent(ctx, grant, EventType(eventType), solution, payload); err != nil {
-		return err
+		return AuditEntry{}, err
 	}
 	// entry_id is optional on the request because the surface is shared: types
 	// that record something about a whole solution have no entry to name. A type
@@ -923,13 +967,13 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// than at the transport, where a min_len would impose the requirement on
 	// every type that shares the field.
 	if entryID == "" && AuditEventRequiresEntry(EventType(eventType)) {
-		return status.Errorf(codes.InvalidArgument, "audit: event %q records what happened to a resource and requires entry_id", eventType)
+		return AuditEntry{}, status.Errorf(codes.InvalidArgument, "audit: event %q records what happened to a resource and requires entry_id", eventType)
 	}
 	// An empty key disables deduplication, so for a type whose emitter reports
 	// per item and retries, accepting one guarantees a duplicate row on every
 	// replayed response rather than risking one.
 	if idempotencyKey == "" && AuditEventRequiresIdempotencyKey(EventType(eventType)) {
-		return status.Errorf(codes.InvalidArgument, "audit: event %q is emitted per item and requires idempotency_key naming the operation, so a retry collapses", eventType)
+		return AuditEntry{}, status.Errorf(codes.InvalidArgument, "audit: event %q is emitted per item and requires idempotency_key naming the operation, so a retry collapses", eventType)
 	}
 	// Resolved after the registry has accepted the event: the subject case needs a
 	// membership read, so an emit that is going to be rejected on the request alone
@@ -937,27 +981,12 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// does so before this surface touches the store at all.
 	actorID, actorType, err := s.resolveModuleAuditActor(ctx, caller, tenant, actor)
 	if err != nil {
-		return err
+		return AuditEntry{}, err
 	}
 	entryID = opaqueAuditEntryID(ctx, entryID)
-	// The emission IS the operation the module requested, so a failed write must
-	// surface as an error — not the fire-and-forget emit(), which swallows the
-	// error and would report success while the event was silently lost.
-	emit := func(ctx context.Context) error {
-		entry := s.buildAuditEntry(ctx, actorID, actorType, EventType(eventType), solution, entryID, tenant, payload)
-		entry.IdempotencyKey = idempotencyKey
-		return s.emitEntryTx(ctx, entry)
-	}
-	if tenant == "" {
-		if err := s.store.WithControlPlane(ctx, emit); err != nil {
-			return moduleAuditEffectError(err)
-		}
-		return nil
-	}
-	if err := s.store.WithOrgTx(ctx, tenant, emit); err != nil {
-		return moduleAuditEffectError(err)
-	}
-	return nil
+	entry := s.buildAuditEntry(ctx, actorID, actorType, EventType(eventType), solution, entryID, tenant, payload)
+	entry.IdempotencyKey = idempotencyKey
+	return entry, nil
 }
 
 // ErrModuleAuditActorUnresolved reports that a module-attributed audit actor

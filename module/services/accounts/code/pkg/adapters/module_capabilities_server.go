@@ -818,3 +818,19 @@ func moduleApprovalProto(a *business.ApprovalRequest) *gen.ModuleApproval {
 		CreatedAt:  timestamppb.New(a.CreatedAt),
 	}
 }
+
+func (s *ModuleCapabilitiesServer) LookupAuditEvent(ctx context.Context, req *gen.ModuleEmitAuditEventRequest) (*gen.ModuleLookupAuditEventResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eventID, err := service.ModuleLookupAuditEvent(ctx, caller,
+		req.GetTenant(), req.GetEventType(), req.GetActor(), req.GetSolution(), req.GetEntryId(), req.GetIdempotencyKey(), req.GetFields())
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModuleLookupAuditEventResponse{EventId: eventID}, nil
+}

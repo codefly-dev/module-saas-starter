@@ -91,6 +91,43 @@ func TestModuleEmitAuditEventDedupsRetriedTenantEmit(t *testing.T) {
 	require.Len(t, buckets, 1, "one event_type group is expected")
 	require.EqualValues(t, 2, buckets[0].Count,
 		"the retried emit must collapse to one row, leaving two document.ingested rows")
+
+	lookup := func(c business.ModuleCaller, tenant, entry, key string) (string, error) {
+		return svc.ModuleLookupAuditEvent(testCtx, c, tenant, "saas.document.ingested", modulePrincSvc, "sol", entry, key, nil)
+	}
+	eventID, err := lookup(caller, org, "entry-1", key)
+	require.NoError(t, err)
+	require.NotEmpty(t, eventID)
+	rows, _, _, err := svc.QueryAuditLog(testCtx, business.AuditQuery{OrgID: org, EventType: "saas.document.ingested", PageSize: 10})
+	require.NoError(t, err)
+	var matches int
+	for _, row := range rows {
+		if row.ID == eventID {
+			matches++
+		}
+	}
+	require.Equal(t, 1, matches, "receipt names the committed audit row")
+	missing, err := lookup(caller, org, "entry-1", "missing-"+business.NewIDString())
+	require.NoError(t, err)
+	require.Empty(t, missing)
+	_, err = lookup(caller, org, "entry-2", key)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	_, err = lookup(caller, org, "entry-1", legacyKey)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	_, err = lookup(caller, org, "entry-1", "")
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = lookup(caller, business.NewIDString(), "entry-1", key)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	// Read-only lookup must not add events, even when no receipt exists.
+	buckets, err = svc.AggregateAuditLog(testCtx, business.AuditQuery{OrgID: org, EventType: "saas.document.ingested"}, business.AuditAggregationSpec{GroupBy: []string{"event_type"}})
+	require.NoError(t, err)
+	require.Len(t, buckets, 1)
+	require.EqualValues(t, 2, buckets[0].Count)
+	// Narrowing the module grant takes effect before an old receipt is returned.
+	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{})
+	_, err = lookup(caller, org, "entry-1", key)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
 }
 
 // TestModuleEmitAuditEventRowKeepsItsActorAndEntry is the round trip the

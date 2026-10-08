@@ -279,3 +279,26 @@ receipts. New consumers require the supported authority response and refuse a
 missing or unknown version; old servers reject the new request field. Adopting
 this response does not itself migrate an existing consumer, validate software
 compatibility or qualify an installed rollout.
+
+## Recovering an audit emission
+
+A module calls `ModuleCapabilitiesService.LookupAuditEvent` with the complete
+original `ModuleEmitAuditEventRequest`, including a nonempty idempotency key,
+under its current module Work Context. The host rechecks the same tenant,
+registered event scope and actor rules as emission. This is not an alternative
+human audit-query permission.
+
+A nonempty `event_id` names the committed event for that exact intent. An empty
+ID means no receipt was visible at the read; it does not prove that nothing
+happened and does not authorize an effect retry. A changed intent under the key,
+or a historical key-only reservation without recorded intent, returns
+`FAILED_PRECONDITION`. The host does not backfill historical intent from a retry.
+Lookup does not create an event or reserve a key. Revoking the module's grant
+also revokes receipt access.
+
+Keyed emissions now bind actor, tenant, resource, payload, impersonation and
+client attribution alongside the event identity in the audit transaction.
+Attempt timestamps, generated IDs, IP addresses and catalog versions do not
+change the intent. Apply migration19 before starting a binary that uses the new
+binding; producers must treat an unverifiable historical key as reconciliation
+work rather than silently choosing another key and duplicating the effect.

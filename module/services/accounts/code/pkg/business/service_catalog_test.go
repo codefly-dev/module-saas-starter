@@ -23,7 +23,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
 	require.Len(t, catalog.GetServices(), 35)
-	require.Len(t, catalog.GetMethods(), 246)
+	require.Len(t, catalog.GetMethods(), 248)
 	require.Len(t, catalog.GetPermissions(), 24)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -38,6 +38,12 @@ func TestServiceCatalogCompilation(t *testing.T) {
 		require.NotEmpty(t, method.GetOutputType())
 		require.NotEmpty(t, method.GetSourceProto())
 		require.NotNil(t, method.GetPolicy())
+	}
+
+	for _, name := range []string{"VerifyWorkContextRuntimeBoundary", "LookupAuditEvent"} {
+		method := methods["/saas.accounts.v1.ModuleCapabilitiesService/"+name]
+		require.NotNil(t, method, name)
+		require.Equal(t, "internal", method.GetPolicyTier(), name)
 	}
 
 	readableSources := methods["/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"]

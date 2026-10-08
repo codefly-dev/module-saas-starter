@@ -284,6 +284,12 @@ message ModuleCancelApprovalRequest {
 // Audit
 // ---------------------------------------------------------------------------
 
+// Receipt for the exact requested audit intent, under current emission authority.
+// Empty event_id means no receipt was visible, not proof that nothing happened.
+message ModuleLookupAuditEventResponse {
+  string event_id = 1;
+}
+
 // ModuleEmitAuditEventRequest emits a registered audit event onto the tenant's
 // single audit spine. event_type must be registered in the code-owned catalog
 // (unregistered types are rejected, not stored free-form). solution names the
@@ -307,7 +313,8 @@ message ModuleEmitAuditEventRequest {
   google.protobuf.Struct fields = 6;
   // idempotency_key deduplicates retried emits: two emits with the same
   // (tenant, event_type, idempotency_key) collapse to a single audit row, and
-  // the duplicate returns success without writing again. Empty disables
+  // an identical intent returns success without writing again. Changed intent or
+  // an older key without recorded intent returns FAILED_PRECONDITION. Empty disables
   // deduplication (every emit is a distinct event). Scoped by tenant so one
   // tenant's keys can never suppress another's events.
   string idempotency_key = 7 [(buf.validate.field).string.max_len = 255];
@@ -1182,6 +1189,22 @@ service ModuleCapabilitiesService {
   }
   // EmitAuditEvent records a registered audit event on the tenant's spine.
   rpc EmitAuditEvent(ModuleEmitAuditEventRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // Read-only recovery for the complete original intent. Requires a nonempty
+  // idempotency_key; same authority as EmitAuditEvent. No retry authorization is
+  // implied by an absent receipt. Old unbound keys return FAILED_PRECONDITION.
+  rpc LookupAuditEvent(ModuleEmitAuditEventRequest) returns (ModuleLookupAuditEventResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE

@@ -38,6 +38,7 @@ const (
 	ModuleCapabilitiesService_GetApproval_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
 	ModuleCapabilitiesService_CancelApproval_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
 	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_LookupAuditEvent_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/LookupAuditEvent"
 	ModuleCapabilitiesService_DeclareAuditEventTypes_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/DeclareAuditEventTypes"
 	ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
 	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
@@ -103,6 +104,10 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(ctx context.Context, in *ModuleCancelApprovalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Read-only recovery for the complete original intent. Requires a nonempty
+	// idempotency_key; same authority as EmitAuditEvent. No retry authorization is
+	// implied by an absent receipt. Old unbound keys return FAILED_PRECONDITION.
+	LookupAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*ModuleLookupAuditEventResponse, error)
 	// DeclareAuditEventTypes admits the audit event types a composed module owns,
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(ctx context.Context, in *ModuleDeclareAuditEventTypesRequest, opts ...grpc.CallOption) (*ModuleDeclareAuditEventTypesResponse, error)
@@ -347,6 +352,16 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, in
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) LookupAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*ModuleLookupAuditEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleLookupAuditEventResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_LookupAuditEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) DeclareAuditEventTypes(ctx context.Context, in *ModuleDeclareAuditEventTypesRequest, opts ...grpc.CallOption) (*ModuleDeclareAuditEventTypesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModuleDeclareAuditEventTypesResponse)
@@ -555,6 +570,10 @@ type ModuleCapabilitiesServiceServer interface {
 	CancelApproval(context.Context, *ModuleCancelApprovalRequest) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error)
+	// Read-only recovery for the complete original intent. Requires a nonempty
+	// idempotency_key; same authority as EmitAuditEvent. No retry authorization is
+	// implied by an absent receipt. Old unbound keys return FAILED_PRECONDITION.
+	LookupAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*ModuleLookupAuditEventResponse, error)
 	// DeclareAuditEventTypes admits the audit event types a composed module owns,
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(context.Context, *ModuleDeclareAuditEventTypesRequest) (*ModuleDeclareAuditEventTypesResponse, error)
@@ -679,6 +698,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) CancelApproval(context.Conte
 }
 func (UnimplementedModuleCapabilitiesServiceServer) EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EmitAuditEvent not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) LookupAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*ModuleLookupAuditEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method LookupAuditEvent not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) DeclareAuditEventTypes(context.Context, *ModuleDeclareAuditEventTypesRequest) (*ModuleDeclareAuditEventTypesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeclareAuditEventTypes not implemented")
@@ -1050,6 +1072,24 @@ func _ModuleCapabilitiesService_EmitAuditEvent_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_LookupAuditEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleEmitAuditEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).LookupAuditEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_LookupAuditEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).LookupAuditEvent(ctx, req.(*ModuleEmitAuditEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_DeclareAuditEventTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModuleDeclareAuditEventTypesRequest)
 	if err := dec(in); err != nil {
@@ -1362,6 +1402,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EmitAuditEvent",
 			Handler:    _ModuleCapabilitiesService_EmitAuditEvent_Handler,
+		},
+		{
+			MethodName: "LookupAuditEvent",
+			Handler:    _ModuleCapabilitiesService_LookupAuditEvent_Handler,
 		},
 		{
 			MethodName: "DeclareAuditEventTypes",

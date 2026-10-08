@@ -181,6 +181,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ModuleCapabilitiesService/PlaceRecord":                        "Place one of the caller's own records at a scope node.",
 	"ModuleCapabilitiesService/DeclareAuditEventTypes":             "Declare the audit event types a composed module owns, in the namespaces bound to it.",
 	"ModuleCapabilitiesService/EmitAuditEvent":                     "Emit a registered audit event on the tenant's spine.",
+	"ModuleCapabilitiesService/LookupAuditEvent":                   "Recover a committed audit event identity for matching intent under current emission authority.",
 	"ModuleCapabilitiesService/ListSubjectVisibility":              "List the subjects whose rows a viewer may read in a tenant.",
 	"ModuleCapabilitiesService/FetchDatasourceBlob":                "Stream a datasource file blob referenced by a change set.",
 	"ModuleCapabilitiesService/FetchDatasourceFiles":               "Stream a batch of a datasource's files at one pinned version.",

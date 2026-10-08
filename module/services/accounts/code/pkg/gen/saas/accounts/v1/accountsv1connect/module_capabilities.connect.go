@@ -87,6 +87,9 @@ const (
 	// ModuleCapabilitiesServiceEmitAuditEventProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's EmitAuditEvent RPC.
 	ModuleCapabilitiesServiceEmitAuditEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	// ModuleCapabilitiesServiceLookupAuditEventProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's LookupAuditEvent RPC.
+	ModuleCapabilitiesServiceLookupAuditEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/LookupAuditEvent"
 	// ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's DeclareAuditEventTypes RPC.
 	ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/DeclareAuditEventTypes"
@@ -179,6 +182,10 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// Read-only recovery for the complete original intent. Requires a nonempty
+	// idempotency_key; same authority as EmitAuditEvent. No retry authorization is
+	// implied by an absent receipt. Old unbound keys return FAILED_PRECONDITION.
+	LookupAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[v1.ModuleLookupAuditEventResponse], error)
 	// DeclareAuditEventTypes admits the audit event types a composed module owns,
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error)
@@ -359,6 +366,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 			connect.WithClientOptions(opts...),
 		),
+		lookupAuditEvent: connect.NewClient[v1.ModuleEmitAuditEventRequest, v1.ModuleLookupAuditEventResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceLookupAuditEventProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("LookupAuditEvent")),
+			connect.WithClientOptions(opts...),
+		),
 		declareAuditEventTypes: connect.NewClient[v1.ModuleDeclareAuditEventTypesRequest, v1.ModuleDeclareAuditEventTypesResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure,
@@ -465,6 +478,7 @@ type moduleCapabilitiesServiceClient struct {
 	getApproval                        *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
 	cancelApproval                     *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
 	emitAuditEvent                     *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	lookupAuditEvent                   *connect.Client[v1.ModuleEmitAuditEventRequest, v1.ModuleLookupAuditEventResponse]
 	declareAuditEventTypes             *connect.Client[v1.ModuleDeclareAuditEventTypesRequest, v1.ModuleDeclareAuditEventTypesResponse]
 	listSubjectVisibility              *connect.Client[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse]
 	fetchDatasourceBlob                *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
@@ -569,6 +583,11 @@ func (c *moduleCapabilitiesServiceClient) CancelApproval(ctx context.Context, re
 // EmitAuditEvent calls saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent.
 func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, req *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.emitAuditEvent.CallUnary(ctx, req)
+}
+
+// LookupAuditEvent calls saas.accounts.v1.ModuleCapabilitiesService.LookupAuditEvent.
+func (c *moduleCapabilitiesServiceClient) LookupAuditEvent(ctx context.Context, req *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[v1.ModuleLookupAuditEventResponse], error) {
+	return c.lookupAuditEvent.CallUnary(ctx, req)
 }
 
 // DeclareAuditEventTypes calls saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes.
@@ -694,6 +713,10 @@ type ModuleCapabilitiesServiceHandler interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// Read-only recovery for the complete original intent. Requires a nonempty
+	// idempotency_key; same authority as EmitAuditEvent. No retry authorization is
+	// implied by an absent receipt. Old unbound keys return FAILED_PRECONDITION.
+	LookupAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[v1.ModuleLookupAuditEventResponse], error)
 	// DeclareAuditEventTypes admits the audit event types a composed module owns,
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error)
@@ -870,6 +893,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceLookupAuditEventHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceLookupAuditEventProcedure,
+		svc.LookupAuditEvent,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("LookupAuditEvent")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceDeclareAuditEventTypesHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure,
 		svc.DeclareAuditEventTypes,
@@ -990,6 +1019,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceCancelApprovalHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceEmitAuditEventProcedure:
 			moduleCapabilitiesServiceEmitAuditEventHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceLookupAuditEventProcedure:
+			moduleCapabilitiesServiceLookupAuditEventHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure:
 			moduleCapabilitiesServiceDeclareAuditEventTypesHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceListSubjectVisibilityProcedure:
@@ -1093,6 +1124,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) CancelApproval(context.Cont
 
 func (UnimplementedModuleCapabilitiesServiceHandler) EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) LookupAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[v1.ModuleLookupAuditEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.LookupAuditEvent is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error) {

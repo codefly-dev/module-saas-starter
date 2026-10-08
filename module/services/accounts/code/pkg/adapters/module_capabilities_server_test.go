@@ -302,3 +302,16 @@ func TestFetchDatasourceBlob_StreamsAuthorizedBlobEndToEnd(t *testing.T) {
 		t.Fatal("streamed frames carried no content type")
 	}
 }
+
+// Receipt knowledge is not authority: even a fully specified lookup must pass
+// module authentication before reaching the service or any stored audit binding.
+func TestAuditReceiptLookupRequiresModuleAuthentication(t *testing.T) {
+	server := &ModuleCapabilitiesServer{}
+	_, err := server.LookupAuditEvent(context.Background(), &gen.ModuleEmitAuditEventRequest{
+		Tenant: blobStreamOrgID, EventType: "example.changed", Actor: blobStreamCallerID,
+		Solution: "example", EntryId: "entry", IdempotencyKey: "known-effect-key",
+	})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unauthenticated lookup: %v", err)
+	}
+}
