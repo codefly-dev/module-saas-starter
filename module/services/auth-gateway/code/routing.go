@@ -222,11 +222,16 @@ func (m *RouteMatcher) RequiredArtifactUpstreams() []routeArtifactUpstream {
 }
 
 // ReservedV1Prefixes returns the set of `/v1/<prefix>` first segments owned by
-// the loaded catalog (generated + explicit extensions). Runtime module
-// federation must never register one of these prefixes: the catalog is the
-// authority for its own surface, and a colliding registration would be a route
-// the matcher can never reach (catalog wins) — so it is rejected at
-// registration rather than silently ignored.
+// the loaded catalog (generated + explicit extensions).
+//
+// A declared module whose route alias is one of these cannot be served: the
+// matcher runs first and takes every path it matches, so the module would serve
+// only the paths the catalog happens not to match — one prefix split between two
+// authorities. handleDeclaredModule refuses such an alias rather than serving
+// half of it. main used this set to refuse the claim when a module registered
+// itself; with declaration there is no registration to refuse at this edge, so
+// the refusal here is the backstop and what a delivery may declare is the
+// upstream question.
 func (m *RouteMatcher) ReservedV1Prefixes() map[string]struct{} {
 	reserved := make(map[string]struct{})
 	collect := func(path string) {
@@ -243,37 +248,6 @@ func (m *RouteMatcher) ReservedV1Prefixes() map[string]struct{} {
 		collect(entry.Path)
 	}
 	return reserved
-}
-
-// v1Prefix extracts the `<prefix>` from a `/v1/<prefix>/...` (or `/v1/<prefix>`)
-// path. It reports false for any path not under /v1/ or with an empty prefix.
-//
-// A custom-verb route ends its first segment with `:<verb>`
-// (`/v1/permissions:check`, `/v1/work-contexts:renew`), and the verb is not part
-// of the prefix. Splitting only on `/` made `permissions:check` the "prefix" of
-// that route, which left the real prefix `permissions` absent from
-// ReservedV1Prefixes: a runtime module could claim a namespace the catalog owns,
-// which is exactly what the reservation exists to refuse. It also made the
-// federation lookup on the other caller compare a verb-suffixed segment against
-// registered prefixes, so `/v1/<module>:<verb>` could never reach a registered
-// module even when that module owned the prefix.
-func v1Prefix(path string) (string, bool) {
-	const root = "/v1/"
-	if !strings.HasPrefix(path, root) {
-		return "", false
-	}
-	rest := path[len(root):]
-	prefix := rest
-	if idx := strings.IndexByte(rest, '/'); idx >= 0 {
-		prefix = rest[:idx]
-	}
-	if idx := strings.IndexByte(prefix, ':'); idx >= 0 {
-		prefix = prefix[:idx]
-	}
-	if prefix == "" {
-		return "", false
-	}
-	return prefix, true
 }
 
 // MatchREST looks up a REST route by HTTP method and path.

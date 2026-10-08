@@ -52,3 +52,8 @@ module/services/*/nix/
 go.work*
 # Built agent binary (rebuilt by `codefly agent build`).
 module-saas-starter
+
+# Stray Rust build output. No Cargo project lives in this repository; a
+# `target/` here is a scratch build some tool left behind, and 1.1MB of it was
+# committed once by a `git add -A` (removed in the commit that added this line).
+/target/

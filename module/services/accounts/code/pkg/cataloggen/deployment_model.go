@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/codefly-dev/core/standards"
 	"gopkg.in/yaml.v3"
@@ -145,11 +146,11 @@ func assembleDeploymentBindings(documents DeploymentDocuments) (deploymentBindin
 	}
 	for i := range bindings.Interface {
 		exported := &bindings.Interface[i]
-		visibility, err := manifestCatalogVisibility(exported.Visibility, "", exported.AllowModules)
+		visibility, err := manifestCatalogVisibility(exported.Visibility, "", true)
 		if err != nil {
 			return deploymentBindings{}, fmt.Errorf("interface %s/%s: %w", exported.Service, exported.Endpoint, err)
 		}
-		exported.Visibility, exported.AllowModules = visibility, nil
+		exported.Visibility = visibility
 	}
 	declared := make(map[string]bool, len(module.Services))
 	for _, reference := range module.Services {
@@ -225,7 +226,7 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 		if api == "" {
 			api = endpoint.Name
 		}
-		visibility, err := manifestCatalogVisibility(endpoint.Visibility, endpoint.Location, endpoint.AllowModules)
+		visibility, err := manifestCatalogVisibility(endpoint.Visibility, endpoint.Location, false)
 		if err != nil {
 			return deploymentServiceBinding{}, fmt.Errorf("service %q endpoint %q: %w", name, endpoint.Name, err)
 		}
@@ -270,29 +271,26 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 	return service, nil
 }
 
-// manifestCatalogVisibility projects Codefly's independent visibility/location
-// axes into this catalog's categories. MODULE represents every module, so
-// narrower allow-lists refuse rather than silently widening the generated policy.
-func manifestCatalogVisibility(visibility, location string, allowed []string) (string, error) {
+// manifestCatalogVisibility projects the authored reach into the catalog's legacy MODULE
+// category. It does not grant callers: only declared dependency edges render
+// network access, and the composing Core derives cross-module reach from asks.
+func manifestCatalogVisibility(visibility, location string, exported bool) (string, error) {
 	if visibility == "" {
 		visibility = "private"
+		if exported {
+			visibility = "internal"
+		}
 	}
 	if location != "" {
-		if location != "external" || visibility != "private" || len(allowed) != 0 {
+		if location != "external" || visibility != "private" {
 			return "", fmt.Errorf("unsupported external endpoint policy")
 		}
 		return "external", nil
 	}
 	switch visibility {
 	case "private", "public":
-		if len(allowed) != 0 {
-			return "", fmt.Errorf("allow-modules requires internal visibility")
-		}
 		return visibility, nil
 	case "internal":
-		if len(allowed) != 1 || allowed[0] != "*" {
-			return "", fmt.Errorf("deployment catalog requires internal visibility with allow-modules [*]; narrower exports need an allow-list-aware catalog")
-		}
 		return "module", nil
 	default:
 		return "", fmt.Errorf("unsupported authored endpoint visibility %q", visibility)
@@ -351,4 +349,41 @@ func standardAllocation(name, api string, endpoints []manifestEndpoint) (uint32,
 		}
 	}
 	return port, true
+}
+
+func (endpoint *manifestEndpoint) UnmarshalYAML(node *yaml.Node) error {
+	if err := refuseAuthoredConsumers(node); err != nil {
+		return err
+	}
+	type plain manifestEndpoint
+	return node.Decode((*plain)(endpoint))
+}
+
+func (endpoint *deploymentInterfaceBinding) UnmarshalYAML(node *yaml.Node) error {
+	if err := refuseAuthoredConsumers(node); err != nil {
+		return err
+	}
+	type plain deploymentInterfaceBinding
+	return node.Decode((*plain)(endpoint))
+}
+
+// Judge key presence before decoding: null and alternate spellings cannot
+// silently erase a forbidden grant. This matches Core's declaration boundary.
+func refuseAuthoredConsumers(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		var canonical strings.Builder
+		for _, r := range strings.ToLower(key) {
+			if r >= 'a' && r <= 'z' {
+				canonical.WriteRune(r)
+			}
+		}
+		if canonical.String() == "allowmodules" {
+			return fmt.Errorf("authors %q: endpoint access is derived from consumers' declared dependencies", key)
+		}
+	}
+	return nil
 }

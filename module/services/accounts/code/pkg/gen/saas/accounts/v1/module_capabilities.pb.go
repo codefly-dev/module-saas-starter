@@ -4575,12 +4575,17 @@ func (x *ModuleCurrentInstallationRequest) GetInstallationId() string {
 }
 
 type ModuleCurrentInstallationResponse struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	InstallationId     string                 `protobuf:"bytes,1,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
-	TenantId           string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	SolutionIdentifier string                 `protobuf:"bytes,3,opt,name=solution_identifier,json=solutionIdentifier,proto3" json:"solution_identifier,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	InstallationId string                 `protobuf:"bytes,1,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	TenantId       string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	// The immutable target this installation was consented to: one continuous
+	// period of one binding's presence, never reused.
+	TargetId string `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	// The delivered presence binding whose period that target records. This is
+	// what an authority decision keys on; the alias is display only.
+	BindingId     string `protobuf:"bytes,5,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ModuleCurrentInstallationResponse) Reset() {
@@ -4627,9 +4632,16 @@ func (x *ModuleCurrentInstallationResponse) GetTenantId() string {
 	return ""
 }
 
-func (x *ModuleCurrentInstallationResponse) GetSolutionIdentifier() string {
+func (x *ModuleCurrentInstallationResponse) GetTargetId() string {
 	if x != nil {
-		return x.SolutionIdentifier
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *ModuleCurrentInstallationResponse) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
 	}
 	return ""
 }
@@ -4974,11 +4986,13 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x04 \x01(\x03R\x10expectedRevision\"\x9d\x01\n" +
 	" ModuleCurrentInstallationRequest\x12F\n" +
 	"\x19parent_work_context_token\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\x121\n" +
-	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\"\x9a\x01\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\"\xca\x01\n" +
 	"!ModuleCurrentInstallationResponse\x12'\n" +
 	"\x0finstallation_id\x18\x01 \x01(\tR\x0einstallationId\x12\x1b\n" +
-	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12/\n" +
-	"\x13solution_identifier\x18\x03 \x01(\tR\x12solutionIdentifier*\xb8\x02\n" +
+	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12%\n" +
+	"\ttarget_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x05 \x01(\tR\tbindingIdJ\x04\b\x03\x10\x04R\x13solution_identifier*\xb8\x02\n" +
 	"\x14ModuleAuditFieldKind\x12'\n" +
 	"#MODULE_AUDIT_FIELD_KIND_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eMODULE_AUDIT_FIELD_KIND_STRING\x10\x01\x12 \n" +

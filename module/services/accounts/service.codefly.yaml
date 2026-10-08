@@ -32,6 +32,7 @@ workspace-configuration-dependencies:
     - identity
     - internal-auth
     - internal-transport
+    - key-service
     - module-capabilities
     - observability
     - product-analytics
@@ -45,10 +46,8 @@ endpoints:
     - name: authority
       api: grpc
       visibility: internal
-      allow-modules: ["*"]
     - name: connect
       visibility: internal
-      allow-modules: ["*"]
     - name: grpc
     - name: rest
 spec:

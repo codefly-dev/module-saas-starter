@@ -133,12 +133,23 @@
       ]
     },
     {
+      "name": "policy-log",
+      "endpoints": [
+        {
+          "name": "grpc",
+          "api": "CODEFLY_API_GRPC",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "port": 9090
+        }
+      ]
+    },
+    {
       "name": "store",
       "endpoints": [
         {
           "name": "tcp",
           "api": "CODEFLY_API_TCP",
-          "visibility": "ENDPOINT_VISIBILITY_EXTERNAL",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
           "port": 5432
         }
       ]
@@ -202,6 +213,12 @@
     },
     {
       "service": "marketing",
+      "ports": [
+        443
+      ]
+    },
+    {
+      "service": "policy-log",
       "ports": [
         443
       ]

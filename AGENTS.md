@@ -156,7 +156,7 @@ Depth sits with the code that owns it:
 
 | File | Covers |
 | --- | --- |
-| [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the five Go modules and how to test each, configuration groups |
+| [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the Go modules and how to test each, configuration groups |
 | [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the manifests as the model, `spec.deployment`, and moving an agent version |
 | [module/services/auth-gateway/AGENTS.md](./module/services/auth-gateway/AGENTS.md) | upstream registration, the composed-module REST prefix, the credentials both take |
 | [module/services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md) | the durable registry record, module principals, minting a module Work Context, mesh reachability |
@@ -183,7 +183,7 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   such a list with a count: nothing enforces one, so two changes that each add a
   step and each bump the same number merge cleanly into a total that is silently
   wrong.
-- Go suites live in five independent Go modules with no `go.work`
+- Go suites live in independent Go modules with no `go.work`
   ([module/AGENTS.md](./module/AGENTS.md#go-suites)).
 - Vulnerability policy: the complete audit runs non-blocking so vendor-image
   findings stay in the evidence report, while a separate fail-closed step enforces

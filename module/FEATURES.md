@@ -595,7 +595,7 @@ _All previously-open gaps closed 2026-04-25._
 - ✅ **GetOrgEntitlements had no authz** — any authenticated user could read any org's plan + usage. Now gated by `requireOrgMember` (platform admins implicitly satisfy via membership).
 - ✅ **OverrideEntitlement had no authz** — implicit JWT-only. Now requires `platformAdmin`.
 - ✅ **API key scopes enforced on more endpoints** — webhooks (Create/Delete/List/Test/GetDelivery/ReplayDelivery/RotateSecret) and api-keys (Create/List/Revoke). 5 new unit tests pin the wildcard semantics + the JWT pass-through.
-- ✅ **Self-serve SSO admin (WorkOS Connections)** — proto SSOAdminService + business / handler / WorkOS HTTP client + migration 21 + /admin/sso FE. Stub-mode when the selected Codefly identity configuration has no `IDENTITY_MANAGEMENT_API_KEY`, so dev exercises the full flow.
+- ✅ **Self-serve SSO admin (WorkOS Connections)** — proto SSOAdminService + business / handler / WorkOS HTTP client + migration 23 + /admin/sso FE. Stub-mode when the selected Codefly identity configuration has no `IDENTITY_MANAGEMENT_API_KEY`, so dev exercises the full flow.
 - ✅ **Audit-export FE admin form** — was backend-only; /admin/audit-export now lets org admins configure their bucket through the UI. Pre-flight connection probe at Save time so bad creds fail fast.
 - ✅ **s3 plugin now actually runs MinIO** — was a redis-template scaffold (port 6379, redis ping readiness); now real (port 9000, /minio/health/live, structured conn keys, agent v0.0.2).
 - ✅ **User settings API** — JSONB-backed (`users.settings`) + UserSettingsService + /settings hub (theme / locale / timezone / date-time format / email opt-ins).
@@ -655,7 +655,7 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `TELEMETRY_STATE`              | `observability` group, delivered by the platform: `available` or `absent`; missing state refuses startup except in a local runtime, where it means `absent` |
+| `TELEMETRY_STATE`              | `observability` group, delivered by the platform: `available` or `absent`; missing state refuses startup except in the `local` runtime, where it means `absent` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`  | `observability` group: the cell collector's OTLP/gRPC address, required when `available` and ignored when `absent`; `http://` is plaintext on the wire because the mesh supplies mTLS, `https://` is TLS |
 | `TELEMETRY_ABSENT_REASON`      | `observability` group: why the cell has no collector, required when `absent` and ignored when `available`; logged once at startup |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
@@ -667,17 +667,20 @@ When `TELEMETRY_STATE` is `available`, the accounts service and the auth-gateway
 export traces and unsampled request and Go runtime metrics over OTLP/gRPC to the
 cell's collector at `OTEL_EXPORTER_OTLP_ENDPOINT`. The auth-gateway covers both its
 HTTP gateway and gRPC ext_authz authorization service. When it is `absent`, they
-export nothing over OTLP, log `TELEMETRY_ABSENT_REASON` once and boot; a local run
-then uses wool's stdout tracer for traces. The state decides: a cell's values
-override the module's local defaults one key at a time, so a deployed cell that
-says `available` with an endpoint can still carry the `absent` reason the local
-profile left behind. The key the state does not use is ignored, and a startup
-warning names it once. Module defaults never declare `TELEMETRY_STATE`, because
-they also reach deployed cells. Only a local runtime infers `absent` from a
-missing state; elsewhere missing state refuses startup, because a group that
-did not arrive is not a cell without a collector. Unknown state, `available`
-without an endpoint, or explicit `absent` without a reason also refuses startup,
-including locally. An `https://`
+export nothing over OTLP, log `TELEMETRY_ABSENT_REASON` once and boot. A local
+runtime, meaning the Codefly environment named `local` and no other, then uses
+wool's stdout tracer for traces; `local-dogfood` is not that runtime, so it exports
+no traces either. The state decides: the group is layered, so a key the state does
+not use can still arrive from a lower layer, and is ignored, with a startup warning
+that names it once. The module's own profile declares neither `TELEMETRY_STATE`
+nor `TELEMETRY_ABSENT_REASON`, because module defaults also reach deployed cells: a
+healthy `available` cell would warn on every boot about a reason it never set,
+and a cell that sent `absent` without a reason would pass with one written for a
+laptop. Only a local runtime infers `absent` from a missing state, and it
+supplies that state and its reason in code; elsewhere missing state refuses
+startup, because a group that did not arrive is not a cell without a collector.
+Unknown state, `available` without an endpoint, or explicit `absent` without a
+reason also refuses startup, including locally. An `https://`
 endpoint is refused at startup for now: wool's OTLP tracer dials plaintext only,
 so it would be sent in the clear and reported as TLS.
 Metrics leave by OTLP push alone — decided 2026-10-06, because the cell's

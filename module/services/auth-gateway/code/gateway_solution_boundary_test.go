@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"net/http"
 	"net/http/httptest"
@@ -28,114 +29,53 @@ func mintRequest(t *testing.T, priv ed25519.PrivateKey) *http.Request {
 	return req
 }
 
-// A verified credential on the mint becomes the trusted solution identity, and
-// only on the mint: the same credential on any other route stamps nothing, so
-// the surface it widens is one procedure.
-func TestGateway_WorkContextMint_StampsTheVerifiedSolution(t *testing.T) {
-	gw, apiFake, _, priv := newGatewayHarness(t)
+// accountsSolutionIdentityHeader and accountsSolutionPublisherHeader are
+// ACCOUNTS' spellings, written here as literals ON PURPOSE. The point of this
+// file is to check the gateway against what accounts reads, so it must not share
+// a symbol with the gateway: an earlier version of this test set and asserted
+// `x-codefly-solution-identity`, the same near-miss the strip list carried, so
+// the test and the hole agreed and the suite was green while any authenticated
+// caller could assert any solution's identity to accounts. A test that borrows
+// the constant it is checking cannot catch a wrong constant.
+//
+// They are accounts' `connect_auth_interceptor.go` constants, lowercased, which
+// is the form `http.Header.Del` and gRPC metadata both use.
+const (
+	accountsSolutionIdentityHeader  = "x-codefly-solution-id"
+	accountsSolutionPublisherHeader = "x-codefly-solution-publisher"
+)
 
-	req := mintRequest(t, priv)
-	req.Header.Set(solutionRegistrationHeader,
-		signSolutionRegistration(t, "audit", "solution:audit"))
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "audit", apiFake.lastHeaders.Get(solutionIdentityHeader))
-	// The publisher travels with the id, from the same claims: accounts checks
-	// it against the publisher that owns the registration.
-	require.Equal(t, "solution:audit", apiFake.lastHeaders.Get(solutionPublisherHeader))
-	// The credential itself never reaches accounts: it proves the identity here
-	// and the header is what accounts reads.
-	require.Empty(t, apiFake.lastHeaders.Get(solutionRegistrationHeader))
-
-	other := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
-	other.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
-	other.Header.Set(solutionRegistrationHeader,
-		signSolutionRegistration(t, "audit", "solution:audit"))
-	w = httptest.NewRecorder()
-	gw.ServeHTTP(w, other)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Empty(t, apiFake.lastHeaders.Get(solutionIdentityHeader),
-		"the credential means nothing outside the mint procedure")
+// The gateway's strip constants must BE accounts' spellings. `http.Header.Del`
+// canonicalises its argument, so a near-miss deletes a header nobody sends and
+// leaves the real one in place, with no error anywhere.
+func TestSolutionStripConstantsAreTheHeadersAccountsReads(t *testing.T) {
+	require.Equal(t, accountsSolutionIdentityHeader, solutionIdentityHeader)
+	require.Equal(t, accountsSolutionPublisherHeader, solutionPublisherHeader)
 }
 
 // A caller that simply asserts the header gets it stripped, in both spellings
 // an upstream could read one under. This is the whole cross-solution property:
 // without the strip, any authenticated viewer could mint under any solution's
-// boundary by typing its id.
+// boundary by typing its id. Asserted on what the UPSTREAM received, because
+// that is the only place the question is answered.
 func TestGateway_WorkContextMint_StripsACallerAssertedSolution(t *testing.T) {
 	gw, apiFake, _, priv := newGatewayHarness(t)
 
 	req := mintRequest(t, priv)
-	req.Header.Set(solutionIdentityHeader, "audit")
-	req.Header.Set(solutionPublisherHeader, "solution:audit")
+	req.Header.Set(accountsSolutionIdentityHeader, "audit")
+	req.Header.Set(accountsSolutionPublisherHeader, "solution:audit")
+	// The canonical-cased spelling too: a caller controls the case on the wire,
+	// and Del is case-insensitive, so both must go.
+	req.Header.Set("X-Codefly-Solution-Id", "audit")
 	req.Header.Set("Grpc-Metadata-X-Codefly-Solution-Id", "audit")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Empty(t, apiFake.lastHeaders.Get(solutionIdentityHeader))
-	require.Empty(t, apiFake.lastHeaders.Get(solutionPublisherHeader))
+	require.Empty(t, apiFake.lastHeaders.Get(accountsSolutionIdentityHeader),
+		"a caller-asserted solution identity reached the upstream: accounts trusts this header beside a valid gateway token, so it would mint under that solution's boundary")
+	require.Empty(t, apiFake.lastHeaders.Get(accountsSolutionPublisherHeader))
 	requireNoGRPCMetadataHeaders(t, apiFake.lastHeaders)
-}
-
-// A caller holding one solution's credential cannot stamp another's: the id is
-// the credential's own claim, so the header says what was proved and the
-// request body has no say at all.
-func TestGateway_WorkContextMint_CredentialDecidesTheSolution(t *testing.T) {
-	gw, apiFake, _, priv := newGatewayHarness(t)
-
-	req := mintRequest(t, priv)
-	req.Header.Set(solutionRegistrationHeader,
-		signSolutionRegistration(t, "example-b", "solution:example-b"))
-	req.Header.Set(solutionIdentityHeader, "example-a")
-	req.Header.Set(solutionPublisherHeader, "solution:example-a")
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "example-b", apiFake.lastHeaders.Get(solutionIdentityHeader))
-	require.Equal(t, "solution:example-b", apiFake.lastHeaders.Get(solutionPublisherHeader))
-}
-
-// A presented credential that does not verify is refused rather than treated as
-// an ordinary mint. Falling through would answer a forged or expired credential
-// with a capability under a different boundary, which is the one outcome worth
-// failing loudly on.
-func TestGateway_WorkContextMint_RefusesAnUnverifiableCredential(t *testing.T) {
-	gw, apiFake, _, priv := newGatewayHarness(t)
-
-	for name, credential := range map[string]string{
-		"not a token":      "not-a-token",
-		"wrong audience":   signValidToken(t, priv),
-		"empty solution":   signSolutionRegistration(t, "", "solution:audit"),
-		"invalid solution": signSolutionRegistration(t, "Not A Solution", "solution:audit"),
-		"no publisher":     signSolutionRegistration(t, "audit", ""),
-	} {
-		t.Run(name, func(t *testing.T) {
-			req := mintRequest(t, priv)
-			req.Header.Set(solutionRegistrationHeader, credential)
-			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, req)
-
-			require.Equal(t, http.StatusUnauthorized, w.Code)
-			require.Empty(t, apiFake.lastHeaders.Get(solutionIdentityHeader))
-		})
-	}
-}
-
-// A mint with no credential is an ordinary mint and is untouched — every mint
-// the host's own pages and every composed module make takes this path.
-func TestGateway_WorkContextMint_WithoutACredentialIsUnchanged(t *testing.T) {
-	gw, apiFake, _, priv := newGatewayHarness(t)
-
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, mintRequest(t, priv))
-
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Empty(t, apiFake.lastHeaders.Get(solutionIdentityHeader))
 }
 
 // A registration answer carries NO boundary, to either half, and neither does
@@ -144,26 +84,34 @@ func TestGateway_WorkContextMint_WithoutACredentialIsUnchanged(t *testing.T) {
 // would only widen who can see a value that is now stable for the life of the
 // registration. The accounts half of this promise is
 // TestSolutionRegistrationResponsesCarryNoRuntimeBoundary.
-func TestGateway_SolutionRegistration_EchoesNoBoundary(t *testing.T) {
+// The registry must never echo a runtime boundary, and this is the half of that
+// guarantee that survives the cutover.
+//
+// It used to POST to `/solutions/_frontend` and `/solutions/_register` and check
+// their answers too. Those endpoints are the runtime registration writer and are
+// deleted, so asserting on their responses would assert on a 404. What still
+// matters — and matters more, since the seed now outlives a withdrawal — is that
+// the SNAPSHOT every consumer reads carries no boundary: the seed is the one
+// thing that must never leave this host, and the snapshot is what leaves it.
+func TestGateway_SolutionRegistry_SnapshotEchoesNoBoundary(t *testing.T) {
+	// A snapshot that has actually LOADED, reached through the declared path.
+	// This test used to POST to `/solutions/_frontend` and `/solutions/_register`
+	// to populate the registry; those are the runtime registration writer and
+	// are deleted. `refresh` is the seam that remains — without it the handler
+	// answers 503 "solution registry unavailable" and the boundary assertion
+	// would pass because there is nothing to leak.
 	gw, _, _, _ := newGatewayHarness(t)
+	registry := solutionRegistryFake(t, gw)
+	registry.seedDeclared("audit", "http://audit.svc")
+	require.NoError(t, gw.solutions.refresh(context.Background()))
 
-	srv := httptest.NewServer(&fakeUpstream{body: "solution-response"})
-	t.Cleanup(srv.Close)
-
-	for name, call := range map[string][2]string{
-		"the frontend half": {"/solutions/_frontend", `{"id":"audit","manifest":"{\"id\":\"audit\"}"}`},
-		"the backend half":  {"/solutions/_register", `{"id":"audit","upstream":"` + srv.URL + `"}`},
-	} {
-		t.Run(name, func(t *testing.T) {
-			answer := postSolutionRegistration(t, gw, call[0], call[1], http.StatusOK)
-			require.NotContains(t, answer, "runtimeBoundary")
-		})
-	}
-
-	snapshot := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
-	snapshot.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	req := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, snapshot)
-	require.Equal(t, http.StatusOK, w.Code)
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code,
+		"the snapshot must actually be served, or the assertion below is vacuous")
+	require.Contains(t, w.Body.String(), "audit",
+		"the snapshot must carry the declared record, or there is nothing a boundary could leak through")
 	require.NotContains(t, strings.ToLower(w.Body.String()), "boundary")
 }

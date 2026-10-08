@@ -16,8 +16,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/google/uuid"
-
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
@@ -80,6 +78,11 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
 			return nil, err
 		}
+		// The policy log's serving gate. After authorization, so the
+		// refusal reaches only callers this host would have served.
+		if err := enforcePolicyLogServing(ctx); err != nil {
+			return nil, err
+		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
 		return handler(ctx, req)
 	}
@@ -99,6 +102,9 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 			return err
 		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
+			return err
+		}
+		if err := enforcePolicyLogServing(ctx); err != nil {
 			return err
 		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
@@ -291,6 +297,14 @@ func (stream *contextServerStream) Context() context.Context { return stream.ctx
 func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string) (context.Context, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	trustedForwarded := singleValidGatewayToken(md.Get("x-codefly-gateway-token"))
+	// The same unprovable claim over gRPC metadata, refused in the same place
+	// and for the same reasons as the Connect half (see
+	// errSolutionAttestationNotDelivered and the comment beside the Connect
+	// refusal): not inside the stamp helper, whose caller rewrites every error
+	// into "forwarded identity is malformed".
+	if trustedForwarded && solutionIdentityAssertedMD(md) {
+		return ctx, status.Error(codes.PermissionDenied, errSolutionAttestationNotDelivered.Error())
+	}
 	if trustedForwarded && forwardedIdentityAmbiguous(md.Get) {
 		return ctx, status.Error(codes.PermissionDenied, "forwarded identity is ambiguous")
 	}
@@ -390,6 +404,13 @@ func firstMetadataValue(md metadata.MD, key string) string {
 	return ""
 }
 
+// solutionIdentityAssertedMD is the gRPC-metadata half of
+// solutionIdentityAsserted. Metadata keys are lowercase on the wire.
+func solutionIdentityAssertedMD(md metadata.MD) bool {
+	return firstMetadataValue(md, strings.ToLower(solutionIdentityHeader)) != "" ||
+		firstMetadataValue(md, strings.ToLower(solutionPublisherHeader)) != ""
+}
+
 func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Context, error) {
 	if forwardedCredentialIncomplete(md.Get) {
 		return ctx, errForwardedCredentialIncomplete
@@ -421,14 +442,6 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Co
 	if scopedRoles := firstMetadataValue(md, "x-scoped-roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
-	if solution := firstMetadataValue(md, strings.ToLower(solutionIdentityHeader)); solution != "" {
-		ctx, err = auth.WithVerifiedSolution(
-			ctx, solution, firstMetadataValue(md, strings.ToLower(solutionPublisherHeader)),
-		)
-		if err != nil {
-			return ctx, err
-		}
-	}
 	return withScopedRolesTruncated(ctx, firstMetadataValue(md, "x-scoped-roles-truncated") == "true"), nil
 }
 
@@ -440,12 +453,19 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Co
 func stampRequestIdentity(ctx context.Context, identity auth.RequestIdentity, assurance auth.Assurance) context.Context {
 	subject := identity.EffectiveSubjectID()
 	orgID := identity.OrgID.String()
+	// WithVerifiedDatabaseIdentity binds wool's organization as well as the
+	// database scope, so every verified door carries it — a delegated read, a
+	// module parent and the work-context authority all install a verified
+	// identity without passing through this transport.
+	//
+	// The user id is still stamped HERE, unconditionally, because the two have
+	// different availability: database scope needs BOTH uuids and that function
+	// binds nothing without them, while a verified user who has not selected an
+	// organization yet is an ordinary request whose logs and rate-limit key
+	// should still name them.
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, subject, orgID)
 	ctx = context.WithValue(ctx, wool.UserIDKey, subject)
 	ctx = context.WithValue(ctx, wool.UserAuthIDKey, subject)
-	if identity.OrgID != uuid.Nil {
-		ctx = context.WithValue(ctx, wool.OrgIDKey, orgID)
-	}
 	ctx = auth.WithVerifiedRequestIdentity(ctx, identity)
 	ctx = auth.WithVerifiedActor(ctx, identity.Delegation)
 	ctx = auth.WithVerifiedSessionID(ctx, identity.SessionID)

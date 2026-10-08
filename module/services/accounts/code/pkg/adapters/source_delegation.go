@@ -131,7 +131,12 @@ func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 	if s == nil || s.configureErr != nil || s.signer == nil {
 		return workcontext.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
 	}
-	if authority.Audience == "" || authority.Audience == ModuleWorkContextAudience {
+	// The shared mint rule (requireMintableAudience): empty is refused because a
+	// capability with no audience is good at whichever consumer accepts it, and
+	// the capability surface's own audience is refused because a token carrying
+	// it is read as a module identity. Stated once so it cannot lapse here while
+	// holding elsewhere.
+	if requireMintableAudience(authority.Audience) != nil {
 		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: source operation context audience", workcontext.ErrWorkContextInvalid)
 	}
 	if authority.Revision == 0 || authority.OwnerPrincipalID == "" || authority.OwnerPrincipalID == authority.PrincipalID {

@@ -7,10 +7,9 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
-	"google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"google.golang.org/protobuf/proto"
 )
 
 // fakeSolutionRegistry stands in for accounts in gateway tests. It applies
@@ -24,110 +23,120 @@ type fakeSolutionRegistry struct {
 	records  map[string]*accountsv1.SolutionRegistration
 	revision int64
 
-	listErr   error
-	putErr    error
-	deleteErr error
+	listErr error
 
 	listCalls int
-	puts      []*accountsv1.PutSolutionRegistrationRequest
-	deletes   []string
 }
-
-// errFakeSolutionNotFound mirrors the code accounts returns for a delete of a
-// solution that never registered.
-var errFakeSolutionNotFound = grpcstatus.Error(codes.NotFound, "solution registration not found")
 
 func newFakeSolutionRegistry() *fakeSolutionRegistry {
 	return &fakeSolutionRegistry{records: map[string]*accountsv1.SolutionRegistration{}}
 }
 
-func (f *fakeSolutionRegistry) Put(
-	_ context.Context, req *accountsv1.PutSolutionRegistrationRequest,
-) (*accountsv1.SolutionRegistration, error) {
+// fakeSolutionTarget is the target id the fake derives for an alias's FIRST
+// declaration. It is a function of the alias so a test and the fake agree without
+// passing ids around; declareTarget below is how a test says "a different
+// binding now serves this alias", which no derivation can express.
+func fakeSolutionTarget(alias string) string { return "target-" + alias }
+
+// seedDeclared creates a fully declared record, which is how a test gets one
+// now that the runtime registration writer is deleted.
+//
+// Record CREATION in this fake used to come only from the writer's helpers
+// (registerSolutionUpstream / registerSolutionHalves), so with those gone there
+// was no way to put a record in front of the handlers at all — declareTarget
+// below only REPLACES the declaration on a record that already exists. That gap
+// is what item 4 left behind in the test infrastructure, and this closes it on
+// the declared side: delivery is what brings a record into being, so the fake
+// needs a way to say so without pretending a runtime registered itself.
+func (f *fakeSolutionRegistry) seedDeclared(alias, upstream string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.puts = append(f.puts, proto.Clone(req).(*accountsv1.PutSolutionRegistrationRequest))
-	if f.putErr != nil {
-		return nil, f.putErr
-	}
-	record := f.records[req.GetSolutionId()]
-	// Mirror the registry's compare-and-swap and tombstone refusals. A fake that
-	// accepts every write makes the gateway's own tombstone handling untestable:
-	// it would resurrect a removed registration and the test asserting that
-	// cannot happen would still pass.
-	if record != nil {
-		if req.ExpectedRevision != nil && req.GetExpectedRevision() != record.GetRevision() {
-			return nil, grpcstatus.Error(codes.Aborted, "solution registration revision is stale")
-		}
-		if record.GetTombstonedAt() != nil && req.ExpectedRevision == nil {
-			return nil, grpcstatus.Error(codes.FailedPrecondition, "solution registration is tombstoned")
-		}
-		if record.GetTombstonedAt() == nil && req.ExpectedRevision == nil &&
-			fakeSolutionHalfDiffers(record, req) {
-			return nil, grpcstatus.Error(codes.Aborted, "solution registration revision required")
-		}
-	}
 	f.revision++
-	if record == nil {
-		record = &accountsv1.SolutionRegistration{
-			SolutionId: req.GetSolutionId(),
-			Publisher:  req.GetPublisher(),
-			// No RuntimeBoundary: accounts never puts the seed on any response
-			// (issue #1015), and the accounts test that holds it to that is
-			// TestSolutionRegistrationResponsesCarryNoRuntimeBoundary. A fake
-			// that sent one here would let the gateway grow a reader for a field
-			// it will never receive.
-		}
-		f.records[req.GetSolutionId()] = record
+	f.records[alias] = &accountsv1.SolutionRegistration{
+		SolutionId: alias,
+		Publisher:  "solution:" + alias,
+		Revision:   f.revision,
+		Declared: &accountsv1.SolutionDeclaredBinding{
+			BindingId:  "acme.test." + alias,
+			Generation: 1,
+			Release:    "acme/" + alias + "@1.0.0",
+			TargetId:   fakeSolutionTarget(alias),
+			// Every declaration states a kind: core requires it and refuses any
+			// other value, so a fake record without one models a state delivery
+			// cannot produce — and would quietly stop being routed at all.
+			Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
+		},
+		Frontend: &accountsv1.SolutionFrontendBinding{
+			Revision: f.revision, Manifest: `{"id":"` + alias + `"}`, ContractVersion: "v1",
+		},
+		Backend: &accountsv1.SolutionBackendBinding{
+			Revision: f.revision, Upstream: upstream,
+			ServiceAlias: alias, ContractVersion: "v1",
+		},
 	}
-	if record.GetTombstonedAt() != nil {
-		// An admitted reactivation starts from a clean record, as accounts does.
-		record.Frontend, record.Backend = nil, nil
-	}
-	record.TombstonedAt = nil
-	record.Revision = f.revision
-	lease := timestamppb.New(time.Now().Add(time.Duration(req.GetLeaseSeconds()) * time.Second))
-	if half := req.GetFrontend(); half != nil {
-		record.Frontend = &accountsv1.SolutionFrontendBinding{
-			Revision:        f.revision,
-			Manifest:        half.GetManifest(),
-			ContractVersion: half.GetContractVersion(),
-			LeaseExpiresAt:  lease,
-		}
-	}
-	if half := req.GetBackend(); half != nil {
-		record.Backend = &accountsv1.SolutionBackendBinding{
-			Revision:        f.revision,
-			Upstream:        half.GetUpstream(),
-			ServiceAlias:    half.GetServiceAlias(),
-			ContractVersion: half.GetContractVersion(),
-			LeaseExpiresAt:  lease,
-		}
-	}
-	record.Status = fakeSolutionStatus(record, time.Now())
-	return proto.Clone(record).(*accountsv1.SolutionRegistration), nil
 }
 
-func (f *fakeSolutionRegistry) Delete(
-	_ context.Context, req *accountsv1.DeleteSolutionRegistrationRequest,
-) (*accountsv1.SolutionRegistration, error) {
+// declareTarget replaces the declaration on an existing record, so a test can
+// model a REPLACEMENT presence: the same route alias, served by a different
+// binding, under a target that is not the one any earlier installation named.
+func (f *fakeSolutionRegistry) declareTarget(alias, bindingID, targetID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.deletes = append(f.deletes, req.GetSolutionId())
-	if f.deleteErr != nil {
-		return nil, f.deleteErr
-	}
-	record := f.records[req.GetSolutionId()]
+	record := f.records[alias]
 	if record == nil {
-		return nil, errFakeSolutionNotFound
+		return
 	}
 	f.revision++
 	record.Revision = f.revision
-	record.Frontend = nil
-	record.Backend = nil
+	record.Declared = &accountsv1.SolutionDeclaredBinding{
+		BindingId:  bindingID,
+		Generation: 1,
+		Release:    "acme/" + alias + "@2.0.0",
+		TargetId:   targetID,
+		Kind:       accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
+	}
+}
+
+// tombstone applies a withdrawal to a record, which is how a declared presence
+// stops being served: the row stays in the snapshot so diagnostics can see it,
+// and routing treats it exactly like an alias nothing ever declared.
+func (f *fakeSolutionRegistry) tombstone(alias string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	record := f.records[alias]
+	if record == nil {
+		return
+	}
+	f.revision++
+	record.Revision = f.revision
 	record.TombstonedAt = timestamppb.Now()
-	record.Status = accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED
-	return proto.Clone(record).(*accountsv1.SolutionRegistration), nil
+}
+
+// repointUpstream changes a declared record's observed endpoint to model a
+// concurrent delivery observation while a request is being admitted.
+func (f *fakeSolutionRegistry) repointUpstream(alias, upstream string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	record := f.records[alias]
+	if record == nil || record.GetBackend() == nil {
+		return
+	}
+	f.revision++
+	record.Revision = f.revision
+	record.Backend.Revision = f.revision
+	record.Backend.Upstream = upstream
+}
+
+// undeclare strips a record's declaration, modelling presence nothing declared.
+// Such a record resolves to no target and is admissible to nobody.
+func (f *fakeSolutionRegistry) undeclare(alias string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if record := f.records[alias]; record != nil {
+		f.revision++
+		record.Revision = f.revision
+		record.Declared = nil
+	}
 }
 
 func (f *fakeSolutionRegistry) List(
@@ -156,8 +165,20 @@ func (f *fakeSolutionRegistry) List(
 // pending, so a half that stopped renewing reads as dead rather than waiting.
 // A fake that ranks these differently hands tests a status the real registry
 // would never produce.
+//
+// The module arm mirrors it too: a module has no browser remote, so a frontend
+// half is not something it is waiting for. A fake that left modules PENDING would
+// make every module-routing test fail for a reason the real registry does not
+// have.
 func fakeSolutionStatus(record *accountsv1.SolutionRegistration, now time.Time) accountsv1.SolutionRegistrationStatus {
 	front, backend := record.GetFrontend(), record.GetBackend()
+	if record.GetTombstonedAt() == nil &&
+		record.GetDeclared().GetKind() == accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE {
+		if backend == nil {
+			return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
+		}
+		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
+	}
 	switch {
 	case record.GetTombstonedAt() != nil:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED
@@ -165,33 +186,9 @@ func fakeSolutionStatus(record *accountsv1.SolutionRegistration, now time.Time) 
 		front.GetContractVersion() != "" && backend.GetContractVersion() != "" &&
 		front.GetContractVersion() != backend.GetContractVersion():
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE
-	case front != nil && !front.GetLeaseExpiresAt().AsTime().After(now):
-		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_EXPIRED
-	case backend != nil && !backend.GetLeaseExpiresAt().AsTime().After(now):
-		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_EXPIRED
 	case front == nil || backend == nil:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
 	default:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
 	}
-}
-
-// fakeSolutionHalfDiffers reports whether a write replaces a half the record
-// already holds with different content — the case the registry refuses unless
-// the caller names the revision it believes it is replacing.
-func fakeSolutionHalfDiffers(
-	record *accountsv1.SolutionRegistration, req *accountsv1.PutSolutionRegistrationRequest,
-) bool {
-	if half := req.GetFrontend(); half != nil {
-		held := record.GetFrontend()
-		return held != nil && (held.GetManifest() != half.GetManifest() ||
-			held.GetContractVersion() != half.GetContractVersion())
-	}
-	if half := req.GetBackend(); half != nil {
-		held := record.GetBackend()
-		return held != nil && (held.GetUpstream() != half.GetUpstream() ||
-			held.GetServiceAlias() != half.GetServiceAlias() ||
-			held.GetContractVersion() != half.GetContractVersion())
-	}
-	return false
 }

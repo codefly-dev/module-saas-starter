@@ -44,6 +44,25 @@ breaking:
     # audit_export.proto is deleted; waive only the file-deletion rule for it.
     FILE_NO_DELETE:
       - saas/accounts/v1/audit_export.proto
+    # The solution-registration cold cutover (#952) deletes the whole
+    # runtime-asserted presence surface: a solution's presence is now DELIVERED
+    # by its declaration, so the writer RPCs a deployment used to heartbeat
+    # through, and the request/response and observation messages behind them,
+    # have no caller left. Legacy means delete, not deprecate — a retained
+    # writer is a second way to assert presence, which is the thing the cutover
+    # removes. Migration 26 drops the matching columns in the same change, so
+    # there is no window in which the old surface could be served.
+    #
+    # Each waiver below is scoped to the single rule the deletion trips. buf
+    # ignores are path-scoped, so a file is the narrowest expressible scope; the
+    # comments record what inside each file is intended to go. Every other
+    # breaking rule still guards these files, and the deletions are listed one
+    # by one in the pull request body.
+    ENUM_VALUE_NO_DELETE:
+      # SolutionRegistrationStatus.SOLUTION_REGISTRATION_STATUS_EXPIRED (3):
+      # derived from a lapsed lease, and there is no lease. Reserved in the
+      # proto so the number is never reused.
+      - saas/accounts/v1/solution_registry.proto
     # buf ignores are path-scoped, so neither entry can be narrowed to the single
     # message — the comments record the intended scope.
     MESSAGE_NO_DELETE:
@@ -62,6 +81,11 @@ breaking:
       # Only AuditExportJob was dropped from jobs.proto. PrivacyExportJob's fields,
       # and every other rule, stay guarded.
       - saas/exports/v1/jobs.proto
+      # PutSolutionRegistrationRequest and DeleteSolutionRegistrationRequest are
+      # the deleted writer RPCs' messages; SolutionFrontendRegistration and
+      # SolutionBackendRegistration are the observations a deployment used to
+      # submit. All four belong to the removed writer surface (#952).
+      - saas/accounts/v1/solution_registry.proto
     # ListMyAccessibleScopes moved from PermissionService to the new
     # AccessibleScopeService in accessible_scopes.proto (issue #577), which changes
     # its Connect/gRPC procedure path. Its REST route (GET /v1/accessible-scopes) is
@@ -69,6 +93,11 @@ breaking:
     # still fail on any RPC that disappears without the catalogs moving with it.
     RPC_NO_DELETE:
       - saas/accounts/v1/authorization.proto
+      # PutSolutionRegistration and DeleteSolutionRegistration: the registry is
+      # read-only to the wire now, written only by reconciling the declaration
+      # (#952). No replacement RPC takes their place, so nothing moved — the
+      # capability is gone.
+      - saas/accounts/v1/solution_registry_service.proto
     # target_collection (a free-text string that was neither resolvable nor
     # grantable) is replaced by a scope-node boundary binding across the three
     # datasource messages (issue #473). Waive only field deletion for this file;
@@ -78,6 +107,21 @@ breaking:
     # nest) is replaced by a server-derived, UUID-labelled root node (issue #480).
     # Waive only field deletion for this file; every other breaking rule still
     # guards it.
+    #
+    # The FILE category flags a field deletion even when the number and name are
+    # reserved — reservation is honoured by FIELD_NO_DELETE_UNLESS_NUMBER_RESERVED
+    # in the WIRE categories, which this module does not use. Every field below
+    # is reserved in its proto regardless: the waiver is what makes CI pass, the
+    # reservation is what stops the number being reused.
     FIELD_NO_DELETE:
       - saas/accounts/v1/datasource.proto
       - saas/accounts/v1/installations.proto
+      # SolutionFrontendBinding.lease_expires_at (4),
+      # SolutionBackendBinding.lease_expires_at (5) — presence is delivered, so
+      # nothing renews a lease — and SolutionRegistration.runtime_boundary (9),
+      # which is sealed into the Work Context instead of returned on a readable
+      # record (#952).
+      - saas/accounts/v1/solution_registry.proto
+      # ModuleCurrentInstallationResponse.solution_identifier (3): a reusable
+      # route alias, replaced by target_id and binding_id, which are identities.
+      - saas/accounts/v1/module_capabilities.proto

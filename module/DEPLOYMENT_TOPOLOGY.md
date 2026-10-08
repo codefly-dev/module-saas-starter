@@ -21,11 +21,22 @@ anywhere else.
 | `services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml` | Test-only mesh-policy golden (STRICT mTLS + the internal-authority and internal-HTTP AuthorizationPolicies + waypoint); mirrors those resources from the per-environment GitOps mesh baseline, not the whole of it — the namespace `default-deny` and the L4 internal policies are rendered there only. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
-The normalized inventory currently contains seven services, twelve endpoints,
-six dependency edges, six module-interface endpoints, and three explicit
-public-egress grants (`deployment_topology_test.go` pins the counts). The accounts descriptor catalog is an input: if its RPCs
-use gRPC, Connect, or REST without a corresponding accounts endpoint,
-generation fails.
+`deployment_topology_test.go` pins the normalized inventory's shape — how many
+services, endpoints, dependency edges, module-interface endpoints and explicit
+public-egress grants it contains — and that test is the authority. The numbers
+are deliberately NOT repeated here: this paragraph stated five of them and every
+one was stale, because a count in prose is enforced by nothing and a service
+added elsewhere does not touch it. Read them from the assertions.
+
+The accounts descriptor catalog is an input: if its RPCs use gRPC, Connect, or
+REST without a corresponding accounts endpoint, generation fails.
+
+`policy-log` is in the inventory with one private `grpc` endpoint and appears in
+NO row of the service graph below, which is correct rather than an omission: it
+declares no dependency on anything, and the host's client for it is not built
+yet, so there is no edge to draw. When that client lands it adds an
+`accounts` → `policy-log/grpc` row and nothing else — the witness must never
+depend on the database whose authority it witnesses.
 
 ## Service graph
 
@@ -49,6 +60,27 @@ module-visible without a public ingress route.
 
 ## Network-policy model
 
+Authored endpoints and module-interface exports declare `visibility: internal`
+without `allow-modules`. Core derives the modules that can reach an internal
+endpoint from the consumers' declared runtime dependencies. A target never
+lists its consumers. Interface visibility defaults to internal; a service
+endpoint still defaults to private. The catalog retains its `MODULE` enum for
+internal reach, while network and mesh policies admit only declared dependency
+edges. Public frontend and marketing endpoints explicitly declare
+`exposure: public`, preserving their existing public addresses.
+
+Promotion requires a released CLI with Core's consumer-derived allow-list
+support and the audit promotion driver from
+[CLI PR 919](https://github.com/codefly-dev/cli/pull/919). Merge the CLI change,
+release that compatible CLI, then promote this kit cutover. The module agent,
+accounts, auth-gateway, store migrator, and module tools require stable Core 0.14
+or later to load these declarations and derive consumer access. The runtime SDK
+also loads the module when resolving local endpoints or secrets. Core 0.13 refuses
+internal interface exports without an authored list. The CI pin at CLI 0.1.171
+still loads the module with its older Core 0.7, but does not derive cross-module
+access: an internal endpoint with no authored list denies other modules. It is
+not a compatible promotion driver for this declaration model.
+
 The topology-policy golden contains 18 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
@@ -60,6 +92,11 @@ The topology-policy golden contains 18 `NetworkPolicy` resources:
 There is no `allow-intra-namespace` rule. Adding a service dependency or port
 requires changing the topology binding and reviewing both generated directions
 of the edge.
+
+Store bootstrap ingress and egress select the agent's stable
+`codefly.dev/bootstrap-service: store` pod label. Postgres names the immutable
+migration Job with a digest of its rendered pod template, so its Kubernetes
+`job-name` changes with the image or inputs and cannot be a fixed selector.
 
 Pod selectors use the `app: <service>` labels emitted by the pinned Codefly
 agents. Services whose agent uses a different Kubernetes identity declare its
@@ -181,7 +218,8 @@ service's declared in-mesh callers (`notPrincipals`). It is a different resource
 from the internal-authority ALLOW above and gates a different surface; the two
 share only the waypoint that evaluates them. Istio evaluates DENY before ALLOW,
 so it subtracts from the port-wide grant; other methods on the same path — the
-unauthenticated `GET /api/solutions/register` the sidebar polls — are untouched,
+`GET /api/solutions/register` the sidebar polls, which is authenticated on the
+viewer's own bearer rather than on this DENY (issue #949) — are untouched,
 as is the proxy's own loopback read of `/api/internal/solutions`, which never
 leaves the pod and so is never captured by the mesh. Each path is emitted twice,
 exactly and as a `*`-prefixed suffix pattern, because Istio's default path

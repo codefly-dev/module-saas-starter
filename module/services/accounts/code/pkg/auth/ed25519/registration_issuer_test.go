@@ -2,8 +2,6 @@ package ed25519minter_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 
 	ed25519minter "accounts/pkg/auth/ed25519"
@@ -54,14 +52,18 @@ func TestRegistrationCredentialsKeepTheLiteralIssuer(t *testing.T) {
 		`"iss":"`+publicIssuer+`"`)
 }
 
-// The verifier on the other side of that contract. The frontend is TypeScript
-// and this is Go, so nothing but a check like this keeps the two literals equal
-// — and their disagreement is precisely what broke.
-func TestTheFrontendRegistrationVerifierExpectsTheSameIssuer(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "..", "..", "frontend", "code", "src",
-		"solutions", "registration-authority.ts")
-	source, err := os.ReadFile(path)
-	require.NoError(t, err, "the frontend registration verifier must exist at %s", path)
-	require.Contains(t, string(source), `const ISSUER = "saas-starter"`,
-		"the frontend verifier's issuer must match what MintSolutionRegistration signs")
-}
+// The verifier on the other side of that contract is GONE, and so is this
+// check.
+//
+// It read `frontend/code/src/solutions/registration-authority.ts` and required
+// its `ISSUER` literal to equal what MintSolutionRegistration signs — because
+// the frontend is TypeScript and this is Go, so nothing but a check like that
+// kept the two equal. This branch deletes that verifier: the frontend
+// registration path is part of the writer surface runtime self-registration
+// owns, and the contract now has one side.
+//
+// It is NOT replaced by a weaker version. A check that the Go literal equals
+// itself would pass forever and assert nothing. If a declared-presence
+// equivalent of that cross-language contract appears, it needs its own check
+// against whatever the new consumer reads — and the shape to copy is the one
+// deleted here: read the OTHER language's source and compare the literal.

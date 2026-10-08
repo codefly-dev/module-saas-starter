@@ -59,6 +59,23 @@ the origin to Accounts. No local port is copied into configuration. For a
 hosted environment set `WEBAUTHN_RP_ID` to the application host without
 scheme/port.
 
+## Accessing the development frontend through another hostname
+
+When a private reverse proxy uses another hostname, explicitly allow that
+hostname for Next.js development assets and hot reload:
+
+```bash
+codefly run service frontend --fixture dev-admin \
+  --set frontend:FRONTEND_ALLOWED_DEV_ORIGINS=https://app.example.test
+```
+
+The setting accepts comma- or whitespace-separated HTTP(S) origins or hostnames.
+It defaults to no additional hosts and rejects wildcards, credentials, paths,
+queries and fragments. Next.js checks hostnames rather than ports, so selecting
+an origin admits that hostname across ports. This only configures the development
+server's origin check; authentication, CSP, network access and solution
+registration keep their own controls. Configure the network entry separately.
+
 ## Adding this module to a workspace
 
 ```bash

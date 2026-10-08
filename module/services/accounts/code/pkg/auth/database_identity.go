@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/codefly-dev/core/wool"
+
 	"github.com/google/uuid"
 )
 
@@ -37,6 +39,25 @@ func WithVerifiedDatabaseIdentity(ctx context.Context, userID, tenantID string) 
 	if ctx == nil || userErr != nil || tenantErr != nil || user == uuid.Nil || tenant == uuid.Nil {
 		return ctx
 	}
+	// Propagate the same pair onto wool's identity dimension, so everything
+	// downstream — logs, traces, the rate-limit key, an organization-defaulted
+	// read — sees whose request this is without being handed it.
+	//
+	// Set as context values rather than through wool.Wool.WithOrgID, which
+	// cannot work: `with` assigns to the Wool's OWN ctx field, and wool.Get
+	// returns a fresh Wool per call, so the derived context is discarded and no
+	// later wool.Get(ctx).OrgID() can see it. The keys are exported and
+	// wool.Wool.lookup reads them off the context, so this is the propagation
+	// the accessors were written for.
+	//
+	// It is bound HERE and nowhere else for the same reason the verified
+	// identity is: this is the one door, it has already parsed both UUIDs, and
+	// the invalid path returned above — so wool's organization can only ever
+	// carry a verified value. That matters now that it is not merely an
+	// observability field: a key service selects an organization's envelope key
+	// by it.
+	ctx = context.WithValue(ctx, wool.OrgIDKey, tenant.String())
+	ctx = context.WithValue(ctx, wool.UserIDKey, user.String())
 	return context.WithValue(ctx, verifiedDatabaseIdentityKey{}, verifiedDatabaseIdentity{
 		tenantID: tenant.String(),
 		userID:   user.String(),

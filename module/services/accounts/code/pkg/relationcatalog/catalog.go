@@ -105,6 +105,12 @@ var authorities = map[string]Authority{
 	"plans":                         {Scope: ScopeGlobal},
 	"platform_admins":               {Scope: ScopeGlobal},
 	"solution_registrations":        {Scope: ScopeGlobal},
+	"solution_host_bindings":        {Scope: ScopeGlobal},
+	"solution_targets":              {Scope: ScopeGlobal},
+	"solution_generation_history":   {Scope: ScopeGlobal},
+	"solution_delivery_documents":   {Scope: ScopeGlobal},
+	"policy_log_commits":            {Scope: ScopeGlobal},
+	"policy_log_cursor":             {Scope: ScopeGlobal},
 	"datasource_credential_budgets": {Scope: ScopeGlobal},
 
 	// Tenant-scoped relations.
@@ -158,7 +164,11 @@ var authorities = map[string]Authority{
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
 		Notes: "Operator repair evidence for administrative continuity; request traffic holds no grant, so every read runs under the control-plane role.",
 	},
-	"org_generic_settings":     {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
+	"org_generic_settings": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
+	"org_key_bindings": {
+		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
+		Notes: "Which key seals this organization's stored credentials. Read-only to request traffic: a tenant that could write one could point its credentials at another organization's key, so the binding is platform provisioning. The delivery roles also read it, because they open sealed credentials outside any tenant transaction.",
+	},
 	"org_identity_providers":   {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"org_settings":             {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"organization_activations": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},

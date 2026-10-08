@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/network"
@@ -54,14 +55,8 @@ type serviceTopologyManifest struct {
 	} `yaml:"service-dependencies"`
 	WorkspaceConfigurationDependencies []string                             `yaml:"workspace-configuration-dependencies"`
 	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret-service-configurations"`
-	Endpoints                          []struct {
-		Name         string   `yaml:"name"`
-		Visibility   string   `yaml:"visibility"`
-		API          string   `yaml:"api"`
-		AllowModules []string `yaml:"allow-modules"`
-		Location     string   `yaml:"location"`
-	} `yaml:"endpoints"`
-	Spec map[string]any `yaml:"spec"`
+	Endpoints                          []topologyManifestEndpoint           `yaml:"endpoints"`
+	Spec                               map[string]any                       `yaml:"spec"`
 }
 
 // deploymentSpecManifest is the spec.deployment block of a service manifest,
@@ -108,11 +103,11 @@ func assembleDeploymentTopology(moduleDir, moduleName string, services []service
 	}
 	for i := range topology.Interface {
 		exported := &topology.Interface[i]
-		visibility, err := endpointVisibility(exported.Visibility, "", exported.AllowModules)
+		visibility, err := endpointVisibility(exported.Visibility, "", true)
 		if err != nil {
 			return deploymentTopology{}, fmt.Errorf("interface %s/%s: %w", exported.Service, exported.Endpoint, err)
 		}
-		exported.Visibility, exported.AllowModules = visibility, nil
+		exported.Visibility = visibility
 	}
 	ordered := append([]serviceDefinition(nil), services...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].name < ordered[j].name })
@@ -171,7 +166,7 @@ func loadServiceTopology(moduleName string, service serviceDefinition) (topology
 	// declares none and takes the Service port.
 	coreEndpoints := make([]*basev0.Endpoint, 0, len(manifest.Endpoints))
 	for _, endpoint := range manifest.Endpoints {
-		visibility, err := endpointVisibility(endpoint.Visibility, endpoint.Location, endpoint.AllowModules)
+		visibility, err := endpointVisibility(endpoint.Visibility, endpoint.Location, false)
 		if err != nil {
 			return topologyService{}, fmt.Errorf("service %q endpoint %q: %w", service.name, endpoint.Name, err)
 		}
@@ -186,7 +181,7 @@ func loadServiceTopology(moduleName string, service serviceDefinition) (topology
 	seen := make(map[string]bool, len(manifest.Endpoints))
 	for _, endpoint := range manifest.Endpoints {
 		api := endpointAPI(endpoint.Name, endpoint.API)
-		visibility, err := endpointVisibility(endpoint.Visibility, endpoint.Location, endpoint.AllowModules)
+		visibility, err := endpointVisibility(endpoint.Visibility, endpoint.Location, false)
 		if err != nil {
 			return topologyService{}, err
 		}
@@ -231,29 +226,26 @@ func endpointAPI(name, api string) string {
 	return api
 }
 
-// endpointVisibility projects the authored Codefly axes into the host's
-// deployment catalog categories. Its MODULE category means all composed
-// modules, so a narrower allow-list cannot be represented and must refuse.
-func endpointVisibility(visibility, location string, allowed []string) (string, error) {
+// endpointVisibility projects the authored reach into the catalog's legacy MODULE
+// category. It does not grant callers: only declared dependency edges render
+// network access, and the composing Core derives cross-module reach from asks.
+func endpointVisibility(visibility, location string, exported bool) (string, error) {
 	if visibility == "" {
 		visibility = "private"
+		if exported {
+			visibility = "internal"
+		}
 	}
 	if location != "" {
-		if location != "external" || visibility != "private" || len(allowed) != 0 {
+		if location != "external" || visibility != "private" {
 			return "", fmt.Errorf("unsupported external endpoint policy")
 		}
 		return "external", nil
 	}
 	switch visibility {
 	case "private", "public":
-		if len(allowed) != 0 {
-			return "", fmt.Errorf("allow-modules requires internal visibility")
-		}
 		return visibility, nil
 	case "internal":
-		if len(allowed) != 1 || allowed[0] != "*" {
-			return "", fmt.Errorf("deployment catalog requires internal visibility with allow-modules [*]; narrower exports need an allow-list-aware catalog")
-		}
 		return "module", nil
 	default:
 		return "", fmt.Errorf("unsupported authored endpoint visibility %q", visibility)
@@ -301,4 +293,48 @@ func loadDeployJobs(moduleDir string) ([]topologyDeployJob, error) {
 		return nil, fmt.Errorf("%s version %q is not supported", deployJobsManifestPath, manifest.Version)
 	}
 	return manifest.DeployJobs, nil
+}
+
+type topologyManifestEndpoint struct {
+	Name       string `yaml:"name"`
+	Visibility string `yaml:"visibility"`
+	API        string `yaml:"api"`
+	Location   string `yaml:"location"`
+}
+
+func (endpoint *topologyManifestEndpoint) UnmarshalYAML(node *yaml.Node) error {
+	if err := refuseAuthoredConsumers(node); err != nil {
+		return err
+	}
+	type plain topologyManifestEndpoint
+	return node.Decode((*plain)(endpoint))
+}
+
+func (endpoint *topologyInterface) UnmarshalYAML(node *yaml.Node) error {
+	if err := refuseAuthoredConsumers(node); err != nil {
+		return err
+	}
+	type plain topologyInterface
+	return node.Decode((*plain)(endpoint))
+}
+
+// Judge key presence before decoding: null and alternate spellings cannot
+// silently erase a forbidden grant. This matches Core's declaration boundary.
+func refuseAuthoredConsumers(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		var canonical strings.Builder
+		for _, r := range strings.ToLower(key) {
+			if r >= 'a' && r <= 'z' {
+				canonical.WriteRune(r)
+			}
+		}
+		if canonical.String() == "allowmodules" {
+			return fmt.Errorf("authors %q: endpoint access is derived from consumers' declared dependencies", key)
+		}
+	}
+	return nil
 }

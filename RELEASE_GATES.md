@@ -441,8 +441,8 @@ reverse, fails the `release-contract` job.
 | `scoped-pools` | the authority of the pools the store's logins reach: the scoped reader, the scoped writer and the request pool, judged against a native PostgreSQL the suite provisions and widens one grant at a time | `python3 scripts/qualify-scoped-pools.py --postgres-bin "$(pg_config --bindir)"`, which runs `go test -race ./qualification/scopedpools` and fails unless every declared test in that package ran and passed |
 
 Two of those `go test ./...` invocations are worth reading carefully. This
-repository holds **five independent Go modules** — root, `module/tools`, and one
-per Go service (`accounts`, `auth-gateway`, `store`) — with no `go.work`, so `go test ./...` covers only the module it
+repository holds **independent Go modules** — root, `module/tools`, and one
+per Go service — with no `go.work`, so `go test ./...` covers only the module it
 is run in. The `sdk-boundary` invocation runs in the root module (the module
 agent, the host, the generated reference composition) and the `module-package`
 one runs in `module/tools`; neither compiles, let alone tests,

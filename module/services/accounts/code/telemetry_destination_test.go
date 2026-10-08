@@ -22,9 +22,10 @@ func group(values map[string]string) func(string) string {
 
 const collector = "http://otel-collector.otel-collector.svc.cluster.local:4317"
 
-// Module defaults are also inherited by cells. They must not supply the state
-// that only the platform can declare for a deployed workload.
-func TestTelemetryDestinationShippedDefaultsCannotMaskMissingCellState(t *testing.T) {
+// shippedObservabilityProfile is what the module's own `observability` profile
+// contributes to the group, read from the file it ships.
+func shippedObservabilityProfile(t *testing.T) map[string]string {
+	t.Helper()
 	contents, err := os.ReadFile("../../../configurations/local/observability.env")
 	require.NoError(t, err)
 	values := map[string]string{}
@@ -37,12 +38,49 @@ func TestTelemetryDestinationShippedDefaultsCannotMaskMissingCellState(t *testin
 		require.True(t, ok)
 		values[key] = value
 	}
-	_, err = resolveTelemetryDestination(false, group(values))
+	return values
+}
+
+// Module defaults are also inherited by cells, so the profile ships neither the
+// state nor the reason: a deployed workload must get both from the platform, and
+// a local run gets them from code (localAbsentReason), only when it is local.
+func TestTelemetryDestinationShippedProfileDeclaresNothingACellCouldInherit(t *testing.T) {
+	shipped := shippedObservabilityProfile(t)
+	require.NotContains(t, shipped, "TELEMETRY_STATE", "every deployed cell inherits the profile")
+	require.NotContains(t, shipped, "TELEMETRY_ABSENT_REASON", "every deployed cell inherits the profile")
+	require.Empty(t, shipped["OTEL_EXPORTER_OTLP_ENDPOINT"], "the profile keeps the group in existence and names no collector")
+
+	_, err := resolveTelemetryDestination(false, group(shipped))
 	require.ErrorContains(t, err, "TELEMETRY_STATE is not set")
-	destination, err := resolveTelemetryDestination(true, group(values))
+	destination, err := resolveTelemetryDestination(true, group(shipped))
 	require.NoError(t, err)
 	require.False(t, destination.Available())
-	require.NotEmpty(t, destination.AbsentReason)
+	require.Equal(t, localAbsentReason, destination.AbsentReason, "a local run supplies its own reason in code")
+	require.Empty(t, destination.IgnoredNotice())
+}
+
+// Layered over the shipped profile, a healthy cell leaves nothing to warn about,
+// and a cell that says `absent` without a reason is refused rather than passed
+// with the local-run reason.
+func TestTelemetryDestinationCellAnswersAreNotMaskedByTheShippedProfile(t *testing.T) {
+	shipped := shippedObservabilityProfile(t)
+
+	available, err := resolveTelemetryDestination(false, layered(shipped, map[string]string{
+		"TELEMETRY_STATE":             "available",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": collector,
+	}))
+	require.NoError(t, err)
+	require.True(t, available.Available())
+	require.Empty(t, available.Ignored, "an available cell must not log a leftover-key warning on every boot")
+	require.Empty(t, available.IgnoredNotice())
+
+	_, err = resolveTelemetryDestination(false, layered(shipped, map[string]string{"TELEMETRY_STATE": "absent"}))
+	require.ErrorContains(t, err, "TELEMETRY_ABSENT_REASON is not set")
+
+	// The same answer from a local run is refused too: the local reason fills in
+	// a missing state, never an explicit `absent` that did not say why.
+	_, err = resolveTelemetryDestination(true, layered(shipped, map[string]string{"TELEMETRY_STATE": "absent"}))
+	require.ErrorContains(t, err, "TELEMETRY_ABSENT_REASON is not set")
 }
 
 func TestTelemetryDestinationMissingStateDefaultsOnlyInLocalRuntime(t *testing.T) {
@@ -227,9 +265,9 @@ func TestTelemetryDestinationRefusesEverythingElse(t *testing.T) {
 	}
 }
 
-// The state decides. The cell's values override the module's local defaults one
-// key at a time, so a deployed producer sees `available` and an endpoint from the
-// cell beside the reason the local profile left behind. That is not a
+// The state decides. The group is layered, so a deployed producer can still see
+// `available` and an endpoint from the cell beside a reason a lower layer (a
+// consuming workspace's own profile, say) left behind. That is not a
 // contradiction to refuse: the reason is ignored, and said so once.
 func TestTelemetryDestinationAvailableIgnoresALeftoverReason(t *testing.T) {
 	destination, err := resolveTelemetryDestination(false, group(map[string]string{
@@ -304,16 +342,16 @@ func layered(layers ...map[string]string) func(string) string {
 	return group(merged)
 }
 
-// The case this exists for: the module's local profile defaults to `absent` with
-// a reason, and a deployed cell overrides the state and the endpoint but not the
+// The case this exists for: a lower layer of the group says `absent` with a
+// reason, and a deployed cell overrides the state and the endpoint but not the
 // reason. The cell's answer wins, whichever way it points.
-func TestTelemetryDestinationTheCellOverridesTheModuleDefaults(t *testing.T) {
+func TestTelemetryDestinationTheCellOverridesALowerLayer(t *testing.T) {
 	moduleDefault := map[string]string{
 		"TELEMETRY_STATE":         "absent",
 		"TELEMETRY_ABSENT_REASON": "A local run has no cell collector.",
 	}
 
-	t.Run("a cell with a collector overrides the local absent default", func(t *testing.T) {
+	t.Run("a cell with a collector overrides a lower layer's absent default", func(t *testing.T) {
 		destination, err := resolveTelemetryDestination(false, layered(moduleDefault, map[string]string{
 			"TELEMETRY_STATE":             "available",
 			"OTEL_EXPORTER_OTLP_ENDPOINT": collector,
@@ -402,8 +440,8 @@ func TestConfiguredTelemetryDestinationReadsTheObservabilityGroup(t *testing.T) 
 }
 
 // Through the SDK's lookup, with the keys exactly as a deployed cell delivers
-// them after the layers merge: the cell's state and endpoint, and the reason the
-// module's local profile left behind.
+// them after the layers merge: the cell's state and endpoint, and a reason a
+// lower layer left behind.
 func TestConfiguredTelemetryDestinationStateDecidesAcrossLayers(t *testing.T) {
 	const prefix = "CODEFLY__WORKSPACE_CONFIGURATION__OBSERVABILITY__"
 	t.Setenv(prefix+"TELEMETRY_STATE", "available")
@@ -428,13 +466,13 @@ func TestStartupRefusesAnObservabilityGroupThatDidNotArrive(t *testing.T) {
 	// The key-custody requirement answers first outside a local run; satisfy it
 	// so the observability requirement is what is under test.
 	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_KEY_CUSTODY", "seed-signing-key")
-	require.NoError(t, requireStartupConfiguration(true))
-	require.ErrorContains(t, requireStartupConfiguration(false), "TELEMETRY_STATE is not set")
+	require.NoError(t, requireStartupConfiguration(t.Context(), true))
+	require.ErrorContains(t, requireStartupConfiguration(t.Context(), false), "TELEMETRY_STATE is not set")
 
 	t.Setenv(prefix+"TELEMETRY_STATE", "absent")
 	t.Setenv(prefix+"TELEMETRY_ABSENT_REASON", "a local run has no cell collector")
-	require.NoError(t, requireStartupConfiguration(true))
-	require.NoError(t, requireStartupConfiguration(false))
+	require.NoError(t, requireStartupConfiguration(t.Context(), true))
+	require.NoError(t, requireStartupConfiguration(t.Context(), false))
 }
 
 // service.name is never a literal typed here: the environment wins, then the

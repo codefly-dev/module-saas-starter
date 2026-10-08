@@ -18,12 +18,12 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
-        digest: sha256:54cb486f38f377a71fec1a6bbfc8f05fcb86a00054dd00cf1dd7b76a38aaac29
+        digest: sha256:5d7abfdea9eb48867b86146b977e8b34f4f4306249aade05ef189eaa00a4d46c
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:54cb486f38f377a71fec1a6bbfc8f05fcb86a00054dd00cf1dd7b76a38aaac29
+        digest: sha256:5d7abfdea9eb48867b86146b977e8b34f4f4306249aade05ef189eaa00a4d46c
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -31,13 +31,15 @@ services:
         kind: protobuf
         package: saas.gateway.auth.v1
         path: contracts/api/auth-gateway/grpc/contract.binpb
-        digest: sha256:b18ae2e95b39482587abaed305395b2bca29e118710639fa1d0535acd018aaf1
+        digest: sha256:0c2b91ff00eb67f00dc415914d68b3f699119c71e010a13662057056fa10314d
   - name: cache
     endpoints: [read, write]
   - name: frontend
     endpoints: [http]
   - name: marketing
     endpoints: [http]
+  - name: policy-log
+    endpoints: [grpc]
   - name: store
     endpoints: [tcp]
   - name: vault
@@ -98,7 +100,7 @@ migrations:
 breaking-changes:
   - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
   - "Audit event types are namespaced under `saas.*` (`auth.login` -> `saas.auth.login`). The wire value of `audit_events.event_type`, the `X-Webhook-Event` header, and webhook routing keys all change; migration 116 rewrites stored history and existing subscriptions in place, so a live subscriber keeps firing, but a consumer that re-creates a subscription from a hardcoded pre-namespace name, or emits one through `ModuleEmitAuditEvent`, is now rejected. No alias layer."
-  - "The `telemetry` service is removed: the module no longer ships an OTLP gateway, and the cell's collector takes its place. `accounts` and `auth-gateway` read where it is from the `observability` configuration group — `TELEMETRY_STATE` is `available` with `OTEL_EXPORTER_OTLP_ENDPOINT` (an `http://` endpoint is plaintext on the wire because the mesh supplies mTLS; `https://` is TLS), or `absent` with `TELEMETRY_ABSENT_REASON` — and refuse to start outside a local runtime when the group does not say which. Module defaults do not declare TELEMETRY_STATE; only a local runtime infers absent when the state is missing. `OBSERVABILITY_EXPORTER` and `OTEL_EXPORTER_OTLP_HEADERS` no longer mean anything, the `/metrics` scrape endpoint of both services is gone (metrics leave by OTLP push only), and `service.name` is no longer fixed in code: `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` sets it, else the service's own Codefly identity. A consumer that depended on the `telemetry` service, or that overrides the `observability` group, must move to the keys above."
+  - "The `telemetry` service is removed: the module no longer ships an OTLP gateway, and the cell's collector takes its place. `accounts` and `auth-gateway` read where it is from the `observability` configuration group — `TELEMETRY_STATE` is `available` with `OTEL_EXPORTER_OTLP_ENDPOINT` (an `http://` endpoint is plaintext on the wire because the mesh supplies mTLS; `https://` is TLS), or `absent` with `TELEMETRY_ABSENT_REASON` — and refuse to start outside a local runtime when the group does not say which. Module defaults declare neither TELEMETRY_STATE nor TELEMETRY_ABSENT_REASON, because they also reach deployed cells; only the `local` runtime infers absent when the state is missing, and it supplies the state and its reason in code. `OBSERVABILITY_EXPORTER` and `OTEL_EXPORTER_OTLP_HEADERS` no longer mean anything, the `/metrics` scrape endpoint of both services is gone (metrics leave by OTLP push only), and `service.name` is no longer fixed in code: `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` sets it, else the service's own Codefly identity. A consumer that depended on the `telemetry` service, or that overrides the `observability` group, must move to the keys above."
 reserved-namespaces:
   - "@codefly/saas-"
   - "@codefly-dev/saas-"
