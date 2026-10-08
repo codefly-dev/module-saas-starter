@@ -217,7 +217,18 @@ type corsResponseWriter struct {
 	stamped bool
 }
 
+// WriteHeader stamps the final response, and ONLY the final response.
+//
+// A 1xx is informational: net/http sends it and keeps the same header map open for
+// the real response that follows, which the reverse proxy then fills from the
+// upstream. Treating it as the response marked sanitization complete, so the final
+// upstream headers — including an upstream's own permissive grant — went out
+// untouched. An early hint is not an answer.
 func (w *corsResponseWriter) WriteHeader(status int) {
+	if status >= 100 && status < 200 {
+		w.ResponseWriter.WriteHeader(status)
+		return
+	}
 	w.stamp()
 	w.ResponseWriter.WriteHeader(status)
 }

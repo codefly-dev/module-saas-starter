@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -80,4 +81,49 @@ func lowered(value string) string {
 		out = append(out, c)
 	}
 	return string(out)
+}
+
+// A 1xx is informational: net/http sends it and keeps the same header map open for
+// the real response the reverse proxy then fills from the upstream. Treating it as
+// the response marked sanitization complete, so the final upstream headers — an
+// upstream's own permissive grant among them — went out untouched.
+//
+// Driven through real local HTTP servers, because the behaviour is net/http's
+// handling of an early hint and a recorder does not reproduce it.
+func TestR1019CORSAfterInformationalResponse(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// An early hint, exactly as a real upstream may send before its answer.
+		w.Header().Set("Link", "</style.css>; rel=preload")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Del("Link")
+
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("upstream-body"))
+	}))
+	t.Cleanup(upstream.Close)
+
+	gw, _, _, _ := newGatewayHarness(t)
+	upstreamURL, parseErr := url.Parse(upstream.URL)
+	require.NoError(t, parseErr)
+	gw.upstreams["accounts"] = upstreamURL
+
+	front := httptest.NewServer(gw)
+	t.Cleanup(front.Close)
+
+	request, err := http.NewRequest(http.MethodGet, front.URL+"/v1/status", nil)
+	require.NoError(t, err)
+	request.Header.Set("Origin", "https://evil.example")
+
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = response.Body.Close() })
+
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	for name := range response.Header {
+		require.NotContains(t, lowered(name), "access-control-",
+			"the final response must carry no grant this gateway did not make: %s=%q",
+			name, response.Header.Get(name))
+	}
 }
