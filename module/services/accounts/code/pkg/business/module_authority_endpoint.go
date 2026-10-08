@@ -87,6 +87,7 @@ var moduleAuthorityReadOracles = map[string]struct{}{
 // ValidateModuleAuthorityProcedures and the test beside this file hold each
 // entry to the rules above.
 var moduleAuthorityProcedures = []string{
+	"/saas.accounts.v1.ModuleCapabilitiesService/VerifyWorkContextRuntimeBoundary",
 	"/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
 	"/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
 	"/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",

@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
 	ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"
+	ModuleCapabilitiesService_VerifyWorkContextRuntimeBoundary_FullMethodName   = "/saas.accounts.v1.ModuleCapabilitiesService/VerifyWorkContextRuntimeBoundary"
 	ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
 	ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
 	ModuleCapabilitiesService_PlaceRecord_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord"
@@ -64,6 +65,9 @@ type ModuleCapabilitiesServiceClient interface {
 	// of a current parent context and exchanges only an installed operation's
 	// invoke scopes, or its read-only receipt-lookup subset.
 	ExchangeDelegatedOperationAudience(ctx context.Context, in *ModuleExchangeDelegatedOperationAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
+	// Attests a current capability under an active host-owned solution boundary.
+	// This read grants no authority and does not expose the registration seed.
+	VerifyWorkContextRuntimeBoundary(ctx context.Context, in *VerifyWorkContextRuntimeBoundaryRequest, opts ...grpc.CallOption) (*VerifyWorkContextRuntimeBoundaryResponse, error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(ctx context.Context, in *CheckWorkContextRecordAccessRequest, opts ...grpc.CallOption) (*CheckWorkContextRecordAccessResponse, error)
@@ -187,6 +191,16 @@ func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedOperationAudience(ctx
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IssuedWorkContext)
 	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) VerifyWorkContextRuntimeBoundary(ctx context.Context, in *VerifyWorkContextRuntimeBoundaryRequest, opts ...grpc.CallOption) (*VerifyWorkContextRuntimeBoundaryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyWorkContextRuntimeBoundaryResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_VerifyWorkContextRuntimeBoundary_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -503,6 +517,9 @@ type ModuleCapabilitiesServiceServer interface {
 	// of a current parent context and exchanges only an installed operation's
 	// invoke scopes, or its read-only receipt-lookup subset.
 	ExchangeDelegatedOperationAudience(context.Context, *ModuleExchangeDelegatedOperationAudienceRequest) (*IssuedWorkContext, error)
+	// Attests a current capability under an active host-owned solution boundary.
+	// This read grants no authority and does not expose the registration seed.
+	VerifyWorkContextRuntimeBoundary(context.Context, *VerifyWorkContextRuntimeBoundaryRequest) (*VerifyWorkContextRuntimeBoundaryResponse, error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error)
@@ -617,6 +634,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedReadAudienc
 }
 func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedOperationAudience(context.Context, *ModuleExchangeDelegatedOperationAudienceRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExchangeDelegatedOperationAudience not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) VerifyWorkContextRuntimeBoundary(context.Context, *VerifyWorkContextRuntimeBoundaryRequest) (*VerifyWorkContextRuntimeBoundaryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyWorkContextRuntimeBoundary not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckWorkContextRecordAccess not implemented")
@@ -756,6 +776,24 @@ func _ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_Handler(srv i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedOperationAudience(ctx, req.(*ModuleExchangeDelegatedOperationAudienceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_VerifyWorkContextRuntimeBoundary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyWorkContextRuntimeBoundaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).VerifyWorkContextRuntimeBoundary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_VerifyWorkContextRuntimeBoundary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).VerifyWorkContextRuntimeBoundary(ctx, req.(*VerifyWorkContextRuntimeBoundaryRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1264,6 +1302,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExchangeDelegatedOperationAudience",
 			Handler:    _ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_Handler,
+		},
+		{
+			MethodName: "VerifyWorkContextRuntimeBoundary",
+			Handler:    _ModuleCapabilitiesService_VerifyWorkContextRuntimeBoundary_Handler,
 		},
 		{
 			MethodName: "CheckWorkContextRecordAccess",

@@ -5006,6 +5006,43 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/VerifyWorkContextRuntimeBoundary",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "VerifyWorkContextRuntimeBoundary",
+      "input_type": "saas.accounts.v1.VerifyWorkContextRuntimeBoundaryRequest",
+      "output_type": "saas.accounts.v1.VerifyWorkContextRuntimeBoundaryResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "policy_sha256": "cb57ee7f4e96ab9548ead04103dfd3e9a96dce973c06a8bd62a9ac991eab1e16",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
       "procedure": "/saas.accounts.v1.NotificationService/DeleteNotification",
       "full_service": "saas.accounts.v1.NotificationService",
       "method": "DeleteNotification",

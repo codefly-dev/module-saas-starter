@@ -173,6 +173,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ModuleCapabilitiesService/RequestApproval":                    "Open a pending approval whose resume job the module claims.",
 	"ModuleCapabilitiesService/GetApproval":                        "Read one approval request on the caller's tenant.",
 	"ModuleCapabilitiesService/CancelApproval":                     "Withdraw a still-open approval request.",
+	"ModuleCapabilitiesService/VerifyWorkContextRuntimeBoundary":   "Attest current capability membership in an active host-owned runtime boundary.",
 	"ModuleCapabilitiesService/CheckWorkContextRecordAccess":       "Check exact placed-record access under current delegated viewer authority.",
 	"ModuleCapabilitiesService/ExchangeDelegatedReadAudience":      "Exchange a current signed parent through an installed read-only module binding.",
 	"ModuleCapabilitiesService/ExchangeDelegatedOperationAudience": "Exchange a current signed parent through one installed operation binding.",

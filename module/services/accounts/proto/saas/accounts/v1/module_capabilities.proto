@@ -855,6 +855,16 @@ message ModulePlaceRecordResponse {
   string node_id = 1 [(buf.validate.field).string.uuid = true];
 }
 
+// Read-only attestation; identity and boundary come exclusively from this signed
+// context. The caller separately authenticates as its consuming module.
+message VerifyWorkContextRuntimeBoundaryRequest {
+  string forwarded_work_context_token = 1 [(buf.validate.field).string = {min_len: 1, max_len: 32768}];
+}
+message VerifyWorkContextRuntimeBoundaryResponse {
+  string tenant_id = 1;
+  string boundary_id = 2;
+}
+
 // Exact-record delegated oracle. Tenant and subjects come only from the signed
 // forwarded Work Context; a caller cannot provide a scope path or principal.
 message CheckWorkContextRecordAccessRequest {
@@ -958,6 +968,22 @@ service ModuleCapabilitiesService {
   };
  }
 
+
+  // Attests a current capability under an active host-owned solution boundary.
+  // This read grants no authority and does not expose the registration seed.
+  rpc VerifyWorkContextRuntimeBoundary(VerifyWorkContextRuntimeBoundaryRequest) returns (VerifyWorkContextRuntimeBoundaryResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
 
   // Checks current owner and every delegated actor against true record placement,
   // intersected with the verified capability's attenuated resource/action scope.

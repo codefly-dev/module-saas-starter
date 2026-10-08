@@ -3920,6 +3920,104 @@ func (x *ModulePlaceRecordResponse) GetNodeId() string {
 	return ""
 }
 
+// Read-only attestation; identity and boundary come exclusively from this signed
+// context. The caller separately authenticates as its consuming module.
+type VerifyWorkContextRuntimeBoundaryRequest struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	ForwardedWorkContextToken string                 `protobuf:"bytes,1,opt,name=forwarded_work_context_token,json=forwardedWorkContextToken,proto3" json:"forwarded_work_context_token,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *VerifyWorkContextRuntimeBoundaryRequest) Reset() {
+	*x = VerifyWorkContextRuntimeBoundaryRequest{}
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyWorkContextRuntimeBoundaryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyWorkContextRuntimeBoundaryRequest) ProtoMessage() {}
+
+func (x *VerifyWorkContextRuntimeBoundaryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyWorkContextRuntimeBoundaryRequest.ProtoReflect.Descriptor instead.
+func (*VerifyWorkContextRuntimeBoundaryRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *VerifyWorkContextRuntimeBoundaryRequest) GetForwardedWorkContextToken() string {
+	if x != nil {
+		return x.ForwardedWorkContextToken
+	}
+	return ""
+}
+
+type VerifyWorkContextRuntimeBoundaryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	BoundaryId    string                 `protobuf:"bytes,2,opt,name=boundary_id,json=boundaryId,proto3" json:"boundary_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyWorkContextRuntimeBoundaryResponse) Reset() {
+	*x = VerifyWorkContextRuntimeBoundaryResponse{}
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyWorkContextRuntimeBoundaryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyWorkContextRuntimeBoundaryResponse) ProtoMessage() {}
+
+func (x *VerifyWorkContextRuntimeBoundaryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyWorkContextRuntimeBoundaryResponse.ProtoReflect.Descriptor instead.
+func (*VerifyWorkContextRuntimeBoundaryResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *VerifyWorkContextRuntimeBoundaryResponse) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *VerifyWorkContextRuntimeBoundaryResponse) GetBoundaryId() string {
+	if x != nil {
+		return x.BoundaryId
+	}
+	return ""
+}
+
 // Exact-record delegated oracle. Tenant and subjects come only from the signed
 // forwarded Work Context; a caller cannot provide a scope path or principal.
 type CheckWorkContextRecordAccessRequest struct {
@@ -3933,7 +4031,7 @@ type CheckWorkContextRecordAccessRequest struct {
 
 func (x *CheckWorkContextRecordAccessRequest) Reset() {
 	*x = CheckWorkContextRecordAccessRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[52]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3945,7 +4043,7 @@ func (x *CheckWorkContextRecordAccessRequest) String() string {
 func (*CheckWorkContextRecordAccessRequest) ProtoMessage() {}
 
 func (x *CheckWorkContextRecordAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[52]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3958,7 +4056,7 @@ func (x *CheckWorkContextRecordAccessRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use CheckWorkContextRecordAccessRequest.ProtoReflect.Descriptor instead.
 func (*CheckWorkContextRecordAccessRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{52}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *CheckWorkContextRecordAccessRequest) GetResourceType() string {
@@ -3994,7 +4092,7 @@ type CheckWorkContextRecordAccessResponse struct {
 
 func (x *CheckWorkContextRecordAccessResponse) Reset() {
 	*x = CheckWorkContextRecordAccessResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[53]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4006,7 +4104,7 @@ func (x *CheckWorkContextRecordAccessResponse) String() string {
 func (*CheckWorkContextRecordAccessResponse) ProtoMessage() {}
 
 func (x *CheckWorkContextRecordAccessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[53]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4019,7 +4117,7 @@ func (x *CheckWorkContextRecordAccessResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use CheckWorkContextRecordAccessResponse.ProtoReflect.Descriptor instead.
 func (*CheckWorkContextRecordAccessResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{53}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *CheckWorkContextRecordAccessResponse) GetAllowed() bool {
@@ -4048,7 +4146,7 @@ type ModuleExchangeDelegatedReadAudienceRequest struct {
 
 func (x *ModuleExchangeDelegatedReadAudienceRequest) Reset() {
 	*x = ModuleExchangeDelegatedReadAudienceRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[54]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4060,7 +4158,7 @@ func (x *ModuleExchangeDelegatedReadAudienceRequest) String() string {
 func (*ModuleExchangeDelegatedReadAudienceRequest) ProtoMessage() {}
 
 func (x *ModuleExchangeDelegatedReadAudienceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[54]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4073,7 +4171,7 @@ func (x *ModuleExchangeDelegatedReadAudienceRequest) ProtoReflect() protoreflect
 
 // Deprecated: Use ModuleExchangeDelegatedReadAudienceRequest.ProtoReflect.Descriptor instead.
 func (*ModuleExchangeDelegatedReadAudienceRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{54}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ModuleExchangeDelegatedReadAudienceRequest) GetBindingId() string {
@@ -4129,7 +4227,7 @@ type ModuleExchangeDelegatedOperationAudienceRequest struct {
 
 func (x *ModuleExchangeDelegatedOperationAudienceRequest) Reset() {
 	*x = ModuleExchangeDelegatedOperationAudienceRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[55]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4141,7 +4239,7 @@ func (x *ModuleExchangeDelegatedOperationAudienceRequest) String() string {
 func (*ModuleExchangeDelegatedOperationAudienceRequest) ProtoMessage() {}
 
 func (x *ModuleExchangeDelegatedOperationAudienceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[55]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4154,7 +4252,7 @@ func (x *ModuleExchangeDelegatedOperationAudienceRequest) ProtoReflect() protore
 
 // Deprecated: Use ModuleExchangeDelegatedOperationAudienceRequest.ProtoReflect.Descriptor instead.
 func (*ModuleExchangeDelegatedOperationAudienceRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{55}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ModuleExchangeDelegatedOperationAudienceRequest) GetBindingId() string {
@@ -4469,7 +4567,13 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\n" +
 	"resourceId\">\n" +
 	"\x19ModulePlaceRecordResponse\x12!\n" +
-	"\anode_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06nodeId\"\xa7\x01\n" +
+	"\anode_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06nodeId\"w\n" +
+	"'VerifyWorkContextRuntimeBoundaryRequest\x12L\n" +
+	"\x1cforwarded_work_context_token\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x19forwardedWorkContextToken\"h\n" +
+	"(VerifyWorkContextRuntimeBoundaryResponse\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x1f\n" +
+	"\vboundary_id\x18\x02 \x01(\tR\n" +
+	"boundaryId\"\xa7\x01\n" +
 	"#CheckWorkContextRecordAccessRequest\x12/\n" +
 	"\rresource_type\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x02R\fresourceType\x12+\n" +
@@ -4522,12 +4626,13 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x1cMETADATA_DISCLOSURE_WITHHELD\x10\x02*\\\n" +
 	"\x0fSourceSyncStage\x12!\n" +
 	"\x1dSOURCE_SYNC_STAGE_UNSPECIFIED\x10\x00\x12&\n" +
-	"\"SOURCE_SYNC_STAGE_CHANGES_ENQUEUED\x10\x012\xd1#\n" +
+	"\"SOURCE_SYNC_STAGE_CHANGES_ENQUEUED\x10\x012\x87%\n" +
 	"\x19ModuleCapabilitiesService\x12\xc5\x01\n" +
 	"\x1dExchangeDelegatedReadAudience\x12<.saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"A\xc2\xf3\x18=\b\x03\x10\x010\x01:+\n" +
 	"'saas.module.delegated_audience_exchange\x10\x04@\x01H\aP\x04X\x04`\x01\x12\xcf\x01\n" +
 	"\"ExchangeDelegatedOperationAudience\x12A.saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"A\xc2\xf3\x18=\b\x03\x10\x010\x01:+\n" +
-	"'saas.module.delegated_audience_exchange\x10\x04@\x01H\aP\x04X\x04`\x01\x12\xa7\x01\n" +
+	"'saas.module.delegated_audience_exchange\x10\x04@\x01H\aP\x04X\x04`\x01\x12\xb3\x01\n" +
+	" VerifyWorkContextRuntimeBoundary\x129.saas.accounts.v1.VerifyWorkContextRuntimeBoundaryRequest\x1a:.saas.accounts.v1.VerifyWorkContextRuntimeBoundaryResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x04X\x03`\x01\x12\xa7\x01\n" +
 	"\x1cCheckWorkContextRecordAccess\x125.saas.accounts.v1.CheckWorkContextRecordAccessRequest\x1a6.saas.accounts.v1.CheckWorkContextRecordAccessResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xaa\x01\n" +
 	"\x1dListReadableSourceCollections\x126.saas.accounts.v1.ListReadableSourceCollectionsRequest\x1a7.saas.accounts.v1.ListReadableSourceCollectionsResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\x80\x01\n" +
 	"\vPlaceRecord\x12*.saas.accounts.v1.ModulePlaceRecordRequest\x1a+.saas.accounts.v1.ModulePlaceRecordResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12}\n" +
@@ -4580,7 +4685,7 @@ func file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_module_capabilities_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_saas_accounts_v1_module_capabilities_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
+var file_saas_accounts_v1_module_capabilities_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
 var file_saas_accounts_v1_module_capabilities_proto_goTypes = []any{
 	(ModuleAuditFieldKind)(0),                               // 0: saas.accounts.v1.ModuleAuditFieldKind
 	(ModuleAuditEventVisibility)(0),                         // 1: saas.accounts.v1.ModuleAuditEventVisibility
@@ -4640,146 +4745,150 @@ var file_saas_accounts_v1_module_capabilities_proto_goTypes = []any{
 	(*ListReadableSourceCollectionsResponse)(nil),           // 55: saas.accounts.v1.ListReadableSourceCollectionsResponse
 	(*ModulePlaceRecordRequest)(nil),                        // 56: saas.accounts.v1.ModulePlaceRecordRequest
 	(*ModulePlaceRecordResponse)(nil),                       // 57: saas.accounts.v1.ModulePlaceRecordResponse
-	(*CheckWorkContextRecordAccessRequest)(nil),             // 58: saas.accounts.v1.CheckWorkContextRecordAccessRequest
-	(*CheckWorkContextRecordAccessResponse)(nil),            // 59: saas.accounts.v1.CheckWorkContextRecordAccessResponse
-	(*ModuleExchangeDelegatedReadAudienceRequest)(nil),      // 60: saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
-	(*ModuleExchangeDelegatedOperationAudienceRequest)(nil), // 61: saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
-	(*v1.NewJob)(nil),                                       // 62: saas.jobs.v1.NewJob
-	(v1.JobEnqueueDisposition)(0),                           // 63: saas.jobs.v1.JobEnqueueDisposition
-	(*durationpb.Duration)(nil),                             // 64: google.protobuf.Duration
-	(*v1.JobEnvelope)(nil),                                  // 65: saas.jobs.v1.JobEnvelope
-	(*v1.JobLeaseReference)(nil),                            // 66: saas.jobs.v1.JobLeaseReference
-	(*v1.JobLease)(nil),                                     // 67: saas.jobs.v1.JobLease
-	(*v1.JobFailure)(nil),                                   // 68: saas.jobs.v1.JobFailure
-	(*timestamppb.Timestamp)(nil),                           // 69: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),                                 // 70: google.protobuf.Struct
-	(*v11.EventEnvelope)(nil),                               // 71: saas.events.v1.EventEnvelope
-	(*ModuleMintRegistrationRequest)(nil),                   // 72: saas.accounts.v1.ModuleMintRegistrationRequest
-	(*SolutionMintRegistrationRequest)(nil),                 // 73: saas.accounts.v1.SolutionMintRegistrationRequest
-	(*ModuleMintWorkContextRequest)(nil),                    // 74: saas.accounts.v1.ModuleMintWorkContextRequest
-	(*ModuleMintOperationContextRequest)(nil),               // 75: saas.accounts.v1.ModuleMintOperationContextRequest
-	(*ModuleMintSourceOperationContextRequest)(nil),         // 76: saas.accounts.v1.ModuleMintSourceOperationContextRequest
-	(*IssuedWorkContext)(nil),                               // 77: saas.accounts.v1.IssuedWorkContext
-	(*emptypb.Empty)(nil),                                   // 78: google.protobuf.Empty
-	(*ModuleMintRegistrationResponse)(nil),                  // 79: saas.accounts.v1.ModuleMintRegistrationResponse
-	(*SolutionMintRegistrationResponse)(nil),                // 80: saas.accounts.v1.SolutionMintRegistrationResponse
-	(*ModuleMintWorkContextResponse)(nil),                   // 81: saas.accounts.v1.ModuleMintWorkContextResponse
-	(*ModuleMintOperationContextResponse)(nil),              // 82: saas.accounts.v1.ModuleMintOperationContextResponse
-	(*ModuleMintSourceOperationContextResponse)(nil),        // 83: saas.accounts.v1.ModuleMintSourceOperationContextResponse
+	(*VerifyWorkContextRuntimeBoundaryRequest)(nil),         // 58: saas.accounts.v1.VerifyWorkContextRuntimeBoundaryRequest
+	(*VerifyWorkContextRuntimeBoundaryResponse)(nil),        // 59: saas.accounts.v1.VerifyWorkContextRuntimeBoundaryResponse
+	(*CheckWorkContextRecordAccessRequest)(nil),             // 60: saas.accounts.v1.CheckWorkContextRecordAccessRequest
+	(*CheckWorkContextRecordAccessResponse)(nil),            // 61: saas.accounts.v1.CheckWorkContextRecordAccessResponse
+	(*ModuleExchangeDelegatedReadAudienceRequest)(nil),      // 62: saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
+	(*ModuleExchangeDelegatedOperationAudienceRequest)(nil), // 63: saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
+	(*v1.NewJob)(nil),                                       // 64: saas.jobs.v1.NewJob
+	(v1.JobEnqueueDisposition)(0),                           // 65: saas.jobs.v1.JobEnqueueDisposition
+	(*durationpb.Duration)(nil),                             // 66: google.protobuf.Duration
+	(*v1.JobEnvelope)(nil),                                  // 67: saas.jobs.v1.JobEnvelope
+	(*v1.JobLeaseReference)(nil),                            // 68: saas.jobs.v1.JobLeaseReference
+	(*v1.JobLease)(nil),                                     // 69: saas.jobs.v1.JobLease
+	(*v1.JobFailure)(nil),                                   // 70: saas.jobs.v1.JobFailure
+	(*timestamppb.Timestamp)(nil),                           // 71: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),                                 // 72: google.protobuf.Struct
+	(*v11.EventEnvelope)(nil),                               // 73: saas.events.v1.EventEnvelope
+	(*ModuleMintRegistrationRequest)(nil),                   // 74: saas.accounts.v1.ModuleMintRegistrationRequest
+	(*SolutionMintRegistrationRequest)(nil),                 // 75: saas.accounts.v1.SolutionMintRegistrationRequest
+	(*ModuleMintWorkContextRequest)(nil),                    // 76: saas.accounts.v1.ModuleMintWorkContextRequest
+	(*ModuleMintOperationContextRequest)(nil),               // 77: saas.accounts.v1.ModuleMintOperationContextRequest
+	(*ModuleMintSourceOperationContextRequest)(nil),         // 78: saas.accounts.v1.ModuleMintSourceOperationContextRequest
+	(*IssuedWorkContext)(nil),                               // 79: saas.accounts.v1.IssuedWorkContext
+	(*emptypb.Empty)(nil),                                   // 80: google.protobuf.Empty
+	(*ModuleMintRegistrationResponse)(nil),                  // 81: saas.accounts.v1.ModuleMintRegistrationResponse
+	(*SolutionMintRegistrationResponse)(nil),                // 82: saas.accounts.v1.SolutionMintRegistrationResponse
+	(*ModuleMintWorkContextResponse)(nil),                   // 83: saas.accounts.v1.ModuleMintWorkContextResponse
+	(*ModuleMintOperationContextResponse)(nil),              // 84: saas.accounts.v1.ModuleMintOperationContextResponse
+	(*ModuleMintSourceOperationContextResponse)(nil),        // 85: saas.accounts.v1.ModuleMintSourceOperationContextResponse
 }
 var file_saas_accounts_v1_module_capabilities_proto_depIdxs = []int32{
-	62, // 0: saas.accounts.v1.ModuleEnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
-	63, // 1: saas.accounts.v1.ModuleEnqueueJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
-	64, // 2: saas.accounts.v1.ModuleClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
-	65, // 3: saas.accounts.v1.ModuleClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
-	66, // 4: saas.accounts.v1.ModuleHeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	64, // 5: saas.accounts.v1.ModuleHeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
-	67, // 6: saas.accounts.v1.ModuleHeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
-	66, // 7: saas.accounts.v1.ModuleAckJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	66, // 8: saas.accounts.v1.ModuleNackJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	68, // 9: saas.accounts.v1.ModuleNackJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
-	69, // 10: saas.accounts.v1.ModuleNackJobRequest.retry_at:type_name -> google.protobuf.Timestamp
-	70, // 11: saas.accounts.v1.ModuleResumeRef.payload:type_name -> google.protobuf.Struct
-	70, // 12: saas.accounts.v1.ModuleRequestApprovalRequest.subject:type_name -> google.protobuf.Struct
+	64, // 0: saas.accounts.v1.ModuleEnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
+	65, // 1: saas.accounts.v1.ModuleEnqueueJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
+	66, // 2: saas.accounts.v1.ModuleClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
+	67, // 3: saas.accounts.v1.ModuleClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
+	68, // 4: saas.accounts.v1.ModuleHeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	66, // 5: saas.accounts.v1.ModuleHeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
+	69, // 6: saas.accounts.v1.ModuleHeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
+	68, // 7: saas.accounts.v1.ModuleAckJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	68, // 8: saas.accounts.v1.ModuleNackJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	70, // 9: saas.accounts.v1.ModuleNackJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
+	71, // 10: saas.accounts.v1.ModuleNackJobRequest.retry_at:type_name -> google.protobuf.Timestamp
+	72, // 11: saas.accounts.v1.ModuleResumeRef.payload:type_name -> google.protobuf.Struct
+	72, // 12: saas.accounts.v1.ModuleRequestApprovalRequest.subject:type_name -> google.protobuf.Struct
 	18, // 13: saas.accounts.v1.ModuleRequestApprovalRequest.policy:type_name -> saas.accounts.v1.ModuleApprovalPolicy
 	19, // 14: saas.accounts.v1.ModuleRequestApprovalRequest.resume_ref:type_name -> saas.accounts.v1.ModuleResumeRef
-	69, // 15: saas.accounts.v1.ModuleRequestApprovalRequest.expires_at:type_name -> google.protobuf.Timestamp
-	69, // 16: saas.accounts.v1.ModuleRequestApprovalRequest.escalate_at:type_name -> google.protobuf.Timestamp
-	70, // 17: saas.accounts.v1.ModuleApproval.subject:type_name -> google.protobuf.Struct
+	71, // 15: saas.accounts.v1.ModuleRequestApprovalRequest.expires_at:type_name -> google.protobuf.Timestamp
+	71, // 16: saas.accounts.v1.ModuleRequestApprovalRequest.escalate_at:type_name -> google.protobuf.Timestamp
+	72, // 17: saas.accounts.v1.ModuleApproval.subject:type_name -> google.protobuf.Struct
 	19, // 18: saas.accounts.v1.ModuleApproval.resume_ref:type_name -> saas.accounts.v1.ModuleResumeRef
-	69, // 19: saas.accounts.v1.ModuleApproval.expires_at:type_name -> google.protobuf.Timestamp
-	69, // 20: saas.accounts.v1.ModuleApproval.escalate_at:type_name -> google.protobuf.Timestamp
-	69, // 21: saas.accounts.v1.ModuleApproval.created_at:type_name -> google.protobuf.Timestamp
-	70, // 22: saas.accounts.v1.ModuleEmitAuditEventRequest.fields:type_name -> google.protobuf.Struct
+	71, // 19: saas.accounts.v1.ModuleApproval.expires_at:type_name -> google.protobuf.Timestamp
+	71, // 20: saas.accounts.v1.ModuleApproval.escalate_at:type_name -> google.protobuf.Timestamp
+	71, // 21: saas.accounts.v1.ModuleApproval.created_at:type_name -> google.protobuf.Timestamp
+	72, // 22: saas.accounts.v1.ModuleEmitAuditEventRequest.fields:type_name -> google.protobuf.Struct
 	0,  // 23: saas.accounts.v1.ModuleAuditFieldDeclaration.kind:type_name -> saas.accounts.v1.ModuleAuditFieldKind
 	26, // 24: saas.accounts.v1.ModuleAuditEventTypeDeclaration.fields:type_name -> saas.accounts.v1.ModuleAuditFieldDeclaration
 	1,  // 25: saas.accounts.v1.ModuleAuditEventTypeDeclaration.visibility:type_name -> saas.accounts.v1.ModuleAuditEventVisibility
 	27, // 26: saas.accounts.v1.ModuleDeclareAuditEventTypesRequest.types:type_name -> saas.accounts.v1.ModuleAuditEventTypeDeclaration
-	69, // 27: saas.accounts.v1.SubjectVisibilityGrant.expires_at:type_name -> google.protobuf.Timestamp
+	71, // 27: saas.accounts.v1.SubjectVisibilityGrant.expires_at:type_name -> google.protobuf.Timestamp
 	30, // 28: saas.accounts.v1.ModuleListSubjectVisibilityResponse.grants:type_name -> saas.accounts.v1.SubjectVisibilityGrant
 	35, // 29: saas.accounts.v1.FetchDatasourceFilesRequest.files:type_name -> saas.accounts.v1.DatasourceFileRef
 	2,  // 30: saas.accounts.v1.DatasourceItemReaders.basis:type_name -> saas.accounts.v1.DatasourceItemReadersBasis
 	37, // 31: saas.accounts.v1.DatasourceFileHeader.provenance:type_name -> saas.accounts.v1.DatasourceProvenance
 	38, // 32: saas.accounts.v1.DatasourceFileHeader.readers:type_name -> saas.accounts.v1.DatasourceItemReaders
 	39, // 33: saas.accounts.v1.FetchDatasourceFilesFrame.header:type_name -> saas.accounts.v1.DatasourceFileHeader
-	71, // 34: saas.accounts.v1.ModulePublishEventRequest.envelope:type_name -> saas.events.v1.EventEnvelope
+	73, // 34: saas.accounts.v1.ModulePublishEventRequest.envelope:type_name -> saas.events.v1.EventEnvelope
 	3,  // 35: saas.accounts.v1.ModuleSubscribeRequest.delivery:type_name -> saas.accounts.v1.EventDelivery
 	3,  // 36: saas.accounts.v1.ModuleSubscription.delivery:type_name -> saas.accounts.v1.EventDelivery
-	69, // 37: saas.accounts.v1.ModuleSubscription.created_at:type_name -> google.protobuf.Timestamp
+	71, // 37: saas.accounts.v1.ModuleSubscription.created_at:type_name -> google.protobuf.Timestamp
 	44, // 38: saas.accounts.v1.ModuleSubscribeResponse.subscription:type_name -> saas.accounts.v1.ModuleSubscription
 	44, // 39: saas.accounts.v1.ModuleListSubscriptionsResponse.subscriptions:type_name -> saas.accounts.v1.ModuleSubscription
-	69, // 40: saas.accounts.v1.ModuleReplayEventsRequest.since:type_name -> google.protobuf.Timestamp
+	71, // 40: saas.accounts.v1.ModuleReplayEventsRequest.since:type_name -> google.protobuf.Timestamp
 	4,  // 41: saas.accounts.v1.ReadableSourceCollection.grant_disclosure:type_name -> saas.accounts.v1.MetadataDisclosure
 	52, // 42: saas.accounts.v1.ReadableSourceCollection.read_grants:type_name -> saas.accounts.v1.ReadableCollectionGrant
 	53, // 43: saas.accounts.v1.ReadableSourceCollection.sync:type_name -> saas.accounts.v1.CollectionSyncProvenance
-	69, // 44: saas.accounts.v1.ReadableCollectionGrant.expires_at:type_name -> google.protobuf.Timestamp
+	71, // 44: saas.accounts.v1.ReadableCollectionGrant.expires_at:type_name -> google.protobuf.Timestamp
 	5,  // 45: saas.accounts.v1.CollectionSyncProvenance.stage:type_name -> saas.accounts.v1.SourceSyncStage
-	69, // 46: saas.accounts.v1.CollectionSyncProvenance.at:type_name -> google.protobuf.Timestamp
+	71, // 46: saas.accounts.v1.CollectionSyncProvenance.at:type_name -> google.protobuf.Timestamp
 	4,  // 47: saas.accounts.v1.CollectionSyncProvenance.requester_disclosure:type_name -> saas.accounts.v1.MetadataDisclosure
-	69, // 48: saas.accounts.v1.CollectionSyncProvenance.requested_at:type_name -> google.protobuf.Timestamp
+	71, // 48: saas.accounts.v1.CollectionSyncProvenance.requested_at:type_name -> google.protobuf.Timestamp
 	51, // 49: saas.accounts.v1.ListReadableSourceCollectionsResponse.collections:type_name -> saas.accounts.v1.ReadableSourceCollection
-	60, // 50: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
-	61, // 51: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
-	58, // 52: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:input_type -> saas.accounts.v1.CheckWorkContextRecordAccessRequest
-	54, // 53: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:input_type -> saas.accounts.v1.ListReadableSourceCollectionsRequest
-	56, // 54: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:input_type -> saas.accounts.v1.ModulePlaceRecordRequest
-	6,  // 55: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:input_type -> saas.accounts.v1.ModuleEnqueueJobRequest
-	8,  // 56: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:input_type -> saas.accounts.v1.ModuleClaimJobsRequest
-	10, // 57: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:input_type -> saas.accounts.v1.ModuleHeartbeatJobRequest
-	12, // 58: saas.accounts.v1.ModuleCapabilitiesService.AckJob:input_type -> saas.accounts.v1.ModuleAckJobRequest
-	13, // 59: saas.accounts.v1.ModuleCapabilitiesService.NackJob:input_type -> saas.accounts.v1.ModuleNackJobRequest
-	14, // 60: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:input_type -> saas.accounts.v1.ModuleNotifyUserRequest
-	16, // 61: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:input_type -> saas.accounts.v1.ModuleNotifyOrgAdminsRequest
-	20, // 62: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:input_type -> saas.accounts.v1.ModuleRequestApprovalRequest
-	22, // 63: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:input_type -> saas.accounts.v1.ModuleGetApprovalRequest
-	24, // 64: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:input_type -> saas.accounts.v1.ModuleCancelApprovalRequest
-	25, // 65: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:input_type -> saas.accounts.v1.ModuleEmitAuditEventRequest
-	28, // 66: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:input_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesRequest
-	31, // 67: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:input_type -> saas.accounts.v1.ModuleListSubjectVisibilityRequest
-	33, // 68: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:input_type -> saas.accounts.v1.FetchDatasourceBlobRequest
-	36, // 69: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:input_type -> saas.accounts.v1.FetchDatasourceFilesRequest
-	72, // 70: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:input_type -> saas.accounts.v1.ModuleMintRegistrationRequest
-	73, // 71: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:input_type -> saas.accounts.v1.SolutionMintRegistrationRequest
-	74, // 72: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:input_type -> saas.accounts.v1.ModuleMintWorkContextRequest
-	75, // 73: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:input_type -> saas.accounts.v1.ModuleMintOperationContextRequest
-	76, // 74: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:input_type -> saas.accounts.v1.ModuleMintSourceOperationContextRequest
-	41, // 75: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:input_type -> saas.accounts.v1.ModulePublishEventRequest
-	43, // 76: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:input_type -> saas.accounts.v1.ModuleSubscribeRequest
-	46, // 77: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:input_type -> saas.accounts.v1.ModuleUnsubscribeRequest
-	47, // 78: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:input_type -> saas.accounts.v1.ModuleListSubscriptionsRequest
-	49, // 79: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:input_type -> saas.accounts.v1.ModuleReplayEventsRequest
-	77, // 80: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	77, // 81: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	59, // 82: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:output_type -> saas.accounts.v1.CheckWorkContextRecordAccessResponse
-	55, // 83: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:output_type -> saas.accounts.v1.ListReadableSourceCollectionsResponse
-	57, // 84: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:output_type -> saas.accounts.v1.ModulePlaceRecordResponse
-	7,  // 85: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:output_type -> saas.accounts.v1.ModuleEnqueueJobResponse
-	9,  // 86: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:output_type -> saas.accounts.v1.ModuleClaimJobsResponse
-	11, // 87: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:output_type -> saas.accounts.v1.ModuleHeartbeatJobResponse
-	78, // 88: saas.accounts.v1.ModuleCapabilitiesService.AckJob:output_type -> google.protobuf.Empty
-	78, // 89: saas.accounts.v1.ModuleCapabilitiesService.NackJob:output_type -> google.protobuf.Empty
-	15, // 90: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:output_type -> saas.accounts.v1.ModuleNotifyUserResponse
-	17, // 91: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:output_type -> saas.accounts.v1.ModuleNotifyOrgAdminsResponse
-	21, // 92: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:output_type -> saas.accounts.v1.ModuleRequestApprovalResponse
-	23, // 93: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:output_type -> saas.accounts.v1.ModuleApproval
-	78, // 94: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:output_type -> google.protobuf.Empty
-	78, // 95: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:output_type -> google.protobuf.Empty
-	29, // 96: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:output_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesResponse
-	32, // 97: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:output_type -> saas.accounts.v1.ModuleListSubjectVisibilityResponse
-	34, // 98: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:output_type -> saas.accounts.v1.FetchDatasourceBlobChunk
-	40, // 99: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:output_type -> saas.accounts.v1.FetchDatasourceFilesFrame
-	79, // 100: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:output_type -> saas.accounts.v1.ModuleMintRegistrationResponse
-	80, // 101: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:output_type -> saas.accounts.v1.SolutionMintRegistrationResponse
-	81, // 102: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:output_type -> saas.accounts.v1.ModuleMintWorkContextResponse
-	82, // 103: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:output_type -> saas.accounts.v1.ModuleMintOperationContextResponse
-	83, // 104: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:output_type -> saas.accounts.v1.ModuleMintSourceOperationContextResponse
-	42, // 105: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:output_type -> saas.accounts.v1.ModulePublishEventResponse
-	45, // 106: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:output_type -> saas.accounts.v1.ModuleSubscribeResponse
-	78, // 107: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:output_type -> google.protobuf.Empty
-	48, // 108: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:output_type -> saas.accounts.v1.ModuleListSubscriptionsResponse
-	50, // 109: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:output_type -> saas.accounts.v1.ModuleReplayEventsResponse
-	80, // [80:110] is the sub-list for method output_type
-	50, // [50:80] is the sub-list for method input_type
+	62, // 50: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
+	63, // 51: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
+	58, // 52: saas.accounts.v1.ModuleCapabilitiesService.VerifyWorkContextRuntimeBoundary:input_type -> saas.accounts.v1.VerifyWorkContextRuntimeBoundaryRequest
+	60, // 53: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:input_type -> saas.accounts.v1.CheckWorkContextRecordAccessRequest
+	54, // 54: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:input_type -> saas.accounts.v1.ListReadableSourceCollectionsRequest
+	56, // 55: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:input_type -> saas.accounts.v1.ModulePlaceRecordRequest
+	6,  // 56: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:input_type -> saas.accounts.v1.ModuleEnqueueJobRequest
+	8,  // 57: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:input_type -> saas.accounts.v1.ModuleClaimJobsRequest
+	10, // 58: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:input_type -> saas.accounts.v1.ModuleHeartbeatJobRequest
+	12, // 59: saas.accounts.v1.ModuleCapabilitiesService.AckJob:input_type -> saas.accounts.v1.ModuleAckJobRequest
+	13, // 60: saas.accounts.v1.ModuleCapabilitiesService.NackJob:input_type -> saas.accounts.v1.ModuleNackJobRequest
+	14, // 61: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:input_type -> saas.accounts.v1.ModuleNotifyUserRequest
+	16, // 62: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:input_type -> saas.accounts.v1.ModuleNotifyOrgAdminsRequest
+	20, // 63: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:input_type -> saas.accounts.v1.ModuleRequestApprovalRequest
+	22, // 64: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:input_type -> saas.accounts.v1.ModuleGetApprovalRequest
+	24, // 65: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:input_type -> saas.accounts.v1.ModuleCancelApprovalRequest
+	25, // 66: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:input_type -> saas.accounts.v1.ModuleEmitAuditEventRequest
+	28, // 67: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:input_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesRequest
+	31, // 68: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:input_type -> saas.accounts.v1.ModuleListSubjectVisibilityRequest
+	33, // 69: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:input_type -> saas.accounts.v1.FetchDatasourceBlobRequest
+	36, // 70: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:input_type -> saas.accounts.v1.FetchDatasourceFilesRequest
+	74, // 71: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:input_type -> saas.accounts.v1.ModuleMintRegistrationRequest
+	75, // 72: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:input_type -> saas.accounts.v1.SolutionMintRegistrationRequest
+	76, // 73: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:input_type -> saas.accounts.v1.ModuleMintWorkContextRequest
+	77, // 74: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:input_type -> saas.accounts.v1.ModuleMintOperationContextRequest
+	78, // 75: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:input_type -> saas.accounts.v1.ModuleMintSourceOperationContextRequest
+	41, // 76: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:input_type -> saas.accounts.v1.ModulePublishEventRequest
+	43, // 77: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:input_type -> saas.accounts.v1.ModuleSubscribeRequest
+	46, // 78: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:input_type -> saas.accounts.v1.ModuleUnsubscribeRequest
+	47, // 79: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:input_type -> saas.accounts.v1.ModuleListSubscriptionsRequest
+	49, // 80: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:input_type -> saas.accounts.v1.ModuleReplayEventsRequest
+	79, // 81: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	79, // 82: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	59, // 83: saas.accounts.v1.ModuleCapabilitiesService.VerifyWorkContextRuntimeBoundary:output_type -> saas.accounts.v1.VerifyWorkContextRuntimeBoundaryResponse
+	61, // 84: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:output_type -> saas.accounts.v1.CheckWorkContextRecordAccessResponse
+	55, // 85: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:output_type -> saas.accounts.v1.ListReadableSourceCollectionsResponse
+	57, // 86: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:output_type -> saas.accounts.v1.ModulePlaceRecordResponse
+	7,  // 87: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:output_type -> saas.accounts.v1.ModuleEnqueueJobResponse
+	9,  // 88: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:output_type -> saas.accounts.v1.ModuleClaimJobsResponse
+	11, // 89: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:output_type -> saas.accounts.v1.ModuleHeartbeatJobResponse
+	80, // 90: saas.accounts.v1.ModuleCapabilitiesService.AckJob:output_type -> google.protobuf.Empty
+	80, // 91: saas.accounts.v1.ModuleCapabilitiesService.NackJob:output_type -> google.protobuf.Empty
+	15, // 92: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:output_type -> saas.accounts.v1.ModuleNotifyUserResponse
+	17, // 93: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:output_type -> saas.accounts.v1.ModuleNotifyOrgAdminsResponse
+	21, // 94: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:output_type -> saas.accounts.v1.ModuleRequestApprovalResponse
+	23, // 95: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:output_type -> saas.accounts.v1.ModuleApproval
+	80, // 96: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:output_type -> google.protobuf.Empty
+	80, // 97: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:output_type -> google.protobuf.Empty
+	29, // 98: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:output_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesResponse
+	32, // 99: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:output_type -> saas.accounts.v1.ModuleListSubjectVisibilityResponse
+	34, // 100: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:output_type -> saas.accounts.v1.FetchDatasourceBlobChunk
+	40, // 101: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:output_type -> saas.accounts.v1.FetchDatasourceFilesFrame
+	81, // 102: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:output_type -> saas.accounts.v1.ModuleMintRegistrationResponse
+	82, // 103: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:output_type -> saas.accounts.v1.SolutionMintRegistrationResponse
+	83, // 104: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:output_type -> saas.accounts.v1.ModuleMintWorkContextResponse
+	84, // 105: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:output_type -> saas.accounts.v1.ModuleMintOperationContextResponse
+	85, // 106: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:output_type -> saas.accounts.v1.ModuleMintSourceOperationContextResponse
+	42, // 107: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:output_type -> saas.accounts.v1.ModulePublishEventResponse
+	45, // 108: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:output_type -> saas.accounts.v1.ModuleSubscribeResponse
+	80, // 109: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:output_type -> google.protobuf.Empty
+	48, // 110: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:output_type -> saas.accounts.v1.ModuleListSubscriptionsResponse
+	50, // 111: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:output_type -> saas.accounts.v1.ModuleReplayEventsResponse
+	81, // [81:112] is the sub-list for method output_type
+	50, // [50:81] is the sub-list for method input_type
 	50, // [50:50] is the sub-list for extension type_name
 	50, // [50:50] is the sub-list for extension extendee
 	0,  // [0:50] is the sub-list for field type_name
@@ -4802,7 +4911,7 @@ func file_saas_accounts_v1_module_capabilities_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_module_capabilities_proto_rawDesc), len(file_saas_accounts_v1_module_capabilities_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   56,
+			NumMessages:   58,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

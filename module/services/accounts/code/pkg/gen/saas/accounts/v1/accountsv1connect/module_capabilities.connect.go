@@ -42,6 +42,9 @@ const (
 	// ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure is the fully-qualified name
 	// of the ModuleCapabilitiesService's ExchangeDelegatedOperationAudience RPC.
 	ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"
+	// ModuleCapabilitiesServiceVerifyWorkContextRuntimeBoundaryProcedure is the fully-qualified name of
+	// the ModuleCapabilitiesService's VerifyWorkContextRuntimeBoundary RPC.
+	ModuleCapabilitiesServiceVerifyWorkContextRuntimeBoundaryProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/VerifyWorkContextRuntimeBoundary"
 	// ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's CheckWorkContextRecordAccess RPC.
 	ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
@@ -138,6 +141,9 @@ type ModuleCapabilitiesServiceClient interface {
 	// of a current parent context and exchanges only an installed operation's
 	// invoke scopes, or its read-only receipt-lookup subset.
 	ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// Attests a current capability under an active host-owned solution boundary.
+	// This read grants no authority and does not expose the registration seed.
+	VerifyWorkContextRuntimeBoundary(context.Context, *connect.Request[v1.VerifyWorkContextRuntimeBoundaryRequest]) (*connect.Response[v1.VerifyWorkContextRuntimeBoundaryResponse], error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
@@ -261,6 +267,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure,
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedOperationAudience")),
+			connect.WithClientOptions(opts...),
+		),
+		verifyWorkContextRuntimeBoundary: connect.NewClient[v1.VerifyWorkContextRuntimeBoundaryRequest, v1.VerifyWorkContextRuntimeBoundaryResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceVerifyWorkContextRuntimeBoundaryProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("VerifyWorkContextRuntimeBoundary")),
 			connect.WithClientOptions(opts...),
 		),
 		checkWorkContextRecordAccess: connect.NewClient[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse](
@@ -438,6 +450,7 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 type moduleCapabilitiesServiceClient struct {
 	exchangeDelegatedReadAudience      *connect.Client[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext]
 	exchangeDelegatedOperationAudience *connect.Client[v1.ModuleExchangeDelegatedOperationAudienceRequest, v1.IssuedWorkContext]
+	verifyWorkContextRuntimeBoundary   *connect.Client[v1.VerifyWorkContextRuntimeBoundaryRequest, v1.VerifyWorkContextRuntimeBoundaryResponse]
 	checkWorkContextRecordAccess       *connect.Client[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse]
 	listReadableSourceCollections      *connect.Client[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse]
 	placeRecord                        *connect.Client[v1.ModulePlaceRecordRequest, v1.ModulePlaceRecordResponse]
@@ -478,6 +491,12 @@ func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx cont
 // saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience.
 func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedOperationAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return c.exchangeDelegatedOperationAudience.CallUnary(ctx, req)
+}
+
+// VerifyWorkContextRuntimeBoundary calls
+// saas.accounts.v1.ModuleCapabilitiesService.VerifyWorkContextRuntimeBoundary.
+func (c *moduleCapabilitiesServiceClient) VerifyWorkContextRuntimeBoundary(ctx context.Context, req *connect.Request[v1.VerifyWorkContextRuntimeBoundaryRequest]) (*connect.Response[v1.VerifyWorkContextRuntimeBoundaryResponse], error) {
+	return c.verifyWorkContextRuntimeBoundary.CallUnary(ctx, req)
 }
 
 // CheckWorkContextRecordAccess calls
@@ -637,6 +656,9 @@ type ModuleCapabilitiesServiceHandler interface {
 	// of a current parent context and exchanges only an installed operation's
 	// invoke scopes, or its read-only receipt-lookup subset.
 	ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// Attests a current capability under an active host-owned solution boundary.
+	// This read grants no authority and does not expose the registration seed.
+	VerifyWorkContextRuntimeBoundary(context.Context, *connect.Request[v1.VerifyWorkContextRuntimeBoundaryRequest]) (*connect.Response[v1.VerifyWorkContextRuntimeBoundaryResponse], error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
@@ -756,6 +778,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure,
 		svc.ExchangeDelegatedOperationAudience,
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedOperationAudience")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceVerifyWorkContextRuntimeBoundaryHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceVerifyWorkContextRuntimeBoundaryProcedure,
+		svc.VerifyWorkContextRuntimeBoundary,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("VerifyWorkContextRuntimeBoundary")),
 		connect.WithHandlerOptions(opts...),
 	)
 	moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler := connect.NewUnaryHandler(
@@ -932,6 +960,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure:
 			moduleCapabilitiesServiceExchangeDelegatedOperationAudienceHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceVerifyWorkContextRuntimeBoundaryProcedure:
+			moduleCapabilitiesServiceVerifyWorkContextRuntimeBoundaryHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure:
 			moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure:
@@ -1003,6 +1033,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedReadAudien
 
 func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) VerifyWorkContextRuntimeBoundary(context.Context, *connect.Request[v1.VerifyWorkContextRuntimeBoundaryRequest]) (*connect.Response[v1.VerifyWorkContextRuntimeBoundaryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.VerifyWorkContextRuntimeBoundary is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error) {

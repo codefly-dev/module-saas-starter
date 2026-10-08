@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **246 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **247 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -129,6 +129,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Open a pending approval whose resume job the module claims. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/Subscribe` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Create or re-affirm a durable event subscription for the caller. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Revoke one of the caller's own event subscriptions. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/VerifyWorkContextRuntimeBoundary` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Attest current capability membership in an active host-owned runtime boundary. |
 | `/saas.accounts.v1.NotificationService/DeleteNotification` | unary | `DELETE /v1/notifications/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Delete one of the caller's notifications. |
 | `/saas.accounts.v1.NotificationService/GetUnreadCount` | unary | `GET /v1/notifications/unread-count` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Count the caller's unread notifications. |
 | `/saas.accounts.v1.NotificationService/ListNotifications` | unary | `GET /v1/notifications` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the caller's notifications. |
@@ -258,7 +259,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 49
+- `internal`: 50
 - `mfa`: 4
 - `org_admin`: 56
 - `org_member`: 49
