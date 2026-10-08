@@ -87,13 +87,16 @@ func (s *WebhookSender) signingSecrets(ctx context.Context, sub *WebhookSubscrip
 		return "", "", fmt.Errorf("webhook secret cipher is not configured")
 	}
 	purpose := WebhookSecretPurpose(sub.ID)
-	current, err := s.cipher.DecryptSecret(ctx, purpose, sub.SecretEncrypted)
+	// The subscription's own organization, because this runs on the delivery
+	// path: an outbound send has no request scope at all, so the row is the only
+	// thing that can say which organization's key opens its signing secret.
+	current, err := OpenTenantSecret(ctx, s.cipher, sub.OrgID, purpose, sub.SecretEncrypted)
 	if err != nil {
 		return "", "", fmt.Errorf("decrypt current webhook secret: %w", err)
 	}
 	var previous string
 	if sub.PreviousSecretEncrypted != "" && sub.PreviousSecretExpiresAt != nil && s.now().Before(*sub.PreviousSecretExpiresAt) {
-		previous, err = s.cipher.DecryptSecret(ctx, purpose, sub.PreviousSecretEncrypted)
+		previous, err = OpenTenantSecret(ctx, s.cipher, sub.OrgID, purpose, sub.PreviousSecretEncrypted)
 		if err != nil {
 			return "", "", fmt.Errorf("decrypt previous webhook secret: %w", err)
 		}

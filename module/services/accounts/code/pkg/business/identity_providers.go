@@ -123,7 +123,7 @@ func (s *Service) ConfigureOrgIdentityProvider(ctx context.Context, input OrgIde
 		if s.identityCipher == nil {
 			return nil, w.NewError("identity provider secret cipher is not configured")
 		}
-		envelope, err := s.identityCipher.EncryptSecret(ctx, OrgIdentityProviderSecretPurpose(orgID), input.ClientSecret)
+		envelope, err := SealTenantSecret(ctx, s.identityCipher, orgID, OrgIdentityProviderSecretPurpose(orgID), input.ClientSecret)
 		if err != nil {
 			return nil, w.Wrapf(err, "encrypt client secret")
 		}

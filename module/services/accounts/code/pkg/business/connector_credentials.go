@@ -90,7 +90,7 @@ func (s *Service) PutGitHubSourceCredential(ctx context.Context, orgID, sourceID
 	if err != nil {
 		return w.Wrapf(err, "encode source credential")
 	}
-	envelope, err := s.connectorCipher.EncryptSecret(ctx, ConnectorSecretPurpose(sourceID), string(plaintext))
+	envelope, err := SealTenantSecret(ctx, s.connectorCipher, orgID, ConnectorSecretPurpose(sourceID), string(plaintext))
 	if err != nil {
 		return w.Wrapf(err, "encrypt source credential")
 	}
@@ -138,7 +138,7 @@ func (s *Service) GetGitHubSourceCredential(ctx context.Context, orgID, sourceID
 	}); err != nil {
 		return SourceCredential{}, err
 	}
-	return s.decryptSourceCredential(ctx, sourceID, envelope)
+	return s.decryptSourceCredential(ctx, orgID, sourceID, envelope)
 }
 
 // DeleteSourceCredential removes a source's credential for the caller's org.
@@ -183,6 +183,11 @@ func (s *Service) SourceSigningSecret(ctx context.Context, sourceID string) (str
 	}
 
 	var envelope string
+	// The organization comes off the RECORD, not from the caller: this path runs
+	// before the tenant is known — it is how an inbound webhook's signature is
+	// verified — so there is no request scope to read, and the row is what says
+	// whose credential this is and therefore which key opens it.
+	var credentialOrgID string
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		record, err := s.store.GetConnectorCredential(ctx, sourceID)
 		if err != nil {
@@ -192,12 +197,13 @@ func (s *Service) SourceSigningSecret(ctx context.Context, sourceID string) (str
 			return ErrSourceCredentialNotFound
 		}
 		envelope = record.SecretEncrypted
+		credentialOrgID = record.OrgID
 		return nil
 	}); err != nil {
 		return "", err
 	}
 
-	cred, err := s.decryptSourceCredential(ctx, sourceID, envelope)
+	cred, err := s.decryptSourceCredential(ctx, credentialOrgID, sourceID, envelope)
 	if err != nil {
 		return "", err
 	}
@@ -227,9 +233,9 @@ func (s *Service) FetchGitHubSourceContents(ctx context.Context, orgID, sourceID
 
 // decryptSourceCredential decrypts an envelope outside the store transaction so
 // the Vault round-trip does not hold a pooled database connection.
-func (s *Service) decryptSourceCredential(ctx context.Context, sourceID, envelope string) (SourceCredential, error) {
+func (s *Service) decryptSourceCredential(ctx context.Context, orgID, sourceID, envelope string) (SourceCredential, error) {
 	w := wool.Get(ctx).In("decryptSourceCredential")
-	plaintext, err := s.connectorCipher.DecryptSecret(ctx, ConnectorSecretPurpose(sourceID), envelope)
+	plaintext, err := OpenTenantSecret(ctx, s.connectorCipher, orgID, ConnectorSecretPurpose(sourceID), envelope)
 	if err != nil {
 		return SourceCredential{}, w.Wrapf(err, "decrypt source credential")
 	}

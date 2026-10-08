@@ -34,7 +34,8 @@ func (b oidcProviderStackBuilder) Build(ctx context.Context, provider *business.
 		return business.ProviderStack{}, fmt.Errorf("org %s oidc provider requires a client id and client secret", provider.OrgID)
 	}
 
-	clientSecret, err := b.cipher.DecryptSecret(ctx, business.OrgIdentityProviderSecretPurpose(provider.OrgID), provider.ClientSecretRef)
+	clientSecret, err := business.OpenTenantSecret(ctx, b.cipher, provider.OrgID,
+		business.OrgIdentityProviderSecretPurpose(provider.OrgID), provider.ClientSecretRef)
 	if err != nil {
 		return business.ProviderStack{}, fmt.Errorf("decrypt org %s client secret: %w", provider.OrgID, err)
 	}

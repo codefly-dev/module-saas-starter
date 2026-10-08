@@ -193,7 +193,7 @@ func (s *Service) ResolveWebhookSource(ctx context.Context, sourceID string) (*W
 	if source == nil || !source.WebhookConfigured() {
 		return nil, ErrDatasourceSourceNotFound
 	}
-	secret, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceWebhookSecretPurpose(sourceID), source.WebhookSecretRef)
+	secret, err := OpenTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceWebhookSecretPurpose(sourceID), source.WebhookSecretRef)
 	if err != nil {
 		return nil, err
 	}

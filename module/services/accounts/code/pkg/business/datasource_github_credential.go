@@ -156,7 +156,7 @@ func (s *Service) githubClientForSource(ctx context.Context, source *DatasourceS
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource connector is not configured")
 	}
-	plaintext, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	plaintext, err := OpenTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 	if err != nil {
 		return nil, datasourceCredentialError(err)
 	}
@@ -314,7 +314,7 @@ func (s *Service) MigrateGitHubSourceToApp(ctx context.Context, actorID, orgID, 
 	if err != nil {
 		return nil, w.Wrapf(err, "encode app credential")
 	}
-	encrypted, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(id), blob)
+	encrypted, err := SealTenantSecret(ctx, s.datasourceCipher, orgID, DatasourceConnectorSecretPurpose(id), blob)
 	if err != nil {
 		return nil, w.Wrapf(err, "encrypt app credential")
 	}

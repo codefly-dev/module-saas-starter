@@ -215,7 +215,7 @@ func (s *Service) CreateSubscription(ctx context.Context, actor AuditActor, orgI
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot generate webhook secret")
 	}
-	encryptedSecret, err := s.webhookCipher.EncryptSecret(ctx, WebhookSecretPurpose(subscriptionID), secret)
+	encryptedSecret, err := SealTenantSecret(ctx, s.webhookCipher, orgID, WebhookSecretPurpose(subscriptionID), secret)
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot encrypt webhook secret")
 	}
@@ -476,7 +476,7 @@ func (s *Service) RotateWebhookSecret(ctx context.Context, actor AuditActor, org
 	if err != nil {
 		return "", nil, w.Wrapf(err, "rng failure")
 	}
-	encryptedSecret, err := s.webhookCipher.EncryptSecret(ctx, WebhookSecretPurpose(subscriptionID), newSecret)
+	encryptedSecret, err := SealTenantSecret(ctx, s.webhookCipher, orgID, WebhookSecretPurpose(subscriptionID), newSecret)
 	if err != nil {
 		return "", nil, w.Wrapf(err, "cannot encrypt webhook secret")
 	}

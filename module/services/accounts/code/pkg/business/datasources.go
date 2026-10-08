@@ -667,7 +667,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	}
 
 	if secret := strings.TrimSpace(input.WebhookSecret); secret != "" {
-		webhookRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceWebhookSecretPurpose(source.ID), secret)
+		webhookRef, err := SealTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceWebhookSecretPurpose(source.ID), secret)
 		if err != nil {
 			return nil, w.Wrapf(err, "encrypt webhook secret")
 		}
@@ -725,7 +725,7 @@ func (s *Service) sealGitHubConnectCredential(ctx context.Context, source *Datas
 		source.GitHubCredentialKind = githubCredentialKindPublic
 		return nil
 	}
-	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), credential.Plaintext)
+	credentialRef, err := SealTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceConnectorSecretPurpose(source.ID), credential.Plaintext)
 	if err != nil {
 		return err
 	}
@@ -900,7 +900,7 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		if err != nil {
 			return nil, w.Wrap(err)
 		}
-		credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), credentialPlaintext)
+		credentialRef, err := SealTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceConnectorSecretPurpose(source.ID), credentialPlaintext)
 		if err != nil {
 			return nil, w.Wrapf(err, "encrypt credential")
 		}
@@ -908,7 +908,7 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	}
 
 	if secret := strings.TrimSpace(input.WebhookSecret); secret != "" {
-		webhookRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceWebhookSecretPurpose(source.ID), secret)
+		webhookRef, err := SealTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceWebhookSecretPurpose(source.ID), secret)
 		if err != nil {
 			return nil, w.Wrapf(err, "encrypt webhook secret")
 		}
@@ -1292,7 +1292,7 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			return "", err
 		}
 		if replacing {
-			encrypted, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), token)
+			encrypted, err := SealTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceConnectorSecretPurpose(source.ID), token)
 			if err != nil {
 				return "", jobs.NewProcessingError("datasource.credential_store_unavailable", "Could not securely save the replacement credential. Retry shortly.", true)
 			}
@@ -1489,7 +1489,7 @@ func (s *Service) runAPISync(ctx context.Context, source *DatasourceSource) (int
 		fetchConfig.CredentialKind = APICredentialKindBearer
 		fetchCredential = accessToken
 	} else {
-		stored, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+		stored, err := OpenTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 		if err != nil {
 			return 0, w.Wrapf(err, "decrypt credential")
 		}
@@ -1539,7 +1539,7 @@ func (s *Service) resolveOAuth2AccessToken(ctx context.Context, source *Datasour
 		if err != nil {
 			return w.Wrapf(err, "lock credential")
 		}
-		stored, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), ref)
+		stored, err := OpenTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceConnectorSecretPurpose(source.ID), ref)
 		if err != nil {
 			return w.Wrapf(err, "decrypt credential")
 		}
@@ -1581,7 +1581,7 @@ func (s *Service) resolveOAuth2AccessToken(ctx context.Context, source *Datasour
 		if err != nil {
 			return w.Wrapf(err, "encode rotated oauth2 credential")
 		}
-		newRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), string(blob))
+		newRef, err := SealTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceConnectorSecretPurpose(source.ID), string(blob))
 		if err != nil {
 			return w.Wrapf(err, "encrypt rotated oauth2 credential")
 		}
@@ -1775,7 +1775,7 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 		return 0, w.NewError("upload source has no config")
 	}
 
-	secretKey, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	secretKey, err := OpenTenantSecret(ctx, s.datasourceCipher, source.OrgID, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 	if err != nil {
 		return 0, w.Wrapf(err, "decrypt secret access key")
 	}
