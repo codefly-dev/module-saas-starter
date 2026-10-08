@@ -265,8 +265,10 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusForbidden, "no organization in this session")
 		return true
 	}
-	// Proxy to the solution. The caller's bearer is preserved so the solution
-	// can call accounts through the gateway on the user's behalf.
+	// Proxy to the solution. The caller's session credential does NOT travel with
+	// it: proxyTo removes the Authorization and Cookie headers for every
+	// runtime-registered upstream, and the solution receives the stamped identity
+	// headers instead (removePersonsSessionCredential).
 	//
 	// Route through rateLimitThenProxy, not proxyTo directly: an authenticated
 	// solution data endpoint must consume the same per-org budget as an equivalent

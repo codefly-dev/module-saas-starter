@@ -97,21 +97,46 @@ func TestRefreshCookie_DoesNotTrustForwardedProto(t *testing.T) {
 	}
 }
 
-func TestRefreshCookie_LoopbackHTTPOriginCanStoreCookie(t *testing.T) {
-	h := refreshTokenCookie(downstream(`{"accessToken":"at","refreshToken":"rt-secret"}`))
-	req := httptest.NewRequest(http.MethodPost, "http://localhost:21931/v1/auth/authenticate", strings.NewReader(`{}`))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+// The local-development exemption is the RUNTIME's, not the request's: a browser
+// discards a Secure cookie on a plaintext loopback origin, so local development
+// needs one, and nothing a caller sends may claim it. Asserted in both
+// directions, because the defect was that a deployed cell answered `Host:
+// localhost` with a cookie it would then send over plaintext.
+func TestRefreshCookieSecureFlagComesFromTheRuntimeNotTheRequest(t *testing.T) {
+	loopbackRequest := func() *http.Request {
+		return httptest.NewRequest(http.MethodPost,
+			"http://localhost:21931/v1/auth/authenticate", strings.NewReader(`{}`))
+	}
 
+	// A deployed runtime (the zero value of the flag) keeps Secure even for a
+	// request that looks entirely like local development.
+	rec := httptest.NewRecorder()
+	refreshTokenCookie(downstream(`{"accessToken":"at","refreshToken":"rt-secret"}`)).
+		ServeHTTP(rec, loopbackRequest())
+	if cookie := refreshCookieOf(t, rec); !cookie.Secure {
+		t.Fatal("a deployed runtime must keep Secure whatever the request's host says")
+	}
+
+	// A local runtime drops it, so a developer still has a session.
+	SetAllowInsecureRefreshCookie(true)
+	t.Cleanup(func() { SetAllowInsecureRefreshCookie(false) })
+	rec = httptest.NewRecorder()
+	refreshTokenCookie(downstream(`{"accessToken":"at","refreshToken":"rt-secret"}`)).
+		ServeHTTP(rec, loopbackRequest())
+	if cookie := refreshCookieOf(t, rec); cookie.Secure {
+		t.Fatal("a local runtime must drop Secure so the browser stores the cookie")
+	}
+}
+
+func refreshCookieOf(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
 	for _, cookie := range rec.Result().Cookies() {
 		if cookie.Name == refreshTokenCookieName {
-			if cookie.Secure {
-				t.Fatal("loopback HTTP refresh cookie must be accepted by the browser")
-			}
-			return
+			return cookie
 		}
 	}
 	t.Fatal("refresh-token cookie was not set")
+	return nil
 }
 
 func TestRefreshCookie_RefreshRequest_InjectsCookieIntoBody(t *testing.T) {

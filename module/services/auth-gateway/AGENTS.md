@@ -10,6 +10,27 @@ for the trust model behind declared presence.
 Nothing here may name a specific solution or composed module: every seam is
 generic, and a registered target is data, never a branch.
 
+## What a deployed gateway refuses to start without
+
+Three of this service's controls are only controls when the thing they depend on
+is there, and each used to degrade into something that read as working:
+
+- **A trusted-proxy range** (`gateway/TRUSTED_PROXY_CIDRS`). SP-GW-09 requires the
+  anonymous and authentication-factor budgets to key on the originating client.
+  Empty means no forwarding header is trusted, so `clientIP` answers the peer —
+  behind the frontend, the frontend's own pod — and every caller shares one bucket.
+  It read as working: the limiter was enabled and the buckets were enforced.
+- **A shared rate-limit store.** Per-replica counters enforce the configured budget
+  times the replica count, and which replica a caller lands on decides their share.
+- **A revocation store.** A revoker with no store answers "not revoked" to every
+  question, so a signed-out session, a killed device and an ended impersonation
+  window all keep authenticating until their tokens expire — and no request can
+  tell that from an empty revocation set.
+
+Each refuses at boot outside local development, naming what to provision. Local
+development keeps all three fallbacks: one replica, no ingress hop, no cache
+service, and the alternative is a gateway that cannot start.
+
 ## Reading declared solution upstreams
 
 `GET /solutions/_registry` returns this replica's read projection: identity,
@@ -56,6 +77,49 @@ needing less authority.
 
 Module identity exchanges are described below; accounts owns their authority.
 
+## A runtime-registered upstream never receives the person's session
+
+The gateway removes `Authorization`, `Cookie` and `Proxy-Authorization` from every
+request it forwards to a runtime-registered upstream — a federated module prefix or
+a solution. A catalog route is untouched: accounts is the host's own API, where the
+session IS the credential.
+
+The host access token carries one host-wide audience and the person's full
+authority, so it is not a credential any single upstream should hold. The cookie
+goes the same way, and the gateway has already resolved identity from it by the time
+it forwards, so an upstream reading it learns nothing it is not told.
+
+An upstream receives the identity `ext_authz` stamped: the subject, the tenant, the
+session, the credential kind and the scope ceiling. That names the person without
+carrying their authority.
+
+**SP-GW-07 has a second half this gateway does not yet satisfy.** The invariant is
+that an upstream receives a host-minted context bound to THAT upstream's own
+audience — not merely that it stops receiving the person's session. Today it
+receives the stamped identity headers and no audience-bound context, so the
+credential is no longer over-broad but the positive half is absent. Minting it at
+the edge is open work here; it cannot be supplied by a consumer.
+
+What is missing is specific, so that the next person does not have to rediscover it.
+`WorkContextService` already exposes `ExchangeAudience`, which re-binds an existing
+Work Context to a different audience — and that is not the operation this needs. The
+caller here holds a browser SESSION, which is not a Work Context, so the edge would
+need a mint that takes a verified session and returns a context bound to one
+upstream's audience, with that person's authority narrowed to what the upstream may
+do on their behalf. No RPC does that today, and adding one is a descriptor change
+(contract digests, published clients, a verified regeneration), which is why the
+stripping half shipped alone.
+
+Two things to settle with it, because they are the reason it is not a small change:
+the mint is per request on the proxy path, so its latency and its failure mode become
+the failure mode of all federated traffic; and the authority to narrow TO is the
+installation's ceiling, which the host cannot currently look up from a solution id
+either (see `module/SOLUTION_REGISTRATION.md`).
+
+**A consumer written against the old behaviour has to change**: anything that read
+the forwarded bearer needs a host-minted capability bound to its own audience
+instead.
+
 ## A registered client calls without a proxy
 
 The host's own frontend reaches this gateway through a server-side proxy, so it
@@ -88,6 +152,17 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
   start is validated against — is derived from that registration. The frontend's
   internal-token path still establishes it too; the registration is the stronger
   claim, since it names the client rather than only the process that forwarded.
+
+**The grant on a forwarded response is this gateway's, and only this gateway's.**
+Every proxied response has its `access-control-*` headers stripped before the
+gateway stamps whatever it granted — including when it granted nothing. An
+upstream may answer CORS itself, and accounts does: its generated handler hands an
+empty allowlist to a library that reads empty as allow-all, so it answers a
+wildcard origin with credentials true. Forwarded verbatim, that made the public
+surface grant a cross-origin read the gateway had granted nobody, and made an
+empty allowlist grant everything. The generated handler is the `go-grpc` agent's
+to fix; what the gateway owns is that nothing leaves it claiming a grant it did not
+make.
 
 Two deliberate limits. **Credentials are never allowed**: a registered client
 authenticates with its bearer, and echoing `access-control-allow-credentials`

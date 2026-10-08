@@ -471,6 +471,12 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 			r.Header.Set("X-Codefly-Public-Origin", publicOrigin)
 		}
 	}
+	if isRuntimeRegisteredRoute(entry) {
+		// A resource-bound tool token is forwarded; a host-wide session is not.
+		if !isSolutionToolRequestPath(r.URL.Path) {
+			removePersonsSessionCredential(r.Header)
+		}
+	}
 	if entry != nil && entry.UpstreamPath != "" {
 		r.URL.Path = entry.UpstreamPath
 		r.URL.RawPath = ""
@@ -487,6 +493,48 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// removePersonsSessionCredential strips the person's own session from a request
+// before it reaches a runtime-registered upstream — a composed module's federated
+// prefix, or a solution.
+//
+// The invariant (SP-GW-07): a module or solution upstream never receives the
+// person's session credential or cookie. The host access token carries a host-wide
+// audience and the person's full authority, so it is not a credential any single
+// upstream should hold; the Cookie goes with it because the gateway has already
+// resolved identity from it by this point, so an upstream reading it learns nothing
+// it is not told.
+//
+// An upstream receives the identity headers ext_authz stamped — the subject, the
+// tenant, the session, the credential kind, the scope ceiling — which name the
+// person without carrying their authority.
+//
+// The ONE exception, and it is the invariant rather than a hole in it: a solution's
+// MCP tool endpoint. ext_authz refuses a host-wide token there outright
+// (`resourceUnbound` is a 401), so a request that reaches this point on a tool path
+// carries a token whose audience names THAT SOLUTION'S resource and nothing else —
+// which is exactly the audience-bound credential SP-GW-07's positive half asks for,
+// already minted and already confined by `resourceAudienceAdmits`. Stripping it would
+// not withhold the person's authority; it would break the one surface that is doing
+// the right thing, and the merged resource-indicator work depends on forwarding it so
+// the runtime can mint the viewer's Work Context from it.
+//
+// The binding is read off the PATH, not re-derived from the token: admission has
+// already proved it, and a second JWT parse here would be a second verifier to keep in
+// agreement with the first.
+//
+// For every other upstream path the host-wide session is still removed, and an upstream
+// that needs to act on the person's behalf there still needs a host-minted capability
+// bound to its own audience. **That remains unbuilt: see the audience-bound context
+// note in services/auth-gateway/AGENTS.md.**
+//
+// Catalog routes are untouched: accounts is the host's own API, where the session
+// is the credential.
+func removePersonsSessionCredential(h http.Header) {
+	h.Del("Authorization")
+	h.Del("Cookie")
+	h.Del("Proxy-Authorization")
 }
 
 // removeCallerConnectionOptions applies the caller's Connection header to the

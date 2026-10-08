@@ -543,7 +543,9 @@ func TestLogout(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken}, "")
+	// No access token and no verified session: the body's refresh credential alone
+	// must still end the family, which is what a non-browser caller presents.
+	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken}, "", "")
 	require.NoError(t, err)
 
 	_, err = testService.RefreshToken(testCtx, &gen.RefreshTokenRequest{

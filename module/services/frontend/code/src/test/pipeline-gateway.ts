@@ -1,3 +1,10 @@
+import {
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+	getWorkspaceConfiguration,
+	getWorkspaceSecret,
+} from "codefly";
 import { NextRequest } from "next/server";
 import {
 	type CodeflyRuntimeReader,
@@ -6,12 +13,6 @@ import {
 import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
 import { trustedGatewayRequestHeaders } from "@/proxy";
 import { productOrigin } from "@/test/codefly-endpoints";
-import {
-	getCurrentModule,
-	getCurrentService,
-	getEndpoints,
-	getWorkspaceSecret,
-} from "codefly";
 
 // Endpoint resolution lives in one place, shared with the Playwright config and
 // the e2e global setup: see ./codefly-endpoints.
@@ -30,6 +31,10 @@ const gatewayRuntimeSDK: CodeflyRuntimeReader = {
 	currentService: getCurrentService,
 	endpoints: getEndpoints,
 	workspaceSecret: getWorkspaceSecret,
+	workspaceConfiguration: getWorkspaceConfiguration,
+	// A pipeline test runs against a local graph, whose own endpoint is the real
+	// loopback address rather than a render's placeholder.
+	isDeployedBuild: () => false,
 };
 
 export function runtimeWithResolvedOrigin(
@@ -78,7 +83,7 @@ export function runtimeWithResolvedOrigin(
 export function stampedGatewayHeaders(): Record<string, string> {
 	const origin = productOrigin();
 	const runtime = runtimeWithResolvedOrigin(origin);
-	const context = resolveCodeflyGatewayContext(origin, runtime);
+	const context = resolveCodeflyGatewayContext(runtime);
 	if (!context) {
 		throw new Error(
 			"Codefly did not provide the frontend gateway context (internal-auth secret and frontend/http endpoint).",

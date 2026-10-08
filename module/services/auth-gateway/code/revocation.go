@@ -247,13 +247,32 @@ func (c *cachedRevoker) evictOldest(n int) {
 	}
 }
 
-// newRevoker builds the revoker wired into the ext_authz check. No Redis configured
-// falls back to noopRevoker (dev parity, loudly logged); a Redis URL that
-// doesn't parse is a config error, not a reason to silently run without
-// revocation — the caller must treat it as fatal.
-func newRevoker(redisURL string, ttl time.Duration) (revoker, error) {
+// newRevoker builds the revoker wired into the ext_authz check.
+//
+// A Redis URL that does not parse is a config error, not a reason to silently run
+// without revocation — the caller must treat it as fatal.
+//
+// An ABSENT store is refused on a deployed runtime, by name. It used to fall back
+// to noopRevoker with a log line, which is the worst available answer: the
+// revoker answers "not revoked" to every question, so a signed-out session, a
+// killed device and an ended impersonation window all keep authenticating until
+// their tokens expire naturally — and the gateway reports healthy throughout,
+// because nothing on the request path can tell a no-op revoker from an empty
+// revocation set. The fail-closed behaviour on a store ERROR (revocationFailsOpen)
+// was already right; this is the same rule for a store that was never there.
+//
+// Local development keeps the no-op: there is no cache service in a bare `go run`
+// graph, and the alternative is a gateway that cannot start.
+func newRevoker(redisURL string, ttl time.Duration, isLocal bool) (revoker, error) {
 	if strings.TrimSpace(redisURL) == "" {
-		log.Printf("auth-gateway: no Redis configured — access-token revocation disabled (dev parity with accounts NoopTokenRevoker)")
+		if !isLocal {
+			return nil, fmt.Errorf(
+				"access-token revocation has no store: a deployed gateway must reach the cache " +
+					"service's Redis, because a revoker with no store answers \"not revoked\" to " +
+					"every question — resolve the cache service's redis/connection secret, or set " +
+					"REDIS_URL")
+		}
+		log.Printf("auth-gateway: no Redis configured — access-token revocation disabled (local development only)")
 		return noopRevoker{}, nil
 	}
 	store, err := newRedisRevocationStore(redisURL)

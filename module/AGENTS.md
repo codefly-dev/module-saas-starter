@@ -97,6 +97,20 @@ consumer workspace — `legal`, `identity`, `internal-auth`, `federation`,
 `module-capabilities`, and the rest. A consumer overrides a group only by
 declaring one of the same name.
 
+**A credential's blast radius is the set of services that DECLARE its group**, not
+the set that reads it: a declared group is injected whether anything reads it or
+not. So which group a credential lives in is the security decision, and
+`module/tools/credential_group_scope_test.go` holds both halves of it — which
+services may declare each credential-bearing group, and that the
+gateway-provenance key appears in no group but `gateway-trust`.
+
+That is why the identity provider's own credentials live in `identity-provider`
+rather than in `identity`: the frontend declares `identity` to render the login
+page from its public facts (issuer, client id, display name, scope), so a
+deployment putting the provider's client secret and management key there hands a
+public-facing process credentials it never reads. Only accounts declares
+`identity-provider`.
+
 **Do not generalise about how an unset value behaves — read the group.** The three
 digest maps in `federation` (`MODULE_REGISTRATION_SECRETS`,
 `MODULE_IDENTITY_SECRETS`, `SOLUTION_REGISTRATION_SECRETS`) each fail closed when
@@ -107,6 +121,18 @@ Context. That is a property of those maps, not of configuration here.
 Other groups ship a **working default**, which is the opposite posture: `local`
 carries `CODEFLY_INTERNAL_TOKEN=local-dev-only-replace-me` in
 `internal-auth.secret.env` and `IDENTITY_SIGNUP_MODE=open` in `identity.env`.
-Nothing rejects a shipped placeholder that reaches a real deployment, so an
-unprovisioned group is not a denied one — it is a live credential with a value
-everybody knows.
+
+For the credentials that decide **perimeter membership** — the cluster-internal
+token and the gateway-provenance token — a shipped default no longer reaches a
+deployed runtime: accounts and `auth-gateway` each refuse to start when one
+carries a marker from the same list the shipping gate requires of every secret
+default, or is shorter than 32 characters, and the refusal names the
+group-qualified key. The marker lists and the length floor live in
+`shipped_placeholder.go` beside each service's entrypoint, and
+`module/tools/shipped_placeholder_lockstep_test.go` holds all three copies
+identical — one added on only one side leaves either a published value a cell
+accepts or a default that side can no longer boot on.
+
+Every **other** group still ships a working default that a deployed runtime will
+use: an unprovisioned optional group is not a denied one. Where that matters for a
+credential, the loader's own "is this required" check is the place to say so.

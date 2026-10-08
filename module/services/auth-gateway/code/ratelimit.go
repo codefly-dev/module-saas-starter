@@ -158,6 +158,7 @@ type RateLimiter struct {
 type rateLimiterOptions struct {
 	redisURL                   string
 	authenticationAttemptLimit int
+	allowInProcessBackend      bool
 }
 
 type RateLimiterOption func(*rateLimiterOptions)
@@ -170,11 +171,25 @@ func WithAuthenticationAttemptLimit(limit int) RateLimiterOption {
 	return func(options *rateLimiterOptions) { options.authenticationAttemptLimit = limit }
 }
 
+// WithInProcessBackendAllowed permits the per-replica in-memory counters. Wire it
+// from codefly.IsLocal() only.
+//
+// A per-replica bucket is not the budget it reports: with N replicas the effective
+// limit is N times the configured one, and which replica a caller lands on decides
+// how much of it they get. For an authentication-factor budget that is the
+// difference between a bounded number of attempts and a bounded number per
+// replica. So a deployed gateway refuses to start without the shared store rather
+// than enforcing a budget nobody declared, while local development — one replica,
+// no cache service — keeps the counters.
+func WithInProcessBackendAllowed(allowed bool) RateLimiterOption {
+	return func(options *rateLimiterOptions) { options.allowInProcessBackend = allowed }
+}
+
 // NewRateLimiter creates a rate limiter allowing requestsPerMinute requests
 // per key per minute, with a 20% burst allowance. If REDIS_URL is set it
 // connects to Redis; otherwise it uses in-memory counters with a background
 // cleanup goroutine.
-func NewRateLimiter(requestsPerMinute int, optionFns ...RateLimiterOption) *RateLimiter {
+func NewRateLimiter(requestsPerMinute int, optionFns ...RateLimiterOption) (*RateLimiter, error) {
 	options := rateLimiterOptions{
 		redisURL:                   os.Getenv("REDIS_URL"),
 		authenticationAttemptLimit: authenticationAttemptLimitPerMinute,
@@ -197,19 +212,29 @@ func NewRateLimiter(requestsPerMinute int, optionFns ...RateLimiterOption) *Rate
 	if redisURL := options.redisURL; redisURL != "" {
 		rb, err := newRedisBackend(redisURL)
 		if err != nil {
+			if !options.allowInProcessBackend {
+				return nil, fmt.Errorf("rate limiter cannot reach its shared store: %w", err)
+			}
 			log.Printf("WARNING: cannot connect to configured Redis: %v — falling back to in-memory rate limiter", err)
 		} else {
 			log.Printf("rate limiter using pooled Redis backend")
 			rl.backend = rb
-			return rl
+			return rl, nil
 		}
+	} else if !options.allowInProcessBackend {
+		return nil, fmt.Errorf(
+			"rate limiter has no shared store: a deployed gateway runs more than one replica, " +
+				"so per-replica counters enforce the configured budget times the replica count " +
+				"and which replica a caller lands on decides their share — resolve the cache " +
+				"service's redis/connection secret, or set REDIS_URL")
 	}
 
-	// In-memory fallback.
+	// Per-replica counters: local development only (see
+	// WithInProcessBackendAllowed).
 	mem := &memoryBackend{}
 	rl.backend = mem
 	go mem.cleanup(rl.stop)
-	return rl
+	return rl, nil
 }
 
 // Allow checks whether the given key is under the rate limit for the current
@@ -357,11 +382,41 @@ func newProxyTrust(raw string) proxyTrust {
 	return trust
 }
 
+// requireProxyTrust is the boot check for a DEPLOYED runtime: the trusted-proxy
+// range must parse AND name at least one hop.
+//
+// The invariant (SP-GW-09): anonymous and authentication-factor budgets are keyed
+// on the ORIGINATING client, never on an intermediate hop, and a cell with no
+// trusted-proxy range refuses to start.
+//
+// An empty range is not a narrow configuration, it is no configuration: with no
+// trusted hop clientIP answers the peer, which behind the frontend is the
+// frontend's own pod, so every caller shares one bucket. It read as working — the
+// limiter was enabled and the buckets were enforced — which is why this refuses at
+// boot rather than warning.
+//
+// Local development has no ingress hop and the peer IS the client, so an empty
+// range is correct there and only there.
+func requireProxyTrust(raw string, isLocal bool) error {
+	trust, err := parseProxyTrust(raw)
+	if err != nil {
+		return err
+	}
+	if isLocal || len(trust.prefixes) > 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"gateway: TRUSTED_PROXY_CIDRS is empty: a deployed gateway sits behind an ingress and " +
+			"a frontend hop, so with no trusted range every rate-limit bucket keys on the " +
+			"frontend's pod address and collapses into one — set it to the ranges this cell's " +
+			"ingress and frontend reach the gateway from")
+}
+
 // parseProxyTrust parses a comma-separated list of bare IPs and CIDRs into a
 // trust set, returning an error on any malformed entry. Boot validates through
-// this (parity with accounts' ParseTrustedProxyCIDRs) so a typo'd
-// TRUSTED_PROXY_CIDRS fails startup rather than silently narrowing the trust
-// set and collapsing every forwarded caller into one spoofable IP bucket.
+// requireProxyTrust so a typo'd TRUSTED_PROXY_CIDRS fails startup rather than
+// silently narrowing the trust set and collapsing every forwarded caller into one
+// spoofable IP bucket.
 func parseProxyTrust(raw string) (proxyTrust, error) {
 	var trust proxyTrust
 	for _, candidate := range strings.Split(raw, ",") {
@@ -445,4 +500,15 @@ func parsePeerAddress(remoteAddr string) (netip.Addr, bool) {
 		return netip.Addr{}, false
 	}
 	return addr.Unmap(), true
+}
+
+// newInProcessRateLimiter is the per-replica limiter, for tests and for local
+// development's single-replica graph. It is a distinct constructor rather than an
+// option on the main one so a deployed wiring cannot reach it by passing a flag.
+func newInProcessRateLimiter(requestsPerMinute int) *RateLimiter {
+	limiter, err := NewRateLimiter(requestsPerMinute, WithInProcessBackendAllowed(true))
+	if err != nil {
+		panic(fmt.Sprintf("in-process rate limiter: %v", err))
+	}
+	return limiter
 }

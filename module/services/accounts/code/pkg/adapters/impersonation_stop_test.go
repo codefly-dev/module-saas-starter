@@ -272,8 +272,15 @@ func newImpersonationRig(t *testing.T) *impersonationRig {
 func (r *impersonationRig) start(t *testing.T, subjectID string) (string, string, context.Context) {
 	t.Helper()
 
+	// Genuine AAL2 evidence, not merely a timestamp: a platform administrator
+	// reaches impersonation only behind a recent second factor, and
+	// Assurance.HasRecentMFA requires the level and the method as well as the
+	// time. The fixture carried the time alone and passed only because an
+	// a privileged actor's factor evidence is required, not merely consulted.
 	adminCtx := stampVerifiedIdentity(context.Background(), supportActorID, "", auth.Assurance{
-		MFAVerifiedAt: time.Now(),
+		Level:                 auth.AssuranceLevelAAL2,
+		AuthenticationMethods: []string{auth.AuthenticationMethodWebAuthn},
+		MFAVerifiedAt:         time.Now(),
 	})
 	resp, err := (&PlatformAdminServer{}).ImpersonateUser(adminCtx,
 		&gen.ImpersonateUserRequest{UserId: subjectID, Reason: "investigating a billing discrepancy"})

@@ -28,6 +28,7 @@ type Service struct {
 	store                     Store
 	hasher                    KeyHasher
 	validator                 auth.TokenValidator // production: validates provider tokens after OAuth code exchange
+	headerJWTValidator        auth.TokenValidator // header-jwt mode only: validates the gateway-injected identity assertion
 	exchanger                 CodeExchanger       // production: exchanges OAuth codes for provider tokens
 	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
 	resolver                  auth.IdentityResolver
@@ -77,7 +78,7 @@ type Service struct {
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
 	datasourceSyncOperations  DatasourceSyncOperationStore
 	datasourceConnectors      *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
-	datasourceLinkKey         []byte              // signs account-link states; derived from the deployment's internal key
+	datasourceLinkKey         []byte              // signs account-link states; delivered as datasource-keys/DATASOURCE_ACCOUNT_LINK_KEY, not derived from any other credential
 	datasourceLinkers         map[string]DatasourceAccountLinker
 	datasourceTXTResolver     TXTResolver
 	datasourceBudgets         DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
@@ -511,6 +512,25 @@ func (s *Service) SetTokenValidator(v auth.TokenValidator) {
 	s.validator = v
 }
 
+// SetHeaderJWTTokenValidator enables the header-jwt login path, where the
+// identity assertion arrives as a token the trusted gateway injected rather than
+// through an authorization-code exchange.
+//
+// It is a SEPARATE field from the code-exchange validator on purpose. Both are
+// built from the same configured provider's key set, so sharing one field made
+// the two paths indistinguishable: a body carrying `header_jwt` reached the
+// code-exchange validator, which checks a signature, an issuer, an audience and
+// an expiry — and no nonce, because a nonce is the code exchange's binding to a
+// single authorize request and lives in the state the exchange holds. The result
+// was an id_token admitted with no state, no proof-of-possession verifier and no
+// nonce: exactly the injection and replay the nonce exists to stop.
+//
+// Only work.go's header-jwt branch calls this, so in every other provider mode
+// the field is nil and the body credential is refused by name.
+func (s *Service) SetHeaderJWTTokenValidator(v auth.TokenValidator) {
+	s.headerJWTValidator = v
+}
+
 // SetDevelopmentTokenValidator explicitly enables fixture authentication.
 // The validator must resolve an opaque fixture token to allowlisted claims;
 // Authenticate never trusts provider identity fields supplied by the caller.
@@ -545,12 +565,15 @@ func (s *Service) SetEmailOutbox(outbox *email.Outbox, appBaseURL string) {
 // publicBaseURL is the origin baked into interactive links — magic-link,
 // invitation, and waitlist emails, and Stripe redirect targets. Those links are
 // delivered out of band and never re-validated downstream, so the origin must be
-// operator-trusted. A configured APP_BASE_URL wins; the frontend-supplied
-// verified public origin is a per-request, caller-influenced value (the frontend
-// derives it from the browser request when its own endpoint is a placeholder),
-// so it is only a fallback for deployments that have not pinned a canonical
-// origin. Without either, callers fail closed rather than mint a link on an
-// unverified host.
+// operator-trusted.
+//
+// A configured APP_BASE_URL wins, and outside local development boot requires one
+// (requireApplicationBaseURL). The verified public origin behind it is no longer a
+// caller-influenced value: a forwarded origin is recorded as verified only when it
+// equals the configured one (auth.WithVerifiedPublicOrigin), so where both exist
+// they are the same string and where only the second does, nothing is pinned and
+// the runtime is local. Without either, callers fail closed rather than mint a link
+// on an unverified host.
 func (s *Service) publicBaseURL(ctx context.Context) string {
 	if base := strings.TrimSuffix(strings.TrimSpace(s.appBaseURL), "/"); base != "" {
 		return base

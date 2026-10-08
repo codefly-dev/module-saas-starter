@@ -1,6 +1,7 @@
 import type { ServiceEndpoint } from "codefly";
 import { describe, expect, it } from "vitest";
 
+import type { CodeflyRuntimeReader } from "@/lib/codefly-gateway-context";
 import {
 	codeflyInjectedRuntime,
 	type PipelineRuntimeReader,
@@ -61,6 +62,24 @@ function selfStartedRuntime(
 	});
 }
 
+// The gateway-context reader a `runtimeWithResolvedOrigin` case passes through. It
+// carries the two members the public origin now depends on — the configured value
+// and whether this is a deployed build — because the origin is operator
+// configuration and no longer derivable from a request.
+function gatewayRuntime(
+	overrides: Partial<CodeflyRuntimeReader> = {},
+): CodeflyRuntimeReader {
+	return {
+		currentModule: () => "saas-starter",
+		currentService: () => "frontend",
+		endpoints: () => [authGatewayREST()],
+		workspaceSecret: () => "internal-test-token",
+		workspaceConfiguration: () => undefined,
+		isDeployedBuild: () => false,
+		...overrides,
+	};
+}
+
 describe("codeflyInjectedRuntime", () => {
 	it("recognizes a Codefly-owned test before endpoints are injected", () => {
 		expect(codeflyInjectedRuntime(runtime({ endpoints: () => [] }))).toBe(true);
@@ -77,24 +96,19 @@ describe("codeflyInjectedRuntime", () => {
 
 describe("runtimeWithResolvedOrigin", () => {
 	it("supplies the SDK-resolved own origin when Codefly runs only dependencies", () => {
-		const adapted = runtimeWithResolvedOrigin(ORIGIN, {
-			currentModule: () => "saas-starter",
-			currentService: () => "frontend",
-			endpoints: () => [authGatewayREST()],
-			workspaceSecret: () => "internal-test-token",
-		});
+		const adapted = runtimeWithResolvedOrigin(ORIGIN, gatewayRuntime());
 
 		expect(adapted.endpoints()).toContainEqual(frontendHTTP());
 	});
 
 	it("does not replace an injected own endpoint", () => {
 		const injected = frontendHTTP({ address: "https://app.cell.example" });
-		const adapted = runtimeWithResolvedOrigin(ORIGIN, {
-			currentModule: () => "saas-starter",
-			currentService: () => "frontend",
-			endpoints: () => [injected],
-			workspaceSecret: () => "internal-test-token",
-		});
+		const adapted = runtimeWithResolvedOrigin(
+			ORIGIN,
+			gatewayRuntime({
+				endpoints: () => [injected],
+			}),
+		);
 
 		expect(adapted.endpoints()).toEqual([injected]);
 	});

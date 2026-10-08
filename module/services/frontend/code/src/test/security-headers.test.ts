@@ -31,6 +31,30 @@ describe("securityHeaders", () => {
 			"frame-ancestors 'none'",
 		);
 	});
+
+	// The edge redirects plaintext to TLS, which protects the redirect and nothing
+	// before it: a browser's first request to a host it has never pinned goes out in
+	// the clear and an attacker on the path answers it.
+	it("pins the browser to HTTPS for a year", () => {
+		const byKey = Object.fromEntries(
+			securityHeaders({}).map((h) => [h.key, h.value]),
+		);
+		expect(byKey["Strict-Transport-Security"]).toBe("max-age=31536000");
+	});
+
+	// includeSubDomains and preload commit hosts this service does not own: a
+	// sibling subdomain on plaintext breaks under the first, and the second is
+	// effectively irreversible. Both are the ingress operator's to add, so their
+	// absence here is a decision rather than an omission.
+	it("commits no host but its own", () => {
+		const byKey = Object.fromEntries(
+			securityHeaders({}).map((h) => [h.key, h.value]),
+		);
+		expect(byKey["Strict-Transport-Security"]).not.toContain(
+			"includeSubDomains",
+		);
+		expect(byKey["Strict-Transport-Security"]).not.toContain("preload");
+	});
 });
 
 describe("baselineSecurityHeaders", () => {
@@ -41,6 +65,7 @@ describe("baselineSecurityHeaders", () => {
 		expect(byKey["X-Frame-Options"]).toBe("DENY");
 		expect(byKey["X-Content-Type-Options"]).toBe("nosniff");
 		expect(byKey["Cross-Origin-Opener-Policy"]).toBe("same-origin");
+		expect(byKey["Strict-Transport-Security"]).toBe("max-age=31536000");
 		expect(byKey["Content-Security-Policy"]).toBeUndefined();
 	});
 });

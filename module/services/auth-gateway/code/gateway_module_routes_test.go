@@ -80,8 +80,19 @@ func TestGateway_UndeclaredModulePrefixIsNotServed(t *testing.T) {
 
 // A declared module IS routed: the full /v1/<alias>/... path reaches the declared
 // upstream, with the ordinary authenticated pipeline in front of it — identity
-// projected from the validated token, caller-supplied identity stripped, the
-// caller's bearer preserved, and the gateway's own accounts credential withheld.
+// projected from the validated token, caller-supplied identity stripped, and both
+// the person's session credential and the gateway's own accounts credential
+// withheld.
+//
+// This asserted the person's bearer PRESERVED until SA-F-BEARER. A host access
+// token names one host-wide audience and carries the person's whole authority, so
+// a declared upstream holding one holds a credential good at every other upstream
+// and at the host's own API. The capability path a module needs is untouched by
+// the withholding: a Work Context travels in its own header
+// (workcontext.WorkContextHeaderName), is verified here against this route's
+// audience (moduleCapabilitiesAudience), and is forwarded — which is the
+// difference between a capability bound to this upstream and a session borrowed
+// from the person.
 func TestGateway_DeclaredModuleIsRoutedThroughTheAuthenticatedPipeline(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	fake := declareModule(t, gw, "example-module")
@@ -109,7 +120,8 @@ func TestGateway_DeclaredModuleIsRoutedThroughTheAuthenticatedPipeline(t *testin
 	require.Equal(t, "/v1/example-module/things", fake.lastPath)
 	require.NotEqual(t, "attacker", fake.lastHeaders.Get("x-user-id"))
 	require.Equal(t, "admin", fake.lastHeaders.Get("x-org-role"))
-	require.Equal(t, "Bearer "+token, fake.lastHeaders.Get("authorization"))
+	require.Empty(t, fake.lastHeaders.Get("authorization"),
+		"a declared module upstream must not receive the person's host-wide session")
 	require.Empty(t, fake.lastHeaders.Get("x-codefly-gateway-token"),
 		"the gateway token is an accounts-only capability and must not reach a module upstream")
 }

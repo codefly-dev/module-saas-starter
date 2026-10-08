@@ -54,7 +54,15 @@ const (
 // isSolutionMCPPath reports whether a solution sub-path (the suffix after
 // `/solutions/<id>/`, with no leading slash) is that solution's MCP endpoint.
 func isSolutionMCPPath(subPath string) bool {
-	return subPath == solutionMCPSegment
+	// The whole `mcp` SUBTREE, not the exact segment. An exact match closed
+	// `/solutions/<id>/mcp` and left `/solutions/<id>/mcp/` — a spelling every HTTP
+	// client and router treats as the same endpoint — admitting a token that names only
+	// the host, which is the invariant's whole subject (SP-SOL-07). MCP's own transports
+	// also address sub-routes under it (`mcp/messages` for the SSE channel), and those
+	// are the same protected resource: a resource identified by a prefix has to be
+	// judged by that prefix, or the narrowest spelling becomes the way around it.
+	return subPath == solutionMCPSegment ||
+		strings.HasPrefix(subPath, solutionMCPSegment+"/")
 }
 
 // isSolutionToolRequestPath reports whether a FULL request path addresses a

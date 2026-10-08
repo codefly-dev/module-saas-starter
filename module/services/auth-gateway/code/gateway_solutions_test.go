@@ -211,8 +211,9 @@ func TestGateway_Solution_ValidJWT_ForwardsWithIdentity(t *testing.T) {
 	require.NotEmpty(t, fake.lastHeaders.Get("x-user-id"))
 	require.NotEmpty(t, fake.lastHeaders.Get("x-org-id"))
 	require.Equal(t, "admin", fake.lastHeaders.Get("x-org-role"))
-	// The caller's bearer is preserved for the solution's own downstream calls.
-	require.Equal(t, "Bearer "+token, fake.lastHeaders.Get("authorization"))
+	// The caller's session credential does NOT travel to the solution: the
+	// identity headers above name the person without carrying their authority.
+	require.Empty(t, fake.lastHeaders.Get("authorization"))
 	// The gateway token is an accounts-only capability and must not leak to a
 	// solution upstream.
 	require.Empty(t, fake.lastHeaders.Get("x-codefly-gateway-token"))
@@ -272,7 +273,7 @@ func TestGateway_Solution_MissingID_NotFound(t *testing.T) {
 func TestGateway_Solution_RateLimited(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 	fake := registerSolutionUpstream(t, gw, "audit")
 
 	// Reuse ONE token so every request keys on the same injected x-org-id.
@@ -301,7 +302,7 @@ func TestGateway_Solution_RateLimited(t *testing.T) {
 func TestGateway_Solution_PublicSurface_RateLimited(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / key / min.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 	fake := registerSolutionUpstream(t, gw, "audit")
 
 	got429 := false

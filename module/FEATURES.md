@@ -158,7 +158,7 @@ rather than at first login.
 | Rotation      | One locked transaction consumes the family, resolves current authorization, and inserts one successor |
 | Org exchange  | Authenticated target-only exchange; current membership/roles resolved under the active session lock; same device family and refresh credential |
 | Reuse defense | Reuse of a token consumed by rotation revokes every active user session; administrative revocation is not replay |
-| Logout        | Revokes the refresh family and deny-lists the current access-token JTI in Redis |
+| Logout        | The browser posts an empty body and its HttpOnly refresh cookie; the middleware moves the cookie's token into the request as it does for refresh, so the family is revoked without the credential ever reaching script. Deny-lists the presented access-token JTI and the verified session, so the access half dies on the strength of who is calling rather than of what the body carried |
 | Current state | Refresh requires current authorization; database triggers atomically revoke affected families on status, membership/role, platform-role, and verified-MFA changes |
 
 ---
@@ -248,11 +248,11 @@ their next owning change.
 | Password login                       | ❌    | Intentional — provider-only; account recovery routed via OAuth    |
 | Fixture login (dev)                 | ✅    | Click-to-login in dev mode; not exposed in prod build            |
 | MFA (passkeys + TOTP + recovery)    | ✅    | WebAuthn with exact RP/origin policy and encrypted credential state; durable one-use login challenges and recent AAL2 step-up |
-| Refresh-token rotation              | ✅    | OWASP family revocation on reuse                                 |
+| Refresh-token rotation              | ✅    | OWASP family revocation on reuse. The credential never leaves as readable content: every authentication-completing surface — REST and Connect alike — moves it into the scoped HttpOnly SameSite=Strict cookie and strips the field, with one declared exemption, the OAuth 2.1 token endpoint, whose caller is a registered client and whose body carrier is the protocol's |
 | Session list + revoke               | ✅    | Stable per-device family ids, device context, idle/absolute expiry, whole-family revoke |
 | Session lifetime policy             | ✅    | Configurable fixed absolute TTL, idle TTL, and serialized active-device cap |
-| Logout                              | ✅    | Revokes the presented device family                              |
-| OAuth state / CSRF                  | 🟡    | Validated client-side in `sessionStorage`; no server-side double-check (gap) |
+| Logout                              | ✅    | Revokes the presented device family, the presented access token and the verified session's access half; the browser's cookie is the credential carrier, so an empty body is a complete sign-out |
+| OAuth state / CSRF                  | ✅    | Server-signed state bound to (provider, redirect_uri), single-use: the nonce is consumed on first verification and the state is refused when single use cannot be recorded |
 | OAuth PKCE                          | ❌    | Comments mention PKCE but exchanger uses `client_secret` (acceptable for confidential server-side; PKCE adds defense for SPA-driven flows) |
 | Account lockout (failed attempts)   | ❌    | No counter on user table                                         |
 | Email verification                  | 🟡    | `email_verified` flag stored; no flow that issues + checks       |
@@ -516,7 +516,7 @@ starters, and large-scale enterprise SaaS expectations.
 | OAuth login (multiple providers)           | ✅          | Same               |
 | Email/password login                       | ❌          | ✅ (most starters keep both) |
 | Magic-link login                           | 🟡          | ✅ (one-click)     |
-| MFA enforced on sensitive ops              | ✅          | ✅ (2026-04-25 fix: `requireMFA` gates billing, GDPR delete, role grants, impersonation; opt-in per user) |
+| MFA enforced on sensitive ops              | ✅          | 🟡 `requireMFA` gates billing, GDPR delete, impersonation, organization deletion, waitlist review, the role/scope/principal grants (creation and revocation) and the platform-admin mutations (suspend, unsuspend, session revoke, entitlement override). Fail-closed for a privileged actor — any platform role, or ownership of the request's organization — where not being enrolled is a refusal, not a pass; opt-in per user for every other member, which an ENROLLED organization admin now meets on the grant paths (see below). **The method policy still declares `MFA_REQUIREMENT_NONE` for the newly gated methods, so the policy/handler lockstep gate does not yet demand it** — see the note below |
 | Multi-org tenancy                          | ✅          | Same               |
 | Org invitations                            | ✅          | Same               |
 | RBAC (built-in roles)                      | ✅          | Same               |
@@ -530,6 +530,38 @@ starters, and large-scale enterprise SaaS expectations.
 | API keys with scopes                       | ✅          | ✅ (2026-04-25 fix: `requireScope` enforces `resource:action` patterns + wildcards on API-key callers; JWT callers bypass via RBAC) |
 | OpenAPI / TS client autogen                | ✅          | ✅ (Connect-ES is more typesafe than fetch-based clients) |
 | Real-stack e2e tests                       | ✅          | 🟡 (most starters mock — we're ahead) |
+
+**What the MFA row does not yet have.** `module/services/accounts/proto/.../*.proto`
+declares each method's `mfa:` requirement, and
+`pkg/adapters/rpc_policy_lockstep_test.go` holds handlers to what their policy
+declares. The methods gated in this change still declare `MFA_REQUIREMENT_NONE`, so
+the gate is satisfied by them either way and a later edit could remove the gate
+without reddening anything. `pkg/adapters/privileged_mutation_factor_test.go` is the
+stopgap: it reads the source and requires the gate, before the mutation, for every
+method on an explicit list. Aligning the declarations is the durable fix and is owed;
+it is a descriptor change, so it moves the contract digests and the published client
+and wants its own verified regeneration.
+
+Ordinary tenant mutations — dashboards, teams, invitations, notifications, user
+settings — are deliberately NOT gated. Whether a second factor belongs there is a
+product decision about an operator's whole roster, not a property of this host.
+
+**Who the gated set actually reaches, which is wider than "privileged actor".** The
+role, scope and principal grants admit an organization ADMIN as well as an owner, and
+`requireMFA` is fail-closed only for a privileged actor — for everyone else it keeps
+the pre-existing opt-in rule, which refuses an ENROLLED member without recent
+evidence. So an enrolled org admin who has not stepped up recently is now refused on
+`AssignRole`, `RevokeRole`, `GrantScope`, `RevokeScope`, the role CRUD and
+`CreateAgentPrincipal`, where before this change nothing asked. That is intended —
+granting authority inside a tenant is not an ordinary tenant mutation, whoever does
+it — and it is stated here because an operator reading only the paragraph above would
+not predict the refusal. An admin who has enrolled nothing is still admitted, so no
+roster is forced to enrol by this change alone.
+
+Containment actions carry the same requirement: `SuspendUser`, `RevokeSession` and
+`RevokePrincipal` need fresh factor evidence, so a responder acting on a compromise
+steps up first. A runbook for those operations should say so, because the refusal
+arrives at the least convenient moment by design.
 
 ### Nice-to-have (differentiators)
 
@@ -609,7 +641,7 @@ _All previously-open gaps closed 2026-04-25._
 - ✅ **User identity endpoints unauthenticated** — `AddIdentity`, `FindUserByIdentity`, `ListUserIdentities` would let any authenticated caller enumerate provider identities or attach attacker-controlled identities to any user. Now gated by `requireSelfOrPlatformAdmin` / `requirePlatformAdmin`.
 - ✅ **gRPC server had no in-process auth interceptor** — handlers assumed the auth-gateway ext_authz check was in front; direct port hits bypassed auth. Added `grpcAuthInterceptor` mirroring the Connect interceptor (defense in depth: api validates the bearer regardless of upstream).
 - ✅ **Connect server had no CORS** — browser preflight returned 405; every Connect-Web request from the FE failed in production-style architectures. Added `rs/cors` middleware.
-- ✅ **MFA is enforced and refresh-safe** — enrolled users receive no normal session until a durable one-use challenge succeeds. JWT/session evidence carries `amr`, `auth_time`, `acr`, and `mfa_at`; refresh preserves rather than renews that evidence. Refresh re-resolves verified enrollment: newly enrolled MFA terminates AAL1 refresh families and requires login, while removed MFA strips factor methods and downgrades the successor to AAL1. General sensitive operations apply the configured recent-AAL2 policy to enrolled users; money-moving billing checkout/portal is stricter and always requires fresh AAL2, so lack of enrollment is not a bypass. Passkeys require WebAuthn user verification with exact Codefly-configured RP/origin policy; complete credentials and ceremony state use Vault Transit envelopes. TOTP seeds are encrypted and recovery codes are one-use bcrypt hashes.
+- ✅ **MFA is enforced and refresh-safe** — enrolled users receive no normal session until a durable one-use challenge succeeds. JWT/session evidence carries `amr`, `auth_time`, `acr`, and `mfa_at`; refresh preserves rather than renews that evidence. Refresh re-resolves verified enrollment: newly enrolled MFA terminates AAL1 refresh families and requires login, while removed MFA strips factor methods and downgrades the successor to AAL1. General sensitive operations apply the configured recent-AAL2 policy to enrolled users, and to every privileged actor whether enrolled or not — a platform role of any grade, or ownership of the request's organization — so for the principals whose compromise is the whole platform or the whole tenant, lack of enrolment is a refusal rather than a bypass. Money-moving billing checkout/portal is stricter still and always requires fresh AAL2. Passkeys require WebAuthn user verification with exact Codefly-configured RP/origin policy; complete credentials and ceremony state use Vault Transit envelopes. TOTP seeds are encrypted and recovery codes are one-use bcrypt hashes.
 - ✅ **API key scopes forwarded but not enforced** — the auth-gateway ext_authz check set `X-Scopes`; handlers ignored. New `requireScope(ctx, "resource:action")` gate with wildcard support (`*`, `users:*`, `*:read`). Applied to `ListUsers`, `UpdateUser`, `DeleteUser` as a starter set; extend to other resources per business needs (JWT-authenticated callers bypass — RBAC handles them).
 - ✅ **Access tokens not individually revocable** — Logout only killed the refresh chain; old access tokens stayed valid up to 15 min. New `auth.TokenRevoker` interface + `cache.NewTokenRevoker` Redis impl. `Logout(refresh, accessToken)` now calls `JWTMinter.RevokeAccess` which adds the jti to the revocation list with TTL = remaining `exp`. `VerifyAccess` consults the list. Falls back to `NoopTokenRevoker` (no Redis) → original behavior.
 - ✅ **Impersonation had no time limit** — admin "view-as" sessions inherited the normal 15-min TTL. New `Config.ImpersonationTokenTTL` (default 5 min) auto-applied when minting tokens with `acting` claim set.

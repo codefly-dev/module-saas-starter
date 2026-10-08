@@ -30,11 +30,13 @@ workspace-configuration-dependencies:
     - abuse-protection
     - application
     - billing
+    - datasource-keys
     - email
     - federation
     - gateway-trust
     - github-app
     - identity
+    - identity-provider
     - internal-auth
     - internal-transport
     - key-service

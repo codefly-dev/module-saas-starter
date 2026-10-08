@@ -561,23 +561,33 @@ func (s *Service) SetDatasourceGitHubClientFactory(factory func(token string) Gi
 	s.newGitHubClient = factory
 }
 
-// SetDatasourceTicketKey seeds the signer that mints and verifies the opaque
-// content tickets a change-set job carries in place of an oversized blob. The
-// seed is the deployment's internal key; the same seed must be present wherever
-// ResolveContentTicket runs so a ticket minted by the compiler verifies at
-// redemption. An empty seed disables tickets: deriving a key from it would sign
-// with a constant anyone can compute.
-func (s *Service) SetDatasourceTicketKey(seed []byte) {
-	if len(seed) == 0 {
+// SetDatasourceKeys installs the message-authentication keys the datasource paths
+// sign with: one for the opaque content tickets a change-set job carries in place
+// of an oversized blob, one for the account-link state that carries a person
+// through a provider's sign-in and back.
+//
+// Each is DELIVERED, one per purpose, rather than derived from a shared
+// credential: SP-SEC-07 requires every signing or message-authentication purpose to
+// have its own key, derived from no credential shared beyond its owner.
+//
+// An absent key leaves its purpose unavailable rather than falling back to a
+// derivation, because a fallback would make the property conditional on nobody
+// forgetting.
+func (s *Service) SetDatasourceKeys(ticketKey, accountLinkKey []byte) {
+	if len(ticketKey) == 0 {
 		s.datasourceTicketSigner = nil
+	} else {
+		s.datasourceTicketSigner = newDatasourceTicketSigner(ticketKey)
+	}
+	if len(accountLinkKey) == 0 {
 		s.datasourceLinkKey = nil
 		return
 	}
-	// The account-link state is signed under its own domain-separated key, so
-	// neither kind of token can pass for the other.
-	linkKey := sha256.Sum256(append([]byte("datasource-account-link-state\x00"), seed...))
+	// Domain-separated from whatever else the delivered value is used for, so a
+	// link state and a content ticket can never pass for each other even if an
+	// operator provisions one value for both keys.
+	linkKey := sha256.Sum256(append([]byte("datasource-account-link-state\x00"), accountLinkKey...))
 	s.datasourceLinkKey = linkKey[:]
-	s.datasourceTicketSigner = newDatasourceTicketSigner(seed)
 }
 
 // SetDatasourceAPIClientFactory overrides how per-Source API clients are built.

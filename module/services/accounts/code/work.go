@@ -35,6 +35,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
@@ -641,7 +642,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		if !hasConfiguredValue(headerName) {
 			return nil, fmt.Errorf("identity provider header-jwt requires IDENTITY_HEADER_NAME")
 		}
-		service.SetTokenValidator(v)
+		service.SetHeaderJWTTokenValidator(v)
 		adapters.SetHeaderJWTLoginHeader(headerName)
 	default:
 		// user_identities.provider is a foreign key into the identity_providers
@@ -660,7 +661,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			// SSO administration is a WorkOS-specific optional adapter. Other
 			// identity providers cannot accidentally activate it by exposing a
 			// similarly named management credential.
-			service.SetSSOManagementAPIKey(identityEnv("IDENTITY_MANAGEMENT_API_KEY"))
+			service.SetSSOManagementAPIKey(identityProviderSecret("IDENTITY_MANAGEMENT_API_KEY"))
 		}
 		oauthPolicy, err := buildOAuthRequestPolicy(authProvider)
 		if err != nil {
@@ -839,6 +840,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// debugging; every deployed environment returns generic auth errors so the
 	// identity/enumeration oracle stays closed (#208).
 	adapters.SetExposeAuthErrorDetail(codefly.IsLocal())
+	// A browser discards a Secure cookie on a plaintext loopback origin, so local
+	// development needs the exemption; nothing else does, and the default keeps
+	// Secure.
+	adapters.SetAllowInsecureRefreshCookie(codefly.IsLocal())
 
 	// Separate shared-secret guards for internal RPC admission and forwarded
 	// gateway identity. Empty values fail closed; production deploys provide
@@ -859,10 +864,14 @@ func doWork(ctx context.Context) (Clean, error) {
 	adapters.SetGatewayToken(gatewayCredentials.current)
 	adapters.SetPreviousGatewayToken(gatewayCredentials.previous)
 	adapters.SetPreviousGatewayTokenExpiresAt(gatewayCredentials.previousExpiresAt)
-	// The datasource content-ticket signer is keyed from the same internal secret,
-	// domain-separated, so a change-set job's opaque content ticket verifies at
-	// redemption without a second key to provision.
-	service.SetDatasourceTicketKey([]byte(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN")))
+	// One delivered key per purpose, never derived from the perimeter credential:
+	// see business.SetDatasourceKeys. A key a deployed runtime may not use is
+	// passed as ABSENT, which leaves its purpose unavailable — the same answer as
+	// an unprovisioned key, and the reason the loader does not need a second one.
+	service.SetDatasourceKeys(
+		usableDatasourceKey("DATASOURCE_CONTENT_TICKET_KEY", codefly.IsLocal()),
+		usableDatasourceKey("DATASOURCE_ACCOUNT_LINK_KEY", codefly.IsLocal()),
+	)
 
 	centralEnforcement, err := configuredCentralEnforcement()
 	if err != nil {
@@ -914,6 +923,13 @@ func doWork(ctx context.Context) (Clean, error) {
 	appBase, err := configuredApplicationBaseURL()
 	if err != nil {
 		return nil, err
+	}
+	// The one origin this deployment treats as its own: what binds an OAuth
+	// redirect, an authenticator's relying party and every emailed link. From here
+	// on a forwarded origin is honoured only when it equals this one, so no hop can
+	// substitute a caller's choice (pkg/auth.WithVerifiedPublicOrigin).
+	if err := auth.SetConfiguredPublicOrigin(appBase); err != nil {
+		return nil, fmt.Errorf("application: APP_BASE_URL: %w", err)
 	}
 	var workerEmailOutbox *email.Outbox
 	var emailWorker *jobs.Worker
@@ -1710,6 +1726,22 @@ func configuredApplicationBaseURL() (string, error) {
 	if parsed.Scheme != "https" && parsed.Hostname() != "localhost" && parsed.Hostname() != "127.0.0.1" {
 		return "", fmt.Errorf("application: APP_BASE_URL must use https outside local development")
 	}
+	// The value must also survive the function that will CANONICALIZE it at request
+	// time. The checks above are url.Parse plus field rules; pkg/auth uses IDNA. Two
+	// validators for one value meant an origin boot accepted and every request then
+	// refused — the cell started green and no authentication worked, because
+	// WithVerifiedPublicOrigin could not canonicalize what was configured
+	// (R1019-N12/f1). One validator decides.
+	if _, err := auth.CanonicalPublicOrigin(strings.TrimSuffix(raw, "/")); err != nil {
+		return "", fmt.Errorf(
+			"application: APP_BASE_URL is not an origin this service can use (%w): it is the "+
+				"value every OAuth redirect, relying-party origin, emailed link and same-origin "+
+				"comparison is bound to, so it has to be one this host can compare", err)
+	}
+	// The RAW value is returned, not the canonical one. It is also the token issuer and
+	// the published authorization-server metadata, where the spelling is part of the
+	// contract a verifier compares exactly — canonicalizing here would silently change
+	// `iss` for any deployment whose configured origin carries, say, an explicit :443.
 	return strings.TrimSuffix(raw, "/"), nil
 }
 
@@ -2006,6 +2038,68 @@ func identityEnv(key string) string {
 	return value
 }
 
+// identityProviderSecret reads a credential that authenticates THIS HOST to the
+// identity provider, from the `identity-provider` group only accounts declares.
+//
+// They used to live in `identity`, which the frontend declares too — it renders
+// the login page from that group's public facts, the issuer and the client id —
+// so a deployment putting the provider's credentials there delivered them to the
+// frontend as well, which reads neither. A public-facing process holding the
+// provider's administration credential widens what a frontend compromise is worth,
+// for nothing.
+//
+// The read falls back to `identity` while a deployment still holds them there, and
+// says so once per key: the group a value is delivered under is the composition's
+// to change, and a hard cutover here would take sign-in down on every cell between
+// this landing and that edit. The fallback goes when the cells have moved — until
+// then, the warning is how an operator knows one has not.
+func identityProviderSecret(key string) string {
+	destination, _ := codefly.For(codefly.Context()).WorkspaceValue("identity-provider", key)
+	legacy := identityEnv(key)
+
+	// A PROVISIONED destination value always wins.
+	//
+	// "Provisioned" has to exclude the placeholder this module ships in the new
+	// group's local defaults, and that is the whole of what this gets right:
+	// hasConfiguredValue rejects only the literal REPLACE_ME, so the shipped
+	// default read as configured and overrode a real value still delivered under
+	// `identity` — defeating the migration fallback precisely on the cells that
+	// have not migrated yet, which are the only ones that need it.
+	if isProvisionedCredential(destination) {
+		return destination
+	}
+	if isProvisionedCredential(legacy) {
+		reportIdentityProviderSecretStillInIdentityGroup(key)
+		return legacy
+	}
+	// Neither group holds a provisioned value: local development, where the
+	// shipped placeholder IS the intended value. Prefer the destination group so a
+	// developer edits the group this service now declares.
+	if strings.TrimSpace(destination) != "" {
+		return destination
+	}
+	return legacy
+}
+
+// isProvisionedCredential reports whether a value is one an operator supplied, as
+// opposed to a placeholder this module ships or an unset key. It is the selection
+// rule for a credential that is moving between configuration groups: a shipped
+// default must not count as the destination being ready.
+func isProvisionedCredential(value string) bool {
+	return hasConfiguredValue(value) && !looksLikeShippedPlaceholder(value)
+}
+
+var identityProviderSecretWarned sync.Map
+
+func reportIdentityProviderSecretStillInIdentityGroup(key string) {
+	if _, loaded := identityProviderSecretWarned.LoadOrStore(key, true); loaded {
+		return
+	}
+	wool.Get(context.Background()).In("identityProviderSecret").Warn(
+		"an identity-provider credential is still delivered under the `identity` group, which the frontend also declares; move it to `identity-provider`, which only this service declares",
+		wool.Field("key", key))
+}
+
 // applicationEnv is also Codefly-only. Local product origins and bootstrap
 // identity must come from the selected workspace configuration, never from an
 // ambient shell file that can disagree with the browser runtime.
@@ -2124,7 +2218,7 @@ func buildGenericOIDCStack(provider string) (auth.TokenValidator, business.CodeE
 // two can never disagree at login.
 func discoverOIDCValidator(provider string, defaultAudienceToClientID bool) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
 	clientID = identityEnv("IDENTITY_CLIENT_ID")
-	clientSecret = identityEnv("IDENTITY_CLIENT_SECRET")
+	clientSecret = identityProviderSecret("IDENTITY_CLIENT_SECRET")
 	issuer := identityEnv("IDENTITY_ISSUER")
 	if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
 		return nil, "", "", "", fmt.Errorf(
@@ -2228,7 +2322,7 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		domain := identityEnv("IDENTITY_DOMAIN")
 		audience := identityEnv("IDENTITY_AUDIENCE")
 		clientID := identityEnv("IDENTITY_CLIENT_ID")
-		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+		clientSecret := identityProviderSecret("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) || !hasConfiguredValue(audience) {
 			return nil, nil, fmt.Errorf("identity provider auth0 requires IDENTITY_DOMAIN, IDENTITY_AUDIENCE, IDENTITY_CLIENT_ID, and IDENTITY_CLIENT_SECRET")
 		}
@@ -2248,7 +2342,7 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 
 	case "google":
 		clientID := identityEnv("IDENTITY_CLIENT_ID")
-		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+		clientSecret := identityProviderSecret("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
 			return nil, nil, fmt.Errorf("identity provider google requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET")
 		}
@@ -2549,7 +2643,77 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err != nil {
 		return err
 	}
-	return requireKeyCustody(selection.SigningBackend, isLocal)
+	if err := requireKeyCustody(selection.SigningBackend, isLocal); err != nil {
+		return err
+	}
+	if err := requirePerimeterCredentials(isLocal); err != nil {
+		return err
+	}
+	return requireApplicationBaseURL(isLocal)
+}
+
+// requireApplicationBaseURL refuses to start a deployed runtime without the
+// origin it treats as its own.
+//
+// It is the value that binds an OAuth redirect, an authenticator's relying party
+// and every emailed link. Unset, each of those was bound to whatever origin the
+// request's trusted hop forwarded — which that hop derived from the caller's own
+// forwarding header — so a caller chose the host a sign-in returned to and the host
+// an emailed link pointed at. A cell without it is a cell whose verified origin is
+// a request parameter, so it refuses here, where a deployment can still be fixed,
+// rather than serving a sign-in bound to somewhere else.
+// usableDatasourceKey resolves one datasource message-authentication key, or nil
+// when a deployed runtime may not use what is configured.
+//
+// The shipped local defaults for this group carry placeholder markers, exactly as
+// every other secret group's do, and this module's repository is public. A deployed
+// runtime holding one would be signing with a published value, so it is treated as
+// ABSENT rather than refused at boot: unlike a perimeter credential, a datasource
+// key is not required for the service to serve, and the purpose it signs for
+// already has a defined unavailable state. Refusing to start would turn an
+// unprovisioned optional purpose into an outage.
+//
+// Local development uses the shipped default, which is its intended value.
+func usableDatasourceKey(key string, isLocal bool) []byte {
+	value := strings.TrimSpace(workspaceEnv("datasource-keys", key))
+	if value == "" {
+		return nil
+	}
+	if isLocal {
+		return []byte(value)
+	}
+	if looksLikeShippedPlaceholder(value) {
+		wool.Get(context.Background()).In("usableDatasourceKey").Warn(
+			"a datasource key carries a placeholder this module ships in its public local defaults; "+
+				"the purpose it signs for is unavailable until the key is provisioned for this cell",
+			wool.Field("key", "datasource-keys/"+key))
+		return nil
+	}
+	if len(value) < minimumPerimeterCredentialLength {
+		wool.Get(context.Background()).In("usableDatasourceKey").Warn(
+			"a datasource key is shorter than the minimum for a signing key; "+
+				"the purpose it signs for is unavailable until it is replaced",
+			wool.Field("key", "datasource-keys/"+key),
+			wool.Field("minimum", minimumPerimeterCredentialLength))
+		return nil
+	}
+	return []byte(value)
+}
+
+func requireApplicationBaseURL(isLocal bool) error {
+	if isLocal {
+		return nil
+	}
+	configured, err := configuredApplicationBaseURL()
+	if err != nil {
+		return err
+	}
+	if configured == "" {
+		return fmt.Errorf("application: APP_BASE_URL is required outside the local environment: " +
+			"set it in the `application` configuration group to this cell's public origin, which is " +
+			"what binds an OAuth redirect, the authenticator relying-party origin and every emailed link")
+	}
+	return nil
 }
 
 // requireKeyCustody refuses to start outside the local environment without the
