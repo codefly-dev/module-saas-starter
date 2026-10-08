@@ -243,3 +243,47 @@ func TestTenantCipherKeyedHashIsAlwaysTheDeploymentsOwn(t *testing.T) {
 	require.True(t, strings.HasPrefix(hash, "deployment:"),
 		"the hash must be the deployment's, got %q", hash)
 }
+
+// The row's organization and the transaction's scope must agree. Row-level
+// security binds the SCOPE, never the argument, so a disagreement means one of
+// them is wrong — and guessing which seals a customer's credential under another
+// customer's key. Nothing else in the stack catches this.
+func TestTenantCipherRefusesARowWhoseOrganizationDisagreesWithTheScope(t *testing.T) {
+	cipher, _, _ := newTenantCipher(t, map[string]*OrgKeyBinding{
+		"org-a": {KeyRef: "acme-key"},
+		"org-b": {KeyRef: "other-key"},
+	})
+
+	scoped := func(org string) context.Context {
+		return context.WithValue(t.Context(), scopeKeyForTest{}, org)
+	}
+	previous := VerifiedScope
+	VerifiedScope = func(ctx context.Context) (string, bool) {
+		org, ok := ctx.Value(scopeKeyForTest{}).(string)
+		return org, ok
+	}
+	t.Cleanup(func() { VerifiedScope = previous })
+
+	// Agreeing is fine.
+	_, err := cipher.EncryptTenantSecret(scoped("org-a"), "org-a", "org-idp:org-a", "secret")
+	require.NoError(t, err)
+
+	// Disagreeing is refused, both directions, on both verbs.
+	_, err = cipher.EncryptTenantSecret(scoped("org-b"), "org-a", "org-idp:org-a", "secret")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "the row and the scope disagree")
+
+	stored, err := cipher.EncryptTenantSecret(scoped("org-a"), "org-a", "org-idp:org-a", "secret")
+	require.NoError(t, err)
+	_, err = cipher.DecryptTenantSecret(scoped("org-b"), "org-a", "org-idp:org-a", stored)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "the row and the scope disagree")
+
+	// A path with NO request scope is the delivery worker, and is legitimate:
+	// the outbound sender opens a subscription's secret as app_webhook_worker,
+	// outside any tenant transaction, with only the row to go on.
+	_, err = cipher.DecryptTenantSecret(t.Context(), "org-a", "org-idp:org-a", stored)
+	require.NoError(t, err, "a delivery worker has no request scope and must still open the row's secret")
+}
+
+type scopeKeyForTest struct{}

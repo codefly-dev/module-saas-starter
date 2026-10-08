@@ -15,11 +15,30 @@ import (
 // organization before it could store anything would be worse for everyone. A
 // binding is an OVERRIDE.
 //
-// The organization is passed EXPLICITLY rather than read from the context. An
-// implicit read that returned "" would seal a customer's credential under this
-// deployment's key — silently, and exactly for the customer who went to the
-// trouble of bringing their own. That is the failure this type exists to
-// prevent, so the argument is required and an empty one is refused.
+// Which organization a value belongs to comes from the ROW being sealed —
+// sub.OrgID, source.OrgID, the org a provider is configured for — not from the
+// request context, and not threaded down from a caller's caller. Two reasons it
+// cannot be the context:
+//
+//   - the delivery paths have none. The outbound webhook sender opens a
+//     subscription's signing secret as app_webhook_worker, outside any tenant
+//     transaction, so there is no verified organization to read; the row is all
+//     there is.
+//   - the key should follow the DATA. A value's organization is a property of
+//     the row, and sealing it under whatever organization the current request
+//     happens to be scoped to would be a different question with the same
+//     answer most of the time, which is the worst kind of coincidence.
+//
+// Where the context DOES carry a verified organization, the two must agree, and
+// requireConsistentScope refuses when they do not: the row's organization and
+// the transaction's scope disagreeing means one of them is wrong, and guessing
+// which seals a customer's credential under another customer's key. Row-level
+// security binds the transaction, never this argument, so nothing else catches
+// it.
+//
+// An absent organization is refused outright. A fallback to the deployment's key
+// would betray exactly the customer who went to the trouble of bringing their
+// own.
 type TenantCipher struct {
 	// deployment seals for an organization with no key of its own, and is the
 	// only thing that computes the keyed hash.
@@ -95,8 +114,8 @@ func (c *TenantCipher) EncryptTenantSecret(ctx context.Context, orgID, purpose, 
 // that has just been given its own key still holds credentials sealed under the
 // deployment's, and those must keep opening until they are re-sealed.
 func (c *TenantCipher) DecryptTenantSecret(ctx context.Context, orgID, purpose, stored string) (string, error) {
-	if orgID == "" {
-		return "", errors.New("key service: opening an organization's secret requires the organization")
+	if err := requireConsistentScope(ctx, orgID, "opening"); err != nil {
+		return "", err
 	}
 	binding, err := c.bindings.OrgKeyBinding(ctx, orgID)
 	if err != nil {
@@ -159,8 +178,8 @@ func (c *TenantCipher) ResealTenantSecret(ctx context.Context, orgID, purpose, s
 // sealerFor resolves the organization's sealer, or nil when it has none and the
 // deployment's key applies.
 func (c *TenantCipher) sealerFor(ctx context.Context, orgID string) (Sealer, error) {
-	if orgID == "" {
-		return nil, errors.New("key service: sealing an organization's secret requires the organization")
+	if err := requireConsistentScope(ctx, orgID, "sealing"); err != nil {
+		return nil, err
 	}
 	binding, err := c.bindings.OrgKeyBinding(ctx, orgID)
 	if err != nil {
@@ -196,4 +215,30 @@ func (c *TenantCipher) boundSealer(ctx context.Context, keyRef string) (Sealer, 
 	}
 	c.mu.Unlock()
 	return sealer, nil
+}
+
+// VerifiedScope reports the organization the caller's transaction is scoped to,
+// when it is running inside one. A path with no request identity — a delivery
+// worker — reports false, which is not an error.
+//
+// It is a variable so the wiring supplies it: this package must not import the
+// request-identity plumbing, and a test must be able to drive both answers.
+var VerifiedScope func(ctx context.Context) (orgID string, ok bool)
+
+// requireConsistentScope refuses a row whose organization is absent, and one
+// that disagrees with the transaction's own scope.
+func requireConsistentScope(ctx context.Context, orgID, verb string) error {
+	if orgID == "" {
+		return fmt.Errorf("key service: %s an organization's secret requires the organization it belongs to", verb)
+	}
+	if VerifiedScope == nil {
+		return nil
+	}
+	scope, ok := VerifiedScope(ctx)
+	if !ok || scope == orgID {
+		// No request scope is the delivery-worker case, which is legitimate.
+		return nil
+	}
+	return fmt.Errorf("key service: refusing to %s a secret for organization %s inside a transaction scoped to %s: the row and the scope disagree, and row-level security binds the scope rather than this argument, so one of them is wrong",
+		verb, orgID, scope)
 }
