@@ -162,6 +162,8 @@ github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc/go.mod h1:VWPYY3FH4te7SzdN2xl9odNpWidJ1Grl/Hjs1SNoEF8=
 github.com/codefly-dev/core v0.14.0 h1:rpLFxeHSf2PrbxsRSp/NcZt8htMRM38JV2Oc8RKievU=
 github.com/codefly-dev/core v0.14.0/go.mod h1:rp4YZkCJEOufliWQAgK3sv8YlO7Xcva7+cN7hIlAR0I=
+github.com/codefly-dev/core v0.15.1 h1:emWxsFL4yCqw+OIMIV73D4HBAby3pLh76hO0Xx+SGvw=
+github.com/codefly-dev/core v0.15.1/go.mod h1:rp4YZkCJEOufliWQAgK3sv8YlO7Xcva7+cN7hIlAR0I=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba h1:6nFaDYsLyA5x3WiGAk6pMI3c0naqxiPeaTHMqRPvbVs=

@@ -74,11 +74,14 @@ func TestTheWorkContextCutoverIsAtomic(t *testing.T) {
 		t.Fatal("sdk-go now emits a seal; re-read whether the cutover is still atomic")
 	}
 
-	// And core will not read it. Inspect is the WEAKEST core entrypoint — it
-	// verifies no signature and holds no trust root — so a refusal here means
-	// Verify and Authenticate refuse it too, and no partial switch can route
-	// one call site through core while the mint stays where it is.
-	_, err = coreworkcontext.Inspect(token.Encoded())
+	// And core will not read it. Decode is the WEAKEST core entrypoint — no
+	// signature, no issuer, no audience, no window, no issuer state — so a
+	// refusal here means Verify, Authenticator and Inspector refuse it too, and
+	// no partial switch can route one call site through core while the mint
+	// stays where it is. (Core v0.15.0 moved this structural read from Inspect
+	// to Decode; Inspect is now a forwarding hop's check and needs a trust
+	// root, which would make a refusal here say nothing about the format.)
+	_, err = coreworkcontext.Decode(token.Encoded())
 	if err == nil {
 		t.Fatal("core READ an sdk-go capability: the formats have converged and the switch may no longer be atomic — re-read this test's premise before trusting it")
 	}
@@ -93,7 +96,7 @@ func TestTheWorkContextCutoverIsAtomic(t *testing.T) {
 	// core: its own shipped fixtures go through the same call, and at least one
 	// has to be readable.
 	//
-	// Inspect is structural, so an ACCEPTED fixture and a fixture refused for a
+	// Decode is structural, so an ACCEPTED fixture and a fixture refused for a
 	// reason only a verifier could reach (an expired window, a superseded
 	// revision, a consumed single-use capability) are both readable here; what
 	// must not happen is every one of them failing to decode.
@@ -106,12 +109,12 @@ func TestTheWorkContextCutoverIsAtomic(t *testing.T) {
 	}
 	var read int
 	for _, fixture := range fixtures {
-		if _, err := coreworkcontext.Inspect(fixture.Token); err == nil {
+		if _, err := coreworkcontext.Decode(fixture.Token); err == nil {
 			read++
 		}
 	}
 	if read == 0 {
-		t.Fatalf("Inspect read 0 of core's own %d fixtures, so its refusal above says nothing about the sdk-go format", len(fixtures))
+		t.Fatalf("Decode read 0 of core's own %d fixtures, so its refusal above says nothing about the sdk-go format", len(fixtures))
 	}
 	t.Logf("Inspect read %d of core's own %d fixtures and refused the sdk-go capability", read, len(fixtures))
 }

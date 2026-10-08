@@ -338,7 +338,7 @@ func TestVerificationCoversThePayloadAndNamespacesComeFromTheDocument(t *testing
 func signedPresenceCarrier(t *testing.T, domain, namespace string) []byte {
 	t.Helper()
 	document := &solutionhost.SolutionHostBinding{
-		Schema:           solutionhost.SchemaPresenceV2,
+		Schema:           solutionhost.SchemaPresenceV1,
 		Kind:             solutionhost.KindSolution,
 		Binding:          "acme.test.delivery-http",
 		Generation:       3,
