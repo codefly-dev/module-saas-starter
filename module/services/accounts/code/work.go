@@ -864,14 +864,13 @@ func doWork(ctx context.Context) (Clean, error) {
 	adapters.SetGatewayToken(gatewayCredentials.current)
 	adapters.SetPreviousGatewayToken(gatewayCredentials.previous)
 	adapters.SetPreviousGatewayTokenExpiresAt(gatewayCredentials.previousExpiresAt)
-	// The datasource content-ticket signer is keyed from the same internal secret,
-	// domain-separated, so a change-set job's opaque content ticket verifies at
-	// redemption without a second key to provision.
 	// One delivered key per purpose, never derived from the perimeter credential:
-	// see business.SetDatasourceKeys.
+	// see business.SetDatasourceKeys. A key a deployed runtime may not use is
+	// passed as ABSENT, which leaves its purpose unavailable — the same answer as
+	// an unprovisioned key, and the reason the loader does not need a second one.
 	service.SetDatasourceKeys(
-		[]byte(strings.TrimSpace(workspaceEnv("datasource-keys", "DATASOURCE_CONTENT_TICKET_KEY"))),
-		[]byte(strings.TrimSpace(workspaceEnv("datasource-keys", "DATASOURCE_ACCOUNT_LINK_KEY"))),
+		usableDatasourceKey("DATASOURCE_CONTENT_TICKET_KEY", codefly.IsLocal()),
+		usableDatasourceKey("DATASOURCE_ACCOUNT_LINK_KEY", codefly.IsLocal()),
 	)
 
 	centralEnforcement, err := configuredCentralEnforcement()
@@ -2037,14 +2036,39 @@ func identityEnv(key string) string {
 // this landing and that edit. The fallback goes when the cells have moved — until
 // then, the warning is how an operator knows one has not.
 func identityProviderSecret(key string) string {
-	if value, err := codefly.For(codefly.Context()).WorkspaceValue("identity-provider", key); err == nil && hasConfiguredValue(value) {
-		return value
-	}
+	destination, _ := codefly.For(codefly.Context()).WorkspaceValue("identity-provider", key)
 	legacy := identityEnv(key)
-	if hasConfiguredValue(legacy) {
+
+	// A PROVISIONED destination value always wins.
+	//
+	// "Provisioned" has to exclude the placeholder this module ships in the new
+	// group's local defaults, and that is the whole of what this gets right:
+	// hasConfiguredValue rejects only the literal REPLACE_ME, so the shipped
+	// default read as configured and overrode a real value still delivered under
+	// `identity` — defeating the migration fallback precisely on the cells that
+	// have not migrated yet, which are the only ones that need it.
+	if isProvisionedCredential(destination) {
+		return destination
+	}
+	if isProvisionedCredential(legacy) {
 		reportIdentityProviderSecretStillInIdentityGroup(key)
+		return legacy
+	}
+	// Neither group holds a provisioned value: local development, where the
+	// shipped placeholder IS the intended value. Prefer the destination group so a
+	// developer edits the group this service now declares.
+	if strings.TrimSpace(destination) != "" {
+		return destination
 	}
 	return legacy
+}
+
+// isProvisionedCredential reports whether a value is one an operator supplied, as
+// opposed to a placeholder this module ships or an unset key. It is the selection
+// rule for a credential that is moving between configuration groups: a shipped
+// default must not count as the destination being ready.
+func isProvisionedCredential(value string) bool {
+	return hasConfiguredValue(value) && !looksLikeShippedPlaceholder(value)
 }
 
 var identityProviderSecretWarned sync.Map
@@ -2620,6 +2644,44 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 // an emailed link pointed at. A cell without it is a cell whose verified origin is
 // a request parameter, so it refuses here, where a deployment can still be fixed,
 // rather than serving a sign-in bound to somewhere else.
+// usableDatasourceKey resolves one datasource message-authentication key, or nil
+// when a deployed runtime may not use what is configured.
+//
+// The shipped local defaults for this group carry placeholder markers, exactly as
+// every other secret group's do, and this module's repository is public. A deployed
+// runtime holding one would be signing with a published value, so it is treated as
+// ABSENT rather than refused at boot: unlike a perimeter credential, a datasource
+// key is not required for the service to serve, and the purpose it signs for
+// already has a defined unavailable state. Refusing to start would turn an
+// unprovisioned optional purpose into an outage.
+//
+// Local development uses the shipped default, which is its intended value.
+func usableDatasourceKey(key string, isLocal bool) []byte {
+	value := strings.TrimSpace(workspaceEnv("datasource-keys", key))
+	if value == "" {
+		return nil
+	}
+	if isLocal {
+		return []byte(value)
+	}
+	if looksLikeShippedPlaceholder(value) {
+		wool.Get(context.Background()).In("usableDatasourceKey").Warn(
+			"a datasource key carries a placeholder this module ships in its public local defaults; "+
+				"the purpose it signs for is unavailable until the key is provisioned for this cell",
+			wool.Field("key", "datasource-keys/"+key))
+		return nil
+	}
+	if len(value) < minimumPerimeterCredentialLength {
+		wool.Get(context.Background()).In("usableDatasourceKey").Warn(
+			"a datasource key is shorter than the minimum for a signing key; "+
+				"the purpose it signs for is unavailable until it is replaced",
+			wool.Field("key", "datasource-keys/"+key),
+			wool.Field("minimum", minimumPerimeterCredentialLength))
+		return nil
+	}
+	return []byte(value)
+}
+
 func requireApplicationBaseURL(isLocal bool) error {
 	if isLocal {
 		return nil

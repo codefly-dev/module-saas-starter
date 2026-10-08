@@ -63,19 +63,16 @@ func CanonicalPublicOrigin(candidate string) (string, error) {
 // has been authenticated by an adapter — AND only when it is the origin this
 // deployment pinned.
 //
-// The credential check alone was not enough, and that is the whole of the defect
-// it closes. The frontend held the internal token legitimately, and derived the
-// origin it stamped from the caller's own `X-Forwarded-Host` whenever its rendered
-// endpoint was a loopback placeholder, which is what a render produces. So an
-// authenticated hop forwarded a caller's choice, and this recorded it as VERIFIED:
-// an OAuth redirect, the authenticator relying-party origin and the links mailed
-// out were then bound to a host the caller named.
+// The invariant: the origin this service treats as its verified public origin — the
+// one that binds a sign-in redirect, an authenticator's relying party and an
+// emailed link — is fixed by operator configuration (SP-GW-08). A forwarded value
+// is honoured only where it equals the configured one, so the configuration is the
+// authority and a forwarding hop cannot substitute for it. This check is
+// independent of any hop's own correctness, which is why it lives here as well.
 //
-// Comparing against the pinned origin makes that unreachable regardless of what
-// any hop forwards — a second, independent barrier to the frontend's own fix, and
-// the one that holds for a hop this service does not own. Where nothing is pinned
-// the candidate stands on the credential alone, which only a local runtime reaches:
-// boot requires a pinned origin outside local development.
+// Where nothing is pinned the candidate stands on the credential alone, which only
+// a local runtime reaches: boot requires a pinned origin outside local development
+// (requireApplicationBaseURL).
 func WithVerifiedPublicOrigin(ctx context.Context, candidate string) (context.Context, error) {
 	origin, err := CanonicalPublicOrigin(candidate)
 	if err != nil {

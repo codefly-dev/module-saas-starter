@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,8 +10,10 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -108,3 +111,96 @@ func TestBeginOAuthRefusalNamesNoInternalDetail(t *testing.T) {
 	require.False(t, strings.Contains(message, "auth: "),
 		"the sentinel's own text is internal detail")
 }
+
+// A sign-out is acknowledged only when every revocation held. Reporting success
+// while the access half failed tells the caller their session ended when it has
+// not, which is the one answer a sign-out must never give.
+type partiallyRevokingMinter struct {
+	auth.JWTMinter
+	accessErr  error
+	sessionErr error
+	familyErr  error
+	revoked    []string
+}
+
+func (m *partiallyRevokingMinter) RevokeAccess(context.Context, string) error {
+	m.revoked = append(m.revoked, "access")
+	return m.accessErr
+}
+
+func (m *partiallyRevokingMinter) RevokeSessionAccess(context.Context, string) error {
+	m.revoked = append(m.revoked, "session")
+	return m.sessionErr
+}
+
+func (m *partiallyRevokingMinter) Revoke(context.Context, string) error {
+	m.revoked = append(m.revoked, "family")
+	return m.familyErr
+}
+
+func TestR1019LogoutRequiresCompleteRevocation(t *testing.T) {
+	boom := errors.New("revocation store unavailable")
+	for _, tc := range []struct {
+		name       string
+		accessErr  error
+		sessionErr error
+	}{
+		{"the access marker fails", boom, nil},
+		{"the session marker fails", nil, boom},
+		{"both fail", boom, boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			minter := &partiallyRevokingMinter{accessErr: tc.accessErr, sessionErr: tc.sessionErr}
+			installLogoutMinter(t, minter)
+
+			_, err := (&AuthServer{}).Logout(logoutContext(), &gen.LogoutRequest{RefreshToken: "rt"})
+
+			require.Error(t, err, "an incomplete sign-out must not be reported as success")
+			require.Equal(t, codes.Unavailable, status.Code(err))
+			require.Contains(t, minter.revoked, "family",
+				"the durable half must still be attempted and kept")
+		})
+	}
+}
+
+// The healthy control: every revocation succeeds and the caller is told so.
+func TestR1019LogoutSucceedsWhenRevocationIsComplete(t *testing.T) {
+	minter := &partiallyRevokingMinter{}
+	installLogoutMinter(t, minter)
+
+	_, err := (&AuthServer{}).Logout(logoutContext(), &gen.LogoutRequest{RefreshToken: "rt"})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"access", "session", "family"}, minter.revoked)
+}
+
+// A failed FAMILY revocation is the durable half failing, and reaches the caller as
+// itself rather than as the incomplete-sign-out reason.
+func TestR1019LogoutFamilyFailureIsNotMaskedAsIncomplete(t *testing.T) {
+	minter := &partiallyRevokingMinter{familyErr: errors.New("session store unavailable")}
+	installLogoutMinter(t, minter)
+
+	_, err := (&AuthServer{}).Logout(logoutContext(), &gen.LogoutRequest{RefreshToken: "rt"})
+
+	require.Error(t, err)
+	require.NotEqual(t, codes.Unavailable, status.Code(err))
+}
+
+func installLogoutMinter(t *testing.T, minter auth.JWTMinter) {
+	t.Helper()
+	previous := service
+	t.Cleanup(func() { service = previous })
+	svc, err := business.NewService(&authErrorSurfaceStore{})
+	require.NoError(t, err)
+	svc.SetJWTMinter(minter)
+	WithService(svc)
+}
+
+// A caller with a verified session and a bearer, so both access revocations run.
+func logoutContext() context.Context {
+	ctx := metadata.NewIncomingContext(context.Background(),
+		metadata.Pairs("authorization", "Bearer an-access-token"))
+	return auth.WithVerifiedSessionID(ctx, logoutSessionID)
+}
+
+var logoutSessionID = uuid.MustParse("00000000-0000-4000-8000-0000000000c1")

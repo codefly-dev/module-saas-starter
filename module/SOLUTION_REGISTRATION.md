@@ -221,16 +221,19 @@ is re-checked at dial time**, so a mesh-looking name whose DNS answer later poin
 off-mesh never receives one. Loopback is an explicit development exception and is
 tested as such.
 
-A solution upstream does **not** receive the viewer's session credential. The
-gateway removes `Authorization` and `Cookie` from every request it forwards to a
-runtime-registered upstream, module or solution, and the upstream receives the
-identity headers `ext_authz` stamped instead — the subject, the tenant, the
-session, the credential kind and the scope ceiling, which name the person without
-carrying their authority. A host access token is the person's whole session at a
-single host-wide audience, so forwarding it made every upstream that held one, or
-logged one, a source of replayable full-authority sessions. An upstream that needs
-to act on a person's behalf needs a host-minted capability bound to its own
-audience, which is the Work Context surface.
+A solution upstream does **not** receive the viewer's session credential
+(SP-GW-07). The gateway removes `Authorization` and `Cookie` from every request it
+forwards to a runtime-registered upstream, module or solution, and the upstream
+receives the identity headers `ext_authz` stamped instead — the subject, the tenant,
+the session, the credential kind and the scope ceiling, which name the person
+without carrying their authority. A host access token carries one host-wide audience
+and the person's full authority, so it is not a credential any single upstream
+should hold.
+
+The invariant's other half is **open**: an upstream should receive a host-minted
+context bound to its own audience, and today it receives none. An upstream that
+needs to act on a person's behalf needs that capability from the Work Context
+surface.
 
 ## 3. Runtime compatibility is enforced, not stored
 

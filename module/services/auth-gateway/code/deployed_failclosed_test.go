@@ -7,13 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A deployed gateway sits behind an ingress and a frontend hop, so with no
-// trusted-proxy range the client address is always the frontend's own pod: every
-// anonymous caller shares one budget and every authentication-factor attempt
-// shares one. A few bogus completions a minute then deny the factor to the whole
-// cell and a flood of anonymous requests denies login to all of it — a denial of
-// service delivered by the control meant to prevent one, which read as working
-// because the limiter was enabled and the buckets were enforced.
+// SP-GW-09: anonymous and authentication-factor budgets key on the originating
+// client, and a cell with no trusted-proxy range refuses to start. A deployed
+// gateway sits behind an ingress and a frontend hop, so with no trusted range the
+// client address is the frontend's own pod and every caller shares one bucket.
 func TestDeployedRefusesEmptyProxyTrust(t *testing.T) {
 	for _, raw := range []string{"", "   ", ",", " , "} {
 		err := requireProxyTrust(raw, false)

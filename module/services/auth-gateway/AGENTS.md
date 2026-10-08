@@ -15,12 +15,11 @@ generic, and a registered target is data, never a branch.
 Three of this service's controls are only controls when the thing they depend on
 is there, and each used to degrade into something that read as working:
 
-- **A trusted-proxy range** (`gateway/TRUSTED_PROXY_CIDRS`). Empty means no
-  forwarding header is trusted, so `clientIP` answers the peer — behind the
-  frontend, the frontend's own pod. Every anonymous caller then shares one budget
-  and every authentication-factor attempt shares one, so a few bogus completions a
-  minute deny the factor to the whole cell. The limiter was enabled and the buckets
-  were enforced throughout; nothing said they had collapsed onto one key.
+- **A trusted-proxy range** (`gateway/TRUSTED_PROXY_CIDRS`). SP-GW-09 requires the
+  anonymous and authentication-factor budgets to key on the originating client.
+  Empty means no forwarding header is trusted, so `clientIP` answers the peer —
+  behind the frontend, the frontend's own pod — and every caller shares one bucket.
+  It read as working: the limiter was enabled and the buckets were enforced.
 - **A shared rate-limit store.** Per-replica counters enforce the configured budget
   times the replica count, and which replica a caller lands on decides their share.
 - **A revocation store.** A revoker with no store answers "not revoked" to every
@@ -85,22 +84,25 @@ request it forwards to a runtime-registered upstream — a federated module pref
 a solution. A catalog route is untouched: accounts is the host's own API, where the
 session IS the credential.
 
-A host access token is the person's whole session: one host-wide audience, the
-person's full authority, valid at every other upstream and at the host's own API.
-Forwarding it meant a compromised module or solution pod — or a single logged
-request header, or an upstream that redeems it to mint contexts for further
-audiences — yielded replayable full-authority sessions for every viewer who had
-used it. The cookie went the same way, and the gateway has already resolved
-identity from it by the time it forwards, so an upstream reading it learns nothing
-it is not told.
+The host access token carries one host-wide audience and the person's full
+authority, so it is not a credential any single upstream should hold. The cookie
+goes the same way, and the gateway has already resolved identity from it by the time
+it forwards, so an upstream reading it learns nothing it is not told.
 
 An upstream receives the identity `ext_authz` stamped: the subject, the tenant, the
 session, the credential kind and the scope ceiling. That names the person without
-carrying their authority. **An upstream that needs to act on the person's behalf
-needs a host-minted capability bound to its own audience** — the Work Context
-surface — not a bearer it borrowed. A consumer written against the old behaviour
-has to change: the two consumer repositories that read the forwarded bearer own
-their half of this.
+carrying their authority.
+
+**SP-GW-07 has a second half this gateway does not yet satisfy.** The invariant is
+that an upstream receives a host-minted context bound to THAT upstream's own
+audience — not merely that it stops receiving the person's session. Today it
+receives the stamped identity headers and no audience-bound context, so the
+credential is no longer over-broad but the positive half is absent. Minting it at
+the edge is open work here; it cannot be supplied by a consumer.
+
+**A consumer written against the old behaviour has to change**: anything that read
+the forwarded bearer needs a host-minted capability bound to its own audience
+instead.
 
 ## A registered client calls without a proxy
 

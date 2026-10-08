@@ -74,11 +74,15 @@ func unary[Req, Resp any](
 // it moves the minted refresh credential out of the response body and into the
 // browser's cookie, exactly as the REST middleware does for the same methods.
 //
-// The Connect surface serves the same browser over the same origin and returned
-// the credential as readable content, so an injected script could read it from a
-// response it provoked. A caller that genuinely needs a refresh token in a body
-// is a registered OAuth client using the token endpoint, which is a separate
-// contract with its own audience and its own registry.
+// The invariant: the refresh credential reaches the browser only as a scoped,
+// non-script-readable, transport-protected, same-site cookie, and never as
+// readable content on a surface that completes an authentication (SP-IDENT-07).
+// The Connect surface serves the same browser as REST, so it owes the same
+// carrier.
+//
+// A caller that needs a refresh token in a body is a registered OAuth client using
+// the token endpoint, a separate contract with its own audience and registry — see
+// oauthTokenEndpointRESTPath for that exemption and its reason.
 func unaryCookieingRefreshToken[Req, Resp any](
 	ctx context.Context,
 	req *connect.Request[Req],

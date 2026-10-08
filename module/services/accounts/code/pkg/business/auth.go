@@ -482,27 +482,54 @@ func (s *Service) BeginOAuth(ctx context.Context, provider, redirectURI string) 
 // logout that reaches here revokes the presented session's access tokens whether
 // or not a refresh credential came with it.
 //
-// Both access-token revocations are best-effort — a failure never fails the
-// logout, since those tokens expire within AccessTokenTTL — while the family
-// revocation is the durable authority and its error is returned.
+// EVERY revocation is required, and a sign-out is acknowledged only when all of
+// them held. SP-IDENT-05 is that after signing out the presented access token no
+// longer authenticates — so reporting success while the access half failed tells
+// the caller their session ended when it has not, which is the one answer a
+// sign-out must never give. A failure that leaves a token live has to reach the
+// caller, who can retry, rather than a log nobody reads.
+//
+// The order is deliberate: the family revocation runs LAST and its result is
+// returned directly, so a failed access-marker write cannot discard the durable
+// half. Work that succeeded is kept — each step is idempotent, so a retry
+// completes the remainder rather than starting over.
 func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToken, sessionID string) error {
 	w := wool.Get(ctx).In("Logout")
 
 	if s.minter == nil {
 		return w.NewError("auth path not wired: minter missing")
 	}
+	var incomplete []string
 	if accessToken != "" {
 		if err := s.minter.RevokeAccess(ctx, accessToken); err != nil {
-			w.Warn("RevokeAccess failed (best-effort)", wool.ErrField(err))
+			w.Warn("RevokeAccess failed", wool.ErrField(err))
+			incomplete = append(incomplete, "the presented access token")
 		}
 	}
 	if sessionID != "" {
 		if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
-			w.Warn("RevokeSessionAccess failed (best-effort)", wool.ErrField(err))
+			w.Warn("RevokeSessionAccess failed", wool.ErrField(err))
+			incomplete = append(incomplete, "the presented session's access tokens")
 		}
 	}
-	return s.minter.Revoke(ctx, req.RefreshToken)
+	if err := s.minter.Revoke(ctx, req.RefreshToken); err != nil {
+		return err
+	}
+	if len(incomplete) > 0 {
+		// The family is revoked, so nothing can be refreshed; what is still live is
+		// the access half, until its natural expiry. The caller is told, because the
+		// difference between "signed out" and "signed out except for a few minutes"
+		// is theirs to act on.
+		return fmt.Errorf("%w: %s", ErrLogoutIncomplete, strings.Join(incomplete, " and "))
+	}
+	return nil
 }
+
+// ErrLogoutIncomplete reports a sign-out whose refresh family was revoked while an
+// access-token revocation could not be recorded. The session cannot be refreshed,
+// but an already-issued access token stays usable until it expires, so this is not
+// the complete sign-out SP-IDENT-05 describes.
+var ErrLogoutIncomplete = errors.New("logout incomplete: revocation could not be fully recorded")
 
 // GetJWKS returns the sidecar-facing JSON Web Key Set.
 // Non-authoritative: the sidecar loads its key from Vault directly.

@@ -385,14 +385,15 @@ func newProxyTrust(raw string) proxyTrust {
 // requireProxyTrust is the boot check for a DEPLOYED runtime: the trusted-proxy
 // range must parse AND name at least one hop.
 //
+// The invariant (SP-GW-09): anonymous and authentication-factor budgets are keyed
+// on the ORIGINATING client, never on an intermediate hop, and a cell with no
+// trusted-proxy range refuses to start.
+//
 // An empty range is not a narrow configuration, it is no configuration: with no
-// trusted hop, clientIP always answers the peer, which behind the frontend is the
-// frontend's own pod. Every anonymous caller then shares one budget and every
-// authentication-factor attempt shares one, so a few bogus completions a minute
-// deny the factor to the whole cell and a flood of anonymous requests denies
-// login to all of it. That is a denial of service delivered BY the control meant
-// to prevent one, and it read as working: the limiter was enabled, the buckets
-// were enforced, and nothing said they had collapsed onto one key.
+// trusted hop clientIP answers the peer, which behind the frontend is the
+// frontend's own pod, so every caller shares one bucket. It read as working — the
+// limiter was enabled and the buckets were enforced — which is why this refuses at
+// boot rather than warning.
 //
 // Local development has no ingress hop and the peer IS the client, so an empty
 // range is correct there and only there.

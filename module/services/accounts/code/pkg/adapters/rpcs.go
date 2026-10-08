@@ -579,6 +579,14 @@ func (s *PermServer) CreateRole(ctx context.Context, req *gen.CreateRoleRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.CreateRole(ctx, actorID, req)
 }
 
@@ -608,6 +616,14 @@ func (s *PermServer) UpdateRole(ctx context.Context, req *gen.UpdateRoleRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.UpdateRole(ctx, actorID, req)
 }
 
@@ -627,6 +643,14 @@ func (s *PermServer) DeleteRole(ctx context.Context, req *gen.DeleteRoleRequest)
 	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	if err := service.DeleteRole(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -644,6 +668,14 @@ func (s *PermServer) AssignRole(ctx context.Context, req *gen.AssignRoleRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.AssignRole(ctx, req)
 }
 
@@ -656,6 +688,14 @@ func (s *PermServer) RevokeRole(ctx context.Context, req *gen.RevokeRoleRequest)
 		return nil, err
 	}
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	if err := service.RevokeRole(ctx, actorID, req); err != nil {
@@ -763,6 +803,14 @@ func (s *PermServer) GrantScope(ctx context.Context, req *gen.GrantScopeRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.GrantScope(ctx, actorID, req)
 }
 
@@ -775,6 +823,14 @@ func (s *PermServer) RevokeScope(ctx context.Context, req *gen.RevokeScopeReques
 		return nil, err
 	}
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	if err := service.RevokeScope(ctx, actorID, req); err != nil {
@@ -1170,6 +1226,13 @@ func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*empty
 		verifiedSession = sessionID.String()
 	}
 	if err := service.Logout(ctx, req, accessToken, verifiedSession); err != nil {
+		// An incomplete sign-out is reported as retryable rather than as success:
+		// the family is revoked, so nothing refreshes, but an already-issued access
+		// token stays usable until it expires and the caller may want to retry.
+		// The reason is fixed; the cause is logged in the business layer.
+		if errors.Is(err, business.ErrLogoutIncomplete) {
+			return nil, status.Error(codes.Unavailable, "logout incomplete, retry")
+		}
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -1612,6 +1675,14 @@ func (s *PlatformAdminServer) SuspendUser(ctx context.Context, req *gen.SuspendU
 	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	if err := service.SuspendUser(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -1627,6 +1698,14 @@ func (s *PlatformAdminServer) UnsuspendUser(ctx context.Context, req *gen.Unsusp
 		return nil, err
 	}
 	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	if err := service.UnsuspendUser(ctx, actorID, req); err != nil {
@@ -1697,6 +1776,14 @@ func (s *PlatformAdminServer) RevokeSession(ctx context.Context, req *gen.Revoke
 	if err := requirePlatformRole(ctx, actorID, "support"); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	if err := service.RevokeSession(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -1749,6 +1836,14 @@ func (s *PlatformAdminServer) OverrideEntitlement(ctx context.Context, req *gen.
 	// can't bump their own caps; that's the whole point of the
 	// override mechanism.
 	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+		return nil, err
+	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	id, err := service.OverrideEntitlement(ctx, actorID, req)

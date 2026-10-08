@@ -566,16 +566,13 @@ func (s *Service) SetDatasourceGitHubClientFactory(factory func(token string) Gi
 // of an oversized blob, one for the account-link state that carries a person
 // through a provider's sign-in and back.
 //
-// Each is DELIVERED, one per purpose. Both used to be derived from the cell-wide
-// internal token — the perimeter credential every service and composed module
-// holds — so every holder of that credential could compute them and forge what
-// they authenticate, and rotating the perimeter credential silently invalidated
-// every outstanding ticket and link state. Neither consequence was visible from
-// either end.
+// Each is DELIVERED, one per purpose, rather than derived from a shared
+// credential: SP-SEC-07 requires every signing or message-authentication purpose to
+// have its own key, derived from no credential shared beyond its owner.
 //
 // An absent key leaves its purpose unavailable rather than falling back to a
-// derivation. A key reachable from a credential thirteen workloads hold is not a
-// key, and a fallback would make the fix conditional on nobody forgetting.
+// derivation, because a fallback would make the property conditional on nobody
+// forgetting.
 func (s *Service) SetDatasourceKeys(ticketKey, accountLinkKey []byte) {
 	if len(ticketKey) == 0 {
 		s.datasourceTicketSigner = nil

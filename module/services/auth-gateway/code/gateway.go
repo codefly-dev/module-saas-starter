@@ -496,22 +496,20 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 // before it reaches a runtime-registered upstream — a composed module's federated
 // prefix, or a solution.
 //
-// The host access token IS the person's whole session: a host-wide audience, the
-// person's full authority, and valid at every other upstream and at the host's own
-// API. Forwarding it verbatim meant a compromised module or solution pod — or one
-// logged request header, or one upstream that redeems it to mint contexts for
-// other audiences — yielded replayable full-authority sessions for every viewer
-// who had used it. The Cookie goes with it for the same reason and one more: the
-// gateway has already resolved identity from it by this point, so an upstream
-// reading it learns nothing it is not told, and nothing legitimately needs the
-// host's session cookie.
+// The invariant (SP-GW-07): a module or solution upstream never receives the
+// person's session credential or cookie. The host access token carries a host-wide
+// audience and the person's full authority, so it is not a credential any single
+// upstream should hold; the Cookie goes with it because the gateway has already
+// resolved identity from it by this point, so an upstream reading it learns nothing
+// it is not told.
 //
-// What an upstream receives instead is what it should have been receiving: the
-// identity headers ext_authz stamped (the subject, the tenant, the session, the
-// credential kind, the scope ceiling), which name the person without carrying
-// their authority. An upstream that needs to ACT on the person's behalf needs a
-// host-minted capability bound to its own audience, which is the Work Context
-// surface, not a bearer it borrowed.
+// An upstream receives the identity headers ext_authz stamped — the subject, the
+// tenant, the session, the credential kind, the scope ceiling — which name the
+// person without carrying their authority. An upstream that needs to ACT on the
+// person's behalf needs a host-minted capability bound to its own audience, which
+// is the Work Context surface, not a bearer it borrowed. **That half of SP-GW-07 is
+// not yet built here: see the audience-bound context note in
+// services/auth-gateway/AGENTS.md.**
 //
 // Catalog routes are untouched: accounts is the host's own API, where the session
 // is the credential.

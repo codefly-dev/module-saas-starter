@@ -516,7 +516,7 @@ starters, and large-scale enterprise SaaS expectations.
 | OAuth login (multiple providers)           | ✅          | Same               |
 | Email/password login                       | ❌          | ✅ (most starters keep both) |
 | Magic-link login                           | 🟡          | ✅ (one-click)     |
-| MFA enforced on sensitive ops              | ✅          | ✅ `requireMFA` gates billing, GDPR delete, role grants, impersonation. Fail-closed for a privileged actor — any platform role, or ownership of the request's organization — where not being enrolled is a refusal, not a pass; opt-in per user for every other member |
+| MFA enforced on sensitive ops              | ✅          | 🟡 `requireMFA` gates billing, GDPR delete, impersonation, organization deletion, waitlist review, the role/scope/principal grants and the platform-admin mutations (suspend, session revoke, entitlement override). Fail-closed for a privileged actor — any platform role, or ownership of the request's organization — where not being enrolled is a refusal, not a pass; opt-in per user for every other member. **The method policy still declares `MFA_REQUIREMENT_NONE` for the newly gated methods, so the policy/handler lockstep gate does not yet demand it** — see the note below |
 | Multi-org tenancy                          | ✅          | Same               |
 | Org invitations                            | ✅          | Same               |
 | RBAC (built-in roles)                      | ✅          | Same               |
@@ -530,6 +530,21 @@ starters, and large-scale enterprise SaaS expectations.
 | API keys with scopes                       | ✅          | ✅ (2026-04-25 fix: `requireScope` enforces `resource:action` patterns + wildcards on API-key callers; JWT callers bypass via RBAC) |
 | OpenAPI / TS client autogen                | ✅          | ✅ (Connect-ES is more typesafe than fetch-based clients) |
 | Real-stack e2e tests                       | ✅          | 🟡 (most starters mock — we're ahead) |
+
+**What the MFA row does not yet have.** `module/services/accounts/proto/.../*.proto`
+declares each method's `mfa:` requirement, and
+`pkg/adapters/rpc_policy_lockstep_test.go` holds handlers to what their policy
+declares. The methods gated in this change still declare `MFA_REQUIREMENT_NONE`, so
+the gate is satisfied by them either way and a later edit could remove the gate
+without reddening anything. `pkg/adapters/privileged_mutation_factor_test.go` is the
+stopgap: it reads the source and requires the gate, before the mutation, for every
+method on an explicit list. Aligning the declarations is the durable fix and is owed;
+it is a descriptor change, so it moves the contract digests and the published client
+and wants its own verified regeneration.
+
+Ordinary tenant mutations — dashboards, teams, invitations, notifications, user
+settings — are deliberately NOT gated. Whether a second factor belongs there is a
+product decision about an operator's whole roster, not a property of this host.
 
 ### Nice-to-have (differentiators)
 

@@ -58,12 +58,10 @@ func TestContentTicketRejectsTamperAndForeignKey(t *testing.T) {
 	}
 }
 
-// TestAttack_UnsetTicketKeyDisablesTickets: an unset key used to produce
-// sha256("datasource-content-ticket\x00") — a constant anyone can compute, so
-// anyone could mint a ticket for any tenant's source. An unset key must leave
-// content tickets disabled, which minting and redemption already treat as
-// unavailable — and must NOT fall back to any other value, which is the shape the
-// derivation from the perimeter credential had.
+// TestAttack_UnsetTicketKeyDisablesTickets: an unset key must leave content tickets
+// disabled, which minting and redemption already treat as unavailable, and must NOT
+// fall back to any other value — SP-SEC-07 requires each purpose's key to be its
+// own, derived from no credential shared beyond its owner.
 func TestAttack_UnsetTicketKeyDisablesTickets(t *testing.T) {
 	for _, key := range [][]byte{nil, {}} {
 		s := &Service{}

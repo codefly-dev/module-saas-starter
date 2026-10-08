@@ -8,14 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The host access token IS the person's whole session: one host-wide audience,
-// the person's full authority, valid at every other upstream and at the host's own
-// API. Forwarding it verbatim meant a compromised module or solution pod — or one
-// logged request header — yielded replayable full-authority sessions for every
-// viewer who had used it.
+// SP-GW-07: a module or solution upstream never receives the person's session
+// credential or cookie. The host access token carries one host-wide audience and
+// the person's full authority, so it is not a credential any single upstream should
+// hold.
 //
-// What an upstream receives instead is the identity ext_authz stamped, which names
-// the person without carrying their authority.
+// An upstream receives the identity ext_authz stamped, which names the person
+// without carrying their authority. The invariant's other half — a host-minted
+// context bound to that upstream's audience — is open work; see
+// services/auth-gateway/AGENTS.md.
 func TestModuleUpstreamReceivesNoSessionBearer(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	fake := declareModule(t, gw, "documents")
