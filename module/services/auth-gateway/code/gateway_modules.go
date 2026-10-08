@@ -11,8 +11,9 @@ package main
 //
 // Registration only adds a proxy target; it never relaxes authentication. Every
 // proxied /v1/<module>/* request runs the same ext_authz Check and identity
-// projection as a protected catalog route, so a bearer-less call is denied at
-// the gateway (401) regardless of what is registered.
+// projection as a protected catalog route, unless trusted startup policy
+// explicitly enables Work Context admission for that prefix. Registration
+// itself never enables that mode.
 //
 // Trust model: registration is gated on a per-module cryptographic identity, not
 // the shared cluster-internal token. The caller presents a signed registration
@@ -58,6 +59,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -226,28 +228,34 @@ func (g *Gateway) handleFederatedModule(w http.ResponseWriter, r *http.Request) 
 
 	// Same discipline as every protected catalog route: drop caller-supplied
 	// identity, run ext_authz, require a valid credential, and subject the
-	// forwarded request to the same rate-limit budget (below). A bearer-less
-	// call is denied here, so federation only adds a proxy target — it never
-	// widens the authenticated surface, and it does not open an unmetered one.
-	stripAllIdentityHeaders(r)
-	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, "auth check failed")
-		return true
-	}
-	if denied := checkResp.GetDeniedResponse(); denied != nil {
-		code := int(denied.GetStatus().GetCode())
-		if code == 0 {
-			code = http.StatusForbidden
+	// forwarded request to the same rate-limit budget (below). Headless admission
+	// is separately opted in by trusted startup policy; registration cannot widen
+	// the authenticated surface or open an unmetered one.
+	if g.headlessModulePrefixes[prefix] && len(r.Header.Values("Authorization")) == 0 {
+		if !g.authorizeHeadlessModule(w, r, prefix) {
+			return true
 		}
-		httpError(w, code, denied.GetBody())
-		return true
+	} else {
+		stripAllIdentityHeaders(r)
+		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "auth check failed")
+			return true
+		}
+		if denied := checkResp.GetDeniedResponse(); denied != nil {
+			code := int(denied.GetStatus().GetCode())
+			if code == 0 {
+				code = http.StatusForbidden
+			}
+			httpError(w, code, denied.GetBody())
+			return true
+		}
+		if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
+			httpError(w, http.StatusForbidden, "forbidden")
+			return true
+		}
+		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 	}
-	if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
-		httpError(w, http.StatusForbidden, "forbidden")
-		return true
-	}
-	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 
 	// Forward the full /v1/<module>/... path unchanged: the module owns and
 	// serves its own /v1/<module> surface. The caller's bearer is preserved so
@@ -972,4 +980,47 @@ func isAllowedResolvedModuleIP(ip net.IP) bool {
 		return false
 	}
 	return ip.IsLoopback() || ip.IsPrivate()
+}
+
+// authorizeHeadlessModule is called only for a registered prefix explicitly
+// enabled by trusted startup policy and only when Authorization is absent.
+// A bad bearer is never downgraded to Work Context authentication.
+func (g *Gateway) authorizeHeadlessModule(w http.ResponseWriter, r *http.Request, prefix string) bool {
+	values := r.Header.Values(workcontext.WorkContextHeaderName)
+	if len(values) != 1 || values[0] == "" {
+		httpError(w, http.StatusUnauthorized, "one work context required")
+		return false
+	}
+	if g.workContext == nil {
+		httpError(w, http.StatusServiceUnavailable, "work context authority unavailable")
+		return false
+	}
+	token, err := workcontext.ParseWorkContextToken(values[0])
+	if err != nil {
+		httpError(w, http.StatusUnauthorized, "invalid work context")
+		return false
+	}
+	claims, err := g.workContext.VerifyForAudience(r.Context(), token, prefix)
+	if err != nil {
+		httpError(w, http.StatusUnauthorized, "invalid work context")
+		return false
+	}
+	if err = g.authz.checkCurrentWorkContext(r.Context(), claims); err != nil {
+		switch status.Code(err) {
+		case codes.PermissionDenied, codes.FailedPrecondition, codes.Unauthenticated, codes.InvalidArgument:
+			httpError(w, http.StatusForbidden, "work context authority refused")
+		default:
+			httpError(w, http.StatusServiceUnavailable, "work context authority unavailable")
+		}
+		return false
+	}
+	stripAllIdentityHeaders(r)
+	// These identify the original owner and tenant for metering/correlation, not
+	// a role or permission grant. The target must authorize the unchanged signed
+	// context, including its actor chain, on every operation.
+	r.Header.Set("X-User-Id", claims.GetOwnerPrincipalId())
+	r.Header.Set("X-Org-Id", claims.GetTenantId())
+	r.Header.Set("X-Session-Id", claims.GetSessionId())
+	r.Header.Set("X-Credential-Kind", "work_context")
+	return true
 }

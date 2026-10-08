@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 
@@ -20,4 +22,24 @@ func workspaceEnv(configuration, key string) string {
 		return value
 	}
 	return os.Getenv(key)
+}
+
+// Only targets whose handlers enforce Work Context scopes may be enabled.
+// Empty configuration leaves all federated routes on bearer authentication.
+func parseHeadlessModulePrefixes(raw string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if strings.TrimSpace(raw) == "" {
+		return out, nil
+	}
+	var prefixes []string
+	if err := json.Unmarshal([]byte(raw), &prefixes); err != nil || prefixes == nil {
+		return nil, fmt.Errorf("WORK_CONTEXT_MODULE_PREFIXES must be a JSON array")
+	}
+	for _, prefix := range prefixes {
+		if !validCatalogIdentity(prefix) || out[prefix] {
+			return nil, fmt.Errorf("WORK_CONTEXT_MODULE_PREFIXES requires unique exact module prefixes")
+		}
+		out[prefix] = true
+	}
+	return out, nil
 }

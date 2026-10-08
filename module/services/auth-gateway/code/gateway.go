@@ -61,6 +61,8 @@ type Gateway struct {
 	// registrationReplay makes each solution-registration credential single-use.
 	registrationReplay *registrationReplayGuard
 	workContext        *workContextVerifier
+	// Trusted startup policy only; registration and request input cannot enable it.
+	headlessModulePrefixes map[string]bool
 }
 
 // NewGateway constructs a gateway with explicit route matching.

@@ -233,6 +233,15 @@ func main() {
 		// reach this replica without restarting it.
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
+		headlessPrefixes, err := parseHeadlessModulePrefixes(workspaceEnv("gateway", "WORK_CONTEXT_MODULE_PREFIXES"))
+		if err != nil {
+			panic(err)
+		}
+		if len(headlessPrefixes) > 0 && apiHTTPURL == "" {
+			panic("headless module routes require Work Context key discovery")
+		}
+		gateway.headlessModulePrefixes = headlessPrefixes
+
 		go gateway.solutions.reconcile(ctx)
 		go gateway.clients.reconcile(ctx)
 		if apiHTTPURL != "" {

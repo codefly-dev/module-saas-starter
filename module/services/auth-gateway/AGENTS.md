@@ -109,7 +109,31 @@ own service principal. This host checks only that the secret presented for a
 prefix matches its digest; it neither knows nor cares which process presents
 it. The token is short-lived and fetched **per registration attempt**, not
 cached across a gateway restart. Registration only adds a proxy target — every
-proxied `/v1/<module>/*` request still runs the full ext_authz check.
+proxied `/v1/<module>/*` request still authenticates. By default it runs the full
+ext_authz bearer check; the trusted headless opt-in below is the only exception.
+
+## Explicit headless module transport
+
+The `gateway` configuration group may set `WORK_CONTEXT_MODULE_PREFIXES` to a
+JSON array of exact registered prefixes. Default `[]` keeps bearer-only access;
+malformed, duplicate or wildcard prefixes fail boot. Registration requests and
+caller headers cannot enable this policy. Enable only targets whose handlers
+independently enforce signed Work Context scopes and current authority.
+
+For an opted-in prefix, a request with **no Authorization header** must carry
+exactly one valid Work Context signed by this host and addressed to that prefix.
+The gateway calls Accounts' existing internal `CheckAuthorizationRevision` with
+the signed owner and every actor's scopes, using its own internal credential.
+A refusal is 403 and an unavailable authority is 503; neither reaches the target.
+A bearer header, including a bad bearer, retains the original bearer path and
+never falls back to Work Context admission.
+
+Only verified owner/tenant/session correlation headers are projected; no role
+is invented. The unchanged signed Work Context reaches the target through the
+same rate limiter and registered-upstream transport. The target still owns
+operation authorization, receipt read-only enforcement and any protected
+runtime-boundary checks. This mode grants no access to Accounts' catalog or
+internal RPC routes and supplies no module identity credential.
 
 ## A registered client calls without a proxy
 
