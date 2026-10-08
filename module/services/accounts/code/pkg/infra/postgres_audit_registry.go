@@ -131,6 +131,13 @@ func (s *PostgresStore) EnsureAuditPartitions(ctx context.Context, months int) e
 // DropAuditPartitionsBefore drops every monthly partition whose entire range is
 // older than `before`, returning the number dropped. This is how audit
 // retention runs — DDL that never trips the append-only trigger.
+//
+// The database decides which partitions are older, from the bounds it holds for
+// each, never from the month in a name or the zone this session runs in. It
+// locks audit_events before it drops, and gives up with SQLSTATE 55P03 after ten
+// seconds rather than wait for a writer that does not finish; nothing is dropped
+// then, and the next scheduled run tries again. A partition whose bounds are not
+// a bounded range is never dropped.
 func (s *PostgresStore) DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error) {
 	q := s.getQueryExecutor(ctx)
 	var dropped int64
