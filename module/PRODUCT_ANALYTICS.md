@@ -201,7 +201,7 @@ active organization.
 
 SigNoz is the single backend for application traces, metrics, and logs. The
 application surface remains standard OpenTelemetry/OTLP to the cell's collector,
-whose address the platform delivers in the `observability` configuration group; an
+whose address the platform delivers as `OTEL_EXPORTER_OTLP_ENDPOINT`; an
 optional SigNoz provider may provision dashboards and alerts but does not project
 an application SDK, endpoint, or credential.
 

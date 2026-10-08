@@ -71,7 +71,8 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	)
 	otel.SetTracerProvider(tracerProvider)
 
-	metrics, err := enableOTELMetrics(t.Context(), availableAt(t, "http", endpoint))
+	collectorAt(t, "http", endpoint)
+	metrics, err := enableOTELMetrics(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, metrics)
 	t.Cleanup(func() {
@@ -111,26 +112,14 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	require.Empty(t, spanExporter.GetSpans())
 }
 
-// availableAt resolves the destination the way the process does, from the
-// endpoint the platform would deliver, so these tests hand the exporter the URL
-// it really receives rather than a hand-built struct.
-func availableAt(t *testing.T, scheme, hostPort string) telemetryDestination {
-	t.Helper()
-	destination, err := resolveTelemetryDestination(false, group(map[string]string{
-		"TELEMETRY_STATE":             "available",
-		"OTEL_EXPORTER_OTLP_ENDPOINT": scheme + "://" + hostPort,
-	}))
-	require.NoError(t, err)
-	return destination
-}
-
 // The exporter reads its transport off the URL's scheme, so an https:// URL is
 // TLS and cannot talk to a plaintext receiver. A constant WithInsecure() would
 // have let it.
 func TestEnableOTELMetricsDerivesTransportFromTheURLScheme(t *testing.T) {
 	endpoint, capture := startMetricCapture(t)
 	previousMeterProvider := otel.GetMeterProvider()
-	metrics, err := enableOTELMetrics(t.Context(), availableAt(t, "https", endpoint))
+	collectorAt(t, "https", endpoint)
+	metrics, err := enableOTELMetrics(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, metrics)
 	t.Cleanup(func() {
@@ -150,12 +139,33 @@ func TestEnableOTELMetricsDerivesTransportFromTheURLScheme(t *testing.T) {
 	}
 }
 
-// A destination with no collector URL is refused. WithEndpointURL("") would
-// otherwise fall back to the exporter's own default, localhost:4317.
-func TestEnableOTELMetricsRefusesADestinationWithoutAURL(t *testing.T) {
-	metrics, err := enableOTELMetrics(t.Context(), telemetryDestination{AbsentReason: "no collector"})
-	require.ErrorContains(t, err, "no collector URL")
-	require.Nil(t, metrics)
+// A process with no collector configured builds no exporter: an
+// otlpmetricgrpc exporter with nothing configured dials its own default,
+// localhost:4317, so the call refuses instead.
+func TestEnableOTELMetricsRefusesWithoutAnEndpoint(t *testing.T) {
+	for name, value := range map[string]string{"unset": "", "blank": "   "} {
+		t.Run(name, func(t *testing.T) {
+			isolateOTLPEnvironment(t)
+			t.Setenv(otlpEndpointVariable, value)
+			metrics, err := enableOTELMetrics(t.Context())
+			require.ErrorContains(t, err, "no "+otlpEndpointVariable)
+			require.Nil(t, metrics)
+		})
+	}
+}
+
+// The exporter reads the variable only as an http:// or https:// URL. Any other
+// form keeps its default, localhost:4317, without a word, so it is refused here,
+// and the refusal does not echo the value, which may carry credentials.
+func TestEnableOTELMetricsRefusesAnEndpointTheExporterCannotRead(t *testing.T) {
+	for _, value := range []string{"collector.example:4317", "ftp://collector.example:4317", "://bad", "secret-user:secret-pass@collector.example:4317"} {
+		isolateOTLPEnvironment(t)
+		t.Setenv(otlpEndpointVariable, value)
+		metrics, err := enableOTELMetrics(t.Context())
+		require.ErrorContains(t, err, "http:// or https://", value)
+		require.NotContains(t, err.Error(), "secret-pass")
+		require.Nil(t, metrics)
+	}
 }
 
 // A resource that cannot be built fails the whole call, and the call builds it
@@ -165,7 +175,8 @@ func TestEnableOTELMetricsFailsWhenTheResourceCannotBeBuilt(t *testing.T) {
 	t.Setenv("OTEL_SERVICE_NAME", "")
 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "an-attribute-with-no-value")
 	endpoint, _ := startMetricCapture(t)
-	metrics, err := enableOTELMetrics(t.Context(), availableAt(t, "http", endpoint))
+	collectorAt(t, "http", endpoint)
+	metrics, err := enableOTELMetrics(t.Context())
 	require.Error(t, err)
 	require.Nil(t, metrics)
 }

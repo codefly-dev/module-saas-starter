@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	runtimemetrics "runtime/metrics"
 	"time"
@@ -16,17 +15,21 @@ import (
 )
 
 // otelMetrics owns the process's MeterProvider. Metrics leave by one path only:
-// an OTLP push to the cell's collector, which is the record for traces and
-// metrics alike. There is no scrape endpoint to mount, expose or exempt.
+// an OTLP push to the collector OTEL_EXPORTER_OTLP_ENDPOINT names, which is the
+// record for traces and metrics alike. There is no scrape endpoint to mount,
+// expose or exempt.
 type otelMetrics struct {
 	provider *metric.MeterProvider
 }
 
-func enableOTELMetrics(ctx context.Context, destination telemetryDestination) (*otelMetrics, error) {
-	if destination.URL == "" {
-		// WithEndpointURL("") would fall back to the exporter's own default,
-		// localhost:4317: a process that exports to nowhere and reports success.
-		return nil, errors.New("telemetry: no collector URL to export metrics to")
+// enableOTELMetrics starts the process's OTLP metrics push to the collector the
+// environment names. It is only for a process that was given one: with no
+// OTEL_EXPORTER_OTLP_ENDPOINT it refuses rather than build an exporter, because
+// an otlpmetricgrpc exporter with nothing configured dials its own default,
+// localhost:4317 over TLS, and a process that exports to nowhere reports success.
+func enableOTELMetrics(ctx context.Context) (*otelMetrics, error) {
+	if err := requireMetricsEndpoint(); err != nil {
+		return nil, err
 	}
 	// The resource comes before the exporter, so a failure here leaves nothing
 	// to shut down: an exporter holds a client connection that only Shutdown
@@ -35,9 +38,10 @@ func enableOTELMetrics(ctx context.Context, destination telemetryDestination) (*
 	if err != nil {
 		return nil, err
 	}
-	// The exporter reads the transport off the URL's scheme itself: http:// is
-	// plaintext on the wire, because the mesh supplies mTLS, and https:// is TLS.
-	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(destination.URL))
+	// The exporter reads the collector from OTEL_EXPORTER_OTLP_ENDPOINT itself and
+	// takes the transport off the URL's scheme: http:// is plaintext on the wire,
+	// because the mesh supplies mTLS, and https:// is TLS.
+	exporter, err := otlpmetricgrpc.New(ctx)
 	if err != nil {
 		return nil, err
 	}

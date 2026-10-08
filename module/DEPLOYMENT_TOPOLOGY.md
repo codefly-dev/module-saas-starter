@@ -106,13 +106,14 @@ is tracked by `P1-CI-004`.
 
 The generated Codefly dependency declarations contain exact endpoint
 references. The module owns no collector: accounts and auth-gateway export traces
-and metrics to the cell's, whose address the platform delivers in the
-`observability` configuration group (`TELEMETRY_STATE`, with
-`OTEL_EXPORTER_OTLP_ENDPOINT` when the cell has a collector and
-`TELEMETRY_ABSENT_REASON` when it does not), so neither service needs public
-egress to reach a telemetry backend and no product configuration owns a collector
-port. The generated NetworkPolicy remains the hard endpoint/port enforcement
-boundary for the services the module declares.
+and metrics to the cell's, whose address the platform delivers as the standard
+`OTEL_EXPORTER_OTLP_ENDPOINT` variable when the cell has a collector they may
+reach, and delivers nothing when it does not. Neither service needs public egress
+to reach a telemetry backend and no product configuration owns a collector port.
+The generated NetworkPolicy remains the hard endpoint/port enforcement boundary
+for the services the module declares, and it grants no egress to the cell's
+collector: that collector's namespace and port are not part of the environment
+declaration the generators read, so the module renders no rule for them.
 
 The AWS overlay replaces stateful services with managed dependencies. A
 pod-selector rule cannot authorize an RDS, ElastiCache, external Vault, or S3

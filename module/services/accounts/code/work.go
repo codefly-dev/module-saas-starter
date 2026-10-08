@@ -82,40 +82,30 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// Traces and metrics go to the cell's collector, whose address the platform
-	// delivers in the `observability` configuration group — or the group says the
-	// cell has none. Either answer was already required before anything was
-	// acquired (requireStartupConfiguration); this reads it again to act on it.
-	telemetryDestination, err := configuredTelemetryDestination(codefly.IsLocal())
-	if err != nil {
-		return nil, err
-	}
-	// A local run with no cell collector gets wool's own stdout tracer instead.
-	otelProvider, err := enableTracing(ctx, telemetryDestination, codefly.IsLocal())
+	// Traces and metrics go to the collector OTEL_EXPORTER_OTLP_ENDPOINT names, which
+	// the platform delivers when the cell has one this workload may reach. With none
+	// delivered the process exports nothing over OTLP; a local run's traces go to
+	// wool's own stdout tracer instead. wool/otel reads and validates the variable,
+	// so a value it refuses stops the process here with its reason.
+	otelProvider, err := enableTracing(ctx, codefly.IsLocal())
 	if err != nil {
 		return nil, fmt.Errorf("configure OTEL tracing: %w", err)
 	}
 	var otelMetricProvider *otelMetrics
-	if telemetryDestination.Available() {
-		metricProvider, oerr := enableOTELMetrics(ctx, telemetryDestination)
+	if otlpEndpointConfigured() {
+		metricProvider, oerr := enableOTELMetrics(ctx)
 		if oerr != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = otelProvider.Shutdown(shutdownCtx)
-			cancel()
+			if otelProvider != nil {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = otelProvider.Shutdown(shutdownCtx)
+				cancel()
+			}
 			return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
 		}
 		otelMetricProvider = metricProvider
-		w.Info("OTEL enabled",
-			wool.Field("endpoint", telemetryDestination.Endpoint),
-			wool.Field("insecure", telemetryDestination.Insecure))
+		w.Info("OTEL export enabled: traces and metrics go to the collector at " + otlpEndpointVariable)
 	} else {
-		w.Info("OTEL export disabled: the cell has no collector",
-			wool.Field("reason", telemetryDestination.AbsentReason))
-	}
-	// The state decided; a key it does not use is a leftover, reported here once.
-	// requireStartupConfiguration reads the group too, but only to refuse.
-	if notice := telemetryDestination.IgnoredNotice(); notice != "" {
-		w.Warn(notice)
+		w.Info("OTEL export disabled: " + otlpEndpointVariable + " is not set, so nothing is exported over OTLP")
 	}
 
 	store, err := infra.NewPostgresStore(ctx)
@@ -2542,21 +2532,7 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err != nil {
 		return err
 	}
-	if err := requireKeyCustody(selection.SigningBackend, isLocal); err != nil {
-		return err
-	}
-	return requireTelemetryConfiguration(isLocal)
-}
-
-// requireTelemetryConfiguration refuses to start unless the `observability`
-// group says where the cell's collector is, or that the cell has none. It only
-// checks: doWork reads the same answer again to act on it. A group that did not
-// arrive is refused outside the local runtime, before the database or Vault is
-// touched: reading it as "no collector" would leave a cell exporting nothing
-// while it converges green.
-func requireTelemetryConfiguration(isLocal bool) error {
-	_, err := configuredTelemetryDestination(isLocal)
-	return err
+	return requireKeyCustody(selection.SigningBackend, isLocal)
 }
 
 // requireKeyCustody refuses to start outside the local environment without the

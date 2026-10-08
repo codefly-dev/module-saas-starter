@@ -33,14 +33,6 @@ func main() {
 		panic(fmt.Sprintf("codefly init failed: %v", err))
 	}
 
-	// The cell's collector is delivered in the `observability` configuration
-	// group, or the group says the cell has none. A group that did not arrive is
-	// neither, so it is refused outside a local runtime before anything else starts.
-	telemetryDestination, err := configuredTelemetryDestination(codefly.IsLocal())
-	if err != nil {
-		panic(err)
-	}
-
 	// The SDK resolves an endpoint from the carrier the runtime injected or, in a
 	// local run, from the workspace's endpoint map, and never invents a port.
 	grpcNet, grpcNetErr := codefly.For(ctx).API(standards.GRPC).ResolveNetworkInstance()
@@ -54,27 +46,29 @@ func main() {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
 	httpPort = httpNet.Port
-	// A local run with no cell collector gets wool's own stdout tracer instead.
-	otelProvider, err := enableTracing(ctx, telemetryDestination, codefly.IsLocal())
+	// Traces and metrics go to the collector OTEL_EXPORTER_OTLP_ENDPOINT names, which
+	// the platform delivers when the cell has one this workload may reach. With none
+	// delivered the process exports nothing over OTLP; a local run's traces go to
+	// wool's own stdout tracer instead. wool/otel reads and validates the variable,
+	// so a value it refuses stops the process here with its reason.
+	otelProvider, err := enableTracing(ctx, codefly.IsLocal())
 	if err != nil {
 		panic(fmt.Sprintf("configure OTEL tracing: %v", err))
 	}
 	var otelMetricProvider *otelMetrics
-	if telemetryDestination.Available() {
-		otelMetricProvider, err = enableOTELMetrics(ctx, telemetryDestination)
+	if otlpEndpointConfigured() {
+		otelMetricProvider, err = enableOTELMetrics(ctx)
 		if err != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = otelProvider.Shutdown(shutdownCtx)
-			cancel()
+			if otelProvider != nil {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = otelProvider.Shutdown(shutdownCtx)
+				cancel()
+			}
 			panic(fmt.Sprintf("configure OTEL metrics: %v", err))
 		}
-		log.Printf("OTEL enabled: endpoint=%s insecure=%t", telemetryDestination.Endpoint, telemetryDestination.Insecure)
+		log.Print("OTEL export enabled: traces and metrics go to the collector at " + otlpEndpointVariable)
 	} else {
-		log.Printf("OTEL export disabled: the cell has no collector: %s", telemetryDestination.AbsentReason)
-	}
-	// The state decided; a key it does not use is a leftover, reported here once.
-	if notice := telemetryDestination.IgnoredNotice(); notice != "" {
-		log.Print(notice)
+		log.Print("OTEL export disabled: " + otlpEndpointVariable + " is not set, so nothing is exported over OTLP")
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

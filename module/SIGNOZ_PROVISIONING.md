@@ -13,8 +13,8 @@ contract.
 
 This decision does not affect application telemetry. Applications export
 OTLP/gRPC to the cell's collector, at the address the platform delivers as
-`OTEL_EXPORTER_OTLP_ENDPOINT` in the `observability` configuration group (or the
-group says the cell has none); they do not hard-code it, and the module ships no
+`OTEL_EXPORTER_OTLP_ENDPOINT` (or nothing, when the cell has no collector for them,
+and then they export nothing); they do not hard-code it, and the module ships no
 collector of its own. Dashboard provisioning is not an application runtime
 capability.
 
