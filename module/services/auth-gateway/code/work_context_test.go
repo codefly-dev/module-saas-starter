@@ -351,3 +351,27 @@ func TestGateway_NoWorkContextHeaderUnaffected(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.NotNil(t, apiFake.lastHeaders)
 }
+
+func TestWorkContextVerifierAudienceAdmission(t *testing.T) {
+	pub, priv := mustEd25519(t)
+	const kid = "audience-key"
+	server := jwksServer(t, jwksDocument(map[string]ed25519.PublicKey{kid: pub}), nil)
+	verifier := newWorkContextVerifier(server.URL)
+	token := mintWorkContext(t, kid, priv, nil)
+	claims, err := verifier.VerifyForAudience(context.Background(), token, "solution:demo")
+	require.NoError(t, err)
+	require.Equal(t, "user-1", claims.GetOwnerPrincipalId())
+	require.Equal(t, "tenant-1", claims.GetTenantId())
+	for _, audience := range []string{"", "another-target"} {
+		claims, err = verifier.VerifyForAudience(context.Background(), token, audience)
+		require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+		require.Nil(t, claims)
+	}
+	otherSigner, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{Issuer: "another-issuer", KeyID: kid, PrivateKey: priv})
+	require.NoError(t, err)
+	otherToken, _, err := otherSigner.StartTask(workcontext.StartTaskInput{Audience: "solution:demo", TenantID: "tenant-1", OwnerPrincipalID: "user-1", TaskID: "task-1", SessionID: "session-1", AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "audit", Actions: []string{"read"}}}})
+	require.NoError(t, err)
+	claims, err = verifier.VerifyForAudience(context.Background(), otherToken, "solution:demo")
+	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+	require.Nil(t, claims)
+}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/sdk-go/workcontext"
 )
 
@@ -61,18 +62,35 @@ func (v *workContextVerifier) Refresh(ctx context.Context) error {
 // signature, freshness, and attenuation of the token against the published
 // keys; audience and scope are the callee's concern and are not asserted here.
 func (v *workContextVerifier) Verify(ctx context.Context, token workcontext.WorkContextToken) error {
+	_, err := v.verify(ctx, token, workcontext.WorkContextExpectations{})
+	return err
+}
+
+// VerifyForAudience is for explicitly enabled headless module routes. Unlike
+// optional edge attenuation, admission must bind the capability to the selected
+// target and this host's issuer. It does not establish current authorization;
+// callers must check the sealed revision with Accounts before proxying.
+func (v *workContextVerifier) VerifyForAudience(ctx context.Context, token workcontext.WorkContextToken, audience string) (*basev0.WorkContextV1, error) {
+	if audience == "" {
+		return nil, invalidWorkContext(fmt.Errorf("target audience required"))
+	}
+	return v.verify(ctx, token, workcontext.WorkContextExpectations{Issuer: "saas-starter", Audience: audience})
+}
+
+func (v *workContextVerifier) verify(ctx context.Context, token workcontext.WorkContextToken, expectations workcontext.WorkContextExpectations) (*basev0.WorkContextV1, error) {
 	keyID, err := workContextTokenKeyID(token)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	verifier, err := v.cache.resolve(ctx, keyID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := verifier.Verify(token, workcontext.WorkContextExpectations{}); err != nil {
-		return invalidWorkContext(err)
+	claims, err := verifier.Verify(token, expectations)
+	if err != nil {
+		return nil, invalidWorkContext(err)
 	}
-	return nil
+	return claims, nil
 }
 
 func workContextTokenKeyID(token workcontext.WorkContextToken) (string, error) {
