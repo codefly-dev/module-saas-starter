@@ -194,7 +194,8 @@ never the SDK binding input. Regenerate the export before generating the SDK.
 
 ## Unknown and partial results
 
-Empty queries have no points and render **No data yet**. Numeric sums with no
+Empty queries have no points and render as no data, in the form the widget's
+visualization has for it (see *How a resolved series is drawn*). Numeric sums with no
 numeric observations omit their value, just like averages/percentiles; an emitted
 zero stays zero. `samples[alias]` reports observations before reduction (so
 repeated logical IDs are not mistaken for missing telemetry). Fewer samples than
@@ -211,6 +212,36 @@ nested derived metrics.
 The host DSL also withholds totals after top-N truncation. Authorization/RPC
 errors remain errors, never empty successful results. Existing consumers of the
 SDK must handle `total: null` when adopting this contract.
+
+## How a resolved series is drawn
+
+Every dashboard built from these series — the host's own pages, a solution's
+declared dashboard, and a solution remote that mounts the kit itself — is drawn
+by one renderer, `<Dashboard>` from `@codefly-dev/ui/dashboard`, with the kit's
+**metric tier**. There is no second, plainer rendering: a consuming solution
+does not have to ask which half of the kit its dashboard will get.
+
+| Widget | Drawn as | Empty series | `coverage: "partial"` | `total: null` |
+| --- | --- | --- | --- | --- |
+| `number` | `StatTile`: the series total, in the widget's `format` and `unit`; a sparkline and a delta against the previous bucket when the metric is bucketed over **time** | `—` with a **No data** badge, never `0` | `—` with a **Partial data** badge | `—` with a **No total** badge when coverage is complete |
+| `line` / `area` / `bar` | the kit's metric chart over a `ChartSeries` — axes from the appearance palette, a crosshair readout, a legend for two or more series, and every exact value in a visually-hidden data table | the chart's own **No data** plot, plus a **No data** badge on the card | the observed points still plot, with a **Partial data** badge on the card | nothing: a series widget shows no total |
+| `table` | key/value rows | **No data yet.** | a **Partial data** badge on the card | — |
+
+Two of those cells are the contract, not presentation. A `null` total renders as
+a dash and never as `0`, because "cannot say" and "nothing happened" are
+different answers and only one of them is in the data; and a series with no
+points is no data rather than a zero, because the aggregate omits a bucket
+instead of emitting an empty one. A sparkline and a bucket delta are drawn
+**only** for a time-bucketed series: a line through counts grouped by event type
+or region would assert an order, and a delta between two of them a change over
+time, that a categorical grouping does not have.
+
+A host composes its own features around that renderer — `<Dashboard>`'s slots
+take header actions, a layout (the host's solution dashboard passes a
+drag-to-reorder grid), a per-widget renderer for a host that resolves each
+widget in its own query, and an empty state. A consumer re-implementing any part
+of the drawing is refused by a gate: `src/components/__tests__/kit.test.ts` in
+the frontend.
 
 ## Independent validation
 

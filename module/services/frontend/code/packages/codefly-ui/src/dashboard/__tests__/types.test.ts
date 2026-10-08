@@ -25,8 +25,14 @@ describe("fromDashboardData", () => {
 		expect(view.columns).toBe(3);
 		expect(view.accent).toBe("#7c3aed");
 		expect(view.widgets).toHaveLength(1);
-		expect(view.widgets[0]).toMatchObject({ id: "trend", visualization: "line" });
-		expect(view.widgets[0].series.total).toBe(3);
+		expect(view.widgets[0]).toMatchObject({
+			id: "trend",
+			visualization: "line",
+		});
+		// `fromDashboardData` bridges an ALREADY-resolved result, so the series
+		// it produces is never the `null` the view model allows for a widget
+		// still being resolved.
+		expect(view.widgets[0].series?.total).toBe(3);
 	});
 
 	it("defaults layout to grid when the source omits it", () => {

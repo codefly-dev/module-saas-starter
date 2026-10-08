@@ -13,7 +13,13 @@ export {
 	LineChart,
 	StatChart,
 } from "./charts.js";
-export { Dashboard } from "./dashboard.js";
+export {
+	Dashboard,
+	type DashboardSlots,
+	type DashboardTile,
+	DashboardWidget,
+	type DashboardWidgetProps,
+} from "./dashboard.js";
 export { formatAxisKey, formatAxisValue, parseTimeKey } from "./format.js";
 export {
 	linearScale,
