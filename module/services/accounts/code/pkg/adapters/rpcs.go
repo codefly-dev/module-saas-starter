@@ -1075,7 +1075,13 @@ func (s *AuthServer) RefreshToken(ctx context.Context, req *gen.RefreshTokenRequ
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.RefreshToken(ctx, req)
+	response, err := service.RefreshToken(ctx, req)
+	if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) {
+		// Terminal session rejection must reach REST as 401, not an Unknown
+		// error (500) that clients correctly treat as a transient outage.
+		return nil, status.Error(codes.Unauthenticated, "session refresh rejected")
+	}
+	return response, err
 }
 
 func (s *AuthServer) SwitchOrganization(ctx context.Context, req *gen.SwitchOrganizationRequest) (*gen.SwitchOrganizationResponse, error) {
