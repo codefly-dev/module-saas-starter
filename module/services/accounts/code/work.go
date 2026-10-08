@@ -928,7 +928,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	// redirect, an authenticator's relying party and every emailed link. From here
 	// on a forwarded origin is honoured only when it equals this one, so no hop can
 	// substitute a caller's choice (pkg/auth.WithVerifiedPublicOrigin).
-	auth.SetConfiguredPublicOrigin(appBase)
+	if err := auth.SetConfiguredPublicOrigin(appBase); err != nil {
+		return nil, fmt.Errorf("application: APP_BASE_URL: %w", err)
+	}
 	var workerEmailOutbox *email.Outbox
 	var emailWorker *jobs.Worker
 	if emailConfig.sender == nil {
@@ -1724,6 +1726,22 @@ func configuredApplicationBaseURL() (string, error) {
 	if parsed.Scheme != "https" && parsed.Hostname() != "localhost" && parsed.Hostname() != "127.0.0.1" {
 		return "", fmt.Errorf("application: APP_BASE_URL must use https outside local development")
 	}
+	// The value must also survive the function that will CANONICALIZE it at request
+	// time. The checks above are url.Parse plus field rules; pkg/auth uses IDNA. Two
+	// validators for one value meant an origin boot accepted and every request then
+	// refused — the cell started green and no authentication worked, because
+	// WithVerifiedPublicOrigin could not canonicalize what was configured
+	// (R1019-N12/f1). One validator decides.
+	if _, err := auth.CanonicalPublicOrigin(strings.TrimSuffix(raw, "/")); err != nil {
+		return "", fmt.Errorf(
+			"application: APP_BASE_URL is not an origin this service can use (%w): it is the "+
+				"value every OAuth redirect, relying-party origin, emailed link and same-origin "+
+				"comparison is bound to, so it has to be one this host can compare", err)
+	}
+	// The RAW value is returned, not the canonical one. It is also the token issuer and
+	// the published authorization-server metadata, where the spelling is part of the
+	// contract a verifier compares exactly — canonicalizing here would silently change
+	// `iss` for any deployment whose configured origin carries, say, an explicit :443.
 	return strings.TrimSuffix(raw, "/"), nil
 }
 

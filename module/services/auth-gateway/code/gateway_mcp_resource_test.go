@@ -769,3 +769,36 @@ func TestThePublicAddressIsResolvedOnceAtConstruction(t *testing.T) {
 		"a resource-bound token must not be refused because the environment moved under the process")
 	require.Equal(t, "/mcp", example.lastPath)
 }
+
+// SA-F-MCPAUD, the spelling the merged resource-indicator work left open: an exact
+// `mcp` segment match closed `/solutions/<id>/mcp` and admitted
+// `/solutions/<id>/mcp/`, which routers, proxies and clients treat as the same
+// endpoint. A token naming only the host reached the tool surface through it.
+//
+// Asserted on the predicate the admission switch keys on, with the non-MCP control, so
+// widening it cannot have swept the product's own API surface in.
+func TestR1019EverySpellingOfTheToolEndpointIsProtected(t *testing.T) {
+	for _, protected := range []string{
+		"/solutions/abc/mcp",
+		"/solutions/abc/mcp/",
+		"/solutions/abc/mcp?session=1",
+		"/solutions/abc/mcp/messages",
+		"/solutions/abc/mcp/messages?session=1",
+	} {
+		require.True(t, isSolutionToolRequestPath(protected),
+			"%s addresses the tool surface and must demand a resource-bound token", protected)
+	}
+
+	// The control: a solution's ordinary API surface is reached with a session, and
+	// requiring a resource-bound token there would refuse the product.
+	for _, ordinary := range []string{
+		"/solutions/abc/other",
+		"/solutions/abc/mcpx",
+		"/solutions/abc/mcp-tools",
+		"/solutions/abc",
+		"/modules/abc/mcp",
+	} {
+		require.False(t, isSolutionToolRequestPath(ordinary),
+			"%s is not the tool surface and must stay reachable with a session", ordinary)
+	}
+}

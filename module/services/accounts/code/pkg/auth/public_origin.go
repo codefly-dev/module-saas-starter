@@ -12,6 +12,31 @@ import (
 	"golang.org/x/net/idna"
 )
 
+// publicOriginHostProfile renders a host the way the browser's URL parser does.
+//
+// idna.Lookup — the obvious choice, and what this used first — additionally enforces
+// DNS hostname policy, which refuses an UNDERSCORE in a label. Browsers accept one,
+// and internal and staging hostnames routinely carry one, so Lookup refused origins a
+// deployment legitimately serves while the frontend accepted them (R1019-N12/f1).
+// StrictDomainName(false) drops that policy and keeps the mapping.
+//
+// idna.Punycode is NOT the alternative, though it accepts more: it does raw conversion
+// with no case folding, so "BÜCHER.example" encodes to "xn--BCHER-2pa.example" while
+// "bücher.example" encodes to "xn--bcher-kva.example" — two spellings of one origin
+// that would never compare equal, and lowercasing afterwards cannot merge them because
+// the punycode payloads already differ. MapForLookup case-folds BEFORE encoding, which
+// is why it is the mapping used here and why no ToLower is needed after it.
+//
+// VerifyDNSLength(false) because a length limit is the resolver's to enforce, not this
+// comparison's: refusing an over-long host here would reject it at sign-in rather than
+// where it actually fails.
+var publicOriginHostProfile = idna.New(
+	idna.MapForLookup(),
+	idna.Transitional(false),
+	idna.StrictDomainName(false),
+	idna.VerifyDNSLength(false),
+)
+
 type verifiedPublicOriginKey struct{}
 
 // configuredPublicOrigin is the origin an operator pinned for this deployment,
@@ -27,13 +52,22 @@ var configuredPublicOrigin string
 // Storing it raw is what made `https://app.example:443` refuse the equivalent origin
 // the frontend forwards. A value that does not canonicalize is stored trimmed, so the
 // comparison refuses it rather than silently matching something.
-func SetConfiguredPublicOrigin(origin string) {
+func SetConfiguredPublicOrigin(origin string) error {
 	trimmed := strings.TrimSuffix(strings.TrimSpace(origin), "/")
-	if canonical, err := CanonicalPublicOrigin(trimmed); err == nil {
-		configuredPublicOrigin = canonical
-		return
+	if trimmed == "" {
+		configuredPublicOrigin = ""
+		return nil
 	}
-	configuredPublicOrigin = trimmed
+	canonical, err := CanonicalPublicOrigin(trimmed)
+	if err != nil {
+		// Storing the raw value on failure looked like the conservative branch and was
+		// the opposite: a value that cannot canonicalize can never equal a canonicalized
+		// candidate, so every origin comparison failed for the life of the process while
+		// boot reported success (R1019-N12/f2). The caller refuses instead.
+		return fmt.Errorf("configured public origin is unusable: %w", err)
+	}
+	configuredPublicOrigin = canonical
+	return nil
 }
 
 // ConfiguredPublicOrigin returns the pinned origin, if there is one.
@@ -106,11 +140,11 @@ func canonicalPublicOriginHost(hostname string) (string, error) {
 		// and net.IP.String() picks the same representation the browser does.
 		return ip.String(), nil
 	}
-	ascii, err := idna.Lookup.ToASCII(hostname)
+	ascii, err := publicOriginHostProfile.ToASCII(hostname)
 	if err != nil {
 		return "", fmt.Errorf("public origin host is not a usable hostname")
 	}
-	return strings.ToLower(ascii), nil
+	return ascii, nil
 }
 
 // canonicalPublicOriginPort renders the port as the ":NNN" suffix of a canonical

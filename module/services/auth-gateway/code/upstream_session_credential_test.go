@@ -72,3 +72,46 @@ func TestCatalogRouteStillCarriesTheSessionToAccounts(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, "Bearer "+token, api.lastHeaders.Get("Authorization"))
 }
+
+// The boundary between SP-GW-07's two halves, which the merged resource-indicator work
+// made load-bearing: a HOST-WIDE session is removed, a RESOURCE-BOUND tool token is
+// forwarded.
+//
+// Both directions are asserted because either alone is satisfied by the wrong rule.
+// Without the forwarding case, stripping everything passes — and that broke the tool
+// surface, whose runtime mints the viewer's Work Context from that token. Without the
+// stripping case, forwarding everything passes, which is the finding SA-F-BEARER was.
+//
+// The path is what decides, and that is sound rather than convenient: ext_authz answers
+// 401 to a host-wide token on a tool path, so a tool request that reaches the proxy has
+// already been proved resource-bound.
+func TestR1019ToolTokenIsForwardedWhileASessionIsNotForwarded(t *testing.T) {
+	for _, tc := range []struct {
+		path      string
+		forwarded bool
+		why       string
+	}{
+		{"/solutions/example/mcp", true, "a resource-bound tool token is the scoped credential the runtime needs"},
+		{"/solutions/example/mcp/", true, "the same endpoint, spelled with a trailing slash"},
+		{"/solutions/example/mcp/messages", true, "MCP's own transport sub-route is the same resource"},
+		{"/solutions/example/data", false, "a solution's ordinary API gets identity headers, never the session"},
+		{"/solutions/example", false, "nor does its root"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			header := http.Header{}
+			header.Set("Authorization", "Bearer a-token")
+			header.Set("Cookie", "codefly_session=1")
+
+			if !isSolutionToolRequestPath(tc.path) {
+				removePersonsSessionCredential(header)
+			}
+
+			if tc.forwarded {
+				require.Equal(t, "Bearer a-token", header.Get("Authorization"), tc.why)
+				return
+			}
+			require.Empty(t, header.Get("Authorization"), tc.why)
+			require.Empty(t, header.Get("Cookie"), tc.why)
+		})
+	}
+}

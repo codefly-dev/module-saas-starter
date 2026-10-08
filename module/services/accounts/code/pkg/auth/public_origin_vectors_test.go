@@ -21,7 +21,13 @@ import (
 // same set.
 //
 // Expected values are the browser's own answers, taken from the parser rather than
-// reasoned about, with one deliberate exception noted in refusedPublicOriginVectors.
+// reasoned about, with the deliberate exceptions noted in refusedPublicOriginVectors.
+//
+// THIS TABLE IS THE FULL EXTENT OF THE AGREEMENT. The lockstep gate proves the two
+// sides assert the same cases; it cannot prove anything about a case absent from both,
+// and a gap here reads as agreement when there is none. An underscore host and a
+// hyphen-edged label were both missing, and both were spellings the two sides answered
+// differently (R1019-N12/f3). A new spelling belongs here first.
 var canonicalPublicOriginVectors = []struct{ Input, Canonical string }{
 	{"https://app.example", "https://app.example"},
 	{"https://APP.example", "https://app.example"},
@@ -37,6 +43,9 @@ var canonicalPublicOriginVectors = []struct{ Input, Canonical string }{
 	{"http://localhost:80", "http://localhost"},
 	{"http://127.0.0.1:3000", "http://127.0.0.1:3000"},
 	{"http://[::1]:80", "http://[::1]"},
+	{"https://my_app.example", "https://my_app.example"},
+	{"https://a_b-c.example", "https://a_b-c.example"},
+	{"https://BÜCHER.example", "https://xn--bcher-kva.example"},
 }
 
 // Refused on both sides. Every entry but one is refused by the browser parser too.
@@ -49,6 +58,8 @@ var refusedPublicOriginVectors = []string{
 	"https://:443",
 	"https://app.example:99999",
 	"https://app.example:0",
+	"https://-app.example",
+	"https://app-.example",
 	"https://app.example:-1",
 	"https://app.example/path",
 	"https://app.example?q=1",
@@ -81,13 +92,13 @@ func TestR1019CanonicalPublicOriginRefusesWhatTheBrowserWillNotParse(t *testing.
 // Canonicalization is only worth anything if the COMPARISON uses it. A configured
 // origin and a differently spelled equivalent must reach the same verified origin.
 func TestR1019ConfiguredOriginAcceptsEveryEquivalentSpelling(t *testing.T) {
-	t.Cleanup(func() { SetConfiguredPublicOrigin("") })
+	t.Cleanup(func() { _ = SetConfiguredPublicOrigin("") })
 
 	for _, spelling := range []string{
 		"https://app.example", "https://APP.example", "https://app.example:443",
 		"https://app.example:0443", "https://app.example:", "https://app.example/",
 	} {
-		SetConfiguredPublicOrigin(spelling)
+		require.NoError(t, SetConfiguredPublicOrigin(spelling))
 		configured, ok := ConfiguredPublicOrigin()
 		require.True(t, ok)
 		require.Equal(t, "https://app.example", configured,
@@ -107,4 +118,27 @@ func TestR1019ConfiguredOriginAcceptsEveryEquivalentSpelling(t *testing.T) {
 		require.ErrorIs(t, err, ErrPublicOriginNotConfigured,
 			"a different origin is still refused when %q is pinned", spelling)
 	}
+}
+
+// R1019-N12/f2: the setter must refuse a value it cannot canonicalize rather than
+// store it. Storing the raw string kept the process running with a configured origin
+// that could never equal any canonicalized candidate, so every comparison failed for
+// the life of the process and nothing said why.
+func TestR1019ConfiguringAnUnusableOriginIsRefused(t *testing.T) {
+	t.Cleanup(func() { _ = SetConfiguredPublicOrigin("") })
+	require.NoError(t, SetConfiguredPublicOrigin("https://app.example"))
+
+	for _, unusable := range refusedPublicOriginVectors {
+		if unusable == "" {
+			continue // the empty value means "none pinned", which is a local runtime
+		}
+		require.Error(t, SetConfiguredPublicOrigin(unusable),
+			"%q cannot be canonicalized, so pinning it would make every comparison fail", unusable)
+	}
+
+	// And the pin is unchanged by a refused call, so a failed reconfiguration cannot
+	// leave the process comparing against something it never accepted.
+	configured, ok := ConfiguredPublicOrigin()
+	require.True(t, ok)
+	require.Equal(t, "https://app.example", configured)
 }

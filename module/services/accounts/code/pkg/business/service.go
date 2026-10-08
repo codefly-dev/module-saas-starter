@@ -78,7 +78,7 @@ type Service struct {
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
 	datasourceSyncOperations  DatasourceSyncOperationStore
 	datasourceConnectors      *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
-	datasourceLinkKey         []byte              // signs account-link states; derived from the deployment's internal key
+	datasourceLinkKey         []byte              // signs account-link states; delivered as datasource-keys/DATASOURCE_ACCOUNT_LINK_KEY, not derived from any other credential
 	datasourceLinkers         map[string]DatasourceAccountLinker
 	datasourceTXTResolver     TXTResolver
 	datasourceBudgets         DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered

@@ -68,6 +68,18 @@ function canonicalOrigin(candidate: string): string | undefined {
 				return undefined;
 			}
 		}
+		// A hostname label may not begin or end with a hyphen (RFC 1123). The parser
+		// accepts one and Go's IDNA mapping refuses it, which is a spelling the two
+		// sides would answer differently (R1019-N12/f3) — so this side refuses it too
+		// rather than leaving the disagreement to the comparison. An IPv6 literal is
+		// bracketed and has no labels, so it is left alone.
+		if (!parsed.hostname.startsWith("[")) {
+			for (const label of parsed.hostname.split(".")) {
+				if (label.startsWith("-") || label.endsWith("-")) {
+					return undefined;
+				}
+			}
+		}
 		return parsed.origin;
 	} catch {
 		return undefined;

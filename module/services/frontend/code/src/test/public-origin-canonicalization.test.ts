@@ -15,6 +15,10 @@ import {
 // The same table is asserted in pkg/auth/public_origin_vectors_test.go, and
 // module/tools/public_origin_vectors_lockstep_test.go holds the two copies identical,
 // so a case fixed on one side cannot be left failing on the other.
+//
+// THIS TABLE IS THE FULL EXTENT OF THE AGREEMENT: the gate cannot prove anything about
+// a spelling absent from both tables, and a gap here reads as agreement when there is
+// none (R1019-N12/f3). A new spelling belongs here first.
 const canonicalPublicOriginVectors: [string, string][] = [
 	["https://app.example", "https://app.example"],
 	["https://APP.example", "https://app.example"],
@@ -30,6 +34,9 @@ const canonicalPublicOriginVectors: [string, string][] = [
 	["http://localhost:80", "http://localhost"],
 	["http://127.0.0.1:3000", "http://127.0.0.1:3000"],
 	["http://[::1]:80", "http://[::1]"],
+	["https://my_app.example", "https://my_app.example"],
+	["https://a_b-c.example", "https://a_b-c.example"],
+	["https://BÜCHER.example", "https://xn--bcher-kva.example"],
 ];
 
 // Refused on both sides. Port 0 is the one case the parser itself accepts; see the
@@ -38,6 +45,8 @@ const refusedPublicOriginVectors: string[] = [
 	"https://:443",
 	"https://app.example:99999",
 	"https://app.example:0",
+	"https://-app.example",
+	"https://app-.example",
 	"https://app.example:-1",
 	"https://app.example/path",
 	"https://app.example?q=1",
