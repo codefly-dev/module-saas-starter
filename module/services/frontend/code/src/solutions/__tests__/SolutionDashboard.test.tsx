@@ -116,13 +116,18 @@ function aggregateHandler(
 
 const DEFAULT_ORDER = ["Logins over time", "Top event types", "Total logins"];
 
-// The tile titles, in the order the dashboard shows them.
+// The tile titles, in the order the dashboard shows them. The kit's renderer
+// titles a series widget through its Card (`card-heading`) and a scalar one
+// through its StatTile (`metric-label`), so a tile is named by whichever of
+// the two it carries.
 function tileTitles(): string[] {
 	return screen
 		.getAllByRole("listitem")
 		.map(
 			(tile) =>
-				tile.querySelector('[data-slot="card-title"]')?.textContent ?? "",
+				tile.querySelector(
+					'[data-slot="card-heading"], [data-slot="metric-label"]',
+				)?.textContent ?? "",
 		);
 }
 
@@ -155,13 +160,22 @@ describe("SolutionDashboards", () => {
 
 		renderInApp(<SolutionDashboards graph={graph} solutionId="example" />);
 
-		// Bar widget: each event_type bucket becomes a labelled bar.
-		expect(await screen.findByText("saas.auth.login")).toBeTruthy();
-		expect(screen.getByText("42")).toBeTruthy();
+		// Bar widget: each event_type bucket becomes a bar, and every exact
+		// value is reachable in the chart's accessible data table — which is
+		// what a reader who cannot see the geometry gets.
+		const bars = await screen.findByRole("table", { name: "Top event types" });
+		expect(
+			within(bars).getByRole("row", { name: /saas\.auth\.login/ }),
+		).toBeTruthy();
+		expect(within(bars).getByText("42")).toBeTruthy();
 		// Number widget: the total-logins stat sums the time buckets (3 + 5).
 		expect(screen.getByText("8")).toBeTruthy();
-		// Each widget's title is rendered from the declaration.
-		expect(screen.getByText("Logins over time")).toBeTruthy();
+		// Each widget's title is rendered from the declaration. A chart widget
+		// says it three times: once visibly as its card's heading, and twice in
+		// the accessible data table that is the chart's screen-reader
+		// representation — as the table's caption and as its one series' column
+		// header, there being no other name for the series than the widget's.
+		expect(screen.getAllByText("Logins over time")).toHaveLength(3);
 		expect(screen.getByText("Total logins")).toBeTruthy();
 	});
 
