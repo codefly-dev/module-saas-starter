@@ -97,6 +97,54 @@ has three node kinds:
   one metric. These metric-bound widgets are distinct from `ui.widgets`, which
   are presentation slots contributed to host surfaces; the two never mix.
 
+### Dashboard layout
+
+Layout fields are **additive**. Existing declarations need no edits. A grid
+packs consecutive `number` widgets into four-column rows and series into
+two-column rows, collapsing to one column on narrow screens. Runs retain widget
+order; a scalar is never moved ahead of a preceding chart. Cards align at their
+natural height, so a short or empty card does not stretch to its neighbour.
+`stack` keeps one widget per row and ignores column/span hints.
+
+- `Dashboard.columns?: 1 | 2 | 3 | 4` overrides the default for both kinds of row.
+- `MetricWidget.span?: 1 | 2 | 3 | 4` applies to scalars and series, clamped to
+  the containing row's columns and the current responsive breakpoint.
+- `Dashboard.sections?: { id, title, description?, columns? }[]` declares named
+  bands in section order. Each widget may name one with `section`; the id must
+  exist. A section inherits the dashboard column count unless it overrides it.
+  Widgets without a section appear first; within each section, widget order is
+  preserved. Empty sections draw nothing.
+
+For example, an existing dashboard can add:
+
+```json
+{
+  "id": "overview",
+  "layout": "grid",
+  "columns": 2,
+  "sections": [
+    { "id": "headline", "title": "Headline numbers", "columns": 4 },
+    { "id": "trends", "title": "Over time" }
+  ],
+  "widgets": [
+    { "id": "total", "metric": "total_events", "visualization": "number", "section": "headline" },
+    { "id": "trend", "metric": "events_per_day", "visualization": "line", "section": "trends", "span": 2 }
+  ]
+}
+```
+
+`runDashboard` and `fromDashboardData` carry these fields to the kit unchanged.
+The host's sortable view uses the same geometry. Dragging swaps widget IDs;
+keyboard arrows move one place within the widget's declared section. A viewer's
+preference does not change declared section membership.
+
+**Independent rollout:** hosts with this validator ignore unknown presentation
+fields on dashboards, sections and widgets. Unknown metric/query fields still
+fail validation. Previously released hosts used exact-key validation and will
+reject the new fields: upgrade those hosts before adding layout fields, or keep
+sending the unchanged declaration to them. Additive types cannot retrofit an
+already-deployed validator.
+
 On a registered solution's page the host renders every declared dashboard in a
 **Dashboard** tab beside the solution's own **App** tab, never stacked above
 the solution; the solution stays mounted while the dashboard is open. A
@@ -104,7 +152,10 @@ solution that declares no dashboard gets no tab bar. Each viewer can arrange a
 dashboard for themselves: reorder its declared widgets, remove
 them, and re-add the ones they removed. The declared widgets, in declared order,
 are where every viewer starts, and a widget declared later reaches viewers who
-already rearranged. A viewer's arrangement is a preference (ADR 0007): it never
+already rearranged. Saved layouts use widget IDs, not positions, and record the
+IDs known at save time. An unchanged saved default follows a new declaration;
+a customized order keeps surviving IDs, appends newly declared IDs once, and
+keeps intentionally removed widgets hidden. A viewer's arrangement is a preference (ADR 0007): it never
 adds a metric the dashboard does not draw, so a metric declared only as a
 derived metric's input stays off the page.
 

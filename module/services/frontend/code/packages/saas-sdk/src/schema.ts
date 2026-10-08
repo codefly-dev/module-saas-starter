@@ -134,9 +134,21 @@ export interface DerivedMetric {
 export type Metric = SourceMetric | DerivedMetric;
 
 /** One dashboard widget bound to a declared metric. */
+export type DashboardColumns = 1 | 2 | 3 | 4;
+
+/** A named band; widgets refer to its id through `section`. */
+export interface DashboardSection {
+	id: string;
+	title: string;
+	description?: string;
+	columns?: DashboardColumns;
+}
+
 export interface MetricWidget {
 	id: string;
 	metric: string;
+	span?: DashboardColumns;
+	section?: string;
 	visualization: WidgetVisualization;
 	title?: string;
 }
@@ -146,6 +158,8 @@ export interface Dashboard {
 	id: string;
 	title?: string;
 	layout: DashboardLayout;
+	columns?: DashboardColumns;
+	sections?: readonly DashboardSection[];
 	widgets: readonly MetricWidget[];
 }
 

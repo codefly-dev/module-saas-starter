@@ -8,6 +8,8 @@
 // own types here is what lets `@codefly-dev/ui` stay a pure component library with no
 // dependency on the SDK's transport stack.
 
+import type { MetricFormat } from "./metric-tiles.js";
+
 /** How a widget draws its series. */
 export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 
@@ -28,21 +30,48 @@ export interface WidgetSeries {
 }
 
 /** A widget bound to its resolved series. */
+export interface DashboardSectionView {
+	id: string;
+	title: string;
+	description?: string;
+	columns?: 1 | 2 | 3 | 4;
+}
+
 export interface DashboardWidgetView {
+	section?: string;
 	id: string;
 	visualization: WidgetVisualization;
 	title?: string;
-	series: WidgetSeries;
+	/**
+	 * The resolved series, or `null` while it is still being resolved. A
+	 * renderer draws a placeholder for `null` rather than an empty series,
+	 * because "not yet" and "nothing matched" are different answers and the
+	 * second one is a fact about the data.
+	 */
+	series: WidgetSeries | null;
+	/**
+	 * The series could not be resolved — an error, not an empty result. A
+	 * caller that resolves each widget separately sets it per widget, so one
+	 * failure says so in its own card instead of blanking its siblings.
+	 */
+	failed?: boolean;
 	/** Grid columns this widget spans (1–4); ignored in a stack. */
 	span?: 1 | 2 | 3 | 4;
+	/** How a scalar widget's value is rendered. Defaults to a plain number. */
+	format?: MetricFormat;
+	/** Suffix after a scalar widget's value, e.g. "req/s". */
+	unit?: string;
+	/** When false a rising value reads as bad (an error count). Defaults true. */
+	higherIsBetter?: boolean;
 }
 
 /** The fully-resolved dashboard the renderer paints. */
 export interface DashboardView {
+	sections?: readonly DashboardSectionView[];
 	title?: string;
 	description?: string;
 	layout?: DashboardLayoutKind;
-	/** Grid column count (default 2); ignored in a stack. */
+	/** Grid columns (default 4 for scalars, 2 for series); ignored in a stack. */
 	columns?: 1 | 2 | 3 | 4;
 	/** Optional accent (any CSS color) applied to charts via the primary token. */
 	accent?: string;
@@ -53,12 +82,19 @@ export interface DashboardView {
 // structurally (not imported) so this package keeps zero runtime deps; any value
 // with these fields — including the SDK's `DashboardData` — satisfies it.
 interface ResolvedWidgetLike {
+	span?: 1 | 2 | 3 | 4;
+	section?: string;
 	id: string;
 	visualization: WidgetVisualization;
 	title?: string;
 	series: WidgetSeries;
+	format?: MetricFormat;
+	unit?: string;
+	higherIsBetter?: boolean;
 }
 interface DashboardDataLike {
+	columns?: 1 | 2 | 3 | 4;
+	sections?: readonly DashboardSectionView[];
 	title?: string;
 	layout?: DashboardLayoutKind;
 	widgets: ResolvedWidgetLike[];
@@ -77,13 +113,19 @@ export function fromDashboardData(
 		title: data.title,
 		description: extra?.description,
 		layout: data.layout ?? "grid",
-		columns: extra?.columns,
+		columns: extra?.columns ?? data.columns,
+		sections: data.sections,
 		accent: extra?.accent,
 		widgets: data.widgets.map((widget) => ({
 			id: widget.id,
+			span: widget.span,
+			section: widget.section,
 			visualization: widget.visualization,
 			title: widget.title,
 			series: widget.series,
+			format: widget.format,
+			unit: widget.unit,
+			higherIsBetter: widget.higherIsBetter,
 		})),
 	};
 }

@@ -115,6 +115,40 @@ whether `/s/{id}` renders, and it stays installation-blind.
   observation speaks for the present is the host's to decide, and a copy of that
   window here would drift from it.
 
+## Drawing a solution's declared dashboard
+
+`src/solutions/SolutionDashboard.tsx` **mounts** the shared kit's
+`<Dashboard>` (`@codefly-dev/ui/dashboard`); it draws nothing itself. Which
+tier each widget and each coverage state is drawn with is the module's
+[AUDIT_METRICS.md](../../AUDIT_METRICS.md) ("How a resolved series is drawn") —
+one renderer for the host's pages, a declared solution dashboard and a solution
+remote alike.
+
+What this file owns is only what is the host's, composed through that
+renderer's slots:
+
+- **the audit queries**, one per widget, so a widget whose metric errors fails
+  alone instead of blanking its siblings. Each lives in its own component
+  (`SolutionWidget`) that resolves the series and then mounts the kit's
+  `DashboardWidget`, because React fixes the number of hooks a component may
+  call and a renderer taking the whole view cannot hold a varying number of
+  queries;
+- **the viewer's arrangement** — reorder by drag or arrow keys, remove, add
+  back, saved per viewer and organization (`dashboard-layout.ts`), handed to
+  the renderer's `layout` slot as the kit's `SortableGrid`;
+- **the ⓘ** that says what a tile counts, from which audit events, over what
+  range and who caused the newest ones (`metric-info.ts`, the principal
+  directory, the recent-events drill-down), handed to each widget as its
+  header actions.
+
+Re-implementing any part of the drawing is refused by
+`src/components/__tests__/kit.test.ts`: a declaration taking a name
+`@codefly-dev/ui` exports must render the kit's component of that name or carry
+a reviewed entry, `class-variance-authority` is not a dependency of this app so
+a kit-shaped primitive cannot be built here, and the two chart surfaces
+(`src/components/charts/chart.tsx`,
+`src/features/dashboard/ui/charts/line-chart.tsx`) stay re-exports.
+
 ## Loading a remote, and its CSP
 
 `/s/[solutionId]` (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the

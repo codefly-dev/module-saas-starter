@@ -15,6 +15,7 @@ import {
 	tileWidget,
 	writeSavedLayout,
 } from "../dashboard-layout";
+import platformSignins from "./fixtures/platform-signins.json";
 
 // A graph with one metric on no dashboard (`per_day`), one drawn only on the
 // second dashboard (`returns`), and one derived from two others (`net`). Only
@@ -244,5 +245,39 @@ describe("dashboard layout", () => {
 		expect(readSavedLayout(null, "k")).toBeNull();
 		expect(writeSavedLayout(blocked, "k", "{}")).toBe(false);
 		expect(writeSavedLayout(null, "k", "{}")).toBe(false);
+	});
+});
+
+// The platform-event fixture is the actual nine-widget declaration supplied
+// with #1044, serialized without changing its event, metric or widget shape.
+describe("a declaration growing from three widgets to nine", () => {
+	const current = platformSignins.dashboards[0] as Dashboard;
+	const before = {
+		...current,
+		widgets: [current.widgets[0], current.widgets[4], current.widgets[6]],
+	};
+	it("follows the declaration before any reorder, including a saved old default", () => {
+		expect(defaultLayout(current)).toEqual(current.widgets.map((w) => w.id));
+		expect(
+			parseLayout(serializeLayout(defaultLayout(before), before), current),
+		).toEqual(defaultLayout(current));
+	});
+	it("retains a custom order by identity and appends new ids once", () => {
+		const order = [before.widgets[2].id, before.widgets[0].id];
+		const saved = serializeLayout(order, before);
+		expect(parseLayout(saved, current)).toEqual([
+			...order,
+			...current.widgets
+				.filter((w) => !before.widgets.some((old) => old.id === w.id))
+				.map((w) => w.id),
+		]);
+		const renamed = {
+			...current,
+			widgets: current.widgets
+				.map((w) => ({ ...w, title: "Updated title" }))
+				.reverse(),
+		};
+		expect(parseLayout(saved, renamed).slice(0, 2)).toEqual(order);
+		expect(parseLayout(saved, current)).not.toContain(before.widgets[1].id);
 	});
 });

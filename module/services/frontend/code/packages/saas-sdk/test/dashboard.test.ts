@@ -184,3 +184,29 @@ describe("runDashboard", () => {
 		expect(calls).toHaveLength(1);
 	});
 });
+
+it("carries layout declarations through resolution without interpreting them", async () => {
+	const { client } = fakeAuditClient(() => [{ key: "login", count: 1 }]);
+	const sections = [{ id: "headline", title: "Headline", columns: 4 as const }];
+	const declaration = {
+		...graph,
+		dashboards: [
+			{
+				...graph.dashboards[0],
+				columns: 3 as const,
+				sections,
+				widgets: graph.dashboards[0].widgets.map((w) => ({
+					...w,
+					section: "headline",
+					span: 2 as const,
+				})),
+			},
+		],
+	};
+	const result = await runDashboard(client, declaration, "activity", context);
+	expect(result.columns).toBe(3);
+	expect(result.sections).toEqual(sections);
+	expect(
+		result.widgets.every((w) => w.span === 2 && w.section === "headline"),
+	).toBe(true);
+});
