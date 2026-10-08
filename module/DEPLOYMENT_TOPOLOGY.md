@@ -70,9 +70,7 @@ edges. Public frontend and marketing endpoints explicitly declare
 `exposure: public`, preserving their existing public addresses.
 
 Promotion requires a released CLI with Core's consumer-derived allow-list
-support and the audit promotion driver from
-[CLI PR 919](https://github.com/codefly-dev/cli/pull/919). Merge the CLI change,
-release that compatible CLI, then promote this kit cutover. The module agent,
+support. The module agent,
 accounts, auth-gateway, store migrator, and module tools require stable Core 0.14
 or later to load these declarations and derive consumer access. The runtime SDK
 also loads the module when resolving local endpoints or secrets. Core 0.13 refuses
