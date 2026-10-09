@@ -60,8 +60,11 @@ function publishedKitPackages(): Array<{
 
 /**
  * The Module-Federation share key each published entry point is imported by:
- * the bare package name for ".", and name + subpath for "./layout". A stylesheet
- * is not a module and cannot be shared, so only JS entry points count.
+ * the bare package name for ".", and name + subpath for "./layout". Only a
+ * runtime module can be a share-scope singleton, so an entry point is one whose
+ * target is built JavaScript: a stylesheet, and a published document such as the
+ * dashboard catalog or its data model, are bytes a consumer compiles, reads or
+ * freezes, with no instance to dedupe.
  */
 function shareKeysOf(manifest: {
 	name: string;
@@ -75,7 +78,7 @@ function shareKeysOf(manifest: {
 					: ((target as Record<string, string>)?.import ??
 						(target as Record<string, string>)?.default ??
 						"");
-			return !subpath.endsWith(".css") && !file.endsWith(".css");
+			return file.endsWith(".js") && !subpath.endsWith(".css");
 		})
 		.map(([subpath]) =>
 			subpath === "." ? manifest.name : `${manifest.name}${subpath.slice(1)}`,

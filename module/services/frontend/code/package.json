@@ -31,7 +31,8 @@
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"test:published-ui": "npm run build:plugin-packages && node scripts/test-published-ui.mjs && node scripts/test-registry-ui.mjs",
-		"generate:type-utilities": "node packages/codefly-ui/scripts/generate-type-utilities.mjs"
+		"generate:type-utilities": "node packages/codefly-ui/scripts/generate-type-utilities.mjs",
+		"generate:dashboard-catalog": "node packages/codefly-ui/scripts/generate-dashboard-catalog.mjs"
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.3.0",

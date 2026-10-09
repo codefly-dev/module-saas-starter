@@ -110,6 +110,8 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
 | `@codefly-dev/ui/board`           | `Board` (React-only)                                |
+| `@codefly-dev/ui/dashboard-catalog.json` | The dashboard components as an A2UI catalog — the exact document a consumer freezes |
+| `@codefly-dev/ui/dashboard-data.schema.json` | The data model those catalog bindings resolve against |
 | `@codefly-dev/ui/type-slots.css`  | The generated type-slot and control-rung utilities  |
 | `@codefly-dev/ui/theme.css`       | The token layer: token → utility, light/dark binding, custom variants (Tailwind source) |
 | `@codefly-dev/ui/preview.css`     | The kit compiled with the default skin, for previews only — see below |
@@ -226,6 +228,63 @@ host's copy and writes to the store the mounted Toaster reads. Never import the
 notification library directly in a remote: its bundled copy writes to a store no
 Toaster reads, and the message is lost without a trace. Keep an in-place message
 for anything the person must act on; a toast is a signal, not the record.
+
+## The chart vocabulary is published, not just implemented
+
+`./dashboard` draws five visualizations — `line`, `bar`, `area`, `number`,
+`table` — and that list used to be a convention: written here in
+`WidgetVisualization`, restated in `@codefly-dev/saas-sdk`'s data-graph schema and
+in `@codefly/saas-plugin-manifest`, and retyped by any agent offering a
+`visualization` enum. Nothing checked that they agreed.
+
+The kit now publishes it once, as an [A2UI](https://a2ui.org) catalog:
+
+- **`@codefly-dev/ui/dashboard-catalog.json`** names the components a renderer may
+  be asked for — `Dashboard` (one resolved view, drawn whole), `DashboardGrid`,
+  and `MetricLineChart` / `MetricAreaChart` / `MetricBarChart` / `StatTile` — with
+  each property declared through A2UI's canonical `ComponentId` / `ChildList` /
+  `Dynamic*` references. It is pinned at `protocolVersion: "0.9"`, the
+  specification's production version: v1.0 is a candidate that spells a binding
+  `{"@path": …}`, and the published renderers expose `v0_8`/`v0_9` and no `v1_0`,
+  so a v1.0 catalog would describe properties no shipped client can bind.
+- **`@codefly-dev/ui/dashboard-data.schema.json`** is the data model those bindings
+  resolve to: `DashboardView` and the shapes beneath it. It describes series and
+  carries no numbers. It is a second document because A2UI closes a catalog's
+  root keys and limits its `$defs` to `anyComponent`/`anyFunction`, so a
+  conforming catalog has nowhere to put a shared series schema; the catalog names
+  this one by `$id` in its `instructions`.
+- **`DASHBOARD_CATALOG`, `DASHBOARD_DATA_SCHEMA`, `DASHBOARD_VISUALIZATIONS`,
+  `DASHBOARD_WIDGET_COMPONENT_BY_VISUALIZATION` and
+  `dashboardCatalogComponents()`** are the same vocabulary as values, exported
+  from `./dashboard`. The last one is the projection a consumer that *freezes* a
+  catalog keeps — component names and their child-bearing properties — derived
+  from the document's own references rather than retyped.
+
+`table` maps to `null`: `<Dashboard>` draws a table body itself and the kit
+exports no standalone table chart, so there is no component for a catalog to
+name. The gap is a declared value, not a silence.
+
+Both documents are generated from `src/dashboard/catalog.ts` by
+`node scripts/generate-dashboard-catalog.mjs` (`--check` to fail on a stale one),
+and they are committed because a consumer freezes a catalog by the digest of the
+document it was approved under. Three things stop the kit drifting from what it
+publishes, and each has been shown to fail when it should:
+
+1. The component map is `Record<WidgetVisualization, string | null>`, so a sixth
+   visualization does not compile until the catalog names it or declares its gap.
+2. The data model's properties are
+   `Record<keyof Required<DashboardView>, JsonSchemaNode>`, so a view field added
+   here does not compile until the published schema describes it, and a
+   `required` list is checked against which fields are actually required.
+3. `src/dashboard/__tests__/catalog.test.ts` holds the committed bytes to the
+   source, holds the document to A2UI's rules for a catalog, and validates
+   `fromDashboardData`'s output against the published data model — exercising its
+   refusals, so an evaluation that accepts everything cannot pass for evidence.
+
+`src/solutions/__tests__/dashboard-vocabulary.test.ts` in the host closes the
+other half: the kit, the SDK and the manifest package must hold one list, and the
+manifest's own validator must accept every visualization the catalog publishes
+and refuse one it does not.
 
 ## Skin resolution
 

@@ -1,0 +1,183 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "codefly-dev.ui:dashboard/v1",
+	"protocolVersion": "0.9",
+	"title": "Codefly dashboard catalog",
+	"description": "The dashboard components @codefly-dev/ui/dashboard renders, as an A2UI catalog. Generated from the kit's own types.",
+	"catalogId": "codefly-dev.ui:dashboard/v1",
+	"instructions": "- Every component here is drawn by `@codefly-dev/ui/dashboard`. This catalog publishes the names and their properties; the kit owns the drawing.\n- Data is bound by reference. A `data` or `series` property carries a data-model pointer and the catalog carries no values — the shapes those pointers resolve to are `codefly-dev.ui:dashboard-data/v1`.\n- A widget's visualization is one of: `line`, `bar`, `area`, `number`, `table`. `line` → `MetricLineChart`, `bar` → `MetricBarChart`, `area` → `MetricAreaChart`, `number` → `StatTile`. `table` is drawn only inside `Dashboard`, from its view, and has no standalone component to name.\n- `Dashboard` draws one resolved view whole; `DashboardGrid` lays out charts declared one by one. Both are valid roots.",
+	"components": {
+		"Dashboard": {
+			"type": "object",
+			"title": "Dashboard",
+			"description": "A whole resolved dashboard: one `DashboardView` from codefly-dev.ui:dashboard-data/v1, bound by pointer. Its widgets travel in the data model, not as child components, so a renderer holding this one component draws every widget the view declares.",
+			"properties": {
+				"component": {
+					"const": "Dashboard"
+				},
+				"data": {
+					"$ref": "common_types.json#/$defs/DynamicValue"
+				}
+			},
+			"required": [
+				"component",
+				"data"
+			],
+			"allowedChildren": []
+		},
+		"DashboardGrid": {
+			"type": "object",
+			"title": "DashboardGrid",
+			"description": "A grid of chart components. Use it when each chart is declared and refreshed on its own; use Dashboard when one resolved view is drawn whole.",
+			"properties": {
+				"component": {
+					"const": "DashboardGrid"
+				},
+				"title": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"widgets": {
+					"$ref": "common_types.json#/$defs/ChildList"
+				}
+			},
+			"required": [
+				"component",
+				"widgets"
+			],
+			"allowedChildren": [
+				"MetricLineChart",
+				"MetricAreaChart",
+				"MetricBarChart",
+				"StatTile"
+			]
+		},
+		"MetricLineChart": {
+			"type": "object",
+			"title": "MetricLineChart",
+			"description": "One metric as a line. `series` points at that metric's resolved `SeriesPoint[]`.",
+			"properties": {
+				"component": {
+					"const": "MetricLineChart"
+				},
+				"title": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"metricId": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"series": {
+					"$ref": "common_types.json#/$defs/DynamicValue"
+				}
+			},
+			"required": [
+				"component",
+				"series"
+			],
+			"allowedChildren": []
+		},
+		"MetricAreaChart": {
+			"type": "object",
+			"title": "MetricAreaChart",
+			"description": "One metric as a filled area. `series` points at that metric's resolved `SeriesPoint[]`.",
+			"properties": {
+				"component": {
+					"const": "MetricAreaChart"
+				},
+				"title": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"metricId": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"series": {
+					"$ref": "common_types.json#/$defs/DynamicValue"
+				}
+			},
+			"required": [
+				"component",
+				"series"
+			],
+			"allowedChildren": []
+		},
+		"MetricBarChart": {
+			"type": "object",
+			"title": "MetricBarChart",
+			"description": "One metric as bars, one per group. `series` points at that metric's resolved `SeriesPoint[]`.",
+			"properties": {
+				"component": {
+					"const": "MetricBarChart"
+				},
+				"title": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"metricId": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"series": {
+					"$ref": "common_types.json#/$defs/DynamicValue"
+				}
+			},
+			"required": [
+				"component",
+				"series"
+			],
+			"allowedChildren": []
+		},
+		"StatTile": {
+			"type": "object",
+			"title": "StatTile",
+			"description": "One metric as a scalar, with its points behind it. `total` is the scalar; a null total is unavailable, not zero.",
+			"properties": {
+				"component": {
+					"const": "StatTile"
+				},
+				"title": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"metricId": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				},
+				"series": {
+					"$ref": "common_types.json#/$defs/DynamicValue"
+				},
+				"total": {
+					"$ref": "common_types.json#/$defs/DynamicNumber"
+				},
+				"coverage": {
+					"$ref": "common_types.json#/$defs/DynamicString"
+				}
+			},
+			"required": [
+				"component"
+			],
+			"allowedChildren": []
+		}
+	},
+	"$defs": {
+		"anyComponent": {
+			"oneOf": [
+				{
+					"$ref": "#/components/Dashboard"
+				},
+				{
+					"$ref": "#/components/DashboardGrid"
+				},
+				{
+					"$ref": "#/components/MetricLineChart"
+				},
+				{
+					"$ref": "#/components/MetricAreaChart"
+				},
+				{
+					"$ref": "#/components/MetricBarChart"
+				},
+				{
+					"$ref": "#/components/StatTile"
+				}
+			],
+			"discriminator": {
+				"propertyName": "component"
+			}
+		}
+	}
+}

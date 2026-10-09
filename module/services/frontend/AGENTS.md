@@ -174,6 +174,38 @@ touching either, run `npm run generate:preview-stylesheet --workspace
 host or a remote; what it may and may not be used for is in
 `packages/codefly-ui/README.md` § "Previewing a solution without a host".
 
+### The kit publishes its chart vocabulary
+
+The five visualizations `@codefly-dev/ui/dashboard` draws are a published
+contract, not a convention repeated in three packages. The kit ships two
+documents — `@codefly-dev/ui/dashboard-catalog.json`, an [A2UI](https://a2ui.org)
+catalog naming the dashboard components, and
+`@codefly-dev/ui/dashboard-data.schema.json`, the data model those bindings
+resolve against — generated from `packages/codefly-ui/src/dashboard/catalog.ts`
+by `npm run generate:dashboard-catalog`. They are committed, because a consumer
+freezes a catalog by the digest of the document it was approved under, so a
+hand-edited document would be a state no regeneration reproduces; the kit suite
+holds the bytes to the source.
+
+Three consequences for anyone touching the dashboard types here:
+
+- **Adding a visualization is a four-line change, and the compiler says so.**
+  `WidgetVisualization` gains a member, `catalog.ts`'s component map gains its
+  entry (a component name, or `null` for one only `<Dashboard>` draws), and
+  the documents are regenerated. Skip any of it and the kit does not build.
+- **Adding a `DashboardView` field is the same.** The published data model's
+  properties are typed `Record<keyof Required<DashboardView>, …>`, so a field the
+  schema does not describe fails to compile.
+- **The vocabulary is also restated in `@codefly-dev/saas-sdk` and
+  `@codefly/saas-plugin-manifest`**, and
+  `code/src/solutions/__tests__/dashboard-vocabulary.test.ts` holds all three to
+  one list — including the manifest validator's own runtime list, which no type
+  can reach. A member added to one package alone fails there.
+
+Details, and why the catalog is pinned at `protocolVersion: "0.9"` rather than
+the candidate v1.0, are in `packages/codefly-ui/README.md` § "The chart
+vocabulary is published, not just implemented".
+
 ## Two rules every admin surface owes its reader
 
 Both are product rules the owner has raised repeatedly, and both are kept by a
