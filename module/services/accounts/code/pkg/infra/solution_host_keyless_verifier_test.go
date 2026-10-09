@@ -73,7 +73,7 @@ func keylessVerifierFor(t *testing.T, sigstore *ca.VirtualSigstore) any {
 func TestKeylessVerifierAcceptsAnAllowlistedSigner(t *testing.T) {
 	sigstore, err := ca.NewVirtualSigstore()
 	require.NoError(t, err)
-	payload := []byte(`{"schema":"codefly/solution-host-binding/v2"}`)
+	payload := []byte(`{"schema":"codefly/solution-host-binding/v1"}`)
 	entity, err := sigstore.Sign(testIdentity, testIssuer, payload)
 	require.NoError(t, err)
 

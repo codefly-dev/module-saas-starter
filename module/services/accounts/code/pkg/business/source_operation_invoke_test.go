@@ -18,6 +18,7 @@ import (
 	"accounts/pkg/datasource/connector/connectortest"
 	"accounts/pkg/datasource/operations"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/codefly-dev/sdk-go/receipts"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -121,7 +122,10 @@ func (c operationHTTPClient) Do(ctx context.Context, method, target string, body
 		return nil, &apisource.Failure{Reason: "transport failed"}
 	}
 	req.Header.Set("Authorization", "Bearer "+c.credential)
-	res, err := http.DefaultClient.Do(req)
+	// Match the production single-exchange transport. A shared default
+	// transport can transparently resend a GET after a lost reused connection.
+	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}, Timeout: 30 * time.Second}
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, &apisource.Failure{Reason: "transport failed"}
 	}

@@ -9,8 +9,13 @@ store, background call queue or per-organization provider-app registry.
 
 The accounts **Connect endpoint** serves `DatasourceService.InvokeSourceOperation`
 and `LookupInvokeSourceOperation`, including Connect JSON, gRPC and gRPC-Web.
-The method is marked `codefly.runnable.v0.operation`; `tool` is absent. Discovery
-projects individual declaration schemas/effects/digests over this one binding.
+The method is marked `codefly.runnable.v0.operation`; `tool` is absent.
+Install the `accounts/connect/InvokeSourceOperation` derived package: the
+`authority` listener remains limited to the existing module authority methods.
+The current contract exporter copies the whole service descriptor to both endpoints,
+so it also derives an authority package that this listener cannot serve. That
+export needs endpoint-specific projection; generated output is never filtered by
+hand. Discovery projects individual declaration schemas/effects/digests over this one binding.
 The caller never chooses a destination, HTTP header, credential or method.
 
 Invoke takes `org_id`, `source_id`, `operation`, `input_json`, and `effect_id`.
@@ -67,6 +72,10 @@ can be retried. Unknown mutations use `SOURCE_OPERATION_OUTCOME_UNKNOWN`, a
 non-retryable FailedPrecondition; using the same effect again still cannot send
 another request. A new effect is a new authorized call, not recovery.
 
+Each outbound exchange disables connection reuse, so the HTTP transport cannot
+transparently replay a method after losing a reused connection. The declaration
+owns the effect even when a provider uses GET for a mutation.
+
 Calls share the existing credential budget Scheduler with API sync and use
 PriorityInteractive. New source configurations persist a deployment-keyed HMAC
 budget identity, without storing the credential in the budget key. Legacy API
@@ -102,4 +111,6 @@ The operations conformance suite is independent of sync conformance. Its
 in-memory and httptest fixtures qualify HTTP and host decisions; real business
 tests require Postgres and Vault booted by Codefly. Test results and any boot or
 Core derivation blocker are recorded in the PR; a compiled test is not a passed
-integration test. Release stays gated on acceptance of handbook proposal #269.
+integration test. The callable-sources handbook decision is accepted (proposal
+#269, merged in handbook PR #271). Release still requires the Core release carrying #755 and
+completed host qualification.

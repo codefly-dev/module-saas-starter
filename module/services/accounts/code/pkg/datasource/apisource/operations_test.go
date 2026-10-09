@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -186,5 +188,37 @@ func TestNoCredentialLeaksThroughJSONEscapesOrBasicEncoding(t *testing.T) {
 				t.Fatal("encoded credential reflection escaped the refusal")
 			}
 		})
+	}
+}
+
+// HTTP method names cannot authorize transport retries: the declaration owns
+// the effect, and even GET may represent a provider mutation.
+func TestDoDoesNotReplayLostReplyOnReusedClient(t *testing.T) {
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+	client := New(Config{BaseURL: server.URL, CredentialKind: CredentialKindBearer}, "example-token")
+	// Only replace resolved-IP dialing to reach the local fixture. Retain every
+	// other production transport option, especially connection/retry behavior.
+	client.http.Transport.(*http.Transport).DialContext = (&net.Dialer{}).DialContext
+	if _, err := client.Do(t.Context(), http.MethodGet, server.URL, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Do(t.Context(), http.MethodGet, server.URL, nil); err == nil {
+		t.Fatal("lost reply must be reported")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("provider received %d calls; want 2", got)
 	}
 }

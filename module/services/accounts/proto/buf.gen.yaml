@@ -1,4 +1,9 @@
 version: v2
+# Generate owned declarations only, including in the agent sync-drift check.
+inputs:
+  - directory: .
+    paths:
+      - saas
 managed:
   enabled: true
   disable:

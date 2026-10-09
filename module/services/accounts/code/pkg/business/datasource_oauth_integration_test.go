@@ -3,6 +3,7 @@
 package business_test
 
 import (
+	"accounts/pkg/auth"
 	"accounts/pkg/datasource/connector/connectortest"
 	"accounts/pkg/datasource/operations"
 	"context"
@@ -11,8 +12,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/codefly-dev/core/wool"
-	"github.com/codefly-dev/sdk-go/receipts"
 	"net/url"
 	"strings"
 	"sync"
@@ -20,9 +19,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
+	"github.com/codefly-dev/sdk-go/receipts"
+
 	"accounts/pkg/business"
 	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/keyservice"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -156,6 +159,7 @@ func TestNoCredentialByteSequenceLeaks(t *testing.T) {
 	clearData(t)
 	actor, org := mustUserAndOrg(t, testCtx, "disclosure@example.com", "disclosure", "Acme")
 	svc, _ := realOAuthService(t)
+	requestCtx := auth.WithVerifiedDatabaseIdentity(testCtx, actor, org)
 	secret, refresh := randomCredential(t), randomCredential(t)
 	captured := &woolCapture{}
 	wool.SetFallbackLogger(captured)
@@ -167,7 +171,8 @@ func TestNoCredentialByteSequenceLeaks(t *testing.T) {
 			cfg.BaseURL = "https://" + strings.ReplaceAll(mode, "_", "-") + ".example.test"
 			source, err := svc.AddSource(testCtx, actor, business.AddSourceInput{OrgID: org, Provider: business.DatasourceProviderAPI, CollectionLabel: "Acme", API: cfg, Credential: refresh, OAuth2ClientSecret: secret})
 			require.NoError(t, err)
-			declarations, err := svc.DeclareSourceOperations(testCtx, actor, org, source.ID, []operations.Declaration{connectortest.OperationDeclaration()})
+			grantOperationBoundary(t, requestCtx, actor, org, source.BoundaryNodeID)
+			declarations, err := svc.DeclareSourceOperations(requestCtx, actor, org, source.ID, []operations.Declaration{connectortest.OperationDeclaration()})
 			require.NoError(t, err)
 			require.Len(t, declarations, 1)
 			svc.SetDatasourceOAuth2RefreshFunc(func(ctx context.Context, cfg apisource.OAuth2Config, token, clientSecret string) (*apisource.OAuth2Token, error) {
@@ -193,12 +198,15 @@ func TestNoCredentialByteSequenceLeaks(t *testing.T) {
 			}
 			effectID := business.NewIDString()
 			sum := sha256.Sum256(input)
-			ctx := receipts.WithEffect(testCtx, receipts.Effect{ID: effectID, Tenant: org, Method: "/saas.accounts.v1.DatasourceService/InvokeSourceOperation", RequestDigest: sum[:]})
+			ctx := receipts.WithEffect(requestCtx, receipts.Effect{ID: effectID, Tenant: org, Method: "/saas.accounts.v1.DatasourceService/InvokeSourceOperation", RequestDigest: sum[:]})
 			response, err := svc.InvokeSourceOperation(ctx, actor, org, source.ID, "read_item", input, func(context.Context, *business.SourceOperationResult) error {
 				t.Fatal("failure must not commit a receipt")
 				return nil
 			})
 			require.Error(t, err)
+			want := map[string]codes.Code{"bad_token_url": codes.Unavailable, "401": codes.FailedPrecondition,
+				"429": codes.ResourceExhausted, "redirect": codes.Unavailable, "timeout": codes.Unavailable, "schema": codes.InvalidArgument}
+			require.Equal(t, want[mode], status.Code(err), "failure must reach the intended layer")
 			encoded, marshalErr := json.Marshal(response)
 			require.NoError(t, marshalErr)
 			var rows []business.AuditEntry

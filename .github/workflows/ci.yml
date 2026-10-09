@@ -89,7 +89,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.migration-reference.outputs.replay == 'true'
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: module/services/store/code/go.sum
       - name: Verify migration upgrade and clean install on PostgreSQL
         if: steps.migration-reference.outputs.replay == 'true'
@@ -226,7 +226,7 @@ jobs:
           fi
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: |
             go.sum
             module/tools/go.sum
@@ -324,7 +324,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: module/services/accounts/code/go.sum
       # The suite needs a native PostgreSQL it can initdb and own, not a service
       # container: it provisions its own logins, roles and grants, and widens one
@@ -372,7 +372,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: |
             go.sum
             module/tools/go.sum
@@ -438,7 +438,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: module/tools/go.sum
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -476,9 +476,12 @@ jobs:
           git fetch --no-tags origin \
             refs/heads/main:refs/remotes/origin/main
           git archive origin/main module/services/accounts/proto | tar -x -C "${baseline}"
-          buf breaking module/services/accounts/proto \
+          # Compare the owned module as one Buf image; the vendored option
+          # closure is a separate module, not a second public API to compare.
+          buf build module/services/accounts/proto --path module/services/accounts/proto/saas -o "${baseline}/current.binpb"
+          buf breaking "${baseline}/current.binpb" \
             --against "${baseline}/module/services/accounts/proto" \
-            --exclude-imports
+            --config module/services/accounts/proto/buf.yaml --exclude-imports
       - name: Execute declared generators and reject drift
         working-directory: module/tools
         env:
@@ -532,7 +535,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
       - name: Reject ineffective image proposals before service CI
         env:
           CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
@@ -664,7 +667,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: |
             go.sum
             module/tools/go.sum
@@ -889,7 +892,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: |
             go.sum
             module/tools/go.sum
@@ -969,7 +972,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: |
             go.sum
             module/tools/go.sum
@@ -1122,7 +1125,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache-dependency-path: module/tools/go.sum
       # The release record runs on the same Node every gate is tested against,
       # rather than whichever version the runner image happens to ship.

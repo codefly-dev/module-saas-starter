@@ -9,17 +9,19 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"encoding/json"
-	"github.com/codefly-dev/sdk-go/receipts"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/codefly-dev/sdk-go/receipts"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
 	"accounts/pkg/business"
 	"accounts/pkg/datasource/operations"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,16 +37,20 @@ func TestSourceDeclarationsAtomicReplacementAndTenantIsolation(t *testing.T) {
 	decl := operations.Declaration{Name: "read_item", Method: "GET", Path: "/items/{id}", Effect: operations.ReadOnly, MaxOutputBytes: 1024,
 		InputSchema:  json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"}},"required":["id"]}`),
 		OutputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`)}
-	admitted, err := svc.DeclareSourceOperations(testCtx, actor, org, source.ID, []operations.Declaration{decl})
+	requestCtx := auth.WithVerifiedDatabaseIdentity(testCtx, actor, org)
+	admitted, err := svc.DeclareSourceOperations(requestCtx, actor, org, source.ID, []operations.Declaration{decl})
 	require.NoError(t, err)
 	require.Len(t, admitted, 1)
 	require.NotEmpty(t, admitted[0].Digest)
-	_, err = svc.DeclareSourceOperations(testCtx, actor, org, source.ID, []operations.Declaration{decl, decl})
+	_, err = svc.DeclareSourceOperations(requestCtx, actor, org, source.ID, []operations.Declaration{decl, decl})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
 		got, err := testStore.ListSourceOperations(ctx, org, source.ID)
 		require.NoError(t, err)
-		require.Equal(t, admitted, got)
+		require.Len(t, got, 1)
+		canonical, err := operations.Admit(got[0])
+		require.NoError(t, err)
+		require.Equal(t, admitted[0], canonical)
 		return nil
 	}))
 	require.NoError(t, testStore.WithOrgTx(testCtx, other, func(ctx context.Context) error {
@@ -53,9 +59,10 @@ func TestSourceDeclarationsAtomicReplacementAndTenantIsolation(t *testing.T) {
 		require.Empty(t, got, "RLS must hide the other tenant's declarations")
 		return nil
 	}))
-	_, err = svc.DeclareSourceOperations(testCtx, business.NewIDString(), org, source.ID, nil)
+	absent := business.NewIDString()
+	_, err = svc.DeclareSourceOperations(auth.WithVerifiedDatabaseIdentity(testCtx, absent, org), absent, org, source.ID, nil)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
-	_, err = svc.DeclareSourceOperations(testCtx, actor, org, source.ID, nil)
+	_, err = svc.DeclareSourceOperations(requestCtx, actor, org, source.ID, nil)
 	require.NoError(t, err)
 	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
 		got, err := testStore.ListSourceOperations(ctx, org, source.ID)
@@ -92,7 +99,9 @@ func TestSourceOperationRealReceiptReplayAndUnknownMutation(t *testing.T) {
 	require.NoError(t, err)
 	declaration := connectortest.OperationDeclaration()
 	declaration.Effect = operations.Mutation
-	_, err = svc.DeclareSourceOperations(testCtx, actor, org, source.ID, []operations.Declaration{declaration})
+	requestCtx := auth.WithVerifiedDatabaseIdentity(testCtx, actor, org)
+	grant := grantOperationBoundary(t, requestCtx, actor, org, source.BoundaryNodeID)
+	_, err = svc.DeclareSourceOperations(requestCtx, actor, org, source.ID, []operations.Declaration{declaration})
 	require.NoError(t, err)
 	receiptStore, closeStore, err := testStore.NewEffectReceipts()
 	require.NoError(t, err)
@@ -152,4 +161,40 @@ func TestSourceOperationRealReceiptReplayAndUnknownMutation(t *testing.T) {
 	attempt, err := svc.SourceOperationAttemptForActor(testCtx, actor, org, "unresolved")
 	require.NoError(t, err)
 	require.NotNil(t, attempt)
+	require.NoError(t, testService.RevokeScope(requestCtx, actor, &gen.RevokeScopeRequest{
+		OrgId: org, SubjectId: actor, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+		ScopePath: grant.ScopePath, RoleId: grant.RoleId,
+	}))
+	_, err = invoke("committed", `{"id":"a"}`)
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "revoked authority must refuse a committed replay")
+	require.EqualValues(t, 2, calls.Load())
+}
+
+// Grant exactly this boundary using the same role/scope rows that production
+// permission checks read. Organization ownership alone is not a scope grant.
+func grantOperationBoundary(t *testing.T, ctx context.Context, actor, org, node string) *gen.ScopeGrant {
+	t.Helper()
+	var grant *gen.ScopeGrant
+	require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+		collections, err := testStore.ListCollectionAccess(ctx, org, "", 100, []string{"datasource"})
+		if err != nil {
+			return err
+		}
+		var path string
+		for _, collection := range collections {
+			if collection.GetNode().GetId() == node {
+				path = collection.GetNode().GetScopePath()
+			}
+		}
+		require.NotEmpty(t, path)
+		role := business.NewIDString()
+		if err := testStore.CreateRole(ctx, &gen.Role{Id: role, Name: "operation " + role, OrgId: org,
+			Permissions: []*gen.Permission{{Resource: "datasource", Action: "invoke"}, {Resource: "datasource", Action: "read"}}}); err != nil {
+			return err
+		}
+		grant = &gen.ScopeGrant{Id: business.NewIDString(), OrgId: org, SubjectId: actor,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: path, RoleId: role, GrantedBy: actor}
+		return testStore.GrantScope(ctx, grant)
+	}))
+	return grant
 }

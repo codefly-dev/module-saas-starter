@@ -4,8 +4,9 @@ import (
 	"accounts/pkg/business"
 	"context"
 	"errors"
-	"github.com/jackc/pgx/v5"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/datasource/operations"
 )

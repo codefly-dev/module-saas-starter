@@ -1,6 +1,6 @@
 module accounts
 
-go 1.27.0
+go 1.27.2
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
@@ -8,7 +8,7 @@ require (
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.14.0
+	github.com/codefly-dev/core v0.17.0
 	github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba
 	github.com/codefly-dev/sdk-go v0.3.1-0.20261006162254-91a2f91ea8e4
 	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260928181007-c1fc359f112f
@@ -35,7 +35,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	go.opentelemetry.io/proto/otlp v1.11.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260831171406-18b4a7587f8a

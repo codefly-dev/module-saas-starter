@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"accounts/pkg/auth"
+
 	"github.com/codefly-dev/sdk-go/receipts"
 	"google.golang.org/protobuf/proto"
 )

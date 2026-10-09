@@ -92,6 +92,10 @@ func New(cfg Config, credential string) *Client {
 // and the OAuth token exchange dial tenant-supplied hosts, so both use it.
 func guardedClient() *http.Client {
 	transport := &http.Transport{
+		// These clients make a single exchange. An idle connection is neither
+		// useful here nor safe for a declared mutation using an HTTP method that
+		// net/http treats as replayable after a lost reply.
+		DisableKeepAlives: true,
 		DialContext: (&net.Dialer{
 			Timeout: 10 * time.Second,
 			Control: guardDial,
