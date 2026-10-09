@@ -754,7 +754,10 @@ creates an API source with the authorization-code grant and no credential, then
 passes its `source_id` to `BeginDatasourceAccountLink`. The same person completes
 the browser sign-in. PKCE uses S256; the state is consumed before token exchange
 and cannot be replayed, including after a lost exchange response. A fresh sign-in
-is needed after such a failure. The token set is sealed and committed alongside
+is needed after such a failure. Only the provider tokens and expiry are sealed; app credentials and endpoints
+are read from the current deployment registration at refresh. This version
+supports one `api` registration and refuses connector-linker overrides. The
+token set is committed alongside
 the account link and its audit event. The source is personal to that caller;
 other members cannot read it or its declarations. Generic OAuth alone does not
 attest a remote user identity: this link identifies a source authorization and

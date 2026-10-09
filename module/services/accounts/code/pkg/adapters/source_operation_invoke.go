@@ -46,11 +46,11 @@ func sourceUnknownResponse(effect string) *gen.InvokeSourceOperationResponse {
 
 func sourceEffectID(header http.Header, field string) (string, error) {
 	ids := append(append([]string{}, header.Values(receipts.EffectIDHeaderName)...), header.Values(receipts.IdempotencyKeyHeaderName)...)
-	if len(ids) > 1 || (len(ids) == 1 && field != "" && ids[0] != field) {
-		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("ambiguous source effect id"))
-	}
-	if len(ids) == 1 {
-		field = ids[0]
+	for _, id := range ids {
+		if id == "" || (field != "" && id != field) {
+			return "", connect.NewError(connect.CodeInvalidArgument, errors.New("ambiguous source effect id"))
+		}
+		field = id
 	}
 	if field == "" || len(field) > 128 {
 		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("bounded source effect id required"))
@@ -78,6 +78,18 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 	if !sourceWireFits(normalized.Msg, sourceInputEnvelopeBytes) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source input exceeds wire bound"))
 	}
+	// Authenticated tenant is sealed before SDK replay; it never comes from the
+	// untrusted org_id field alone.
+	tenant, _, ok := auth.VerifiedDatabaseIdentity(ctx)
+	if !ok || tenant != req.Msg.OrgId {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("source tenant mismatch"))
+	}
+	if err = requireOrgMember(ctx, actor, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err = requireSourceOperationScope(ctx, req.Msg.OrgId, req.Msg.SourceId, "invoke"); err != nil {
+		return nil, err
+	}
 	var declaration operations.Declaration
 	dispatched := false
 	defer func() {
@@ -92,12 +104,6 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 		defer cancel()
 		h.svc.AuditSourceOperation(auditCtx, actor, req.Msg.OrgId, req.Msg.SourceId, declaration, effect, outcome)
 	}()
-	if err = requireOrgMember(ctx, actor, req.Msg.OrgId); err != nil {
-		return nil, translateGRPCError(err)
-	}
-	if err = requireSourceOperationScope(ctx, req.Msg.OrgId, req.Msg.SourceId, "invoke"); err != nil {
-		return nil, err
-	}
 	_, declaration, err = h.svc.SourceOperationAuthority(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, false)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -105,12 +111,6 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 	store, guard := h.svc.SourceOperationReceipts()
 	if store == nil || guard == nil {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("source receipts unavailable"))
-	}
-	// Authenticated tenant is sealed before SDK replay; it never comes from the
-	// untrusted org_id field alone.
-	tenant, _, ok := auth.VerifiedDatabaseIdentity(ctx)
-	if !ok || tenant != req.Msg.OrgId {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("source tenant mismatch"))
 	}
 	ctx = business.WithSourceOperationRecheck(ctx, func(ctx context.Context) error {
 		if _, present := ctx.Value(sourceOperationContextKey{}).(*basev0.WorkContextV1); present {

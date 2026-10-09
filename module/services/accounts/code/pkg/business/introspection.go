@@ -73,6 +73,8 @@ var serviceInfo = &gen.ServiceInfo{
 // options; descriptions remain editorial prose until source comments are
 // compiled into the service catalog.
 var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
+	"DatasourceService/PruneSourceOperationReceipts":               "Expire old source receipt output while retaining effect tombstones.",
+	"DatasourceService/LookupPruneSourceOperationReceipts":         "Read an authorized source receipt-cleanup result.",
 	"DatasourceService/InvokeSourceOperation":                      "Call a declared source operation under current authority and an effect receipt.",
 	"DatasourceService/LookupInvokeSourceOperation":                "Read the current authorized outcome of a source effect without redispatching it.",
 	"DatasourceService/DeclareSourceOperations":                    "Atomically replace an API source's declared operations as an organization administrator.",

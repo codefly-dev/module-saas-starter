@@ -128,7 +128,7 @@ func TestAuthorizationCodeRealVaultPersonalSourceAndReplay(t *testing.T) {
 		challenge := sha256.Sum256([]byte(verifier))
 		require.Equal(t, authorize.Query().Get("code_challenge"), base64.RawURLEncoding.EncodeToString(challenge[:]))
 		require.NotContains(t, handle.State, verifier)
-		return &apisource.OAuth2Token{AccessToken: "example-access", RefreshToken: refresh, ExpiresIn: time.Hour}, nil
+		return &apisource.OAuth2Token{AccessToken: "example-access", RefreshToken: refresh, ExpiresIn: time.Second}, nil
 	})
 	_, err = svc.CompleteDatasourceAccountLink(testCtx, business.NewIDString(), org, handle.State, "example-code")
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
@@ -146,7 +146,28 @@ func TestAuthorizationCodeRealVaultPersonalSourceAndReplay(t *testing.T) {
 	var tokenSet map[string]any
 	require.NoError(t, json.Unmarshal([]byte(plain), &tokenSet))
 	require.Equal(t, refresh, tokenSet["refresh_token"])
-	require.Equal(t, clientSecret, tokenSet["client_secret"])
+	require.NotContains(t, tokenSet, "client_secret")
+	require.Empty(t, stored.API.OAuth2.ClientID)
+	require.Empty(t, stored.API.OAuth2.TokenURL)
+	rotatedSecret := randomCredential(t)
+	rotatedSecrets, _ := json.Marshal(map[string]string{"api": rotatedSecret})
+	require.NoError(t, svc.ConfigureDatasourceOAuth(`{"api":{"authorize_url":"https://auth.example.com/authorize","token_url":"https://auth.example.com/rotated-token","scopes":["read"]}}`, `{"api":"rotated-client"}`, string(rotatedSecrets)))
+	svc.SetDatasourceOAuth2RefreshFunc(func(ctx context.Context, cfg apisource.OAuth2Config, token, secret string) (*apisource.OAuth2Token, error) {
+		require.Equal(t, refresh, token)
+		require.Equal(t, rotatedSecret, secret)
+		require.Equal(t, "rotated-client", cfg.ClientID)
+		require.Equal(t, "https://auth.example.com/rotated-token", cfg.TokenURL)
+		return &apisource.OAuth2Token{AccessToken: "rotated-access", RefreshToken: "rotated-refresh", ExpiresIn: time.Hour}, nil
+	})
+	access, err := svc.ResolveDatasourceTokenForTest(testCtx, stored)
+	require.NoError(t, err)
+	require.Equal(t, "rotated-access", access)
+	plain, err = cipher.DecryptSecret(testCtx, business.DatasourceConnectorSecretPurpose(source.ID), stored.CredentialSecretRef)
+	require.NoError(t, err)
+	tokenSet = map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(plain), &tokenSet))
+	require.NotContains(t, tokenSet, "client_secret")
+	require.Equal(t, "rotated-refresh", tokenSet["refresh_token"])
 	_, err = svc.ListSourceOperations(testCtx, business.NewIDString(), org, source.ID)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }

@@ -5,8 +5,8 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "codefly/runnable/v0/options.proto";
 import "google/api/annotations.proto";
-import "google/protobuf/struct.proto";
 import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "saas/jobs/v1/jobs.proto";
 import "saas/policy/v1/options.proto";
@@ -129,6 +129,8 @@ message ApiOAuth2Config {
     GRANT_CLIENT_CREDENTIALS = 2;
     GRANT_AUTHORIZATION_CODE = 3;
   }
+  // AUTHORIZATION_CODE stores only this grant selector on a source; endpoint,
+  // client ID and scopes below come from the current deployment registration.
   Grant grant = 4;
   // Token endpoint the refresh_token grant is exchanged at, e.g.
   // "https://oauth2.example.com/token". Absolute http(s) URL.
@@ -312,7 +314,13 @@ message AddGitHubSourceRequest {
   // Optional file suffix allowlist, intersected with paths (not a glob).
   repeated string file_extensions = 10 [(buf.validate.field).repeated = {
     max_items: 32
-    items: { string: { min_len: 2 max_len: 33 pattern: "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+    items: {
+      string: {
+        min_len: 2
+        max_len: 33
+        pattern: "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$"
+      }
+    }
   }];
 }
 
@@ -479,7 +487,6 @@ message DatasourceProviderDescriptor {
   string oauth_authorize_url = 18;
   string oauth_token_url = 19;
   repeated string oauth_scopes = 20;
-
 }
 
 message GetDatasourceCatalogRequest {}
@@ -1011,29 +1018,37 @@ message RevokeSourceDelegationResponse {
 // through the generated SDK) to declare and operate connected datasources.
 // SourceOperation is an admitted route and bounded JSON contract, never a credential.
 message SourceOperation {
- string name = 1;
- string description = 2;
- string method = 3;
- string path = 4;
- repeated string query = 5;
- google.protobuf.Struct input_schema = 6;
- google.protobuf.Struct output_schema = 7;
- enum Effect { EFFECT_UNSPECIFIED = 0; EFFECT_READ_ONLY = 1; EFFECT_MUTATION = 2; }
- Effect effect = 8;
- uint32 max_output_bytes = 9;
- string digest = 10;
+  string name = 1;
+  string description = 2;
+  string method = 3;
+  string path = 4;
+  repeated string query = 5;
+  google.protobuf.Struct input_schema = 6;
+  google.protobuf.Struct output_schema = 7;
+  enum Effect {
+    EFFECT_UNSPECIFIED = 0;
+    EFFECT_READ_ONLY = 1;
+    EFFECT_MUTATION = 2;
+  }
+  Effect effect = 8;
+  uint32 max_output_bytes = 9;
+  string digest = 10;
 }
 message DeclareSourceOperationsRequest {
- string org_id = 1 [(buf.validate.field).string.uuid = true];
- string source_id = 2 [(buf.validate.field).string.uuid = true];
- repeated SourceOperation operations = 3;
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string source_id = 2 [(buf.validate.field).string.uuid = true];
+  repeated SourceOperation operations = 3;
 }
-message DeclareSourceOperationsResponse { repeated SourceOperation operations = 1; }
+message DeclareSourceOperationsResponse {
+  repeated SourceOperation operations = 1;
+}
 message ListSourceOperationsRequest {
- string org_id = 1 [(buf.validate.field).string.uuid = true];
- string source_id = 2 [(buf.validate.field).string.uuid = true];
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string source_id = 2 [(buf.validate.field).string.uuid = true];
 }
-message ListSourceOperationsResponse { repeated SourceOperation operations = 1; }
+message ListSourceOperationsResponse {
+  repeated SourceOperation operations = 1;
+}
 
 // InvokeSourceOperationRequest carries exactly one JSON object in input_json.
 // effect_id must match x-codefly-effect-id; either location may supply it.
@@ -1059,21 +1074,128 @@ message InvokeSourceOperationResponse {
 // Lookup uses the caller's verified tenant and the effect's stored binding.
 // A single string effect selector is the Runnable runtime's recovery contract.
 message LookupInvokeSourceOperationRequest {
-  string effect_id = 1 [(buf.validate.field).string = {min_len: 1, max_bytes: 128}];
+  string effect_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_bytes: 128
+  }];
+}
+
+// Runtime-scheduled receipt retention; no host timer or queue is created.
+message PruneSourceOperationReceiptsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string source_id = 2 [(buf.validate.field).string.uuid = true];
+  string effect_id = 3 [(buf.validate.field).string.max_bytes = 128];
+}
+message PruneSourceOperationReceiptsResponse {
+  string effect_id = 1;
+  int64 receipts = 2;
+  string status = 3; // committed or unknown after the cleanup receipt expires.
+}
+message LookupPruneSourceOperationReceiptsRequest {
+  string effect_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_bytes: 128
+  }];
 }
 
 service DatasourceService {
+  // PruneSourceOperationReceipts expires response bodies after Invoke's declared
+  // total timeout plus a 24-hour lookup grace. It retains effect tombstones.
+  // The composition schedules this source-scoped host operation in the runtime.
+  rpc PruneSourceOperationReceipts(PruneSourceOperationReceiptsRequest) returns (PruneSourceOperationReceiptsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "datasource:invoke"
+      scopes: "datasource:invoke"
+      resource_bindings: {
+        request_field: "source_id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.receipts.pruned"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (codefly.runnable.v0.operation) = {
+      attempt_timeout: {seconds: 60}
+      total_timeout: {seconds: 600}
+      max_attempts: 5
+      backoff: {seconds: 2}
+      retryable_codes: [
+        "UNAVAILABLE",
+        "RESOURCE_EXHAUSTED",
+        "ABORTED"
+      ]
+      audience: "saas-datasource"
+      required_scope_slots: {
+        name: "source"
+        required_actions: [
+          "invoke",
+          "read"
+        ]
+        lookup: true
+      }
+      lookup_method: "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts"
+      max_input_bytes: 4096
+      max_output_bytes: 4096
+      completion: COMPLETION_CALL
+    };
+  }
+  rpc LookupPruneSourceOperationReceipts(LookupPruneSourceOperationReceiptsRequest) returns (PruneSourceOperationReceiptsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "datasource:read"
+      scopes: "datasource:read"
+      resource_bindings: {
+        request_field: "effect_id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
   // InvokeSourceOperation calls an admitted operation under current authority.
+  // FailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN
+  // means this effect will not be redispatched and its receipt stays unresolved.
+  // Other refusal reasons do not mean unknown. Provider refusals include the
+  // decimal HTTP status in ErrorInfo.metadata["provider_status"] when known.
+  // InvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.
   rpc InvokeSourceOperation(InvokeSourceOperationRequest) returns (InvokeSourceOperationResponse) {
-    option (google.api.http) = {post: "/v1/organizations/{org_id}/datasources/{source_id}/operations/{operation}:invoke" body: "*"};
+    option (google.api.http) = {
+      post: "/v1/organizations/{org_id}/datasources/{source_id}/operations/{operation}:invoke"
+      body: "*"
+    };
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
       tenant: TENANT_REQUIREMENT_ORG_MEMBER
       permissions: "datasource:invoke"
       scopes: "datasource:invoke"
-      resource_bindings: {request_field: "source_id" target: RESOURCE_TARGET_OWNED_RESOURCE lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION}
+      resource_bindings: {
+        request_field: "source_id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
       mfa: MFA_REQUIREMENT_NONE
-      audit: {events: "saas.datasource.operation.invoked" emission: AUDIT_EMISSION_SUCCESS_AND_FAILURE}
+      audit: {
+        events: "saas.datasource.operation.invoked"
+        emission: AUDIT_EMISSION_SUCCESS_AND_FAILURE
+      }
       idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
       request_sensitivity: SENSITIVITY_SECRET
@@ -1085,9 +1207,20 @@ service DatasourceService {
       total_timeout: {seconds: 600}
       max_attempts: 5
       backoff: {seconds: 2}
-      retryable_codes: ["UNAVAILABLE", "RESOURCE_EXHAUSTED", "ABORTED"]
+      retryable_codes: [
+        "UNAVAILABLE",
+        "RESOURCE_EXHAUSTED",
+        "ABORTED"
+      ]
       audience: "saas-datasource"
-      required_scope_slots: {name: "source" required_actions: ["invoke", "read"] lookup: true}
+      required_scope_slots: {
+        name: "source"
+        required_actions: [
+          "invoke",
+          "read"
+        ]
+        lookup: true
+      }
       lookup_method: "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation"
       max_input_bytes: 65536
       max_output_bytes: 1048576
@@ -1095,6 +1228,8 @@ service DatasourceService {
     };
   }
   // LookupInvokeSourceOperation recovers a receipt without contacting the provider.
+  // NotFound "source effect not found" means there is no attempt marker; retrying
+  // the same effect is safe. An unknown receipt never authorizes redispatch.
   rpc LookupInvokeSourceOperation(LookupInvokeSourceOperationRequest) returns (InvokeSourceOperationResponse) {
     option (google.api.http) = {get: "/v1/datasource-operation-receipts/{effect_id}"};
     option (saas.policy.v1.method_policy) = {
@@ -1102,7 +1237,11 @@ service DatasourceService {
       tenant: TENANT_REQUIREMENT_ORG_MEMBER
       permissions: "datasource:read"
       scopes: "datasource:read"
-      resource_bindings: {request_field: "effect_id" target: RESOURCE_TARGET_OWNED_RESOURCE lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION}
+      resource_bindings: {
+        request_field: "effect_id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -1113,39 +1252,55 @@ service DatasourceService {
     };
   }
 
- // ListSourceOperations reads the currently admitted declarations under source authority.
- rpc ListSourceOperations(ListSourceOperationsRequest) returns (ListSourceOperationsResponse) {
- option (google.api.http) = {get: "/v1/organizations/{org_id}/datasources/{source_id}/operations"};
- option (saas.policy.v1.method_policy) = {
- exposure: EXPOSURE_AUTHENTICATED
- tenant: TENANT_REQUIREMENT_ORG_MEMBER
- resource_bindings: { request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID }
- mfa: MFA_REQUIREMENT_NONE
- audit: { emission: AUDIT_EMISSION_NONE }
- idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
- rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
- request_sensitivity: SENSITIVITY_CONFIDENTIAL
- response_sensitivity: SENSITIVITY_CONFIDENTIAL
- platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
- };
- }
+  // ListSourceOperations reads the currently admitted declarations under source authority.
+  rpc ListSourceOperations(ListSourceOperationsRequest) returns (ListSourceOperationsResponse) {
+    option (google.api.http) = {get: "/v1/organizations/{org_id}/datasources/{source_id}/operations"};
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "datasource:read"
+      scopes: "datasource:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
 
- // DeclareSourceOperations atomically replaces the source operation set, as an administrator.
- rpc DeclareSourceOperations(DeclareSourceOperationsRequest) returns (DeclareSourceOperationsResponse) {
- option (google.api.http) = {post: "/v1/organizations/{org_id}/datasources/{source_id}/operations" body: "*"};
- option (saas.policy.v1.method_policy) = {
- exposure: EXPOSURE_AUTHENTICATED
- tenant: TENANT_REQUIREMENT_ORG_ADMIN
- resource_bindings: { request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID }
- mfa: MFA_REQUIREMENT_NONE
- audit: { events: "saas.datasource.operation.declared" emission: AUDIT_EMISSION_SUCCESS }
- idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
- rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
- request_sensitivity: SENSITIVITY_CONFIDENTIAL
- response_sensitivity: SENSITIVITY_CONFIDENTIAL
- platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
- };
- }
+  // DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+  rpc DeclareSourceOperations(DeclareSourceOperationsRequest) returns (DeclareSourceOperationsResponse) {
+    option (google.api.http) = {
+      post: "/v1/organizations/{org_id}/datasources/{source_id}/operations"
+      body: "*"
+    };
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.operation.declared"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
 
   // AddGitHubSource registers a GitHub repository as a datasource, encrypts and
   // stores its access token (and optional webhook signing secret), and returns

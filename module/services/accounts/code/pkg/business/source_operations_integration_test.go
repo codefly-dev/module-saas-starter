@@ -9,6 +9,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -197,4 +198,121 @@ func grantOperationBoundary(t *testing.T, ctx context.Context, actor, org, node 
 		return testStore.GrantScope(ctx, grant)
 	}))
 	return grant
+}
+
+// Backdate only the storage clock; transactions, RLS and SDK serialization stay
+// real. This avoids either sleeping through retention or bypassing DB grants.
+type sourceReceiptClock struct {
+	receipts.Store
+	before time.Time
+}
+
+func (s *sourceReceiptClock) Record(ctx context.Context, tx receipts.Tx, receipt receipts.Receipt) error {
+	if !s.before.IsZero() {
+		receipt.CommittedAt = s.before
+	}
+	return s.Store.Record(ctx, tx, receipt)
+}
+
+func TestSourceOperationRealReceiptRetentionAndTombstones(t *testing.T) {
+	clearData(t)
+	actor, org := mustUserAndOrg(t, testCtx, "retention@example.com", "retention", "Acme")
+	otherActor, otherOrg := mustUserAndOrg(t, testCtx, "other-retention@example.com", "other-retention", "ExampleCorp")
+	svc, _ := realOAuthService(t)
+	sourceFor := func(actor, org string) *business.DatasourceSource {
+		source, err := svc.AddSource(testCtx, actor, business.AddSourceInput{OrgID: org, Provider: business.DatasourceProviderAPI, CollectionLabel: "Example", Credential: randomCredential(t), API: apiConfig()})
+		require.NoError(t, err)
+		return source
+	}
+	source, otherSource, foreign := sourceFor(actor, org), sourceFor(actor, org), sourceFor(otherActor, otherOrg)
+	requestCtx := auth.WithVerifiedDatabaseIdentity(testCtx, actor, org)
+	grantOperationBoundary(t, requestCtx, actor, org, source.BoundaryNodeID)
+	d := connectortest.OperationDeclaration()
+	d.Effect = operations.Mutation
+	declared, err := svc.DeclareSourceOperations(requestCtx, actor, org, source.ID, []operations.Declaration{d})
+	require.NoError(t, err)
+	receiptStore, closeStore, err := testStore.NewEffectReceipts()
+	require.NoError(t, err)
+	defer closeStore()
+	clock := &sourceReceiptClock{Store: receiptStore}
+	require.NoError(t, svc.ConfigureSourceOperationReceipts(clock))
+	seed := func(src *business.DatasourceSource, owner, effect string, age time.Duration, committed bool) {
+		digest := []byte("fixture request digest")
+		ctx := auth.WithVerifiedDatabaseIdentity(testCtx, owner, src.OrgID)
+		ctx = receipts.WithEffect(ctx, receipts.Effect{ID: effect, Tenant: src.OrgID, Method: business.SourceOperationMethod, RequestDigest: digest})
+		clock.before = time.Now().Add(-age)
+		require.NoError(t, testStore.WithOrgTx(ctx, src.OrgID, func(ctx context.Context) error {
+			created, err := testStore.CreateSourceOperationAttempt(ctx, business.SourceOperationAttempt{OrgID: src.OrgID, ActorID: owner, SourceID: src.ID, Operation: d.Name, DeclarationDigest: declared[0].Digest, EffectID: effect, RequestDigest: digest})
+			require.NoError(t, err)
+			require.True(t, created)
+			if !committed {
+				return nil
+			}
+			return svc.RecordSourceOperationReceipt(ctx, &gen.InvokeSourceOperationResponse{OutputJson: `{}`, Receipt: &gen.SourceOperationReceipt{EffectId: effect, Status: "committed", OutputJson: `{}`}})
+		}))
+	}
+	seed(source, actor, "expired", 48*time.Hour, true)
+	seed(source, actor, "recent", 0, true)
+	seed(otherSource, actor, "other-source", 48*time.Hour, true)
+	seed(foreign, otherActor, "foreign", 48*time.Hour, true)
+	seed(source, actor, "uncertain", 48*time.Hour, false)
+	clock.before = time.Time{}
+	_, guard := svc.SourceOperationReceipts()
+	request := &gen.PruneSourceOperationReceiptsRequest{OrgId: org, SourceId: source.ID, EffectId: "cleanup"}
+	invoke := func() (proto.Message, error) {
+		ctx := business.WithSourceOperationRecheck(requestCtx, func(ctx context.Context) error {
+			return svc.SourceReceiptRetentionAuthority(ctx, actor, org, source.ID, "cleanup", false)
+		})
+		return guard.Handle(ctx, business.SourceReceiptRetentionMethod, "cleanup", request, func(ctx context.Context) (proto.Message, error) {
+			var response *gen.PruneSourceOperationReceiptsResponse
+			err := svc.PruneSourceOperationReceipts(ctx, actor, org, source.ID, func(ctx context.Context, removed int64) error {
+				response = &gen.PruneSourceOperationReceiptsResponse{EffectId: "cleanup", Receipts: removed, Status: "committed"}
+				return svc.RecordSourceOperationReceipt(ctx, response)
+			})
+			return response, err
+		})
+	}
+	failedCtx := receipts.WithEffect(requestCtx, receipts.Effect{ID: "cleanup-failed", Tenant: org, Method: business.SourceReceiptRetentionMethod, RequestDigest: []byte("cleanup")})
+	commitAttempted := false
+	err = svc.PruneSourceOperationReceipts(failedCtx, actor, org, source.ID, func(context.Context, int64) error { commitAttempted = true; return errors.New("receipt unavailable") })
+	require.True(t, commitAttempted, "cleanup must reach the failing commit callback")
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	_, stillPresent, err := receiptStore.Lookup(testCtx, org, "expired", business.SourceOperationMethod)
+	require.NoError(t, err)
+	require.True(t, stillPresent, "failed receipt commit must roll back cleanup")
+	first, err := invoke()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, first.(*gen.PruneSourceOperationReceiptsResponse).Receipts)
+	replay, err := invoke()
+	require.NoError(t, err)
+	require.True(t, proto.Equal(first, replay))
+	_, found, err := receiptStore.Lookup(testCtx, org, "expired", business.SourceOperationMethod)
+	require.NoError(t, err)
+	require.False(t, found)
+	for _, item := range []struct{ org, effect string }{{org, "recent"}, {org, "other-source"}, {otherOrg, "foreign"}} {
+		_, found, err := receiptStore.Lookup(testCtx, item.org, item.effect, business.SourceOperationMethod)
+		require.NoError(t, err)
+		require.True(t, found, item.effect)
+	}
+	for _, effect := range []string{"expired", "uncertain"} {
+		attempt, err := svc.SourceOperationAttemptForActor(requestCtx, actor, org, effect)
+		require.NoError(t, err)
+		require.NotNil(t, attempt)
+		ctx := receipts.WithEffect(requestCtx, receipts.Effect{ID: effect, Tenant: org, Method: business.SourceOperationMethod, RequestDigest: attempt.RequestDigest})
+		_, err = svc.InvokeSourceOperation(ctx, actor, org, source.ID, d.Name, []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error {
+			t.Fatal("expired mutation redispatched")
+			return nil
+		})
+		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		require.Contains(t, err.Error(), "outcome is unknown")
+	}
+	require.NoError(t, testStore.WithOrgTx(requestCtx, org, func(ctx context.Context) error {
+		removed, err := testStore.PruneSourceOperationReceipts(ctx, otherOrg, foreign.ID, time.Now())
+		require.NoError(t, err)
+		require.Zero(t, removed, "RLS must deny pruning another tenant")
+		return nil
+	}))
+	window, err := business.SourceReceiptRetentionWindow()
+	require.NoError(t, err)
+	require.Equal(t, 24*time.Hour+10*time.Minute, window)
 }

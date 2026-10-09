@@ -32,7 +32,7 @@ func (s *Service) ConfigureSourceOperationReceipts(store receipts.Store) error {
 	if err != nil {
 		return err
 	}
-	if !guard.IsOperation(SourceOperationMethod) {
+	if !guard.IsOperation(SourceOperationMethod) || !guard.IsOperation(SourceReceiptRetentionMethod) {
 		return errors.New("source operation marking unavailable")
 	}
 	s.sourceReceiptStore, s.sourceReceiptGuard = store, guard

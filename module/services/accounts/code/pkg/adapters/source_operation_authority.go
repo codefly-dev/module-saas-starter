@@ -16,7 +16,7 @@ import (
 type sourceOperationContextKey struct{}
 
 func sourceOperationProcedure(method string) bool {
-	return method == business.SourceOperationMethod || method == "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation"
+	return method == business.SourceOperationMethod || method == "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation" || method == business.SourceReceiptRetentionMethod || method == "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts"
 }
 
 // The existing delegated-audience exchange issues this capability. Verification

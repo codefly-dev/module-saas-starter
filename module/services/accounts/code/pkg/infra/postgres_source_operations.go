@@ -76,3 +76,18 @@ func (s *PostgresStore) DeleteSourceOperationAttempt(ctx context.Context, org, e
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `DELETE FROM datasource_operation_attempts WHERE org_id=$1 AND effect_id=$2`, org, effect)
 	return err
 }
+
+// This is source-scoped, transaction-bound cleanup of the SDK's receipt table.
+// Include maintenance receipts themselves; keep every compact attempt marker so
+// neither a mutation nor an effect with changed input can be silently reused.
+func (s *PostgresStore) PruneSourceOperationReceipts(ctx context.Context, org, source string, before time.Time) (int64, error) {
+	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `WITH expired AS (
+ SELECT r.tenant,r.effect_id,r.method FROM codefly_effect_receipts r
+ JOIN datasource_operation_attempts a ON a.org_id=$1::text::uuid AND a.effect_id=r.effect_id
+ WHERE r.tenant=$1 AND a.source_id=$2 AND r.committed_at < $3 AND r.method IN ($4,$5)
+ ORDER BY r.committed_at LIMIT 1000
+)
+ DELETE FROM codefly_effect_receipts r USING expired e
+ WHERE r.tenant=e.tenant AND r.effect_id=e.effect_id AND r.method=e.method`, org, source, before, business.SourceOperationMethod, business.SourceReceiptRetentionMethod)
+	return tag.RowsAffected(), err
+}

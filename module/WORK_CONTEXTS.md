@@ -458,3 +458,10 @@ that slot. The host maps each source ID to its boundary node and checks
 refused. Personal OAuth sources also require the owning person. Declarations
 and receipts cannot expand these scopes. Invoke rechecks again after waiting for
 the SDK effect lock, before a committed response can be replayed.
+
+Receipt retention uses the same selected source scope and audience through
+`PruneSourceOperationReceipts` / `LookupPruneSourceOperationReceipts`, with an
+additional current organization-admin check before invocation or replay. A
+composition schedules the Connect Runnable; the host adds no timer or queue.
+Expired output never removes a mutation's last effect marker. See
+[Callable sources](CALLABLE_SOURCES.md#receipts-and-uncertain-outcomes).

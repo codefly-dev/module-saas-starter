@@ -80,3 +80,17 @@ func TestAPICredentialBudgetIsSharedAndOpaque(t *testing.T) {
 		t.Fatal("credential key is not protected by deployment key")
 	}
 }
+
+func TestOAuthRegistrationCannotShadowConnectorLinker(t *testing.T) {
+	s := &Service{}
+	err := s.ConfigureDatasourceOAuth(`{"github":{"authorize_url":"https://auth.example.com/authorize","token_url":"https://auth.example.com/token"}}`, `{"github":"example-client"}`, `{}`)
+	if err == nil {
+		t.Fatal("generic OAuth registration replaced a connector-owned linker")
+	}
+	if len(s.datasourceOAuth) != 0 {
+		t.Fatal("invalid registration was installed")
+	}
+	if err := s.ConfigureDatasourceOAuth(`{"api":{"authorize_url":"https://auth.example.com/authorize","token_url":"https://auth.example.com/token"}}`, `{"api":"example-client"}`, `{}`); err != nil {
+		t.Fatal(err)
+	}
+}

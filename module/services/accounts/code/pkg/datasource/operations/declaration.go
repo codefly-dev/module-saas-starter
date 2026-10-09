@@ -4,6 +4,7 @@ package operations
 
 import (
 	"bytes"
+	"container/list"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -89,16 +91,24 @@ func localSchema(v any) bool {
 	}
 	return true
 }
-func compile(data []byte, input bool) (*jsonschema.Schema, map[string]any, error) {
+func schemaObject(data []byte, input bool) (map[string]any, error) {
 	if len(data) > MaxInputBytes {
-		return nil, nil, refuse("schema exceeds bound", "/")
+		return nil, refuse("schema exceeds bound", "/")
 	}
 	obj, err := object(data)
 	if err != nil || obj["type"] != "object" || !localSchema(obj) {
-		return nil, nil, refuse("unsupported schema", "/")
+		return nil, refuse("unsupported schema", "/")
 	}
 	if input && obj["additionalProperties"] != false {
-		return nil, nil, refuse("input schema must close additional properties", "/")
+		return nil, refuse("input schema must close additional properties", "/")
+	}
+	return obj, nil
+}
+
+func compile(data []byte, input bool) (*jsonschema.Schema, map[string]any, error) {
+	obj, err := schemaObject(data, input)
+	if err != nil {
+		return nil, nil, err
 	}
 	c := jsonschema.NewCompiler()
 	c.UseLoader(noExternalSchema{})
@@ -152,11 +162,11 @@ func Admit(in Declaration) (Declaration, error) {
 			return Declaration{}, refuse("invalid path segment", "/path")
 		}
 	}
-	_, input, err := compile(in.InputSchema, true)
+	input, err := schemaObject(in.InputSchema, true)
 	if err != nil {
 		return Declaration{}, err
 	}
-	_, output, err := compile(in.OutputSchema, false)
+	output, err := schemaObject(in.OutputSchema, false)
 	if err != nil {
 		return Declaration{}, err
 	}
@@ -190,14 +200,55 @@ func Admit(in Declaration) (Declaration, error) {
 	if want != "" && want != in.Digest {
 		return Declaration{}, refuse("declaration digest mismatch", "/digest")
 	}
+	if _, err := compiledDeclaration(in); err != nil {
+		return Declaration{}, err
+	}
 	return in, nil
 }
 
-func validate(data []byte, schemaData []byte, input bool) (map[string]any, error) {
-	schema, obj, err := compile(schemaData, input)
+// The digest is recomputed and checked by Admit before this cache is consulted.
+// Compiled schemas are immutable; callers never receive the cache's maps. A
+// bounded LRU prevents tenant declarations from growing process memory forever.
+const schemaCacheCapacity = 64
+
+type compiledPair struct {
+	digest                    string
+	input, output             *jsonschema.Schema
+	inputObject, outputObject map[string]any
+}
+
+var declarationSchemas = struct {
+	sync.Mutex
+	entries map[string]*list.Element
+	order   *list.List
+}{entries: map[string]*list.Element{}, order: list.New()}
+
+func compiledDeclaration(d Declaration) (*compiledPair, error) {
+	declarationSchemas.Lock()
+	defer declarationSchemas.Unlock()
+	if entry := declarationSchemas.entries[d.Digest]; entry != nil {
+		declarationSchemas.order.MoveToFront(entry)
+		return entry.Value.(*compiledPair), nil
+	}
+	input, inputObject, err := compile(d.InputSchema, true)
 	if err != nil {
 		return nil, err
 	}
+	output, outputObject, err := compile(d.OutputSchema, false)
+	if err != nil {
+		return nil, err
+	}
+	pair := &compiledPair{digest: d.Digest, input: input, output: output, inputObject: inputObject, outputObject: outputObject}
+	declarationSchemas.entries[d.Digest] = declarationSchemas.order.PushFront(pair)
+	if declarationSchemas.order.Len() > schemaCacheCapacity {
+		last := declarationSchemas.order.Back()
+		delete(declarationSchemas.entries, last.Value.(*compiledPair).digest)
+		declarationSchemas.order.Remove(last)
+	}
+	return pair, nil
+}
+
+func validate(data []byte, schema *jsonschema.Schema, obj map[string]any) (map[string]any, error) {
 	value, err := object(data)
 	if err != nil {
 		return nil, err
@@ -233,7 +284,11 @@ func (d Declaration) Route(baseURL string, data []byte) (string, []byte, error) 
 		return "", nil, refuse("declaration not admitted", "/digest")
 	}
 	d = admitted
-	input, err := validate(data, d.InputSchema, true)
+	pair, err := compiledDeclaration(d)
+	if err != nil {
+		return "", nil, err
+	}
+	input, err := validate(data, pair.input, pair.inputObject)
 	if err != nil {
 		return "", nil, err
 	}
@@ -270,7 +325,7 @@ func (d Declaration) Route(baseURL string, data []byte) (string, []byte, error) 
 	if err != nil || base.Host == "" || base.User != nil || (base.Scheme != "https" && base.Scheme != "http") {
 		return "", nil, refuse("invalid source origin", "/")
 	}
-	ref, err := url.Parse(path)
+	ref, err := url.Parse(strings.TrimRight(base.EscapedPath(), "/") + path)
 	if err != nil {
 		return "", nil, refuse("invalid route", "/")
 	}
@@ -301,6 +356,14 @@ func (d Declaration) ValidateOutput(data []byte) error {
 	if len(data) > d.MaxOutputBytes {
 		return refuse("output exceeds bound", "/")
 	}
-	_, err := validate(data, d.OutputSchema, false)
+	admitted, err := Admit(d)
+	if err != nil {
+		return err
+	}
+	pair, err := compiledDeclaration(admitted)
+	if err != nil {
+		return err
+	}
+	_, err = validate(data, pair.output, pair.outputObject)
 	return err
 }

@@ -1056,3 +1056,9 @@ The callable-source declaration and consumed OAuth state relations are tenant-on
 composite source foreign key also binds it to that organization. OAuth states
 persist only a digest and expiry. Credential tokens remain in the source's
 existing encrypted envelope. No control-plane role can read either new relation.
+
+`PruneSourceOperationReceipts` joins tenant receipts to the selected source's
+attempt markers under the request pool's RLS. Expired response bytes, a typed
+audit event and the cleanup operation's own receipt commit atomically. Compact
+markers are retained so expiry cannot authorize redispatch of a mutation.
+No control-plane grant or host retention timer is added.

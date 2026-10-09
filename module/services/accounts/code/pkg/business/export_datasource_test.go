@@ -14,7 +14,7 @@ import (
 // validate what it was connected with. It is compiled into tests only;
 // production has no path around admission.
 func (s *Service) AddExistingSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
-	return s.addSource(ctx, actorID, input)
+	return s.addSource(ctx, actorID, input, false)
 }
 
 // DatasourceProcessingErrorForTest exposes how a sync job's failure is typed.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"accounts/pkg/datasource/apisource"
@@ -99,8 +100,26 @@ func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, sour
 func operationUnavailable() error {
 	return datasourceStatus(codes.Unavailable, "SOURCE_OPERATION_UNAVAILABLE", "source operation unavailable", nil, 0)
 }
-func operationRefused(reason string) error {
-	return datasourceStatus(codes.FailedPrecondition, reason, "source operation refused", nil, 0)
+func operationRefused(reason string, providerStatus ...int) error {
+	var metadata map[string]string
+	if len(providerStatus) == 1 && providerStatus[0] >= 100 && providerStatus[0] <= 599 {
+		metadata = map[string]string{"provider_status": strconv.Itoa(providerStatus[0])}
+	}
+	return datasourceStatus(codes.FailedPrecondition, reason, "source operation refused", metadata, 0)
+}
+
+func sourceInputRefused(err error) error {
+	pointer := "/"
+	var refusal *operations.Refusal
+	if errors.As(err, &refusal) {
+		pointer = refusal.Pointer
+	}
+	base := datasourceStatus(codes.InvalidArgument, "SOURCE_INPUT_REFUSED", "source input refused at "+pointer, nil, 0)
+	detailed, detailErr := status.Convert(base).WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{{Field: pointer, Description: "input does not satisfy the declaration"}}})
+	if detailErr != nil {
+		return base
+	}
+	return detailed.Err()
 }
 func operationUnknown() error {
 	return datasourceStatus(codes.FailedPrecondition, "SOURCE_OPERATION_OUTCOME_UNKNOWN", "source operation outcome is unknown; this effect will not be dispatched again", nil, 0)
@@ -156,11 +175,17 @@ func (s *Service) InvokeSourceOperation(ctx context.Context, actor, org, source,
 		if !bytes.Equal(prior.RequestDigest, effect.RequestDigest) {
 			return nil, operationRefused("SOURCE_EFFECT_REUSED")
 		}
-		return nil, operationUnknown()
+		if declaration.Effect != operations.ReadOnly {
+			return nil, operationUnknown()
+		}
+		// A receipt-free read can be recovered after a crash or failed commit.
+		// The SDK serialization hold and request digest still fence this effect.
+		// Retain the marker: an uncertain local commit may have saved a receipt,
+		// and the actor/request binding must survive recovery either way.
 	}
 	target, body, err := declaration.Route(src.API.BaseURL, input)
 	if err != nil {
-		return nil, datasourceStatus(codes.InvalidArgument, "SOURCE_INPUT_REFUSED", err.Error(), nil, 0)
+		return nil, sourceInputRefused(err)
 	}
 	if s.datasourceCipher == nil {
 		return nil, operationUnavailable()
@@ -218,6 +243,9 @@ func (s *Service) InvokeSourceOperation(ctx context.Context, actor, org, source,
 			if !bytes.Equal(prior.RequestDigest, effect.RequestDigest) {
 				return operationRefused("SOURCE_EFFECT_REUSED")
 			}
+			if declaration.Effect == operations.ReadOnly {
+				return nil // Recover the same read under its existing marker.
+			}
 			return operationUnknown()
 		}
 		created, err = attempts.CreateSourceOperationAttempt(ctx, SourceOperationAttempt{OrgID: org, EffectID: effect.ID, ActorID: actor, SourceID: source, Operation: operation, DeclarationDigest: declaration.Digest, RequestDigest: effect.RequestDigest})
@@ -256,7 +284,7 @@ func (s *Service) InvokeSourceOperation(ctx context.Context, actor, org, source,
 			if err := s.forgetSourceAttempt(ctx, org, effect.ID); err != nil {
 				return nil, err
 			}
-			return nil, operationRefused("SOURCE_PROVIDER_REFUSED")
+			return nil, operationRefused("SOURCE_PROVIDER_REFUSED", failure.ProviderStatus)
 		}
 		if declaration.Effect == operations.Mutation {
 			return nil, operationUnknown()
@@ -265,11 +293,14 @@ func (s *Service) InvokeSourceOperation(ctx context.Context, actor, org, source,
 			return nil, err
 		}
 		if failure != nil && failure.OutputRefused {
-			return nil, operationRefused("SOURCE_OUTPUT_REFUSED")
+			return nil, operationRefused("SOURCE_OUTPUT_REFUSED", failure.ProviderStatus)
 		}
 		return nil, operationUnavailable()
 	}
 	if result == nil {
+		if declaration.Effect == operations.ReadOnly {
+			return nil, operationUnavailable()
+		}
 		return nil, operationUnknown()
 	}
 	if err := declaration.ValidateOutput(result.Body); err != nil {
@@ -279,10 +310,13 @@ func (s *Service) InvokeSourceOperation(ctx context.Context, actor, org, source,
 		if err := s.forgetSourceAttempt(ctx, org, effect.ID); err != nil {
 			return nil, err
 		}
-		return nil, operationRefused("SOURCE_OUTPUT_REFUSED")
+		return nil, operationRefused("SOURCE_OUTPUT_REFUSED", result.StatusCode)
 	}
 	out := &SourceOperationResult{Output: result.Body, EffectID: effect.ID, CommittedAt: time.Now().UTC(), ProviderStatus: result.StatusCode}
 	if err := s.store.WithOrgTx(ctx, org, func(ctx context.Context) error { return commit(ctx, out) }); err != nil {
+		if declaration.Effect == operations.ReadOnly {
+			return nil, operationUnavailable()
+		}
 		return nil, operationUnknown()
 	}
 	return out, nil

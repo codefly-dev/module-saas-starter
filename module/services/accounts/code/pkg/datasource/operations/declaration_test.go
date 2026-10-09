@@ -3,6 +3,7 @@ package operations
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -102,4 +103,56 @@ func TestBodyMapping(t *testing.T) {
 	if err != nil || string(body) != `{"filter":"x"}` {
 		t.Fatalf("body mapping %s: %v", body, err)
 	}
+}
+
+func TestRoutePreservesEscapedSourceBasePath(t *testing.T) {
+	d := declaration(t)
+	for _, base := range []string{"https://api.example.com/v2", "https://api.example.com/v2/"} {
+		target, _, err := d.Route(base, []byte(`{"id":"a/b"}`))
+		if err != nil || target != "https://api.example.com/v2/items/a%2Fb" {
+			t.Fatalf("target=%s err=%v", target, err)
+		}
+	}
+	target, _, err := d.Route("https://api.example.com/acme%2Fv2/", []byte(`{"id":"a"}`))
+	if err != nil || target != "https://api.example.com/acme%2Fv2/items/a" {
+		t.Fatalf("target=%s err=%v", target, err)
+	}
+}
+
+func TestSchemaCacheReusesCanonicalDigestAndRejectsTampering(t *testing.T) {
+	d := declaration(t)
+	first, err := compiledDeclaration(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := Admit(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := compiledDeclaration(canonical)
+	if err != nil || first != second {
+		t.Fatal("same declaration did not reuse compiled schemas")
+	}
+	d.InputSchema = json.RawMessage(`{"type":"object","additionalProperties":true}`)
+	if _, _, err := d.Route("https://api.example.com", []byte(`{"id":"a","extra":true}`)); err == nil {
+		t.Fatal("cached digest admitted changed schema")
+	}
+}
+
+func TestCompiledDeclarationConcurrentUse(t *testing.T) {
+	d := declaration(t)
+	var workers sync.WaitGroup
+	for range 16 {
+		workers.Go(func() {
+			for range 10 {
+				if _, _, err := d.Route("https://api.example.com/v2", []byte(`{"id":"a"}`)); err != nil {
+					t.Error(err)
+				}
+				if err := d.ValidateOutput([]byte(`{"ok":true}`)); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+	workers.Wait()
 }

@@ -153,3 +153,11 @@ module credential separately from its current signed parent and an installed
 policy selector; neither an ordinary HTTP authorization header nor generic
 perimeter access grants consent. See `MODULE_INSTALLATION.md` for the exact
 identity, policy and lifecycle contract.
+
+The receipt-maintenance methods `PruneSourceOperationReceipts` and
+`LookupPruneSourceOperationReceipts` are authenticated, admin-only Connect
+operations with no `google.api.http` mapping. They add no public REST route.
+Input schema refusals from Invoke include BadRequest FieldViolation JSON
+pointers; provider refusals carry their known decimal `provider_status` in
+ErrorInfo metadata. The `SOURCE_OPERATION_OUTCOME_UNKNOWN` reason distinguishes
+an unresolved, non-redispatchable effect from an ordinary provider refusal.

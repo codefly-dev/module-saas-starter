@@ -15,5 +15,15 @@
   "lookup_method": "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
   "max_input_bytes": 65536,
   "max_output_bytes": 1048576,
-  "completion": "COMPLETION_CALL"
+  "completion": "COMPLETION_CALL",
+  "required_scope_slots": [
+    {
+      "name": "source",
+      "required_actions": [
+        "invoke",
+        "read"
+      ],
+      "lookup": true
+    }
+  ]
 }

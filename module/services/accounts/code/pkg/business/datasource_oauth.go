@@ -45,6 +45,9 @@ func (s *Service) ConfigureDatasourceOAuth(descriptors, clientIDs, clientSecrets
 		}
 	}
 	for key, p := range providers {
+		if key != DatasourceProviderAPI {
+			return errors.New("datasource OAuth registration supports only the api connector")
+		}
 		for _, raw := range []string{p.AuthorizeURL, p.TokenURL} {
 			u, err := url.Parse(raw)
 			if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
@@ -144,7 +147,7 @@ func (l oauthAccountLinker) ResolveAccount(ctx context.Context, code string) (st
 	if ttl <= 0 {
 		ttl = oauth2DefaultTTL
 	}
-	blob, _ := json.Marshal(oauthStoredCredential{RefreshToken: token.RefreshToken, ClientSecret: l.descriptor.ClientSecret, AccessToken: token.AccessToken, ExpiresAt: time.Now().Add(ttl).Unix()})
+	blob, _ := json.Marshal(oauthStoredCredential{RefreshToken: token.RefreshToken, AccessToken: token.AccessToken, ExpiresAt: time.Now().Add(ttl).Unix()})
 	if l.s.datasourceCipher == nil {
 		return "", "", errors.New("source cipher unavailable")
 	}

@@ -1,5 +1,5 @@
 {
-  "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
+  "method": "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
   "attempt_timeout": "1m0s",
   "total_timeout": "10m0s",
   "max_attempts": 5,
@@ -12,9 +12,9 @@
   "audience": "saas-datasource",
   "invoke_scopes": [],
   "lookup_scopes": [],
-  "lookup_method": "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
-  "max_input_bytes": 65536,
-  "max_output_bytes": 1048576,
+  "lookup_method": "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",
+  "max_input_bytes": 4096,
+  "max_output_bytes": 4096,
   "completion": "COMPLETION_CALL",
   "required_scope_slots": [
     {

@@ -796,12 +796,11 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	if err := s.admitDatasourceConnection(input.Provider); err != nil {
 		return nil, err
 	}
-	input.operationsOnly = input.Provider == DatasourceProviderAPI
-	return s.addSource(ctx, actorID, input)
+	return s.addSource(ctx, actorID, input, input.Provider == DatasourceProviderAPI)
 }
 
 // addSource validates, seals and stores a source of an admitted provider.
-func (s *Service) addSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
+func (s *Service) addSource(ctx context.Context, actorID string, input AddSourceInput, operationsOnly bool) (*DatasourceSource, error) {
 	w := wool.Get(ctx).In("AddSource")
 
 	orgID := strings.TrimSpace(input.OrgID)
@@ -879,15 +878,6 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		if strings.TrimSpace(input.WebhookSecret) != "" {
 			return nil, w.NewError("api provider does not support webhooks")
 		}
-		if authCode {
-			provider, ok := s.datasourceOAuth[DatasourceProviderAPI]
-			if !ok {
-				return nil, status.Error(codes.FailedPrecondition, "provider sign-in is not configured")
-			}
-			api := *input.API
-			api.OAuth2 = &APIOAuth2Config{Grant: OAuth2AuthorizationCode, TokenURL: provider.TokenURL, ClientID: provider.ClientID, Scopes: provider.Scopes}
-			input.API = &api
-		}
 		cfg, err := normalizeAPIConfig(input.API)
 		if err != nil {
 			return nil, w.Wrap(err)
@@ -897,16 +887,16 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 			if !ok || provider.ClientID == "" {
 				return nil, status.Error(codes.FailedPrecondition, "provider sign-in is not configured")
 			}
-			cfg.OAuth2 = &APIOAuth2Config{Grant: OAuth2AuthorizationCode, TokenURL: provider.TokenURL, ClientID: provider.ClientID, Scopes: provider.Scopes}
+			cfg.OAuth2 = &APIOAuth2Config{Grant: OAuth2AuthorizationCode}
 			cfg.PersonalOwnerUserID = actorID
 			source.PersonalOwnerUserID = actorID
 			credential = ""
 		}
-		if input.operationsOnly {
+		if operationsOnly {
 			source.ReconcileInterval = 0
 			source.NextReconcileAt = nil
 		}
-		cfg.OperationsOnly = input.operationsOnly
+		cfg.OperationsOnly = operationsOnly
 		cfg.CredentialBudgetKey = s.apiCredentialBudgetKey(cfg, credential)
 		source.API = cfg
 	case DatasourceProviderCrawler:
@@ -985,7 +975,7 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
-	if !input.operationsOnly {
+	if !operationsOnly {
 		s.startFirstSync(ctx, source)
 	}
 	return source, nil
@@ -1154,6 +1144,10 @@ func normalizeUploadConfig(cfg *UploadDatasourceConfig) (*UploadDatasourceConfig
 func normalizeOAuth2Config(cfg *APIOAuth2Config) (*APIOAuth2Config, error) {
 	if cfg == nil {
 		return nil, errors.New("api oauth2 credential kind requires oauth2 config")
+	}
+	if cfg.Grant == OAuth2AuthorizationCode {
+		// The deployment registration is resolved live, never frozen per source.
+		return &APIOAuth2Config{Grant: OAuth2AuthorizationCode}, nil
 	}
 	tokenURL := strings.TrimSpace(cfg.TokenURL)
 	parsed, err := url.Parse(tokenURL)
@@ -1608,6 +1602,17 @@ func (s *Service) resolveOAuth2AccessToken(ctx context.Context, source *Datasour
 		return "", oauthCredentialUnavailable()
 	}
 
+	config := apisource.OAuth2Config{TokenURL: source.API.OAuth2.TokenURL, ClientID: source.API.OAuth2.ClientID, Scopes: source.API.OAuth2.Scopes}
+	var appSecret string
+	if source.API.OAuth2.Grant == OAuth2AuthorizationCode {
+		provider, ok := s.datasourceOAuth[source.Provider]
+		if !ok {
+			return "", oauthCredentialUnavailable()
+		}
+		config = apisource.OAuth2Config{TokenURL: provider.TokenURL, ClientID: provider.ClientID, Scopes: provider.Scopes}
+		appSecret = provider.ClientSecret
+	}
+
 	var accessToken string
 	err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
 		ref, err := s.store.LockDatasourceSourceCredentialRef(ctx, source.OrgID, source.ID)
@@ -1641,11 +1646,12 @@ func (s *Service) resolveOAuth2AccessToken(ctx context.Context, source *Datasour
 		if source.API.OAuth2.Grant == OAuth2ClientCredentials {
 			grantCredential = source.API.OAuth2.ClientID
 		}
-		token, err := exchange(ctx, apisource.OAuth2Config{
-			TokenURL: source.API.OAuth2.TokenURL,
-			ClientID: source.API.OAuth2.ClientID,
-			Scopes:   source.API.OAuth2.Scopes,
-		}, grantCredential, cred.ClientSecret)
+		clientSecret := cred.ClientSecret
+		if source.API.OAuth2.Grant == OAuth2AuthorizationCode {
+			clientSecret = appSecret
+			cred.ClientSecret = "" // Erase a pre-rotation copy on the next seal.
+		}
+		token, err := exchange(ctx, config, grantCredential, clientSecret)
 		if err != nil {
 			if errors.Is(err, apisource.ErrRefreshRejected) {
 				return ErrOAuth2ReauthRequired

@@ -1315,7 +1315,7 @@
     },
     "/v1/datasource-operation-receipts/{effectId}": {
       "get": {
-        "summary": "LookupInvokeSourceOperation recovers a receipt without contacting the provider.",
+        "summary": "LookupInvokeSourceOperation recovers a receipt without contacting the provider.\nNotFound \"source effect not found\" means there is no attempt marker; retrying\nthe same effect is safe. An unknown receipt never authorizes redispatch.",
         "operationId": "DatasourceService_LookupInvokeSourceOperation",
         "responses": {
           "200": {
@@ -2716,7 +2716,7 @@
     },
     "/v1/organizations/{orgId}/datasources/{sourceId}/operations/{operation}:invoke": {
       "post": {
-        "summary": "InvokeSourceOperation calls an admitted operation under current authority.",
+        "summary": "InvokeSourceOperation calls an admitted operation under current authority.\nFailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN\nmeans this effect will not be redispatched and its receipt stays unresolved.\nOther refusal reasons do not mean unknown. Provider refusals include the\ndecimal HTTP status in ErrorInfo.metadata[\"provider_status\"] when known.\nInvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.",
         "operationId": "DatasourceService_InvokeSourceOperation",
         "responses": {
           "200": {

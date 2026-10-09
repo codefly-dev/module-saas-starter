@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:68d440e5b983efde2c1eeabe8b89abfacad5858511ae90971e38f1d032390085",
+      "digest": "sha256:255ce9004f6b2fe20b287b1ab80b050f6094c59b6dab1dcc1cc82a95190d2823",
       "services": [
         {
           "name": "APIKeyService",
@@ -128,7 +128,9 @@
             "/saas.accounts.v1.DatasourceService/ListSourceOperations",
             "/saas.accounts.v1.DatasourceService/ListSources",
             "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
+            "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",
             "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+            "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
             "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
             "/saas.accounts.v1.DatasourceService/SyncSource",
             "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",

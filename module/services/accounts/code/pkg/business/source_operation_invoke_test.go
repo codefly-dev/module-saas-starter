@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/codefly-dev/sdk-go/receipts"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -222,4 +224,59 @@ func TestSourceOperationAuditContainsOnlyOutcomeMetadata(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), "private-input-value")
 	connectortest.AssertNoCredentialSegments(t, []string{f.secret}, string(encoded))
+}
+
+func TestReadOnlyCommitFailureCanRetrySameEffect(t *testing.T) {
+	for _, effect := range []string{operations.ReadOnly, operations.Mutation} {
+		t.Run(effect, func(t *testing.T) {
+			f := newOperationFixture(t)
+			d := connectortest.OperationDeclaration()
+			d.Effect = effect
+			f.Declare(t, []operations.Declaration{d})
+			digest := sha256.Sum256([]byte("request"))
+			ctx := receipts.WithEffect(t.Context(), receipts.Effect{ID: "commit-failed", Tenant: "org", Method: business.SourceOperationMethod, RequestDigest: digest[:]})
+			_, err := f.service.InvokeSourceOperation(ctx, "actor", "org", "source", d.Name, []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return errors.New("commit unavailable") })
+			if effect == operations.ReadOnly {
+				require.Equal(t, codes.Unavailable, status.Code(err))
+			} else {
+				require.Equal(t, codes.FailedPrecondition, status.Code(err))
+			}
+			_, err = f.service.InvokeSourceOperation(ctx, "actor", "org", "source", d.Name, []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return nil })
+			if effect == operations.ReadOnly {
+				require.NoError(t, err)
+				require.Equal(t, 2, f.calls)
+			} else {
+				require.Equal(t, codes.FailedPrecondition, status.Code(err))
+				require.Equal(t, 1, f.calls)
+			}
+		})
+	}
+}
+
+func TestSourceOperationSDKErrorDetails(t *testing.T) {
+	f := newOperationFixture(t)
+	f.Declare(t, []operations.Declaration{connectortest.OperationDeclaration()})
+	err := f.Invoke(t.Context(), "read_item", "schema", json.RawMessage(`{"id":false}`))
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	var violation *errdetails.BadRequest
+	for _, detail := range status.Convert(err).Details() {
+		if value, ok := detail.(*errdetails.BadRequest); ok {
+			violation = value
+		}
+	}
+	require.NotNil(t, violation)
+	require.Equal(t, "/id", violation.FieldViolations[0].Field)
+	f.ProviderReply(403, "private provider body", false)
+	err = f.Invoke(t.Context(), "read_item", "refusal", json.RawMessage(`{"id":"a"}`))
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	var info *errdetails.ErrorInfo
+	for _, detail := range status.Convert(err).Details() {
+		if value, ok := detail.(*errdetails.ErrorInfo); ok {
+			info = value
+		}
+	}
+	require.NotNil(t, info)
+	require.Equal(t, "SOURCE_PROVIDER_REFUSED", info.Reason)
+	require.Equal(t, "403", info.Metadata["provider_status"])
+	require.NotContains(t, err.Error(), "private provider body")
 }

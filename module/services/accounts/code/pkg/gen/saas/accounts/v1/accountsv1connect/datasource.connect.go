@@ -34,6 +34,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// DatasourceServicePruneSourceOperationReceiptsProcedure is the fully-qualified name of the
+	// DatasourceService's PruneSourceOperationReceipts RPC.
+	DatasourceServicePruneSourceOperationReceiptsProcedure = "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts"
+	// DatasourceServiceLookupPruneSourceOperationReceiptsProcedure is the fully-qualified name of the
+	// DatasourceService's LookupPruneSourceOperationReceipts RPC.
+	DatasourceServiceLookupPruneSourceOperationReceiptsProcedure = "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts"
 	// DatasourceServiceInvokeSourceOperationProcedure is the fully-qualified name of the
 	// DatasourceService's InvokeSourceOperation RPC.
 	DatasourceServiceInvokeSourceOperationProcedure = "/saas.accounts.v1.DatasourceService/InvokeSourceOperation"
@@ -119,9 +125,21 @@ const (
 
 // DatasourceServiceClient is a client for the saas.accounts.v1.DatasourceService service.
 type DatasourceServiceClient interface {
+	// PruneSourceOperationReceipts expires response bodies after Invoke's declared
+	// total timeout plus a 24-hour lookup grace. It retains effect tombstones.
+	// The composition schedules this source-scoped host operation in the runtime.
+	PruneSourceOperationReceipts(context.Context, *connect.Request[v1.PruneSourceOperationReceiptsRequest]) (*connect.Response[v1.PruneSourceOperationReceiptsResponse], error)
+	LookupPruneSourceOperationReceipts(context.Context, *connect.Request[v1.LookupPruneSourceOperationReceiptsRequest]) (*connect.Response[v1.PruneSourceOperationReceiptsResponse], error)
 	// InvokeSourceOperation calls an admitted operation under current authority.
+	// FailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN
+	// means this effect will not be redispatched and its receipt stays unresolved.
+	// Other refusal reasons do not mean unknown. Provider refusals include the
+	// decimal HTTP status in ErrorInfo.metadata["provider_status"] when known.
+	// InvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.
 	InvokeSourceOperation(context.Context, *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// LookupInvokeSourceOperation recovers a receipt without contacting the provider.
+	// NotFound "source effect not found" means there is no attempt marker; retrying
+	// the same effect is safe. An unknown receipt never authorizes redispatch.
 	LookupInvokeSourceOperation(context.Context, *connect.Request[v1.LookupInvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *connect.Request[v1.ListSourceOperationsRequest]) (*connect.Response[v1.ListSourceOperationsResponse], error)
@@ -220,6 +238,18 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 	baseURL = strings.TrimRight(baseURL, "/")
 	datasourceServiceMethods := v1.File_saas_accounts_v1_datasource_proto.Services().ByName("DatasourceService").Methods()
 	return &datasourceServiceClient{
+		pruneSourceOperationReceipts: connect.NewClient[v1.PruneSourceOperationReceiptsRequest, v1.PruneSourceOperationReceiptsResponse](
+			httpClient,
+			baseURL+DatasourceServicePruneSourceOperationReceiptsProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("PruneSourceOperationReceipts")),
+			connect.WithClientOptions(opts...),
+		),
+		lookupPruneSourceOperationReceipts: connect.NewClient[v1.LookupPruneSourceOperationReceiptsRequest, v1.PruneSourceOperationReceiptsResponse](
+			httpClient,
+			baseURL+DatasourceServiceLookupPruneSourceOperationReceiptsProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("LookupPruneSourceOperationReceipts")),
+			connect.WithClientOptions(opts...),
+		),
 		invokeSourceOperation: connect.NewClient[v1.InvokeSourceOperationRequest, v1.InvokeSourceOperationResponse](
 			httpClient,
 			baseURL+DatasourceServiceInvokeSourceOperationProcedure,
@@ -387,33 +417,47 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // datasourceServiceClient implements DatasourceServiceClient.
 type datasourceServiceClient struct {
-	invokeSourceOperation         *connect.Client[v1.InvokeSourceOperationRequest, v1.InvokeSourceOperationResponse]
-	lookupInvokeSourceOperation   *connect.Client[v1.LookupInvokeSourceOperationRequest, v1.InvokeSourceOperationResponse]
-	listSourceOperations          *connect.Client[v1.ListSourceOperationsRequest, v1.ListSourceOperationsResponse]
-	declareSourceOperations       *connect.Client[v1.DeclareSourceOperationsRequest, v1.DeclareSourceOperationsResponse]
-	addGitHubSource               *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
-	addSource                     *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
-	getDatasourceCatalog          *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
-	listSources                   *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
-	getSource                     *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
-	syncSource                    *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
-	getSourceSync                 *connect.Client[v1.GetSourceSyncRequest, v1.GetSourceSyncResponse]
-	deleteSource                  *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
-	beginGitHubAppSetup           *connect.Client[v1.BeginGitHubAppSetupRequest, v1.BeginGitHubAppSetupResponse]
-	completeGitHubAppSetup        *connect.Client[v1.CompleteGitHubAppSetupRequest, v1.CompleteGitHubAppSetupResponse]
-	migrateGitHubSourceToApp      *connect.Client[v1.MigrateGitHubSourceToAppRequest, v1.MigrateGitHubSourceToAppResponse]
-	beginDatasourceAccountLink    *connect.Client[v1.BeginDatasourceAccountLinkRequest, v1.BeginDatasourceAccountLinkResponse]
-	completeDatasourceAccountLink *connect.Client[v1.CompleteDatasourceAccountLinkRequest, v1.CompleteDatasourceAccountLinkResponse]
-	listMyDatasourceAccountLinks  *connect.Client[v1.ListMyDatasourceAccountLinksRequest, v1.ListMyDatasourceAccountLinksResponse]
-	deleteDatasourceAccountLink   *connect.Client[v1.DeleteDatasourceAccountLinkRequest, v1.DeleteDatasourceAccountLinkResponse]
-	getDatasourceDirectory        *connect.Client[v1.GetDatasourceDirectoryRequest, v1.GetDatasourceDirectoryResponse]
-	bindDatasourceGroup           *connect.Client[v1.BindDatasourceGroupRequest, v1.BindDatasourceGroupResponse]
-	unbindDatasourceGroup         *connect.Client[v1.UnbindDatasourceGroupRequest, v1.UnbindDatasourceGroupResponse]
-	claimDatasourceDomain         *connect.Client[v1.ClaimDatasourceDomainRequest, v1.ClaimDatasourceDomainResponse]
-	verifyDatasourceDomain        *connect.Client[v1.VerifyDatasourceDomainRequest, v1.VerifyDatasourceDomainResponse]
-	deleteDatasourceDomain        *connect.Client[v1.DeleteDatasourceDomainRequest, v1.DeleteDatasourceDomainResponse]
-	listSourceDelegations         *connect.Client[v1.ListSourceDelegationsRequest, v1.ListSourceDelegationsResponse]
-	revokeSourceDelegation        *connect.Client[v1.RevokeSourceDelegationRequest, v1.RevokeSourceDelegationResponse]
+	pruneSourceOperationReceipts       *connect.Client[v1.PruneSourceOperationReceiptsRequest, v1.PruneSourceOperationReceiptsResponse]
+	lookupPruneSourceOperationReceipts *connect.Client[v1.LookupPruneSourceOperationReceiptsRequest, v1.PruneSourceOperationReceiptsResponse]
+	invokeSourceOperation              *connect.Client[v1.InvokeSourceOperationRequest, v1.InvokeSourceOperationResponse]
+	lookupInvokeSourceOperation        *connect.Client[v1.LookupInvokeSourceOperationRequest, v1.InvokeSourceOperationResponse]
+	listSourceOperations               *connect.Client[v1.ListSourceOperationsRequest, v1.ListSourceOperationsResponse]
+	declareSourceOperations            *connect.Client[v1.DeclareSourceOperationsRequest, v1.DeclareSourceOperationsResponse]
+	addGitHubSource                    *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
+	addSource                          *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
+	getDatasourceCatalog               *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
+	listSources                        *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
+	getSource                          *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
+	syncSource                         *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
+	getSourceSync                      *connect.Client[v1.GetSourceSyncRequest, v1.GetSourceSyncResponse]
+	deleteSource                       *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
+	beginGitHubAppSetup                *connect.Client[v1.BeginGitHubAppSetupRequest, v1.BeginGitHubAppSetupResponse]
+	completeGitHubAppSetup             *connect.Client[v1.CompleteGitHubAppSetupRequest, v1.CompleteGitHubAppSetupResponse]
+	migrateGitHubSourceToApp           *connect.Client[v1.MigrateGitHubSourceToAppRequest, v1.MigrateGitHubSourceToAppResponse]
+	beginDatasourceAccountLink         *connect.Client[v1.BeginDatasourceAccountLinkRequest, v1.BeginDatasourceAccountLinkResponse]
+	completeDatasourceAccountLink      *connect.Client[v1.CompleteDatasourceAccountLinkRequest, v1.CompleteDatasourceAccountLinkResponse]
+	listMyDatasourceAccountLinks       *connect.Client[v1.ListMyDatasourceAccountLinksRequest, v1.ListMyDatasourceAccountLinksResponse]
+	deleteDatasourceAccountLink        *connect.Client[v1.DeleteDatasourceAccountLinkRequest, v1.DeleteDatasourceAccountLinkResponse]
+	getDatasourceDirectory             *connect.Client[v1.GetDatasourceDirectoryRequest, v1.GetDatasourceDirectoryResponse]
+	bindDatasourceGroup                *connect.Client[v1.BindDatasourceGroupRequest, v1.BindDatasourceGroupResponse]
+	unbindDatasourceGroup              *connect.Client[v1.UnbindDatasourceGroupRequest, v1.UnbindDatasourceGroupResponse]
+	claimDatasourceDomain              *connect.Client[v1.ClaimDatasourceDomainRequest, v1.ClaimDatasourceDomainResponse]
+	verifyDatasourceDomain             *connect.Client[v1.VerifyDatasourceDomainRequest, v1.VerifyDatasourceDomainResponse]
+	deleteDatasourceDomain             *connect.Client[v1.DeleteDatasourceDomainRequest, v1.DeleteDatasourceDomainResponse]
+	listSourceDelegations              *connect.Client[v1.ListSourceDelegationsRequest, v1.ListSourceDelegationsResponse]
+	revokeSourceDelegation             *connect.Client[v1.RevokeSourceDelegationRequest, v1.RevokeSourceDelegationResponse]
+}
+
+// PruneSourceOperationReceipts calls
+// saas.accounts.v1.DatasourceService.PruneSourceOperationReceipts.
+func (c *datasourceServiceClient) PruneSourceOperationReceipts(ctx context.Context, req *connect.Request[v1.PruneSourceOperationReceiptsRequest]) (*connect.Response[v1.PruneSourceOperationReceiptsResponse], error) {
+	return c.pruneSourceOperationReceipts.CallUnary(ctx, req)
+}
+
+// LookupPruneSourceOperationReceipts calls
+// saas.accounts.v1.DatasourceService.LookupPruneSourceOperationReceipts.
+func (c *datasourceServiceClient) LookupPruneSourceOperationReceipts(ctx context.Context, req *connect.Request[v1.LookupPruneSourceOperationReceiptsRequest]) (*connect.Response[v1.PruneSourceOperationReceiptsResponse], error) {
+	return c.lookupPruneSourceOperationReceipts.CallUnary(ctx, req)
 }
 
 // InvokeSourceOperation calls saas.accounts.v1.DatasourceService.InvokeSourceOperation.
@@ -555,9 +599,21 @@ func (c *datasourceServiceClient) RevokeSourceDelegation(ctx context.Context, re
 
 // DatasourceServiceHandler is an implementation of the saas.accounts.v1.DatasourceService service.
 type DatasourceServiceHandler interface {
+	// PruneSourceOperationReceipts expires response bodies after Invoke's declared
+	// total timeout plus a 24-hour lookup grace. It retains effect tombstones.
+	// The composition schedules this source-scoped host operation in the runtime.
+	PruneSourceOperationReceipts(context.Context, *connect.Request[v1.PruneSourceOperationReceiptsRequest]) (*connect.Response[v1.PruneSourceOperationReceiptsResponse], error)
+	LookupPruneSourceOperationReceipts(context.Context, *connect.Request[v1.LookupPruneSourceOperationReceiptsRequest]) (*connect.Response[v1.PruneSourceOperationReceiptsResponse], error)
 	// InvokeSourceOperation calls an admitted operation under current authority.
+	// FailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN
+	// means this effect will not be redispatched and its receipt stays unresolved.
+	// Other refusal reasons do not mean unknown. Provider refusals include the
+	// decimal HTTP status in ErrorInfo.metadata["provider_status"] when known.
+	// InvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.
 	InvokeSourceOperation(context.Context, *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// LookupInvokeSourceOperation recovers a receipt without contacting the provider.
+	// NotFound "source effect not found" means there is no attempt marker; retrying
+	// the same effect is safe. An unknown receipt never authorizes redispatch.
 	LookupInvokeSourceOperation(context.Context, *connect.Request[v1.LookupInvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *connect.Request[v1.ListSourceOperationsRequest]) (*connect.Response[v1.ListSourceOperationsResponse], error)
@@ -652,6 +708,18 @@ type DatasourceServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	datasourceServiceMethods := v1.File_saas_accounts_v1_datasource_proto.Services().ByName("DatasourceService").Methods()
+	datasourceServicePruneSourceOperationReceiptsHandler := connect.NewUnaryHandler(
+		DatasourceServicePruneSourceOperationReceiptsProcedure,
+		svc.PruneSourceOperationReceipts,
+		connect.WithSchema(datasourceServiceMethods.ByName("PruneSourceOperationReceipts")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceLookupPruneSourceOperationReceiptsHandler := connect.NewUnaryHandler(
+		DatasourceServiceLookupPruneSourceOperationReceiptsProcedure,
+		svc.LookupPruneSourceOperationReceipts,
+		connect.WithSchema(datasourceServiceMethods.ByName("LookupPruneSourceOperationReceipts")),
+		connect.WithHandlerOptions(opts...),
+	)
 	datasourceServiceInvokeSourceOperationHandler := connect.NewUnaryHandler(
 		DatasourceServiceInvokeSourceOperationProcedure,
 		svc.InvokeSourceOperation,
@@ -816,6 +884,10 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 	)
 	return "/saas.accounts.v1.DatasourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case DatasourceServicePruneSourceOperationReceiptsProcedure:
+			datasourceServicePruneSourceOperationReceiptsHandler.ServeHTTP(w, r)
+		case DatasourceServiceLookupPruneSourceOperationReceiptsProcedure:
+			datasourceServiceLookupPruneSourceOperationReceiptsHandler.ServeHTTP(w, r)
 		case DatasourceServiceInvokeSourceOperationProcedure:
 			datasourceServiceInvokeSourceOperationHandler.ServeHTTP(w, r)
 		case DatasourceServiceLookupInvokeSourceOperationProcedure:
@@ -878,6 +950,14 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 
 // UnimplementedDatasourceServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDatasourceServiceHandler struct{}
+
+func (UnimplementedDatasourceServiceHandler) PruneSourceOperationReceipts(context.Context, *connect.Request[v1.PruneSourceOperationReceiptsRequest]) (*connect.Response[v1.PruneSourceOperationReceiptsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.PruneSourceOperationReceipts is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) LookupPruneSourceOperationReceipts(context.Context, *connect.Request[v1.LookupPruneSourceOperationReceiptsRequest]) (*connect.Response[v1.PruneSourceOperationReceiptsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.LookupPruneSourceOperationReceipts is not implemented"))
+}
 
 func (UnimplementedDatasourceServiceHandler) InvokeSourceOperation(context.Context, *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.InvokeSourceOperation is not implemented"))
