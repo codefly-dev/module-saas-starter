@@ -36,7 +36,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	// states a count; a drift in either direction fails the build and names
 	// both numbers.
 	requireAuthzMatrixMatchesTheCatalog(t, len(catalog.GetServices()), len(catalog.GetMethods()))
-	require.Len(t, catalog.GetPermissions(), 24)
+	require.Len(t, catalog.GetPermissions(), 26)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
 	require.Equal(t, "api_calls_monthly", catalog.GetEntitlements()[0].GetKey())

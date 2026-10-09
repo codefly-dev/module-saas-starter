@@ -9,9 +9,11 @@ scope and RLS posture is in
 registration and module-identity records that only accounts may write.
 
 **Regenerating after a proto change** is one command from this directory,
-`codefly generate proto --proto ./proto --output .. --template
+`codefly generate proto --proto ./proto --path saas --output .. --template
 accounts/proto/buf.gen.yaml` (Docker, Codefly CLI ≥ 0.1.160), then the
-`go generate` steps. The `--output . --local --template buf.gen.local.yaml`
+`go generate` steps. `codefly sync service accounts` also runs the agent-owned
+regeneration; `buf.gen.yaml` limits its input to the owned `saas` tree so the
+vendored Core options never become duplicate Go descriptors. The `--output . --local --template buf.gen.local.yaml`
 spelling that older docs and the `generated-pins-gate` message still show no
 longer works. The full procedure and why are in
 [../../REST_SURFACE.md](../../REST_SURFACE.md#regeneration).
@@ -737,6 +739,20 @@ authenticates the calling module from its Work Context nor one of the two
 declared read-only oracles. A method that authorizes on the shared perimeter
 credential alone and mutates state therefore cannot reach every composed module
 through a one-line edit to the list.
+
+`cmd/connect-registration` also generates
+`generated/api-contract-surfaces.json`, selected by the service manifest's
+`spec.api-contract-surfaces`. It uses Core's API contract service records:
+authority is exactly `ModuleAuthorityProcedures`; Connect is the complete
+registration catalog, including internal methods. The gateway route catalog
+omits those internal methods and cannot supply this inventory. Contract export
+retains complete descriptors for schemas but publishes each listener's served
+procedures, so Runnable derivation only admits Invoke/Prune and their paired
+Lookups on Connect. The cataloggen drift test compares both inventories with
+their owners; the Connect registration test checks every catalog method reaches
+its mux handler. Regenerate with `go generate ./pkg/business ./pkg/adapters
+./pkg/cataloggen` from `code`, then the contract and Runnable commands documented
+in [../../CALLABLE_SOURCES.md](../../CALLABLE_SOURCES.md#generation-and-qualification).
 
 The generated `AuthorizationPolicy` allowlists accounts' internal surface to the
 service accounts of services that **declare a dependency on one of accounts'

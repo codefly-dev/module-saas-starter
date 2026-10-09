@@ -18,12 +18,12 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
-        digest: sha256:5d7abfdea9eb48867b86146b977e8b34f4f4306249aade05ef189eaa00a4d46c
+        digest: sha256:a91e6a4eb630b9ec43511494337bcc65a15486307c860a201ea22defc76a2ee1
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:5d7abfdea9eb48867b86146b977e8b34f4f4306249aade05ef189eaa00a4d46c
+        digest: sha256:a91e6a4eb630b9ec43511494337bcc65a15486307c860a201ea22defc76a2ee1
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -181,6 +181,8 @@ claims:
   - {kind: permission, key: "dashboards:read", owner: base}
   - {kind: permission, key: "dashboards:share", owner: base}
   - {kind: permission, key: "dashboards:write", owner: base}
+  - {kind: permission, key: "datasource:read", owner: base}
+  - {kind: permission, key: "datasource:invoke", owner: base}
   - {kind: permission, key: "entitlements:read", owner: base}
   - {kind: permission, key: "invitations:read", owner: base}
   - {kind: permission, key: "invitations:write", owner: base}

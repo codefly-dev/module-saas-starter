@@ -1,0 +1,231 @@
+syntax = "proto3";
+package codefly.base.v0;
+
+import "google/protobuf/duration.proto";
+
+/*
+
+Readiness declares, as data, what "healthy" means for an endpoint or for a
+dependency that exposes no endpoint at all.
+
+Without a declaration a consumer can only observe transport reachability: an
+open socket. That is not health — an open admin port says nothing about the
+gRPC endpoint next to it, and an HTTP server answering 503 is reachable and
+broken at the same time. A Probe names the predicate that actually has to hold.
+
+Absence is meaningful and stays legacy: an endpoint that declares no health
+keeps transport-only semantics, so a hand-customized service is never retro-
+actively required to serve /healthz or register the gRPC Health service.
+
+*/
+
+// ProbeKind names the predicate families a probe can express. The wire form of
+// a probe is the Probe oneof; this enum labels a probe in reports and in the
+// capabilities a service advertises.
+enum ProbeKind {
+  // PROBE_KIND_UNSPECIFIED is the default when no predicate is declared, which
+  // means legacy transport-only semantics.
+  PROBE_KIND_UNSPECIFIED = 0;
+  // PROBE_KIND_TRANSPORT is a bare connection to the endpoint address.
+  PROBE_KIND_TRANSPORT = 1;
+  // PROBE_KIND_GRPC_HEALTH is a grpc.health.v1 check that must answer SERVING.
+  PROBE_KIND_GRPC_HEALTH = 2;
+  // PROBE_KIND_HTTP is an HTTP GET whose status, and optionally body, must
+  // match the declared predicate.
+  PROBE_KIND_HTTP = 3;
+  // PROBE_KIND_AGENT is readiness as reported by the owning runtime agent.
+  PROBE_KIND_AGENT = 4;
+  // PROBE_KIND_COMPLETION is successful termination of a one-shot unit of work.
+  PROBE_KIND_COMPLETION = 5;
+}
+
+// ProbeIntent separates the three questions a probe can answer, which have
+// different consequences: startup gates the first success, readiness gates
+// traffic and dependency ordering, liveness gates restarts.
+enum ProbeIntent {
+  // PROBE_INTENT_UNSPECIFIED is the default when the intent is not stated.
+  PROBE_INTENT_UNSPECIFIED = 0;
+  // PROBE_INTENT_READINESS is "may receive traffic / may unblock consumers".
+  PROBE_INTENT_READINESS = 1;
+  // PROBE_INTENT_LIVENESS is "is still alive, or must be restarted".
+  PROBE_INTENT_LIVENESS = 2;
+  // PROBE_INTENT_STARTUP is "has finished booting", which suspends the others.
+  PROBE_INTENT_STARTUP = 3;
+}
+
+// TransportProbe connects to the endpoint address and requires nothing more.
+message TransportProbe {
+}
+
+// GrpcHealthProbe issues grpc.health.v1.Health/Check and requires SERVING.
+message GrpcHealthProbe {
+  // service is the health service name to query. The empty string is the
+  // conventional whole-server check.
+  string service = 1;
+}
+
+// HttpStatusRange is an inclusive HTTP status code range.
+message HttpStatusRange {
+  // min is the lowest accepted status code.
+  uint32 min = 1;
+  // max is the highest accepted status code.
+  uint32 max = 2;
+}
+
+// HttpProbe issues an HTTP GET against path and requires the response to match
+// the declared predicate.
+message HttpProbe {
+  // path is the request path, always rooted at "/". There is no default: a
+  // service that never served a health path must not be asked for one.
+  string path = 1;
+  // statuses are the accepted status ranges. Empty means 200-399.
+  repeated HttpStatusRange statuses = 2;
+  // body_contains, when set, requires the response body to contain it.
+  string body_contains = 3;
+}
+
+// AgentProbe defers to the owning runtime agent's reported health rather than
+// reaching the service directly. It is how a resource whose health only its
+// agent can judge (an authenticated SQL or schema check, say) participates
+// without leaking credentials into a generic probe declaration.
+message AgentProbe {
+}
+
+// CompletionProbe requires a one-shot unit of work to have terminated
+// successfully. It is the predicate for dependencies that never listen.
+message CompletionProbe {
+}
+
+// ProbeTiming is the schedule an evaluator must follow to reach a verdict. It
+// is binding, not advisory: an evaluator that ignores failure_threshold turns a
+// declared boot window into an immediate failure.
+message ProbeTiming {
+  // initial_delay is how long to wait before the first attempt.
+  google.protobuf.Duration initial_delay = 1;
+  // period is the interval between attempts. Zero means attempts are made back
+  // to back once a threshold requires more than one.
+  google.protobuf.Duration period = 2;
+  // timeout bounds a single attempt.
+  google.protobuf.Duration timeout = 3;
+  // failure_threshold is how many consecutive failures mark the probe failed.
+  // Zero means one: a single failure is a verdict.
+  uint32 failure_threshold = 4;
+  // success_threshold is how many consecutive successes mark it passed. Zero
+  // means one.
+  uint32 success_threshold = 5;
+}
+
+// Probe is one declared health predicate. Exactly one predicate is set; an
+// unset oneof is an unusable probe rather than an implicit transport check,
+// so that "declared nothing" and "declared something empty" stay distinct.
+message Probe {
+  // predicate selects exactly one supported predicate variant.
+  oneof predicate {
+    // transport requires only that the endpoint address accepts a connection.
+    TransportProbe transport = 1;
+    // grpc_health requires a SERVING answer from the gRPC health service.
+    GrpcHealthProbe grpc_health = 2;
+    // http requires a matching HTTP response.
+    HttpProbe http = 3;
+    // agent defers to the owning runtime agent's reported health.
+    AgentProbe agent = 4;
+    // completion requires successful termination of a one-shot workload.
+    CompletionProbe completion = 5;
+  }
+  // timing are the scheduling knobs for this predicate.
+  ProbeTiming timing = 6;
+}
+
+// Health is the set of predicates declared for one endpoint. Each intent is
+// independent: a service may declare readiness without ever accepting a
+// liveness restart policy.
+message Health {
+  // readiness gates traffic and unblocks consumers.
+  Probe readiness = 1;
+  // liveness decides whether a running instance must be restarted.
+  Probe liveness = 2;
+  // startup gates the boot window, suspending readiness and liveness until it
+  // first succeeds.
+  Probe startup = 3;
+}
+
+// ProbeOutcome is the result of evaluating one probe.
+enum ProbeOutcome {
+  // PROBE_OUTCOME_UNSPECIFIED is the default when the probe was not evaluated.
+  PROBE_OUTCOME_UNSPECIFIED = 0;
+  // PROBE_OUTCOME_PASSED means the predicate held.
+  PROBE_OUTCOME_PASSED = 1;
+  // PROBE_OUTCOME_FAILED means the predicate did not hold.
+  PROBE_OUTCOME_FAILED = 2;
+  // 3 was PROBE_OUTCOME_SKIPPED. A requirement that does not gate readiness is
+  // absent from the plan rather than present with a skipped result.
+  reserved 3;
+}
+
+// ProbeFailureKind classifies why a predicate did not hold, so that a consumer
+// can tell "not up yet" from "up and refusing to serve".
+enum ProbeFailureKind {
+  // PROBE_FAILURE_KIND_UNSPECIFIED is the default when the probe passed or the
+  // cause is unknown.
+  PROBE_FAILURE_KIND_UNSPECIFIED = 0;
+  // PROBE_FAILURE_KIND_UNREACHABLE means the address refused or dropped the
+  // connection.
+  PROBE_FAILURE_KIND_UNREACHABLE = 1;
+  // PROBE_FAILURE_KIND_NOT_SERVING means health answered anything but SERVING.
+  PROBE_FAILURE_KIND_NOT_SERVING = 2;
+  // PROBE_FAILURE_KIND_UNIMPLEMENTED means the declared health surface is not
+  // implemented by the running service.
+  PROBE_FAILURE_KIND_UNIMPLEMENTED = 3;
+  // PROBE_FAILURE_KIND_UNEXPECTED_STATUS means the HTTP status fell outside the
+  // declared ranges.
+  PROBE_FAILURE_KIND_UNEXPECTED_STATUS = 4;
+  // PROBE_FAILURE_KIND_UNEXPECTED_BODY means the HTTP body did not match.
+  PROBE_FAILURE_KIND_UNEXPECTED_BODY = 5;
+  // PROBE_FAILURE_KIND_LIFECYCLE means the owning agent never reached, or has
+  // since left, a started state.
+  PROBE_FAILURE_KIND_LIFECYCLE = 6;
+  // PROBE_FAILURE_KIND_INCOMPLETE means a one-shot workload has not finished.
+  PROBE_FAILURE_KIND_INCOMPLETE = 7;
+  // PROBE_FAILURE_KIND_TIMEOUT means the attempt exceeded its deadline.
+  PROBE_FAILURE_KIND_TIMEOUT = 8;
+  // PROBE_FAILURE_KIND_INVALID_TARGET means the probe could not be attempted
+  // because the address or path is unusable. Unlike UNREACHABLE it never
+  // resolves by waiting, so a caller must stop retrying and report the
+  // declaration or mapping that produced it.
+  PROBE_FAILURE_KIND_INVALID_TARGET = 9;
+}
+
+// ProbeResult is the evaluation of one predicate, carrying enough identity for
+// a consumer to name the failing predicate rather than report "not ready".
+message ProbeResult {
+  // dependency is the module/service that owns the probed thing.
+  string dependency = 1;
+  // endpoint is the probed endpoint name, empty for an endpointless dependency.
+  string endpoint = 2;
+  // api is the probed endpoint's API, empty for an endpointless dependency.
+  string api = 3;
+  // intent is the question this probe answers.
+  ProbeIntent intent = 4;
+  // kind labels the predicate family that was evaluated.
+  ProbeKind kind = 5;
+  // outcome is the evaluation result.
+  ProbeOutcome outcome = 6;
+  // failure_kind classifies the cause when outcome is FAILED.
+  ProbeFailureKind failure_kind = 7;
+  // predicate is the human-readable predicate that was required.
+  string predicate = 8;
+  // message carries diagnostics for the attempt.
+  string message = 9;
+}
+
+// HealthReport is a point-in-time evaluation of every declared predicate.
+message HealthReport {
+  // generation is the lifecycle generation the report belongs to. It increments
+  // on every successful Start, so a consumer cannot mistake a ready result
+  // recorded before a restart for evidence about the process running now.
+  uint64 generation = 1;
+  // ready is true only when every required predicate passed.
+  bool ready = 2;
+  // results are the individual predicate evaluations.
+  repeated ProbeResult results = 3;
+}

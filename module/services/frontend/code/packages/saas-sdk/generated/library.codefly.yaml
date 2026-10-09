@@ -12,7 +12,7 @@ sources:
       module: saas-starter
       service: accounts
       endpoint: connect
-      contract-digest: sha256:5d7abfdea9eb48867b86146b977e8b34f4f4306249aade05ef189eaa00a4d46c
+      contract-digest: sha256:a91e6a4eb630b9ec43511494337bcc65a15486307c860a201ea22defc76a2ee1
       services:
         - APIKeyService
         - AccessibleScopeService

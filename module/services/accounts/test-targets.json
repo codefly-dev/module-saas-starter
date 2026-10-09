@@ -45,7 +45,7 @@
         "store",
         "vault"
       ],
-      "setup_budget_seconds": 300,
+      "setup_budget_seconds": 600,
       "input_roots": [
         "module/services/accounts/",
         "module/services/store/migrations/",

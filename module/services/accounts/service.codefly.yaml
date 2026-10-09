@@ -30,6 +30,7 @@ workspace-configuration-dependencies:
     - abuse-protection
     - application
     - billing
+    - datasource-oauth
     - email
     - federation
     - gateway-trust
@@ -56,6 +57,7 @@ endpoints:
     - name: grpc
     - name: rest
 spec:
+    api-contract-surfaces: generated/api-contract-surfaces.json
     connect-endpoint: true
     hot-reload: true
     # The datasource fetch reads a repository over git's smart-HTTP transport by

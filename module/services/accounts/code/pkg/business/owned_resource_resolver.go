@@ -1,6 +1,7 @@
 package business
 
 import (
+	"accounts/pkg/auth"
 	"context"
 	"strings"
 
@@ -32,20 +33,24 @@ type ownedResourceResolver func(ctx context.Context, store OwnedResourceStore, i
 // method's resource binding; this map only selects the kind-specific lookup.
 // A method absent here has no resolver and stays unsupported.
 var ownedResourceResolvers = map[string]ownedResourceResolver{
-	"/saas.accounts.v1.DashboardService/DeleteDashboard":      resolveDashboardOrg,
-	"/saas.accounts.v1.DashboardService/GetDashboard":         resolveDashboardOrg,
-	"/saas.accounts.v1.DashboardService/ShareDashboard":       resolveDashboardOrg,
-	"/saas.accounts.v1.DashboardService/UpdateDashboard":      resolveDashboardOrg,
-	"/saas.accounts.v1.InvitationService/ResendInvitation":    resolveInvitationOrg,
-	"/saas.accounts.v1.InvitationService/IssueInvitationLink": resolveInvitationOrg,
-	"/saas.accounts.v1.InvitationService/RevokeInvitation":    resolveInvitationOrg,
-	"/saas.accounts.v1.WebhookService/DeleteSubscription":     resolveSubscriptionOrg,
-	"/saas.accounts.v1.WebhookService/RotateSecret":           resolveSubscriptionOrg,
-	"/saas.accounts.v1.WebhookService/TestWebhook":            resolveSubscriptionOrg,
-	"/saas.accounts.v1.WebhookService/ListDeliveries":         resolveSubscriptionOrg,
-	"/saas.accounts.v1.WebhookService/GetDelivery":            resolveDeliveryOrg,
-	"/saas.accounts.v1.WebhookService/ReplayDelivery":         resolveDeliveryOrg,
-	"/saas.accounts.v1.PrincipalService/RevokePrincipal":      resolvePrincipalOrg,
+	SourceOperationMethod:        resolveSourceOperationOrg,
+	SourceReceiptRetentionMethod: resolveSourceOperationOrg,
+	"/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts": resolveSourceEffectOrg,
+	"/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation":        resolveSourceEffectOrg,
+	"/saas.accounts.v1.DashboardService/DeleteDashboard":                     resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/GetDashboard":                        resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/ShareDashboard":                      resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/UpdateDashboard":                     resolveDashboardOrg,
+	"/saas.accounts.v1.InvitationService/ResendInvitation":                   resolveInvitationOrg,
+	"/saas.accounts.v1.InvitationService/IssueInvitationLink":                resolveInvitationOrg,
+	"/saas.accounts.v1.InvitationService/RevokeInvitation":                   resolveInvitationOrg,
+	"/saas.accounts.v1.WebhookService/DeleteSubscription":                    resolveSubscriptionOrg,
+	"/saas.accounts.v1.WebhookService/RotateSecret":                          resolveSubscriptionOrg,
+	"/saas.accounts.v1.WebhookService/TestWebhook":                           resolveSubscriptionOrg,
+	"/saas.accounts.v1.WebhookService/ListDeliveries":                        resolveSubscriptionOrg,
+	"/saas.accounts.v1.WebhookService/GetDelivery":                           resolveDeliveryOrg,
+	"/saas.accounts.v1.WebhookService/ReplayDelivery":                        resolveDeliveryOrg,
+	"/saas.accounts.v1.PrincipalService/RevokePrincipal":                     resolvePrincipalOrg,
 }
 
 func resolveDashboardOrg(ctx context.Context, store OwnedResourceStore, id string) (string, error) {
@@ -164,4 +169,40 @@ func stringFieldValue(req proto.Message, fieldPath string) string {
 		message = value.Message()
 	}
 	return ""
+}
+
+// Source/effect identifiers are resolved only inside the verified tenant, even
+// when a central policy reader holds the control pool. Effects are tenant keys,
+// not globally unique resources; a cross-tenant lookup would be ambiguous.
+func resolveSourceOperationOrg(ctx context.Context, store OwnedResourceStore, id string) (string, error) {
+	org, _, ok := auth.VerifiedDatabaseIdentity(ctx)
+	if !ok {
+		return "", nil
+	}
+	reader, ok := store.(interface {
+		GetDatasourceSource(context.Context, string, string) (*DatasourceSource, error)
+	})
+	if !ok {
+		return "", nil
+	}
+	source, err := reader.GetDatasourceSource(ctx, org, id)
+	if err != nil || source == nil {
+		return "", err
+	}
+	return source.OrgID, nil
+}
+func resolveSourceEffectOrg(ctx context.Context, store OwnedResourceStore, id string) (string, error) {
+	org, _, ok := auth.VerifiedDatabaseIdentity(ctx)
+	if !ok {
+		return "", nil
+	}
+	reader, ok := store.(SourceOperationAttemptStore)
+	if !ok {
+		return "", nil
+	}
+	attempt, err := reader.GetSourceOperationAttempt(ctx, org, id)
+	if err != nil || attempt == nil {
+		return "", err
+	}
+	return resolveSourceOperationOrg(ctx, store, attempt.SourceID)
 }

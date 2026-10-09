@@ -130,6 +130,16 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
+	effectReceipts, closeEffectReceipts, err := store.NewEffectReceipts()
+	if err != nil {
+		return nil, err
+	}
+	if err = service.ConfigureSourceOperationReceipts(effectReceipts); err != nil {
+		closeEffectReceipts()
+		return nil, err
+	}
+	// The pool is owned by the process; close the receipt handle at shutdown.
+	go func() { <-ctx.Done(); closeEffectReceipts() }()
 	abuseVerifier, err := configuredAbuseVerifier()
 	if err != nil {
 		return nil, err
@@ -350,6 +360,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		workspaceEnv("github-app", "GITHUB_APP_CLIENT_ID"),
 		workspaceEnv("github-app", "GITHUB_APP_CLIENT_SECRET"),
 	)
+	if err := service.ConfigureDatasourceOAuth(workspaceEnv("datasource-oauth", "providers"), workspaceEnv("datasource-oauth", "client_id"), workspaceEnv("datasource-oauth", "client_secret")); err != nil {
+		return nil, err
+	}
+
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(cipher, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()

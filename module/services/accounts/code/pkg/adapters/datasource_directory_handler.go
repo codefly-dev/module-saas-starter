@@ -23,7 +23,7 @@ func (h *datasourceConnectHandler) BeginDatasourceAccountLink(ctx context.Contex
 	if err := requireOrgMember(ctx, actorID, req.Msg.GetOrgId()); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	handle, err := h.svc.BeginDatasourceAccountLink(ctx, actorID, req.Msg.GetOrgId(), req.Msg.GetConnector(), req.Msg.GetRedirectUri())
+	handle, err := h.svc.BeginDatasourceAccountLink(ctx, actorID, req.Msg.GetOrgId(), req.Msg.GetConnector(), req.Msg.GetRedirectUri(), req.Msg.GetSourceId())
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}

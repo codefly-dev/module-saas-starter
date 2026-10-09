@@ -1,0 +1,29 @@
+{
+  "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
+  "attempt_timeout": "1m0s",
+  "total_timeout": "10m0s",
+  "max_attempts": 5,
+  "backoff": "2s",
+  "retryable_codes": [
+    "UNAVAILABLE",
+    "RESOURCE_EXHAUSTED",
+    "ABORTED"
+  ],
+  "audience": "saas-datasource",
+  "invoke_scopes": [],
+  "lookup_scopes": [],
+  "lookup_method": "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
+  "max_input_bytes": 65536,
+  "max_output_bytes": 1048576,
+  "completion": "COMPLETION_CALL",
+  "required_scope_slots": [
+    {
+      "name": "source",
+      "required_actions": [
+        "invoke",
+        "read"
+      ],
+      "lookup": true
+    }
+  ]
+}

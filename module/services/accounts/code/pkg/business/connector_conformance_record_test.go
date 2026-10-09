@@ -123,3 +123,23 @@ func TestConformanceRecordNamesNoGapForAConformantProvider(t *testing.T) {
 }
 
 func collapseSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// Operations and files admission have distinct evidence: neither can stand in
+// for the other in the catalog.
+func TestOperationsAdmissionHasItsOwnConformanceRecord(t *testing.T) {
+	service := &Service{}
+	service.SetDatasourceConnector(nil, nil, "")
+	sections := conformanceSections(readConformanceRecord(t))
+	for _, entry := range service.DatasourceCatalog() {
+		if !entry.AcceptsOperations {
+			continue
+		}
+		section := sections[entry.Descriptor.Key]
+		if !strings.Contains(section, "connectortest.RunOperations") {
+			t.Fatalf("operations provider %q has no operations suite record", entry.Descriptor.Key)
+		}
+		if entry.AcceptsNewSources {
+			t.Fatalf("operations admission enabled sync for %q", entry.Descriptor.Key)
+		}
+	}
+}

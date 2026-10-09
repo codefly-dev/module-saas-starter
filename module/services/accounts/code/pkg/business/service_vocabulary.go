@@ -40,6 +40,8 @@ var servicePermissionVocabulary = []servicePermissionDefinition{
 	{Permission: "dashboards:read", Description: "List and open own and org-shared dashboards.", BuiltInRoles: []string{"admin (via *:*)", "editor", "viewer"}},
 	{Permission: "dashboards:share", Description: "Promote a dashboard to org-shared visibility.", BuiltInRoles: []string{"admin (via *:*)"}},
 	{Permission: "dashboards:write", Description: "Create, rename, edit, and delete own dashboards.", BuiltInRoles: []string{"admin (via *:*)", "editor", "viewer"}},
+	{Permission: "datasource:read", Description: "Read declared operations on a source boundary.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
+	{Permission: "datasource:invoke", Description: "Invoke declared operations on a source boundary.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "entitlements:read", Description: "View entitlement limits, overrides, and usage.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "invitations:read", Description: "List organization invitations.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "invitations:write", Description: "Create and revoke organization invitations.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},

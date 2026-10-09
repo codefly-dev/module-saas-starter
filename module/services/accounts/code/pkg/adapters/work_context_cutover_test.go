@@ -74,11 +74,19 @@ func TestTheWorkContextCutoverIsAtomic(t *testing.T) {
 		t.Fatal("sdk-go now emits a seal; re-read whether the cutover is still atomic")
 	}
 
-	// And core will not read it. Inspect is the WEAKEST core entrypoint — it
-	// verifies no signature and holds no trust root — so a refusal here means
-	// Verify and Authenticate refuse it too, and no partial switch can route
-	// one call site through core while the mint stays where it is.
-	_, err = coreworkcontext.Inspect(token.Encoded())
+	// Core's verifier decodes before it checks the signature or live state.
+	// A format refusal here proves the existing SDK mint cannot be switched
+	// independently of the verifier. Use the supported verifier entrypoint;
+	// structural inspection is no longer a public authority-bearing API.
+	now := time.Now()
+	verifier := &coreworkcontext.Verifier{
+		Issuer: coreworkcontext.FixtureIssuer, Audience: coreworkcontext.FixtureAudience,
+		Keys: coreworkcontext.FixtureKeys(), Revisions: coreworkcontext.FixtureRevisions(),
+		Replay: coreworkcontext.NewMemoryReplayStore(), Grants: coreworkcontext.FixtureGrants(now),
+		Seals: coreworkcontext.FixtureSeals(), Now: func() time.Time { return now },
+		TrustTheConformanceFixtureKey: true,
+	}
+	_, err = verifier.Verify(t.Context(), token.Encoded())
 	if err == nil {
 		t.Fatal("core READ an sdk-go capability: the formats have converged and the switch may no longer be atomic — re-read this test's premise before trusting it")
 	}
@@ -87,31 +95,24 @@ func TestTheWorkContextCutoverIsAtomic(t *testing.T) {
 			"This test is about the ENCODING boundary; a refusal on some other ground means the premise moved.", err)
 	}
 
-	// NON-VACUITY. Everything above would also pass if Inspect simply refused
-	// every string it was handed, which would make this test a tautology about
-	// core rather than a statement about the two formats. So core must read
-	// core: its own shipped fixtures go through the same call, and at least one
-	// has to be readable.
-	//
-	// Inspect is structural, so an ACCEPTED fixture and a fixture refused for a
-	// reason only a verifier could reach (an expired window, a superseded
-	// revision, a consumed single-use capability) are both readable here; what
-	// must not happen is every one of them failing to decode.
-	fixtures, err := coreworkcontext.Fixtures(time.Now())
+	// Non-vacuity: the same verifier must accept Core's own valid fixtures.
+	// Otherwise the format refusal above could be an entrypoint rejecting
+	// everything, rather than evidence of an incompatible encoding.
+	fixtures, err := coreworkcontext.Fixtures(now)
 	if err != nil {
 		t.Fatalf("core fixtures: %v", err)
 	}
 	if len(fixtures) == 0 {
-		t.Fatal("core shipped no capability fixtures, so nothing proved Inspect reads anything")
+		t.Fatal("core shipped no capability fixtures, so nothing proved Verify accepts anything")
 	}
 	var read int
 	for _, fixture := range fixtures {
-		if _, err := coreworkcontext.Inspect(fixture.Token); err == nil {
+		if _, err := verifier.Verify(t.Context(), fixture.Token); err == nil {
 			read++
 		}
 	}
 	if read == 0 {
-		t.Fatalf("Inspect read 0 of core's own %d fixtures, so its refusal above says nothing about the sdk-go format", len(fixtures))
+		t.Fatalf("Verify accepted 0 of core's own %d fixtures, so its refusal above says nothing about the sdk-go format", len(fixtures))
 	}
-	t.Logf("Inspect read %d of core's own %d fixtures and refused the sdk-go capability", read, len(fixtures))
+	t.Logf("Verify accepted %d of core's own %d fixtures and refused the sdk-go capability", read, len(fixtures))
 }

@@ -1,0 +1,161 @@
+syntax = "proto3";
+package codefly.runnable.v0;
+
+import "codefly/base/v0/runnable.proto";
+import "codefly/base/v0/work_context.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/duration.proto";
+
+/*
+A unary, idempotent method an owner service already publishes becomes a
+Runnable by derivation, not by authoring: the method option below says which
+methods are operations and under what execution policy, and the message
+descriptors say what the contract is. Nothing here is a second spelling of the
+contract — a package built from a method is
+codefly.base.v0.RunnablePackage like any other.
+
+The option's bounds are enforced by the runnable Go package, not by
+protovalidate. They are read off a descriptor at generation time, and the same
+message is delivered as a prepared binding's policy (PreparedBinding.policy),
+where runnable.VerifyPrepared applies those same bounds to what was delivered.
+Stating them here as well would put the numbers in two places, and the one a
+constraint could not express — that lookup_scopes are a read-only subset of
+invoke_scopes — is the one that matters most.
+*/
+
+// Operation marks one method as a Runnable operation and declares how it is
+// executed. Policy and authority are installed with the binding, so they are
+// deliberately not part of the package the method derives: the package is the
+// contract, and two installations of it may run under different policies.
+//
+// The option's presence is the marking; every field below except
+// lookup_method, max_input_bytes, max_output_bytes, tool and
+// required_scope_slots is required, completion included. An attempt
+// budget and an authority nobody chose are not defaults core may invent on an
+// owner's behalf, so an empty option is rejected rather than filled in.
+message Operation {
+  // attempt_timeout bounds one attempt.
+  google.protobuf.Duration attempt_timeout = 1;
+  // total_timeout bounds every attempt of one invocation together, and is the
+  // derived package's execution timeout.
+  google.protobuf.Duration total_timeout = 2;
+  // max_attempts is how many times the operation may be attempted.
+  uint32 max_attempts = 3;
+  // backoff is the delay before the second attempt.
+  google.protobuf.Duration backoff = 4;
+  // retryable_codes are the gRPC status code names an attempt may be retried
+  // on, such as "UNAVAILABLE". A code outside that set ends the invocation.
+  repeated string retryable_codes = 5;
+  // audience is the exact trust boundary the authority is minted for.
+  string audience = 6;
+  // invoke_scopes are the scopes the runtime binds for the call itself.
+  repeated codefly.base.v0.WorkScopeV1 invoke_scopes = 7;
+  // lookup_scopes are the scopes the runtime binds to read an effect receipt.
+  // They must be a read-only subset of invoke_scopes: recovering an outcome
+  // never carries more authority than producing it did.
+  repeated codefly.base.v0.WorkScopeV1 lookup_scopes = 8;
+  // lookup_method is a paired method on the same service that takes the effect
+  // id and answers with the receipt, spelled "/package.Service/Method". Empty
+  // leaves the answer to the SDK's generic receipt lookup. It may not name the
+  // operation itself: recovery reads the receipt and never re-runs the effect.
+  string lookup_method = 9;
+  // max_input_bytes bounds the operation's inline input as the derived package
+  // declares it; zero keeps the default inline payload bound. An owner states
+  // its bounds when its caller holds payloads tighter than that default, so an
+  // installer refuses at install what it could otherwise refuse only on a call.
+  uint64 max_input_bytes = 10;
+  // max_output_bytes bounds the operation's inline output the same way; zero
+  // keeps the default.
+  uint64 max_output_bytes = 11;
+  // completion is how the answer arrives, and it is required like the rest of
+  // the policy: an operation that did not say is not a synchronous one, because
+  // a caller that assumed wrongly either abandons work that is still running or
+  // waits for a reply that was never going to come.
+  codefly.base.v0.RunnableExecution.Completion completion = 12;
+  // tool explicitly permits discovery as a tool. Absent means not exposed;
+  // presence never grants a caller authority to discover or invoke it. The
+  // host still checks installation, exposure and current caller permissions.
+  ToolExposure tool = 13;
+  // required_scope_slots are authority the owner cannot spell alone: a model
+  // whose resource kind another module defines, a tool whose kinds and actions
+  // only the installed tool owner knows. The owner names each slot and states
+  // what it needs of whatever fills it; the composition that installs the
+  // operation selects the exact scopes (ScopeSelection). Every slot is
+  // required — a prepared binding delivered with a slot unresolved is refused
+  // — and never a wildcard. A selected kind coincides neither with a fixed
+  // invoke scope's kind nor with another slot's, so what the owner fixed and
+  // what the composition selected stay distinguishable.
+  // runnable.OperationSpec.ResolveScopeSlots is the one resolution to a
+  // concrete policy.
+  repeated ScopeSlot required_scope_slots = 14;
+}
+
+// ToolExposure is an owner's explicit tool contribution. Input and output
+// schemas come from the operation contract, never from a second declaration.
+message ToolExposure {
+  // Effect is the operation's declared effect, independent of its HTTP verb,
+  // method name or scope spelling. Idempotent mutations are still mutations.
+  enum Effect {
+    // EFFECT_UNSPECIFIED is not an admissible exposure: omission is not read-only.
+    EFFECT_UNSPECIFIED = 0;
+    // EFFECT_READ_ONLY observes owner state without changing it.
+    EFFECT_READ_ONLY = 1;
+    // EFFECT_MUTATION may change owner state and requires the caller's effect
+    // authorization and any approval its installation policy requires.
+    EFFECT_MUTATION = 2;
+  }
+  // name is the stable model-facing name, 1..64 ASCII letters, digits, '_' or
+  // '-', beginning with a letter. An admitting tool set rejects collisions.
+  string name = 1;
+  // description is bounded owner-authored text, not authority or instructions
+  // to bypass the caller's policy. It is at most 4096 UTF-8 bytes.
+  string description = 2;
+  // effect must be explicitly declared. No transport or scope implies it.
+  Effect effect = 3;
+}
+
+// ScopeSlot is one owner-declared hole in an operation's authority, filled at
+// installation by the composition with the exact scopes it forwards. The owner
+// cannot spell the resource kinds, actions or ids and does not try to; it says
+// what it will need of them.
+message ScopeSlot {
+  // name identifies the slot to a composition's selection: 1..64 ASCII
+  // letters, digits or '_', beginning with a letter, unique among the
+  // operation's slots.
+  string name = 1;
+  // required_actions are actions every invoke scope selected into the slot
+  // must carry — what the owner will do with the resource, spelled in the
+  // kind's own vocabulary. Empty constrains nothing.
+  repeated string required_actions = 2;
+  // lookup requires the selection to bind, for every invoke scope it selects,
+  // a read-only lookup scope over the same kind and the same exact ids, so the
+  // receipt of an effect on the resource can be read back. A selection may
+  // bind lookup scopes unasked; it may not omit them when asked. A kind whose
+  // vocabulary has no read-only action cannot fill a slot that asks for
+  // lookup: a lookup scope is the one read-only action and nothing else.
+  bool lookup = 3;
+}
+
+// ScopeSelection is a composition's answer to one ScopeSlot: the exact scopes
+// it forwards into it. It is authored where the composition is — never derived
+// from a transport, a name or a generated document — and one selection answers
+// one slot.
+message ScopeSelection {
+  // slot names the ScopeSlot this selection fills.
+  string slot = 1;
+  // invoke are the scopes bound for the call: resource kind, actions and
+  // explicit resource ids, each bounded as any scope and never a wildcard (an
+  // empty resource_ids would be every resource of the kind, and is refused).
+  // At least one is required.
+  repeated codefly.base.v0.WorkScopeV1 invoke = 2;
+  // lookup are the read-only lookup scopes bound to read a receipt: each
+  // carries the one read-only action over a kind an invoke scope of this
+  // selection names and ids that invoke scope covers.
+  repeated codefly.base.v0.WorkScopeV1 lookup = 3;
+}
+
+extend google.protobuf.MethodOptions {
+  // operation marks the method as a Runnable operation; its presence is the
+  // marking, and its value is the execution policy.
+  Operation operation = 51003;
+}

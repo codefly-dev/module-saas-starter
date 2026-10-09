@@ -1,0 +1,29 @@
+{
+  "schema": "codefly/runnable-operations/v1",
+  "workspace": "saas-starter-dev",
+  "module": "saas-starter",
+  "operations": [
+    {
+      "name": "accounts-connect-invoke-source-operation",
+      "version": "0.1.0",
+      "digest": "6cc3a4a60970e9468efbcc6686fbe3e18b081ca56533d35a53b284fd53e22083",
+      "service": "accounts",
+      "endpoint": "connect",
+      "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
+      "input_message": "saas.accounts.v1.InvokeSourceOperationRequest",
+      "output_message": "saas.accounts.v1.InvokeSourceOperationResponse",
+      "path": "contracts/runnables/accounts/connect/InvokeSourceOperation"
+    },
+    {
+      "name": "accounts-connect-prune-source-operation-receipts",
+      "version": "0.1.0",
+      "digest": "e45ebb98e7fd538733a25bde55cfbd1641dc7d5455b0c49efd49e08f649518c2",
+      "service": "accounts",
+      "endpoint": "connect",
+      "method": "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
+      "input_message": "saas.accounts.v1.PruneSourceOperationReceiptsRequest",
+      "output_message": "saas.accounts.v1.PruneSourceOperationReceiptsResponse",
+      "path": "contracts/runnables/accounts/connect/PruneSourceOperationReceipts"
+    }
+  ]
+}

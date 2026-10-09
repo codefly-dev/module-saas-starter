@@ -1890,7 +1890,6 @@ func TestAddSource_RefusesProvidersOffTheEnvelope(t *testing.T) {
 	store := newDatasourceFakeStore()
 	svc, audit := newDatasourceService(store, &recordingProducer{}, nil)
 	inputs := map[string]business.AddSourceInput{
-		business.DatasourceProviderAPI:     {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides", Credential: "sekret", API: apiConfig()},
 		business.DatasourceProviderCrawler: {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides", Crawler: crawlerConfig()},
 		business.DatasourceProviderUpload:  {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "secretkey", Upload: uploadConfig()},
 	}
@@ -1917,4 +1916,27 @@ func TestAddSource_RefusesProvidersOffTheEnvelope(t *testing.T) {
 	if n, err := svc.RunDatasourceSync(context.Background(), existing.ID); err != nil || n != 1 {
 		t.Fatalf("an existing crawler source still syncs: %d, %v", n, err)
 	}
+}
+
+func TestAPISourceOperationsAdmissionDoesNotEnableSync(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+	source, err := svc.AddSource(t.Context(), "actor-1", business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "Acme", Credential: "example-secret", API: apiConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !source.API.OperationsOnly || source.NextReconcileAt != nil || source.ReconcileInterval != 0 {
+		t.Fatal("call source scheduled for sync")
+	}
+	if _, err := svc.SyncDatasourceSource(t.Context(), "actor-1", testOrg, source.ID); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("sync not refused: %v", err)
+	}
+	for _, entry := range svc.DatasourceCatalog() {
+		if entry.Descriptor.Key == business.DatasourceProviderAPI {
+			if entry.AcceptsNewSources || !entry.AcceptsOperations {
+				t.Fatal("call/sync admission conflated")
+			}
+			return
+		}
+	}
+	t.Fatal("API descriptor missing")
 }

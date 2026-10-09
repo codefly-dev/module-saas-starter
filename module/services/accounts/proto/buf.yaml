@@ -6,10 +6,14 @@ modules:
     # duplicate Go/Connect/REST symbols.
     excludes:
       - codefly
+      - vendor
+  - path: vendor
 deps:
   - buf.build/bufbuild/protovalidate
   - buf.build/googleapis/googleapis
 lint:
+  ignore:
+    - vendor
   use:
     - COMMENTS
     - STANDARD
