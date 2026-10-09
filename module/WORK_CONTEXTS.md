@@ -429,3 +429,32 @@ The gateway exchange is `POST /modules/_source-operation-context`
 
 The transport all of this is carried on, and what a client library must and
 must not require of it, is [INTERNAL_TRANSPORT.md](./INTERNAL_TRANSPORT.md).
+
+## Callable-source declarations
+
+`datasource:read` and `datasource:invoke` are source-boundary role permissions.
+Reading declarations rechecks organization membership, the source boundary's
+`datasource:read` grant, and personal-source ownership. An administrator atomically
+replaces declarations; neither a declaration nor its digest grants authority.
+The generic authorization-code source remains personal even when another member
+holds an organization-wide wildcard role. OAuth token custody is independent of
+the host's inbound Work Context and delegated-audience exchange.
+
+
+Callable source operations use `saas-datasource`, the host's source-operation
+audience. `module-capabilities` remains the module identity audience and the mint
+explicitly refuses it as an operation audience; there was no existing host call
+audience to reuse. The new owner is included in the closed host audience set.
+The existing `operation_audiences` registration and
+`ExchangeDelegatedOperationAudience` perform issuance and attenuation; no second
+exchange is introduced. Source-delegation parents are rechecked through
+`ConfirmSourceDelegationParent`, including the current binding digest. Ordinary
+delegations use the existing chain journal and authorization revision recheck.
+
+The Runnable `source` slot requires invoke/read and read-only recovery. An
+installation supplies the `datasource.sources` kind and explicit source IDs for
+that slot. The host maps each source ID to its boundary node and checks
+`datasource:invoke` or `datasource:read` there; an unscoped source-kind grant is
+refused. Personal OAuth sources also require the owning person. Declarations
+and receipts cannot expand these scopes. Invoke rechecks again after waiting for
+the SDK effect lock, before a committed response can be replayed.

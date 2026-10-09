@@ -81,6 +81,8 @@ func (d datasourceScheduler) Blocked(ctx context.Context, src connector.Source, 
 // whole deployment, as the provider meters it by address.
 func datasourceCredentialKey(source *DatasourceSource) string {
 	switch {
+	case source.Provider == DatasourceProviderAPI && source.API != nil && source.API.CredentialBudgetKey != "":
+		return source.API.CredentialBudgetKey
 	case source.Provider != DatasourceProviderGitHub:
 		return source.Provider + ":source:" + source.ID
 	case source.GitHubInstallationID != "":

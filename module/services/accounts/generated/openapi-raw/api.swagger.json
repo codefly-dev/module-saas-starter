@@ -1313,6 +1313,37 @@
         ]
       }
     },
+    "/v1/datasource-operation-receipts/{effectId}": {
+      "get": {
+        "summary": "LookupInvokeSourceOperation recovers a receipt without contacting the provider.",
+        "operationId": "DatasourceService_LookupInvokeSourceOperation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "effectId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
     "/v1/delegations": {
       "post": {
         "summary": "RequestDelegation creates a new pending grant. Idempotent on\n(org_id, request_hash) — same request from a retrying actor\nreturns the original row's id.",
@@ -2600,6 +2631,137 @@
         ],
         "tags": [
           "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/datasources/{sourceId}/operations": {
+      "get": {
+        "summary": "ListSourceOperations reads the currently admitted declarations under source authority.",
+        "operationId": "DatasourceService_ListSourceOperations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSourceOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "sourceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      },
+      "post": {
+        "summary": "DeclareSourceOperations atomically replaces the source operation set, as an administrator.",
+        "operationId": "DatasourceService_DeclareSourceOperations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeclareSourceOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "sourceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceDeclareSourceOperationsBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/datasources/{sourceId}/operations/{operation}:invoke": {
+      "post": {
+        "summary": "InvokeSourceOperation calls an admitted operation under current authority.",
+        "operationId": "DatasourceService_InvokeSourceOperation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "sourceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceInvokeSourceOperationBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatasourceService"
         ]
       }
     },
@@ -6036,6 +6198,30 @@
       },
       "description": "DecideApprovalReviewRequest binds the decision to the subject that was shown."
     },
+    "DatasourceServiceDeclareSourceOperationsBody": {
+      "type": "object",
+      "properties": {
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SourceOperation"
+          }
+        }
+      }
+    },
+    "DatasourceServiceInvokeSourceOperationBody": {
+      "type": "object",
+      "properties": {
+        "inputJson": {
+          "type": "string"
+        },
+        "effectId": {
+          "type": "string"
+        }
+      },
+      "description": "InvokeSourceOperationRequest carries exactly one JSON object in input_json.\neffect_id must match x-codefly-effect-id; either location may supply it."
+    },
     "DelegationServiceDecideDelegationBody": {
       "type": "object",
       "properties": {
@@ -6223,6 +6409,15 @@
           "type": "string"
         }
       }
+    },
+    "SourceOperationEffect": {
+      "type": "string",
+      "enum": [
+        "EFFECT_UNSPECIFIED",
+        "EFFECT_READ_ONLY",
+        "EFFECT_MUTATION"
+      ],
+      "default": "EFFECT_UNSPECIFIED"
     },
     "TeamServiceCreateTeamBody": {
       "type": "object",
@@ -7550,6 +7745,18 @@
         }
       }
     },
+    "v1DeclareSourceOperationsResponse": {
+      "type": "object",
+      "properties": {
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SourceOperation"
+          }
+        }
+      }
+    },
     "v1DelegationEvent": {
       "type": "object",
       "properties": {
@@ -8563,6 +8770,18 @@
       },
       "description": "Invoice — trimmed view of Stripe's invoice object. Amounts are in\nthe smallest currency unit (cents for USD/EUR); FE divides by 100."
     },
+    "v1InvokeSourceOperationResponse": {
+      "type": "object",
+      "properties": {
+        "outputJson": {
+          "type": "string",
+          "description": "Exactly one JSON object; {} when unknown."
+        },
+        "receipt": {
+          "$ref": "#/definitions/v1SourceOperationReceipt"
+        }
+      }
+    },
     "v1IssueClientAuthorizationCodeRequest": {
       "type": "object",
       "properties": {
@@ -9332,6 +9551,18 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1RecordShare"
+          }
+        }
+      }
+    },
+    "v1ListSourceOperationsResponse": {
+      "type": "object",
+      "properties": {
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SourceOperation"
           }
         }
       }
@@ -10814,6 +11045,71 @@
       ],
       "default": "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
       "description": "SolutionRegistrationStatus is derived from declared state and complete,\ncompatible frontend/backend observations, never from an expiring lease.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Both halves are present and their declared contract\nversions agree. This is the only status either surface serves.\n - SOLUTION_REGISTRATION_STATUS_PENDING: A half has not been observed. The record is durable but incomplete, so no\npage advertises it and the gateway has nothing to route to.\n - SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE: The two halves declare different contract versions, so activating them\ntogether would serve a page against a backend it was not built for.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: An applied removal keeps the declaration as a tombstone."
+    },
+    "v1SourceOperation": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "query": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "outputSchema": {
+          "type": "object"
+        },
+        "effect": {
+          "$ref": "#/definitions/SourceOperationEffect"
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "digest": {
+          "type": "string"
+        }
+      },
+      "description": "DatasourceService is the tenant-facing surface a solution drives (directly or\nthrough the generated SDK) to declare and operate connected datasources.\nSourceOperation is an admitted route and bounded JSON contract, never a credential."
+    },
+    "v1SourceOperationReceipt": {
+      "type": "object",
+      "properties": {
+        "effectId": {
+          "type": "string"
+        },
+        "committedAt": {
+          "type": "string",
+          "description": "UTC RFC3339Nano, empty for an unknown outcome."
+        },
+        "status": {
+          "type": "string",
+          "description": "committed or unknown; unknown never authorizes redispatch."
+        },
+        "providerStatus": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "outputJson": {
+          "type": "string",
+          "description": "Exactly one JSON object; {} when unknown."
+        }
+      },
+      "description": "SourceOperationReceipt contains only the committed result and safe metadata."
     },
     "v1StartChildSessionWorkContextRequest": {
       "type": "object",

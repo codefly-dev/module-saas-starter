@@ -195,7 +195,7 @@ func TestNoHostAudienceIsEverEmpty(t *testing.T) {
 	// A blank binding id contributes NO audience rather than the bare prefix: a
 	// "solution:" with nothing after it would be a member that names no binding.
 	require.NotContains(t, set, business.SolutionAudiencePrefix)
-	require.Len(t, set, 2, "one module audience and one real binding; the blank and whitespace ids contribute nothing")
+	require.Len(t, set, 3, "module identity, source operations and one real binding; blank ids contribute nothing")
 
 	// And the structural half refuses an empty audience without consulting the set
 	// at all, so it holds even when the registry cannot be read.

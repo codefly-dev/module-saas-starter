@@ -95,7 +95,7 @@ deletions; to be rebuilt as a records connector or retired.
 | 2 readers | Not applicable until there are items. |
 | 4 versions and change sets | **Not met.** No version, no cursor, no deletions. Re-syncing unchanged content dedupes on the content hash, which is not the same thing: it avoids a duplicate delivery, it does not describe a change. |
 | 5 provenance | Only the source and a content hash. |
-| 6 budget and backpressure | No declared `Budget`; unmetered. OAuth 2.0 token refresh is handled, and a permanent rejection is terminal, but a provider rate limit is not typed with its reset. |
+| 6 budget and backpressure | Calls and legacy sync share the host Scheduler: 60 requests per minute per credential key, with 80% available to background work. Provider 429 responses block that key until reset; the call surface carries typed retry metadata. OAuth refresh is row-locked and permanent rejection requires reconnecting. |
 | 8 bulk only | One request per sync — trivially satisfied, and for the wrong reason: there is only ever one thing to fetch. |
 | interface | `records`, which the registry cannot admit (see above). |
 
@@ -106,6 +106,31 @@ which is a new configuration surface and a new contract, not a repair of this
 one. The registered gap says "rebuilt as a records connector or retired", and
 that is still the honest position — this connector is not one clause away from
 conformance, it is a different design.
+
+### Operations admission
+
+The API call path is separate from this sync envelope. Its descriptor retains
+`accepts_new_sources: false` for sync and reports `accepts_operations` separately.
+Connecting an API for operations creates no sync job or reconcile schedule;
+legacy API sources continue syncing. A call declaration is an explicit bounded
+HTTP route and JSON contract, not a record change-set interface.
+
+`operations/declaration_test.go` covers declaration digests, schema refusal,
+required path parameters, escaping, query/body routing, and GET body refusal.
+`apisource/operations_test.go` covers methods, byte caps, typed provider rate
+limits, token endpoint guards, and transport disclosure.
+`connectortest.RunOperations`, run by `business/TestAPIOperationsConformance`,
+checks the host call path for unknown operations, schema and path refusals,
+GET body refusal, output caps, typed 429 responses and a lost mutation reply
+that cannot be dispatched again. Its scripted provider uses the transport
+substitution seam; it does not qualify the public Connect binding or real
+Postgres receipts. `adapters/TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority`
+derives and prepares the binding, then calls the actual replay handler in Connect
+JSON mode with an in-memory receipt store. It checks input conflicts and current
+permission, personal owner and declaration revocations. The business integration
+suite's `TestSourceOperationRealReceiptReplayAndUnknownMutation` uses real
+Postgres, Vault and the SDK transaction writer. Passing the in-memory test does
+not qualify database commit/rollback or cross-process serialization.
 
 ## Summary
 

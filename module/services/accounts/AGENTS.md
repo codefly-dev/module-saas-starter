@@ -9,7 +9,7 @@ scope and RLS posture is in
 registration and module-identity records that only accounts may write.
 
 **Regenerating after a proto change** is one command from this directory,
-`codefly generate proto --proto ./proto --output .. --template
+`codefly generate proto --proto ./proto --path saas --output .. --template
 accounts/proto/buf.gen.yaml` (Docker, Codefly CLI ≥ 0.1.160), then the
 `go generate` steps. The `--output . --local --template buf.gen.local.yaml`
 spelling that older docs and the `generated-pins-gate` message still show no

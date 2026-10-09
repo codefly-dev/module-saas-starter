@@ -37,6 +37,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterConsentServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service ConsentService: %w", err)
 	}
+	if err := gen.RegisterDatasourceServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service DatasourceService: %w", err)
+	}
 	if err := gen.RegisterDirectoryServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service DirectoryService: %w", err)
 	}
@@ -228,6 +231,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/webhooks/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/approvals/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/billing/invoices/[^/]+$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/datasource-operation-receipts/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/delegations/[^/]+:wait$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/directory/organizations/[^/]+/members$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/directory/organizations/[^/]+/teams$")},
@@ -236,6 +240,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/export/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/installations/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/datasources/[^/]+/operations$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/generic-settings$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/members$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/settings$")},
@@ -261,6 +266,8 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:uninstall$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/invitations/[^/]+:resend$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/notifications/[^/]+:read$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/datasources/[^/]+/operations$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/datasources/[^/]+/operations/[^/]+:invoke$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/generic-settings$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/members$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/teams$")},

@@ -86,6 +86,7 @@ func (h *datasourceConnectHandler) AddSource(
 		}
 		if oauth := api.GetOauth2(); oauth != nil {
 			input.API.OAuth2 = &business.APIOAuth2Config{
+				Grant:    business.OAuth2Grant(oauth.Grant),
 				TokenURL: oauth.TokenUrl,
 				ClientID: oauth.ClientId,
 				Scopes:   oauth.Scopes,
@@ -144,6 +145,9 @@ func (h *datasourceConnectHandler) ListSources(
 	}
 	out := make([]*gen.Datasource, 0, len(sources))
 	for _, source := range sources {
+		if source.PersonalOwnerUserID != "" && source.PersonalOwnerUserID != actorID {
+			continue
+		}
 		out = append(out, datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source)))
 	}
 	return connect.NewResponse(&gen.ListSourcesResponse{Datasources: out}), nil
@@ -161,7 +165,7 @@ func (h *datasourceConnectHandler) GetSource(
 	if err := requireOrgMember(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	source, err := h.svc.GetDatasourceSource(ctx, req.Msg.OrgId, req.Msg.Id)
+	source, err := h.svc.GetDatasourceSourceForActor(ctx, req.Msg.OrgId, req.Msg.Id, actorID)
 	if err != nil {
 		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, err)
@@ -216,6 +220,9 @@ func (h *datasourceConnectHandler) GetSourceSync(
 		return nil, err
 	}
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if _, err := h.svc.GetDatasourceSourceForActor(ctx, req.Msg.OrgId, req.Msg.SourceId, actorID); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	operation, err := h.svc.GetDatasourceSync(ctx, req.Msg.OrgId, req.Msg.SourceId, req.Msg.JobId)
@@ -375,6 +382,7 @@ func datasourceSourceToProto(source *business.DatasourceSource, registry *connec
 		}
 		if source.API.OAuth2 != nil {
 			out.Api.Oauth2 = &gen.ApiOAuth2Config{
+				Grant:    gen.ApiOAuth2Config_Grant(source.API.OAuth2.Grant),
 				TokenUrl: source.API.OAuth2.TokenURL,
 				ClientId: source.API.OAuth2.ClientID,
 				Scopes:   source.API.OAuth2.Scopes,
@@ -503,6 +511,11 @@ func datasourceCatalog(entries []business.DatasourceCatalogEntry) *gen.GetDataso
 			Conformant:        d.Conformant,
 			ConformanceGap:    d.Gap,
 			AcceptsNewSources: e.AcceptsNewSources,
+			AcceptsOperations: e.AcceptsOperations,
+			OperationsGap:     e.OperationsGap,
+			OauthAuthorizeUrl: e.OAuth.AuthorizeURL,
+			OauthTokenUrl:     e.OAuth.TokenURL,
+			OauthScopes:       e.OAuth.Scopes,
 			// Whether an operator has wired this connector's push endpoint HERE,
 			// beside SupportsWebhook's "the connector could take one at all".
 			LiveDeliveryConfigured: e.LiveDeliveryConfigured,

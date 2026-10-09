@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/jobs"
 )
 
@@ -28,4 +29,19 @@ func DatasourceProcessingErrorForTest(err error) *jobs.ProcessingError {
 // DatasourceCredentialKeyForTest exposes which credential a source spends.
 func DatasourceCredentialKeyForTest(source *DatasourceSource) string {
 	return datasourceCredentialKey(source)
+}
+
+// OAuth test seams retain the real store and cipher, substituting only the provider.
+func (s *Service) SetDatasourceClientCredentialsForTest(fn OAuth2RefreshFunc) {
+	s.newOAuth2ClientCredentials = fn
+}
+func (s *Service) ResolveDatasourceTokenForTest(ctx context.Context, source *DatasourceSource) (string, error) {
+	return s.resolveOAuth2AccessToken(ctx, source)
+}
+func (s *Service) SetDatasourceAuthorizationCodeForTest(fn func(context.Context, apisource.OAuth2Config, string, string, string, string) (*apisource.OAuth2Token, error)) {
+	s.newOAuth2AuthorizationCode = fn
+}
+
+func (s *Service) SetSourceOperationClientForTest(fn func(apisource.Config, string) APIOperationClient) {
+	s.newAPIOperationClient = fn
 }

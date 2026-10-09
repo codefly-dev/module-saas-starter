@@ -73,6 +73,10 @@ var serviceInfo = &gen.ServiceInfo{
 // options; descriptions remain editorial prose until source comments are
 // compiled into the service catalog.
 var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
+	"DatasourceService/InvokeSourceOperation":                      "Call a declared source operation under current authority and an effect receipt.",
+	"DatasourceService/LookupInvokeSourceOperation":                "Read the current authorized outcome of a source effect without redispatching it.",
+	"DatasourceService/DeclareSourceOperations":                    "Atomically replace an API source's declared operations as an organization administrator.",
+	"DatasourceService/ListSourceOperations":                       "Read an API source's declared operations under current source authority.",
 	"ModuleCapabilitiesService/GetCurrentInstallation":             "Read current active installation identity as a verified organization member through an authenticated module.",
 	"ModuleCapabilitiesService/ApproveExecutableArtifact":          "Record explicit current-admin consent for an exact executable identity within installed source and contract ceilings.",
 	"ModuleCapabilitiesService/AuthorizeExecutableArtifact":        "Authorize an exact previously approved executable identity using current authority and revocation.",

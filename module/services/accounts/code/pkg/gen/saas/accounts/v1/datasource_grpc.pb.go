@@ -20,6 +20,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DatasourceService_InvokeSourceOperation_FullMethodName         = "/saas.accounts.v1.DatasourceService/InvokeSourceOperation"
+	DatasourceService_LookupInvokeSourceOperation_FullMethodName   = "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation"
+	DatasourceService_ListSourceOperations_FullMethodName          = "/saas.accounts.v1.DatasourceService/ListSourceOperations"
+	DatasourceService_DeclareSourceOperations_FullMethodName       = "/saas.accounts.v1.DatasourceService/DeclareSourceOperations"
 	DatasourceService_AddGitHubSource_FullMethodName               = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
 	DatasourceService_AddSource_FullMethodName                     = "/saas.accounts.v1.DatasourceService/AddSource"
 	DatasourceService_GetDatasourceCatalog_FullMethodName          = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
@@ -48,10 +52,15 @@ const (
 // DatasourceServiceClient is the client API for DatasourceService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// DatasourceService is the tenant-facing surface a solution drives (directly or
-// through the generated SDK) to declare and operate connected datasources.
 type DatasourceServiceClient interface {
+	// InvokeSourceOperation calls an admitted operation under current authority.
+	InvokeSourceOperation(ctx context.Context, in *InvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error)
+	// LookupInvokeSourceOperation recovers a receipt without contacting the provider.
+	LookupInvokeSourceOperation(ctx context.Context, in *LookupInvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error)
+	// ListSourceOperations reads the currently admitted declarations under source authority.
+	ListSourceOperations(ctx context.Context, in *ListSourceOperationsRequest, opts ...grpc.CallOption) (*ListSourceOperationsResponse, error)
+	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+	DeclareSourceOperations(ctx context.Context, in *DeclareSourceOperationsRequest, opts ...grpc.CallOption) (*DeclareSourceOperationsResponse, error)
 	// AddGitHubSource registers a GitHub repository as a datasource, encrypts and
 	// stores its access token (and optional webhook signing secret), and returns
 	// the non-secret projection.
@@ -140,6 +149,46 @@ type datasourceServiceClient struct {
 
 func NewDatasourceServiceClient(cc grpc.ClientConnInterface) DatasourceServiceClient {
 	return &datasourceServiceClient{cc}
+}
+
+func (c *datasourceServiceClient) InvokeSourceOperation(ctx context.Context, in *InvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvokeSourceOperationResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_InvokeSourceOperation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) LookupInvokeSourceOperation(ctx context.Context, in *LookupInvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvokeSourceOperationResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_LookupInvokeSourceOperation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) ListSourceOperations(ctx context.Context, in *ListSourceOperationsRequest, opts ...grpc.CallOption) (*ListSourceOperationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSourceOperationsResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_ListSourceOperations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) DeclareSourceOperations(ctx context.Context, in *DeclareSourceOperationsRequest, opts ...grpc.CallOption) (*DeclareSourceOperationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeclareSourceOperationsResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_DeclareSourceOperations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *datasourceServiceClient) AddGitHubSource(ctx context.Context, in *AddGitHubSourceRequest, opts ...grpc.CallOption) (*AddGitHubSourceResponse, error) {
@@ -375,10 +424,15 @@ func (c *datasourceServiceClient) RevokeSourceDelegation(ctx context.Context, in
 // DatasourceServiceServer is the server API for DatasourceService service.
 // All implementations must embed UnimplementedDatasourceServiceServer
 // for forward compatibility.
-//
-// DatasourceService is the tenant-facing surface a solution drives (directly or
-// through the generated SDK) to declare and operate connected datasources.
 type DatasourceServiceServer interface {
+	// InvokeSourceOperation calls an admitted operation under current authority.
+	InvokeSourceOperation(context.Context, *InvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error)
+	// LookupInvokeSourceOperation recovers a receipt without contacting the provider.
+	LookupInvokeSourceOperation(context.Context, *LookupInvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error)
+	// ListSourceOperations reads the currently admitted declarations under source authority.
+	ListSourceOperations(context.Context, *ListSourceOperationsRequest) (*ListSourceOperationsResponse, error)
+	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+	DeclareSourceOperations(context.Context, *DeclareSourceOperationsRequest) (*DeclareSourceOperationsResponse, error)
 	// AddGitHubSource registers a GitHub repository as a datasource, encrypts and
 	// stores its access token (and optional webhook signing secret), and returns
 	// the non-secret projection.
@@ -469,6 +523,18 @@ type DatasourceServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDatasourceServiceServer struct{}
 
+func (UnimplementedDatasourceServiceServer) InvokeSourceOperation(context.Context, *InvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InvokeSourceOperation not implemented")
+}
+func (UnimplementedDatasourceServiceServer) LookupInvokeSourceOperation(context.Context, *LookupInvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method LookupInvokeSourceOperation not implemented")
+}
+func (UnimplementedDatasourceServiceServer) ListSourceOperations(context.Context, *ListSourceOperationsRequest) (*ListSourceOperationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSourceOperations not implemented")
+}
+func (UnimplementedDatasourceServiceServer) DeclareSourceOperations(context.Context, *DeclareSourceOperationsRequest) (*DeclareSourceOperationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeclareSourceOperations not implemented")
+}
 func (UnimplementedDatasourceServiceServer) AddGitHubSource(context.Context, *AddGitHubSourceRequest) (*AddGitHubSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddGitHubSource not implemented")
 }
@@ -557,6 +623,78 @@ func RegisterDatasourceServiceServer(s grpc.ServiceRegistrar, srv DatasourceServ
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&DatasourceService_ServiceDesc, srv)
+}
+
+func _DatasourceService_InvokeSourceOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvokeSourceOperationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).InvokeSourceOperation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_InvokeSourceOperation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).InvokeSourceOperation(ctx, req.(*InvokeSourceOperationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_LookupInvokeSourceOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LookupInvokeSourceOperationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).LookupInvokeSourceOperation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_LookupInvokeSourceOperation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).LookupInvokeSourceOperation(ctx, req.(*LookupInvokeSourceOperationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_ListSourceOperations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSourceOperationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).ListSourceOperations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_ListSourceOperations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).ListSourceOperations(ctx, req.(*ListSourceOperationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_DeclareSourceOperations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeclareSourceOperationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).DeclareSourceOperations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_DeclareSourceOperations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).DeclareSourceOperations(ctx, req.(*DeclareSourceOperationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _DatasourceService_AddGitHubSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -980,6 +1118,22 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.DatasourceService",
 	HandlerType: (*DatasourceServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "InvokeSourceOperation",
+			Handler:    _DatasourceService_InvokeSourceOperation_Handler,
+		},
+		{
+			MethodName: "LookupInvokeSourceOperation",
+			Handler:    _DatasourceService_LookupInvokeSourceOperation_Handler,
+		},
+		{
+			MethodName: "ListSourceOperations",
+			Handler:    _DatasourceService_ListSourceOperations_Handler,
+		},
+		{
+			MethodName: "DeclareSourceOperations",
+			Handler:    _DatasourceService_DeclareSourceOperations_Handler,
+		},
 		{
 			MethodName: "AddGitHubSource",
 			Handler:    _DatasourceService_AddGitHubSource_Handler,

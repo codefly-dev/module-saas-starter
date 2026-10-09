@@ -425,6 +425,8 @@ jobs:
         run: bash scripts/ci/install-codefly.sh
       - name: Check exported API contracts are in sync with the proto
         run: codefly generate contracts saas-starter --check
+      - name: Check derived source operations
+        run: codefly generate runnables saas-starter --check
 
   module-package:
     name: Immutable module package

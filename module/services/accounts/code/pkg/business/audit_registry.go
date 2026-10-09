@@ -431,6 +431,8 @@ const (
 	EventWebhookSecretRotated EventType = "saas.webhook.secret_rotated"
 	EventJobReplayed          EventType = "saas.job.replayed"
 
+	EventDatasourceOperationDeclared    EventType = "saas.datasource.operation.declared"
+	EventDatasourceOperationInvoked     EventType = "saas.datasource.operation.invoked"
 	EventDatasourceSourceAdded          EventType = "saas.datasource.source.added"
 	EventDatasourceSyncCompleted        EventType = "saas.datasource.sync.completed"
 	EventDatasourceCredentialUpdated    EventType = "saas.datasource.credential.updated"
@@ -711,6 +713,8 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
 		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2),
 	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
+	mutation(EventDatasourceOperationDeclared, CategorySystem, "A source operation set was declared.", strs("operations")),
+	observation(EventDatasourceOperationInvoked, CategorySystem, "A source operation was invoked.", str("operation"), enum("effect", "READ_ONLY", "MUTATION", "UNKNOWN"), enum("outcome", "committed", "refused", "unresolved", "rate_limited"), str("effect_id")),
 	observation(EventDatasourceAccountLinkStarted, CategorySystem, "A person started linking a provider account.", str("connector")),
 	mutation(EventDatasourceAccountLinked, CategorySystem, "A person linked a provider account they signed in as.",
 		str("connector"), str("provider_account_id")),

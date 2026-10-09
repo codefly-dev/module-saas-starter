@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"accounts/pkg/datasource/apisource"
+	"accounts/pkg/datasource/connector"
 	"accounts/pkg/datasource/crawler"
 	"accounts/pkg/datasource/github"
 	"accounts/pkg/datasource/objectstore"
@@ -305,6 +306,9 @@ func DatasourceWebhookSecretPurpose(sourceID string) string {
 // the credential itself lives only as a SecretCipher envelope in
 // CredentialSecretRef.
 type APIDatasourceConfig struct {
+	OperationsOnly       bool             `json:"operations_only,omitempty"`
+	CredentialBudgetKey  string           `json:"credential_budget_key,omitempty"`
+	PersonalOwnerUserID  string           `json:"personal_owner_user_id,omitempty"`
 	BaseURL              string           `json:"base_url"`
 	ResourcePath         string           `json:"resource_path"`
 	CredentialKind       string           `json:"credential_kind"`
@@ -316,10 +320,20 @@ type APIDatasourceConfig struct {
 // APIOAuth2Config is the non-secret OAuth 2.0 configuration of an API Source.
 // The refresh token and client secret are never held here; they live only in
 // the SecretCipher credential envelope (oauthStoredCredential).
+type OAuth2Grant int32
+
+const (
+	OAuth2RefreshToken OAuth2Grant = iota
+	OAuth2ExplicitRefreshToken
+	OAuth2ClientCredentials
+	OAuth2AuthorizationCode
+)
+
 type APIOAuth2Config struct {
-	TokenURL string   `json:"token_url"`
-	ClientID string   `json:"client_id"`
-	Scopes   []string `json:"scopes,omitempty"`
+	Grant    OAuth2Grant `json:"grant,omitempty"`
+	TokenURL string      `json:"token_url"`
+	ClientID string      `json:"client_id"`
+	Scopes   []string    `json:"scopes,omitempty"`
 }
 
 // oauthStoredCredential is the JSON shape encrypted into the credential envelope
@@ -358,17 +372,18 @@ type UploadDatasourceConfig struct {
 // provider), never plaintext. Repo/Paths/Branch are set for the GitHub provider;
 // API/Crawler/Upload is set for the matching generic provider.
 type DatasourceSource struct {
-	ID             string
-	OrgID          string
-	Provider       string
-	Repo           string
-	Paths          []string
-	FileExtensions []string
-	Branch         string
-	API            *APIDatasourceConfig
-	Crawler        *CrawlerDatasourceConfig
-	Upload         *UploadDatasourceConfig
-	BoundaryNodeID string
+	PersonalOwnerUserID string
+	ID                  string
+	OrgID               string
+	Provider            string
+	Repo                string
+	Paths               []string
+	FileExtensions      []string
+	Branch              string
+	API                 *APIDatasourceConfig
+	Crawler             *CrawlerDatasourceConfig
+	Upload              *UploadDatasourceConfig
+	BoundaryNodeID      string
 	// BoundaryLabel is the display label of BoundaryNodeID (the collection's
 	// name). Read only by the org-scoped listing and point read the
 	// DatasourceService serves; empty on every other read.
@@ -739,8 +754,9 @@ func (s *Service) sealGitHubConnectCredential(ctx context.Context, source *Datas
 // each encrypted through the SecretCipher and persisted only as an envelope
 // reference.
 type AddSourceInput struct {
-	OrgID    string
-	Provider string
+	operationsOnly bool
+	OrgID          string
+	Provider       string
 	// The data boundary the source writes into: exactly one of an existing scope
 	// node's id, or a label to mint a new `collection` node (issue #473).
 	BoundaryNodeID  string
@@ -774,12 +790,13 @@ type AddSourceInput struct {
 // supports webhooks, the signing secret), persists the non-secret row, and
 // returns it without credential material.
 func (s *Service) AddSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
-	// A provider off the datasource envelope takes no new source (its existing
-	// sources keep running); an unknown one is refused here too. Nothing is
+	// Sync admission follows connector conformance. The API provider has its
+	// own operations admission; those new sources schedule no sync. Nothing is
 	// validated, sealed or stored before admission.
-	if err := s.admitNewDatasource(input.Provider); err != nil {
+	if err := s.admitDatasourceConnection(input.Provider); err != nil {
 		return nil, err
 	}
+	input.operationsOnly = input.Provider == DatasourceProviderAPI
 	return s.addSource(ctx, actorID, input)
 }
 
@@ -850,7 +867,11 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		}
 		source.Branch = strings.TrimSpace(input.Branch)
 	case DatasourceProviderAPI:
-		if credential == "" {
+		authCode := input.API != nil && input.API.OAuth2 != nil && input.API.OAuth2.Grant == OAuth2AuthorizationCode
+		if authCode && input.API.CredentialKind != APICredentialKindOAuth2 {
+			return nil, status.Error(codes.InvalidArgument, "authorization code requires OAuth2 credential kind")
+		}
+		if credential == "" && !authCode {
 			return nil, w.NewError("credential is required")
 		}
 		// The generic API provider has no webhook receiver yet; refuse a secret
@@ -858,10 +879,35 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		if strings.TrimSpace(input.WebhookSecret) != "" {
 			return nil, w.NewError("api provider does not support webhooks")
 		}
+		if authCode {
+			provider, ok := s.datasourceOAuth[DatasourceProviderAPI]
+			if !ok {
+				return nil, status.Error(codes.FailedPrecondition, "provider sign-in is not configured")
+			}
+			api := *input.API
+			api.OAuth2 = &APIOAuth2Config{Grant: OAuth2AuthorizationCode, TokenURL: provider.TokenURL, ClientID: provider.ClientID, Scopes: provider.Scopes}
+			input.API = &api
+		}
 		cfg, err := normalizeAPIConfig(input.API)
 		if err != nil {
 			return nil, w.Wrap(err)
 		}
+		if authCode {
+			provider, ok := s.datasourceOAuth[DatasourceProviderAPI]
+			if !ok || provider.ClientID == "" {
+				return nil, status.Error(codes.FailedPrecondition, "provider sign-in is not configured")
+			}
+			cfg.OAuth2 = &APIOAuth2Config{Grant: OAuth2AuthorizationCode, TokenURL: provider.TokenURL, ClientID: provider.ClientID, Scopes: provider.Scopes}
+			cfg.PersonalOwnerUserID = actorID
+			source.PersonalOwnerUserID = actorID
+			credential = ""
+		}
+		if input.operationsOnly {
+			source.ReconcileInterval = 0
+			source.NextReconcileAt = nil
+		}
+		cfg.OperationsOnly = input.operationsOnly
+		cfg.CredentialBudgetKey = s.apiCredentialBudgetKey(cfg, credential)
 		source.API = cfg
 	case DatasourceProviderCrawler:
 		// The crawler reads public pages: it takes no credential and has no webhook
@@ -939,7 +985,9 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
-	s.startFirstSync(ctx, source)
+	if !input.operationsOnly {
+		s.startFirstSync(ctx, source)
+	}
 	return source, nil
 }
 
@@ -1020,7 +1068,7 @@ func normalizeAPIConfig(cfg *APIDatasourceConfig) (*APIDatasourceConfig, error) 
 	}
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	parsed, err := url.Parse(baseURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
 		return nil, errors.New("api base url must be an absolute http(s) url")
 	}
 	out := &APIDatasourceConfig{
@@ -1109,7 +1157,7 @@ func normalizeOAuth2Config(cfg *APIOAuth2Config) (*APIOAuth2Config, error) {
 	}
 	tokenURL := strings.TrimSpace(cfg.TokenURL)
 	parsed, err := url.Parse(tokenURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
 		return nil, errors.New("api oauth2 token url must be an absolute http(s) url")
 	}
 	clientID := strings.TrimSpace(cfg.ClientID)
@@ -1122,7 +1170,14 @@ func normalizeOAuth2Config(cfg *APIOAuth2Config) (*APIOAuth2Config, error) {
 			scopes = append(scopes, s)
 		}
 	}
-	return &APIOAuth2Config{TokenURL: tokenURL, ClientID: clientID, Scopes: scopes}, nil
+	if cfg.Grant < OAuth2RefreshToken || cfg.Grant > OAuth2AuthorizationCode {
+		return nil, errors.New("api oauth2 grant is not supported")
+	}
+	grant := cfg.Grant
+	if grant == OAuth2ExplicitRefreshToken {
+		grant = OAuth2RefreshToken
+	}
+	return &APIOAuth2Config{TokenURL: tokenURL, ClientID: clientID, Scopes: scopes, Grant: grant}, nil
 }
 
 // connectorCredentialPlaintext returns the plaintext to encrypt into the
@@ -1133,10 +1188,12 @@ func connectorCredentialPlaintext(source *DatasourceSource, credential, oauth2Cl
 	if source.API == nil || source.API.CredentialKind != APICredentialKindOAuth2 {
 		return credential, nil
 	}
-	blob, err := json.Marshal(oauthStoredCredential{
-		RefreshToken: credential,
-		ClientSecret: strings.TrimSpace(oauth2ClientSecret),
-	})
+	stored := oauthStoredCredential{RefreshToken: credential, ClientSecret: strings.TrimSpace(oauth2ClientSecret)}
+	if source.API.OAuth2 != nil && source.API.OAuth2.Grant == OAuth2ClientCredentials {
+		stored.RefreshToken = ""
+		stored.ClientSecret = credential
+	}
+	blob, err := json.Marshal(stored)
 	if err != nil {
 		return "", err
 	}
@@ -1262,6 +1319,13 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	if err != nil {
 		return "", err
 	}
+	if source.API != nil && source.API.OperationsOnly {
+		return "", status.Error(codes.FailedPrecondition, "this source accepts declared operations only")
+	}
+	if source.PersonalOwnerUserID != "" && source.PersonalOwnerUserID != actorID {
+		return "", status.Error(codes.PermissionDenied, "source is personal to another member")
+	}
+
 	defer func() {
 		if resultErr != nil {
 			s.emit(ctx, actorID, "user", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, datasourceFailureFields(resultErr, source.Repo, "manual"))
@@ -1496,8 +1560,20 @@ func (s *Service) runAPISync(ctx context.Context, source *DatasourceSource) (int
 		fetchCredential = stored
 	}
 
+	scheduler := datasourceScheduler{s: s}
+	if err := scheduler.Acquire(ctx, connectorSource(source), apiOperationBudget, connector.PriorityFrom(ctx)); err != nil {
+		return 0, err
+	}
 	result, err := s.newAPIClient(fetchConfig, fetchCredential).Fetch(ctx)
 	if err != nil {
+		var failure *apisource.Failure
+		if errors.As(err, &failure) && failure.ProviderStatus == 429 {
+			limited := &connector.RateLimitedError{ResetAt: time.Now().UTC().Add(failure.RetryAfter), Scope: "credential"}
+			if err := scheduler.Blocked(ctx, connectorSource(source), limited); err != nil {
+				return 0, operationUnavailable()
+			}
+			return 0, limited
+		}
 		return 0, w.Wrapf(err, "fetch api resource")
 	}
 	if len(result.Body) > maxIngestPayload {
@@ -1525,27 +1601,26 @@ func (s *Service) runAPISync(ctx context.Context, source *DatasourceSource) (int
 // ErrOAuth2ReauthRequired (terminal). source.CredentialSecretRef is updated to
 // the rotated envelope.
 func (s *Service) resolveOAuth2AccessToken(ctx context.Context, source *DatasourceSource) (string, error) {
-	w := wool.Get(ctx).In("resolveOAuth2AccessToken")
-	if s.newOAuth2Refresh == nil {
-		return "", w.NewError("datasource connector is not configured")
+	if s.newOAuth2Refresh == nil || s.datasourceCipher == nil || source == nil || source.API == nil {
+		return "", oauthCredentialUnavailable()
 	}
 	if source.API.OAuth2 == nil {
-		return "", w.NewError("oauth2 source has no oauth2 config")
+		return "", oauthCredentialUnavailable()
 	}
 
 	var accessToken string
 	err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
 		ref, err := s.store.LockDatasourceSourceCredentialRef(ctx, source.OrgID, source.ID)
 		if err != nil {
-			return w.Wrapf(err, "lock credential")
+			return oauthCredentialUnavailable()
 		}
 		stored, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), ref)
 		if err != nil {
-			return w.Wrapf(err, "decrypt credential")
+			return oauthCredentialUnavailable()
 		}
 		var cred oauthStoredCredential
 		if err := json.Unmarshal([]byte(stored), &cred); err != nil {
-			return w.Wrapf(err, "decode stored oauth2 credential")
+			return oauthCredentialUnavailable()
 		}
 
 		now := time.Now().UTC()
@@ -1555,38 +1630,52 @@ func (s *Service) resolveOAuth2AccessToken(ctx context.Context, source *Datasour
 			return nil
 		}
 
-		token, err := s.newOAuth2Refresh(ctx, apisource.OAuth2Config{
+		exchange := s.newOAuth2Refresh
+		if source.API.OAuth2.Grant == OAuth2ClientCredentials {
+			exchange = s.newOAuth2ClientCredentials
+			if exchange == nil {
+				exchange = apisource.ClientCredentials
+			}
+		}
+		grantCredential := cred.RefreshToken
+		if source.API.OAuth2.Grant == OAuth2ClientCredentials {
+			grantCredential = source.API.OAuth2.ClientID
+		}
+		token, err := exchange(ctx, apisource.OAuth2Config{
 			TokenURL: source.API.OAuth2.TokenURL,
 			ClientID: source.API.OAuth2.ClientID,
 			Scopes:   source.API.OAuth2.Scopes,
-		}, cred.RefreshToken, cred.ClientSecret)
+		}, grantCredential, cred.ClientSecret)
 		if err != nil {
 			if errors.Is(err, apisource.ErrRefreshRejected) {
 				return ErrOAuth2ReauthRequired
 			}
-			return w.Wrapf(err, "refresh oauth2 token")
+			return oauthCredentialUnavailable()
 		}
 
+		if token == nil || token.AccessToken == "" {
+			return oauthCredentialUnavailable()
+		}
 		cred.AccessToken = token.AccessToken
 		ttl := token.ExpiresIn
 		if ttl <= 0 {
 			ttl = oauth2DefaultTTL
 		}
 		cred.ExpiresAt = now.Add(ttl).Unix()
-		if token.RefreshToken != "" {
+		if source.API.OAuth2.Grant != OAuth2ClientCredentials && token.RefreshToken != "" {
 			cred.RefreshToken = token.RefreshToken
 		}
 
 		blob, err := json.Marshal(cred)
 		if err != nil {
-			return w.Wrapf(err, "encode rotated oauth2 credential")
+			return oauthCredentialUnavailable()
 		}
 		newRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), string(blob))
 		if err != nil {
-			return w.Wrapf(err, "encrypt rotated oauth2 credential")
+			return oauthCredentialUnavailable()
 		}
 		if err := s.store.UpdateDatasourceSourceCredential(ctx, source.OrgID, source.ID, newRef); err != nil {
-			return w.Wrapf(err, "persist rotated oauth2 credential")
+			return oauthCredentialUnavailable()
 		}
 		source.CredentialSecretRef = newRef
 		accessToken = cred.AccessToken
