@@ -24,6 +24,7 @@ import (
 	"accounts/pkg/datasource/operations"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -162,6 +163,38 @@ func TestSourceOperationRealReceiptReplayAndUnknownMutation(t *testing.T) {
 	attempt, err := svc.SourceOperationAttemptForActor(testCtx, actor, org, "unresolved")
 	require.NoError(t, err)
 	require.NotNil(t, attempt)
+	t.Run("removed declaration retains committed and unknown evidence", func(t *testing.T) {
+		_, err := svc.DeclareSourceOperations(requestCtx, actor, org, source.ID, nil)
+		require.NoError(t, err)
+		for _, effect := range []string{"committed", "unresolved"} {
+			_, _, err := svc.SourceOperationAuthority(requestCtx, actor, org, source.ID, declaration.Name, effect, true)
+			require.NoError(t, err, "lookup authority must not require the removed declaration")
+			saved, found, err := receiptStore.Lookup(requestCtx, org, effect, business.SourceOperationMethod)
+			require.NoError(t, err)
+			wantStatus := "unknown"
+			if effect == "committed" {
+				require.True(t, found)
+				response := &gen.InvokeSourceOperationResponse{}
+				require.NoError(t, proto.Unmarshal(saved.Response, response))
+				require.True(t, proto.Equal(first, response))
+				wantStatus = "committed"
+			} else {
+				require.False(t, found)
+			}
+			_, err = invoke(effect, `{"id":"a"}`)
+			require.Equal(t, codes.FailedPrecondition, status.Code(err))
+			var info *errdetails.ErrorInfo
+			for _, detail := range status.Convert(err).Details() {
+				if typed, ok := detail.(*errdetails.ErrorInfo); ok {
+					info = typed
+				}
+			}
+			require.NotNil(t, info)
+			require.Equal(t, "SOURCE_OPERATION_DECLARATION_REMOVED", info.Reason)
+			require.Equal(t, wantStatus, info.Metadata["receipt_status"])
+		}
+		require.EqualValues(t, 2, calls.Load(), "removal must not cause a second call for either effect")
+	})
 	require.NoError(t, testService.RevokeScope(requestCtx, actor, &gen.RevokeScopeRequest{
 		OrgId: org, SubjectId: actor, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		ScopePath: grant.ScopePath, RoleId: grant.RoleId,

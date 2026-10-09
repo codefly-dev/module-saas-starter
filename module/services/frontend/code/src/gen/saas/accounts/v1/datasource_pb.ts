@@ -3436,6 +3436,9 @@ export const DatasourceService: GenService<{
    * InvokeSourceOperation calls an admitted operation under current authority.
    * FailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN
    * means this effect will not be redispatched and its receipt stays unresolved.
+   * SOURCE_OPERATION_DECLARATION_REMOVED refuses a retained effect whose
+   * declaration was removed; ErrorInfo.metadata["receipt_status"] is committed
+   * or unknown. Recover that same effect with Lookup; never choose a fresh ID.
    * Other refusal reasons do not mean unknown. Provider refusals include the
    * decimal HTTP status in ErrorInfo.metadata["provider_status"] when known.
    * InvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.
@@ -3451,6 +3454,8 @@ export const DatasourceService: GenService<{
    * LookupInvokeSourceOperation recovers a receipt without contacting the provider.
    * NotFound "source effect not found" means there is no attempt marker; retrying
    * the same effect is safe. An unknown receipt never authorizes redispatch.
+   * Once an attempt exists, retained receipt evidence survives declaration
+   * removal or replacement. Current source read authority still applies.
    *
    * @generated from rpc saas.accounts.v1.DatasourceService.LookupInvokeSourceOperation
    */

@@ -457,10 +457,13 @@ that slot. The host maps each source ID to its boundary node and checks
 `datasource:invoke` or `datasource:read` there; an unscoped source-kind grant is
 refused. Personal OAuth sources also require the owning person. Declarations
 and receipts cannot expand these scopes. Invoke rechecks again after waiting for
-the SDK effect lock, before a committed response can be replayed.
+the SDK effect lock, before a committed response can be replayed. Lookup reads
+retained receipt evidence under current source read authority even after the
+operation declaration is removed or replaced; the declaration is not evidence
+of whether an effect was attempted.
 
 Receipt retention uses the same selected source scope and audience through
-`PruneSourceOperationReceipts` / `LookupPruneSourceOperationReceipts`, with an
+`PruneSourceOperationReceipts` / `LookupPruneSourceOperationReceipts`, with a
 current organization-admin check for shared sources; a personal source instead
 requires its owning member. These checks precede invocation and replay. A
 composition schedules the Connect Runnable; the host adds no timer or queue.

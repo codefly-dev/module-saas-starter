@@ -45,7 +45,9 @@ type APIOperationClient interface {
 }
 
 // SourceOperationAuthority runs before the SDK replay guard as well as before
-// dispatch. Changed declarations and revoked permissions cannot replay old data.
+// dispatch. Invocation fences the current declaration. Lookup recovers retained
+// evidence independently of declarations, under the actor's current source read
+// authority; deleting or replacing a declaration cannot erase an attempt.
 func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, source, operation, effectID string, lookup bool) (*DatasourceSource, operations.Declaration, error) {
 	declarations, ok := s.store.(SourceOperationStore)
 	attempts, attemptsOK := s.store.(SourceOperationAttemptStore)
@@ -54,15 +56,31 @@ func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, sour
 	}
 	var src *DatasourceSource
 	var declaration operations.Declaration
+	declarationRemoved := false
 	err := s.store.WithOrgTx(ctx, org, func(ctx context.Context) error {
+		attempt, err := attempts.GetSourceOperationAttempt(ctx, org, effectID)
+		if err != nil {
+			return operationUnavailable()
+		}
+		if attempt != nil && (attempt.ActorID != actor || attempt.SourceID != source || attempt.Operation != operation) {
+			return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
+		}
 		action := "invoke"
 		if lookup {
 			action = "read"
 		}
-		var err error
 		src, err = s.sourceOperationAccess(ctx, actor, org, source, action)
 		if err != nil {
+			if attempt != nil && status.Code(err) == codes.NotFound {
+				return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
+			}
 			return err
+		}
+		if lookup {
+			if attempt == nil {
+				return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
+			}
+			return nil
 		}
 		if src.Provider != DatasourceProviderAPI || src.API == nil {
 			return operationRefused("SOURCE_OPERATIONS_UNAVAILABLE")
@@ -78,6 +96,10 @@ func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, sour
 			}
 		}
 		if declaration.Name == "" {
+			if attempt != nil {
+				declarationRemoved = true
+				return nil
+			}
 			return status.Error(codes.NotFound, "source operation not found")
 		}
 		checked, err := operations.Admit(declaration)
@@ -85,16 +107,32 @@ func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, sour
 			return operationRefused("SOURCE_DECLARATION_INVALID")
 		}
 		declaration = checked
-		attempt, err := attempts.GetSourceOperationAttempt(ctx, org, effectID)
-		if err != nil {
-			return operationUnavailable()
-		}
-		if attempt != nil && (attempt.ActorID != actor || attempt.SourceID != source || attempt.Operation != operation || attempt.DeclarationDigest != declaration.Digest) {
+		if attempt != nil && attempt.DeclarationDigest != declaration.Digest {
 			return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
 		}
 		return nil
 	})
+	if err == nil && declarationRemoved {
+		// Release the authority transaction before the SDK opens its tenant read.
+		// Only receipt presence is needed; no response data enters the refusal.
+		if s.sourceReceiptStore == nil {
+			return src, declaration, operationUnavailable()
+		}
+		_, committed, lookupErr := s.sourceReceiptStore.Lookup(ctx, org, effectID, SourceOperationMethod)
+		if lookupErr != nil {
+			return src, declaration, operationUnavailable()
+		}
+		err = operationDeclarationRemoved(committed)
+	}
 	return src, declaration, err
+}
+
+func operationDeclarationRemoved(committed bool) error {
+	receiptStatus := "unknown"
+	if committed {
+		receiptStatus = "committed"
+	}
+	return datasourceStatus(codes.FailedPrecondition, "SOURCE_OPERATION_DECLARATION_REMOVED", "source operation declaration was removed; recover the original effect with Lookup", map[string]string{"receipt_status": receiptStatus}, 0)
 }
 
 func operationUnavailable() error {

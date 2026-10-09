@@ -64,6 +64,9 @@ type DatasourceServiceClient interface {
 	// InvokeSourceOperation calls an admitted operation under current authority.
 	// FailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN
 	// means this effect will not be redispatched and its receipt stays unresolved.
+	// SOURCE_OPERATION_DECLARATION_REMOVED refuses a retained effect whose
+	// declaration was removed; ErrorInfo.metadata["receipt_status"] is committed
+	// or unknown. Recover that same effect with Lookup; never choose a fresh ID.
 	// Other refusal reasons do not mean unknown. Provider refusals include the
 	// decimal HTTP status in ErrorInfo.metadata["provider_status"] when known.
 	// InvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.
@@ -71,6 +74,8 @@ type DatasourceServiceClient interface {
 	// LookupInvokeSourceOperation recovers a receipt without contacting the provider.
 	// NotFound "source effect not found" means there is no attempt marker; retrying
 	// the same effect is safe. An unknown receipt never authorizes redispatch.
+	// Once an attempt exists, retained receipt evidence survives declaration
+	// removal or replacement. Current source read authority still applies.
 	LookupInvokeSourceOperation(ctx context.Context, in *LookupInvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(ctx context.Context, in *ListSourceOperationsRequest, opts ...grpc.CallOption) (*ListSourceOperationsResponse, error)
@@ -469,6 +474,9 @@ type DatasourceServiceServer interface {
 	// InvokeSourceOperation calls an admitted operation under current authority.
 	// FailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN
 	// means this effect will not be redispatched and its receipt stays unresolved.
+	// SOURCE_OPERATION_DECLARATION_REMOVED refuses a retained effect whose
+	// declaration was removed; ErrorInfo.metadata["receipt_status"] is committed
+	// or unknown. Recover that same effect with Lookup; never choose a fresh ID.
 	// Other refusal reasons do not mean unknown. Provider refusals include the
 	// decimal HTTP status in ErrorInfo.metadata["provider_status"] when known.
 	// InvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.
@@ -476,6 +484,8 @@ type DatasourceServiceServer interface {
 	// LookupInvokeSourceOperation recovers a receipt without contacting the provider.
 	// NotFound "source effect not found" means there is no attempt marker; retrying
 	// the same effect is safe. An unknown receipt never authorizes redispatch.
+	// Once an attempt exists, retained receipt evidence survives declaration
+	// removal or replacement. Current source read authority still applies.
 	LookupInvokeSourceOperation(context.Context, *LookupInvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *ListSourceOperationsRequest) (*ListSourceOperationsResponse, error)

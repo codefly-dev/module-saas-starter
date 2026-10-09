@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,7 @@ import (
 	"github.com/codefly-dev/sdk-go/receipts"
 	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoregistry"
 )
@@ -106,7 +108,9 @@ func (a *sourceWireAudit) Emit(_ context.Context, e business.AuditEntry) {
 
 func TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority(t *testing.T) {
 	org, actor, source := "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333"
-	declaration, err := operations.Admit(connectortest.OperationDeclaration())
+	mutation := connectortest.OperationDeclaration()
+	mutation.Effect = operations.Mutation
+	declaration, err := operations.Admit(mutation)
 	require.NoError(t, err)
 	request := &gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source, Operation: declaration.Name, InputJson: `{"id":"one"}`, EffectId: "effect-one"}
 	digest, err := receipts.RequestDigest(request)
@@ -135,6 +139,8 @@ func TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority(t *testing.
 		return func(_ context.Context, r connect.AnyRequest) (connect.AnyResponse, error) { return next(ctx, r) }
 	})
 	mux.Handle(business.SourceOperationMethod, connect.NewUnaryHandler(business.SourceOperationMethod, handler.InvokeSourceOperation, connect.WithInterceptors(stamp)))
+	const lookupMethod = "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation"
+	mux.Handle(lookupMethod, connect.NewUnaryHandler(lookupMethod, handler.LookupInvokeSourceOperation, connect.WithInterceptors(stamp)))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	prepared := sourcePreparedBinding(t, business.SourceOperationMethod, server.URL, source)
@@ -152,6 +158,33 @@ func TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority(t *testing.
 	lookup, err := handler.LookupInvokeSourceOperation(ctx, connect.NewRequest(&gen.LookupInvokeSourceOperationRequest{EffectId: request.EffectId}))
 	require.NoError(t, err)
 	require.True(t, proto.Equal(expected, lookup.Msg))
+	t.Run("removed declaration retains mutation receipt", func(t *testing.T) {
+		store.declaration = operations.Declaration{}
+		defer func() { store.declaration = declaration }()
+		lookupClient := connect.NewClient[gen.LookupInvokeSourceOperationRequest, gen.InvokeSourceOperationResponse](server.Client(), server.URL+lookupMethod, connect.WithProtoJSON())
+		found, err := lookupClient.CallUnary(t.Context(), connect.NewRequest(&gen.LookupInvokeSourceOperationRequest{EffectId: request.EffectId}))
+		require.NoError(t, err)
+		require.True(t, proto.Equal(expected, found.Msg))
+		_, err = client.CallUnary(t.Context(), connect.NewRequest(request))
+		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+		var refusal *connect.Error
+		require.True(t, errors.As(err, &refusal))
+		var info *errdetails.ErrorInfo
+		for _, detail := range refusal.Details() {
+			value, detailErr := detail.Value()
+			require.NoError(t, detailErr)
+			if typed, ok := value.(*errdetails.ErrorInfo); ok {
+				info = typed
+			}
+		}
+		require.NotNil(t, info)
+		require.Equal(t, "SOURCE_OPERATION_DECLARATION_REMOVED", info.Reason)
+		require.Equal(t, "committed", info.Metadata["receipt_status"])
+		store.allowed = false
+		_, err = lookupClient.CallUnary(t.Context(), connect.NewRequest(&gen.LookupInvokeSourceOperationRequest{EffectId: request.EffectId}))
+		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+		store.allowed = true
+	})
 	store.allowed = false
 	_, err = client.CallUnary(t.Context(), connect.NewRequest(request))
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
@@ -168,7 +201,10 @@ func TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority(t *testing.
 	require.NoError(t, err)
 	_, err = client.CallUnary(t.Context(), connect.NewRequest(request))
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-	store.declaration = declaration
+	lookup, err = handler.LookupInvokeSourceOperation(ctx, connect.NewRequest(&gen.LookupInvokeSourceOperationRequest{EffectId: request.EffectId}))
+	require.NoError(t, err, "a replacement declaration cannot erase receipt evidence")
+	require.True(t, proto.Equal(expected, lookup.Msg))
+	store.declaration = operations.Declaration{}
 	store.attempt.EffectID = "unresolved"
 	unknown, err := handler.LookupInvokeSourceOperation(ctx, connect.NewRequest(&gen.LookupInvokeSourceOperationRequest{EffectId: "unresolved"}))
 	require.NoError(t, err)

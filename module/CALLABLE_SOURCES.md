@@ -47,8 +47,8 @@ gate. Work Context callers present the existing delegated-audience exchange's
 `saas-datasource` capability with an explicit `datasource.sources` source scope.
 The `source` scope slot requires invoke/read and read-only lookup for the same
 IDs. The host checks current delegation/binding/revision, owner membership,
-boundary permission, personal ownership and current declaration, including on
-replay. The lookup request contains only `effect_id`; its tenant and source
+boundary permission and personal ownership. Invoke also fences the current
+declaration, including on replay. The lookup request contains only `effect_id`; its tenant and source
 binding are recovered from verified identity and durable attempt metadata.
 
 ## Receipts and uncertain outcomes
@@ -66,9 +66,13 @@ The attempt marker survives process death, a lost mutation reply, a provider
 5xx, an invalid mutation output or failure to commit the local result. It never
 expires automatically: a remote mutation cannot be rolled back with Postgres.
 Lookup reports unknown when that marker has no committed receipt and never
-contacts the provider. NotFound `source effect not found` means no attempt was
-recorded; a same-ID retry is safe. A read-only local commit failure returns
-Unavailable and allows the same request to retry.
+contacts the provider. NotFound `source effect not found` means no attempt
+marker remains; a same-ID retry is safe. Once an attempt exists, Lookup returns its
+retained receipt even if the declaration was removed or replaced; if the output
+expired or no receipt committed, it returns `unknown`. The actor still needs
+current source read authority. Removing a declaration never turns an attempted
+effect into NotFound. A read-only local commit failure returns Unavailable and
+allows the same request to retry.
 
 A trustworthy provider 4xx refusal clears the attempt and reports
 FailedPrecondition; 429 clears it and returns the same `DATASOURCE_RATE_LIMITED`
@@ -77,7 +81,11 @@ can be retried. Unknown mutations use `SOURCE_OPERATION_OUTCOME_UNKNOWN`, a
 non-retryable FailedPrecondition; using the same effect again still cannot send
 another request. A new effect is a new authorized call, not recovery. Provider
 refusals include their known HTTP code as decimal `provider_status` ErrorInfo
-metadata. InvalidArgument input refusals include a BadRequest FieldViolation
+metadata. Re-invoking a retained effect whose declaration was removed returns
+FailedPrecondition with `SOURCE_OPERATION_DECLARATION_REMOVED` and
+`receipt_status` metadata (`committed` or `unknown`), without dispatching. Recover
+the original effect with Lookup; a new ID is never a recovery mechanism.
+InvalidArgument input refusals include a BadRequest FieldViolation
 whose `field` is the JSON pointer, without input values.
 
 `PruneSourceOperationReceipts` and `LookupPruneSourceOperationReceipts` expose
