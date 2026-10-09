@@ -66,9 +66,9 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DatasourceService/ListSourceOperations` | unary | `GET /v1/organizations/{org_id}/datasources/{source_id}/operations` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:read; scope=datasource:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read an API source's declared operations under current source authority. |
 | `/saas.accounts.v1.DatasourceService/ListSources` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | List the org's connected datasources. |
 | `/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation` | unary | `GET /v1/datasource-operation-receipts/{effect_id}` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:read; scope=datasource:read | effect_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → SECRET | Read the current authorized outcome of a source effect without redispatching it. |
-| `/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=datasource:read; scope=datasource:read | effect_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read an authorized source receipt-cleanup result. |
+| `/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:read; scope=datasource:read | effect_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read an authorized source receipt-cleanup result. |
 | `/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.credential.updated | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history. |
-| `/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=datasource:invoke; scope=datasource:invoke | source_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: saas.datasource.receipts.pruned | REQUIRED / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expire old source receipt output while retaining effect tombstones. |
+| `/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:invoke; scope=datasource:invoke | source_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: saas.datasource.receipts.pruned | REQUIRED / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expire old source receipt output while retaining effect tombstones. |
 | `/saas.accounts.v1.DatasourceService/RevokeSourceDelegation` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.delegation.revoked | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Revoke one of the organization's source delegations. |
 | `/saas.accounts.v1.DatasourceService/SyncSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.source.synced | FORBIDDEN / STANDARD_WRITE | SECRET → INTERNAL | Pull the source's current contents and enqueue ingestion deliveries. |
 | `/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.group_unbound | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Remove a provider group binding. |
@@ -272,7 +272,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 43
 - `internal`: 54
 - `mfa`: 4
-- `org_admin`: 60
-- `org_member`: 52
+- `org_admin`: 58
+- `org_member`: 54
 - `platform_admin`: 27
 - `public`: 18

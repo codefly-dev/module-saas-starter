@@ -35,7 +35,8 @@ func SourceReceiptRetentionWindow() (time.Duration, error) {
 
 // SourceReceiptRetentionAuthority is checked before receipt replay and again
 // after acquiring the SDK serialization hold. A runtime must present the same
-// installed source scope as an invocation, owned by an organization admin.
+// installed source scope as an invocation. Shared sources require an organization
+// admin; a personal source can be maintained only by its owning member.
 func (s *Service) SourceReceiptRetentionAuthority(ctx context.Context, actor, org, source, effectID string, lookup bool) error {
 	tenant, _, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok || tenant != org {
@@ -46,15 +47,19 @@ func (s *Service) SourceReceiptRetentionAuthority(ctx context.Context, actor, or
 		if err != nil {
 			return operationUnavailable()
 		}
-		if member == nil || !IsOrgAdminRole(orgRoleToString(member.Role)) {
-			return status.Error(codes.PermissionDenied, "organization administrator required")
+		if member == nil {
+			return status.Error(codes.PermissionDenied, "organization membership required")
 		}
 		action := "invoke"
 		if lookup {
 			action = "read"
 		}
-		if _, err := s.sourceOperationAccess(ctx, actor, org, source, action); err != nil {
+		src, err := s.sourceOperationAccess(ctx, actor, org, source, action)
+		if err != nil {
 			return err
+		}
+		if src.PersonalOwnerUserID != actor && !IsOrgAdminRole(orgRoleToString(member.Role)) {
+			return status.Error(codes.PermissionDenied, "source owner or organization administrator required")
 		}
 		attempts, ok := s.store.(SourceOperationAttemptStore)
 		if !ok {

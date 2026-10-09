@@ -2512,7 +2512,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [
           "datasource:read"
         ],
@@ -2540,13 +2540,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "cbf99022ffa10456f534165607707d3520392473340a3e5a07b63273b32ef461",
+      "policy_sha256": "4bf370975fc5259a77d27e0155fb4ff286b20b35c17b4de508ec086d012d12c2",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2604,7 +2604,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [
           "datasource:invoke"
         ],
@@ -2634,13 +2634,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "3402b2ba5ddcc60668c9acca6f8e35f3d546489ac5cd3ead6ec5c2316d173d43",
+      "policy_sha256": "f00903d36b2112b599075df9cde97795730a4052d028158db896c855495aba15",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

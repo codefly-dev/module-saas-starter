@@ -20,7 +20,7 @@ func (h *datasourceConnectHandler) requireReceiptRetention(ctx context.Context, 
 	if !ok || tenant != org {
 		return connect.NewError(connect.CodePermissionDenied, errors.New("source tenant mismatch"))
 	}
-	if err := requireOrgAdmin(ctx, actor, org); err != nil {
+	if err := requireOrgMember(ctx, actor, org); err != nil {
 		return translateGRPCError(err)
 	}
 	action := "invoke"
@@ -96,7 +96,7 @@ func (h *datasourceConnectHandler) LookupPruneSourceOperationReceipts(ctx contex
 	if !ok || org == "" {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("source tenant required"))
 	}
-	if err := requireOrgAdmin(ctx, actor, org); err != nil {
+	if err := requireOrgMember(ctx, actor, org); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	effect, err := sourceEffectID(req.Header(), req.Msg.EffectId)

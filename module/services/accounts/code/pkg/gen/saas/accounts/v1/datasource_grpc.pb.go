@@ -58,6 +58,7 @@ type DatasourceServiceClient interface {
 	// PruneSourceOperationReceipts expires response bodies after Invoke's declared
 	// total timeout plus a 24-hour lookup grace. It retains effect tombstones.
 	// The composition schedules this source-scoped host operation in the runtime.
+	// Shared sources require an org admin; personal sources require their owner.
 	PruneSourceOperationReceipts(ctx context.Context, in *PruneSourceOperationReceiptsRequest, opts ...grpc.CallOption) (*PruneSourceOperationReceiptsResponse, error)
 	LookupPruneSourceOperationReceipts(ctx context.Context, in *LookupPruneSourceOperationReceiptsRequest, opts ...grpc.CallOption) (*PruneSourceOperationReceiptsResponse, error)
 	// InvokeSourceOperation calls an admitted operation under current authority.
@@ -462,6 +463,7 @@ type DatasourceServiceServer interface {
 	// PruneSourceOperationReceipts expires response bodies after Invoke's declared
 	// total timeout plus a 24-hour lookup grace. It retains effect tombstones.
 	// The composition schedules this source-scoped host operation in the runtime.
+	// Shared sources require an org admin; personal sources require their owner.
 	PruneSourceOperationReceipts(context.Context, *PruneSourceOperationReceiptsRequest) (*PruneSourceOperationReceiptsResponse, error)
 	LookupPruneSourceOperationReceipts(context.Context, *LookupPruneSourceOperationReceiptsRequest) (*PruneSourceOperationReceiptsResponse, error)
 	// InvokeSourceOperation calls an admitted operation under current authority.

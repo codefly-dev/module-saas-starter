@@ -461,7 +461,8 @@ the SDK effect lock, before a committed response can be replayed.
 
 Receipt retention uses the same selected source scope and audience through
 `PruneSourceOperationReceipts` / `LookupPruneSourceOperationReceipts`, with an
-additional current organization-admin check before invocation or replay. A
+current organization-admin check for shared sources; a personal source instead
+requires its owning member. These checks precede invocation and replay. A
 composition schedules the Connect Runnable; the host adds no timer or queue.
 Expired output never removes a mutation's last effect marker. See
 [Callable sources](CALLABLE_SOURCES.md#receipts-and-uncertain-outcomes).

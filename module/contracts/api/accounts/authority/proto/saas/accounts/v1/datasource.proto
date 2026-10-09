@@ -1102,10 +1102,11 @@ service DatasourceService {
   // PruneSourceOperationReceipts expires response bodies after Invoke's declared
   // total timeout plus a 24-hour lookup grace. It retains effect tombstones.
   // The composition schedules this source-scoped host operation in the runtime.
+  // Shared sources require an org admin; personal sources require their owner.
   rpc PruneSourceOperationReceipts(PruneSourceOperationReceiptsRequest) returns (PruneSourceOperationReceiptsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       permissions: "datasource:invoke"
       scopes: "datasource:invoke"
       resource_bindings: {
@@ -1152,7 +1153,7 @@ service DatasourceService {
   rpc LookupPruneSourceOperationReceipts(LookupPruneSourceOperationReceiptsRequest) returns (PruneSourceOperationReceiptsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       permissions: "datasource:read"
       scopes: "datasource:read"
       resource_bindings: {

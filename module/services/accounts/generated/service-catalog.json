@@ -3602,7 +3602,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [
           "datasource:read"
         ],
@@ -3630,7 +3630,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Read an authorized source receipt-cleanup result.",
       "owner": {
         "module": "saas-starter",
@@ -3706,7 +3706,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [
           "datasource:invoke"
         ],
@@ -3736,7 +3736,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Expire old source receipt output while retaining effect tombstones.",
       "owner": {
         "module": "saas-starter",

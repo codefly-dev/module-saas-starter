@@ -6731,12 +6731,12 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"*SOURCE_DELEGATION_REVOCATION_USER_INACTIVE\x10\x06\x120\n" +
 	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\x9e0\n" +
 	"\x11DatasourceService\x12\xb9\x03\n" +
-	"\x1cPruneSourceOperationReceipts\x125.saas.accounts.v1.PruneSourceOperationReceiptsRequest\x1a6.saas.accounts.v1.PruneSourceOperationReceiptsResponse\"\xa9\x02\xc2\xf3\x18l\b\x02\x10\x04\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +
+	"\x1cPruneSourceOperationReceipts\x125.saas.accounts.v1.PruneSourceOperationReceiptsRequest\x1a6.saas.accounts.v1.PruneSourceOperationReceiptsResponse\"\xa9\x02\xc2\xf3\x18l\b\x02\x10\x03\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +
 	"\tsource_id\x10\x04\x18\x030\x01:#\n" +
 	"\x1fsaas.datasource.receipts.pruned\x10\x02@\x03H\x04P\x03X\x03`\x01\xda\xf3\x18\xb4\x01\n" +
 	"\x02\b<\x12\x03\b\xd8\x04\x18\x05\"\x02\b\x02*\vUNAVAILABLE*\x12RESOURCE_EXHAUSTED*\aABORTED2\x0fsaas-datasourceJF/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceiptsP\x80 X\x80 `\x01r\x18\n" +
 	"\x06source\x12\x06invoke\x12\x04read\x18\x01\x12\xe6\x01\n" +
-	"\"LookupPruneSourceOperationReceipts\x12;.saas.accounts.v1.LookupPruneSourceOperationReceiptsRequest\x1a6.saas.accounts.v1.PruneSourceOperationReceiptsResponse\"K\xc2\xf3\x18G\b\x02\x10\x04\x1a\x0fdatasource:read\"\x0fdatasource:read*\x0f\n" +
+	"\"LookupPruneSourceOperationReceipts\x12;.saas.accounts.v1.LookupPruneSourceOperationReceiptsRequest\x1a6.saas.accounts.v1.PruneSourceOperationReceiptsResponse\"K\xc2\xf3\x18G\b\x02\x10\x03\x1a\x0fdatasource:read\"\x0fdatasource:read*\x0f\n" +
 	"\teffect_id\x10\x04\x18\x030\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x12\xfc\x03\n" +
 	"\x15InvokeSourceOperation\x12..saas.accounts.v1.InvokeSourceOperationRequest\x1a/.saas.accounts.v1.InvokeSourceOperationResponse\"\x81\x03\xc2\xf3\x18n\b\x02\x10\x03\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +
 	"\tsource_id\x10\x04\x18\x030\x01:%\n" +

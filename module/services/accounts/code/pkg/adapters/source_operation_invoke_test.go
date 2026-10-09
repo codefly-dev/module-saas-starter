@@ -285,4 +285,15 @@ func TestSourceReceiptRetentionPreparedConnectReplayAndAuthority(t *testing.T) {
 	require.Equal(t, 1, store.prunes)
 	_, err = handler.LookupPruneSourceOperationReceipts(ctx, connect.NewRequest(&gen.LookupPruneSourceOperationReceiptsRequest{EffectId: "cleanup"}))
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	// A personal source owned by a non-admin must still be maintainable.
+	store.source.PersonalOwnerUserID = actor
+	_, err = client.CallUnary(t.Context(), connect.NewRequest(request))
+	require.NoError(t, err)
+	_, err = handler.LookupPruneSourceOperationReceipts(ctx, connect.NewRequest(&gen.LookupPruneSourceOperationReceiptsRequest{EffectId: "cleanup"}))
+	require.NoError(t, err)
+	store.source.PersonalOwnerUserID = "another-member"
+	store.role = gen.OrgRole_ORG_ROLE_ADMIN
+	_, err = client.CallUnary(t.Context(), connect.NewRequest(request))
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "admin cannot maintain another person's source")
+	require.Equal(t, 1, store.prunes)
 }

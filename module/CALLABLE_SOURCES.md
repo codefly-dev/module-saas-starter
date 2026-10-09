@@ -81,7 +81,9 @@ metadata. InvalidArgument input refusals include a BadRequest FieldViolation
 whose `field` is the JSON pointer, without input values.
 
 `PruneSourceOperationReceipts` and `LookupPruneSourceOperationReceipts` expose
-receipt cleanup as a second, admin-only host Runnable on Connect. The composition
+receipt cleanup as a second host Runnable on Connect. Shared sources require an
+organization administrator; a personal source requires its owning member. Both
+need the selected source permission, including on replay. The composition
 schedules its `accounts/connect/PruneSourceOperationReceipts` binding in the
 runtime, resolving the same `source` slot; it has no `tool` exposure. A call
 removes at most 1,000 responses. Schedule it frequently
