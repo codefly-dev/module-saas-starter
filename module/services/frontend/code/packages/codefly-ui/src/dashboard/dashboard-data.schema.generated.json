@@ -1,0 +1,138 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "codefly-dev.ui:dashboard-data/v1",
+	"title": "Codefly dashboard data model",
+	"description": "The resolved shapes a Codefly dashboard catalog binds to by JSON Pointer. Generated from @codefly-dev/ui's own DashboardView types.",
+	"$ref": "#/$defs/DashboardView",
+	"$defs": {
+		"SeriesPoint": {
+			"type": "object",
+			"properties": {
+				"key": {
+					"type": "string",
+					"description": "The group this point is of — a bucket, a label, a name."
+				},
+				"value": {
+					"type": "number",
+					"description": "The resolved value for that group."
+				}
+			},
+			"required": [
+				"key",
+				"value"
+			]
+		},
+		"WidgetSeries": {
+			"type": "object",
+			"properties": {
+				"points": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SeriesPoint"
+					},
+					"description": "The resolved points, in the order they are drawn."
+				},
+				"total": {
+					"type": [
+						"number",
+						"null"
+					],
+					"description": "Null when the series is empty or partial, or not additive across groups — not zero."
+				},
+				"coverage": {
+					"enum": [
+						"complete",
+						"partial",
+						"empty"
+					],
+					"description": "Completeness of the observed telemetry, not proof that every producer emitted."
+				}
+			},
+			"required": [
+				"points",
+				"total"
+			]
+		},
+		"DashboardWidgetView": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"description": "Stable identity of this widget."
+				},
+				"visualization": {
+					"enum": [
+						"line",
+						"bar",
+						"area",
+						"number",
+						"table"
+					],
+					"description": "How the widget draws its series."
+				},
+				"title": {
+					"type": "string"
+				},
+				"series": {
+					"$ref": "#/$defs/WidgetSeries"
+				},
+				"span": {
+					"type": "integer",
+					"enum": [
+						1,
+						2,
+						3,
+						4
+					],
+					"description": "Grid columns this widget spans; ignored in a stack."
+				}
+			},
+			"required": [
+				"id",
+				"visualization",
+				"series"
+			]
+		},
+		"DashboardView": {
+			"type": "object",
+			"properties": {
+				"title": {
+					"type": "string"
+				},
+				"description": {
+					"type": "string"
+				},
+				"layout": {
+					"enum": [
+						"grid",
+						"stack"
+					],
+					"description": "Defaults to a grid."
+				},
+				"columns": {
+					"type": "integer",
+					"enum": [
+						1,
+						2,
+						3,
+						4
+					],
+					"description": "Grid column count; ignored in a stack."
+				},
+				"accent": {
+					"type": "string",
+					"description": "Any CSS colour, applied to this dashboard's charts through the primary token."
+				},
+				"widgets": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/DashboardWidgetView"
+					}
+				}
+			},
+			"required": [
+				"widgets"
+			]
+		}
+	}
+}
