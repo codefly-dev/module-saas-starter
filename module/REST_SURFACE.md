@@ -112,6 +112,15 @@ cd code
 go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 ```
 
+The adapters step also emits `generated/api-contract-surfaces.json` from the
+complete Connect registration catalog and the authority listener's allowlist.
+`spec.api-contract-surfaces` selects it for endpoint-specific API contract
+export; `generated/gateway-routes.json` cannot substitute because it excludes
+internal methods. From the workspace root, run `codefly generate contracts
+saas-starter` and `codefly generate runnables saas-starter`, then repeat both
+with `--check`. This requires the CLI release carrying #947; development uses
+that PR's `3a88b6305a919eb842491ffbc313434be05123b8` head with Core #755.
+
 The first line is the whole proto step. It runs the versioned proto companion
 image with the service's own template, `proto/buf.gen.yaml`, which declares
 every output the service owns: the Go, gRPC, grpc-gateway and Connect bindings

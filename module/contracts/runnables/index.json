@@ -4,28 +4,6 @@
   "module": "saas-starter",
   "operations": [
     {
-      "name": "accounts-authority-invoke-source-operation",
-      "version": "0.1.0",
-      "digest": "c8bf20bc7767a7df0f259da51117abc7ec0f5b2e2888d015726f58d488af9f18",
-      "service": "accounts",
-      "endpoint": "authority",
-      "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
-      "input_message": "saas.accounts.v1.InvokeSourceOperationRequest",
-      "output_message": "saas.accounts.v1.InvokeSourceOperationResponse",
-      "path": "contracts/runnables/accounts/authority/InvokeSourceOperation"
-    },
-    {
-      "name": "accounts-authority-prune-source-operation-receipts",
-      "version": "0.1.0",
-      "digest": "6e64a785fd97b4b92f18bc5dc1a7335382418b67607ed25aa0902116ebc046ad",
-      "service": "accounts",
-      "endpoint": "authority",
-      "method": "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
-      "input_message": "saas.accounts.v1.PruneSourceOperationReceiptsRequest",
-      "output_message": "saas.accounts.v1.PruneSourceOperationReceiptsResponse",
-      "path": "contracts/runnables/accounts/authority/PruneSourceOperationReceipts"
-    },
-    {
       "name": "accounts-connect-invoke-source-operation",
       "version": "0.1.0",
       "digest": "6cc3a4a60970e9468efbcc6686fbe3e18b081ca56533d35a53b284fd53e22083",

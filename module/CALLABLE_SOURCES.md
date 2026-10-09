@@ -145,6 +145,15 @@ Core's option import closure is copied byte for byte under the accounts proto's
 owned `saas` tree, then run business/adapters/catalog generation, contract export,
 the frontend SDK script, and `codefly generate runnables saas-starter`. CI runs
 `codefly generate runnables saas-starter --check` alongside contract drift checks.
+The accounts registration generator emits `generated/api-contract-surfaces.json`
+and the service manifest selects it through `spec.api-contract-surfaces`.
+Authority's inventory comes only from `ModuleAuthorityProcedures`; Connect's
+comes from the full registration catalog, including internal procedures. Both
+exports retain the complete descriptor for schemas. Only the two Connect
+packages (`InvokeSourceOperation`, `PruneSourceOperationReceipts`) are derived,
+with their paired Lookups; neither operation is served or exported by authority.
+The cataloggen suite checks inventory drift against the registration catalog and
+authority allowlist before contract/Runnable drift checks consume it.
 After changing the audit registry, run `go test -tags pure ./pkg/business -run
 AuditEventsContribution -update` from accounts/code, then `go run
 ./cmd/module-package run-generators --module ..` from module/tools to regenerate
@@ -156,7 +165,8 @@ tests require Postgres and Vault booted by Codefly. Test results and any boot or
 Core/CLI delivery blocker are recorded in the PR; a compiled test is not a passed
 integration test. The callable-sources handbook decision is accepted (proposal
 #269, merged in handbook PR #271). Release still requires the Core release carrying
-#755 and the CLI release carrying #943. Development qualification with CLI PR #947
+#755 and the CLI release carrying #943/#947. Development qualification with CLI PR #947
+at `3a88b6305a919eb842491ffbc313434be05123b8`
 preserves scope slots in operation documents and resolves composition selections
 during preparation; the released pins must pass the same checks before readiness.
 A passing generation drift check alone does not qualify the delivery path.

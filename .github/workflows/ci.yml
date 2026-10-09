@@ -423,7 +423,12 @@ jobs:
             codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
-      - name: Check exported API contracts are in sync with the proto
+      - name: Check endpoint procedure inventories against their listener owners
+        working-directory: module/services/accounts/code
+        env:
+          GOWORK: "off"
+        run: go test -tags pure ./pkg/cataloggen -run '^TestAPIContractSurfaces' -count=1
+      - name: Check exported API contracts are in sync with the proto and endpoint inventories
         run: codefly generate contracts saas-starter --check
       - name: Check derived source operations
         run: codefly generate runnables saas-starter --check
