@@ -538,6 +538,11 @@ a live database. Migration `65_role_permissions_rls` closes the former
 child-table gap: `role_permissions` reads follow parent-role visibility, while
 inserts may target only a custom role owned by the current tenant.
 
+Callable-source declarations, consumed OAuth states, operation attempts and
+effect receipts grant no table privileges to `app_control_plane`. Their reads,
+writes and retention use the tenant transaction. The live exact-grants test
+asserts this absence for all four tables as well as their forced tenant RLS.
+
 ## Partitions carry their parent's row security
 
 `audit_events` is the store's one partitioned relation, split into monthly

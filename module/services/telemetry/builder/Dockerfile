@@ -1,0 +1,103 @@
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# The Go modules the recipe declares it downloads (go_module_downloads), fetched
+# by the caller on its own machine before any image build and supplied here as
+# the build context of this name, in the Go module proxy layout. Without a
+# caller supplying it, the stage is empty and the download below uses the
+# network as it always did.
+FROM scratch AS gomodproxy
+
+# Build stage
+FROM golang:1.27.0-alpine3.23@sha256:3747dcba41c8b0db3211fda4db61638b980e17ac5bb3c94460a975a9cfe19395 AS builder
+
+ARG TARGETARCH
+
+# Private Go modules. A service built from its own directory declares its
+# module's downloads in the recipe, and the caller fetches them before the build
+# and supplies them as the gomodproxy context above: the build reads them from
+# there and needs no credential. GOPRIVATE, a build argument the CLI sets from
+# the host's own, only matters when nothing was supplied — a workspace build, or
+# a plain `docker build` — where those paths bypass the public proxy and are
+# fetched with git; the optional netrc secret mount on those download steps is
+# for callers that predate the declaration and still pass a credential.
+ARG GOPRIVATE
+
+# Install ca-certificates for HTTPS requests and git for private repos if needed.
+# CGO services additionally need a native compiler and libc development files
+# in the build stage; none of that toolchain reaches the runtime image.
+RUN apk add --no-cache ca-certificates git
+
+ENV CGO_ENABLED=0
+ENV GOTOOLCHAIN=local
+
+# Set working directory
+WORKDIR /app
+# Copy the source code
+
+COPY service.codefly.yaml service.codefly.yaml
+
+COPY code code
+
+
+# Download dependencies and build the binary
+COPY code/go.mod code/go.sum code/
+# With the caller's prefetched modules, they are the only module source: no
+# credential is needed or mounted, a module missing from them fails here rather
+# than being fetched, and go.sum alone verifies them (the caller's fetch was
+# verified against the checksum database on its side). GOPRIVATE is cleared so
+# private paths are read from the proxy like any other.
+RUN --mount=type=bind,from=gomodproxy,target=/gomodproxy \
+    if [ -n "$(ls -A /gomodproxy)" ]; then export GOPROXY=file:///gomodproxy GOSUMDB=off GOPRIVATE= GONOPROXY= GONOSUMDB=; fi && \
+    cd code && sha256sum go.mod go.sum > /tmp/locks.sha256 && go mod download && go list -mod=readonly -m -json all > /tmp/modules.json && go mod verify && sha256sum -c /tmp/locks.sha256
+COPY code code
+RUN find . -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/sources.sha256
+RUN --network=none cd code && \
+    GOOS=linux GOARCH=${TARGETARCH} go build -mod=readonly -ldflags='-w -s -extldflags "-static"' -o /app/app .
+
+# Retain the locked graph and metadata of the executables actually compiled.
+# These are build evidence, not a scan, approval, publication or installation.
+RUN --network=none cd code && \
+    sha256sum -c /tmp/locks.sha256 && \
+    mkdir -p /app/build-evidence && \
+    cp go.mod go.sum /app/build-evidence/ && \
+    cp /tmp/sources.sha256 /app/build-evidence/sources.sha256 && \
+    cp /tmp/modules.json /app/build-evidence/modules.json && \
+    go version -m /app/app > /app/build-evidence/binaries.txt && \
+    sha256sum /app/app > /app/build-evidence/binaries.sha256
+
+# Final stage
+FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+
+# Runtime only needs the public CA bundle. Keep build tooling out of the image.
+RUN apk add --no-cache ca-certificates
+
+# Run from the Go source directory, mirroring the dev runner (which starts the
+# binary with its working directory set to the source dir). This is what makes a
+# service's runtime path — e.g. "../routing/rest", anchored at the source dir —
+# resolve to the same file it does in dev.
+WORKDIR /app/code
+
+# Set environment variables
+
+
+# Create a non-root user
+RUN adduser -D appuser
+
+# Copy the binary from the builder stage
+COPY --chown=appuser --from=builder /app/app .
+COPY --from=builder /app/build-evidence /usr/share/codefly/build
+
+# Copy declared runtime assets from the build context, reproducing the source
+# tree under /app so a source-relative reference resolves the same as in dev.
+# Services that read config or data files at startup rely on a source-relative
+# fallback in dev; these COPY lines are what carry those files into the image.
+# Inventory the final bytes at their real runtime locations, including assets.
+RUN find /app -type f -print0 | sort -z | xargs -0 sha256sum > /usr/share/codefly/build/runtime.sha256
+
+# Use the non-root user
+USER appuser
+
+# Expose ports
+EXPOSE 8080 9090
+
+# Run the binary
+CMD ["./app"]

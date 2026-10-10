@@ -2,7 +2,18 @@ FROM node:24.17.0-alpine3.23@sha256:7c70d1235c0b4c2bc9eeed5393d19f1bbdde6885ba0d
 
 # Install dependencies
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+# libc6-compat is a virtual name: apk resolves it to gcompat plus gcompat's own
+# dependencies, so an `=<version>` pin would constrain one of the three packages
+# actually installed and leave the rest floating. A base image digest pins the
+# image, not the Alpine package index apk reads at build time, and that index
+# carries only the current build of each package — so a version pin here does
+# not go stale, it becomes unresolvable and fails the build outright.
+# The resolved set is therefore RECORDED rather than pinned, and copied into
+# both runtime images below: the OS packages an image was actually built from
+# stay readable from the image whose digest the CLI captured.
+RUN apk add --no-cache libc6-compat \
+    && mkdir -p /codefly \
+    && apk info -v | sort > /codefly/apk-packages.txt
 WORKDIR /app
 
 COPY code/package.json code/package-lock.json* ./
@@ -25,8 +36,17 @@ COPY service.codefly.yaml /service.codefly.yaml
 # otherwise host-absolute .bin symlinks can shadow the container executables.
 RUN rm -rf node_modules
 COPY --from=deps /app/node_modules ./node_modules
+# npm nests a workspace's dependency under packages/<name>/node_modules when its
+# version conflicts with one hoisted to the root. Those installs exist only in
+# the deps stage (host copies are excluded from the context), so restore the
+# workspace packages from there too, or the build resolves the hoisted version
+# instead. The sources are the same context files the deps stage copied.
+COPY --from=deps /app/packages ./packages
 
 ENV NEXT_TELEMETRY_DISABLED=1
+
+ARG FRONTEND_SKIN_RUNTIME
+ENV FRONTEND_SKIN_RUNTIME=$FRONTEND_SKIN_RUNTIME
 
 RUN mkdir -p public && npm run build
 
@@ -54,6 +74,7 @@ RUN chown nextjs:nodejs .next
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=deps /codefly/apk-packages.txt /codefly/apk-packages.txt
 
 USER nextjs
 

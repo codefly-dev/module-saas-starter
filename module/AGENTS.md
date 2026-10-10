@@ -72,6 +72,9 @@ suites need Codefly and Docker — or let `codefly ci run` do it.
 Core dependencies are pinned to released v0.18.0 in every owning Go module,
 including the module-authority qualification module. Run qualification with
 `GOWORK=off` so a developer workspace cannot mask the released dependency.
+Accounts declares Go 1.27.0 as its supported minimum, matching the pinned
+go-grpc builder. The development/CI compiler may be newer; do not raise the
+module minimum to that patch version without qualifying the image builder too.
 The older auth-gateway, policy-log, store and telemetry SDK pins also move to
 released SDK v0.3.1 for compatibility. Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local

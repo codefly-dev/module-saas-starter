@@ -367,6 +367,13 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "executable_artifact_approvals" {
 				want = relationPrivileges{}
 			}
+			// Callable-source declarations, OAuth state, attempts and receipts
+			// are tenant-only. The control plane must not read or mutate them.
+			switch relation {
+			case "datasource_source_operations", "datasource_oauth_consumed_states",
+				"datasource_operation_attempts", "codefly_effect_receipts":
+				want = relationPrivileges{}
+			}
 			if relation == "feature_flags" {
 				want = relationPrivileges{selectRows: true}
 			}

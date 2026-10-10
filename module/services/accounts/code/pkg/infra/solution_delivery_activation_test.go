@@ -225,6 +225,11 @@ func productionPathAuthority(
 		Host:             solutionhost.HostTarget{Coordinate: productionPathCoordinate, Component: "saas-host"},
 		OwnershipDomain:  productionPathDomain,
 		EnvelopeRevision: solutionhost.FixtureEnvelopeRevision,
+		// This subject owns no queues, audit namespaces or scope vocabulary.
+		// Core requires explicit declarations, including on tombstones.
+		Queues:        []string{},
+		Namespaces:    []string{},
+		ScopeCeilings: []solutionhost.ScopeCeiling{},
 	}
 	if !removed {
 		document.ApprovedBuild = build
