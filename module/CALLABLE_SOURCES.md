@@ -12,10 +12,10 @@ and `LookupInvokeSourceOperation`, including Connect JSON, gRPC and gRPC-Web.
 The method is marked `codefly.runnable.v0.operation`; `tool` is absent.
 Install the `accounts/connect/InvokeSourceOperation` derived package: the
 `authority` listener remains limited to the existing module authority methods.
-The current contract exporter copies the whole service descriptor to both endpoints,
-so it also derives an authority package that this listener cannot serve. That
-export needs endpoint-specific projection; generated output is never filtered by
-hand. Discovery projects individual declaration schemas/effects/digests over this one binding.
+The host-generated surface inventory identifies each endpoint's served procedures;
+CLI #947 uses it to derive packages only on Connect. CI still needs the CLI
+release carrying that change, as described under qualification below. Discovery
+projects individual declaration schemas/effects/digests over this one binding.
 The caller never chooses a destination, HTTP header, credential or method.
 
 Invoke takes `org_id`, `source_id`, `operation`, `input_json`, and `effect_id`.
@@ -154,6 +154,14 @@ packages (`InvokeSourceOperation`, `PruneSourceOperationReceipts`) are derived,
 with their paired Lookups; neither operation is served or exported by authority.
 The cataloggen suite checks inventory drift against the registration catalog and
 authority allowlist before contract/Runnable drift checks consume it.
+
+The generated frontend catalog publishes `datasource:read` and
+`datasource:invoke` as permissions and API-key scopes. Its frontend test checks
+those names, scope membership and permission recognition; the Go cataloggen
+fixture-equality test checks the complete catalog against its source. Vocabulary
+totals are not a contract: adding a permission must not invalidate an unrelated
+fixed-count assertion.
+
 After changing the audit registry, run `go test -tags pure ./pkg/business -run
 AuditEventsContribution -update` from accounts/code, then `go run
 ./cmd/module-package run-generators --module ..` from module/tools to regenerate
