@@ -219,6 +219,13 @@ input. Regenerated recipes accompanying that input must match the pinned agent's
 effective build recipe byte-for-byte; an unselected, missing, ambiguous or
 different recipe fails the build-evidence gate. Deleting obsolete generated
 copies is allowed. Image proposals belong in the image contract alongside topology adoption.
+To reproduce this check locally, set `CODEFLY_BASE` to the pull request event's
+base SHA when running `node scripts/ci/build-images.mjs check`. Without it,
+the command checks coverage only; it does not inspect recipe proposals. The
+same variable enables proposed-recipe comparisons in `build-images.mjs evidence`.
+A successful image build and matching materials alone do not establish that a
+generated-file change belongs in the PR. Reproduce recipes using the CI-pinned
+CLI and the released agents selected by the service manifests.
 Every topology service must declare image coverage, even if its recipe is absent
 from the checkout. Redis and Vault explicitly use the existing Codefly vendor
 image audit; an unknown agent is an error.
