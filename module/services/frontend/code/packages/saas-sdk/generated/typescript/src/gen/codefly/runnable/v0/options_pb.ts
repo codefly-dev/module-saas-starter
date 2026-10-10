@@ -26,9 +26,11 @@ export const file_codefly_runnable_v0_options: GenFile = /*@__PURE__*/
  *
  * The option's presence is the marking; every field below except
  * lookup_method, max_input_bytes, max_output_bytes, tool and
- * required_scope_slots is required, completion included. An attempt
+ * required_scope_slots and the scope lists is required, completion included. An attempt
  * budget and an authority nobody chose are not defaults core may invent on an
  * owner's behalf, so an empty option is rejected rather than filled in.
+ * Fixed invoke_scopes and lookup_scopes may be empty while required_scope_slots
+ * await selection; the resolved policy must contain both concrete scope lists.
  *
  * @generated from message codefly.runnable.v0.Operation
  */
@@ -78,7 +80,8 @@ export type Operation = Message<"codefly.runnable.v0.Operation"> & {
   audience: string;
 
   /**
-   * invoke_scopes are the scopes the runtime binds for the call itself.
+   * invoke_scopes are the fixed scopes the runtime binds for the call itself.
+   * Required slots may supply all invoke scopes instead of fixed ones.
    *
    * @generated from field: repeated codefly.base.v0.WorkScopeV1 invoke_scopes = 7;
    */
@@ -87,7 +90,8 @@ export type Operation = Message<"codefly.runnable.v0.Operation"> & {
   /**
    * lookup_scopes are the scopes the runtime binds to read an effect receipt.
    * They must be a read-only subset of invoke_scopes: recovering an outcome
-   * never carries more authority than producing it did.
+   * never carries more authority than producing it did. Required slots may
+   * supply all lookup scopes; a resolved policy with none is still refused.
    *
    * @generated from field: repeated codefly.base.v0.WorkScopeV1 lookup_scopes = 8;
    */

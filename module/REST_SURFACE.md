@@ -119,7 +119,9 @@ export; `generated/gateway-routes.json` cannot substitute because it excludes
 internal methods. From the workspace root, run `codefly generate contracts
 saas-starter` and `codefly generate runnables saas-starter`, then repeat both
 with `--check`. This requires the CLI release carrying #947; development uses
-that PR's `3a88b6305a919eb842491ffbc313434be05123b8` head with Core #755.
+that PR's `3a88b6305a919eb842491ffbc313434be05123b8` head with a local CLI
+workspace override to released Core v0.18.0. Host Go modules pin v0.18.0
+and are tested with `GOWORK=off`.
 
 The first line is the whole proto step. It runs the versioned proto companion
 image with the service's own template, `proto/buf.gen.yaml`, which declares

@@ -164,9 +164,10 @@ in-memory and httptest fixtures qualify HTTP and host decisions; real business
 tests require Postgres and Vault booted by Codefly. Test results and any boot or
 Core/CLI delivery blocker are recorded in the PR; a compiled test is not a passed
 integration test. The callable-sources handbook decision is accepted (proposal
-#269, merged in handbook PR #271). Release still requires the Core release carrying
-#755 and the CLI release carrying #943/#947. Development qualification with CLI PR #947
-at `3a88b6305a919eb842491ffbc313434be05123b8`
-preserves scope slots in operation documents and resolves composition selections
-during preparation; the released pins must pass the same checks before readiness.
+#269, merged in handbook PR #271). All host Go modules that depend on Core pin released v0.18.0, which carries
+#755; host suites run with `GOWORK=off`. The CLI release carrying #943/#947
+is still required. Development qualification uses CLI PR #947
+at `3a88b6305a919eb842491ffbc313434be05123b8`, built with an external
+workspace override to released Core v0.18.0. It preserves scope slots in operation documents and resolves composition selections
+during preparation; the released CLI pin must pass the same checks before readiness.
 A passing generation drift check alone does not qualify the delivery path.

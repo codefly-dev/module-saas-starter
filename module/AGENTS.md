@@ -69,6 +69,15 @@ reference composition), for six in total; a consumer's root module is its own.
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.
 
+Core dependencies are pinned to released v0.18.0 in every owning Go module,
+including the module-authority qualification module. Run qualification with
+`GOWORK=off` so a developer workspace cannot mask the released dependency.
+The older auth-gateway, policy-log, store and telemetry SDK pins also move to
+released SDK v0.3.1 for compatibility. Their listeners resolve allocated
+endpoints through `ResolveNetworkInstance`, which selects the delivered or local
+endpoint from the runtime environment; the removed `WithDefaultNetwork` switch
+must not be replaced with a hard-coded address or port.
+
 ## Runtime composition seams
 
 Solutions and composed modules are independently deployed and **self-register at

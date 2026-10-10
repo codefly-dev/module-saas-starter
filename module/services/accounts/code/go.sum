@@ -122,8 +122,8 @@ github.com/codahale/rfc6979 v0.0.0-20141003034818-6a90f24967eb h1:EDmT6Q9Zs+SbUo
 github.com/codahale/rfc6979 v0.0.0-20141003034818-6a90f24967eb/go.mod h1:ZjrT6AXHbDs86ZSdt/osfBi5qfexBrKUdONk989Wnk4=
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc h1:olDnVJ1A1Retn0z9A59YMwDRmDLgkV2y1lbl+HzNrj8=
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc/go.mod h1:VWPYY3FH4te7SzdN2xl9odNpWidJ1Grl/Hjs1SNoEF8=
-github.com/codefly-dev/core v0.17.0 h1:Ckhs4URD9ip/zY6WrWkBKHxavS81B6QxZzRkaTwv3dg=
-github.com/codefly-dev/core v0.17.0/go.mod h1:dSSLXlN1AbnzWNvsseJYbJnAYcitUsPjaxFCsrwb8mw=
+github.com/codefly-dev/core v0.18.0 h1:G7KmDlTUUfiTHQVKLEs9Vo+YywxjhmI11RqEBUA0L7Q=
+github.com/codefly-dev/core v0.18.0/go.mod h1:FKBqn6GMGIsx9b3LNY6kKCRxCEjjeswvqt2CxSZWq20=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba h1:6nFaDYsLyA5x3WiGAk6pMI3c0naqxiPeaTHMqRPvbVs=
