@@ -1,5 +1,12 @@
 import type { DataGraph } from "@codefly/saas-plugin-manifest";
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { Code, ConnectError } from "@connectrpc/connect";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	screen,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -114,15 +121,25 @@ function aggregateHandler(
 	);
 }
 
+// A rejected refetch reaches the component a tick after `refetchQueries`
+// resolves. Without this wait an assertion can run while the previous state is
+// still rendered, which makes the retention tests pass whatever the code does.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
 const DEFAULT_ORDER = ["Logins over time", "Top event types", "Total logins"];
 
-// The tile titles, in the order the dashboard shows them.
+// The tile titles, in the order the dashboard shows them. The kit's renderer
+// titles a series widget through its Card (`card-heading`) and a scalar one
+// through its StatTile (`metric-label`), so a tile is named by whichever of
+// the two it carries.
 function tileTitles(): string[] {
 	return screen
 		.getAllByRole("listitem")
 		.map(
 			(tile) =>
-				tile.querySelector('[data-slot="card-title"]')?.textContent ?? "",
+				tile.querySelector(
+					'[data-slot="card-heading"], [data-slot="metric-label"]',
+				)?.textContent ?? "",
 		);
 }
 
@@ -155,13 +172,22 @@ describe("SolutionDashboards", () => {
 
 		renderInApp(<SolutionDashboards graph={graph} solutionId="example" />);
 
-		// Bar widget: each event_type bucket becomes a labelled bar.
-		expect(await screen.findByText("saas.auth.login")).toBeTruthy();
-		expect(screen.getByText("42")).toBeTruthy();
+		// Bar widget: each event_type bucket becomes a bar, and every exact
+		// value is reachable in the chart's accessible data table — which is
+		// what a reader who cannot see the geometry gets.
+		const bars = await screen.findByRole("table", { name: "Top event types" });
+		expect(
+			within(bars).getByRole("row", { name: /saas\.auth\.login/ }),
+		).toBeTruthy();
+		expect(within(bars).getByText("42")).toBeTruthy();
 		// Number widget: the total-logins stat sums the time buckets (3 + 5).
 		expect(screen.getByText("8")).toBeTruthy();
-		// Each widget's title is rendered from the declaration.
-		expect(screen.getByText("Logins over time")).toBeTruthy();
+		// Each widget's title is rendered from the declaration. A chart widget
+		// says it three times: once visibly as its card's heading, and twice in
+		// the accessible data table that is the chart's screen-reader
+		// representation — as the table's caption and as its one series' column
+		// header, there being no other name for the series than the widget's.
+		expect(screen.getAllByText("Logins over time")).toHaveLength(3);
 		expect(screen.getByText("Total logins")).toBeTruthy();
 	});
 
@@ -194,6 +220,449 @@ describe("SolutionDashboards", () => {
 		expect(await screen.findByText("8")).toBeTruthy();
 		// ...even though the bar widget's own query failed.
 		expect(await screen.findByText("Unable to load.")).toBeTruthy();
+	});
+
+	// The sequence that matters: a read that SUCCEEDED, then one that did not.
+	// TanStack Query hands back the last successful data when a refetch
+	// rejects, so a cold failure cannot show this — there is nothing retained
+	// to leak.
+	describe.each([
+		[403, "permission_denied", Code.PermissionDenied],
+		[503, "unavailable", Code.Unavailable],
+	] as const)("a %d on a refetch", (status, code, expected) => {
+		const refused = status === 403;
+
+		it(`${refused ? "discards" : "keeps"} the values already on screen`, async () => {
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ code, message: "read rejected" }, { status }),
+				),
+			);
+			await act(async () => {
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+			});
+
+			const query = client
+				.getQueryCache()
+				.find({ queryKey: ["solution-widget"], exact: false });
+			expect(ConnectError.from(query?.state.error).code).toBe(expected);
+
+			if (refused) {
+				// A number this viewer is no longer allowed to read is a wrong
+				// answer, not a stale one.
+				expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+				expect(screen.queryByText("Stale")).toBeNull();
+			} else {
+				// A transient failure says nothing about authority, so the
+				// values stay and read as out of date.
+				expect(await screen.findAllByText("Stale")).not.toHaveLength(0);
+				expect(screen.getAllByText("37").length).toBeGreaterThan(0);
+			}
+		});
+	});
+
+	// The longer sequence, and the one that matters most: a refusal followed by
+	// an ordinary failure, with no authorized read in between. A snapshot that
+	// outlived the refusal would be eligible again at the next error, which
+	// hands those values straight back.
+	describe.each(["line", "area", "bar", "number", "table"] as const)(
+		"a refused %s widget",
+		(visualization) => {
+			const oneWidget: DataGraph = {
+				...graph,
+				dashboards: [
+					{
+						...graph.dashboards[0],
+						widgets: [{ ...graph.dashboards[0].widgets[0], visualization }],
+					},
+				],
+			};
+
+			it.each([
+				[
+					"a 503",
+					() => HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+				],
+				["a dropped connection", () => HttpResponse.error()],
+			])("does not resurrect its values on %s", async (_name, fail) => {
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({
+							buckets: [{ key: "2026-09-01", count: "37" }],
+						}),
+					),
+				);
+				const { client } = renderInApp(
+					<SolutionDashboards graph={oneWidget} solutionId="example" />,
+				);
+				expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+					),
+				);
+				await act(async () => {
+					await client.refetchQueries({ queryKey: ["solution-widget"] });
+					await settle();
+				});
+				expect(await screen.findByText("No access")).toBeTruthy();
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+
+				server.use(http.post(rpc("AuditService", "AggregateAuditLog"), fail));
+				await act(async () => {
+					await client.refetchQueries({ queryKey: ["solution-widget"] });
+					await settle();
+				});
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+			});
+		},
+	);
+
+	it("does not resurrect them once the caches have had time to expire", async () => {
+		// The shape this replaced marked the snapshot ineligible from a second
+		// cache entry, which had its own garbage-collection clock: five
+		// minutes later the mark was gone and the values were not, so a retry
+		// handed them back. Deleting the snapshot leaves nothing with a
+		// lifetime of its own to fall out of step.
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		// Past the default five-minute gcTime, on the cache's own clock.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(300_001);
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
+	});
+
+	it("does not resurrect them on a remount", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client, unmount } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		unmount();
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		renderInApp(
+			<SolutionDashboards graph={graph} solutionId="example" />,
+			client,
+		);
+		await act(async () => {
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
+	});
+
+	it("does not leave the same numbers behind under another graph revision", async () => {
+		// The graph is the last part of the query key, so a declaration that
+		// differs only in a dashboard title has its own cache entry holding
+		// the same numbers. A refusal has to reach every revision of them.
+		const renamed: DataGraph = {
+			...graph,
+			dashboards: [{ ...graph.dashboards[0], title: "Activity (renamed)" }],
+		};
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client, unmount } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+		unmount();
+
+		// A second revision, cached under its own key.
+		const second = renderInApp(
+			<SolutionDashboards graph={renamed} solutionId="example" />,
+			client,
+		);
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+		second.unmount();
+
+		// Back to the first revision, whose refresh fails transiently.
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		renderInApp(
+			<SolutionDashboards graph={graph} solutionId="example" />,
+			client,
+		);
+		await act(async () => {
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
+	});
+
+	it("lets a successful authorized read lift the refusal", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		// Authority restored: a read succeeds and the NEW values are drawn.
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "42" }] }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+		});
+		expect(await screen.findAllByText("42")).not.toHaveLength(0);
+		expect(screen.queryByText("No access")).toBeNull();
+	});
+
+	// Everything above drives the refusal through a mounted component. These
+	// drive it where no mounted component can answer for it: the refusal is a
+	// property of the READ, and the read outlives whoever started it.
+	describe("a refusal with nobody watching it", () => {
+		// A handler that holds its request open until the test releases it, so a
+		// refusal can be in flight across an unmount or a change of dashboard.
+		function heldRefusal() {
+			let enter!: () => void;
+			let release!: () => void;
+			const entered = new Promise<void>((resolve) => {
+				enter = resolve;
+			});
+			const released = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), async () => {
+					enter();
+					await released;
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}),
+			);
+			return { entered, release };
+		}
+
+		it.each([
+			[
+				"a 503",
+				() => HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			],
+			["a dropped connection", () => HttpResponse.error()],
+		])(
+			"deletes the values when it completes after the page is gone, then %s",
+			async (_name, fail) => {
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({
+							buckets: [{ key: "2026-09-01", count: "37" }],
+						}),
+					),
+				);
+				const { client, unmount } = renderDashboards();
+				expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+				const { entered, release } = heldRefusal();
+				const refusal = client.refetchQueries({
+					queryKey: ["solution-widget"],
+				});
+				await entered;
+				// The viewer leaves while the request is still open, so no effect
+				// of theirs is left to run when the answer comes back.
+				unmount();
+				release();
+				await refusal;
+
+				// A retry nobody is watching either. It must not hand the values
+				// back to the next mount.
+				server.use(http.post(rpc("AuditService", "AggregateAuditLog"), fail));
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+
+				renderInApp(
+					<SolutionDashboards graph={graph} solutionId="example" />,
+					client,
+				);
+				await act(async () => {
+					await settle();
+				});
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+			},
+		);
+
+		it("deletes the revision on screen when it lands on the one the viewer left", async () => {
+			// The refusal is for the revision the viewer has navigated away from;
+			// the one mounted is another revision of the same widget, with its own
+			// cached values on screen. Both are this widget's source, and nothing
+			// in React connects the refused read to the component drawing them.
+			const renamed: DataGraph = {
+				...graph,
+				dashboards: [{ ...graph.dashboards[0], title: "Activity (renamed)" }],
+			};
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client, rerender } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			// The second revision reads its own values, under its own key.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "42" }] }),
+				),
+			);
+			rerender(<SolutionDashboards graph={renamed} solutionId="example" />);
+			expect(await screen.findAllByText("42")).not.toHaveLength(0);
+			rerender(<SolutionDashboards graph={graph} solutionId="example" />);
+			await act(async () => {
+				await settle();
+			});
+
+			const { entered, release } = heldRefusal();
+			const refusal = client.refetchQueries({
+				queryKey: ["solution-widget"],
+				type: "active",
+			});
+			await entered;
+
+			// Mid-refusal the viewer switches back, where the other revision's
+			// values are cached and its refresh fails transiently: 42, stale.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+				),
+			);
+			rerender(<SolutionDashboards graph={renamed} solutionId="example" />);
+			expect(await screen.findAllByText("Stale")).not.toHaveLength(0);
+			expect(screen.getAllByText("42").length).toBeGreaterThan(0);
+
+			await act(async () => {
+				release();
+				await refusal;
+				await settle();
+			});
+			expect(screen.queryAllByText("42")).toHaveLength(0);
+		});
+
+		it("asks once, rather than clearing its own error and asking again", async () => {
+			// Clearing the entry to drop its values restarts every active read of
+			// it, whose next answer is the same refusal: a standing 403 became an
+			// unbounded loop. Deleting the values touches neither the error nor
+			// the fetch, so the retry policy is the client's alone.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			let refusals = 0;
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), async () => {
+					refusals += 1;
+					// Answered a tick late, so the component sees the pending state
+					// in between — the window a self-restarting clear re-entered.
+					await new Promise((resolve) => setTimeout(resolve, 15));
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}),
+			);
+			await act(async () => {
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+			});
+			expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+			for (let round = 0; round < 8; round += 1) {
+				await act(async () => {
+					await settle();
+				});
+			}
+			// Three widgets, one refresh, `retry: false` in tests.
+			expect(refusals).toBe(3);
+		});
 	});
 
 	it("reads as loading until the org context resolves, never as empty", () => {

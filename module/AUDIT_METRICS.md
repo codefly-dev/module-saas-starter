@@ -195,7 +195,8 @@ never the SDK binding input. Regenerate the export before generating the SDK.
 
 ## Unknown and partial results
 
-Empty queries have no points and render **No data yet**. Numeric sums with no
+Empty queries have no points and render as no data, in the form the widget's
+visualization has for it (see *How a resolved series is drawn*). Numeric sums with no
 numeric observations omit their value, just like averages/percentiles; an emitted
 zero stays zero. `samples[alias]` reports observations before reduction (so
 repeated logical IDs are not mistaken for missing telemetry). Fewer samples than
@@ -212,6 +213,60 @@ nested derived metrics.
 The host DSL also withholds totals after top-N truncation. Authorization/RPC
 errors remain errors, never empty successful results. Existing consumers of the
 SDK must handle `total: null` when adopting this contract.
+
+## How a resolved series is drawn
+
+Every dashboard built from these series — the host's own pages, a solution's
+declared dashboard, and a solution remote that mounts the kit itself — is drawn
+by one renderer, `<Dashboard>` from `@codefly-dev/ui/dashboard`, with the kit's
+**metric tier**. There is no second, plainer rendering: a consuming solution
+does not have to ask which half of the kit its dashboard will get.
+
+| Widget | Drawn as | Empty series | `coverage: "partial"` | `total: null` |
+| --- | --- | --- | --- | --- |
+| `number` | `StatTile`: the series total, in the widget's `format` and `unit`; a sparkline and a delta against the previous bucket when the metric is bucketed over **time** | `—` with a **No data** badge, never `0` | `—` with a **Partial data** badge | `—` with a **No total** badge when coverage is complete |
+| `line` / `area` / `bar` | the kit's metric chart over a `ChartSeries` — axes from the appearance palette, a crosshair readout, a legend for two or more series, and every exact value in a visually-hidden data table | the chart's own **No data** plot, plus a **No data** badge on the card | the observed points still plot, with a **Partial data** badge on the card | nothing: a series widget shows no total |
+| `table` | key/value rows | **No data yet.** | a **Partial data** badge on the card | — |
+
+A scalar widget's `format` names how its value is written, and `percent` takes a
+value that is **already a percentage**: 45 renders "45%". It is not a share —
+0.4 renders "0.4%". A producer whose own `percent` means a 0-to-1 share scales it
+before it reaches the view, because the field is bound structurally and nothing
+on the wire distinguishes the two conventions.
+
+Two of those cells are the contract, not presentation. A `null` total renders as
+a dash and never as `0`, because "cannot say" and "nothing happened" are
+different answers and only one of them is in the data; and a series with no
+points is no data rather than a zero, because the aggregate omits a bucket
+instead of emitting an empty one. A sparkline and a bucket delta are drawn
+**only** for a time-bucketed series: a line through counts grouped by event type
+or region would assert an order, and a delta between two of them a change over
+time, that a categorical grouping does not have. Both read the series in **time**
+order, taken from the parsed bucket keys rather than from the order the
+aggregate returned them in, so a series delivered newest-first reports the same
+change — a delta's sign is drawn as a colour, and getting it from an array
+position would paint a decline as a green rise.
+
+A widget whose resolution **failed** says so only when it has nothing else to
+say. With a series still in hand — a refresh that did not land — the tile draws
+that series and carries a **Stale** badge instead, because values that are old
+are still better than a blank card. Only a failure with nothing behind it reads
+as "Unable to load."
+
+A widget whose resolution was **refused** is the other case, and it keeps
+nothing. "No access" is drawn before the series is read, and the host that
+resolved the widget deletes the values it had cached — every revision of that
+widget's declaration, at the read that was refused rather than in the component
+displaying it, so a refusal arriving after the viewer moved on still lands.
+Numbers this viewer is no longer allowed to read are a wrong answer, not a stale
+one, and only a read that succeeds puts any back.
+
+A host composes its own features around that renderer — `<Dashboard>`'s slots
+take header actions, a layout (the host's solution dashboard passes a
+drag-to-reorder grid), a per-widget renderer for a host that resolves each
+widget in its own query, and an empty state. A consumer re-implementing any part
+of the drawing is refused by a gate: `src/components/__tests__/kit.test.ts` in
+the frontend.
 
 ## Independent validation
 

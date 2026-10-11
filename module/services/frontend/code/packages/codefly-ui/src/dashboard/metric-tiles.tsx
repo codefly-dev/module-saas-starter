@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
-import type { ComponentProps, KeyboardEvent } from "react";
+import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
 import {
 	CardRoot as Card,
 	CardContent,
@@ -28,8 +28,14 @@ export interface Metric {
 	/** Stable identity for list keying; falls back to position when omitted. */
 	id?: string;
 	label: string;
-	/** The computed value as a plain number — `Number(bigint)` a bigint source. */
-	value: number;
+	/**
+	 * The computed value as a plain number — `Number(bigint)` a bigint source.
+	 * `null` when no number exists: it renders as a dash, never as `0`. A
+	 * withheld total and a zero are different answers, and a tile that drew
+	 * `null` as `0` would report the second when the pipeline said the first.
+	 * {@link state} says which of partial / empty / no-total withheld it.
+	 */
+	value: number | null;
 	/**
 	 * How {@link value} is rendered. `"percent"` treats the value as an
 	 * already-scaled percentage (45 → "45%"), not a fraction — unlike
@@ -70,6 +76,8 @@ const valuelessStates: MetricState[] = [
 	"no_data",
 	"not_configured",
 	"provider_unavailable",
+	"no_total",
+	"forbidden",
 ];
 
 export function formatMetricValue(
@@ -110,13 +118,20 @@ function MetricValue({
 	if (metric.state === "loading") {
 		return <Skeleton className={cn("h-8 w-24", className)} />;
 	}
-	const valueless = !!metric.state && valuelessStates.includes(metric.state);
+	// No number to show: either none exists, or the state is one for which none
+	// is meaningful. A unit with no value to qualify is noise, so it goes too.
+	if (
+		metric.value === null ||
+		(metric.state && valuelessStates.includes(metric.state))
+	) {
+		return <span className={cn("type-metric-value", className)}>—</span>;
+	}
 	// Standalone figures use the font's proportional digits — tabular-nums is
 	// for columns that must align, and looks loose at display sizes.
 	return (
 		<span className={cn("type-metric-value", className)}>
-			{valueless ? "—" : formatMetricValue(metric.value, metric.format)}
-			{!valueless && metric.unit && (
+			{formatMetricValue(metric.value, metric.format)}
+			{metric.unit && (
 				<span className="ml-1 type-metric-unit text-muted-foreground">
 					{metric.unit}
 				</span>
@@ -188,6 +203,20 @@ function hasTrend(series: number[] | undefined): series is number[] {
 	return !!series && series.length > 1;
 }
 
+/**
+ * Whether this metric's value may be derived from at all.
+ *
+ * `forbidden` is not a state of the data, it is a statement about the reader's
+ * authority, so everything computed FROM the value goes with the value: a tile
+ * that dashed its number and still drew "+170%" beside a trend line would have
+ * published the same figure twice over, in the two forms that are hardest to
+ * notice. Every other state here is about the data — an average legitimately
+ * has no total and a meaningful delta — so only this one withholds.
+ */
+function withholdsValue(metric: Metric): boolean {
+	return metric.state === "forbidden";
+}
+
 // The card props that turn a metric into a control. Both StatTile and
 // MetricCard apply these, because `onSelect` lives on the Metric rather than on
 // one component's props: a renderer that ignored it would silently drop the
@@ -225,14 +254,45 @@ function selectableCard(metric: Metric): {
  * A single headline number — label, value, optional delta and trend sparkline,
  * with a freshness badge when the metric isn't `ready`. The compact building
  * block of a {@link KPIRow}.
+ *
+ * `actions` puts controls in the header beside the badge, for a caller that
+ * owns the tile as well as the number — a dashboard whose viewer can drag,
+ * remove or interrogate each tile. Without it the tile is purely presentational.
  */
+/** The colour a dashboard's accent reaches the first chart series through. */
+const ACCENT_TREND = "var(--chart-1)";
+
+function trendTone(trend: "muted" | "accent"): string | undefined {
+	return trend === "muted" ? "text-muted-foreground/70" : undefined;
+}
+
 export function StatTile({
 	metric,
+	actions,
+	labelAs = "span",
+	trend = "muted",
 	className,
 }: {
 	metric: Metric;
+	actions?: ReactNode;
+	/**
+	 * The element the label is drawn as. A tile standing in for a titled
+	 * region — a dashboard widget — passes `"h3"` so the title stays in the
+	 * document outline and reachable by heading navigation, which a card with
+	 * a heading gives for free and a tile otherwise takes away.
+	 */
+	labelAs?: "span" | "h3";
+	/**
+	 * How the trend sparkline is coloured. `"muted"` is a tile reading beside
+	 * other content; `"accent"` takes the dashboard's own accent, which a
+	 * scalar widget wants for the same reason its charts do — a declared
+	 * accent that coloured the line charts and not the sparklines beside them
+	 * left one dashboard drawn in two palettes.
+	 */
+	trend?: "muted" | "accent";
 	className?: string;
 }) {
+	const Label = labelAs;
 	const selectable = selectableCard(metric);
 	return (
 		<Card
@@ -240,24 +300,40 @@ export function StatTile({
 			{...selectable.props}
 		>
 			<div className="flex items-center justify-between gap-2">
-				<span className="type-metric-label text-muted-foreground">
+				{/* Truncated because the header also carries a badge and, for a
+				    caller that owns the tile, its controls — with the full text
+				    in `title`, as BarList does, so clipping it does not lose it. */}
+				<Label
+					data-slot="metric-label"
+					title={metric.label}
+					className="min-w-0 flex-1 truncate type-metric-label text-muted-foreground"
+				>
 					{metric.label}
-				</span>
+				</Label>
 				{metric.state && <MetricStateBadge state={metric.state} />}
+				{actions != null && (
+					<div className="flex shrink-0 items-center">{actions}</div>
+				)}
 			</div>
 			<div className="flex items-end justify-between gap-3">
 				<div className="flex flex-col gap-1">
 					<MetricValue metric={metric} />
-					<MetricDelta
-						delta={metric.delta}
-						deltaLabel={metric.deltaLabel}
-						higherIsBetter={metric.higherIsBetter}
-					/>
+					{!withholdsValue(metric) && (
+						<MetricDelta
+							delta={metric.delta}
+							deltaLabel={metric.deltaLabel}
+							higherIsBetter={metric.higherIsBetter}
+						/>
+					)}
 				</div>
-				{hasTrend(metric.series) && (
+				{!withholdsValue(metric) && hasTrend(metric.series) && (
 					<Sparkline
 						points={metric.series}
-						className="shrink-0 text-muted-foreground/70"
+						className={cn("shrink-0", trendTone(trend))}
+						// A token, not a utility class, so the accent a dashboard
+						// scopes onto its subtree reaches the trend: the sparkline
+						// strokes `currentColor`, and a muted utility would pin it.
+						style={trend === "accent" ? { color: ACCENT_TREND } : undefined}
 					/>
 				)}
 			</div>
@@ -281,7 +357,10 @@ export function MetricCard({
 	return (
 		<Card className={cn(selectable.className, className)} {...selectable.props}>
 			<CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-				<span className="type-metric-heading text-muted-foreground">
+				<span
+					data-slot="metric-label"
+					className="type-metric-heading text-muted-foreground"
+				>
 					{metric.label}
 				</span>
 				{metric.state && <MetricStateBadge state={metric.state} />}
@@ -289,13 +368,15 @@ export function MetricCard({
 			<CardContent className="flex items-end justify-between gap-3">
 				<div className="flex flex-col gap-1">
 					<MetricValue metric={metric} className="type-metric-value-lg" />
-					<MetricDelta
-						delta={metric.delta}
-						deltaLabel={metric.deltaLabel}
-						higherIsBetter={metric.higherIsBetter}
-					/>
+					{!withholdsValue(metric) && (
+						<MetricDelta
+							delta={metric.delta}
+							deltaLabel={metric.deltaLabel}
+							higherIsBetter={metric.higherIsBetter}
+						/>
+					)}
 				</div>
-				{hasTrend(metric.series) && (
+				{!withholdsValue(metric) && hasTrend(metric.series) && (
 					<Sparkline
 						points={metric.series}
 						width={128}
@@ -316,19 +397,26 @@ export function MetricCard({
 /**
  * A responsive row of {@link StatTile}s — the handful of headline numbers a
  * dashboard leads with.
+ *
+ * Pass `metrics` and the row draws a tile per metric. Pass `children` instead
+ * when the tiles need something a {@link Metric} cannot carry (a per-tile
+ * control, a key the caller chooses): the row then only lays out the tiles
+ * given, so its geometry still lives here and is not copied to the call site.
  */
 export function KPIRow({
 	metrics,
+	children,
 	className,
-}: {
-	metrics: Metric[];
-	className?: string;
-}) {
+}: { className?: string | false } & (
+	| { metrics: Metric[]; children?: never }
+	| { children: ReactNode; metrics?: never }
+)) {
 	return (
 		<div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-4", className)}>
-			{metrics.map((metric, i) => (
-				<StatTile key={metric.id ?? i} metric={metric} />
-			))}
+			{children ??
+				metrics?.map((metric, i) => (
+					<StatTile key={metric.id ?? i} metric={metric} />
+				))}
 		</div>
 	);
 }
