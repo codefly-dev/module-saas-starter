@@ -65,8 +65,12 @@ type AvailableSolutionQuery struct {
 	OrgID string
 	// TargetID narrows to one target. When set, Cursor is ignored.
 	TargetID string
-	Cursor   string
-	Limit    int
+	// TargetIDs narrows to a set of targets — the ones a page of installations
+	// names — so joining a listing to the catalogue is one statement through the
+	// same acceptance predicate, not one per row. Empty does not narrow.
+	TargetIDs []string
+	Cursor    string
+	Limit     int
 }
 
 // AvailableSolutionTarget is one row of the catalogue: a solution target an

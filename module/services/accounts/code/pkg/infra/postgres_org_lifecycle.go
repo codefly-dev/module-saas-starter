@@ -106,12 +106,13 @@ func (s *PostgresStore) RevokeOrgPendingInvitations(ctx context.Context, orgID s
 	return tag.RowsAffected(), nil
 }
 
-// ActiveInstallationIDs lists an organization's installations that are not yet
-// revoked, so archiving can uninstall each through the same path an operator's
-// uninstall takes.
+// ActiveInstallationIDs locks and lists an organization's unrevoked
+// installations in ID order. The caller must keep this transaction open through
+// the entire uninstall batch: every installation lock must precede the first
+// grant deletion, whose trigger locks the organization's source-read revision.
 func (s *PostgresStore) ActiveInstallationIDs(ctx context.Context, orgID string) ([]string, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
-		`SELECT id FROM installations WHERE org_id = $1 AND status = 'active' ORDER BY id`, orgID)
+		`SELECT id FROM installations WHERE org_id = $1 AND status = 'active' ORDER BY id FOR UPDATE`, orgID)
 	if err != nil {
 		return nil, wool.Get(ctx).In("ActiveInstallationIDs").Wrapf(err, "failed to list installations")
 	}

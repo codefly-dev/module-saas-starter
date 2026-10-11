@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:034ed34951b51856c8bfe23ec3788b469fd284794cf31c71340581e18bc4eca9",
+      "digest": "sha256:c6cec8e5a585ef92b347afa5995735622e75412c629423971f0b3c4f40b85d3c",
       "services": [
         {
           "name": "APIKeyService",
@@ -172,9 +172,12 @@
           "fullName": "saas.accounts.v1.InstallationService",
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
+            "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
             "/saas.accounts.v1.InstallationService/InstallSolution",
             "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
             "/saas.accounts.v1.InstallationService/ListInstallations",
+            "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+            "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"
           ]
@@ -489,7 +492,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:034ed34951b51856c8bfe23ec3788b469fd284794cf31c71340581e18bc4eca9",
+      "digest": "sha256:c6cec8e5a585ef92b347afa5995735622e75412c629423971f0b3c4f40b85d3c",
       "services": [
         {
           "name": "APIKeyService",
@@ -651,9 +654,12 @@
           "fullName": "saas.accounts.v1.InstallationService",
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
+            "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
             "/saas.accounts.v1.InstallationService/InstallSolution",
             "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
             "/saas.accounts.v1.InstallationService/ListInstallations",
+            "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+            "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"
           ]

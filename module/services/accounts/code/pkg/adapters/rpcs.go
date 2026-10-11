@@ -803,6 +803,10 @@ func (s *PermServer) GrantScope(ctx context.Context, req *gen.GrantScopeRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// The subject's tenancy is settled inside the grant's own transaction, under
+	// the membership lock a removal takes (Service.grantScopeTx), not here: a
+	// check committed before that transaction could be stale by the write.
+	//
 	// A privilege-granting or platform-security mutation sits behind a recent second
 	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
 	// mutation: a factor check the write has already passed is not a check.
