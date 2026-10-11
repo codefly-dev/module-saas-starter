@@ -29,23 +29,23 @@ import (
 // Field names use short JSON keys matching the backend minter.
 type accessClaims struct {
 	jwt.RegisteredClaims
-	OrgID                 string              `json:"org,omitempty"`
-	OrgRole               string              `json:"or,omitempty"`
-	PlatformRole          string              `json:"pr,omitempty"`
-	ScopedRoles           map[string][]string `json:"sr,omitempty"`
-	ScopedRolesTruncated  bool                `json:"srt,omitempty"`
-	SessionID             string              `json:"sid"`
+	OrgID                string              `json:"org,omitempty"`
+	OrgRole              string              `json:"or,omitempty"`
+	PlatformRole         string              `json:"pr,omitempty"`
+	ScopedRoles          map[string][]string `json:"sr,omitempty"`
+	ScopedRolesTruncated bool                `json:"srt,omitempty"`
+	SessionID            string              `json:"sid"`
 	// FamilyID is the refresh family, stable across the rotation that changes
 	// `sid`. A sign-out revokes it, so it is what matches an access token minted
 	// before the last refresh.
-	FamilyID string `json:"fid"`
-	ActingAsUserID        string              `json:"acting,omitempty"`
-	MFASatisfied          bool                `json:"mfa,omitempty"`
-	AuthenticationMethods []string            `json:"amr,omitempty"`
-	AuthenticationTime    *jwt.NumericDate    `json:"auth_time,omitempty"`
-	AssuranceLevel        string              `json:"acr,omitempty"`
-	MFAVerifiedAt         *jwt.NumericDate    `json:"mfa_at,omitempty"`
-	Act                   *actorClaim         `json:"act,omitempty"`
+	FamilyID              string           `json:"fid"`
+	ActingAsUserID        string           `json:"acting,omitempty"`
+	MFASatisfied          bool             `json:"mfa,omitempty"`
+	AuthenticationMethods []string         `json:"amr,omitempty"`
+	AuthenticationTime    *jwt.NumericDate `json:"auth_time,omitempty"`
+	AssuranceLevel        string           `json:"acr,omitempty"`
+	MFAVerifiedAt         *jwt.NumericDate `json:"mfa_at,omitempty"`
+	Act                   *actorClaim      `json:"act,omitempty"`
 	// AuthorizedParty is the registered client the token was issued to (OIDC
 	// `azp`). Absent on the host's own web sessions, which belong to no client.
 	AuthorizedParty string `json:"azp,omitempty"`
