@@ -42,3 +42,7 @@ export function usePlatformAdminService() {
 export function useInvitationService() {
 	return clients.InvitationService;
 }
+
+export function useInstallationService() {
+	return clients.InstallationService;
+}
