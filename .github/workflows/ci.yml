@@ -503,9 +503,15 @@ jobs:
           git archive origin/main module/services/accounts/proto | tar -x -C "${baseline}"
           # Compare the owned module as one Buf image; the vendored option
           # closure is a separate module, not a second public API to compare.
+          # Both sides are built with the same --path filter. The proto
+          # directory holds two buf modules (the owned API and the vendored
+          # option closure under vendor/), so an unfiltered baseline yields two
+          # images against the filtered input's one and buf refuses to compare.
           buf build module/services/accounts/proto --path module/services/accounts/proto/saas -o "${baseline}/current.binpb"
+          buf build "${baseline}/module/services/accounts/proto" \
+            --path "${baseline}/module/services/accounts/proto/saas" -o "${baseline}/against.binpb"
           buf breaking "${baseline}/current.binpb" \
-            --against "${baseline}/module/services/accounts/proto" \
+            --against "${baseline}/against.binpb" \
             --config module/services/accounts/proto/buf.yaml --exclude-imports
       - name: Execute declared generators and reject drift
         working-directory: module/tools
