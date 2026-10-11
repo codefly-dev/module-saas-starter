@@ -55,6 +55,7 @@ pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: W
 pkg/business/follow_fanout.go: (*Service).undeliveredFollowers: WithControlPlane
 pkg/business/gdpr.go: (*Service).PurgeExpiredPrivacyArtifacts: WithControlPlane
 pkg/business/installation_exposure.go: (*Service).ListOrganizationInstallations: WithControlPlane
+pkg/business/installation_registry.go: (*Service).prepareInstallation: WithControlPlane
 pkg/business/installations.go: (*Service).ListAvailableSolutions: WithControlPlane
 pkg/business/installations.go: (*Service).resolveInstallableTarget: WithControlPlane
 pkg/business/invitations.go: (*Service).AcceptInvitation: As(System())
@@ -77,7 +78,6 @@ pkg/business/module_capabilities.go: (*Service).moduleAuditSubjectIsMemberOf: Wi
 pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControlPlane
 pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
-pkg/business/module_envelope.go: (*Service).PutModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
 pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
@@ -179,7 +179,7 @@ pkg/infra/postgres_membership_diagnostic.go: (*PostgresStore).RecordMembershipIn
 pkg/infra/postgres_mfa.go: (*PostgresStore).MigrateLegacyMFASecrets: WithControlPlane
 pkg/infra/postgres_mfa_login.go: (*PostgresStore).ConsumeMFALoginTransaction: WithControlPlane
 pkg/infra/postgres_mfa_login.go: (*PostgresStore).GetActiveMFALoginTransaction: WithControlPlane
-pkg/infra/postgres_module_authority.go: (*PostgresStore).LiveModuleAuthority: WithControlPlane
+pkg/infra/postgres_module_authority.go: (*PostgresStore).BeginModuleAuthorityUse: authorityUse.Begin
 pkg/infra/postgres_org.go: (*PostgresStore).CreateOrganization: txbind.BindRequest
 pkg/infra/postgres_org_identity_providers.go: (*PostgresStore).resolvePreAuthProvider: WithControlPlane
 pkg/infra/postgres_permissions.go: (*PostgresStore).CreateRole: txbind.BindRequest

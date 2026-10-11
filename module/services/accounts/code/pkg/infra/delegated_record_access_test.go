@@ -61,7 +61,7 @@ func TestDelegatedRecordAccessIsolatesCollidingPlacementsAcrossTenants(t *testin
 	const resource, collided = "example.record", "shared-record-id"
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(testStore, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		// Cross-tenant: one principal places in both tenants, which a
 		// principal bound to one tenant may not — the capability check holds a
@@ -83,6 +83,8 @@ func TestDelegatedRecordAccessIsolatesCollidingPlacementsAcrossTenants(t *testin
 
 	orgA, ownerA, roleA := layeredFixture(t, resource, "read")
 	orgB, ownerB, roleB := layeredFixture(t, resource, "read")
+	installCapabilityFixture(t, svc, orgA, ownerA)
+	installCapabilityFixture(t, svc, orgB, ownerB)
 	// Each tenant grants on a branch the other does not, so resolving the wrong
 	// tenant's placement changes the answer instead of merely the node id.
 	for _, tenant := range []struct{ org, owner, role, branch string }{

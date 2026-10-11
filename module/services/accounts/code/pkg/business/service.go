@@ -325,17 +325,18 @@ func (s *Service) ModulePrincipals() ModulePrincipalRegistry {
 	return maps.Clone(s.declaredModules())
 }
 
-// SetModulePrincipals replaces the registry at runtime. Its production caller is
-// the module principal reconciler, which swaps in each pass's whole derived
-// registry. It clones, for the same reason the accessor does: storing the
-// caller's own map would leave the backing map addressable by whoever passed it.
+// SetModulePrincipals replaces an unversioned registry. A registry derived from
+// a live envelope is published with InstallDerivedModulePrincipals instead.
+// It clones, for the same reason the accessor does: storing the caller's own
+// map would leave the backing map addressable by whoever passed it.
 func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 	s.storeModulePrincipals(registry)
 }
 
-// installDerivedModulePrincipals publishes a registry derived from one envelope
-// revision. The reconciler is its only caller.
-func (s *Service) installDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64) {
+// InstallDerivedModulePrincipals publishes a registry derived from one envelope
+// revision. Callers must derive the entries from that revision before publishing;
+// this operation does not infer or advance a revision from the current database.
+func (s *Service) InstallDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64) {
 	s.observeModuleEnvelopeRevision(envelopeRevision)
 	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision})
 }
@@ -431,8 +432,10 @@ func NewService(store Store) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	authority, _ := store.(ModuleAuthorityStore)
 	return &Service{
 		store:                     store,
+		moduleAuthority:           authority,
 		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
 		waitlistEmailVerification: true,
 		usageMeters:               usageMeters,

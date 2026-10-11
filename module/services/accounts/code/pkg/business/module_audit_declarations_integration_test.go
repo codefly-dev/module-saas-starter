@@ -30,13 +30,16 @@ func moduleDeclaringService(t *testing.T, bound map[string][]string) *business.S
 	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
 	require.NoError(t, err)
 	svc.SetAuditEmitter(emitter)
+	id := business.NewIDString()
+	owner, org := mustUserAndOrg(t, testCtx, id+"@example.com", id, "Acme Audit")
 	registry := business.ModulePrincipalRegistry{}
 	for prefix, namespaces := range bound {
-		registry[business.ModulePrincipalID(prefix)] = business.ModulePrincipalGrant{Prefix: prefix, Namespaces: namespaces}
+		registry[business.ModulePrincipalID(prefix)] = business.ModulePrincipalGrant{Prefix: prefix, Tenant: org, Namespaces: namespaces}
 	}
 	backend := &fakeJobBackend{}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(testStore, nil)
 	svc.SetModuleCapabilities(backend, backend, registry)
+	installCapabilityFixture(t, svc, org, owner)
 	return svc
 }
 
@@ -74,19 +77,27 @@ func TestModuleAuditDeclarations_ConcurrentClaimsLeaveOneOwner(t *testing.T) {
 		first, second := testSolutionID(t), testSolutionID(t)
 		bound := map[string][]string{first: {namespace}, second: {namespace}}
 
+		// Prepare both installations before starting the claimants. This helper
+		// registers users in SERIALIZABLE transactions; racing their existence
+		// checks and inserts can fail before any claim runs. The namespace claims
+		// still race through separate services behind the same start barrier.
+		services := []*business.Service{
+			moduleDeclaringService(t, bound),
+			moduleDeclaringService(t, bound),
+		}
 		var (
 			wg      sync.WaitGroup
 			start   = make(chan struct{})
 			results = make([]error, 2)
 		)
 		for i, prefix := range []string{first, second} {
+			svc := services[i]
 			wg.Add(1)
 			go func(i int, prefix string) {
 				defer wg.Done()
-				svc := moduleDeclaringService(t, bound)
 				<-start
 				_, _, results[i] = svc.ModuleDeclareAuditEventTypes(testCtx,
-					business.ModuleCaller{PrincipalID: business.ModulePrincipalID(prefix)}, prefix,
+					business.ModuleCaller{PrincipalID: business.ModulePrincipalID(prefix), BoundOrg: svc.ModulePrincipals()[business.ModulePrincipalID(prefix)].Tenant}, prefix,
 					conversationDeclaration(namespace))
 			}(i, prefix)
 		}
@@ -123,7 +134,7 @@ func TestModuleAuditDeclarations_DeclareEmitExport(t *testing.T) {
 	namespace := freshAuditNamespace(t)
 	prefix := testSolutionID(t)
 	svc := moduleDeclaringService(t, map[string][]string{prefix: {namespace}})
-	caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(prefix)}
+	caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(prefix), BoundOrg: svc.ModulePrincipals()[business.ModulePrincipalID(prefix)].Tenant}
 	eventType := namespace + ".chat.conversation_shared"
 
 	admitted, _, err := svc.ModuleDeclareAuditEventTypes(testCtx, caller, prefix, conversationDeclaration(namespace))
@@ -134,15 +145,7 @@ func TestModuleAuditDeclarations_DeclareEmitExport(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, again)
 
-	_, org := mustUserAndOrg(t, testCtx, "declared@module-audit.test", "declared-module-audit", "Acme Module Audit")
-	caller.BoundOrg = org
-	// The capability check holds the credential to its grant's tenant, so the
-	// grant names the organization the emits are bound to.
-	registry := svc.ModulePrincipals()
-	grant := registry[caller.PrincipalID]
-	grant.Tenant = org
-	registry[caller.PrincipalID] = grant
-	svc.SetModulePrincipals(registry)
+	org := caller.BoundOrg
 	emit := func(payload map[string]any) error {
 		fields, err := structpb.NewStruct(payload)
 		require.NoError(t, err)

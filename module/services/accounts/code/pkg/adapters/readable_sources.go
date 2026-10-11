@@ -20,6 +20,12 @@ import (
 // module's own identity token is the scope requirement below: that mint seals no
 // authority scopes, and an empty scope set grants nothing.
 func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Context, req *gen.ListReadableSourceCollectionsRequest) (*gen.ListReadableSourceCollectionsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}

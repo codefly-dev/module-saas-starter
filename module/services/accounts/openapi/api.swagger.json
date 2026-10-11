@@ -53,6 +53,19 @@
       },
       "type": "object"
     },
+    "InstallationServiceNarrowInstallationBody": {
+      "description": "An org administrator may only remove installed authority. The host reads\nthe current revision and serializes the narrowing with other lifecycle acts.",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "scope": {
+          "description": "Same JSON shape as InstallSolution.scope; {} removes all capability access.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "InstallationServiceRevokeInstallationFromTeamBody": {
       "properties": {
         "orgId": {
@@ -2328,6 +2341,10 @@
         },
         "rootScopeLabel": {
           "description": "Human-readable display label for the solution's authority-root scope node\n(kind='solution'). The node's ltree path is derived server-side, not this.",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Installed consent as JSON: capabilities, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences and\nartifact_policies, with the same shapes as the module envelope grant.\nMust be a subset of the current ceiling. Omitted selects that ceiling;\nan explicit {} grants nothing. Tenant and identity are never scope fields.",
           "type": "string"
         },
         "targetId": {
@@ -7551,6 +7568,46 @@
           }
         },
         "summary": "RevokeInstallationFromTeam removes one team grant at an installation's\nauthority-root node. It is a narrowing, so it runs under the policy log\nexactly as RevokeScope does: a host that cannot witness the narrowing refuses\nit, and says so, rather than revoking unwitnessed. It removes the one grant\nat the authority root that granted_teams reports; a team that also reaches\nthe installation from a grant above keeps that reach. Organisation-admin,\nwith the same platform super administrator exception.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:narrow": {
+      "post": {
+        "operationId": "InstallationService_NarrowInstallation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceNarrowInstallationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "Narrowing is witnessed in the policy log before commit, then atomically\nbumps the installation revision, cancels its org's work and records audit.",
         "tags": [
           "InstallationService"
         ]

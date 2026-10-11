@@ -31,7 +31,16 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
+	var scope *business.InstallationScope
+	if req.Scope != nil {
+		parsed, err := business.ParseInstallationScope(req.GetScope())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		scope = &parsed
+	}
 	installation, err := service.InstallSolution(ctx, actorID, &business.InstallSolutionParams{
+		Scope:               scope,
 		OrgID:               req.GetOrgId(),
 		AgentIdentifier:     req.GetAgentIdentifier(),
 		TargetID:            req.GetTargetId(),
@@ -305,6 +314,12 @@ func mapInstallationError(err error) error {
 		case business.ErrTypeValidation:
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
+	}
+	if errors.Is(err, business.ErrPolicyLogUnreachable) {
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	if st, ok := status.FromError(err); ok {
+		return st.Err()
 	}
 	return status.Error(codes.Internal, err.Error())
 }

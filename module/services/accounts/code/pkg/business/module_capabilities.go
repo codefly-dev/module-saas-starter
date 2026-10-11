@@ -146,6 +146,8 @@ func (w ModuleWorkload) validateForm(prefix string) error {
 }
 
 type ModulePrincipalGrant struct {
+	// PresenceBinding is the durable registry key proven by delivered authority.
+	PresenceBinding    string                              `json:"presence_binding,omitempty"`
 	ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
 	ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
 	OperationAudiences map[string]ModuleOperationAudience  `json:"operation_audiences"`
@@ -299,6 +301,11 @@ func ModulePrincipalID(prefix string) string {
 // returns, so an uppercase, braced, urn:uuid: or unhyphenated spelling would
 // pass a parse and then match its own organization nowhere.
 func canonicalModuleTenant(prefix, raw string) (string, error) {
+	// Empty is the envelope's shared tenancy. It does not select an organization:
+	// every capability still requires its own bound org and live installation.
+	if raw == "" {
+		return "", nil
+	}
 	tenant, err := uuid.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
@@ -488,9 +495,8 @@ func authorizeTenant(caller ModuleCaller, grant ModulePrincipalGrant, requested 
 	if requested == caller.BoundOrg {
 		return nil
 	}
-	if grant.CrossTenant {
-		return nil
-	}
+	// cross_tenant permits installations in other organizations; a capability
+	// decision is still bound to the installation read for its own organization.
 	return status.Errorf(codes.PermissionDenied, "principal %s may not act on tenant %s", caller.PrincipalID, requested)
 }
 
@@ -528,9 +534,19 @@ func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string
 // global inbox work requires the cross-tenant grant and uses the privileged
 // worker producer.
 func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, tenant string, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleEnqueueJob")
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
 	if err != nil {
+		return nil, err
+	}
+	grant := authority.Grant
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
 		return nil, err
 	}
 	job := req.GetJob()
@@ -541,6 +557,7 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, ten
 		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not use queue %q", caller.PrincipalID, job.GetQueue())
 	}
 
+	req = jobs.StampModuleJob(req, authority.JobAuthority())
 	scope := job.GetScope()
 	var resp *jobsv1.EnqueueJobResponse
 	switch {
@@ -594,27 +611,26 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, ten
 	return resp, nil
 }
 
-// ModuleClaimJobs leases a bounded batch from one queue the principal owns.
-// Claiming a queue reads every scope on it — global work and every tenant's
-// org- and subject-scoped jobs (the claim selects by queue with no tenant
-// filter) — so a claimed payload can belong to any tenant. That makes claiming
-// an inherently cross-tenant, inbox-worker operation: it requires the cross-
-// tenant grant, not merely the queue grant. Without this a tenant-bound
-// principal could read other tenants' confidential job payloads off a shared
-// queue (e.g. datasource, which carries every tenant's ingest jobs).
+// ModuleClaimJobs leases only work attributable to the caller's organization.
+// The store also re-checks the producer installation stamp before leasing; a
+// cross_tenant ceiling never turns this into an unscoped queue read.
 func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleClaimJobs")
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
+	grant := authority.Grant
 	if !grant.allowsQueue(req.GetQueue()) {
 		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not claim queue %q", caller.PrincipalID, req.GetQueue())
 	}
-	if !grant.CrossTenant {
-		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not claim queue %q: claiming reads across tenants and requires a cross-tenant grant", caller.PrincipalID, req.GetQueue())
-	}
-	resp, err := s.moduleJobStore.Claim(ctx, req)
+	resp, err := s.moduleJobStore.Claim(jobs.WithModuleClaim(ctx, authority.JobAuthority()), req)
 	if err != nil {
 		return nil, moduleJobError(w, err)
 	}
@@ -624,11 +640,18 @@ func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req 
 // ModuleHeartbeatJob renews a live lease. The fencing token is the authority: a
 // caller without the current, unexpired token cannot renew.
 func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, req *jobsv1.HeartbeatJobRequest) (*jobsv1.HeartbeatJobResponse, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleHeartbeatJob")
-	if _, err := s.moduleCapability(ctx, caller); err != nil {
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
+	if err != nil {
 		return nil, err
 	}
-	resp, err := s.moduleJobStore.Heartbeat(ctx, req)
+	resp, err := s.moduleJobStore.Heartbeat(jobs.WithModuleClaim(ctx, authority.JobAuthority()), req)
 	if err != nil {
 		return nil, moduleJobError(w, err)
 	}
@@ -637,8 +660,14 @@ func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, r
 
 // ModuleAckJob completes a leased job successfully.
 func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, executionKind, executionID string) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleAckJob")
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -647,10 +676,10 @@ func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *
 		return status.Error(codes.InvalidArgument, "execution kind and id must be supplied together")
 	}
 	if executionKind != "" {
-		execution = &jobsv1.JobExecutionReference{Owner: grant.Prefix, Kind: executionKind, Id: executionID}
+		execution = &jobsv1.JobExecutionReference{Owner: authority.Grant.Prefix, Kind: executionKind, Id: executionID}
 	}
 	req := &jobsv1.CompleteJobRequest{Lease: lease, Execution: execution}
-	if err := s.moduleJobStore.Complete(ctx, req); err != nil {
+	if err := s.moduleJobStore.Complete(jobs.WithModuleClaim(ctx, authority.JobAuthority()), req); err != nil {
 		return moduleJobError(w, err)
 	}
 	return nil
@@ -659,20 +688,27 @@ func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *
 // ModuleNackJob fails a leased job: retryable reschedules (or dead-letters when
 // the attempt budget is exhausted); otherwise it dead-letters immediately.
 func (s *Service) ModuleNackJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, failure *jobsv1.JobFailure, retryable bool, retryAt *timestamppb.Timestamp) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleNackJob")
-	if _, err := s.moduleCapability(ctx, caller); err != nil {
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
+	if err != nil {
 		return err
 	}
 	if retryable {
 		if retryAt == nil {
 			return status.Error(codes.InvalidArgument, "retry_at is required for a retryable nack")
 		}
-		if _, err := s.moduleJobStore.Retry(ctx, &jobsv1.RetryJobRequest{Lease: lease, Failure: failure, RetryAt: retryAt}); err != nil {
+		if _, err := s.moduleJobStore.Retry(jobs.WithModuleClaim(ctx, authority.JobAuthority()), &jobsv1.RetryJobRequest{Lease: lease, Failure: failure, RetryAt: retryAt}); err != nil {
 			return moduleJobError(w, err)
 		}
 		return nil
 	}
-	if err := s.moduleJobStore.DeadLetter(ctx, &jobsv1.DeadLetterJobRequest{Lease: lease, Failure: failure}); err != nil {
+	if err := s.moduleJobStore.DeadLetter(jobs.WithModuleClaim(ctx, authority.JobAuthority()), &jobsv1.DeadLetterJobRequest{Lease: lease, Failure: failure}); err != nil {
 		return moduleJobError(w, err)
 	}
 	return nil
@@ -725,6 +761,12 @@ type ModuleNotifyUserResult struct {
 // notifications are user-scoped, so the tenant guard alone does not stop a
 // module bound to tenant A from notifying a user in tenant B.
 func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in ModuleNotifyUserInput) (ModuleNotifyUserResult, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleNotifyUserResult{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleNotifyUserResult{}, err
@@ -791,6 +833,12 @@ type ModuleNotifyOrgAdminsInput struct {
 // key and the recipient, so a redelivered call converges on the rows it already
 // wrote. The send is audited with the recipient and delivery counts.
 func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller, in ModuleNotifyOrgAdminsInput) (bool, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return false, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return false, err
@@ -899,6 +947,12 @@ type ModuleRequestApprovalInput struct {
 // resume queue must be one the principal may claim, so a decision cannot direct
 // work onto a queue the module does not own.
 func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller, in ModuleRequestApprovalInput) (string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return "", fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
@@ -929,6 +983,12 @@ func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller
 
 // ModuleGetApproval returns one approval request on the caller's tenant.
 func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, tenant, id string) (*ApprovalRequest, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -945,6 +1005,12 @@ func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, te
 
 // ModuleCancelApproval withdraws a still-open approval request.
 func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller, tenant, id, reason string) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
@@ -1058,6 +1124,12 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // entryID must be an opaque identifier; one that is a locator is dropped rather
 // than stored, for the reasons opaqueAuditEntryID gives.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
@@ -1345,6 +1417,12 @@ type ModuleSubjectVisibilityGrant struct {
 // bound to one tenant could name a subject in another and learn whether that
 // subject has colleagues.
 func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller ModuleCaller, tenant, viewer string) ([]ModuleSubjectVisibilityGrant, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -1393,6 +1471,12 @@ func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller Module
 // grant names, so it can neither introduce a type it holds no grant for nor
 // re-point a record another module owns.
 func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, tenant, scopePath, kind, label, resourceType, resourceID string) (string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return "", fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
@@ -1459,6 +1543,12 @@ func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, te
 // decrypted token when the mirror lacks it; the token never leaves accounts, and
 // anything over maxContentTicketBytes is refused rather than buffered.
 func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCaller, sourceID, blobSHA string) ([]byte, string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, "", fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleFetchDatasourceBlob")
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
@@ -1554,6 +1644,12 @@ func mapPublishError(err error) error {
 // of record is itself the trail — so only subscription changes and replays emit
 // audit events.
 func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, tenant string, envelope *events.EventEnvelope) (string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return "", fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
@@ -1653,6 +1749,12 @@ func missingFollowableSubject(envelope *events.EventEnvelope) (string, bool) {
 // ones taken against the module itself. A re-subscribe of the same (principal,
 // pattern, queue) returns the existing live row and emits no second audit event.
 func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, typePattern, queue, delivery string) (*EventSubscription, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -1718,6 +1820,12 @@ func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, type
 // revoking an unknown or already-revoked subscription is NotFound and emits no
 // audit event.
 func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, subscriptionID string) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return err
 	}
@@ -1745,6 +1853,12 @@ func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, su
 
 // ModuleListSubscriptions returns the calling principal's live subscriptions.
 func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCaller) ([]*EventSubscription, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return nil, err
 	}
@@ -1765,6 +1879,12 @@ func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCall
 // acknowledged the event still receives the replay. The replay itself is
 // audited (a control-plane action) but the individual redeliveries are not.
 func (s *Service) ModuleReplayEvents(ctx context.Context, caller ModuleCaller, tenant, eventType string, since time.Time) (int, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return 0, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return 0, err

@@ -8,6 +8,14 @@ method policy is `EXPOSURE_PUBLIC` or `EXPOSURE_AUTHENTICATED`. Internal RPCs
 must not have HTTP annotations and remain available through generated gRPC and
 Connect clients.
 
+The installation contract also declares `POST
+/v1/installations/{installation_id}:narrow` for organisation administrators. It
+accepts `org_id`, `installation_id` and JSON `scope`, logs the narrowing before
+commit, increments revision and cancels only that installation's organisation's
+work. `POST /v1/installations` accepts optional JSON `scope` bounded by the
+module ceiling. These additions require the coordinator's complete regeneration;
+the checked-in generated counts below describe the preceding projection.
+
 ## Current surface
 
 The accounts projection contains 165 descriptor routes across 29 services

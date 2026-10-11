@@ -189,7 +189,8 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 	}
 
 	var payload struct {
-		Prefix string `json:"prefix"`
+		Prefix         string `json:"prefix"`
+		OrganizationID string `json:"organization_id,omitempty"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
 		httpError(w, http.StatusBadRequest, "invalid json")
@@ -202,7 +203,7 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
-	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, serviceAccountToken)
+	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, serviceAccountToken, payload.OrganizationID)
 	if err != nil {
 		logModuleExchangeRefusal("module-work-context", payload.Prefix, err)
 		switch status.Code(err) {
@@ -276,8 +277,9 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 	}
 
 	var payload struct {
-		Prefix  string `json:"prefix"`
-		Binding string `json:"binding"`
+		Prefix         string `json:"prefix"`
+		Binding        string `json:"binding"`
+		OrganizationID string `json:"organization_id,omitempty"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
 		httpError(w, http.StatusBadRequest, "invalid json")
@@ -294,7 +296,7 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 
 	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
-	issued, err := g.authz.mintModuleOperationContext(ctx, payload.Prefix, serviceAccountToken, payload.Binding)
+	issued, err := g.authz.mintModuleOperationContext(ctx, payload.Prefix, serviceAccountToken, payload.Binding, payload.OrganizationID)
 	if err != nil {
 		logModuleExchangeRefusal("module-operation-context/"+payload.Binding, payload.Prefix, err)
 		switch status.Code(err) {
@@ -335,14 +337,14 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 }
 
 func (s *ExtAuthz) mintModuleWorkContext(
-	ctx context.Context, prefix, serviceAccountToken string,
+	ctx context.Context, prefix, serviceAccountToken, organizationID string,
 ) (*accountsv1.ModuleMintWorkContextResponse, error) {
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
 	response := &accountsv1.ModuleMintWorkContextResponse{}
-	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken}
+	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, OrganizationId: organizationID}
 	if err := s.backendConn.Invoke(ctx, mintModuleWorkContextMethod, request, response); err != nil {
 		return nil, err
 	}
@@ -350,14 +352,14 @@ func (s *ExtAuthz) mintModuleWorkContext(
 }
 
 func (s *ExtAuthz) mintModuleOperationContext(
-	ctx context.Context, prefix, serviceAccountToken, binding string,
+	ctx context.Context, prefix, serviceAccountToken, binding, organizationID string,
 ) (*accountsv1.ModuleMintOperationContextResponse, error) {
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
 	response := &accountsv1.ModuleMintOperationContextResponse{}
-	request := &accountsv1.ModuleMintOperationContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, Binding: binding}
+	request := &accountsv1.ModuleMintOperationContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, Binding: binding, OrganizationId: organizationID}
 	if err := s.backendConn.Invoke(ctx, mintModuleOperationContextMethod, request, response); err != nil {
 		return nil, err
 	}

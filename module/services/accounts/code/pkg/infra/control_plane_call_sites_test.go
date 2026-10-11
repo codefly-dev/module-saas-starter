@@ -402,7 +402,7 @@ func controlPlaneSitesIn(file *ast.File) ([]string, error) {
 	}
 	isControlPlaneField := func(expr ast.Expr) bool {
 		sel, ok := expr.(*ast.SelectorExpr)
-		return ok && sel.Sel.Name == "controlPlane"
+		return ok && (sel.Sel.Name == "controlPlane" || sel.Sel.Name == "authorityUse")
 	}
 	// isIdentity reports whether expr spells business.Identity, or a pointer to
 	// it.
@@ -457,7 +457,7 @@ func controlPlaneSitesIn(file *ast.File) ([]string, error) {
 					record("txbind." + name)
 					consumed[n.Fun] = true
 				case isSelector && isControlPlaneField(fun.X):
-					record("controlPlane." + fun.Sel.Name)
+					record(fun.X.(*ast.SelectorExpr).Sel.Name + "." + fun.Sel.Name)
 					consumed[fun.X] = true
 				case isSystemCall(n):
 					record("System()")
@@ -465,7 +465,7 @@ func controlPlaneSitesIn(file *ast.File) ([]string, error) {
 				default:
 					for _, arg := range n.Args {
 						if isControlPlaneField(arg) {
-							record(exprName(n.Fun) + "(controlPlane)")
+							record(exprName(n.Fun) + "(" + arg.(*ast.SelectorExpr).Sel.Name + ")")
 							consumed[arg] = true
 						}
 					}
@@ -477,8 +477,8 @@ func controlPlaneSitesIn(file *ast.File) ([]string, error) {
 				switch {
 				case n.Sel.Name == "WithControlPlane", n.Sel.Name == "WithControlPlaneReadSnapshot", n.Sel.Name == "withControlPlaneTx":
 					record(n.Sel.Name)
-				case n.Sel.Name == "controlPlane":
-					record("controlPlane")
+				case n.Sel.Name == "controlPlane", n.Sel.Name == "authorityUse":
+					record(n.Sel.Name)
 				case isSystem(n):
 					// Not called here: a function value that yields System() later,
 					// under whatever name it is stored as.
@@ -591,4 +591,14 @@ func funcDeclName(fn *ast.FuncDecl) string {
 		return fmt.Sprintf("%T", expr)
 	}
 	return "(" + recv(fn.Recv.List[0].Type) + ")." + fn.Name.Name
+}
+
+func TestControlPlaneScanIncludesAuthorityLockPool(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "fence.go", `package infra
+func fence(s *Store) { s.authorityUse.Begin(ctx); hold := s.authorityUse; begin := s.authorityUse.Begin; consume(s.authorityUse) }
+`, parser.SkipObjectResolution)
+	require.NoError(t, err)
+	sites, err := controlPlaneSitesIn(file)
+	require.NoError(t, err)
+	require.Equal(t, []string{"fence: authorityUse.Begin", "fence: authorityUse", "fence: authorityUse", "fence: consume(authorityUse)"}, sites)
 }
