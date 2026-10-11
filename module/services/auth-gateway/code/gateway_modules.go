@@ -25,10 +25,16 @@ import (
 // named, rather than the static catalog.
 //
 // Both kinds qualify, for one reason: the address is read out of a delivered
-// document and user bearers are forwarded to it, so the host must still refuse a
-// name that resolves somewhere it will not send credentials. A module route added
-// without this line would have been the one declared upstream dialled on the
-// plain transport, and nothing about the route's shape would have said so.
+// document and the person's identity is stamped on what is sent there, so the
+// host must still refuse a name that resolves somewhere it will not send a
+// request made on someone's behalf. A module route added without this line would
+// have been the one declared upstream dialled on the plain transport, and nothing
+// about the route's shape would have said so.
+//
+// The predicate has a second reader now: proxyTo withholds the caller's COOKIE
+// for exactly these routes (removeCallerCookie). The bearer still travels —
+// SA-F-BEARER is recorded open, for the reason given at
+// removePersonsSessionCredential in gateway.go.
 func isRuntimeRegisteredRoute(entry *RouteEntry) bool {
 	return entry != nil &&
 		(strings.HasPrefix(entry.Service, solutionServicePrefix) ||

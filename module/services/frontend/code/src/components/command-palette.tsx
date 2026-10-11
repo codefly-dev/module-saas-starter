@@ -38,6 +38,7 @@ import { isSuperAdmin } from "@/lib/permissions";
 import { selectNavigation } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
+import { signOutAndLeave } from "@/lib/sign-out-journey";
 
 export function CommandPalette() {
 	const [open, setOpen] = useState(false);
@@ -150,9 +151,12 @@ export function CommandPalette() {
 							<CommandGroup heading="Actions">
 								<CommandItem
 									value="sign out logout"
-									onSelect={async () => {
+									onSelect={() => {
 										setOpen(false);
-										await logout();
+										// Through the shared journey. Discarding the outcome here
+										// left the palette — one of the two controls reachable when
+										// the account menu is not — silently reporting success.
+										void signOutAndLeave(logout);
 									}}
 								>
 									<LogOut className="mr-2 h-4 w-4" />

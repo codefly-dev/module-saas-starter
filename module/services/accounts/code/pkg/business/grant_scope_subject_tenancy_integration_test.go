@@ -6,8 +6,10 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"accounts/pkg/adapters"
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -49,11 +51,34 @@ func (w *grantScopeWorld) grantTo(subject string, kind gen.SubjectKind) *gen.Gra
 	return &gen.GrantScopeRequest{OrgId: w.org, SubjectId: subject, SubjectKind: kind, ScopePath: w.path, RoleId: w.role}
 }
 
+// callerWithRecentFactor is storyCallerContext plus recent second-factor
+// evidence, which every privilege-granting mutation on this host requires before
+// it runs. Without it a test of such a mutation exercises the factor gate instead
+// of the rule it names.
+func callerWithRecentFactor(ctx context.Context, userID, orgID string) context.Context {
+	return auth.WithAssurance(
+		storyCallerContext(ctx, userID, orgID),
+		auth.Assurance{
+			AuthenticationMethods: []string{auth.AuthenticationMethodOTP},
+			AuthenticatedAt:       time.Now(),
+			Level:                 auth.AssuranceLevelAAL2,
+			MFAVerifiedAt:         time.Now(),
+		},
+	)
+}
+
 // A scope grant names a subject of the organization it is written in. A subject
 // of another organization is refused.
+//
+// The caller carries a SATISFIED second factor, because a scope grant is a
+// privilege-granting mutation and sits behind one (SP-IDENT-10, requireMFA in
+// PermServer.GrantScope). That gate runs before the mutation, so an actor without
+// a recent factor is refused with `mfa_required` and never reaches the subject at
+// all — correct, and it would make this test assert the factor rather than the
+// tenancy. Satisfying it is what lets the subject check be the thing under test.
 func TestGrantScopeRefusesASubjectOfAnotherOrganization(t *testing.T) {
 	w := newGrantScopeWorld(t)
-	caller := storyCallerContext(testCtx, w.admin, w.org)
+	caller := callerWithRecentFactor(testCtx, w.admin, w.org)
 
 	_, err := (&adapters.PermServer{}).GrantScope(caller, w.grantTo(w.otherTeam, gen.SubjectKind_SUBJECT_KIND_TEAM))
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "a team of another organization is refused: %v", err)

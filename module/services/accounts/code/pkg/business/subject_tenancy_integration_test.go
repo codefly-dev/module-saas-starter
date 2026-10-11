@@ -97,10 +97,15 @@ func awaitBlockedTransaction(t *testing.T, msg string) {
 	}, 10*time.Second, 20*time.Millisecond, msg)
 }
 
+// The caller carries a satisfied second factor: a role assignment is a
+// privilege-granting mutation and sits behind one (requireMFA in
+// PermServer.AssignRole), and that gate runs before the mutation — so without it
+// this asserts the factor rather than the subject's tenancy. ShareRecord below
+// needs no such caller; it is not one of the gated mutations.
 func TestAssignRoleRequiresTheSubjectToBelongToTheOrganization(t *testing.T) {
 	w := newTenancyWorld(t)
 	server := &adapters.PermServer{}
-	caller := storyCallerContext(testCtx, w.admin, w.org)
+	caller := callerWithRecentFactor(testCtx, w.admin, w.org)
 
 	// A scoped assignment is the one whose write also touches the subject's
 	// sessions; it is refused before it is written.

@@ -579,6 +579,14 @@ func (s *PermServer) CreateRole(ctx context.Context, req *gen.CreateRoleRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.CreateRole(ctx, actorID, req)
 }
 
@@ -608,6 +616,14 @@ func (s *PermServer) UpdateRole(ctx context.Context, req *gen.UpdateRoleRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.UpdateRole(ctx, actorID, req)
 }
 
@@ -627,6 +643,14 @@ func (s *PermServer) DeleteRole(ctx context.Context, req *gen.DeleteRoleRequest)
 	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	if err := service.DeleteRole(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -644,6 +668,14 @@ func (s *PermServer) AssignRole(ctx context.Context, req *gen.AssignRoleRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.AssignRole(ctx, req)
 }
 
@@ -656,6 +688,14 @@ func (s *PermServer) RevokeRole(ctx context.Context, req *gen.RevokeRoleRequest)
 		return nil, err
 	}
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	if err := service.RevokeRole(ctx, actorID, req); err != nil {
@@ -766,6 +806,15 @@ func (s *PermServer) GrantScope(ctx context.Context, req *gen.GrantScopeRequest)
 	// The subject's tenancy is settled inside the grant's own transaction, under
 	// the membership lock a removal takes (Service.grantScopeTx), not here: a
 	// check committed before that transaction could be stale by the write.
+	//
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.GrantScope(ctx, actorID, req)
 }
 
@@ -778,6 +827,14 @@ func (s *PermServer) RevokeScope(ctx context.Context, req *gen.RevokeScopeReques
 		return nil, err
 	}
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	if err := service.RevokeScope(ctx, actorID, req); err != nil {
@@ -869,6 +926,19 @@ func (s *APIKeyServer) CreateAPIKey(ctx context.Context, req *gen.CreateAPIKeyRe
 		return nil, err
 	}
 	if err := requireOrgAdmin(ctx, actorID, req.OrganizationId); err != nil {
+		return nil, err
+	}
+	// Issuing a credential is a privilege-changing mutation, so it sits behind a
+	// recent second factor like the others (SP-IDENT-10). The key this returns
+	// authenticates as its creator for as long as it lives and without the
+	// session that asked for it, which is the thing a factor is protecting: an
+	// owner whose session was taken could mint a credential that outlives the
+	// theft and survives a password change.
+	//
+	// AFTER the authorization guards and BEFORE the mutation. requireMFA is
+	// fail-closed for a privileged actor, so an unenrolled owner or platform
+	// role is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	response, err := service.CreateAPIKey(ctx, actorID, req)
@@ -1078,7 +1148,83 @@ func (s *AuthServer) RefreshToken(ctx context.Context, req *gen.RefreshTokenRequ
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.RefreshToken(ctx, req)
+	resp, err := service.RefreshToken(ctx, req)
+	if err != nil {
+		return nil, refreshStatusError(ctx, err)
+	}
+	return resp, nil
+}
+
+// refreshStatusError maps a refusal to refresh onto the one answer a caller is
+// allowed to see: unauthenticated, with a fixed reason.
+//
+// Every rejection the session store can reach — an unknown token, a revoked
+// family, an expired or idled-out session, a reused token — is reported as
+// ErrRefreshRevoked or ErrRefreshReuse, deliberately indistinguishable so the
+// store is not an oracle. Returning the wrapped chain undid that twice over: it
+// named the internal call path, and a refusal counted as a server error, so an
+// expired cookie — the single most ordinary thing a browser can present —
+// arrived as HTTP 500 and was counted against availability.
+//
+// The cause is logged, where it is diagnosable without being disclosed.
+// Anything that is NOT a refusal (a store that cannot be reached, an invalid
+// session policy) still passes through unchanged: it is a genuine server-side
+// failure, and reporting it as a credential problem would send an operator
+// looking at the wrong half.
+// innerStatus finds a gRPC status an error carries beneath any wrapping, or nil.
+// status.Convert cannot be used for this: given a wrapped error it builds a status
+// from the whole chain's text, which is the internal detail the caller must not see.
+func innerStatus(err error) *status.Status {
+	var carrier interface{ GRPCStatus() *status.Status }
+	if errors.As(err, &carrier) {
+		return carrier.GRPCStatus()
+	}
+	return nil
+}
+
+// callerFacingRefusal reports whether a status is a DECISION ABOUT THE CALLER, whose
+// message was therefore written for the caller to read.
+//
+// Being a status does not make a message public-safe (R1019-N10). A code in this set
+// answers "you may not" or "that input is wrong", and the reason is the answer. The
+// codes outside it — Internal, Unavailable, Unknown, DataLoss, Aborted, DeadlineExceeded
+// — answer "this host failed", and their messages carry whatever the failing layer
+// happened to say: a DSN, a host name, a driver's text. Those are logged and replaced.
+//
+// OK is outside the set deliberately. (*status.Status).Err() returns nil for an OK
+// status, so passing one through would turn a failure into a nil error beside a nil
+// response, and the caller would read a success that never happened.
+func callerFacingRefusal(st *status.Status) bool {
+	switch st.Code() {
+	case codes.Unauthenticated, codes.PermissionDenied, codes.FailedPrecondition,
+		codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.OutOfRange:
+		return true
+	default:
+		return false
+	}
+}
+
+func refreshStatusError(ctx context.Context, err error) error {
+	inner := innerStatus(err)
+	switch {
+	case errors.Is(err, auth.ErrRefreshReuse), errors.Is(err, auth.ErrRefreshRevoked):
+		wool.Get(ctx).In("RefreshToken").Warn("refresh refused", wool.ErrField(err))
+		return status.Error(codes.Unauthenticated, "invalid refresh token")
+	case inner != nil && callerFacingRefusal(inner):
+		// A deliberate refusal from further in — a session that is no longer active, a
+		// policy refusal. Its reason was chosen for the caller, so it is returned
+		// WITHOUT the wrapper: the wrapping is what names the internal call chain,
+		// and returning err unchanged would carry it out with the good reason.
+		return inner.Err()
+	default:
+		// Anything else is this host failing, and the chain — status-carrying or not —
+		// names the internal call path and the store's address. SP-GW-13: a refused or
+		// failed request carries a stable public reason and the cause is logged, not
+		// returned. Unavailable rather than Internal because a refresh is worth
+		// retrying.
+		wool.Get(ctx).In("RefreshToken").Error("refresh failed", wool.ErrField(err))
+		return status.Error(codes.Unavailable, "refresh temporarily unavailable")
+	}
 }
 
 func (s *AuthServer) SwitchOrganization(ctx context.Context, req *gen.SwitchOrganizationRequest) (*gen.SwitchOrganizationResponse, error) {
@@ -1113,7 +1259,15 @@ func (s *AuthServer) BeginOAuth(ctx context.Context, req *gen.BeginOAuthRequest)
 	}
 	state, err := service.BeginOAuth(ctx, req.Provider, req.RedirectUri)
 	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "cannot mint oauth state: %v", err)
+		// A refused provider or redirect is the caller's request being wrong,
+		// not this host failing; and the reason is a wrapped internal chain,
+		// which named the call path to an unauthenticated caller. Log it, and
+		// answer the one thing the caller may know.
+		wool.Get(ctx).In("BeginOAuth").Warn("oauth begin refused", wool.ErrField(err))
+		if errors.Is(err, auth.ErrInvalidOAuthRequest) {
+			return nil, status.Error(codes.InvalidArgument, "provider or redirect_uri not allowed")
+		}
+		return nil, status.Error(codes.FailedPrecondition, "oauth state unavailable")
 	}
 	return &gen.BeginOAuthResponse{State: state}, nil
 }
@@ -1127,7 +1281,21 @@ func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*empty
 	// family. Empty when called from a non-authenticated context (e.g.
 	// the FE only forwards the refresh, never the access).
 	accessToken := bearerFromContext(ctx)
-	if err := service.Logout(ctx, req, accessToken); err != nil {
+	// The verified session, from the credential the caller actually presented
+	// rather than from the message: the session's access half is then revoked on
+	// the strength of who is calling, not of what the body happened to carry.
+	var verifiedSession string
+	if sessionID, ok := auth.VerifiedSessionID(ctx); ok {
+		verifiedSession = sessionID.String()
+	}
+	if err := service.Logout(ctx, req, accessToken, verifiedSession); err != nil {
+		// An incomplete sign-out is reported as retryable rather than as success:
+		// the family is revoked, so nothing refreshes, but an already-issued access
+		// token stays usable until it expires and the caller may want to retry.
+		// The reason is fixed; the cause is logged in the business layer.
+		if errors.Is(err, business.ErrLogoutIncomplete) {
+			return nil, status.Error(codes.Unavailable, "logout incomplete, retry")
+		}
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -1570,6 +1738,14 @@ func (s *PlatformAdminServer) SuspendUser(ctx context.Context, req *gen.SuspendU
 	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	if err := service.SuspendUser(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -1585,6 +1761,14 @@ func (s *PlatformAdminServer) UnsuspendUser(ctx context.Context, req *gen.Unsusp
 		return nil, err
 	}
 	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	if err := service.UnsuspendUser(ctx, actorID, req); err != nil {
@@ -1655,6 +1839,14 @@ func (s *PlatformAdminServer) RevokeSession(ctx context.Context, req *gen.Revoke
 	if err := requirePlatformRole(ctx, actorID, "support"); err != nil {
 		return nil, err
 	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	if err := service.RevokeSession(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -1707,6 +1899,14 @@ func (s *PlatformAdminServer) OverrideEntitlement(ctx context.Context, req *gen.
 	// can't bump their own caps; that's the whole point of the
 	// override mechanism.
 	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+		return nil, err
+	}
+	// A privilege-granting or platform-security mutation sits behind a recent second
+	// factor (SP-IDENT-10). It runs AFTER the authorization guards and BEFORE the
+	// mutation: a factor check the write has already passed is not a check.
+	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
+	// role or organization owner is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
 	id, err := service.OverrideEntitlement(ctx, actorID, req)

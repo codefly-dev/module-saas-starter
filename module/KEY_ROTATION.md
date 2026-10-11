@@ -246,6 +246,29 @@ the gateway never pins a key at boot: a gateway started mid-overlap loads the
 whole published set and accepts both keys regardless of the order the document
 lists them in.
 
+## One key per purpose, delivered
+
+The signing key above is one key with one purpose. Everything else this module
+signs or authenticates with carries its own **delivered** key, in a group of its
+own, so rotating one rotates one thing.
+
+Two purposes were brought under that rule by the 2026-10-04 audit: the datasource
+**content-ticket** key and the **account-link state** key. Both now come from
+`datasource-keys` (`DATASOURCE_CONTENT_TICKET_KEY`,
+`DATASOURCE_ACCOUNT_LINK_KEY`), a group only accounts declares, instead of being
+derived from a shared credential.
+
+An absent key leaves its purpose unavailable rather than falling back to a
+derivation, because a fallback would make the property conditional on nobody
+forgetting. **Rotating one of these is a flag day for the tokens it signed** — an
+outstanding content ticket does not survive it — which is why each purpose has its
+own, so the day is one purpose wide.
+
+The sealing keys are a separate axis and are no longer one key: a stored value
+names the service that sealed it and that service's own key, and the envelope key
+is per organization. Rotating and moving those is the next two sections; this one
+is about the keys a purpose is DELIVERED, which rotate on their own.
+
 ## Rotating the envelope key
 
 Unlike the signing key, this is invisible to users and needs no overlap window:

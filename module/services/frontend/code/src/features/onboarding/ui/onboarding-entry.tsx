@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { isPersonalOrganization } from "@/features/organizations/model/leave-flow";
 import { orgQueries } from "@/features/organizations/service/queries";
 import { useAuth } from "@/lib/auth";
+import { signOutAndLeave } from "@/lib/sign-out-journey";
 import {
 	Button,
 	Card,
@@ -102,7 +103,10 @@ export function OnboardingEntry({ controller, model }: OnboardingEntryProps) {
 							</CardDescription>
 						</CardHeader>
 						<CardContent>
-							<Button variant="outline" onClick={() => void logout()}>
+							<Button
+								variant="outline"
+								onClick={() => void signOutAndLeave(logout)}
+							>
 								<LogOut className="mr-2 h-4 w-4" />
 								Sign out
 							</Button>

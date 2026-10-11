@@ -1,4 +1,4 @@
-import { requestPublicOrigin } from "@/lib/public-origin";
+import { configuredPublicOrigin } from "@/lib/public-origin";
 import {
 	entitlementFailureResponse,
 	isEntitlementFailure,
@@ -72,12 +72,14 @@ export async function GET(request: Request): Promise<Response> {
 	if (registered === "unavailable") {
 		return Response.json({ error: "registry_unavailable" }, { status: 503 });
 	}
-	// A solution served through this host resolves its modules against this
-	// host's own public origin (see surfacesProjection).
-	const hostOrigin = requestPublicOrigin(request);
-	// The origin is part of the projection, so it is part of what may be reused:
-	// two callers reaching this host through different public origins must not
-	// share a cached answer that resolves a module against one of them.
+	// A solution served through this host resolves its modules against this host's
+	// own public origin (see surfacesProjection) — the configured one, not one
+	// taken from the request: a client told to fetch a remote's modules from a
+	// caller-chosen host would load code from it.
+	const hostOrigin = configuredPublicOrigin();
+	// The origin stays in the cache key. It no longer varies per caller, so this
+	// is not what separates two callers any more; it is what stops a reconfigured
+	// origin being served from an entry computed against the previous one.
 	const solutions = cachedProjection(
 		entitlements,
 		`${client}\u0000${hostOrigin ?? ""}`,

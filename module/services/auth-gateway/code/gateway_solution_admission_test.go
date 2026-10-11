@@ -427,7 +427,7 @@ func TestGatewaySolutionProxy_RefusedRequestsAreMeteredBeforeTheAuthorityIsAsked
 	authority := &entitledTo{ids: nil}
 	gw.solutionEntitlements = authority
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 
 	token := signValidToken(t, priv)
 	throttled := false

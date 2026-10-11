@@ -265,6 +265,18 @@ var wantEmittedHeaders = []string{
 	"x-user-name", "x-session-id", "x-acting-as-user-id", "x-act", "x-scopes",
 	"x-credential-kind", "x-mfa-satisfied", "x-authentication-methods", "x-auth-time",
 	"x-assurance-level", "x-mfa-verified-at", "x-client-id",
+	// Added deliberately, which is what this list is for: the resource a
+	// confined credential was issued for, carried from the ext_authz decision to
+	// the Work Context mint so the mint can hold what it issues to the consumer
+	// the credential was delivered to.
+	//
+	// Eyeballed as this list demands. It leaks nothing: the value is an audience
+	// from the token this host itself minted — a public resource URL the client
+	// already dialled and the solution already publishes — never a provider
+	// identifier, and never anything derived from the caller's own headers. It is
+	// emitted empty for every credential that names no resource, like every
+	// canonical header beside it.
+	resourceConfinementHeader,
 }
 
 // TestPerimeter_SuccessPathEmitsCanonicalHeadersOnly asserts the ext_authz

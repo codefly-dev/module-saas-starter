@@ -169,7 +169,16 @@ export type InstallSolutionRequest = Message<"saas.accounts.v1.InstallSolutionRe
   /**
    * The agent's delegated-execution ceiling (migration 108): the Work Context
    * audiences it may be minted for and the resource kinds it may ever touch.
-   * Empty = unrestricted.
+   *
+   * Empty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an
+   * administrator consented to when they installed it. It is NOT unrestricted
+   * for a mint made with a credential delivered to a THIRD PARTY on a person's
+   * behalf — an MCP client the person authorized for this one solution. There
+   * the installation is the only statement of what the solution may act for, so
+   * an empty list is read as nothing and such a mint is REFUSED by name
+   * (accounts' holdConfinedMintToItsConsumer). The two readings are opposite on
+   * purpose: one bounds a consumer an admin trusts, the other bounds a
+   * credential they never saw.
    *
    * @generated from field: repeated string allowed_audiences = 10;
    */

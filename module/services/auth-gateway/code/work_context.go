@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/sdk-go/workcontext"
 )
 
@@ -89,26 +90,67 @@ const gatewayAudience = "auth-gateway"
 func (v *workContextVerifier) Verify(
 	ctx context.Context, token workcontext.WorkContextToken, expected string,
 ) error {
+	_, err := v.VerifyAny(ctx, token, expected)
+	return err
+}
+
+// VerifyAny is Verify for a route that accepts MORE THAN ONE audience, and it
+// returns the verified claims so a caller can hold the capability to facts
+// beyond its audience.
+//
+// `permitted` is the set of audiences the resolved route accepts. One entry is
+// the ordinary case and is what Verify passes. A route with several is a route
+// whose destination legitimately consumes capabilities of two different kinds —
+// a declared module's own identity, and a viewer's delegated capability for it —
+// and listing both is what keeps a single-valued expectation from refusing the
+// one the caller actually holds (see verifiedModuleCapability).
+//
+// The audience comparison is made HERE rather than by passing a value to sdk-go,
+// because sdk-go compares one string. An EMPTY `permitted` — no entry at all, or
+// one empty entry, which is what the catalog routes pass — means "do not
+// compare", and that is sdk-go's own sentinel (`check.want != ""` in
+// workcontext/work_context.go) restated locally so the one reliance on it stays
+// in one place and stays explicit.
+func (v *workContextVerifier) VerifyAny(
+	ctx context.Context, token workcontext.WorkContextToken, permitted ...string,
+) (*basev0.WorkContextV1, error) {
 	keyID, err := workContextTokenKeyID(token)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	verifier, err := v.cache.resolve(ctx, keyID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	claims, err := verifier.Verify(token, workcontext.WorkContextExpectations{Audience: expected})
+	claims, err := verifier.Verify(token, workcontext.WorkContextExpectations{})
 	if err != nil {
-		return invalidWorkContext(err)
+		return nil, invalidWorkContext(err)
 	}
 	// Refused AFTER the signature check, deliberately: an unsigned token claiming
 	// the hop's audience is an invalid token, not a routing question, and answering
 	// the audience refusal first would tell an unauthenticated caller which
 	// audience the hop answers to.
 	if claims.GetAudience() == gatewayAudience {
-		return fmt.Errorf("%w: a capability addressed to this forwarding hop is never consumed by it", workcontext.ErrWorkContextInvalid)
+		return nil, fmt.Errorf("%w: a capability addressed to this forwarding hop is never consumed by it", workcontext.ErrWorkContextInvalid)
 	}
-	return nil
+	wanted := make([]string, 0, len(permitted))
+	for _, audience := range permitted {
+		if audience != "" {
+			wanted = append(wanted, audience)
+		}
+	}
+	if len(wanted) == 0 {
+		return claims, nil
+	}
+	for _, audience := range wanted {
+		if claims.GetAudience() == audience {
+			return claims, nil
+		}
+	}
+	// The refusal names neither the presented audience nor the permitted set: the
+	// caller learns that the capability is not valid at this route, which is the
+	// whole verdict, and not which consumers this route serves.
+	return nil, fmt.Errorf("%w: the capability names a consumer this route does not serve", workcontext.ErrWorkContextInvalid)
 }
 
 func workContextTokenKeyID(token workcontext.WorkContextToken) (string, error) {

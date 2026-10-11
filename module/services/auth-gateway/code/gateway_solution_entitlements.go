@@ -367,23 +367,41 @@ const (
 // answer changes with no write at all — a grant's expires_at passes, a member
 // leaves a team, a role loses a permission, an owner is demoted — so a cache
 // keyed on any revision a write advances would route on an expired grant.
+// admitViewerSolution answers the admission alone, for the two call sites that
+// need nothing else.
 func (g *Gateway) admitViewerSolution(
 	ctx context.Context, org, viewer string, routing *solutionRouting,
 ) viewerSolutionAdmission {
+	admission, _ := g.admitViewerSolutionInstallation(ctx, org, viewer, routing)
+	return admission
+}
+
+// admitViewerSolutionInstallation also returns WHICH installation admitted the
+// viewer, empty on any answer other than admitted.
+//
+// It comes from the entitlement that matched, on the same answer that decided
+// admission — never from a second read. The installation is the consent an
+// organization gave this one target: it is what a confined mint is held to
+// (confineResourceMintToItsConsumer stamps it, accounts resolves its declared
+// audiences and standing grants), and asking for it again could resolve a
+// different installation from the one that admitted the request.
+func (g *Gateway) admitViewerSolutionInstallation(
+	ctx context.Context, org, viewer string, routing *solutionRouting,
+) (viewerSolutionAdmission, string) {
 	targetID := routing.GetTargetID()
 	if targetID == "" {
 		// Declared by nothing: a self-registration no delivery opened a target
 		// for. There is no identity to be entitled to, so this is a verdict
 		// rather than an outage — it is not a presence an administrator could
 		// have consented to, and no later read will make it one.
-		return viewerSolutionNotEntitled
+		return viewerSolutionNotEntitled, ""
 	}
 	if g.solutionEntitlements == nil {
 		// No authority client wired. Undecidable, never admitted: a deployment
 		// that forgot to wire this must fail closed rather than serve every
 		// solution to every organization, which is the behaviour this check
 		// replaces.
-		return viewerSolutionUndecidable
+		return viewerSolutionUndecidable, ""
 	}
 	token := ""
 	for page := 0; page < solutionEntitlementPageLimit; page++ {
@@ -394,7 +412,7 @@ func (g *Gateway) admitViewerSolution(
 			PageToken: token,
 		})
 		if err != nil {
-			return viewerSolutionUndecidable
+			return viewerSolutionUndecidable, ""
 		}
 		for _, entitlement := range resp.GetEntitlements() {
 			// Membership of the entitled set is the whole test. Health is
@@ -405,13 +423,13 @@ func (g *Gateway) admitViewerSolution(
 			// and make "nobody granted you this" indistinguishable from "it is
 			// restarting".
 			if entitlement.GetTargetId() == targetID {
-				return viewerSolutionAdmitted
+				return viewerSolutionAdmitted, entitlement.GetInstallationId()
 			}
 		}
 		token = resp.GetNextPageToken()
 		if token == "" {
-			return viewerSolutionNotEntitled
+			return viewerSolutionNotEntitled, ""
 		}
 	}
-	return viewerSolutionUndecidable
+	return viewerSolutionUndecidable, ""
 }

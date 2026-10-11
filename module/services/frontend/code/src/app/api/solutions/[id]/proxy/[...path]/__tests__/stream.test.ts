@@ -14,6 +14,12 @@ vi.mock("codefly", () => ({
 	getCurrentModule: () => "",
 	getCurrentService: () => "",
 	getWorkspaceSecret: () => "fixture-internal",
+	// The public origin is operator configuration, and the same-origin check is
+	// made against it, so a fixture deployment has to pin one.
+	getWorkspaceConfiguration: (group: string, key: string) =>
+		group === "application" && key === "APP_BASE_URL"
+			? "http://localhost"
+			: undefined,
 }));
 vi.mock("@/solutions/registry", () => ({ findSolution }));
 

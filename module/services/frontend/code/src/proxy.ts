@@ -99,26 +99,6 @@ function isProductAPI(pathname: string): boolean {
 	return oauthSurfaceUpstreamPath(pathname) !== undefined;
 }
 
-// Next derives `nextUrl`'s protocol and host from the internal request URL and
-// ignores `x-forwarded-*`, so behind a TLS-terminating ingress `nextUrl.protocol`
-// is the pod's plaintext `http:` rather than the browser's `https:` — and
-// Accounts rejects a non-loopback `http` public origin, which would leave OAuth
-// broken. The ingress sets the forwarded pair from the real client connection;
-// prefer each, falling back to `nextUrl` (local dev, direct-to-pod requests).
-export function publicRequestOrigin(req: NextRequest): string {
-	const forwardedProto = req.headers
-		.get("x-forwarded-proto")
-		?.split(",")[0]
-		?.trim();
-	const forwardedHost = req.headers
-		.get("x-forwarded-host")
-		?.split(",")[0]
-		?.trim();
-	const protocol = forwardedProto ? `${forwardedProto}:` : req.nextUrl.protocol;
-	const host = forwardedHost || req.nextUrl.host;
-	return `${protocol}//${host}`;
-}
-
 export function trustedGatewayRequestHeaders(
 	req: NextRequest,
 	context: CodeflyGatewayContext | undefined,
@@ -659,7 +639,7 @@ export async function proxy(req: NextRequest) {
 	const { pathname, search } = req.nextUrl;
 	const gatewayHeaders = trustedGatewayRequestHeaders(
 		req,
-		resolveCodeflyGatewayContext(publicRequestOrigin(req)),
+		resolveCodeflyGatewayContext(),
 	);
 	// The CSP lookup needs the cluster-internal secret and nothing else, so it
 	// reads that secret rather than the gateway context, whose resolution also

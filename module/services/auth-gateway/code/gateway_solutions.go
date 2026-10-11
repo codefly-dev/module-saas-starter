@@ -178,6 +178,17 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 			return true
 		}
 		stripAllIdentityHeaders(r)
+		// The person's whole session credential is withheld HERE even though the
+		// authenticated path below still forwards it (SA-F-BEARER, open).
+		//
+		// This path is the exception that has no contract to break. It runs no
+		// ext_authz at all — it is the anonymous module-federation surface, which
+		// the browser's loader fetches with no credential — so a bearer that
+		// arrives on it is one the upstream was never authenticated to receive
+		// and has no use for. A page that happened to attach one would otherwise
+		// hand it to a third-party pod on an unauthenticated fetch, which is a
+		// strictly worse exposure than the authenticated path's.
+		removePersonsSessionCredential(r.Header)
 		entry := &RouteEntry{
 			Service:        "solution:" + id,
 			UpstreamPath:   publicPath,
@@ -265,8 +276,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusForbidden, "no organization in this session")
 		return true
 	}
-	// Proxy to the solution. The caller's bearer is preserved so the solution
-	// can call accounts through the gateway on the user's behalf.
+	// Proxy to the solution. The caller's COOKIE does not travel with it — proxyTo
+	// removes it for every declared upstream (removeCallerCookie) — and the
+	// solution receives the stamped identity headers beside the bearer. The
+	// bearer itself still travels: SA-F-BEARER is recorded open, for the reason
+	// given at removePersonsSessionCredential in gateway.go.
 	//
 	// Route through rateLimitThenProxy, not proxyTo directly: an authenticated
 	// solution data endpoint must consume the same per-org budget as an equivalent
@@ -304,7 +318,8 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// free. The entitlement LISTING already wrapped its work this way; the proxy
 	// did not.
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch g.admitViewerSolution(r.Context(), org, viewer, routing) {
+		admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, routing)
+		switch admission {
 		case viewerSolutionNotEntitled:
 			// A verdict on this organization's admission, named so a client can
 			// tell it from an ext_authz denial on the credential: one is fixed by
@@ -319,6 +334,23 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 			// is simply down.
 			httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
 			return
+		}
+		// WHICH INSTALLATION admitted this viewer, forwarded to the runtime.
+		//
+		// A solution's runtime cannot mint anything for a composed module without
+		// it: the host requires every mint to name an installation, an
+		// organization is not an installation — one org may hold several — and the
+		// runtime deliberately will NOT read one out of a capability a caller
+		// carried, because inbound that carrier is caller-controlled. So the only
+		// party that can supply it is the hop that just resolved the consent, and
+		// until this it was supplied by nobody: a runtime asking for a module
+		// refused before it reached the mint.
+		//
+		// Gateway-owned like the identity projection beside it, and on
+		// untrustedAuthHeaders, so a caller's own value is replaced rather than
+		// forwarded.
+		if installation != "" {
+			r.Header.Set(installationConfinementHeader, installation)
 		}
 		// The destination is the one this request's single resolution named, and
 		// the one whose identity the authority just admitted.
@@ -450,4 +482,97 @@ func isForbiddenUpstreamHost(host string) bool {
 			ip.IsLinkLocalMulticast()
 	}
 	return false
+}
+
+// confineResourceMintToItsConsumer is the second half of the resource
+// confinement, and the half that makes it a confinement to a CONSUMER rather
+// than only to a route.
+//
+// ext_authz admits a resource-bound credential at exactly one host route — the
+// delegation mint — and stamps the resource it is bound to. That alone bounds
+// WHERE the credential may act. This bounds WHAT it may act for: the solution
+// the resource names must be one this organization installed and this viewer was
+// granted, which is the same question, asked through the same authority, as the
+// one every proxied request to that solution already passes.
+//
+// Three refusals, deliberately distinguished:
+//
+//   - A resource this host would not have minted resolves to no solution. 401:
+//     the credential is not one of ours, and a client answers by re-authorizing.
+//   - A solution whose registration resolves to nothing, or to a target the
+//     viewer holds no grant for, is 403. It is a verdict about this person and
+//     this consumer, and no re-authorization changes it.
+//   - An authority that could not be asked is 503, never an admission. A mint is
+//     a capability; issuing one on "I could not check" is the failure mode this
+//     whole finding is about.
+//
+// It runs on the HTTP gateway path, after the identity projection, because that
+// is where the registry and the entitlement authority live. A deployment driving
+// ext_authz from Envoy gets the route confinement and the carried resource but
+// not this check, which is stated here rather than assumed away: the asymmetry
+// is the same one the gateway credential already has (see ExtAuthz.allow), and
+// closing it means giving the ext_authz server its own registry client.
+func (g *Gateway) confineResourceMintToItsConsumer(w http.ResponseWriter, r *http.Request) bool {
+	resource := r.Header.Get(resourceConfinementHeader)
+	if resource == "" || !isWorkContextMintPath(r.URL.Path) {
+		return true
+	}
+	solutionID, ok := solutionIDFromResource(resource, g.authz.publicBase)
+	if !ok {
+		httpError(w, http.StatusUnauthorized,
+			"the token presented names no resource this host issues")
+		return false
+	}
+	routing, resolution := g.solutions.resolveRouting(r.Context(), solutionID)
+	switch resolution {
+	case solutionRoutable:
+		// Resolved to one declared binding. Admission below.
+	case solutionRegistryUnavailable:
+		// Undecidable, and a mint is never issued on an unanswered question.
+		httpError(w, http.StatusServiceUnavailable,
+			"the solution registry could not be read, so this token's consumer "+
+				"could not be identified")
+		return false
+	default:
+		// Unregistered, withdrawn, or the wrong surface: a verdict.
+		httpError(w, http.StatusForbidden,
+			"the consumer this token was issued for is not available here")
+		return false
+	}
+	org := r.Header.Get("X-Org-Id")
+	viewer := r.Header.Get("X-User-Id")
+	admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, routing)
+	switch admission {
+	case viewerSolutionAdmitted:
+		if installation == "" {
+			// Admitted with no installation named. Nothing produces this — the
+			// admission comes FROM a matched entitlement, which carries one — so
+			// it is an authority that broke its contract, and a mint is not
+			// issued on a ceiling nobody can be held to. The alternative is a
+			// confined mint accounts would judge against no consumer at all,
+			// which is the unconfined mint this whole half closes.
+			httpError(w, http.StatusServiceUnavailable,
+				"the authority that decides this consumer's installation named none")
+			return false
+		}
+		// The consent this mint is held to. Accounts resolves this installation's
+		// declared audiences and its agent's standing grants and refuses anything
+		// outside them (StartTask), so the ceiling is the one an administrator
+		// actually consented to rather than the viewer's whole authority.
+		//
+		// Set AFTER stripAllIdentityHeaders and the identity projection, like the
+		// projection itself: the name is on untrustedAuthHeaders, so whatever a
+		// caller sent under it is already gone.
+		r.Header.Set(installationConfinementHeader, installation)
+		return true
+	case viewerSolutionNotEntitled:
+		httpError(w, http.StatusForbidden,
+			"this organization has not installed the consumer this token was issued for, "+
+				"or you hold no grant that reaches it")
+		return false
+	default:
+		httpError(w, http.StatusServiceUnavailable,
+			"the authority that decides this consumer's installation could not be reached")
+		return false
+	}
 }

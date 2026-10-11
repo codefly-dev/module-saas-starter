@@ -310,7 +310,16 @@ type InstallSolutionRequest struct {
 	CoOwnerPrincipalIds []string `protobuf:"bytes,9,rep,name=co_owner_principal_ids,json=coOwnerPrincipalIds,proto3" json:"co_owner_principal_ids,omitempty"`
 	// The agent's delegated-execution ceiling (migration 108): the Work Context
 	// audiences it may be minted for and the resource kinds it may ever touch.
-	// Empty = unrestricted.
+	//
+	// Empty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an
+	// administrator consented to when they installed it. It is NOT unrestricted
+	// for a mint made with a credential delivered to a THIRD PARTY on a person's
+	// behalf — an MCP client the person authorized for this one solution. There
+	// the installation is the only statement of what the solution may act for, so
+	// an empty list is read as nothing and such a mint is REFUSED by name
+	// (accounts' holdConfinedMintToItsConsumer). The two readings are opposite on
+	// purpose: one bounds a consumer an admin trusts, the other bounds a
+	// credential they never saw.
 	AllowedAudiences []string `protobuf:"bytes,10,rep,name=allowed_audiences,json=allowedAudiences,proto3" json:"allowed_audiences,omitempty"`
 	AllowedScopes    []string `protobuf:"bytes,11,rep,name=allowed_scopes,json=allowedScopes,proto3" json:"allowed_scopes,omitempty"`
 	// The solution target being installed, from ListAvailableSolutions. Required.

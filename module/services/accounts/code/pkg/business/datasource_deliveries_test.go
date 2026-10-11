@@ -449,7 +449,7 @@ func TestCompileDelivery_LargeBlobCarriesContentTicket(t *testing.T) {
 	}
 	store := newDatasourceFakeStore()
 	svc, _ := newDatasourceService(store, producer, gh)
-	svc.SetDatasourceTicketKey([]byte("test-key"))
+	svc.SetDatasourceKeys([]byte("test-ticket-key"), []byte("test-link-key"))
 	source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 	if _, err := svc.CompileGitHubDelivery(context.Background(), source,

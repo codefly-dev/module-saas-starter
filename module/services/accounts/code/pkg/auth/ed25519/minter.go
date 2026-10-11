@@ -124,6 +124,13 @@ type accessClaims struct {
 	ScopedRoles          map[string][]string `json:"sr,omitempty"`
 	ScopedRolesTruncated bool                `json:"srt,omitempty"`
 	SessionID            string              `json:"sid"`
+	// FamilyID is the refresh family this access token was minted under, and it
+	// is STABLE across rotation where `sid` is not: every refresh mints a new
+	// session id and keeps the family. A sign-out revokes the family, so without
+	// this claim the revocation had nothing to match an access token minted
+	// before the last refresh — one stolen then stayed usable until it expired,
+	// through a completed logout.
+	FamilyID string `json:"fid,omitempty"`
 	// AuthorizedParty is the registered client the token was issued to (OIDC
 	// `azp`). Absent on the host's own web session, so a consumer reads "no azp"
 	// as a first-party web session rather than as a missing value.
@@ -315,7 +322,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 	}
 
 	// Access token
-	access, accessExpiresAt, err := m.signAccess(identity, sessionID, now)
+	access, accessExpiresAt, err := m.signAccess(identity, sessionID, familyID, now)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ed25519minter: sign access: %w", err)
 	}
@@ -516,7 +523,7 @@ func (m *Minter) SwitchOrganization(
 		if err != nil {
 			return err
 		}
-		accessToken, accessExpiresAt, err = m.signAccess(identity, current.ID, now)
+		accessToken, accessExpiresAt, err = m.signAccess(identity, current.ID, current.FamilyID, now)
 		return err
 	})
 	if err != nil {
@@ -592,6 +599,18 @@ func isMFAMethod(method string) bool {
 		method == auth.AuthenticationMethodWebAuthn
 }
 
+// familyAccessClaim renders the family id for the access token, and renders
+// NOTHING for the zero value. An access-only window (impersonation) has no
+// refresh family, and stamping the zero UUID would put one shared id on every
+// such token — a single marker would then revoke all of them at once, across
+// tenants.
+func familyAccessClaim(familyID uuid.UUID) string {
+	if familyID == uuid.Nil {
+		return ""
+	}
+	return familyID.String()
+}
+
 // Revoke implements auth.JWTMinter.Revoke by revoking the family backing the
 // given refresh token. Safe to call with an already-revoked token.
 func (m *Minter) Revoke(ctx context.Context, refreshToken string) error {
@@ -603,7 +622,23 @@ func (m *Minter) Revoke(ctx context.Context, refreshToken string) error {
 		}
 		return fmt.Errorf("ed25519minter: revoke lookup: %w", err)
 	}
-	return m.store.RevokeFamily(ctx, rec.FamilyID, "logout")
+	// The durable half: nothing in this family can be refreshed again.
+	if err := m.store.RevokeFamily(ctx, rec.FamilyID, "logout"); err != nil {
+		return err
+	}
+	// The access half, for the WHOLE family rather than one session of it.
+	//
+	// RevokeSessionAccess on the presented `sid` covers only the rotation the
+	// caller is holding. Every refresh mints a new session id, so a token minted
+	// before the last refresh carried a different one and matched no marker — a
+	// token stolen before a refresh survived the sign-out that followed it, until
+	// its natural expiry. The family id is on every access token in the chain
+	// (accessClaims.FamilyID), so one marker reaches all of them.
+	//
+	// Best-effort, exactly like the other access-marker writes: the durable
+	// revocation above is the authority, and a store outage bounds exposure to
+	// the access TTL. The caller is told, because Logout collects that.
+	return m.RevokeSessionAccess(ctx, rec.FamilyID.String())
 }
 
 // VerifyAccess parses and validates an access token minted by this Minter.
@@ -709,11 +744,23 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		}
 	}
 
-	// Session-scoped revocation (admin session-kill). A single marker keyed by
-	// the `sid` claim invalidates every access token in the session at once,
-	// covering the path where the killer never held the victim's token.
-	if claims.SessionID != "" {
-		revoked, err := m.revoker.IsSessionRevoked(context.Background(), claims.SessionID)
+	// Session- and family-scoped revocation. A single marker invalidates every
+	// access token it covers at once: the path where the killer never held the
+	// victim's token (admin session-kill), and the path where the token predates
+	// the last refresh (sign-out).
+	//
+	// Both keys are checked, because they answer different questions and the
+	// session one alone left a hole: `sid` changes on every refresh, so a
+	// sign-out that revoked the CURRENT session left an access token minted
+	// before it unmatched. The family does not change, so one marker covers the
+	// whole chain. They share the session-marker namespace — both are ids this
+	// host mints, and neither can collide with the other — so this needs no
+	// second store and no second TTL.
+	for _, key := range []string{claims.SessionID, claims.FamilyID} {
+		if key == "" {
+			continue
+		}
+		revoked, err := m.revoker.IsSessionRevoked(context.Background(), key)
 		switch {
 		case err != nil && !m.cfg.RevocationFailOpen:
 			return nil, fmt.Errorf("%w: %v", auth.ErrRevocationUnavailable, err)
@@ -843,6 +890,7 @@ func (m *Minter) accessTTL(identity *auth.Identity) time.Duration {
 func (m *Minter) signAccess(
 	identity *auth.Identity,
 	sessionID uuid.UUID,
+	familyID uuid.UUID,
 	now time.Time,
 ) (string, time.Time, error) {
 	jti, err := randHex(16)
@@ -875,6 +923,7 @@ func (m *Minter) signAccess(
 			ID:        jti,
 		},
 		SessionID:       sessionID.String(),
+		FamilyID:        familyAccessClaim(familyID),
 		AuthorizedParty: identity.ClientID,
 		Email:           identity.Email,
 		Name:            identity.DisplayName,

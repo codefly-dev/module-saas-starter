@@ -10,6 +10,27 @@ for the trust model behind declared presence.
 Nothing here may name a specific solution or composed module: every seam is
 generic, and a registered target is data, never a branch.
 
+## What a deployed gateway refuses to start without
+
+Three of this service's controls are only controls when the thing they depend on
+is there, and each used to degrade into something that read as working:
+
+- **A trusted-proxy range** (`gateway/TRUSTED_PROXY_CIDRS`). SP-GW-09 requires the
+  anonymous and authentication-factor budgets to key on the originating client.
+  Empty means no forwarding header is trusted, so `clientIP` answers the peer —
+  behind the frontend, the frontend's own pod — and every caller shares one bucket.
+  It read as working: the limiter was enabled and the buckets were enforced.
+- **A shared rate-limit store.** Per-replica counters enforce the configured budget
+  times the replica count, and which replica a caller lands on decides their share.
+- **A revocation store.** A revoker with no store answers "not revoked" to every
+  question, so a signed-out session, a killed device and an ended impersonation
+  window all keep authenticating until their tokens expire — and no request can
+  tell that from an empty revocation set.
+
+Each refuses at boot outside local development, naming what to provision. Local
+development keeps all three fallbacks: one replica, no ingress hop, no cache
+service, and the alternative is a gateway that cannot start.
+
 ## Reading declared solution upstreams
 
 `GET /solutions/_registry` returns this replica's read projection: identity,
@@ -50,6 +71,136 @@ constitutes organization consent.
 
 Module identity exchanges are described below; accounts owns their authority.
 
+## What a runtime-registered upstream receives, and what it does not
+
+A runtime-registered upstream — a federated module prefix or a solution — receives
+the person's `Authorization` bearer and does NOT receive their `Cookie` or
+`Proxy-Authorization`. A catalog route is untouched: accounts is the host's own API,
+where the session IS the credential.
+
+That split is a decision, not a halfway implementation, and it replaces an earlier
+rule here that said all three were removed from every such request. Each half has
+its own reason:
+
+**The cookie never travels, whatever the bearer does.** Nothing upstream can
+authenticate with it — this perimeter refuses a cookie AS a credential by name (see
+`ExtAuthz.Check`) — and it carries the longest-lived value a browser holds, the
+refresh credential. Forwarding it delivers that value to a third party for no
+purpose it could serve. The two removals used to be one decision, and the broader
+one silently carried the narrower: a request on the MCP tool path skipped the whole
+removal and forwarded `Cookie` with it.
+
+**The bearer does travel, to a DECLARED upstream, when the request is
+authenticated.** A declared upstream authenticates the request by that header; the
+runtime's HTTP wrapper and its passthrough handler both answer 401 without it. The
+capability that should replace it — a host-minted context bound to that upstream's
+own audience — is minted by nothing here and verified by nothing on the consumer
+side, and the consumer half lives in another repository. Removing the header first
+would break every composed solution while shipping a credential no consumer reads.
+
+**It does not travel on the anonymous module-federation surface**, which runs no
+ext_authz at all: a bearer arriving there was never authenticated for that upstream,
+and the loader fetches those bytes without a person.
+
+An upstream also receives the identity `ext_authz` stamped: the subject, the tenant,
+the session, the credential kind and the scope ceiling. That names the person
+independently of the bearer beside it.
+
+**SP-GW-07's second half is open, recorded as `SA-F-BEARER`.** The invariant is that
+an upstream receives a host-minted context bound to THAT upstream's own audience —
+not merely that it stops receiving the person's session. The host access token
+carries one host-wide audience and the person's full authority, so a declared
+upstream holding it holds more than it needs, and that exposure is real while this
+stays open. What closes it: a host-minted context bound to the upstream's own
+audience, plus consumer verification of it, plus one composed browser-to-consumer
+request exercised end to end.
+
+What is missing is specific, so that the next person does not have to rediscover it.
+`WorkContextService` already exposes `ExchangeAudience`, which re-binds an existing
+Work Context to a different audience — and that is not the operation this needs. The
+caller here holds a browser SESSION, which is not a Work Context, so the edge would
+need a mint that takes a verified session and returns a context bound to one
+upstream's audience, with that person's authority narrowed to what the upstream may
+do on their behalf. No RPC does that today, and adding one is a descriptor change
+(contract digests, published clients, a verified regeneration).
+
+Two things to settle with it, because they are the reason it is not a small change:
+the mint is per request on the proxy path, so its latency and its failure mode become
+the failure mode of all federated traffic; and the authority to narrow TO is the
+installation's ceiling. That second one is no longer unreachable — the entitlement
+authority answers it on the path that resolves consent, and this gateway now states
+it as `x-codefly-installation-id` (see below) — but it is answered for one request
+at a time, not as a lookup from a solution id (see
+`module/SOLUTION_REGISTRATION.md`).
+
+**A consumer written against the old behaviour does NOT have to change for the
+bearer.** Two things do change at the edge: a declared upstream no longer receives
+the caller's cookie, and a resource-bound token is confined — it reaches the three
+places below and nowhere else. Anything replaying such a token elsewhere stops
+working, deliberately.
+
+## Three places for a resource-confined credential
+
+A token issued for a solution's MCP endpoint (RFC 8707 resource indicator) is held
+by a third-party client and, once forwarded, by the runtime it dialled. It reaches:
+
+- that solution's own routes, where the resource and the path agree;
+- `/saas.accounts.v1.WorkContextService/StartTask`, the delegation mint; and
+- `/v1/<alias>/*` for a DECLARED MODULE, and only in the company of a verified
+  capability for that module minted on this person's behalf.
+
+The second and third exist because the consumer's own work needs them, and they are
+one flow, not two. The runtime's MCP viewer path derives a module gateway by minting
+a viewer-owned Work Context — carrying the person's bearer, because its own service
+credential does not stand in for the person — and then calls the module with that
+capability AND the same bearer, since a declared upstream still authenticates by the
+bearer (`SA-F-BEARER`, above). Admitting the mint alone moved the failure one request
+later: the tool minted and was then refused at the module.
+
+**Admitting the bearer at module routes on its own would have been the confinement
+deleted, not relocated** — a one-solution credential with the person's whole
+authority at every declared module. So the pairing is the admission:
+`gateway_module_capability.go` requires a capability for THAT module, owned by the
+bearer's own subject, in its own organization, minted in its own session. The session
+binding is what makes "minted under the consumer's ceiling" a fact rather than an
+inference: a capability for the same module could otherwise have come from the same
+person's ordinary browser session, where no consumer ceiling applies.
+
+**The ceiling itself is accounts', not this gateway's.** `ext_authz` stamps
+`x-codefly-resource`; the gateway resolves the solution that resource names, requires
+the organization to have installed it and the viewer to hold a grant reaching it —
+the same question, through the same authority, as every proxied request to that
+solution — and states WHICH installation admitted the request as
+`x-codefly-installation-id`. Accounts then refuses a mint for another organization,
+for an audience that installation does not declare, or for scopes outside its
+agent's standing grants. An authority that cannot be asked answers 503; a capability
+is not issued on an unanswered question.
+
+**An installation that declares NO audiences is refused here, and is unrestricted
+everywhere else.** `allowed_audiences` and `allowed_scopes` are optional and empty
+means unrestricted — the right reading for the installation's own headless work,
+which an administrator consented to — and the install form leaves both empty, so
+that is the ordinary state. For a confined mint the same emptiness would say the
+person's whole authority is available, at every module the organization installed,
+to a third party nobody installed. So accounts refuses and names the field. This is
+the installation's ceiling and NOT the consumer's own declaration: the delivered
+presence document carries module pins (module, package, version), a capability's
+audience is the consumed module's route alias, and no record on this host joins the
+two — deriving one would be a guess at the question the check exists to answer.
+
+Both stamps are on `untrustedAuthHeaders`, so a caller can assert neither and cannot
+pick its own ceiling. The consumer check and the installation stamp run on the HTTP
+gateway path, where the registry and the entitlement authority live; a deployment
+driving `ext_authz` from Envoy gets the route confinement and the carried resource
+but neither the consumer check nor the module pairing — the same asymmetry the
+gateway credential already has, and in the same direction: Envoy mode refuses the
+module route rather than admitting it unpaired.
+
+`x-codefly-installation-id` is also what a solution's runtime reads to name an
+installation on every mint it makes. It will not take one out of a capability a
+caller carried — inbound, that carrier is caller-controlled — so the hop that
+resolved the consent is the only party that can supply it.
+
 ## A registered client calls without a proxy
 
 The host's own frontend reaches this gateway through a server-side proxy, so it
@@ -79,9 +230,30 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
   upstream. A token issued to one client is therefore useless from another's
   page, on catalog, solution, and declared-module routes alike.
 - `X-Codefly-Public-Origin` — the WebAuthn relying party, the origin an OAuth
-  start is validated against — is derived from that registration. The frontend's
-  internal-token path still establishes it too; the registration is the stronger
-  claim, since it names the client rather than only the process that forwarded.
+  start is validated against — is NOT derived from that registration, and was.
+  A registered client's own origin was stamped as the verified public origin,
+  which made the host's relying party and its sign-in redirect target a value a
+  client chose by registering it; accounts' readers all compare the forwarded
+  origin against the configured one, so the two authorities disagreed and the
+  weaker one was the one that named the client. The configured origin is the
+  authority, and the frontend's internal-token path is what establishes it.
+  A registered client therefore does NOT get a verified origin of its own: a
+  WebAuthn ceremony and a `BeginOAuth` redirect for such a client resolve against
+  the configured origin or the static allowlist, which is also the only reading
+  compatible with one relying-party id per deployment. Cross-origin access for
+  the client is unaffected — that is the CORS decision above, from the same
+  registration.
+
+**The grant on a forwarded response is this gateway's, and only this gateway's.**
+Every proxied response has its `access-control-*` headers stripped before the
+gateway stamps whatever it granted — including when it granted nothing. An
+upstream may answer CORS itself, and accounts does: its generated handler hands an
+empty allowlist to a library that reads empty as allow-all, so it answers a
+wildcard origin with credentials true. Forwarded verbatim, that made the public
+surface grant a cross-origin read the gateway had granted nobody, and made an
+empty allowlist grant everything. The generated handler is the `go-grpc` agent's
+to fix; what the gateway owns is that nothing leaves it claiming a grant it did not
+make.
 
 Two deliberate limits. **Credentials are never allowed**: a registered client
 authenticates with its bearer, and echoing `access-control-allow-credentials`

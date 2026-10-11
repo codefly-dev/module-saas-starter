@@ -82,6 +82,13 @@ func TestGateway_UndeclaredModulePrefixIsNotServed(t *testing.T) {
 // upstream, with the ordinary authenticated pipeline in front of it — identity
 // projected from the validated token, caller-supplied identity stripped, the
 // caller's bearer preserved, and the gateway's own accounts credential withheld.
+//
+// The bearer is asserted PRESERVED, and that is the recorded state of SA-F-BEARER
+// rather than agreement with it. An earlier revision of this branch inverted this
+// assertion; the withholding is not enabled, because a declared upstream
+// authenticates by this header and the audience-bound capability that should
+// replace it exists on neither side. See removePersonsSessionCredential in
+// gateway.go. What IS asserted below is the cookie, which never travels.
 func TestGateway_DeclaredModuleIsRoutedThroughTheAuthenticatedPipeline(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	fake := declareModule(t, gw, "example-module")
