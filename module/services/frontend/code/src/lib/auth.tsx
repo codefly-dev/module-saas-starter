@@ -944,7 +944,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		if (outcome.status === "unavailable" && !stopped) {
 			throw new Error("Could not restore your session — please try again.");
 		}
-		await logout();
+		// The sign-out's OWN outcome, read rather than discarded. `logout()`
+		// reports incompleteness — the server answered 503 "logout incomplete,
+		// retry", or nothing answered — and this told the operator to sign in
+		// again either way, which is the same defect the user-facing sign-out
+		// controls had: local state is cleared regardless, so an unfinished
+		// sign-out is invisible while an already-issued token stays live.
+		//
+		// It does not take signOutAndLeave's navigation. The outcome here is
+		// owned by the banner that called this and reports a thrown message as a
+		// toast; a redirect would race that, and the operator's next step is the
+		// same in both branches. What the shared journey decides — WHERE an
+		// incomplete sign-out goes — has no second destination to choose from on
+		// this path, so what is shared is the fact, not the route.
+		const signedOut = await logout();
+		if (!signedOut.complete) {
+			throw new Error(
+				"Your impersonation session was ended, but signing you out of this browser was not confirmed — close this tab and sign in again.",
+			);
+		}
 		if (outcome.status === "unavailable") {
 			throw new Error(
 				"Your impersonation session was ended, but your admin session could not be restored — please sign in again.",
