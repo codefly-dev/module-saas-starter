@@ -6,7 +6,7 @@ import {
 	AvailableSolutionSchema,
 	InstallationHealth,
 	InstallationSchema,
-	InstallationSummarySchema,
+	OrganizationInstallationSchema,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import {
 	agentIdentifierFor,
@@ -28,10 +28,36 @@ const target = create(AvailableSolutionSchema, {
 	appliedGeneration: BigInt(3),
 });
 
-const summary = (targetId: string) =>
-	create(InstallationSummarySchema, {
+const installed = (targetId: string, withTarget: boolean) =>
+	create(OrganizationInstallationSchema, {
 		installation: create(InstallationSchema, { id: `i-${targetId}`, targetId }),
 		health: InstallationHealth.HEALTHY,
+		target: withTarget ? target : undefined,
+		rootScopePath: "root_1",
+		grantedTeams: [
+			{
+				grant: {
+					id: "g-1",
+					subjectId: "team-1",
+					roleId: "role-1",
+					scopePath: "root_1",
+				},
+				subjectLabel: "Finance",
+				roleName: "Solution user",
+			},
+		],
+		inheritedTeams: [
+			{
+				grant: {
+					id: "g-2",
+					subjectId: "team-2",
+					roleId: "role-1",
+					scopePath: "",
+				},
+				subjectLabel: "Everyone",
+				roleName: "Solution user",
+			},
+		],
 	});
 
 describe("solution installation facts", () => {
@@ -51,8 +77,8 @@ describe("solution installation facts", () => {
 		).toBe("Generation 4");
 	});
 
-	it("joins an installation to the catalogue on its target", () => {
-		const [row] = installedRows([summary("t-1")], [target], true);
+	it("names an installation by the target the host joined it to", () => {
+		const [row] = installedRows([installed("t-1", true)]);
 		expect(row.solution).toEqual({ kind: "value", text: "expenses" });
 		expect(row.revision).toMatchObject({
 			kind: "value",
@@ -60,14 +86,25 @@ describe("solution installation facts", () => {
 		});
 	});
 
-	it("never guesses a name for a target the catalogue does not list", () => {
-		const [offered] = installedRows([summary("t-gone")], [target], true);
-		expect(offered.solution).toMatchObject({
-			kind: "gap",
-			label: "Not offered",
-		});
-		const [unread] = installedRows([summary("t-1")], [], false);
-		expect(unread.solution).toMatchObject({ kind: "gap", label: "Not loaded" });
+	it("never guesses a name for a target the host no longer offers", () => {
+		const [row] = installedRows([installed("t-gone", false)]);
+		expect(row.solution).toMatchObject({ kind: "gap", label: "Not offered" });
+		expect(row.revision).toMatchObject({ kind: "gap", label: "Not offered" });
+	});
+
+	it("keeps teams granted here apart from teams inherited from above", () => {
+		const [row] = installedRows([installed("t-1", true)]);
+		expect(row.grantedTeams).toEqual([
+			{
+				key: "g-1",
+				teamId: "team-1",
+				roleId: "role-1",
+				team: "Finance",
+				role: "Solution user",
+				scopePath: "root_1",
+			},
+		]);
+		expect(row.inheritedTeams.map((t) => t.team)).toEqual(["Everyone"]);
 	});
 
 	it("reads an unreported health as a gap, not as healthy", () => {

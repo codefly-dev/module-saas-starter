@@ -1,6 +1,6 @@
 "use client";
 
-import { Layers, RefreshCw } from "lucide-react";
+import { Layers, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
@@ -46,10 +46,14 @@ import {
 	hostRefusal,
 	type InstalledRow,
 	installedRows,
-	TEAM_EXPOSURE_UNAVAILABLE,
+	type TeamGrantRow,
 } from "../model/installations";
-import { useUninstallSolution } from "../service/mutations";
+import {
+	useRevokeInstallationFromTeam,
+	useUninstallSolution,
+} from "../service/mutations";
 import { useAvailableSolutions, useInstallations } from "../service/queries";
+import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
 
 /**
@@ -145,12 +149,7 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 						query={available}
 						onInstall={(solution) => setInstalling(solution)}
 					/>
-					<InstalledSection
-						orgId={orgId}
-						query={installed}
-						available={available.data ?? []}
-						availableKnown={available.isSuccess}
-					/>
+					<InstalledSection orgId={orgId} query={installed} />
 				</>
 			)}
 
@@ -261,27 +260,23 @@ function AvailableSection({
 function InstalledSection({
 	orgId,
 	query,
-	available,
-	availableKnown,
 }: {
 	orgId: string;
 	query: ReturnType<typeof useInstallations>;
-	available: AvailableSolution[];
-	availableKnown: boolean;
 }) {
 	const uninstall = useUninstallSolution(orgId);
+	const revoke = useRevokeInstallationFromTeam(orgId);
 	const [confirming, setConfirming] = useState<InstalledRow | null>(null);
+	const [granting, setGranting] = useState<InstalledRow | null>(null);
 	const [refusal, setRefusal] = useState<{
-		solution: string;
+		title: string;
 		reason: string;
 	} | null>(null);
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the installed solutions");
-	const rows = withheld
-		? []
-		: installedRows(query.data ?? [], available, availableKnown);
+	const rows = withheld ? [] : installedRows(query.data ?? []);
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
@@ -291,8 +286,31 @@ function InstalledSection({
 		uninstall.mutate(row.installationId, {
 			onSuccess: () => toast.success(`${name(row)} uninstalled`),
 			onError: (error) =>
-				setRefusal({ solution: name(row), reason: hostRefusal(error) }),
+				setRefusal({
+					title: `The host refused to uninstall ${name(row)}`,
+					reason: hostRefusal(error),
+				}),
 		});
+	};
+
+	const runRevoke = (row: InstalledRow, team: TeamGrantRow) => {
+		setRefusal(null);
+		revoke.mutate(
+			{
+				installationId: row.installationId,
+				teamId: team.teamId,
+				roleId: team.roleId,
+			},
+			{
+				onSuccess: () =>
+					toast.success(`${team.team} no longer reaches ${name(row)}`),
+				onError: (error) =>
+					setRefusal({
+						title: `The host refused to remove ${team.team} from ${name(row)}`,
+						reason: hostRefusal(error),
+					}),
+			},
+		);
 	};
 
 	return (
@@ -308,7 +326,7 @@ function InstalledSection({
 				{refusal && (
 					<Banner
 						tone="danger"
-						title={`The host refused to uninstall ${refusal.solution}`}
+						title={refusal.title}
 						onDismiss={() => setRefusal(null)}
 					>
 						{refusal.reason}
@@ -358,7 +376,13 @@ function InstalledSection({
 											<Fact view={row.health} />
 										</TableCell>
 										<TableCell>
-											<TeamExposure row={row} name={name(row)} />
+											<TeamExposure
+												row={row}
+												name={name(row)}
+												revoking={revoke.isPending}
+												onGrant={() => setGranting(row)}
+												onRevoke={(team) => runRevoke(row, team)}
+											/>
 										</TableCell>
 										<TableCell className="text-sm text-muted-foreground">
 											{formatDate(row.installedAt)}
@@ -408,31 +432,83 @@ function InstalledSection({
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
+			{granting && (
+				<GrantTeamDialog
+					orgId={orgId}
+					installationId={granting.installationId}
+					solution={name(granting)}
+					onClose={() => setGranting(null)}
+				/>
+			)}
 		</Card>
 	);
 }
 
 /**
- * Team exposure for one installation. The action is shown, disabled, with the
- * reason beside it: a missing capability stated where the reader looks for it,
- * rather than a control that silently does nothing.
+ * Team exposure for one installation: the teams granted here, each removable;
+ * the teams that reach it from a grant above, which are real reach but were not
+ * granted here and so are not removed here; and the action that grants a team.
  */
-function TeamExposure({ row, name }: { row: InstalledRow; name: string }) {
-	const reasonId = `team-exposure-${row.installationId}`;
+function TeamExposure({
+	row,
+	name,
+	revoking,
+	onGrant,
+	onRevoke,
+}: {
+	row: InstalledRow;
+	name: string;
+	revoking: boolean;
+	onGrant: () => void;
+	onRevoke: (team: TeamGrantRow) => void;
+}) {
 	return (
-		<div className="max-w-xs space-y-1">
+		<div className="max-w-xs space-y-2">
+			{row.grantedTeams.length === 0 && row.inheritedTeams.length === 0 && (
+				<p className="text-sm text-muted-foreground">No team</p>
+			)}
+			{row.grantedTeams.length > 0 && (
+				<ul
+					className="flex flex-wrap gap-1"
+					aria-label={`Teams granted ${name}`}
+				>
+					{row.grantedTeams.map((team) => (
+						<li key={team.key}>
+							<Badge
+								variant="secondary"
+								className="gap-1"
+								title={`${team.role} at ${team.scopePath}`}
+							>
+								{team.team}
+								<span className="text-muted-foreground">· {team.role}</span>
+								<button
+									type="button"
+									onClick={() => onRevoke(team)}
+									disabled={revoking}
+									className="ml-1 hover:text-destructive disabled:opacity-50"
+									aria-label={`Remove ${team.team} from ${name}`}
+								>
+									<X className="h-3 w-3" />
+								</button>
+							</Badge>
+						</li>
+					))}
+				</ul>
+			)}
+			{row.inheritedTeams.length > 0 && (
+				<p className="text-xs text-muted-foreground">
+					Inherited from above:{" "}
+					{row.inheritedTeams.map((team) => team.team).join(", ")}
+				</p>
+			)}
 			<Button
 				variant="outline"
 				size="sm"
-				disabled
 				aria-label={`Grant a team access to ${name}`}
-				aria-describedby={reasonId}
+				onClick={onGrant}
 			>
 				Grant a team
 			</Button>
-			<p id={reasonId} className="text-xs text-muted-foreground">
-				{TEAM_EXPOSURE_UNAVAILABLE}
-			</p>
 		</div>
 	);
 }

@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-	type AvailableSolution,
-	InstallationStatus,
-	type InstallationSummary,
+import type {
+	AvailableSolution,
+	OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 
@@ -43,9 +42,10 @@ export function useAvailableSolutions(orgId: string) {
 }
 
 /**
- * This organization's active installations with their live health, from
- * ListInstallations. ACTIVE is asked for explicitly: the listing's unspecified
- * status returns every status, and an uninstalled row is not installed.
+ * This organization's active installations, from ListOrganizationInstallations:
+ * each with its live health, the catalogue row of the target it installed, and
+ * the teams it is exposed to. The organization is bound to the caller's own
+ * administration by the host, so this reads nothing but its own.
  */
 export function useInstallations(orgId: string) {
 	const service = useInstallationService();
@@ -53,12 +53,11 @@ export function useInstallations(orgId: string) {
 		queryKey: solutionInstallationKeys.installed(orgId),
 		enabled: !!orgId,
 		queryFn: async () => {
-			const installations: InstallationSummary[] = [];
+			const installations: OrganizationInstallation[] = [];
 			let pageToken = "";
 			do {
-				const page = await service.listInstallations({
+				const page = await service.listOrganizationInstallations({
 					orgId,
-					status: InstallationStatus.ACTIVE,
 					pageSize: PAGE_SIZE,
 					pageToken,
 				});

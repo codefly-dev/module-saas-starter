@@ -1,11 +1,12 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { ConnectError } from "@connectrpc/connect";
 import type { ComponentProps } from "react";
+import type { CollectionReadGrant } from "@/gen/saas/accounts/v1/authorization_pb";
 import type { Role } from "@/gen/saas/accounts/v1/common_pb";
 import {
 	type AvailableSolution,
 	InstallationHealth,
-	type InstallationSummary,
+	type OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import type { Badge } from "@/shared/ui";
 
@@ -107,6 +108,17 @@ export function healthView(health: InstallationHealth): FactView {
 	}
 }
 
+/** One team grant at an installation, as the page lists and revokes it. */
+export interface TeamGrantRow {
+	key: string;
+	teamId: string;
+	roleId: string;
+	team: string;
+	role: string;
+	/** Where the grant is written, for the reader who wants to know. */
+	scopePath: string;
+}
+
 export interface InstalledRow {
 	installationId: string;
 	targetId: string;
@@ -114,6 +126,10 @@ export interface InstalledRow {
 	revision: FactView;
 	health: FactView;
 	installedAt: string | undefined;
+	/** Granted at this installation's authority root: revocable here. */
+	grantedTeams: TeamGrantRow[];
+	/** Reaching it from a grant above: real reach, but not granted here. */
+	inheritedTeams: TeamGrantRow[];
 }
 
 const NOT_OFFERED: FactView = {
@@ -123,49 +139,59 @@ const NOT_OFFERED: FactView = {
 		"This host no longer offers the installed target, so its route and applied release are not known here.",
 };
 
-/**
- * The installed list, joined to the catalogue on the immutable target — the
- * join the host prescribes (an installation deliberately carries no route alias;
- * a consumer that needs it asks the catalogue and joins on target_id). A target
- * the catalogue does not list, or an installation that names none, is shown as
- * that gap rather than as a guessed name.
- */
-export function installedRows(
-	installations: InstallationSummary[],
-	available: AvailableSolution[],
-	availableKnown: boolean,
-): InstalledRow[] {
-	const byTarget = new Map(available.map((s) => [s.targetId, s] as const));
-	const unknown: FactView = availableKnown
-		? NOT_OFFERED
-		: {
-				kind: "gap",
-				label: "Not loaded",
-				detail:
-					"The available solutions could not be read, so this installation's route and release are not known here.",
-			};
-	return installations.flatMap(({ installation, health }) => {
-		if (!installation) return [];
-		const target = byTarget.get(installation.targetId);
+function teamGrantRows(grants: CollectionReadGrant[]): TeamGrantRow[] {
+	return grants.flatMap((view) => {
+		const grant = view.grant;
+		if (!grant) return [];
 		return [
 			{
-				installationId: installation.id,
-				targetId: installation.targetId,
-				solution: target ? { kind: "value", text: target.routeAlias } : unknown,
-				revision: target
-					? {
-							kind: "value",
-							text: releaseText(target),
-							detail: generationText(target),
-						}
-					: unknown,
-				health: healthView(health),
-				installedAt: installation.createdAt
-					? timestampDate(installation.createdAt).toISOString()
-					: undefined,
+				key:
+					grant.id || `${grant.subjectId}:${grant.roleId}:${grant.scopePath}`,
+				teamId: grant.subjectId,
+				roleId: grant.roleId,
+				team: view.subjectLabel || grant.subjectId,
+				role: view.roleName || grant.roleId,
+				scopePath: grant.scopePath,
 			},
 		];
 	});
+}
+
+/**
+ * The installed list, from the organization's own listing. The host joins each
+ * installation to the catalogue row of the target it installed and says when it
+ * no longer offers that target, so nothing here guesses a name.
+ */
+export function installedRows(
+	installations: OrganizationInstallation[],
+): InstalledRow[] {
+	return installations.flatMap(
+		({ installation, health, target, grantedTeams, inheritedTeams }) => {
+			if (!installation) return [];
+			return [
+				{
+					installationId: installation.id,
+					targetId: installation.targetId,
+					solution: target
+						? { kind: "value", text: target.routeAlias }
+						: NOT_OFFERED,
+					revision: target
+						? {
+								kind: "value",
+								text: releaseText(target),
+								detail: generationText(target),
+							}
+						: NOT_OFFERED,
+					health: healthView(health),
+					installedAt: installation.createdAt
+						? timestampDate(installation.createdAt).toISOString()
+						: undefined,
+					grantedTeams: teamGrantRows(grantedTeams),
+					inheritedTeams: teamGrantRows(inheritedTeams),
+				},
+			];
+		},
+	);
 }
 
 /**
@@ -203,13 +229,3 @@ export function hostRefusal(error: unknown): string {
 	const message = ConnectError.from(error).rawMessage.trim();
 	return message || "The host refused without giving a reason.";
 }
-
-/**
- * Why team exposure cannot be granted from this page. Exposing an installation
- * to a team is a scope grant at its authority-root node (GrantScope / RevokeScope
- * take that node's scope path), and nothing an organization administrator can
- * call returns that path or the team grants already at it: an installation names
- * only the node's id.
- */
-export const TEAM_EXPOSURE_UNAVAILABLE =
-	"Not available yet: the host does not tell an administrator where this installation's access is granted (its scope path), and granting or revoking a team needs it.";

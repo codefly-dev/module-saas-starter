@@ -51,6 +51,52 @@ export function useUninstallSolution(orgId: string) {
 	});
 }
 
+export interface TeamExposure {
+	installationId: string;
+	teamId: string;
+	roleId: string;
+}
+
+/**
+ * Exposes an installation to a team. The page names the installation and the
+ * team; the host resolves where the grant is written, and refuses a role that
+ * would expose nothing.
+ */
+export function useGrantInstallationToTeam(orgId: string) {
+	const service = useInstallationService();
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({ installationId, teamId, roleId }: TeamExposure) =>
+			service.grantInstallationToTeam({
+				orgId,
+				installationId,
+				teamId,
+				roleId,
+			}),
+		onSettled: () => invalidate(queryClient, orgId),
+	});
+}
+
+/**
+ * Removes one team's grant at an installation. A narrowing the host may refuse —
+ * it does when its policy log cannot witness the change — and the caller shows
+ * that refusal as the host words it.
+ */
+export function useRevokeInstallationFromTeam(orgId: string) {
+	const service = useInstallationService();
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({ installationId, teamId, roleId }: TeamExposure) =>
+			service.revokeInstallationFromTeam({
+				orgId,
+				installationId,
+				teamId,
+				roleId,
+			}),
+		onSettled: () => invalidate(queryClient, orgId),
+	});
+}
+
 function invalidate(
 	queryClient: ReturnType<typeof useQueryClient>,
 	orgId: string,

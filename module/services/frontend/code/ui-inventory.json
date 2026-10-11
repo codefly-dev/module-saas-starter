@@ -4744,6 +4744,26 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/solution-installations/ui/grant-team-dialog.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "react",
+        "sonner",
+        "@/features/roles/service/queries",
+        "@/features/teams/service/queries",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/installations",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the solution-installations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/solution-installations/ui/install-solution-dialog.tsx",
       "imports": [
         "@hookform/resolvers/zod",
@@ -4780,6 +4800,7 @@
         "../model/installations",
         "../service/mutations",
         "../service/queries",
+        "./grant-team-dialog",
         "./install-solution-dialog"
       ],
       "owner": "SaaS application",

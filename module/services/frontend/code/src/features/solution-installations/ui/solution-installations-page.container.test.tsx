@@ -27,6 +27,9 @@ const EXPENSES_TARGET = "aaaaaaaa-0000-4000-8000-000000000001";
 const LEDGER_TARGET = "aaaaaaaa-0000-4000-8000-000000000002";
 const EXPENSES_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000001";
 const READER_ROLE = "cccccccc-0000-4000-8000-000000000001";
+const USE_ROLE = "cccccccc-0000-4000-8000-000000000002";
+const FINANCE_TEAM = "eeeeeeee-0000-4000-8000-000000000001";
+const SUPPORT_TEAM = "eeeeeeee-0000-4000-8000-000000000002";
 
 const available = {
 	solutions: [
@@ -67,6 +70,35 @@ const installations = {
 				createdAt: "2026-10-01T00:00:00Z",
 			},
 			health: "INSTALLATION_HEALTH_HEALTHY",
+			// The host joins the installation to its target's catalogue row.
+			target: available.solutions[0],
+			rootScopePath: "dddddddd_0000_4000_8000_000000000001",
+			grantedTeams: [
+				{
+					grant: {
+						id: "grant-1",
+						subjectId: FINANCE_TEAM,
+						subjectKind: "SUBJECT_KIND_TEAM",
+						roleId: USE_ROLE,
+						scopePath: "dddddddd_0000_4000_8000_000000000001",
+					},
+					subjectLabel: "Finance",
+					roleName: "Solution user",
+				},
+			],
+			inheritedTeams: [
+				{
+					grant: {
+						id: "grant-2",
+						subjectId: "eeeeeeee-0000-4000-8000-000000000009",
+						subjectKind: "SUBJECT_KIND_TEAM",
+						roleId: USE_ROLE,
+						scopePath: "",
+					},
+					subjectLabel: "Everyone",
+					roleName: "Solution user",
+				},
+			],
 		},
 	],
 };
@@ -79,8 +111,29 @@ const roles = {
 			orgId: "org-1",
 			permissions: [{ resource: "expenses", action: "read" }],
 		},
+		{
+			id: USE_ROLE,
+			name: "Solution user",
+			orgId: "org-1",
+			permissions: [{ resource: "solution", action: "use" }],
+		},
 	],
 };
+
+const teams = {
+	teams: [
+		{ id: FINANCE_TEAM, orgId: "org-1", name: "Finance" },
+		{ id: SUPPORT_TEAM, orgId: "org-1", name: "Support" },
+	],
+};
+
+// Picks an option in a kit Select, the way the other admin tests do.
+async function choose(dialog: HTMLElement, label: string, option: string) {
+	fireEvent.click(within(dialog).getByRole("combobox", { name: label }));
+	const item = await screen.findByRole("option", { name: option });
+	fireEvent.pointerDown(item, { pointerType: "mouse" });
+	fireEvent.click(item);
+}
 
 function serve({
 	availableBody = available,
@@ -93,12 +146,13 @@ function serve({
 		http.post(rpc("InstallationService", "ListAvailableSolutions"), () =>
 			HttpResponse.json(availableBody),
 		),
-		http.post(rpc("InstallationService", "ListInstallations"), () =>
+		http.post(rpc("InstallationService", "ListOrganizationInstallations"), () =>
 			HttpResponse.json(installationsBody),
 		),
 		http.post(rpc("PermissionService", "ListRoles"), () =>
 			HttpResponse.json(roles),
 		),
+		http.post(rpc("TeamService", "ListTeams"), () => HttpResponse.json(teams)),
 	);
 }
 
@@ -132,21 +186,36 @@ describe("SolutionInstallationsPage admin container", () => {
 		const installedTable = await screen.findByRole("table", {
 			name: "Installed solutions",
 		});
-		// The installation names only its target; the route and the release come
-		// from the catalogue, joined on that target.
+		// The route and the release are the catalogue row the host joined to the
+		// installation's target.
 		const row = within(installedTable).getByText("expenses").closest("tr");
 		if (!row) throw new Error("installed row missing");
 		expect(within(row).getByText("acme/expenses@1.4.0")).toBeTruthy();
 		expect(within(row).getByText("Generation 3 (opened at 2)")).toBeTruthy();
 		expect(within(row).getByText("Healthy")).toBeTruthy();
+		// Granted here and inherited from above are kept apart; only the first is
+		// removable here.
+		const granted = within(row).getByRole("list", {
+			name: "Teams granted expenses",
+		});
+		expect(within(granted).getByText("Finance")).toBeTruthy();
+		expect(within(granted).queryByText("Everyone")).toBeNull();
+		expect(
+			within(row).getByText(/Inherited from above: Everyone/),
+		).toBeTruthy();
+		expect(
+			within(row).queryByRole("button", {
+				name: "Remove Everyone from expenses",
+			}),
+		).toBeNull();
 	});
 
-	it("asks for active installations of this organization only", async () => {
+	it("asks for this organization's installations through the org-admin read", async () => {
 		let asked: unknown;
 		serve();
 		server.use(
 			http.post(
-				rpc("InstallationService", "ListInstallations"),
+				rpc("InstallationService", "ListOrganizationInstallations"),
 				async ({ request }) => {
 					asked = await request.json();
 					return HttpResponse.json(installations);
@@ -155,10 +224,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		);
 		renderInApp(<SolutionInstallationsPage />);
 		await screen.findByRole("table", { name: "Installed solutions" });
-		expect(asked).toMatchObject({
-			orgId: "org-1",
-			status: "INSTALLATION_STATUS_ACTIVE",
-		});
+		expect(asked).toMatchObject({ orgId: "org-1" });
 	});
 
 	it("installs the chosen target with the role and ceiling the administrator gave", async () => {
@@ -322,31 +388,119 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 	});
 
-	it("says why a team cannot be granted here, and grants nothing", async () => {
-		let granted = false;
+	it("grants a team by installation, team and role, never by scope path", async () => {
+		let granted: Record<string, unknown> | undefined;
 		serve();
 		server.use(
-			http.post(rpc("PermissionService", "GrantScope"), () => {
-				granted = true;
-				return HttpResponse.json({});
-			}),
-			http.post(rpc("PermissionService", "RevokeScope"), () => {
-				granted = true;
-				return HttpResponse.json({});
-			}),
+			http.post(
+				rpc("InstallationService", "GrantInstallationToTeam"),
+				async ({ request }) => {
+					granted = (await request.json()) as Record<string, unknown>;
+					return HttpResponse.json({ grant: { id: "grant-3" } });
+				},
+			),
 		);
 		renderInApp(<SolutionInstallationsPage />);
 
-		const grant = (await screen.findByRole("button", {
-			name: "Grant a team access to expenses",
-		})) as HTMLButtonElement;
-		expect(grant.disabled).toBe(true);
-		const reason = document.getElementById(
-			grant.getAttribute("aria-describedby") ?? "",
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Grant a team access to expenses",
+			}),
 		);
-		expect(reason?.textContent).toMatch(/scope path/);
-		fireEvent.click(grant);
-		expect(granted).toBe(false);
+		const dialog = await screen.findByRole("dialog");
+		await choose(dialog, "Team", "Support");
+		await choose(dialog, "Role", "Solution user — solution:use");
+		fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
+
+		await waitFor(() => expect(granted).toBeDefined());
+		expect(granted).toEqual({
+			orgId: "org-1",
+			installationId: EXPENSES_INSTALLATION,
+			teamId: SUPPORT_TEAM,
+			roleId: USE_ROLE,
+		});
+		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+	});
+
+	it("shows the host's refusal of a grant in its own words", async () => {
+		serve();
+		server.use(
+			http.post(rpc("InstallationService", "GrantInstallationToTeam"), () =>
+				HttpResponse.json(
+					{
+						code: "invalid_argument",
+						message:
+							"role does not permit using a solution: role r does not permit solution:use, so a grant of it would expose nothing",
+					},
+					{ status: 400 },
+				),
+			),
+		);
+		renderInApp(<SolutionInstallationsPage />);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Grant a team access to expenses",
+			}),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await choose(dialog, "Team", "Support");
+		await choose(dialog, "Role", "Expense reader — expenses:read");
+		fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
+		const alert = await within(dialog).findByRole("alert");
+		expect(alert.textContent).toContain(
+			"so a grant of it would expose nothing",
+		);
+	});
+
+	it("removes a team through RevokeInstallationFromTeam and shows a refusal as the host words it", async () => {
+		let revoked: unknown;
+		serve();
+		server.use(
+			http.post(
+				rpc("InstallationService", "RevokeInstallationFromTeam"),
+				async ({ request }) => {
+					revoked = await request.json();
+					return HttpResponse.json(
+						{
+							code: "failed_precondition",
+							message:
+								"cannot revoke installation from team: policy log unreachable: this host has no policy log, so authority cannot be narrowed",
+						},
+						{ status: 400 },
+					);
+				},
+			),
+		);
+		renderInApp(<SolutionInstallationsPage />);
+
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Remove Finance from expenses",
+			}),
+		);
+
+		expect(
+			await screen.findByText(
+				"The host refused to remove Finance from expenses",
+			),
+		).toBeTruthy();
+		expect(
+			screen.getByText(
+				"cannot revoke installation from team: policy log unreachable: this host has no policy log, so authority cannot be narrowed",
+			),
+		).toBeTruthy();
+		expect(revoked).toEqual({
+			orgId: "org-1",
+			installationId: EXPENSES_INSTALLATION,
+			teamId: FINANCE_TEAM,
+			roleId: USE_ROLE,
+		});
+		// Still granted: the host did not remove it.
+		expect(
+			within(
+				screen.getByRole("list", { name: "Teams granted expenses" }),
+			).getByText("Finance"),
+		).toBeTruthy();
 	});
 
 	it("says a refused installation read is refused, and still offers the catalogue", async () => {
@@ -354,11 +508,16 @@ describe("SolutionInstallationsPage admin container", () => {
 			installationsBody: undefined,
 		});
 		server.use(
-			http.post(rpc("InstallationService", "ListInstallations"), () =>
-				HttpResponse.json(
-					{ code: "permission_denied", message: "internal procedure" },
-					{ status: 403 },
-				),
+			http.post(
+				rpc("InstallationService", "ListOrganizationInstallations"),
+				() =>
+					HttpResponse.json(
+						{
+							code: "permission_denied",
+							message: "requires organization admin",
+						},
+						{ status: 403 },
+					),
 			),
 		);
 		renderInApp(<SolutionInstallationsPage />);
