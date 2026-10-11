@@ -120,9 +120,9 @@ func TestListAccessibleScopes_GrantRevokeAndShare(t *testing.T) {
 		"a member inherits the team grant across the whole subtree: %v", viaTeam)
 
 	// A per-record share surfaces exactly the placed-record node for a subject with
-	// no scope grant of their own (record_shares.subject_id has no principal FK, so
-	// a bare principal id is a valid share recipient).
-	other := business.NewIDString()
+	// no scope grant of their own. The recipient is a member of the organization: a
+	// share names a subject of the share's organization (requireSubjectInOrgTx).
+	other := mustMember(t, owner, org, "las-other@rls-test.com", "las-other")
 	require.Empty(t, listScopePaths(t, ctx, org, other, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", "read"))
 	_, err = testService.ShareRecord(ctx, owner, &gen.ShareRecordRequest{
 		OrgId: org, ResourceType: "doc", ResourceId: "doc-1",

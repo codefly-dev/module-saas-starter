@@ -1045,26 +1045,45 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 // RLS-protected (Phase 2E). Empty OrgId means a platform-level
 // assignment (super_admin etc.) — handler authz already required
 // platform_admin; the write goes through bypass.
+//
+// An organization assignment names a subject of that organization. The row's
+// RLS policy checks only the assignment's own organization and nothing ties
+// subject_id to a membership, so the subject is checked here, in the write's
+// transaction and under the membership lock a removal takes
+// (requireSubjectInOrgTx). The platform-level path names no organization and is
+// authorised separately, so it is not narrowed by this.
 func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*gen.AssignRoleResponse, error) {
+	orgID, subjectID := req.OrgId, req.SubjectId
+	var err error
+	if orgID != "" {
+		orgID, subjectID, err = canonicalSubjectTenancyIDs(orgID, subjectID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	assignment := &gen.RoleAssignment{
 		Id:          NewIDString(),
-		SubjectId:   req.SubjectId,
+		SubjectId:   subjectID,
 		SubjectKind: req.SubjectKind,
 		RoleId:      req.RoleId,
-		OrgId:       req.OrgId,
+		OrgId:       orgID,
 		Scope:       req.Scope,
 	}
 	wrap := func(ctx context.Context) error {
+		if orgID != "" {
+			if err := s.requireSubjectInOrgTx(ctx, orgID, subjectID, req.SubjectKind); err != nil {
+				return err
+			}
+		}
 		if err := s.store.AssignRole(ctx, assignment); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, req.SubjectId, "user", EventRoleAssigned, "role", req.RoleId, req.OrgId)
+		return s.emitTx(ctx, subjectID, "user", EventRoleAssigned, "role", req.RoleId, orgID)
 	}
-	var err error
-	if req.OrgId == "" {
+	if orgID == "" {
 		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
-		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
+		err = s.store.WithOrgTx(ctx, orgID, wrap)
 	}
 	if err != nil {
 		return nil, err

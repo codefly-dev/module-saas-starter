@@ -325,7 +325,15 @@ type Store interface {
 	// ArchiveOrganization marks a live organization archived and releases its
 	// slug. Migration 16's trigger then refuses any membership into it.
 	ArchiveOrganization(ctx context.Context, orgID, actorID string) error
-	// RemoveAllOrgMembers deletes every membership of an organization.
+	// LockAllOrgMembers takes the administration lock and every canonical
+	// membership lock in sorted order without deleting. Keep this transaction
+	// open through RemoveLockedOrgMembers and acquire these before any writes.
+	LockAllOrgMembers(ctx context.Context, orgID string) ([]string, error)
+	// RemoveLockedOrgMembers deletes only the roster locked above in the same
+	// transaction. Organization deletion must lock and uninstall its installation
+	// batch before this write's authorization/session triggers run.
+	RemoveLockedOrgMembers(ctx context.Context, orgID string, members []string) (int64, error)
+	// RemoveAllOrgMembers locks and deletes every membership in one call.
 	RemoveAllOrgMembers(ctx context.Context, orgID string) (int64, error)
 	// RevokeOrgAPIKeys revokes every live API key of an organization.
 	RevokeOrgAPIKeys(ctx context.Context, orgID string) (int64, error)
