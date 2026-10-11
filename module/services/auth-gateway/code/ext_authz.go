@@ -413,9 +413,23 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		return deny(401, "this host has no configured public address, so it cannot "+
 			"state the resource a token must name"), nil
 	}
+	resourceConfined := ""
 	if binding == resourceBound {
 		solutionID, isSolutionPath := solutionIDFromPath(path)
-		if !isSolutionPath || !resourceAudienceAdmits(resource, solutionID, s.publicBase) {
+		switch {
+		case isSolutionPath && resourceAudienceAdmits(resource, solutionID, s.publicBase):
+			// The solution its own resource names. Admitted, as before.
+		case isWorkContextMintPath(path):
+			// THE ONE HOST ROUTE (isWorkContextMintPath carries the reasoning).
+			//
+			// Admitted, and carried forward as a confinement rather than dropped:
+			// the resource travels to the mint in x-codefly-resource below, so what
+			// accounts issues is held to the consumer this credential was delivered
+			// to. Admitting the route without saying which resource asked would hand
+			// the mint a credential it could not tell from an unbound session, which
+			// is the confinement removed rather than relocated.
+			resourceConfined = resource
+		default:
 			recordJWTRejection(ctx, jwtRejectionWrongResource)
 			return deny(401, "the token presented was issued for a different "+
 				"resource than this endpoint"), nil
@@ -471,6 +485,22 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		// authorization artifact: scopes are an API key's ceiling, and a key
 		// carrying none would otherwise be indistinguishable from a session.
 		hdr("x-credential-kind", credentialKindSession),
+	}
+	if resourceConfined != "" {
+		// The resource this credential was issued for. Non-empty on exactly one
+		// host route — the delegation mint — and on a solution's own paths, where
+		// the resource and the path already agree.
+		//
+		// Accounts reads it as a ceiling on the mint: a capability minted under it
+		// may act for the consumer that resource names and for no other. Empty is
+		// an ordinary unbound session, and allow() stamps the empty value rather
+		// than omitting the header, so the two are distinguishable without either
+		// being a missing-header inference.
+		//
+		// Gateway-owned, like every header beside it: the name is on
+		// untrustedAuthHeaders AND on canonicalUpstreamAuthHeaders, so a caller
+		// presenting it has its value replaced rather than forwarded.
+		hdrs = append(hdrs, hdr(resourceConfinementHeader, resourceConfined))
 	}
 	if claims.MFASatisfied {
 		hdrs = append(hdrs, hdr("x-mfa-satisfied", "true"))
@@ -698,6 +728,18 @@ var canonicalUpstreamAuthHeaders = []string{
 	"x-acting-as-user-id", "x-act", "x-scopes", "x-credential-kind", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	clientIDHeader,
+	// The resource a confined credential was issued for. ON THIS LIST, not only
+	// appended to the stamped set: allow() rebuilds the response from this list
+	// alone, so a header missing from it is silently dropped however carefully it
+	// was appended — which would have admitted the mint route with the
+	// confinement lost in transit, the one outcome worse than refusing it.
+	//
+	// Being here also means it is stamped on EVERY allow, empty when the
+	// credential names no resource. That is stronger than sending it only when
+	// confined: Envoy replaces a caller-supplied value even where the authenticated
+	// token has none, so a caller cannot assert a resource by arriving with one on
+	// a request that would otherwise carry no such header at all.
+	resourceConfinementHeader,
 }
 
 // clientIDHeader carries the registered client a request was made through, as

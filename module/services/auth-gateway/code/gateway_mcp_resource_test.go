@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -167,10 +169,16 @@ func TestGateway_MCPToken_ReachesItsOwnSolutionsOtherRoutes(t *testing.T) {
 //     Work Context surface is part of that API, so the reach included minting
 //     further capabilities for other audiences: authority amplification, not a
 //     fixed set of things "a solution" could already do.
-//  2. The runtime does not need it. A runtime's calls to this host are made with
-//     the module credential it was provisioned — `/modules/_work-context` takes
-//     the internal token and the module secret and never a person's bearer — so
-//     refusing the person's resource token here breaks no path that exists.
+//  2. The reach was the whole API, and only one route of it is needed. This
+//     reason previously read "the runtime does not need it", which was FALSE and
+//     is corrected here rather than quietly dropped: the runtime's MCP viewer
+//     path mints a viewer-owned Work Context at this host, carrying the person's
+//     bearer beside its own workload attestation, and its module credential does
+//     not stand in for that. Refusing every host route refused the viewer's own
+//     tool call. So exactly one route is admitted — the delegation mint — and it
+//     is admitted CONFINED, carrying the resource forward so what is issued is
+//     held to the consumer the credential was delivered to
+//     (TestGateway_MCPToken_ReachesTheMintAndNothingElseOnTheHost).
 //
 // The host audience such a token also carries is a PARSER requirement: the
 // minter stamps it so its own VerifyAccess and this gateway's claims parser
@@ -818,4 +826,148 @@ func TestR1019EverySpellingOfTheToolEndpointIsProtected(t *testing.T) {
 		require.False(t, isSolutionToolRequestPath(ordinary),
 			"%s is not the tool surface and must stay reachable with a session", ordinary)
 	}
+}
+
+// The one host route, and the confinement it carries.
+//
+// Three facts in one test, because the property is the conjunction and any two
+// of them without the third is either a regression or an escape:
+//
+//  1. The delegation mint ADMITS a resource-bound token. Without this the
+//     runtime's MCP viewer cannot derive a module gateway for the person, which
+//     is the consumer regression the second review of this PR demonstrated with
+//     a real runtime tool call.
+//  2. It arrives CONFINED. The resource travels to accounts as
+//     x-codefly-resource, so the mint can hold what it issues to the consumer
+//     the credential was delivered to. An admitted route that dropped the
+//     resource would be the confinement deleted, not relocated — accounts would
+//     see a credential indistinguishable from an unbound session.
+//  3. Nothing ELSE on the host is admitted. The mint is one procedure, compared
+//     whole; a sibling procedure on the same service is refused, which is what
+//     stops "the mint is allowed" from becoming "the Work Context surface is
+//     allowed".
+func TestGateway_MCPToken_ReachesTheMintAndNothingElseOnTheHost(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	s, key := newTestExtAuthz(t)
+	s.publicBase = testPublicBase
+	token := signResourceToken(t, key, solutionMCPResource(testPublicBase, "example"))
+
+	admitted := s.check(t, workContextMintProcedure, token)
+	require.Equal(t, solutionMCPResource(testPublicBase, "example"), admitted.Get(resourceConfinementHeader),
+		"the mint must be told which resource the credential is confined to")
+
+	for _, elsewhere := range []string{
+		"/saas.accounts.v1.WorkContextService/StartInstallationTask",
+		"/saas.accounts.v1.WorkContextService/Exchange",
+		"/saas.accounts.v1.UserService/GetSelf",
+		"/v1/users",
+	} {
+		t.Run(elsewhere, func(t *testing.T) {
+			response, err := s.Check(context.Background(), checkReq(elsewhere, map[string]string{
+				"authorization": "Bearer " + token,
+			}))
+			require.NoError(t, err)
+			require.NotNil(t, response.GetDeniedResponse(), "every host route but the mint stays refused")
+			require.Equal(t, int32(401), int32(response.GetDeniedResponse().GetStatus().GetCode()))
+		})
+	}
+}
+
+// An ordinary session credential is NOT confined, and must not arrive looking as
+// though it were. The header's presence is the whole signal accounts reads, so a
+// value stamped for a token that names no resource would impose a confinement on
+// the browser's own session — refusing the product rather than a replay.
+func TestGateway_SessionTokenCarriesNoResourceConfinement(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	s, key := newTestExtAuthz(t)
+	s.publicBase = testPublicBase
+
+	stamped := s.check(t, workContextMintProcedure, signValidToken(t, key))
+	require.Empty(t, stamped.Get(resourceConfinementHeader),
+		"an unbound session must reach the mint with no confinement asserted")
+}
+
+// check runs one ext_authz decision and returns the headers it stamped,
+// failing the test if the request was refused.
+func (s *ExtAuthz) check(t *testing.T, path, token string) http.Header {
+	t.Helper()
+	response, err := s.Check(context.Background(), checkReq(path, map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+	require.Nil(t, response.GetDeniedResponse(), "expected %s to be admitted", path)
+	stamped := http.Header{}
+	for _, h := range response.GetOkResponse().GetHeaders() {
+		stamped.Set(h.GetHeader().GetKey(), h.GetHeader().GetValue())
+	}
+	return stamped
+}
+
+// The consumer half of the confinement: admitted at the mint only for a solution
+// this organization installed and this viewer was granted.
+//
+// The route confinement alone ("a resource token reaches the mint and nothing
+// else") bounds where the credential acts. It does NOT bound what it acts for: a
+// token issued for one consumer would still have minted a capability while its
+// consumer was uninstalled, revoked, or never granted to this person. These
+// three cases are the difference, and they are asked through the same authority
+// that already decides every proxied request to that solution — not a second,
+// looser copy of the question.
+func TestGateway_MCPToken_AtTheMintIsConfinedToItsInstalledConsumer(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+
+	mintRequest := func(t *testing.T, gw *Gateway, priv ed25519.PrivateKey, solution string) *httptest.ResponseRecorder {
+		t.Helper()
+		token := signResourceToken(t, priv, solutionMCPResource(testPublicBase, solution))
+		req := httptest.NewRequest(http.MethodPost, workContextMintProcedure, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		return w
+	}
+
+	t.Run("an installed, granted consumer mints", func(t *testing.T) {
+		gw, api, _, priv := newGatewayHarness(t)
+		registerSolutionUpstream(t, gw, "example")
+		gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("example")}}
+
+		require.Equal(t, http.StatusOK, mintRequest(t, gw, priv, "example").Code)
+		require.Equal(t, solutionMCPResource(testPublicBase, "example"),
+			api.lastHeaders.Get(resourceConfinementHeader),
+			"and the mint is told which consumer it is confined to")
+	})
+
+	t.Run("a consumer the organization did not install does not", func(t *testing.T) {
+		gw, api, _, priv := newGatewayHarness(t)
+		registerSolutionUpstream(t, gw, "example")
+		registerSolutionUpstream(t, gw, "other")
+		// Installed something else entirely.
+		gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("other")}}
+
+		require.Equal(t, http.StatusForbidden, mintRequest(t, gw, priv, "example").Code)
+		require.Nil(t, api.lastHeaders, "accounts must not be asked to mint at all")
+	})
+
+	t.Run("an authority that cannot be asked does not", func(t *testing.T) {
+		gw, api, _, priv := newGatewayHarness(t)
+		registerSolutionUpstream(t, gw, "example")
+		gw.solutionEntitlements = &fakeSolutionEntitlements{err: errors.New("accounts down")}
+
+		require.Equal(t, http.StatusServiceUnavailable, mintRequest(t, gw, priv, "example").Code,
+			"a capability is never issued on an unanswered question")
+		require.Nil(t, api.lastHeaders)
+	})
+
+	t.Run("an ordinary session is not subject to any of it", func(t *testing.T) {
+		gw, api, _, priv := newGatewayHarness(t)
+		// No entitlement authority and no registered solution: an unconfined
+		// credential must not acquire a consumer check it never had.
+		req := httptest.NewRequest(http.MethodPost, workContextMintProcedure, nil)
+		req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Empty(t, api.lastHeaders.Get(resourceConfinementHeader))
+	})
 }

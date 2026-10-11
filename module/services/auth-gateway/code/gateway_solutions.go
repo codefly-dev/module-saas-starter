@@ -465,3 +465,75 @@ func isForbiddenUpstreamHost(host string) bool {
 	}
 	return false
 }
+
+// confineResourceMintToItsConsumer is the second half of the resource
+// confinement, and the half that makes it a confinement to a CONSUMER rather
+// than only to a route.
+//
+// ext_authz admits a resource-bound credential at exactly one host route — the
+// delegation mint — and stamps the resource it is bound to. That alone bounds
+// WHERE the credential may act. This bounds WHAT it may act for: the solution
+// the resource names must be one this organization installed and this viewer was
+// granted, which is the same question, asked through the same authority, as the
+// one every proxied request to that solution already passes.
+//
+// Three refusals, deliberately distinguished:
+//
+//   - A resource this host would not have minted resolves to no solution. 401:
+//     the credential is not one of ours, and a client answers by re-authorizing.
+//   - A solution whose registration resolves to nothing, or to a target the
+//     viewer holds no grant for, is 403. It is a verdict about this person and
+//     this consumer, and no re-authorization changes it.
+//   - An authority that could not be asked is 503, never an admission. A mint is
+//     a capability; issuing one on "I could not check" is the failure mode this
+//     whole finding is about.
+//
+// It runs on the HTTP gateway path, after the identity projection, because that
+// is where the registry and the entitlement authority live. A deployment driving
+// ext_authz from Envoy gets the route confinement and the carried resource but
+// not this check, which is stated here rather than assumed away: the asymmetry
+// is the same one the gateway credential already has (see ExtAuthz.allow), and
+// closing it means giving the ext_authz server its own registry client.
+func (g *Gateway) confineResourceMintToItsConsumer(w http.ResponseWriter, r *http.Request) bool {
+	resource := r.Header.Get(resourceConfinementHeader)
+	if resource == "" || !isWorkContextMintPath(r.URL.Path) {
+		return true
+	}
+	solutionID, ok := solutionIDFromResource(resource, g.authz.publicBase)
+	if !ok {
+		httpError(w, http.StatusUnauthorized,
+			"the token presented names no resource this host issues")
+		return false
+	}
+	routing, resolution := g.solutions.resolveRouting(r.Context(), solutionID)
+	switch resolution {
+	case solutionRoutable:
+		// Resolved to one declared binding. Admission below.
+	case solutionRegistryUnavailable:
+		// Undecidable, and a mint is never issued on an unanswered question.
+		httpError(w, http.StatusServiceUnavailable,
+			"the solution registry could not be read, so this token's consumer "+
+				"could not be identified")
+		return false
+	default:
+		// Unregistered, withdrawn, or the wrong surface: a verdict.
+		httpError(w, http.StatusForbidden,
+			"the consumer this token was issued for is not available here")
+		return false
+	}
+	org := r.Header.Get("X-Org-Id")
+	viewer := r.Header.Get("X-User-Id")
+	switch g.admitViewerSolution(r.Context(), org, viewer, routing) {
+	case viewerSolutionAdmitted:
+		return true
+	case viewerSolutionNotEntitled:
+		httpError(w, http.StatusForbidden,
+			"this organization has not installed the consumer this token was issued for, "+
+				"or you hold no grant that reaches it")
+		return false
+	default:
+		httpError(w, http.StatusServiceUnavailable,
+			"the authority that decides this consumer's installation could not be reached")
+		return false
+	}
+}

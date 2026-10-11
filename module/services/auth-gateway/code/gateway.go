@@ -363,6 +363,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
+		// A resource-confined credential reaches exactly one host route, and only
+		// for the consumer it was delivered to. Decided AFTER the projection,
+		// because the org and viewer it asks about are what that projection just
+		// established from the verified token — and refused before the limiter, so
+		// a refusal costs the organization nothing.
+		if !g.confineResourceMintToItsConsumer(w, r) {
+			return
+		}
 		// Stamped after the identity projection, so it joins the headers
 		g.rateLimitThenProxy(w, r, upstream, entry)
 
@@ -657,27 +665,33 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	return r.WithContext(ctx)
 }
 
-// publicOriginFor is the browser origin accounts may treat as verified: the
-// WebAuthn relying party a credential is bound to, and the origin an OAuth
-// redirect is validated against.
+// publicOriginFor is THIS HOST's public origin, and only ever that: the WebAuthn
+// relying party a credential is bound to, the base of an emailed link, and the
+// origin the host's own /auth/callback is validated against.
 //
-// Two callers can establish one. The frontend proves it by presenting the
-// cluster-internal token alongside the origin it resolved server-side. A
-// registered client proves it by arriving from an origin its own registration
-// declares, which authorizeCrossOrigin has already checked — a stronger claim,
-// since it names the client rather than only the process that forwarded it.
+// One caller can establish it — the host's own frontend, which proves it by
+// presenting the cluster-internal token alongside the origin it resolved
+// server-side, and whose value accounts then honours only where it equals the
+// configured one.
+//
+// A REGISTERED CLIENT'S OWN ORIGIN IS NOT THIS VALUE, and used to be returned
+// here. A client's CORS origin and the host's public origin are different facts
+// about different parties: an add-in served from https://addin.example is
+// entitled to call this host from there, which authorizeCrossOrigin decides, and
+// that entitlement says nothing about which origin the host mints links at or
+// binds an authenticator to. Collapsing the two sent the client's origin to
+// accounts AS the host's, where pinning the host origin then refused the request
+// outright — so the two meanings were not merely conflated, they were in
+// contradiction the moment an operator configured the host origin at all.
+//
+// Nothing is lost by separating them. A registered client's redirect target is
+// authorized against the URIs its own registration declares
+// (RegisteredClient.AllowsRedirect), never against a public origin, and that
+// type's own comment is explicit that its redirects and its origins are
+// independent "and deriving one from the other would silently widen whichever
+// was not declared". This is that rule applied one hop further out.
 func publicOriginFor(r *http.Request) (string, bool) {
-	if origin, ok := trustedFrontendOrigin(r.Context()); ok {
-		return origin, true
-	}
-	if r.Header.Get(clientIDHeader) == "" {
-		return "", false
-	}
-	origin, err := canonicalPublicOrigin(r.Header.Get("Origin"))
-	if err != nil {
-		return "", false
-	}
-	return origin, true
+	return trustedFrontendOrigin(r.Context())
 }
 
 func trustedFrontendOrigin(ctx context.Context) (string, bool) {
@@ -826,7 +840,19 @@ var untrustedAuthHeaders = []string{
 	solutionIdentityHeader,
 	solutionPublisherHeader,
 	clientIDHeader,
+	// The resource a confined credential was issued for. Stamped by ext_authz on
+	// the one host route that admits such a credential, and read by accounts as a
+	// ceiling on what the mint may issue — so a caller able to set it could lift
+	// its own confinement, or impose one on somebody else's request.
+	resourceConfinementHeader,
 }
+
+// resourceConfinementHeader carries the RFC 8707 resource a credential is bound
+// to, from the ext_authz check to the Work Context mint. It is stamped on every
+// allow decision — empty for an ordinary session, the resource identifier for a
+// confined credential — so accounts reads a VALUE rather than inferring anything
+// from a header's absence, and a caller cannot assert one by supplying it.
+const resourceConfinementHeader = "x-codefly-resource"
 
 // solutionIdentityHeader and solutionPublisherHeader are the headers accounts
 // reads to decide which registered solution a Work Context mint is for. This

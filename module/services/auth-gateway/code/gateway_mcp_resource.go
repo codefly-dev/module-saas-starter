@@ -99,6 +99,44 @@ func publicBaseURL() string {
 	return strings.TrimSuffix(strings.TrimSpace(workspaceEnv("application", "APP_BASE_URL")), "/")
 }
 
+// workContextMintProcedure is the ONE host route a resource-bound token reaches:
+// the delegation mint. It is the full gRPC/Connect procedure name, which is also
+// the request path on both transports.
+//
+// Named as a constant and compared whole. A prefix match would admit any
+// procedure beginning with it, and this is the one place where the difference
+// between "this exact mint" and "anything that looks like it" is the whole
+// property.
+const workContextMintProcedure = "/saas.accounts.v1.WorkContextService/StartTask"
+
+// isWorkContextMintPath reports whether a FULL request path addresses the
+// delegation mint — the single host route a resource-confined credential is
+// admitted at.
+//
+// Why there is exactly one, and why it is this one:
+//
+// A resource-bound token is held by a third-party MCP client and, once
+// forwarded, by the solution runtime it dialled. Confinement exists so that
+// credential cannot act as the person anywhere but the resource it names. The
+// claim that nothing legitimate needed a host route was wrong: the runtime's MCP
+// viewer path derives a module gateway by minting a viewer-owned Work Context
+// here, carrying the viewer's bearer beside its own workload attestation. Its
+// module credential does not stand in for the viewer's — the mint is what turns
+// "this person asked" into a capability the destination module can check — so
+// refusing this route refuses the viewer's own tool call, which is a product
+// regression and not a security property.
+//
+// So the mint is admitted and nothing else is. Everything a resource token could
+// otherwise have reached — this host's own API, another declared module's routes,
+// the rest of the Work Context surface — stays refused, which is the escape the
+// confinement was added to close. What the mint then issues is bounded on the
+// accounts side, where the viewer's own authority, the host audience vocabulary
+// and the stamped resource below decide what may be minted.
+func isWorkContextMintPath(path string) bool {
+	pathOnly, _, _ := strings.Cut(path, "?")
+	return pathOnly == workContextMintProcedure
+}
+
 // resourceAudienceAdmits reports whether a token's resource audience permits a
 // request to solutionID. The audience must be a URL naming that solution's MCP
 // endpoint, at this host's configured origin when one is configured.
@@ -266,4 +304,33 @@ func gatewayTokenIssuer() string {
 // there rather than a second trusted issuer.
 func gatewayAcceptedIssuers() []string {
 	return []string{legacyTokenIssuer}
+}
+
+// solutionIDFromResource is the inverse of solutionMCPResource: the solution a
+// resource identifier names, or ok=false when the value is not an identifier
+// this host would have minted.
+//
+// Built by RECONSTRUCTION, not by parsing. It takes the candidate id out of the
+// expected position and then requires solutionMCPResource to rebuild the exact
+// string that arrived, so anything the two spellings disagree about — a
+// different base, an extra segment, a trailing slash, a different case — fails
+// rather than resolving to a solution it half-matches. The confinement is only
+// as good as the identity of the thing it names, and a lenient reverse parse is
+// how a token for one solution comes to name another.
+func solutionIDFromResource(resource, publicBase string) (string, bool) {
+	if publicBase == "" {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(resource, publicBase+solutionProxyBase)
+	if !ok {
+		return "", false
+	}
+	id, _, found := strings.Cut(rest, "/")
+	if !found || id == "" || !solutionIDPattern.MatchString(id) {
+		return "", false
+	}
+	if solutionMCPResource(publicBase, id) != resource {
+		return "", false
+	}
+	return id, true
 }
