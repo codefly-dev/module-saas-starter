@@ -46,6 +46,8 @@ const (
 	PlatformAdminService_GetEventOperations_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/GetEventOperations"
 	PlatformAdminService_ListEventSubscriptions_FullMethodName = "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions"
 	PlatformAdminService_ListPlatformCatalogue_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue"
+	PlatformAdminService_GetModuleEnvelope_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope"
+	PlatformAdminService_PutModuleEnvelope_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope"
 )
 
 // PlatformAdminServiceClient is the client API for PlatformAdminService service.
@@ -105,6 +107,13 @@ type PlatformAdminServiceClient interface {
 	// ListPlatformCatalogue lists every composed module and solution with what
 	// it declares, what runs, and which organizations have it installed.
 	ListPlatformCatalogue(ctx context.Context, in *ListPlatformCatalogueRequest, opts ...grpc.CallOption) (*ListPlatformCatalogueResponse, error)
+	// GetModuleEnvelope reads the current module envelope: the authority ceiling
+	// every module principal on this host is derived inside.
+	GetModuleEnvelope(ctx context.Context, in *GetModuleEnvelopeRequest, opts ...grpc.CallOption) (*GetModuleEnvelopeResponse, error)
+	// PutModuleEnvelope writes the next revision of the module envelope. It takes
+	// effect at the next check with no restart: the module registry is derived
+	// again from it, so a narrowing removes what the new ceiling no longer allows.
+	PutModuleEnvelope(ctx context.Context, in *PutModuleEnvelopeRequest, opts ...grpc.CallOption) (*PutModuleEnvelopeResponse, error)
 }
 
 type platformAdminServiceClient struct {
@@ -346,6 +355,26 @@ func (c *platformAdminServiceClient) ListPlatformCatalogue(ctx context.Context, 
 	return out, nil
 }
 
+func (c *platformAdminServiceClient) GetModuleEnvelope(ctx context.Context, in *GetModuleEnvelopeRequest, opts ...grpc.CallOption) (*GetModuleEnvelopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetModuleEnvelopeResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_GetModuleEnvelope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformAdminServiceClient) PutModuleEnvelope(ctx context.Context, in *PutModuleEnvelopeRequest, opts ...grpc.CallOption) (*PutModuleEnvelopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutModuleEnvelopeResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_PutModuleEnvelope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PlatformAdminServiceServer is the server API for PlatformAdminService service.
 // All implementations must embed UnimplementedPlatformAdminServiceServer
 // for forward compatibility.
@@ -403,6 +432,13 @@ type PlatformAdminServiceServer interface {
 	// ListPlatformCatalogue lists every composed module and solution with what
 	// it declares, what runs, and which organizations have it installed.
 	ListPlatformCatalogue(context.Context, *ListPlatformCatalogueRequest) (*ListPlatformCatalogueResponse, error)
+	// GetModuleEnvelope reads the current module envelope: the authority ceiling
+	// every module principal on this host is derived inside.
+	GetModuleEnvelope(context.Context, *GetModuleEnvelopeRequest) (*GetModuleEnvelopeResponse, error)
+	// PutModuleEnvelope writes the next revision of the module envelope. It takes
+	// effect at the next check with no restart: the module registry is derived
+	// again from it, so a narrowing removes what the new ceiling no longer allows.
+	PutModuleEnvelope(context.Context, *PutModuleEnvelopeRequest) (*PutModuleEnvelopeResponse, error)
 	mustEmbedUnimplementedPlatformAdminServiceServer()
 }
 
@@ -481,6 +517,12 @@ func (UnimplementedPlatformAdminServiceServer) ListEventSubscriptions(context.Co
 }
 func (UnimplementedPlatformAdminServiceServer) ListPlatformCatalogue(context.Context, *ListPlatformCatalogueRequest) (*ListPlatformCatalogueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPlatformCatalogue not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) GetModuleEnvelope(context.Context, *GetModuleEnvelopeRequest) (*GetModuleEnvelopeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetModuleEnvelope not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) PutModuleEnvelope(context.Context, *PutModuleEnvelopeRequest) (*PutModuleEnvelopeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutModuleEnvelope not implemented")
 }
 func (UnimplementedPlatformAdminServiceServer) mustEmbedUnimplementedPlatformAdminServiceServer() {}
 func (UnimplementedPlatformAdminServiceServer) testEmbeddedByValue()                              {}
@@ -917,6 +959,42 @@ func _PlatformAdminService_ListPlatformCatalogue_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PlatformAdminService_GetModuleEnvelope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetModuleEnvelopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).GetModuleEnvelope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_GetModuleEnvelope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).GetModuleEnvelope(ctx, req.(*GetModuleEnvelopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformAdminService_PutModuleEnvelope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutModuleEnvelopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).PutModuleEnvelope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_PutModuleEnvelope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).PutModuleEnvelope(ctx, req.(*PutModuleEnvelopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PlatformAdminService_ServiceDesc is the grpc.ServiceDesc for PlatformAdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1015,6 +1093,14 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListPlatformCatalogue",
 			Handler:    _PlatformAdminService_ListPlatformCatalogue_Handler,
+		},
+		{
+			MethodName: "GetModuleEnvelope",
+			Handler:    _PlatformAdminService_GetModuleEnvelope_Handler,
+		},
+		{
+			MethodName: "PutModuleEnvelope",
+			Handler:    _PlatformAdminService_PutModuleEnvelope_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

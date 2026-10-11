@@ -51,18 +51,41 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 	return WorkContextSingleton().VerifyModuleWorkContext(values[0])
 }
 
-// MintModuleWorkContext issues that Work Context. Like MintModuleRegistration it
-// takes none itself — this is where a module obtains its identity, so it
-// authenticates with the identity secret its composition provisioned and the
-// principal it acts as is derived from the prefix that secret is bound to.
+// moduleIdentityError maps a failure to prove a module's identity onto the
+// mint's answer, or returns nil for any other error.
+//
+// Two answers and never a third. A VERDICT — the token was reviewed and refused,
+// it is another workload's, the pod runs an unapproved build, the prefix names
+// no declared principal — is `denied` with a fixed message, so a caller probing
+// the mint cannot tell which check it failed; the cause is logged by the
+// business layer. The host NOT KNOWING — the API server unreachable, no
+// execution reviewer wired, a container not yet reporting an image — is
+// Unavailable: nothing was decided, and a retry may succeed.
+func moduleIdentityError(err error, denied codes.Code, message string) error {
+	switch {
+	case errors.Is(err, business.ErrExecutionUnbound):
+		return status.Error(codes.Unavailable,
+			"the host could not establish what the caller is running, so nothing was minted")
+	case errors.Is(err, business.ErrModuleIdentityDenied):
+		return status.Error(denied, message)
+	}
+	return nil
+}
+
+// MintModuleWorkContext issues that Work Context. It takes none itself — this
+// is where a module obtains its identity — so it authenticates with the pod's
+// projected ServiceAccount token: accounts reviews it, reads the pod it names
+// and holds the image that pod is running against the build the principal's
+// authority document approves. The principal is derived from the prefix, which
+// the token must back.
 func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, req *gen.ModuleMintWorkContextRequest) (*gen.ModuleMintWorkContextResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.ModuleAuthorizeWorkContext(req.GetPrefix(), req.GetSecret())
+	authority, err := service.ModuleAuthorizeWorkContext(ctx, req.GetPrefix(), req.GetServiceAccountToken())
 	if err != nil {
-		if errors.Is(err, business.ErrModuleRegistrationDenied) {
-			return nil, status.Error(codes.PermissionDenied, "module work context denied")
+		if mapped := moduleIdentityError(err, codes.PermissionDenied, "module work context denied"); mapped != nil {
+			return nil, mapped
 		}
 		return nil, err
 	}
@@ -80,7 +103,7 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	}
 	// The signer lives on the Work Context authority, which owns this cluster's
 	// signing key; this RPC lives here so the gateway can broker it from the same
-	// minimal-import proto as the registration exchange.
+	// minimal-import proto as the other module mints.
 	token, signed, err := WorkContextSingleton().StartModuleTask(authority)
 	if err != nil {
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
@@ -91,6 +114,9 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	// The record is written only once the capability exists, and the capability is
 	// withheld when the record cannot be committed.
 	if err := service.RecordModuleWorkContextMint(ctx, req.GetPrefix(), authority); err != nil {
+		return nil, err
+	}
+	if err := service.FenceModuleMint(ctx, authority); err != nil {
 		return nil, err
 	}
 	return &gen.ModuleMintWorkContextResponse{
@@ -109,19 +135,21 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 // binding yields; the caller supplies neither.
 //
 // Codes: Unauthenticated when the module's identity is not proven (unknown
-// prefix, wrong secret, no identity digests); PermissionDenied when the proven
-// module names a binding it may not mint headless; FailedPrecondition when the
-// declared tenant is missing or the issuer is unconfigured.
+// prefix, a token refused or for another workload, an unapproved build);
+// Unavailable when the host could not establish the caller's execution;
+// PermissionDenied when the proven module names a binding it may not mint
+// headless; FailedPrecondition when the declared tenant is missing or the
+// issuer is unconfigured.
 func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Context, req *gen.ModuleMintOperationContextRequest) (*gen.ModuleMintOperationContextResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.ModuleAuthorizeOperationContext(req.GetPrefix(), req.GetSecret(), req.GetBinding())
+	authority, err := service.ModuleAuthorizeOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetBinding())
 	if err != nil {
-		switch {
-		case errors.Is(err, business.ErrModuleRegistrationDenied):
-			return nil, status.Error(codes.Unauthenticated, "module operation context denied")
-		case errors.Is(err, business.ErrModuleOperationContextRefused):
+		if mapped := moduleIdentityError(err, codes.Unauthenticated, "module operation context denied"); mapped != nil {
+			return nil, mapped
+		}
+		if errors.Is(err, business.ErrModuleOperationContextRefused) {
 			return nil, status.Error(codes.PermissionDenied, "operation binding is not mintable without a person present")
 		}
 		return nil, err
@@ -145,6 +173,9 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 	if err := service.RecordModuleOperationContextMint(ctx, req.GetPrefix(), authority); err != nil {
 		return nil, err
 	}
+	if err := service.FenceModuleMint(ctx, authority.ModuleWorkContextAuthority); err != nil {
+		return nil, err
+	}
 	return &gen.ModuleMintOperationContextResponse{
 		Token:       token.Encoded(),
 		ExpiresAt:   timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
@@ -152,51 +183,6 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 		Tenant:      authority.Tenant,
 		Audience:    authority.Audience,
 		Binding:     authority.BindingID,
-	}, nil
-}
-
-// MintModuleRegistration issues the credential a composed module presents to the
-// gateway to federate its REST prefix. Unlike every other method here it takes
-// no Work Context: a module registers at startup, before any user request
-// exists, so the caller is authorized by its own registration secret rather than
-// by a forwarded principal. The internal-credential gate on this listener still
-// applies.
-func (s *ModuleCapabilitiesServer) MintModuleRegistration(ctx context.Context, req *gen.ModuleMintRegistrationRequest) (*gen.ModuleMintRegistrationResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	token, expiresAt, err := service.ModuleMintRegistration(ctx, req.GetPrefix(), req.GetSecret())
-	if err != nil {
-		if errors.Is(err, business.ErrModuleRegistrationDenied) {
-			return nil, status.Error(codes.PermissionDenied, "module registration denied")
-		}
-		return nil, err
-	}
-	return &gen.ModuleMintRegistrationResponse{
-		Token:     token,
-		ExpiresAt: timestamppb.New(expiresAt),
-	}, nil
-}
-
-// MintSolutionRegistration issues the credential a solution presents to the
-// gateway and to the frontend to register, update, or delete its upstream and
-// its Module-Federation remote. Like MintModuleRegistration it takes no Work
-// Context and authorizes on the solution's own registration secret, declared
-// separately from the module secrets.
-func (s *ModuleCapabilitiesServer) MintSolutionRegistration(ctx context.Context, req *gen.SolutionMintRegistrationRequest) (*gen.SolutionMintRegistrationResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	token, expiresAt, err := service.SolutionMintRegistration(ctx, req.GetSolutionId(), req.GetSecret())
-	if err != nil {
-		if errors.Is(err, business.ErrSolutionRegistrationDenied) {
-			return nil, status.Error(codes.PermissionDenied, "solution registration denied")
-		}
-		return nil, err
-	}
-	return &gen.SolutionMintRegistrationResponse{
-		Token:     token,
-		ExpiresAt: timestamppb.New(expiresAt),
 	}, nil
 }
 

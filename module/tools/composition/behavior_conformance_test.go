@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -16,7 +15,6 @@ import (
 
 const (
 	extAuthzSource = "services/auth-gateway/code/ext_authz.go"
-	minterSource   = "services/accounts/code/pkg/auth/ed25519/minter.go"
 	hostRuntime    = "services/frontend/code/src/solutions/host-runtime.ts"
 )
 
@@ -61,22 +59,6 @@ func declaredStrings(t *testing.T, value *structpb.Value) []string {
 		values = append(values, entry.GetStringValue())
 	}
 	return values
-}
-
-// declaredToken returns a contract's token declaration, whether the contract
-// states the exchange directly or as a numbered handshake.
-func declaredToken(t *testing.T, content *structpb.Struct) map[string]*structpb.Value {
-	t.Helper()
-	if token, ok := content.GetFields()["token"]; ok {
-		return token.GetStructValue().GetFields()
-	}
-	for _, step := range content.GetFields()["handshake"].GetListValue().GetValues() {
-		if token, ok := step.GetStructValue().GetFields()["token"]; ok {
-			return token.GetStructValue().GetFields()
-		}
-	}
-	t.Fatal("contract declares no minted token")
-	return nil
 }
 
 func readSource(t *testing.T, moduleRoot, relative string) string {
@@ -184,57 +166,34 @@ func TestSolutionRuntimeCompatibilityMatchesTheHost(t *testing.T) {
 	}
 }
 
-// TestRegistrationCredentialsMatchTheMinter ties each declared credential to the
-// audience, subject and lifetime accounts actually mints.
-func TestRegistrationCredentialsMatchTheMinter(t *testing.T) {
+// TestModuleIdentityContractMatchesTheMint ties the declared module identity
+// (#1056) to what the host does: the broker forwards a bearer and reads no
+// secret header, each exchange declares that bearer, and the token is reviewed
+// for the audience the contract names.
+func TestModuleIdentityContractMatchesTheMint(t *testing.T) {
 	moduleRoot := findModuleRoot(t)
 	contracts := loadBehavioralContracts(t, moduleRoot)
-	minter := readSource(t, moduleRoot, minterSource)
-
-	for _, credential := range []struct {
-		contract  string
-		constant  string
-		subject   string
-		principal string
-	}{
-		{"registration.solution.credential", "SolutionRegistrationAudience", "solution:<id>", `"solution:" + solutionID`},
-		{"registration.module.credential", "ModuleRegistrationAudience", "module:<prefix>", `"module:" + prefix`},
-	} {
-		content := contractByID(t, contracts, credential.contract)
-		fields := declaredToken(t, content)
-
-		match := regexp.MustCompile(`const ` + credential.constant + ` = "([^"]+)"`).FindStringSubmatch(minter)
-		if match == nil {
-			t.Fatalf("%s does not declare %s", minterSource, credential.constant)
+	identity := contractByID(t, contracts, "identity.module.execution-binding")
+	if credential := identity.GetFields()["credential"].GetStringValue(); !strings.Contains(credential, "audience accounts") {
+		t.Errorf("identity contract names credential %q, which does not state the accounts audience", credential)
+	}
+	binding := readSource(t, moduleRoot, "services/accounts/code/pkg/business/module_execution_binding.go")
+	if !strings.Contains(binding, `executionTokenAudience = "accounts"`) {
+		t.Error("BindExecution no longer reviews tokens for the accounts audience the contract declares")
+	}
+	broker := readSource(t, moduleRoot, "services/auth-gateway/code/gateway_modules.go")
+	if !strings.Contains(broker, `projectedTokenScheme = "Bearer "`) {
+		t.Error("the gateway broker no longer reads the projected token as a bearer")
+	}
+	for _, id := range []string{"registration.module.work-context", "registration.module.operation-context"} {
+		headers := contractByID(t, contracts, id).GetFields()["exchange"].GetStructValue().GetFields()["headers"].GetStructValue().GetFields()
+		if _, declared := headers["Authorization"]; !declared {
+			t.Errorf("contract %q does not declare the projected-token bearer", id)
 		}
-		if audience := fields["audience"].GetStringValue(); audience != match[1] {
-			t.Errorf("contract %q declares audience %q, minter issues %q", credential.contract, audience, match[1])
-		}
-		if subject := fields["subject"].GetStringValue(); subject != credential.subject {
-			t.Errorf("contract %q declares subject %q, minter builds %s", credential.contract, subject, credential.principal)
-		}
-		if !strings.Contains(minter, credential.principal) {
-			t.Errorf("%s no longer builds the subject %s that contract %q declares", minterSource, credential.principal, credential.contract)
-		}
-		if ttl := fields["ttlSeconds"].GetNumberValue(); ttl != mintedTTLSeconds(t, minter) {
-			t.Errorf("contract %q declares ttlSeconds %v, minter issues %v", credential.contract, ttl, mintedTTLSeconds(t, minter))
+		if _, declared := headers["X-Codefly-Module-Secret"]; declared {
+			t.Errorf("contract %q still declares the deleted module secret header", id)
 		}
 	}
-}
-
-// mintedTTLSeconds reads the lifetime accounts actually stamps on a registration
-// credential, in the minutes the source expresses it in.
-func mintedTTLSeconds(t *testing.T, minter string) float64 {
-	t.Helper()
-	match := regexp.MustCompile(`registrationTTL = (\d+) \* time\.Minute`).FindStringSubmatch(minter)
-	if match == nil {
-		t.Fatalf("%s does not declare registrationTTL in minutes", minterSource)
-	}
-	minutes, err := strconv.Atoi(match[1])
-	if err != nil {
-		t.Fatalf("parse registrationTTL: %v", err)
-	}
-	return float64(minutes * 60)
 }
 
 // TestDeclaredPresenceReadSurfacesExist holds the surviving read contract to

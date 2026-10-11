@@ -2060,6 +2060,15 @@
       },
       "type": "object"
     },
+    "v1GetModuleEnvelopeResponse": {
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope",
+          "description": "The current revision. Absent when no envelope has been written, which\ngrants no module anything."
+        }
+      },
+      "type": "object"
+    },
     "v1GetOrgEntitlementsResponse": {
       "properties": {
         "entitlements": {
@@ -3488,6 +3497,29 @@
     "v1MarkAllNotificationsReadRequest": {
       "type": "object"
     },
+    "v1ModuleEnvelope": {
+      "description": "ModuleEnvelope is one revision of the module envelope: the authority ceiling a\nplatform super_admin writes, which every module principal on this host is\nderived inside. Revisions are append-only; the current ceiling is the\nhighest.",
+      "properties": {
+        "document": {
+          "description": "The whole ceiling at this revision, as JSON: `revision`,\n`approved_builds`, and `principals` keyed by module prefix, each with the\nwhole authority units this host admits (`bindings`: id, revision, scope,\nqueue, namespace, binding_key, lookup_method), the workloads it may run as\n(`workload_identities`: spiffe_id, container), its `scope_ceilings` and its\n`grant` ceiling (tenant, cross_tenant, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences,\nartifact_policies).",
+          "type": "string"
+        },
+        "revision": {
+          "description": "The revision, from 1. A delivered authority document names the revision\nit was rendered against and is inside this one only.",
+          "format": "int64",
+          "type": "string"
+        },
+        "writtenAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "writtenBy": {
+          "description": "The platform administrator who wrote this revision.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1Notification": {
       "properties": {
         "actionUrl": {
@@ -4064,6 +4096,28 @@
         "withdrawnAt": {
           "format": "date-time",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1PutModuleEnvelopeRequest": {
+      "properties": {
+        "document": {
+          "description": "The whole ceiling, as JSON, carrying revision expected_revision + 1.",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "description": "The revision this write replaces: the one the caller read, 0 when none has\nbeen written. A write whose expected revision is not the current one is\nrefused with ABORTED, and nothing is written.",
+          "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1PutModuleEnvelopeResponse": {
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope"
         }
       },
       "type": "object"
@@ -9335,6 +9389,60 @@
             }
           }
         },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/module-envelope": {
+      "get": {
+        "operationId": "PlatformAdminService_GetModuleEnvelope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "GetModuleEnvelope reads the current module envelope: the authority ceiling\nevery module principal on this host is derived inside.",
+        "tags": [
+          "PlatformAdminService"
+        ]
+      },
+      "put": {
+        "operationId": "PlatformAdminService_PutModuleEnvelope",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "PutModuleEnvelope writes the next revision of the module envelope. It takes\neffect at the next check with no restart: the module registry is derived\nagain from it, so a narrowing removes what the new ceiling no longer allows.",
         "tags": [
           "PlatformAdminService"
         ]

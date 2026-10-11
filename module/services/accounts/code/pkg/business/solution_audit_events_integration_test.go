@@ -143,7 +143,7 @@ func TestSolutionAuditEvents_DeclaredAndEmitted(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Namespaces: []string{namespace}},
+		modulePrincSvc: {Tenant: org, Namespaces: []string{namespace}},
 	})
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
 	fields, err := structpb.NewStruct(map[string]any{"count": 2, "score": 0.5, "stage": "final"})

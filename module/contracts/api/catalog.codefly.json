@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:d6457adbb998a7811e2ddc9bc283b3429d68e1a3f28c89dc519230478950303b",
+      "digest": "sha256:6de44477a253ce97486fb86171994e148d1c564ef0ba6410a1b5584ebb27553a",
       "services": [
         {
           "name": "APIKeyService",
@@ -240,9 +240,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
@@ -328,6 +326,7 @@
             "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
             "/saas.accounts.v1.PlatformAdminService/GetJob",
             "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+            "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
             "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
             "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
@@ -340,6 +339,7 @@
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+            "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
             "/saas.accounts.v1.PlatformAdminService/RevokeSession",
@@ -492,7 +492,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:d6457adbb998a7811e2ddc9bc283b3429d68e1a3f28c89dc519230478950303b",
+      "digest": "sha256:6de44477a253ce97486fb86171994e148d1c564ef0ba6410a1b5584ebb27553a",
       "services": [
         {
           "name": "APIKeyService",
@@ -722,9 +722,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
@@ -810,6 +808,7 @@
             "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
             "/saas.accounts.v1.PlatformAdminService/GetJob",
             "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+            "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
             "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
             "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
@@ -822,6 +821,7 @@
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+            "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
             "/saas.accounts.v1.PlatformAdminService/RevokeSession",
@@ -974,7 +974,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:0c2b91ff00eb67f00dc415914d68b3f699119c71e010a13662057056fa10314d",
+      "digest": "sha256:563f35ddb76e5c2b94fb61ced0696b03c394f72db714f5922d0ebbae04eef16f",
       "services": [
         {
           "name": "AuthGatewayService",

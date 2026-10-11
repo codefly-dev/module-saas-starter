@@ -235,9 +235,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
         "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-        "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
         "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-        "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
         "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
         "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
@@ -323,6 +321,7 @@
         "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
         "/saas.accounts.v1.PlatformAdminService/GetJob",
         "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+        "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
         "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
         "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
         "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
@@ -335,6 +334,7 @@
         "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
         "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+        "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
         "/saas.accounts.v1.PlatformAdminService/ReplayJob",
         "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
         "/saas.accounts.v1.PlatformAdminService/RevokeSession",
@@ -6508,51 +6508,6 @@
       }
     },
     {
-      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
-      "service": "ModuleCapabilitiesService",
-      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
-      "method": "MintModuleRegistration",
-      "input_type": "saas.accounts.v1.ModuleMintRegistrationRequest",
-      "output_type": "saas.accounts.v1.ModuleMintRegistrationResponse",
-      "client_streaming": false,
-      "server_streaming": false,
-      "deprecated": false,
-      "source_proto": "saas/accounts/v1/module_capabilities.proto",
-      "protocols": [
-        "PROTOCOL_GRPC",
-        "PROTOCOL_CONNECT"
-      ],
-      "http_bindings": [],
-      "policy": {
-        "exposure": "EXPOSURE_INTERNAL",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "saas.module.registration_minted"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
-        "request_sensitivity": "SENSITIVITY_SECRET",
-        "response_sensitivity": "SENSITIVITY_SECRET",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
-      },
-      "policy_tier": "internal",
-      "description": "Issue a composed module the signed credential it registers its gateway REST prefix with.",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      }
-    },
-    {
       "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
       "service": "ModuleCapabilitiesService",
       "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
@@ -6592,51 +6547,6 @@
       },
       "policy_tier": "internal",
       "description": "Issue a composed module the Work Context its service principal calls this surface with.",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      }
-    },
-    {
-      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
-      "service": "ModuleCapabilitiesService",
-      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
-      "method": "MintSolutionRegistration",
-      "input_type": "saas.accounts.v1.SolutionMintRegistrationRequest",
-      "output_type": "saas.accounts.v1.SolutionMintRegistrationResponse",
-      "client_streaming": false,
-      "server_streaming": false,
-      "deprecated": false,
-      "source_proto": "saas/accounts/v1/module_capabilities.proto",
-      "protocols": [
-        "PROTOCOL_GRPC",
-        "PROTOCOL_CONNECT"
-      ],
-      "http_bindings": [],
-      "policy": {
-        "exposure": "EXPOSURE_INTERNAL",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "saas.solution.registration_minted"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
-        "request_sensitivity": "SENSITIVITY_SECRET",
-        "response_sensitivity": "SENSITIVITY_SECRET",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
-      },
-      "policy_tier": "internal",
-      "description": "Issue a solution the signed credential it registers its gateway upstream and frontend remote with.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9466,6 +9376,57 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "GetModuleEnvelope",
+      "input_type": "saas.accounts.v1.GetModuleEnvelopeRequest",
+      "output_type": "saas.accounts.v1.GetModuleEnvelopeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/platform/module-envelope",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "platform_admin",
+      "description": "Read the current module envelope, the authority ceiling every module principal is derived inside.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
       "service": "PlatformAdminService",
       "full_service": "saas.accounts.v1.PlatformAdminService",
@@ -10068,6 +10029,59 @@
       },
       "policy_tier": "platform_admin",
       "description": "Override one entitlement limit for a single organization.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "PutModuleEnvelope",
+      "input_type": "saas.accounts.v1.PutModuleEnvelopeRequest",
+      "output_type": "saas.accounts.v1.PutModuleEnvelopeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "PUT",
+          "path": "/v1/platform/module-envelope",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
+        "audit": {
+          "events": [
+            "saas.platform.module_envelope_written"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "platform_admin",
+      "description": "Write the next revision of the module envelope; it takes effect at the next check.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

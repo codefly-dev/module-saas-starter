@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
@@ -64,17 +65,17 @@ func (a *validatingAudit) of(event business.EventType) []business.AuditEntry {
 	return out
 }
 
-func installModuleOperationContextService(t *testing.T, declaredSecrets, declaredPrincipals string) (*recordingModuleStore, *validatingAudit) {
+func installModuleOperationContextService(t *testing.T, declaredPrincipals string) (*recordingModuleStore, *validatingAudit) {
 	t.Helper()
-	store := installModuleWorkContextService(t, declaredSecrets, declaredPrincipals)
+	store := installModuleWorkContextService(t, declaredPrincipals)
 	audit := &validatingAudit{}
 	service.SetAuditEmitter(audit)
 	return store, audit
 }
 
-func mintModuleOperationContext(prefix, secret, binding string) (*gen.ModuleMintOperationContextResponse, error) {
+func mintModuleOperationContext(prefix, token, binding string) (*gen.ModuleMintOperationContextResponse, error) {
 	return ModuleCapabilitiesSingleton().MintModuleOperationContext(context.Background(),
-		&gen.ModuleMintOperationContextRequest{Prefix: prefix, Secret: secret, Binding: binding})
+		&gen.ModuleMintOperationContextRequest{Prefix: prefix, ServiceAccountToken: token, Binding: binding})
 }
 
 func verifyOperationContext(t *testing.T, token string) *basev0.WorkContextV1 {
@@ -93,12 +94,11 @@ func verifyOperationContext(t *testing.T, token string) *basev0.WorkContextV1 {
 // invoke scopes, not its lookup scopes — for the binding's audience, owned and
 // actored by the module's own service principal on its declared tenant.
 func TestMintModuleOperationContextSealsExactlyTheHeadlessScopes(t *testing.T) {
-	store, audit := installModuleOperationContextService(t,
-		"documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	store, audit := installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	principalID := business.ModulePrincipalID("documents")
 
-	resp, err := mintModuleOperationContext("documents", "documents-secret", "model")
+	resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
 
 	require.NoError(t, err)
 	require.Equal(t, principalID, resp.GetPrincipalId())
@@ -130,13 +130,20 @@ func TestMintModuleOperationContextSealsExactlyTheHeadlessScopes(t *testing.T) {
 	require.Equal(t, principalID, entries[0].ActorID)
 	require.Equal(t, moduleWorkContextTenant, entries[0].OrgID)
 	require.Equal(t, "documents", entries[0].ResourceID)
-	require.Equal(t, map[string]any{
-		"prefix":     "documents",
-		"tenant":     moduleWorkContextTenant,
-		"binding_id": "model",
-		"audience":   "modelservice",
-		"scopes":     []string{"modelservice.profiles:invoke:profile-digest", "modelservice.profiles:read:profile-digest"},
-	}, entries[0].Payload)
+	payload := entries[0].Payload
+	require.Equal(t, "documents", payload["prefix"])
+	require.Equal(t, moduleWorkContextTenant, payload["tenant"])
+	require.Equal(t, "model", payload["binding_id"])
+	require.Equal(t, "modelservice", payload["audience"])
+	require.Equal(t, []string{"modelservice.profiles:invoke:profile-digest", "modelservice.profiles:read:profile-digest"}, payload["scopes"])
+	// Attribution: the record names the execution the mint was bound to.
+	require.Equal(t, executiontest.Image("documents"), payload["running_digest"])
+	require.Equal(t, "acme-prod", payload["namespace"])
+	require.Equal(t, "module", payload["service_account"])
+	require.Equal(t, "app", payload["container"])
+	require.NotEmpty(t, payload["pod"])
+	require.NotEmpty(t, payload["pod_uid"])
+	require.EqualValues(t, 1, payload["build_incarnation"])
 	require.Equal(t, 1, store.tenantChecks)
 	require.Equal(t, moduleWorkContextTenant, store.tenantCheckedID)
 }
@@ -152,29 +159,37 @@ func requireScopes(t *testing.T, want, got []*basev0.WorkScopeV1) {
 }
 
 func TestMintModuleOperationContextRefusals(t *testing.T) {
-	declared := "documents:" + registrationDigest("documents-secret")
+	twoModules := `{"documents":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleWorkContextTenant + `","operation_audiences":{` +
+		`"model":{"audience":"modelservice",` +
+		`"invoke_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"]}],` +
+		`"lookup_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"]}],` +
+		`"headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["profile-digest"]}]}}},` +
+		`"billing":{"workload":{"service_account":"billing","namespace":"acme-prod","container":"app"},"tenant":"` + moduleWorkContextTenant + `"}}`
+	own := func(t *testing.T) string { return moduleToken(t, "documents") }
 	tests := map[string]struct {
-		secrets    string
 		principals string
 		prefix     string
-		secret     string
+		token      func(t *testing.T) string
 		binding    string
 		code       codes.Code
 	}{
-		"binding not declared":             {declared, headlessPrincipals, "documents", "documents-secret", "absent", codes.PermissionDenied},
-		"binding declares no headless use": {declared, headlessPrincipals, "documents", "documents-secret", "interactive", codes.PermissionDenied},
-		"wrong secret":                     {declared, headlessPrincipals, "documents", "guessed", "model", codes.Unauthenticated},
-		"unknown module":                   {declared + ",billing:" + registrationDigest("billing-secret"), headlessPrincipals, "billing", "billing-secret", "model", codes.Unauthenticated},
-		"another module's secret":          {declared + ",billing:" + registrationDigest("billing-secret"), headlessPrincipals, "documents", "billing-secret", "model", codes.Unauthenticated},
-		"no identity digests":              {"", headlessPrincipals, "documents", "documents-secret", "model", codes.Unauthenticated},
-		"invalid binding name":             {declared, headlessPrincipals, "documents", "documents-secret", "", codes.InvalidArgument},
+		"binding not declared":             {headlessPrincipals, "documents", own, "absent", codes.PermissionDenied},
+		"binding declares no headless use": {headlessPrincipals, "documents", own, "interactive", codes.PermissionDenied},
+		"not a projected token":            {headlessPrincipals, "documents", func(*testing.T) string { return "guessed" }, "model", codes.Unauthenticated},
+		"undeclared module":                {headlessPrincipals, "billing", own, "model", codes.Unauthenticated},
+		"another module's pod":             {twoModules, "documents", func(t *testing.T) string { return moduleToken(t, "billing") }, "model", codes.Unauthenticated},
+		"a pod on an unapproved build": {headlessPrincipals, "documents", func(t *testing.T) string {
+			return moduleExecution.cluster.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "module", Container: "app"},
+				executiontest.Image("documents-unreviewed"))
+		}, "model", codes.Unauthenticated},
+		"invalid binding name": {headlessPrincipals, "documents", own, "", codes.InvalidArgument},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			store, audit := installModuleOperationContextService(t, test.secrets, test.principals)
+			store, audit := installModuleOperationContextService(t, test.principals)
 			installModuleWorkContextAuthority(t)
 
-			resp, err := mintModuleOperationContext(test.prefix, test.secret, test.binding)
+			resp, err := mintModuleOperationContext(test.prefix, test.token(t), test.binding)
 
 			require.Equal(t, test.code, status.Code(err), "%v", err)
 			require.Nil(t, resp)
@@ -184,13 +199,32 @@ func TestMintModuleOperationContextRefusals(t *testing.T) {
 	}
 }
 
+// The module Work Context mint records the execution it was bound to, in a
+// payload the registry accepts.
+func TestMintModuleWorkContextRecordsTheExecutionItWasBoundTo(t *testing.T) {
+	_, audit := installModuleOperationContextService(t, documentsPrincipals)
+	installModuleWorkContextAuthority(t)
+
+	_, err := mintModuleWorkContext(t, "documents", moduleToken(t, "documents"))
+	require.NoError(t, err)
+
+	entries := audit.of(business.EventModuleWorkContextMint)
+	require.Len(t, entries, 1)
+	payload := entries[0].Payload
+	require.Equal(t, executiontest.Image("documents"), payload["running_digest"])
+	require.Equal(t, "acme-prod", payload["namespace"])
+	require.Equal(t, "module", payload["service_account"])
+	require.Equal(t, "app", payload["container"])
+	require.NotEmpty(t, payload["pod_uid"])
+	require.EqualValues(t, 1, payload["build_incarnation"])
+}
+
 func TestMintModuleOperationContextRefusesATenantThatNamesNoOrganization(t *testing.T) {
-	store, audit := installModuleOperationContextService(t,
-		"documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	store, audit := installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	store.tenantExists = false
 
-	resp, err := mintModuleOperationContext("documents", "documents-secret", "model")
+	resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
 
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	require.Nil(t, resp)
@@ -198,11 +232,10 @@ func TestMintModuleOperationContextRefusesATenantThatNamesNoOrganization(t *test
 }
 
 func TestMintModuleOperationContextRecordsNothingWhenSigningFails(t *testing.T) {
-	store, audit := installModuleOperationContextService(t,
-		"documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	store, audit := installModuleOperationContextService(t, headlessPrincipals)
 	resetModuleWorkContextAuthority(t)
 
-	_, err := mintModuleOperationContext("documents", "documents-secret", "model")
+	_, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
 
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	require.Zero(t, store.recordAttempts())
@@ -210,12 +243,11 @@ func TestMintModuleOperationContextRecordsNothingWhenSigningFails(t *testing.T) 
 }
 
 func TestMintModuleOperationContextWithholdsTheCapabilityWhenTheRecordFails(t *testing.T) {
-	store, _ := installModuleOperationContextService(t,
-		"documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	store, _ := installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	store.controlPlaneErr = errors.New("audit store unavailable")
 
-	resp, err := mintModuleOperationContext("documents", "documents-secret", "model")
+	resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
 
 	require.Error(t, err)
 	require.Nil(t, resp)

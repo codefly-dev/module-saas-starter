@@ -281,7 +281,7 @@ func delegationReferenceError(err error) error {
 		return status.Error(codes.PermissionDenied, "source delegation no longer authorizes this work")
 	case errors.Is(err, business.ErrSourceDelegationLookupUnauthorized):
 		return status.Error(codes.PermissionDenied, "source delegation does not authorize receipt lookup for this binding")
-	case errors.Is(err, business.ErrModuleRegistrationDenied):
+	case errors.Is(err, business.ErrModuleIdentityDenied):
 		return status.Error(codes.Unauthenticated, "module source operation context denied")
 	case status.Code(err) != codes.Unknown:
 		return err

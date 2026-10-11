@@ -36,6 +36,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ModuleCapabilitiesServiceGetCurrentInstallationProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's GetCurrentInstallation RPC.
+	ModuleCapabilitiesServiceGetCurrentInstallationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation"
+	// ModuleCapabilitiesServiceApproveExecutableArtifactProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ApproveExecutableArtifact RPC.
+	ModuleCapabilitiesServiceApproveExecutableArtifactProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact"
+	// ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's AuthorizeExecutableArtifact RPC.
+	ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact"
+	// ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's RevokeExecutableArtifact RPC.
+	ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact"
 	// ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure is the fully-qualified name of
 	// the ModuleCapabilitiesService's ExchangeDelegatedReadAudience RPC.
 	ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
@@ -96,12 +108,6 @@ const (
 	// ModuleCapabilitiesServiceFetchDatasourceFilesProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's FetchDatasourceFiles RPC.
 	ModuleCapabilitiesServiceFetchDatasourceFilesProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles"
-	// ModuleCapabilitiesServiceMintModuleRegistrationProcedure is the fully-qualified name of the
-	// ModuleCapabilitiesService's MintModuleRegistration RPC.
-	ModuleCapabilitiesServiceMintModuleRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
-	// ModuleCapabilitiesServiceMintSolutionRegistrationProcedure is the fully-qualified name of the
-	// ModuleCapabilitiesService's MintSolutionRegistration RPC.
-	ModuleCapabilitiesServiceMintSolutionRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
 	// ModuleCapabilitiesServiceMintModuleWorkContextProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's MintModuleWorkContext RPC.
 	ModuleCapabilitiesServiceMintModuleWorkContextProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
@@ -131,6 +137,15 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// Organization-member metadata read, not executable consent or a durable
+	// liveness proof. Returns only a currently active, non-revoked installation.
+	GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error)
+	// Explicit current-admin consent, never inferred from an execution request.
+	ApproveExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
+	// Read existing exact approval; check live authority and revocation each time.
+	AuthorizeExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
+	// Terminal revocation of the exact approved identity.
+	RevokeExecutableArtifact(context.Context, *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error)
@@ -195,24 +210,15 @@ type ModuleCapabilitiesServiceClient interface {
 	// metadata reset_at) and a RetryInfo; a batch past its limits is
 	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
 	FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceFilesFrame], error)
-	// MintModuleRegistration issues the signed, prefix-bound credential a composed
-	// module presents to the gateway to federate its REST surface. Authorized by
-	// the module's own registration secret, not the shared cluster token.
-	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
-	// MintSolutionRegistration issues the signed, solution-bound credential a
-	// solution presents to the gateway and to the frontend to register, update, or
-	// delete its upstream and its Module-Federation remote. Authorized by the
-	// solution's own registration secret, declared separately from the module
-	// secrets because a solution remote executes in the host origin.
-	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
 	// MintModuleWorkContext issues the Work Context a composed module presents to
 	// this surface: owner and sole actor are the module service principal derived
-	// from its registration prefix. Authorized by the module's own registration
-	// secret, like the credential exchange above.
+	// from its prefix. Authorized by the pod's projected ServiceAccount token, held
+	// against the workload the principal declares and the build the authority
+	// document approves; a pod running anything else is issued nothing.
 	MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error)
 	// MintModuleOperationContext issues, with no person present, a Work Context
 	// addressed to one of the calling module's installed operation audiences.
-	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// Authorized by the pod's projected token like MintModuleWorkContext; owner
 	// and sole actor are the module service principal, the tenant is the one its
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
@@ -221,7 +227,7 @@ type ModuleCapabilitiesServiceClient interface {
 	// sync runs with: owned by the person who connected the source, actored by
 	// the calling module's service principal, in the source's organization, with
 	// exactly the source_delegation_scopes of the binding the person delegated
-	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// to. Authorized by the pod's projected token like MintModuleWorkContext;
 	// every mint re-checks that the delegation is active, the source exists, the
 	// person is still an owner or admin of the organization, and the binding is
 	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
@@ -251,6 +257,30 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 	baseURL = strings.TrimRight(baseURL, "/")
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
 	return &moduleCapabilitiesServiceClient{
+		getCurrentInstallation: connect.NewClient[v1.ModuleCurrentInstallationRequest, v1.ModuleCurrentInstallationResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceGetCurrentInstallationProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("GetCurrentInstallation")),
+			connect.WithClientOptions(opts...),
+		),
+		approveExecutableArtifact: connect.NewClient[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceApproveExecutableArtifactProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ApproveExecutableArtifact")),
+			connect.WithClientOptions(opts...),
+		),
+		authorizeExecutableArtifact: connect.NewClient[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("AuthorizeExecutableArtifact")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeExecutableArtifact: connect.NewClient[v1.ModuleRevokeExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("RevokeExecutableArtifact")),
+			connect.WithClientOptions(opts...),
+		),
 		exchangeDelegatedReadAudience: connect.NewClient[v1.ModuleExchangeDelegatedReadAudienceRequest, v11.IssuedWorkContext](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
@@ -371,18 +401,6 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceFiles")),
 			connect.WithClientOptions(opts...),
 		),
-		mintModuleRegistration: connect.NewClient[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse](
-			httpClient,
-			baseURL+ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
-			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
-			connect.WithClientOptions(opts...),
-		),
-		mintSolutionRegistration: connect.NewClient[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse](
-			httpClient,
-			baseURL+ModuleCapabilitiesServiceMintSolutionRegistrationProcedure,
-			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
-			connect.WithClientOptions(opts...),
-		),
 		mintModuleWorkContext: connect.NewClient[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceMintModuleWorkContextProcedure,
@@ -436,6 +454,10 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
+	getCurrentInstallation             *connect.Client[v1.ModuleCurrentInstallationRequest, v1.ModuleCurrentInstallationResponse]
+	approveExecutableArtifact          *connect.Client[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
+	authorizeExecutableArtifact        *connect.Client[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
+	revokeExecutableArtifact           *connect.Client[v1.ModuleRevokeExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
 	exchangeDelegatedReadAudience      *connect.Client[v1.ModuleExchangeDelegatedReadAudienceRequest, v11.IssuedWorkContext]
 	exchangeDelegatedOperationAudience *connect.Client[v1.ModuleExchangeDelegatedOperationAudienceRequest, v11.IssuedWorkContext]
 	checkWorkContextRecordAccess       *connect.Client[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse]
@@ -456,8 +478,6 @@ type moduleCapabilitiesServiceClient struct {
 	listSubjectVisibility              *connect.Client[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse]
 	fetchDatasourceBlob                *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
 	fetchDatasourceFiles               *connect.Client[v1.FetchDatasourceFilesRequest, v1.FetchDatasourceFilesFrame]
-	mintModuleRegistration             *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
-	mintSolutionRegistration           *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
 	mintModuleWorkContext              *connect.Client[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse]
 	mintModuleOperationContext         *connect.Client[v1.ModuleMintOperationContextRequest, v1.ModuleMintOperationContextResponse]
 	mintSourceOperationContext         *connect.Client[v1.ModuleMintSourceOperationContextRequest, v1.ModuleMintSourceOperationContextResponse]
@@ -466,6 +486,29 @@ type moduleCapabilitiesServiceClient struct {
 	unsubscribe                        *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
 	listSubscriptions                  *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
 	replayEvents                       *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+}
+
+// GetCurrentInstallation calls saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation.
+func (c *moduleCapabilitiesServiceClient) GetCurrentInstallation(ctx context.Context, req *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error) {
+	return c.getCurrentInstallation.CallUnary(ctx, req)
+}
+
+// ApproveExecutableArtifact calls
+// saas.accounts.v1.ModuleCapabilitiesService.ApproveExecutableArtifact.
+func (c *moduleCapabilitiesServiceClient) ApproveExecutableArtifact(ctx context.Context, req *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return c.approveExecutableArtifact.CallUnary(ctx, req)
+}
+
+// AuthorizeExecutableArtifact calls
+// saas.accounts.v1.ModuleCapabilitiesService.AuthorizeExecutableArtifact.
+func (c *moduleCapabilitiesServiceClient) AuthorizeExecutableArtifact(ctx context.Context, req *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return c.authorizeExecutableArtifact.CallUnary(ctx, req)
+}
+
+// RevokeExecutableArtifact calls
+// saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact.
+func (c *moduleCapabilitiesServiceClient) RevokeExecutableArtifact(ctx context.Context, req *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return c.revokeExecutableArtifact.CallUnary(ctx, req)
 }
 
 // ExchangeDelegatedReadAudience calls
@@ -574,17 +617,6 @@ func (c *moduleCapabilitiesServiceClient) FetchDatasourceFiles(ctx context.Conte
 	return c.fetchDatasourceFiles.CallServerStream(ctx, req)
 }
 
-// MintModuleRegistration calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration.
-func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Context, req *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
-	return c.mintModuleRegistration.CallUnary(ctx, req)
-}
-
-// MintSolutionRegistration calls
-// saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration.
-func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.Context, req *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
-	return c.mintSolutionRegistration.CallUnary(ctx, req)
-}
-
 // MintModuleWorkContext calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext.
 func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Context, req *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error) {
 	return c.mintModuleWorkContext.CallUnary(ctx, req)
@@ -630,6 +662,15 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// Organization-member metadata read, not executable consent or a durable
+	// liveness proof. Returns only a currently active, non-revoked installation.
+	GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error)
+	// Explicit current-admin consent, never inferred from an execution request.
+	ApproveExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
+	// Read existing exact approval; check live authority and revocation each time.
+	AuthorizeExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
+	// Terminal revocation of the exact approved identity.
+	RevokeExecutableArtifact(context.Context, *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error)
@@ -694,24 +735,15 @@ type ModuleCapabilitiesServiceHandler interface {
 	// metadata reset_at) and a RetryInfo; a batch past its limits is
 	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
 	FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest], *connect.ServerStream[v1.FetchDatasourceFilesFrame]) error
-	// MintModuleRegistration issues the signed, prefix-bound credential a composed
-	// module presents to the gateway to federate its REST surface. Authorized by
-	// the module's own registration secret, not the shared cluster token.
-	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
-	// MintSolutionRegistration issues the signed, solution-bound credential a
-	// solution presents to the gateway and to the frontend to register, update, or
-	// delete its upstream and its Module-Federation remote. Authorized by the
-	// solution's own registration secret, declared separately from the module
-	// secrets because a solution remote executes in the host origin.
-	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
 	// MintModuleWorkContext issues the Work Context a composed module presents to
 	// this surface: owner and sole actor are the module service principal derived
-	// from its registration prefix. Authorized by the module's own registration
-	// secret, like the credential exchange above.
+	// from its prefix. Authorized by the pod's projected ServiceAccount token, held
+	// against the workload the principal declares and the build the authority
+	// document approves; a pod running anything else is issued nothing.
 	MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error)
 	// MintModuleOperationContext issues, with no person present, a Work Context
 	// addressed to one of the calling module's installed operation audiences.
-	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// Authorized by the pod's projected token like MintModuleWorkContext; owner
 	// and sole actor are the module service principal, the tenant is the one its
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
@@ -720,7 +752,7 @@ type ModuleCapabilitiesServiceHandler interface {
 	// sync runs with: owned by the person who connected the source, actored by
 	// the calling module's service principal, in the source's organization, with
 	// exactly the source_delegation_scopes of the binding the person delegated
-	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// to. Authorized by the pod's projected token like MintModuleWorkContext;
 	// every mint re-checks that the delegation is active, the source exists, the
 	// person is still an owner or admin of the organization, and the binding is
 	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
@@ -746,6 +778,30 @@ type ModuleCapabilitiesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
+	moduleCapabilitiesServiceGetCurrentInstallationHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceGetCurrentInstallationProcedure,
+		svc.GetCurrentInstallation,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("GetCurrentInstallation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceApproveExecutableArtifactHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceApproveExecutableArtifactProcedure,
+		svc.ApproveExecutableArtifact,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ApproveExecutableArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceAuthorizeExecutableArtifactHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure,
+		svc.AuthorizeExecutableArtifact,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("AuthorizeExecutableArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceRevokeExecutableArtifactHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure,
+		svc.RevokeExecutableArtifact,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("RevokeExecutableArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
 		svc.ExchangeDelegatedReadAudience,
@@ -866,18 +922,6 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceFiles")),
 		connect.WithHandlerOptions(opts...),
 	)
-	moduleCapabilitiesServiceMintModuleRegistrationHandler := connect.NewUnaryHandler(
-		ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
-		svc.MintModuleRegistration,
-		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
-		connect.WithHandlerOptions(opts...),
-	)
-	moduleCapabilitiesServiceMintSolutionRegistrationHandler := connect.NewUnaryHandler(
-		ModuleCapabilitiesServiceMintSolutionRegistrationProcedure,
-		svc.MintSolutionRegistration,
-		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
-		connect.WithHandlerOptions(opts...),
-	)
 	moduleCapabilitiesServiceMintModuleWorkContextHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceMintModuleWorkContextProcedure,
 		svc.MintModuleWorkContext,
@@ -928,6 +972,14 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ModuleCapabilitiesServiceGetCurrentInstallationProcedure:
+			moduleCapabilitiesServiceGetCurrentInstallationHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceApproveExecutableArtifactProcedure:
+			moduleCapabilitiesServiceApproveExecutableArtifactHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceAuthorizeExecutableArtifactProcedure:
+			moduleCapabilitiesServiceAuthorizeExecutableArtifactHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceRevokeExecutableArtifactProcedure:
+			moduleCapabilitiesServiceRevokeExecutableArtifactHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure:
 			moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure:
@@ -968,10 +1020,6 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceFetchDatasourceFilesProcedure:
 			moduleCapabilitiesServiceFetchDatasourceFilesHandler.ServeHTTP(w, r)
-		case ModuleCapabilitiesServiceMintModuleRegistrationProcedure:
-			moduleCapabilitiesServiceMintModuleRegistrationHandler.ServeHTTP(w, r)
-		case ModuleCapabilitiesServiceMintSolutionRegistrationProcedure:
-			moduleCapabilitiesServiceMintSolutionRegistrationHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleWorkContextProcedure:
 			moduleCapabilitiesServiceMintModuleWorkContextHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleOperationContextProcedure:
@@ -996,6 +1044,22 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 
 // UnimplementedModuleCapabilitiesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedModuleCapabilitiesServiceHandler struct{}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ApproveExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ApproveExecutableArtifact is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) AuthorizeExecutableArtifact(context.Context, *connect.Request[v1.ModuleExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.AuthorizeExecutableArtifact is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) RevokeExecutableArtifact(context.Context, *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact is not implemented"))
+}
 
 func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience is not implemented"))
@@ -1075,14 +1139,6 @@ func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context
 
 func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest], *connect.ServerStream[v1.FetchDatasourceFilesFrame]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles is not implemented"))
-}
-
-func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration is not implemented"))
-}
-
-func (UnimplementedModuleCapabilitiesServiceHandler) MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error) {

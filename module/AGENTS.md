@@ -93,16 +93,19 @@ Design records: [SOLUTION_REGISTRATION.md](./SOLUTION_REGISTRATION.md),
 ## Configuration
 
 `configurations/<env>/*` declares the groups composition provisions into a
-consumer workspace — `legal`, `identity`, `internal-auth`, `federation`,
-`module-capabilities`, and the rest. A consumer overrides a group only by
-declaring one of the same name.
+consumer workspace — `legal`, `identity`, `internal-auth`, `federation`, and
+the rest. A consumer overrides a group only by declaring one of the same name.
+No group declares module authority: the module principal registry is derived
+from delivered authority inside the module envelope a platform super_admin
+writes ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
-**Do not generalise about how an unset value behaves — read the group.** The three
-digest maps in `federation` (`MODULE_REGISTRATION_SECRETS`,
-`MODULE_IDENTITY_SECRETS`, `SOLUTION_REGISTRATION_SECRETS`) each fail closed when
-empty, and say so in the file: only the digest lives on this side, the plaintext
-goes to whoever presents it, and empty means nobody may register or obtain a Work
-Context. That is a property of those maps, not of configuration here.
+**Do not generalise about how an unset value behaves — read the group.**
+`federation` fails closed when its declared-presence keys are empty: no
+coordinate means no delivery surface and no execution binding, so no module may
+obtain a Work Context. It declares no module or solution secret — those three
+digest maps are deleted (#1056); a module proves its identity with its pod's
+projected ServiceAccount token. That is a property of that group, not of
+configuration here.
 
 Other groups ship a **working default**, which is the opposite posture: `local`
 carries `CODEFLY_INTERNAL_TOKEN=local-dev-only-replace-me` in
