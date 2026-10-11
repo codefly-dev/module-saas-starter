@@ -192,3 +192,53 @@ func TestBulkMembershipRemovalRequiresTransactionAndValidOrg(t *testing.T) {
 	_, err = store.RemoveAllOrgMembers(context.Background(), "not-a-uuid")
 	require.Error(t, err)
 }
+
+func TestBulkMembershipLockDoesNotDeleteOrExpandRoster(t *testing.T) {
+	store := &PostgresStore{}
+	second := "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa"
+	rows := &membershipRows{ids: []string{second, lockTestUser}}
+	var calls []string
+	tx := &membershipTx{
+		query: func(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
+			require.Contains(t, sql, "SELECT user_id FROM organization_members")
+			require.Equal(t, []any{lockTestOrg}, args)
+			calls = append(calls, "roster")
+			return rows, nil
+		},
+		exec: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "pg_advisory_xact_lock") {
+				calls = append(calls, args[0].(string))
+				return pgconn.CommandTag{}, nil
+			}
+			calls = append(calls, "delete")
+			require.Contains(t, sql, "user_id = ANY($2::uuid[])")
+			require.Equal(t, []any{lockTestOrg, []string{lockTestUser, second}}, args)
+			return pgconn.NewCommandTag("DELETE 2"), nil
+		},
+	}
+	ctx := txbind.BindControlPlane(context.Background(), tx)
+	members, err := store.LockAllOrgMembers(ctx, strings.ToUpper(lockTestOrg))
+	require.NoError(t, err)
+	require.Equal(t, []string{lockTestUser, second}, members)
+	want := []string{"administration:" + lockTestOrg, "roster", "membership:" + lockTestOrg + ":" + lockTestUser, "membership:" + lockTestOrg + ":" + second}
+	require.Equal(t, want, calls, "lock acquisition must perform no trigger-producing write")
+
+	// A later roster read would include a member the transaction never locked.
+	rows.ids = append(rows.ids, "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb")
+	count, err := store.RemoveLockedOrgMembers(ctx, strings.ToUpper(lockTestOrg), members)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, count)
+	require.Equal(t, append(want, "delete"), calls, "delete the original locked roster without another read or lock")
+}
+
+func TestLockedMembershipRemovalRequiresTransactionAndValidOrg(t *testing.T) {
+	store := &PostgresStore{}
+	_, err := store.RemoveLockedOrgMembers(context.Background(), lockTestOrg, []string{lockTestUser})
+	require.ErrorContains(t, err, "requires a tenant transaction")
+	tx := &membershipTx{exec: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+		t.Fatal("malformed organization reached SQL")
+		return pgconn.CommandTag{}, nil
+	}}
+	_, err = store.RemoveLockedOrgMembers(txbind.BindControlPlane(context.Background(), tx), "not-a-uuid", []string{lockTestUser})
+	require.Error(t, err)
+}

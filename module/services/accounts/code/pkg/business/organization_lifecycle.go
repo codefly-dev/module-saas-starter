@@ -190,7 +190,7 @@ func (s *Service) DeleteOrganization(ctx context.Context, actorID string, req *g
 	}
 	w := wool.Get(ctx).In("DeleteOrganization")
 	actorType := s.actorTypeForCreator(ctx, actorID)
-	var members []*gen.OrgMembership
+	var members []string
 	if err := s.WithPolicyLoggedNarrowing(ctx,
 		deletedOrganizationPolicyLogEntry(actorID, orgID),
 		func(ctx context.Context) error {
@@ -207,20 +207,14 @@ func (s *Service) DeleteOrganization(ctx context.Context, actorID string, req *g
 			if !strings.EqualFold(strings.TrimSpace(req.ConfirmSlug), org.Slug) {
 				return ErrOrgDeleteConfirmation
 			}
-			if members, err = s.store.ListOrgMembers(ctx, orgID); err != nil {
-				return err
-			}
 			// Acquire every membership lock before any revocation can take an
-			// authorization-revision or session lock through its triggers.
-			if _, err := s.store.RemoveAllOrgMembers(ctx, orgID); err != nil {
+			// authorization-revision or session lock through its triggers. Lock
+			// only: deleting now would invert standalone uninstall's order of
+			// installation -> standing grant -> authorization revision.
+			if members, err = s.store.LockAllOrgMembers(ctx, orgID); err != nil {
 				return err
 			}
-			if _, err := s.store.RevokeOrgAPIKeys(ctx, orgID); err != nil {
-				return err
-			}
-			if _, err := s.store.RevokeOrgPendingInvitations(ctx, orgID); err != nil {
-				return err
-			}
+			// No trigger-producing write may precede the entire batch lock.
 			installations, err := s.store.ActiveInstallationIDs(ctx, orgID)
 			if err != nil {
 				return err
@@ -229,6 +223,15 @@ func (s *Service) DeleteOrganization(ctx context.Context, actorID string, req *g
 				if err := s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID); err != nil {
 					return w.Wrapf(err, "cannot uninstall %s", installationID)
 				}
+			}
+			if _, err := s.store.RemoveLockedOrgMembers(ctx, orgID, members); err != nil {
+				return err
+			}
+			if _, err := s.store.RevokeOrgAPIKeys(ctx, orgID); err != nil {
+				return err
+			}
+			if _, err := s.store.RevokeOrgPendingInvitations(ctx, orgID); err != nil {
+				return err
 			}
 			if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: orgID}, SourceDelegationMemberRemoved); err != nil {
 				return err
@@ -242,8 +245,8 @@ func (s *Service) DeleteOrganization(ctx context.Context, actorID string, req *g
 		}); err != nil {
 		return w.Wrapf(err, "cannot delete organization")
 	}
-	for _, member := range members {
-		_ = s.invalidateMembership(ctx, orgID, member.UserId)
+	for _, memberID := range members {
+		_ = s.invalidateMembership(ctx, orgID, memberID)
 	}
 	return nil
 }

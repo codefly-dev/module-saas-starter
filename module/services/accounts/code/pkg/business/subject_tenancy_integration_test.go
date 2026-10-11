@@ -313,6 +313,15 @@ type pausedBulkMembershipStore struct {
 
 func (s *pausedBulkMembershipStore) RemoveAllOrgMembers(ctx context.Context, org string) (int64, error) {
 	n, err := s.PostgresStore.RemoveAllOrgMembers(ctx, org)
+	return s.pauseAfterRemoval(ctx, n, err)
+}
+
+func (s *pausedBulkMembershipStore) RemoveLockedOrgMembers(ctx context.Context, org string, members []string) (int64, error) {
+	n, err := s.PostgresStore.RemoveLockedOrgMembers(ctx, org, members)
+	return s.pauseAfterRemoval(ctx, n, err)
+}
+
+func (s *pausedBulkMembershipStore) pauseAfterRemoval(ctx context.Context, n int64, err error) (int64, error) {
 	if err != nil {
 		return n, err
 	}

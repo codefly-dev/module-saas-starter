@@ -132,7 +132,8 @@ func TestSubjectTenancyRefusesMalformedIDsBeforeStoreAccess(t *testing.T) {
 
 type bulkRemovalOrderStore struct {
 	canonicalTenancyStore
-	removalErr error
+	lockErr         error
+	installationErr error
 }
 
 func (s *bulkRemovalOrderStore) As(Identity) Scoped { return &principalLookupScope{} }
@@ -146,12 +147,18 @@ func (s *bulkRemovalOrderStore) LockOrgAdministration(_ context.Context, org str
 func (s *bulkRemovalOrderStore) GetOrganization(_ context.Context, org string) (*gen.Organization, error) {
 	return &gen.Organization{Id: org, Slug: "example"}, nil
 }
-func (s *bulkRemovalOrderStore) ListOrgMembers(context.Context, string) ([]*gen.OrgMembership, error) {
-	return []*gen.OrgMembership{{OrgId: tenancyTestOrg, UserId: tenancyTestSubject}}, nil
-}
-func (s *bulkRemovalOrderStore) RemoveAllOrgMembers(_ context.Context, org string) (int64, error) {
+func (s *bulkRemovalOrderStore) LockAllOrgMembers(_ context.Context, org string) ([]string, error) {
 	require.Equal(s.t, tenancyTestOrg, org)
-	return 0, s.removalErr
+	return []string{tenancyTestSubject}, s.lockErr
+}
+func (s *bulkRemovalOrderStore) ActiveInstallationIDs(_ context.Context, org string) ([]string, error) {
+	require.Equal(s.t, tenancyTestOrg, org)
+	return nil, s.installationErr
+}
+func (s *bulkRemovalOrderStore) RemoveLockedOrgMembers(_ context.Context, org string, members []string) (int64, error) {
+	require.Equal(s.t, tenancyTestOrg, org)
+	require.Equal(s.t, []string{tenancyTestSubject}, members)
+	return 0, errors.New("membership deletion reached before installation locks; can deadlock an uninstall")
 }
 func (s *bulkRemovalOrderStore) RevokeOrgAPIKeys(context.Context, string) (int64, error) {
 	return 0, errors.New("revocation reached before membership locks; can deadlock an assignment")
@@ -159,9 +166,18 @@ func (s *bulkRemovalOrderStore) RevokeOrgAPIKeys(context.Context, string) (int64
 
 func TestDeleteOrganizationAcquiresMembershipLocksBeforeRevocations(t *testing.T) {
 	lockErr := errors.New("membership lock unavailable")
-	store := &bulkRemovalOrderStore{canonicalTenancyStore: canonicalTenancyStore{t: t, principalKind: PrincipalKindHuman}, removalErr: lockErr}
+	store := &bulkRemovalOrderStore{canonicalTenancyStore: canonicalTenancyStore{t: t, principalKind: PrincipalKindHuman}, lockErr: lockErr}
 	service := &Service{store: store}
 	service.SetPolicyLog(newFakePolicyLog(), newFakePolicyLogStore())
 	err := service.DeleteOrganization(context.Background(), strings.ToUpper(tenancyTestSubject), &gen.DeleteOrganizationRequest{OrgId: strings.ToUpper(tenancyTestOrg), ConfirmSlug: "example"})
 	require.ErrorIs(t, err, lockErr, "bulk membership locks must precede every revocation's trigger locks")
+}
+
+func TestDeleteOrganizationAcquiresInstallationLocksBeforeTriggerWrites(t *testing.T) {
+	lockErr := errors.New("installation lock unavailable")
+	store := &bulkRemovalOrderStore{canonicalTenancyStore: canonicalTenancyStore{t: t, principalKind: PrincipalKindHuman}, installationErr: lockErr}
+	service := &Service{store: store}
+	service.SetPolicyLog(newFakePolicyLog(), newFakePolicyLogStore())
+	err := service.DeleteOrganization(context.Background(), tenancyTestSubject, &gen.DeleteOrganizationRequest{OrgId: tenancyTestOrg, ConfirmSlug: "example"})
+	require.ErrorIs(t, err, lockErr, "the installation batch lock must precede membership deletion and all revocations")
 }
