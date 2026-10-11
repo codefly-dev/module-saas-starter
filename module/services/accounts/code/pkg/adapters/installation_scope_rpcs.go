@@ -3,8 +3,9 @@ package adapters
 import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
-	"connectrpc.com/connect"
 	"context"
+
+	"connectrpc.com/connect"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"

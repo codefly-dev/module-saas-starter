@@ -5,8 +5,9 @@ package business_test
 import (
 	"accounts/pkg/business"
 	"context"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestInstallationScopeInstallNarrowAuditAndPolicyLog(t *testing.T) {

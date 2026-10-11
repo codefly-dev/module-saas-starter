@@ -14,6 +14,7 @@ import (
 	"accounts/pkg/infra"
 	"accounts/pkg/infra/storetx"
 	"accounts/pkg/jobs"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"

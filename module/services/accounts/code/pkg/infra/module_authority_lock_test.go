@@ -4,9 +4,10 @@ import (
 	"accounts/pkg/jobs"
 	"context"
 	"encoding/json"
+	"testing"
+
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 type authorityLockExecutor struct {

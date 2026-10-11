@@ -10,8 +10,9 @@ import (
 	"accounts/pkg/jobs"
 	"context"
 	"encoding/json"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type dynamicInstall struct {

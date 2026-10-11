@@ -3,9 +3,10 @@ package jobs
 import (
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"context"
-	"google.golang.org/protobuf/proto"
 	"strconv"
 	"strings"
+
+	"google.golang.org/protobuf/proto"
 )
 
 // ModuleAuthority is host-stamped provenance. It is not part of the module's
