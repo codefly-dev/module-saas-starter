@@ -37,11 +37,34 @@ import packageJson from "../../../package.json" with { type: "json" };
  *     `export … from "@codefly-dev/ui/dashboard"`. Issue #1041 asked what they
  *     were; they are already right, and this keeps them so.
  *
- * What the gate cannot do, said plainly: a duplicate under a NEW name, built by
- * hand, passes all three legs. {@link ALLOWED} is the backstop for that — a
- * label a reviewer reads and asks about, not a detector. Classifying files by
- * their names instead would fail on the next file anyone adds, and a gate that
- * cries wolf is a gate that gets deleted.
+ * It resolves names with the TypeScript checker, so every spelling that reaches
+ * the same component reaches the same verdict, and it reads what a component
+ * RETURNS rather than what a file mentions. Where it cannot resolve a name the
+ * kit owns — published from a third-party module, or from a chain whose end it
+ * cannot read — it refuses rather than passing: "could not tell" is not a
+ * verdict it is allowed to reach, and four rounds of adversarial fixtures each
+ * found the next way through the version that skipped instead.
+ *
+ * WHAT IT CANNOT SEE. This is a tripwire for the common shape, not a proof, and
+ * these are limits rather than bugs — each is a place where deciding would mean
+ * following the program further than reading one component's returned
+ * expression:
+ *
+ *   - **A duplicate under a NEW name**, built by hand, passes every leg.
+ *     {@link ALLOWED} and {@link DISPATCHERS} are the backstop — labels a
+ *     reviewer reads and asks about, not detectors.
+ *   - **Kit JSX handed to another component through an attribute.** What the
+ *     recipient does with a prop is beyond this; a kit element in one is no
+ *     evidence that this component renders it. Children are not attributes and
+ *     do count.
+ *   - **Anything behind a call.** A mark rendered by a helper function, or
+ *     chosen from a lookup table (`MARKS[kind]`), is a dispatch this cannot
+ *     read. The table is plain to a reviewer and invisible here.
+ *   - **A dispatch split across components**, one visualization each, composed
+ *     by a parent that only forwards.
+ *
+ * Classifying files by their names instead would fail on the next file anyone
+ * adds, and a gate that cries wolf is a gate that gets deleted.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -238,8 +261,14 @@ function programOver(files: { path: string; source: string }[]): {
 		getNewLine: () => "\n",
 		resolveModuleNames: (names, containingFile) =>
 			names.map((name) => {
-				if (!name.startsWith(".")) return undefined;
-				const base = join(dirname(containingFile), name).replaceAll("\\", "/");
+				// The app's own two spellings of its own modules: a relative path
+				// and the `@/` alias its tsconfig maps to `src/`. Resolving only
+				// the first let a copy hide behind an export chain written in the
+				// second — the gate read the barrel and then stopped.
+				if (!name.startsWith(".") && !name.startsWith("@/")) return undefined;
+				const base = name.startsWith("@/")
+					? `src/${name.slice(2)}`
+					: join(dirname(containingFile), name).replaceAll("\\", "/");
 				for (const candidate of [
 					base,
 					`${base}.tsx`,
@@ -274,23 +303,120 @@ function programOver(files: { path: string; source: string }[]): {
 	return { program, checker: program.getTypeChecker(), sources };
 }
 
-/** The import declaration a symbol's declaration sits under, if any. */
-function importOf(declaration: ts.Node): ts.ImportDeclaration | undefined {
-	for (let node: ts.Node | undefined = declaration; node; node = node.parent) {
-		if (ts.isImportDeclaration(node)) return node;
+const KIT_NAMESPACE = "*kit";
+const SURFACE_NAMESPACE = "*surface";
+
+/**
+ * An alias chain from a symbol to its end, every hop included.
+ *
+ * Cycle-detected, not hop-capped. A chain that is long is not a chain that is
+ * suspicious, and abandoning one at an arbitrary depth was itself an escape:
+ * nine re-exports in a row resolved to nothing and the copy at the end of them
+ * went unexamined. A cycle is the only thing that can stop this, and it stops
+ * it without a verdict.
+ */
+function aliasChain(symbol: ts.Symbol, checker: ts.TypeChecker): ts.Symbol[] {
+	const chain = [symbol];
+	const seen = new Set<ts.Symbol>([symbol]);
+	let current = symbol;
+	while (current.flags & ts.SymbolFlags.Alias) {
+		const next = checker.getImmediateAliasedSymbol(current);
+		if (!next || seen.has(next)) break;
+		seen.add(next);
+		chain.push(next);
+		current = next;
 	}
-	return undefined;
+	return chain;
 }
 
 /**
- * The kit component an identifier refers to, by the kit's OWN name, or
- * `"*namespace"` for a whole kit module, or undefined for anything else —
- * including anything the checker cannot resolve, which is the conservative
+ * Where a declaration comes from, when it comes from another module.
+ *
+ * `kit` is the kit's own component under the kit's own name, however the local
+ * spelling renamed it, whether it arrived by `import` or by `export … from`.
+ * `namespace` is a whole kit or surface module, to be resolved at the use site.
+ * `external` is a module that is neither — including a third-party one, which
+ * is as much a second implementation of a kit name as a hand-written copy.
+ * `undefined` means the declaration is local, so the chain continues.
+ */
+type KitBinding =
+	| { kind: "kit"; name: string }
+	| { kind: "namespace"; marker: string }
+	| { kind: "type" }
+	| { kind: "external"; from: string };
+
+function kitBindingOf(
+	declaration: ts.Node,
+	surface: Map<string, string>,
+): KitBinding | undefined {
+	let from: ts.ImportDeclaration | ts.ExportDeclaration | undefined;
+	for (let node: ts.Node | undefined = declaration; node; node = node.parent) {
+		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+			from = node;
+			break;
+		}
+	}
+	const specifier = from?.moduleSpecifier;
+	if (!from || !specifier || !ts.isStringLiteral(specifier)) return undefined;
+	if (
+		(ts.isImportDeclaration(from) && from.importClause?.isTypeOnly) ||
+		(ts.isExportDeclaration(from) && from.isTypeOnly)
+	) {
+		return { kind: "type" };
+	}
+	const fromKit = KIT_SPECIFIER.test(specifier.text);
+	const fromSurface = isHostSurface(
+		specifier.text,
+		from.getSourceFile().fileName,
+	);
+	if (!fromKit && !fromSurface) {
+		return { kind: "external", from: specifier.text };
+	}
+	if (ts.isNamespaceImport(declaration) || ts.isNamespaceExport(declaration)) {
+		return {
+			kind: "namespace",
+			marker: fromKit ? KIT_NAMESPACE : SURFACE_NAMESPACE,
+		};
+	}
+	if (ts.isImportSpecifier(declaration) || ts.isExportSpecifier(declaration)) {
+		// A type is not a component. It cannot be rendered, it cannot be a
+		// second implementation of one, and treating a type-only binding as
+		// something unreadable would offend on every `export type` that shares
+		// a kit name.
+		if (declaration.isTypeOnly || typeOnlyClause(declaration)) {
+			return { kind: "type" };
+		}
+		const published = (declaration.propertyName ?? declaration.name).text;
+		const name = fromKit ? published : surface.get(published);
+		return name
+			? { kind: "kit", name }
+			: { kind: "external", from: specifier.text };
+	}
+	return { kind: "external", from: specifier.text };
+}
+
+/** Whether the clause a specifier sits in is type-only. */
+function typeOnlyClause(
+	declaration: ts.ImportSpecifier | ts.ExportSpecifier,
+): boolean {
+	const clause = declaration.parent.parent;
+	return ts.isImportClause(clause)
+		? clause.isTypeOnly
+		: ts.isExportDeclaration(clause) && clause.isTypeOnly;
+}
+
+/**
+ * The kit component an identifier refers to, by the kit's OWN name, or a
+ * namespace marker for a whole kit module, or undefined for anything else —
+ * including anything that cannot be resolved, which is the conservative
  * answer: unresolved is not composition.
  *
- * Follows what the compiler follows: import aliases, local variable aliases
- * (`const Local = KitCard`, `const Local = UI.Card`) and export chains of any
- * length.
+ * The checker answers this, so every spelling that reaches the same component
+ * reaches the same verdict: an import alias, a local variable alias, a chain of
+ * re-exports through the app's own barrels, a member of a namespace import of
+ * either. Hand-rolled scope analysis is what kept misjudging it — it collected
+ * names across scopes, missed destructured bindings, and could not follow an
+ * export chain at all.
  */
 function kitComponentOf(
 	node: ts.Expression | ts.JsxTagNameExpression,
@@ -301,127 +427,208 @@ function kitComponentOf(
 	if (seen.has(node)) return undefined;
 	seen.add(node);
 
-	// `UI.Card` — resolve the namespace, then the member through the surface.
+	// The whole expression first, which is what resolves `UI.Card` when `UI` is
+	// a namespace of one of the app's own barrels: the checker walks the barrel's
+	// export to the kit import behind it.
+	const symbol = checker.getSymbolAtLocation(node);
+	if (symbol) {
+		for (const hop of aliasChain(symbol, checker)) {
+			const declaration = hop.declarations?.[0];
+			if (!declaration) continue;
+			const binding = kitBindingOf(declaration, surface);
+			if (binding?.kind === "kit") return binding.name;
+			if (binding?.kind === "namespace") return binding.marker;
+			// Another module of the app's own: the chain walks through it. Only
+			// its end can say the name is not the kit's, which is why nothing
+			// here stops at the first hop that is not.
+			if (binding) continue;
+			if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+				return kitComponentOf(declaration.initializer, checker, surface, seen);
+			}
+		}
+	}
+	// `UI.Card` where `UI` is the kit itself: the kit is not in the program, so
+	// there is no symbol for the member and the namespace is the evidence.
 	if (ts.isPropertyAccessExpression(node)) {
 		const base = kitComponentOf(node.expression, checker, surface, seen);
 		if (base === KIT_NAMESPACE) return node.name.text;
 		if (base === SURFACE_NAMESPACE) return surface.get(node.name.text);
-		return undefined;
-	}
-	if (!ts.isIdentifier(node)) return undefined;
-
-	let symbol = checker.getSymbolAtLocation(node);
-	if (!symbol) return undefined;
-	// Through import and export aliases, however many hops.
-	for (let hop = 0; hop < 8 && symbol.flags & ts.SymbolFlags.Alias; hop += 1) {
-		const target = checker.getImmediateAliasedSymbol(symbol);
-		const declaration = symbol.declarations?.[0];
-		// An import of a kit module is where the chain ends: the module is not
-		// in the program, so there is nothing further to resolve, and the
-		// import declaration in the source is the evidence.
-		if (declaration) {
-			const importDeclaration = importOf(declaration);
-			if (
-				importDeclaration &&
-				ts.isStringLiteral(importDeclaration.moduleSpecifier)
-			) {
-				const specifier = importDeclaration.moduleSpecifier.text;
-				const fromKit = KIT_SPECIFIER.test(specifier);
-				const fromSurface = isHostSurface(
-					specifier,
-					importDeclaration.getSourceFile().fileName,
-				);
-				if (fromKit || fromSurface) {
-					if (ts.isNamespaceImport(declaration)) {
-						return fromKit ? KIT_NAMESPACE : SURFACE_NAMESPACE;
-					}
-					if (ts.isImportSpecifier(declaration)) {
-						if (declaration.isTypeOnly) return undefined;
-						const published = (declaration.propertyName ?? declaration.name)
-							.text;
-						return fromKit ? published : surface.get(published);
-					}
-					return undefined;
-				}
-			}
-		}
-		if (!target) break;
-		symbol = target;
-	}
-
-	// A local alias: follow its initializer.
-	const declaration = symbol.declarations?.[0];
-	if (
-		declaration &&
-		ts.isVariableDeclaration(declaration) &&
-		declaration.initializer
-	) {
-		return kitComponentOf(declaration.initializer, checker, surface, seen);
 	}
 	return undefined;
 }
 
-const KIT_NAMESPACE = "*kit";
-const SURFACE_NAMESPACE = "*surface";
+/**
+ * What a component renders, as the alternative pictures it can draw: one set of
+ * kit marks per branch the renderer can take.
+ *
+ * Expression forms, and nothing beyond them. A conditional is two
+ * alternatives wherever it sits — nested inside returned JSX included, which
+ * is where a dispatch is usually written. `&&` adds the empty alternative,
+ * because the mark may be absent. `||` and `??` are their two sides. A cast,
+ * a parenthesis and a non-null assertion are their inner expression. A comma
+ * expression is its RIGHT operand alone: the others are evaluated and thrown
+ * away. Children of an element render together, so they multiply out.
+ *
+ * Nothing else is descended into, which is how two things end up not counting
+ * as rendered — both limits rather than oversights. A function body is not what
+ * the expression holding it draws, so a render prop and a callback in children
+ * are values, not pictures. And JSX handed to another component through an
+ * attribute is a value passed too: what the recipient does with it is beyond
+ * anything this can see, so a kit element in a prop is no evidence that this
+ * component renders it. Children are not attributes and do count.
+ */
+function alternatives(
+	node: ts.Node,
+	checker: ts.TypeChecker,
+	surface: Map<string, string>,
+	seen = new Set<ts.Node>(),
+): Set<string>[] {
+	const NOTHING = [new Set<string>()];
+	if (seen.has(node)) return NOTHING;
+	seen.add(node);
+	const of = (next: ts.Node) => alternatives(next, checker, surface, seen);
+
+	if (
+		ts.isParenthesizedExpression(node) ||
+		ts.isAsExpression(node) ||
+		ts.isSatisfiesExpression(node) ||
+		ts.isTypeAssertionExpression(node) ||
+		ts.isNonNullExpression(node)
+	) {
+		return of(node.expression);
+	}
+	if (ts.isJsxExpression(node)) {
+		return node.expression ? of(node.expression) : NOTHING;
+	}
+	if (ts.isConditionalExpression(node)) {
+		return distinct([...of(node.whenTrue), ...of(node.whenFalse)]);
+	}
+	if (ts.isBinaryExpression(node)) {
+		switch (node.operatorToken.kind) {
+			case ts.SyntaxKind.CommaToken:
+				return of(node.right);
+			case ts.SyntaxKind.AmpersandAmpersandToken:
+				return distinct([new Set<string>(), ...of(node.right)]);
+			case ts.SyntaxKind.BarBarToken:
+			case ts.SyntaxKind.QuestionQuestionToken:
+				return distinct([...of(node.left), ...of(node.right)]);
+			default:
+				return NOTHING;
+		}
+	}
+	if (ts.isJsxElement(node)) {
+		return together([
+			[markOf(node.openingElement.tagName, checker, surface)],
+			...node.children.map(of),
+		]);
+	}
+	if (ts.isJsxSelfClosingElement(node)) {
+		return [markOf(node.tagName, checker, surface)];
+	}
+	if (ts.isJsxFragment(node)) {
+		return together(node.children.map(of));
+	}
+	if (ts.isArrayLiteralExpression(node)) {
+		return together(node.elements.map(of));
+	}
+	// A local name holding a picture: `const content = <KitCard/>; return content`.
+	if (ts.isIdentifier(node)) {
+		const symbol = checker.getSymbolAtLocation(node);
+		for (const hop of symbol ? aliasChain(symbol, checker) : []) {
+			const declaration = hop.declarations?.[0];
+			if (
+				declaration &&
+				ts.isVariableDeclaration(declaration) &&
+				declaration.initializer
+			) {
+				return of(declaration.initializer);
+			}
+		}
+	}
+	return NOTHING;
+}
+
+/** Whether a node is a function, whose body is not this component's picture. */
+function isFunctionLike(node: ts.Node): boolean {
+	return (
+		ts.isFunctionDeclaration(node) ||
+		ts.isFunctionExpression(node) ||
+		ts.isArrowFunction(node) ||
+		ts.isMethodDeclaration(node)
+	);
+}
+
+/** The kit mark a JSX tag draws, as a set of none or one. */
+function markOf(
+	tag: ts.JsxTagNameExpression,
+	checker: ts.TypeChecker,
+	surface: Map<string, string>,
+): Set<string> {
+	const kit = kitComponentOf(tag, checker, surface);
+	return kit && !kit.startsWith("*") ? new Set([kit]) : new Set<string>();
+}
+
+/** One alternative per distinct set of marks. */
+function distinct(paths: Set<string>[]): Set<string>[] {
+	const byShape = new Map<string, Set<string>>();
+	for (const path of paths) {
+		byShape.set([...path].sort().join("+"), path);
+	}
+	return [...byShape.values()];
+}
 
 /**
- * The kit components a declaration RETURNS, as the sets reachable by each
- * distinct return path.
- *
- * Two things this must not do. It must not count JSX in a nested function —
- * an unused local wrapper is not what this component renders. And it must not
- * flatten the paths, because the difference between a page and a dispatch is
- * whether the arms render DIFFERENT marks: a layout that draws the same pair
- * inside a `<section>` or a `<main>` is one picture twice, while choosing a
- * line or an area by a widget's kind is a dispatch.
+ * Parts that all render: every combination of one alternative from each. Kept
+ * distinct at each step, so the count is bounded by the mark sets that can
+ * actually occur rather than by the size of the tree.
  */
-function returnedPaths(
+function together(parts: Set<string>[][]): Set<string>[] {
+	let combined: Set<string>[] = [new Set<string>()];
+	for (const part of parts) {
+		const next: Set<string>[] = [];
+		for (const left of combined) {
+			for (const right of part) {
+				next.push(new Set([...left, ...right]));
+			}
+		}
+		combined = distinct(next);
+	}
+	return combined;
+}
+
+/**
+ * The alternatives a declaration's body returns.
+ *
+ * Every `return` in the body, plus a concise arrow body, which is one. A
+ * statement after a `return` or a `throw` in the same block is unreachable and
+ * is not one: a picture no execution reaches is not drawn.
+ */
+function returnedAlternatives(
 	declaration: ts.Node,
 	checker: ts.TypeChecker,
 	surface: Map<string, string>,
 ): Set<string>[] {
 	const body = functionBodyOf(declaration);
 	if (!body) return [];
-
-	const marksIn = (root: ts.Node): Set<string> => {
-		const found = new Set<string>();
-		const visit = (node: ts.Node) => {
-			// A nested function is not what this component returns.
-			if (isFunctionLike(node) && node !== root) return;
-			if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
-				const kit = kitComponentOf(node.tagName, checker, surface);
-				if (kit && !kit.startsWith("*")) found.add(kit);
-			}
-			ts.forEachChild(node, visit);
-		};
-		visit(root);
-		return found;
-	};
-
-	// Each return path separately: every `return` in this body (not in a
-	// nested function), and each arm of a conditional inside one.
-	const paths: Set<string>[] = [];
-	const addExpression = (expression: ts.Expression) => {
-		if (ts.isConditionalExpression(expression)) {
-			addExpression(expression.whenTrue);
-			addExpression(expression.whenFalse);
-			return;
-		}
-		if (ts.isParenthesizedExpression(expression)) {
-			addExpression(expression.expression);
-			return;
-		}
-		paths.push(marksIn(expression));
-	};
 	if (!ts.isBlock(body)) {
-		// A concise arrow body is the returned expression.
-		addExpression(body as ts.Expression);
-		return paths;
+		return alternatives(body, checker, surface);
 	}
+	const paths: Set<string>[] = [];
 	const visit = (node: ts.Node) => {
 		if (isFunctionLike(node) && node !== body) return;
-		if (ts.isReturnStatement(node) && node.expression) {
-			addExpression(node.expression);
+		if (ts.isBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) {
+			for (const statement of node.statements) {
+				visit(statement);
+				if (ts.isReturnStatement(statement) || ts.isThrowStatement(statement)) {
+					return;
+				}
+			}
+			return;
+		}
+		if (ts.isReturnStatement(node)) {
+			if (node.expression) {
+				paths.push(...alternatives(node.expression, checker, surface));
+			}
 			return;
 		}
 		ts.forEachChild(node, visit);
@@ -430,12 +637,16 @@ function returnedPaths(
 	return paths;
 }
 
-function isFunctionLike(node: ts.Node): boolean {
-	return (
-		ts.isFunctionDeclaration(node) ||
-		ts.isFunctionExpression(node) ||
-		ts.isArrowFunction(node) ||
-		ts.isMethodDeclaration(node)
+/** Every kit component this declaration returns, on any alternative. */
+function returnedKitComponents(
+	declaration: ts.Node,
+	checker: ts.TypeChecker,
+	surface: Map<string, string>,
+): Set<string> {
+	return new Set(
+		returnedAlternatives(declaration, checker, surface).flatMap((path) => [
+			...path,
+		]),
 	);
 }
 
@@ -455,58 +666,88 @@ function functionBodyOf(declaration: ts.Node): ts.Node | undefined {
 	return undefined;
 }
 
-/** Every kit component this declaration returns, flattened. */
-function returnedKitComponents(
-	declaration: ts.Node,
-	checker: ts.TypeChecker,
-	surface: Map<string, string>,
-): Set<string> {
-	return new Set(
-		returnedPaths(declaration, checker, surface).flatMap((path) => [...path]),
-	);
-}
+/**
+ * What a published name resolves to.
+ *
+ * `declaration` is code in this set, to be examined. `kit` is the kit's own
+ * component, however renamed — a re-export ships the kit's component rather
+ * than a second one. `unresolved` is everything else, and it is an OFFENCE
+ * rather than a skip: a name the kit owns, published here from somewhere this
+ * cannot read, is a second implementation of it as surely as a hand-written
+ * copy, and "could not tell" was the hole that four rounds of fixtures each
+ * found the next way through.
+ */
+type Resolution =
+	| { kind: "declaration"; node: ts.Node }
+	| { kind: "kit"; name: string }
+	| { kind: "type" }
+	| { kind: "unresolved"; why: string };
 
 /**
- * Every component a file publishes, by published name, with the declaration
- * that implements it — following an export chain of any length into whichever
- * file actually declares it, so splitting a copy from its kit-named export
- * hides nothing and a genuine wrapper re-exported under the kit's name is not
- * mistaken for one.
+ * Every component a file publishes, by published name — following an export
+ * chain of any length into whichever file actually declares it, so splitting a
+ * copy from its kit-named export hides nothing and a genuine wrapper
+ * re-exported under the kit's name is not mistaken for one. Declarations the
+ * file does not export are still declarations here: a duplicate hidden as a
+ * file-local helper is the commonest way one arrives.
  */
 function publishedComponents(
 	file: ts.SourceFile,
 	checker: ts.TypeChecker,
-): Map<string, ts.Node> {
-	const published = new Map<string, ts.Node>();
-	const implementation = (
-		symbol: ts.Symbol | undefined,
-	): ts.Node | undefined => {
-		let resolved = symbol;
-		for (let hop = 0; resolved && hop < 8; hop += 1) {
-			const declaration = resolved.declarations?.[0];
-			if (!declaration) return undefined;
+	surface: Map<string, string>,
+): Map<string, Resolution> {
+	const published = new Map<string, Resolution>();
+	const resolve = (symbol: ts.Symbol): Resolution => {
+		const chain = aliasChain(symbol, checker);
+		for (const [hop, resolved] of chain.entries()) {
+			const declarations = resolved.declarations ?? [];
+			const value = declarations.find(
+				(declaration) =>
+					ts.isFunctionDeclaration(declaration) ||
+					ts.isClassDeclaration(declaration) ||
+					ts.isVariableDeclaration(declaration),
+			);
+			if (value) return { kind: "declaration", node: value };
 			if (
-				ts.isFunctionDeclaration(declaration) ||
-				ts.isClassDeclaration(declaration) ||
-				ts.isVariableDeclaration(declaration)
+				declarations.length > 0 &&
+				declarations.every(
+					(declaration) =>
+						ts.isTypeAliasDeclaration(declaration) ||
+						ts.isInterfaceDeclaration(declaration),
+				)
 			) {
-				return declaration;
+				return { kind: "type" };
 			}
-			if (!(resolved.flags & ts.SymbolFlags.Alias)) return undefined;
-			resolved = checker.getImmediateAliasedSymbol(resolved);
+			const binding = declarations[0]
+				? kitBindingOf(declarations[0], surface)
+				: undefined;
+			if (binding?.kind === "kit" || binding?.kind === "namespace") {
+				return {
+					kind: "kit",
+					name: binding.kind === "kit" ? binding.name : binding.marker,
+				};
+			}
+			if (binding?.kind === "type") return { kind: "type" };
+			// An `external` hop in the middle is another of the app's own
+			// modules, which the chain walks through. At the END of the chain it
+			// is a module this cannot read, and a kit name coming out of one is
+			// a second implementation of it as much as a hand-written copy.
+			if (hop === chain.length - 1) {
+				return binding?.kind === "external"
+					? { kind: "unresolved", why: `published from ${binding.from}` }
+					: { kind: "unresolved", why: "the chain reaches no declaration" };
+			}
 		}
-		return undefined;
+		return { kind: "unresolved", why: "the chain reaches no declaration" };
 	};
 
 	const moduleSymbol = checker.getSymbolAtLocation(file);
 	if (moduleSymbol) {
 		for (const exported of checker.getExportsOfModule(moduleSymbol)) {
 			if (!/^[A-Z][A-Za-z0-9]*$/.test(exported.name)) continue;
-			const node = implementation(exported);
-			if (node) published.set(exported.name, node);
+			published.set(exported.name, resolve(exported));
 		}
 	}
-	// Declarations the file does not export are still declarations here.
 	const visit = (node: ts.Node) => {
 		const name =
 			(ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
@@ -516,7 +757,7 @@ function publishedComponents(
 					? node.name.text
 					: undefined;
 		if (name && /^[A-Z][A-Za-z0-9]*$/.test(name) && !published.has(name)) {
-			published.set(name, node);
+			published.set(name, { kind: "declaration", node });
 		}
 		ts.forEachChild(node, visit);
 	};
@@ -554,29 +795,42 @@ const DASHBOARD_MARKS = new Set([
 ]);
 
 /**
- * Whether this declaration chooses between dashboard marks — two return paths
- * that render DIFFERENT sets of them.
+ * Whether this declaration CHOOSES between dashboard marks: two alternatives
+ * whose marks are each non-empty and neither contained in the other.
  *
- * Differing is the test, not branching and not counting. A layout that returns
- * the same pair inside a `<section>` or a `<main>` has two paths and one
- * picture, and must pass; a component that returns a line for one kind and an
- * area for another has two pictures, and is the dispatch `<Dashboard>` owns.
- * Both the `cond ? … : …` and the guard-return spellings are return paths, so
- * neither needs its own rule.
+ * Containment is what separates the two shapes that look alike. A page that
+ * always draws a chart and sometimes adds a KPI row has `{chart}` and
+ * `{row, chart}` — one is the other plus an optional extra, and it is one
+ * picture with a variation. A renderer that draws a line for one kind and an
+ * area for another has `{line}` and `{area}` — neither is the other, and that
+ * is the dispatch over visualizations `<Dashboard>` owns.
+ *
+ * Choosing is the test, not branching and not counting: counting file-wide
+ * imports flagged a page that composed two marks side by side, and comparing
+ * only top-level returns walked past the same dispatch written one line deeper,
+ * inside the JSX it returns.
  */
 function dispatchedMarks(
 	declaration: ts.Node,
 	checker: ts.TypeChecker,
 	surface: Map<string, string>,
 ): string[] {
-	const paths = returnedPaths(declaration, checker, surface)
-		.map(
+	const paths = distinct(
+		returnedAlternatives(declaration, checker, surface).map(
 			(path) => new Set([...path].filter((mark) => DASHBOARD_MARKS.has(mark))),
-		)
-		.filter((path) => path.size > 0);
-	const shapes = new Set(paths.map((path) => [...path].sort().join("+")));
-	if (shapes.size < 2) return [];
-	return [...new Set(paths.flatMap((path) => [...path]))].sort();
+		),
+	).filter((path) => path.size > 0);
+	const within = (small: Set<string>, large: Set<string>) =>
+		[...small].every((mark) => large.has(mark));
+	for (const left of paths) {
+		for (const right of paths) {
+			if (left === right) continue;
+			if (!within(left, right) && !within(right, left)) {
+				return [...new Set([...left, ...right])].sort();
+			}
+		}
+	}
+	return [];
 }
 
 const DISPATCHERS: Record<string, string> = {
@@ -657,8 +911,11 @@ function parse(path: string, source: string): ts.SourceFile {
 interface Offence {
 	name: string;
 	path: string;
-	/** Why it is an offence: a name the kit owns, or a widget dispatch. */
-	kind: "name" | "dispatch";
+	/**
+	 * Why it is an offence: a name the kit owns, a widget dispatch, or a name
+	 * the kit owns published from somewhere this cannot read.
+	 */
+	kind: "name" | "dispatch" | "unresolved";
 }
 
 /**
@@ -687,8 +944,7 @@ function defaultExportNames(
 				.getExportsOfModule(moduleSymbol)
 				.find((symbol) => symbol.name === "default")
 		: undefined;
-	let symbol = exported;
-	for (let hop = 0; symbol && hop < 8; hop += 1) {
+	for (const symbol of exported ? aliasChain(exported, checker) : []) {
 		for (const declaration of symbol.declarations ?? []) {
 			if (
 				(ts.isFunctionDeclaration(declaration) ||
@@ -706,17 +962,15 @@ function defaultExportNames(
 				names.add(declaration.expression.text);
 			}
 		}
-		if (!(symbol.flags & ts.SymbolFlags.Alias)) break;
-		symbol = checker.getImmediateAliasedSymbol(symbol);
 	}
 	return names;
 }
 
 /**
  * Declarations that take a kit export's name without RETURNING the kit's
- * component of that name, plus declarations that choose between the kit's
- * dashboard marks. Pure, so the fixtures below can exercise it on sources that
- * are not in the tree.
+ * component of that name, names the kit owns that this cannot resolve at all,
+ * and declarations that choose between the kit's dashboard marks. Pure, so the
+ * fixtures below can exercise it on sources that are not in the tree.
  */
 function findOffences(
 	files: { path: string; source: string }[],
@@ -734,26 +988,35 @@ function findOffences(
 		const routeDefaults = ROUTE_CONVENTION.test(path)
 			? defaultExportNames(file, checker)
 			: new Set<string>();
-		const components = publishedComponents(file, checker);
+		const components = publishedComponents(file, checker, surface);
 
-		for (const [name, declaration] of components) {
+		for (const [name, resolution] of components) {
 			if (!kit.has(name) || routeDefaults.has(name)) continue;
-			if (returnedKitComponents(declaration, checker, surface).has(name)) {
-				continue;
-			}
+			if (resolution.kind === "kit" || resolution.kind === "type") continue;
 			// An exception is recorded where the component is DECLARED, so a
 			// barrel that re-exports it does not need a second one for the
 			// same component. The published path is checked too, for a name a
 			// file publishes without declaring anywhere in the set.
-			const declaredIn = declaration.getSourceFile().fileName;
+			const declaredIn =
+				resolution.kind === "declaration"
+					? resolution.node.getSourceFile().fileName
+					: path;
 			if (`${name} in ${path}` in allowed) continue;
 			if (`${name} in ${declaredIn}` in allowed) continue;
+			if (resolution.kind === "unresolved") {
+				offences.push({ name, path, kind: "unresolved" });
+				continue;
+			}
+			if (returnedKitComponents(resolution.node, checker, surface).has(name)) {
+				continue;
+			}
 			offences.push({ name, path, kind: "name" });
 		}
 
 		if (path in dispatchers) continue;
-		for (const [, declaration] of components) {
-			const marks = dispatchedMarks(declaration, checker, surface);
+		for (const [, resolution] of components) {
+			if (resolution.kind !== "declaration") continue;
+			const marks = dispatchedMarks(resolution.node, checker, surface);
 			if (marks.length > 1) {
 				offences.push({ name: marks.join("+"), path, kind: "dispatch" });
 				break;
@@ -776,11 +1039,15 @@ describe("the host app composes the kit rather than re-implementing it", () => {
 			kit,
 			ALLOWED,
 			hostSurface(),
-		).map(({ name, path, kind }) =>
-			kind === "name"
-				? `${name} in ${path} — @codefly-dev/ui already exports it. Compose the kit's component, or add "${name} in ${path}" to ALLOWED with what the two things are and why neither can stand in for the other.`
-				: `${path} draws with ${name} — more than one of the kit's dashboard marks, which is a widget dispatch and <Dashboard>'s job. Mount <Dashboard> or <DashboardWidget>, or add ${path} to DISPATCHERS with what it is and what would retire it.`,
-		);
+		).map(({ name, path, kind }) => {
+			if (kind === "name") {
+				return `${name} in ${path} — @codefly-dev/ui already exports it. Compose the kit's component, or add "${name} in ${path}" to ALLOWED with what the two things are and why neither can stand in for the other.`;
+			}
+			if (kind === "unresolved") {
+				return `${name} in ${path} — @codefly-dev/ui exports that name and this publishes it from somewhere this gate cannot read, so it cannot tell the kit's component from a second one. Publish the kit's own, or declare it here where it can be read.`;
+			}
+			return `${path} draws with ${name} — more than one of the kit's dashboard marks, which is a widget dispatch and <Dashboard>'s job. Mount <Dashboard> or <DashboardWidget>, or add ${path} to DISPATCHERS with what it is and what would retire it.`;
+		});
 		expect(offences).toEqual([]);
 	});
 
@@ -1366,6 +1633,235 @@ export const LocalPanel = (props) => <KitCard {...props} />;`,
 				{},
 			).length,
 		).toBeGreaterThan(0);
+	});
+
+	// What the gate must see through, and what it must not mistake for a copy.
+	// Each of these was found by an independent review of an earlier shape of
+	// this detector, and each named a rule rather than a trick: these say what
+	// the rule now is.
+	it.each([
+		[
+			"a dispatch written one line inside the JSX it returns",
+			`import { LineChart as L, AreaChart as A } from "@codefly-dev/ui/dashboard";
+export function WidgetBody({ kind }) {
+	return <section>{kind === "line" ? <L points={[]} /> : <A points={[]} />}</section>;
+}`,
+			true,
+		],
+		[
+			"the same dispatch behind a cast",
+			`import { LineChart as L, AreaChart as A } from "@codefly-dev/ui/dashboard";
+export function WidgetBody({ kind }) {
+	return (kind === "line" ? <L points={[]} /> : <A points={[]} />) as React.ReactNode;
+}`,
+			true,
+		],
+		[
+			"kit JSX in a comma operand, which is evaluated and discarded",
+			`import { Card as KitCard } from "@codefly-dev/ui/layout";
+export function Card() { return (<KitCard />, <div>copy</div>); }`,
+			true,
+		],
+		[
+			"kit JSX in a return no execution reaches",
+			`import { Card as KitCard } from "@codefly-dev/ui/layout";
+export function Card() {
+	return <div>copy</div>;
+	return <KitCard />;
+}`,
+			true,
+		],
+		[
+			"kit JSX handed to another component through a prop",
+			`import { Card as KitCard } from "@codefly-dev/ui/layout";
+function Ignore(props) { return <div>copy</div>; }
+export function Card() { return <Ignore unused={<KitCard />} />; }`,
+			true,
+		],
+		[
+			"a dispatch whose arms are fragments",
+			`import { LineChart as L, AreaChart as A } from "@codefly-dev/ui/dashboard";
+export function WidgetBody({ kind }) {
+	return kind === "line" ? <><L points={[]} /></> : <><A points={[]} /></>;
+}`,
+			true,
+		],
+		[
+			"kit JSX returned by a nested function the component only declares",
+			`import { Card as KitCard } from "@codefly-dev/ui/layout";
+export function Card() {
+	function Unused() { return <KitCard />; }
+	return <div>copy</div>;
+}`,
+			true,
+		],
+		[
+			"kit JSX in a callback the component puts in its children",
+			`import { Card as KitCard } from "@codefly-dev/ui/layout";
+export function Card() { return <Panel>{() => <KitCard />}</Panel>; }`,
+			true,
+		],
+		[
+			"returned kit JSX in an array, which React renders",
+			`import { Card as KitCard } from "@codefly-dev/ui/layout";
+export function Card(props) { return [<KitCard key="only" {...props} />]; }`,
+			false,
+		],
+		[
+			"returned kit JSX held in a local first",
+			`import { Card as KitCard } from "@codefly-dev/ui/layout";
+export function Card(props) {
+	const content = <KitCard {...props} />;
+	return content;
+}`,
+			false,
+		],
+		[
+			"a mark drawn always beside one drawn only sometimes",
+			`import { KPIRow, MetricLineChart } from "@codefly-dev/ui/dashboard";
+export function Overview({ withRow }) {
+	return (
+		<section>
+			{withRow ? <KPIRow metrics={[]} /> : null}
+			<MetricLineChart series={[]} />
+		</section>
+	);
+}`,
+			false,
+		],
+	])("%s", (_name, source, rejected) => {
+		expect(detect("src/features/x/ui/example.tsx", source).length > 0).toBe(
+			rejected,
+		);
+	});
+
+	it("catches a copy re-exported through the app's own path alias", () => {
+		// `@/…` and `./…` reach the same module. Resolving only the second read
+		// the barrel and stopped, so the copy at the end of it went unexamined.
+		expect(
+			findOffences(
+				[
+					{
+						path: "src/features/x/ui/local.tsx",
+						source: "export const LocalPanel = () => <div>copy</div>;",
+					},
+					{
+						path: "src/features/x/ui/index.ts",
+						source:
+							'export { LocalPanel as Card } from "@/features/x/ui/local";',
+					},
+				],
+				kit,
+				{},
+				surface,
+				{},
+			).map(({ name, kind }) => `${kind}:${name}`),
+			// `name`, not `unresolved`: the copy was READ. An alias the gate
+			// cannot follow would also be refused, but for not knowing, and that
+			// is a weaker answer than the one available here.
+		).toEqual(["name:Card"]);
+	});
+
+	it("catches a copy however many re-exports stand between", () => {
+		// A chain is followed to its end, cycle-detected rather than cut off at
+		// a depth: ten hops is not more suspicious than two, and a gate that
+		// gave up at eight could be escaped by writing a ninth.
+		const sources = [
+			{
+				path: "src/features/x/ui/local.tsx",
+				source: "export const LocalPanel = () => <div>copy</div>;",
+			},
+		];
+		for (let hop = 0; hop < 9; hop += 1) {
+			sources.push({
+				path: `src/features/x/ui/bridge${hop}.ts`,
+				source: `export { LocalPanel } from "./${hop ? `bridge${hop - 1}` : "local"}";`,
+			});
+		}
+		sources.push({
+			path: "src/features/x/ui/index.ts",
+			source: 'export { LocalPanel as Card } from "./bridge8";',
+		});
+		expect(
+			findOffences(sources, kit, {}, surface, {}).map(
+				({ name, kind }) => `${kind}:${name}`,
+			),
+		).toEqual(["name:Card"]);
+	});
+
+	it.each([
+		[
+			"a named import",
+			'export { Card as Panel } from "@codefly-dev/ui/layout";',
+			'import { Panel } from "./bridge";\nexport const Card = (props) => <Panel {...props} />;',
+		],
+		[
+			"a namespace import",
+			'export { Card } from "@codefly-dev/ui/layout";',
+			'import * as UI from "./bridge";\nexport const Card = (props) => <UI.Card {...props} />;',
+		],
+	])(
+		"accepts a wrapper reaching the kit through the app's own barrel by %s",
+		(_name, bridge, local) => {
+			// The barrel is the app's, the component behind it is the kit's. A
+			// gate that stopped at the barrel rejected a genuine wrapper for how
+			// it spelled its import.
+			expect(
+				findOffences(
+					[
+						{ path: "src/features/x/ui/bridge.ts", source: bridge },
+						{ path: "src/features/x/ui/local.tsx", source: local },
+					],
+					kit,
+					{},
+					surface,
+					{},
+				),
+			).toEqual([]);
+		},
+	);
+
+	it("refuses a kit name published from outside anything it can read", () => {
+		// Not a hand-written copy and not the kit either: a second Card from a
+		// third-party package is the same two-renderers problem, and "could not
+		// tell" is not a verdict this gate is allowed to reach.
+		expect(
+			findOffences(
+				[
+					{
+						path: "src/features/x/ui/index.ts",
+						source: 'export { Panel as Card } from "some-other-ui-kit";',
+					},
+				],
+				kit,
+				{},
+				surface,
+				{},
+			).length,
+		).toBeGreaterThan(0);
+	});
+
+	it("does not refuse a TYPE that shares a kit name", () => {
+		// A type cannot be rendered and cannot stand in for a component, so it
+		// is neither a copy nor something unreadable.
+		expect(
+			findOffences(
+				[
+					{
+						path: "src/features/x/model/types.ts",
+						source: "export interface Card { id: string }",
+					},
+					{
+						path: "src/features/x/ui/index.ts",
+						source: 'export type { Card } from "../model/types";',
+					},
+				],
+				kit,
+				{},
+				surface,
+				{},
+			),
+		).toEqual([]);
 	});
 
 	it("ignores a name the kit does not export", () => {

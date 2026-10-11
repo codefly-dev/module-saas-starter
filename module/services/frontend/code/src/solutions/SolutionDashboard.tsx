@@ -20,14 +20,13 @@ import {
 	SortableGrid,
 	type WidgetReadFailure,
 } from "@codefly-dev/ui/dashboard";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { GripVertical, Info, Plus, X } from "lucide-react";
 import {
-	type ReactNode,
-	useEffect,
-	useState,
-	useSyncExternalStore,
-} from "react";
+	type QueryClient,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
+import { GripVertical, Info, Plus, X } from "lucide-react";
+import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { resolveActor } from "@/features/audit/model/transforms";
 import {
@@ -132,80 +131,108 @@ function SolutionWidget({
 	// happens to share the same solution/dashboard/widget/org ids. Disabled until
 	// the org resolves so the pre-org window reads as loading, never as empty.
 	const client = useQueryClient();
+	const source = widgetSource({ solutionId, dashboardId, widget, orgId });
 	const { data, isError, error } = useQuery({
-		queryKey: [
-			"solution-widget",
-			solutionId,
-			dashboardId,
-			widget.id,
-			orgId,
-			graph,
-		],
+		queryKey: [...source, graph],
 		queryFn: () =>
 			runDashboard(
 				sdk.audit,
 				singleWidgetGraph(graph, widget),
 				SINGLE_WIDGET_DASHBOARD,
 				{ orgId },
-			).then((resolved) => resolved.widgets[0]),
+			)
+				.then((resolved) => resolved.widgets[0])
+				.catch((cause: unknown) => {
+					// The read itself answers for what it leaves behind. A refused
+					// read deletes every snapshot of this widget's source before the
+					// rejection reaches anyone, so there is nothing retained for a
+					// later error to hand back and nothing to keep in step with it.
+					if (!mayKeepRetainedRows(readOutcome(true, cause))) {
+						discardSnapshots(client, source);
+					}
+					throw cause;
+				}),
 		enabled: orgId !== "",
 	});
 
-	// A refused read does not get to keep the numbers it fetched before.
-	// TanStack Query hands back the last successful data when a refetch
-	// rejects, so forwarding it on every error would leave a viewer whose
-	// audit-read authority was revoked still looking at the counts — the same
-	// wrong answer `mayKeepRetainedRows` exists to make unwritable, arrived at
-	// from the dashboard instead of from a table. A transient failure says
-	// nothing about authority, so those values stay and read as stale.
-	//
-	// A refusal DELETES the snapshots rather than marking them ineligible.
-	// Two earlier attempts marked instead, and both leaked: hiding the values
-	// for the refusal alone let the next transient error hand them back, and a
-	// latch beside them in the cache was a second entry with its own lifetime
-	// — garbage-collected on its own schedule, and cleared by a cached success
-	// for another revision of the graph, neither of which is a fresh grant.
-	// Nothing restorable is left here, so there is no second thing to keep in
-	// step: only a later successful read can put values back.
 	const outcome = readOutcome(isError, error);
-	const widgetId = widget.id;
-	useEffect(() => {
-		if (outcome !== "forbidden") return;
-		// Every cached revision of this widget's series, not just the one this
-		// render resolved: the graph is the last part of the query key, so a
-		// dashboard whose declaration has changed since — a different title is
-		// enough — has its own entry holding the same refused numbers.
-		//
-		// Reset, not remove: removing destroys the query this component is
-		// observing, which leaves it with nothing to refetch and no way back
-		// even once authority returns. A reset discards the data and keeps the
-		// query, so the only route to values on screen is a read that succeeds.
-		client.resetQueries({
-			queryKey: ["solution-widget", solutionId, dashboardId, widgetId, orgId],
-			exact: false,
-		});
-	}, [client, outcome, solutionId, dashboardId, widgetId, orgId]);
-
-	const refused = outcome === "forbidden";
-	// `!refused` covers the one render between the refusal arriving and the
-	// effect above clearing the cache, where `data` is still the old success.
-	// No test distinguishes it, and that is worth saying rather than implying:
-	// the renderer answers a refusal before it reads the series, so nothing
-	// reaches the screen through this window either way. It is the host's half
-	// of one rule stated in two places, not the mechanism.
-	const retained =
-		!refused && mayKeepRetainedRows(outcome) ? (data?.series ?? null) : null;
+	// Whatever the cache still holds. A refusal has already emptied it, which is
+	// why this reads the snapshot without asking whether the viewer may keep it:
+	// the question was put at the read boundary, where the answer could be acted
+	// on once for every revision instead of per mounted component.
+	const retained = data?.series ?? null;
 
 	return (
 		<DashboardWidget
 			widget={{
 				...declaredWidget(widget),
 				series: retained,
-				failure: refused ? "refused" : WIDGET_FAILURE[outcome],
+				failure: WIDGET_FAILURE[outcome],
 			}}
 			actions={actions}
 		/>
 	);
+}
+
+/**
+ * Every cached revision of one widget's source — the query key without the
+ * declaration that produced it.
+ *
+ * A dashboard whose declaration has changed since keeps its own cache entry: a
+ * different title is enough for another key, holding the same numbers. So a
+ * rule about this widget's values is a rule about the whole prefix, never about
+ * the one entry a render happens to have resolved.
+ */
+function widgetSource({
+	solutionId,
+	dashboardId,
+	widget,
+	orgId,
+}: {
+	solutionId: string;
+	dashboardId: string;
+	widget: MetricWidget;
+	orgId: string;
+}): readonly unknown[] {
+	return ["solution-widget", solutionId, dashboardId, widget.id, orgId];
+}
+
+/**
+ * Delete the retained snapshots under a widget's source: the values go, the
+ * queries and their states stay.
+ *
+ * This is what `mayKeepRetainedRows` says must happen to rows a refused read
+ * leaves behind, done where the refusal is classified rather than in a
+ * component. The difference is not tidiness. A component effect runs only for
+ * the revision that is mounted and only while it is: a refusal that arrives
+ * after the viewer switched dashboards, or after the page unmounted, left the
+ * numbers in the cache for the next render to serve. The read is the one thing
+ * that happens exactly once per refusal, whoever is watching.
+ *
+ * Writing the state is the whole of it, deliberately:
+ *
+ *   - `removeQueries` destroys the entry, which silently cancels the very read
+ *     that is reporting the refusal (`Query.destroy` → `cancel({silent:true})`)
+ *     and leaves a mounted observer holding a detached query that no longer
+ *     re-renders — the values stay on screen and recovery has nothing to
+ *     refetch into.
+ *   - `setQueryData(key, undefined)` cannot express this at all: the client
+ *     returns early when the new data is `undefined`, so the call does nothing.
+ *   - `resetQueries` clears the error with the data and refetches every active
+ *     entry, so a standing refusal re-asks and re-clears without end.
+ *
+ * Setting `data` notifies the observers, cancels nothing, keeps the refusal,
+ * and starts no fetch. An entry left with no data renders as a wait and is
+ * stale, so the next read of it is a real read — which is the only way values
+ * come back.
+ */
+function discardSnapshots(client: QueryClient, source: readonly unknown[]) {
+	for (const query of client
+		.getQueryCache()
+		.findAll({ queryKey: source, exact: false })) {
+		if (query.state.data === undefined) continue;
+		query.setState({ data: undefined, dataUpdatedAt: 0 });
+	}
 }
 
 // The host's read classification as the renderer's presentational one. A read

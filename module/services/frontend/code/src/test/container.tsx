@@ -25,8 +25,20 @@ export function renderInApp(ui: React.ReactElement, reuse?: QueryClient) {
 	// SECOND read of the same query — the success-then-refused sequence, which is
 	// the one that proves a denial is not hidden behind rows already on screen.
 	// A cold denied read cannot show that, because there is nothing retained.
+	const mounted = render(
+		<QueryClientProvider client={client}>{ui}</QueryClientProvider>,
+	);
 	return {
-		...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>),
+		...mounted,
 		client,
+		// Re-render under the SAME provider. React Testing Library's own
+		// `rerender` replaces the whole tree with what it is given, so a test
+		// that passed the bare container would lose the client — which is the
+		// one thing a test of a second revision of the same declaration needs
+		// to keep.
+		rerender: (next: React.ReactElement) =>
+			mounted.rerender(
+				<QueryClientProvider client={client}>{next}</QueryClientProvider>,
+			),
 	};
 }

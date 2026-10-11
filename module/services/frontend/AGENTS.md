@@ -252,3 +252,18 @@ failures part company here, which is what `mayKeepRetainedRows` and
 those very rows, so they go; a **transient failure** is not, so they stay with a
 note that they may be out of date. Blanking a good table because one request did
 not come back is worse than the staleness.
+
+**Where a refusal acts is the read, not the component.** Withholding rows at
+render answers for the error in hand and leaves the rows in the cache, so the
+next transient failure serves them again — authority is a property of the read,
+and so is what the read may leave behind. A refused read therefore deletes the
+retained snapshots for every cached key of what it was reading, in the query
+function where `readOutcome` classifies it, before the rejection reaches any
+component. `src/solutions/SolutionDashboard.tsx` is the worked example: one
+widget, several cached revisions of its declaration, and a refusal that may
+arrive after the viewer has navigated away or the page has unmounted, where no
+effect of theirs is left to run. Delete the data and nothing else: removing the
+entry cancels the read reporting the refusal and strands recovery, clearing it
+restarts every active read of it so a standing 403 never settles, and
+`setQueryData(key, undefined)` is a documented no-op. Recovery is then exactly
+one thing — a read that succeeds.

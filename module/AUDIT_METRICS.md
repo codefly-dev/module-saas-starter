@@ -253,6 +253,14 @@ that series and carries a **Stale** badge instead, because values that are old
 are still better than a blank card. Only a failure with nothing behind it reads
 as "Unable to load."
 
+A widget whose resolution was **refused** is the other case, and it keeps
+nothing. "No access" is drawn before the series is read, and the host that
+resolved the widget deletes the values it had cached — every revision of that
+widget's declaration, at the read that was refused rather than in the component
+displaying it, so a refusal arriving after the viewer moved on still lands.
+Numbers this viewer is no longer allowed to read are a wrong answer, not a stale
+one, and only a read that succeeds puts any back.
+
 A host composes its own features around that renderer — `<Dashboard>`'s slots
 take header actions, a layout (the host's solution dashboard passes a
 drag-to-reorder grid), a per-widget renderer for a host that resolves each

@@ -271,9 +271,9 @@ describe("SolutionDashboards", () => {
 	});
 
 	// The longer sequence, and the one that matters most: a refusal followed by
-	// an ordinary failure, with no authorized read in between. The cached
-	// snapshot outlives the refusal, so unless the refusal LATCHES, the next
-	// error makes those values eligible again and hands them straight back.
+	// an ordinary failure, with no authorized read in between. A snapshot that
+	// outlived the refusal would be eligible again at the next error, which
+	// hands those values straight back.
 	describe.each(["line", "area", "bar", "number", "table"] as const)(
 		"a refused %s widget",
 		(visualization) => {
@@ -482,7 +482,7 @@ describe("SolutionDashboards", () => {
 		});
 		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
 
-		// Authority restored: the latch lifts and the NEW values are drawn.
+		// Authority restored: a read succeeds and the NEW values are drawn.
 		server.use(
 			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
 				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "42" }] }),
@@ -493,6 +493,176 @@ describe("SolutionDashboards", () => {
 		});
 		expect(await screen.findAllByText("42")).not.toHaveLength(0);
 		expect(screen.queryByText("No access")).toBeNull();
+	});
+
+	// Everything above drives the refusal through a mounted component. These
+	// drive it where no mounted component can answer for it: the refusal is a
+	// property of the READ, and the read outlives whoever started it.
+	describe("a refusal with nobody watching it", () => {
+		// A handler that holds its request open until the test releases it, so a
+		// refusal can be in flight across an unmount or a change of dashboard.
+		function heldRefusal() {
+			let enter!: () => void;
+			let release!: () => void;
+			const entered = new Promise<void>((resolve) => {
+				enter = resolve;
+			});
+			const released = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), async () => {
+					enter();
+					await released;
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}),
+			);
+			return { entered, release };
+		}
+
+		it.each([
+			[
+				"a 503",
+				() => HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			],
+			["a dropped connection", () => HttpResponse.error()],
+		])(
+			"deletes the values when it completes after the page is gone, then %s",
+			async (_name, fail) => {
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({
+							buckets: [{ key: "2026-09-01", count: "37" }],
+						}),
+					),
+				);
+				const { client, unmount } = renderDashboards();
+				expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+				const { entered, release } = heldRefusal();
+				const refusal = client.refetchQueries({
+					queryKey: ["solution-widget"],
+				});
+				await entered;
+				// The viewer leaves while the request is still open, so no effect
+				// of theirs is left to run when the answer comes back.
+				unmount();
+				release();
+				await refusal;
+
+				// A retry nobody is watching either. It must not hand the values
+				// back to the next mount.
+				server.use(http.post(rpc("AuditService", "AggregateAuditLog"), fail));
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+
+				renderInApp(
+					<SolutionDashboards graph={graph} solutionId="example" />,
+					client,
+				);
+				await act(async () => {
+					await settle();
+				});
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+			},
+		);
+
+		it("deletes the revision on screen when it lands on the one the viewer left", async () => {
+			// The refusal is for the revision the viewer has navigated away from;
+			// the one mounted is another revision of the same widget, with its own
+			// cached values on screen. Both are this widget's source, and nothing
+			// in React connects the refused read to the component drawing them.
+			const renamed: DataGraph = {
+				...graph,
+				dashboards: [{ ...graph.dashboards[0], title: "Activity (renamed)" }],
+			};
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client, rerender } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			// The second revision reads its own values, under its own key.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "42" }] }),
+				),
+			);
+			rerender(<SolutionDashboards graph={renamed} solutionId="example" />);
+			expect(await screen.findAllByText("42")).not.toHaveLength(0);
+			rerender(<SolutionDashboards graph={graph} solutionId="example" />);
+			await act(async () => {
+				await settle();
+			});
+
+			const { entered, release } = heldRefusal();
+			const refusal = client.refetchQueries({
+				queryKey: ["solution-widget"],
+				type: "active",
+			});
+			await entered;
+
+			// Mid-refusal the viewer switches back, where the other revision's
+			// values are cached and its refresh fails transiently: 42, stale.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+				),
+			);
+			rerender(<SolutionDashboards graph={renamed} solutionId="example" />);
+			expect(await screen.findAllByText("Stale")).not.toHaveLength(0);
+			expect(screen.getAllByText("42").length).toBeGreaterThan(0);
+
+			await act(async () => {
+				release();
+				await refusal;
+				await settle();
+			});
+			expect(screen.queryAllByText("42")).toHaveLength(0);
+		});
+
+		it("asks once, rather than clearing its own error and asking again", async () => {
+			// Clearing the entry to drop its values restarts every active read of
+			// it, whose next answer is the same refusal: a standing 403 became an
+			// unbounded loop. Deleting the values touches neither the error nor
+			// the fetch, so the retry policy is the client's alone.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			let refusals = 0;
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), async () => {
+					refusals += 1;
+					// Answered a tick late, so the component sees the pending state
+					// in between — the window a self-restarting clear re-entered.
+					await new Promise((resolve) => setTimeout(resolve, 15));
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}),
+			);
+			await act(async () => {
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+			});
+			expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+			for (let round = 0; round < 8; round += 1) {
+				await act(async () => {
+					await settle();
+				});
+			}
+			// Three widgets, one refresh, `retry: false` in tests.
+			expect(refusals).toBe(3);
+		});
 	});
 
 	it("reads as loading until the org context resolves, never as empty", () => {
