@@ -804,17 +804,25 @@ func (s *Service) currentModuleGrantIn(
 	ctx context.Context, principalID string,
 ) (ModulePrincipalGrant, bool, *installedModuleRegistry, error) {
 	snapshot := s.moduleRegistrySnapshot()
+	grant, found, err := s.currentModuleGrantFromSnapshot(ctx, snapshot, principalID)
+	return grant, found, snapshot, err
+}
+
+// currentModuleGrantFromSnapshot fences and resolves an already captured registry.
+func (s *Service) currentModuleGrantFromSnapshot(
+	ctx context.Context, snapshot *installedModuleRegistry, principalID string,
+) (ModulePrincipalGrant, bool, error) {
 	grant, found := snapshot.registry[principalID]
 	if !found {
 		if s.moduleEnvelopes != nil && s.envelopeRevisionSeen.Load() > snapshot.envelopeRevision {
 			s.requestRegistryPass()
-			return ModulePrincipalGrant{}, false, nil, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+			return ModulePrincipalGrant{}, false, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
 				"principal %s: a newer module envelope is committed than the registry was derived from", principalID)
 		}
-		return ModulePrincipalGrant{}, false, nil, nil
+		return ModulePrincipalGrant{}, false, nil
 	}
 	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
-		return ModulePrincipalGrant{}, true, nil, err
+		return ModulePrincipalGrant{}, true, err
 	}
-	return grant, true, snapshot, nil
+	return grant, true, nil
 }

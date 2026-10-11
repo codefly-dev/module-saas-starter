@@ -486,8 +486,10 @@ func (a SourceOperationContextAuthority) WireActorScopes() []*gen.WorkContextSco
 // AuthorizeSourceOperationContext resolves the context a composed module may be
 // issued from a source delegation, failing closed on every check:
 //
-//   - the module proves its identity exactly as for its own Work Context (the
-//     identity secret for its prefix) — otherwise ErrModuleRegistrationDenied;
+//   - the module proves its identity exactly as for its own Work Context (its
+//     pod's projected ServiceAccount token, bound to the running build) —
+//     otherwise ErrModuleIdentityDenied, or ErrExecutionUnbound when the host
+//     could not establish the execution;
 //   - the delegation exists and names this module — otherwise
 //     ErrSourceDelegationInvalid (by id) or
 //     ErrSourceDelegationMissing (by source, when it has no active delegation
@@ -501,12 +503,24 @@ func (a SourceOperationContextAuthority) WireActorScopes() []*gen.WorkContextSco
 //
 // The tenant is the delegation's organization; nothing in the request names it,
 // and the module's declared tenant and cross_tenant grant play no part.
-func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, secret string, ref SourceDelegationRef) (SourceOperationContextAuthority, error) {
-	identity, grant, err := s.authorizeModuleIdentity(ctx, prefix, secret)
+func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, serviceAccountToken string, ref SourceDelegationRef) (SourceOperationContextAuthority, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	identity, _, err := s.authorizeModuleIdentity(ctx, snapshot, prefix, serviceAccountToken)
 	if err != nil {
 		return SourceOperationContextAuthority{}, err
 	}
-	return s.authorizeSourceDelegation(ctx, identity.PrincipalID, grant, ref)
+	authority, err := s.authorizeSourceDelegation(ctx, snapshot, identity.PrincipalID, ref)
+	if err != nil {
+		return SourceOperationContextAuthority{}, err
+	}
+	// The execution this mint was bound to travels with it, so its record
+	// names the pod and build that obtained the delegated capability.
+	authority.Execution = identity.Execution
+	authority.snapshot = snapshot
+	if err := s.FenceModuleMint(ctx, authority.ModuleWorkContextAuthority); err != nil {
+		return SourceOperationContextAuthority{}, err
+	}
+	return authority, nil
 }
 
 // AuthorizeDelegationReferenceExchange resolves the capability one call of
@@ -661,8 +675,9 @@ func (s *Service) revokeStaleDelegation(ctx context.Context, principalID string,
 }
 
 func (s *Service) authorizeSourceDelegation(
-	ctx context.Context, principalID string, grant ModulePrincipalGrant, ref SourceDelegationRef,
+	ctx context.Context, snapshot *installedModuleRegistry, principalID string, ref SourceDelegationRef,
 ) (SourceOperationContextAuthority, error) {
+	grant := snapshot.registry[principalID]
 	if (ref.DelegationID == "") == (ref.SourceID == "") {
 		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
 	}
@@ -756,6 +771,14 @@ func (s *Service) RecordSourceOperationContextMint(ctx context.Context, authorit
 		payload["audience"] = authority.Audience
 		payload["scopes"] = operationScopeGrants(authority.Scopes)
 		payload["lookup"] = authority.Lookup
+		// A mint names the execution it was bound to. The reference exchange
+		// records the same event with none: its caller authenticated with a
+		// module Work Context, so no execution was bound at that call.
+		if authority.Execution.PodUID != "" {
+			for key, value := range authority.Execution.auditFields() {
+				payload[key] = value
+			}
+		}
 		return s.emitTx(ctx, authority.PrincipalID, "system", EventSourceDelegationUsed, "datasource",
 			authority.Delegation.SourceID, authority.Delegation.OrgID, payload)
 	})

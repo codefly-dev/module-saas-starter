@@ -54,6 +54,7 @@ func sourceDelegationRefusal(code codes.Code, reason, message string) error {
 // decides the tenant, owner, audience or scopes.
 //
 // Codes: Unauthenticated when the module's identity is not proven;
+// Unavailable when the host could not establish the caller's execution;
 // FailedPrecondition with reason DELEGATION_MISSING when the named source has
 // no active delegation to the module; PermissionDenied with reason
 // DELEGATION_REVOKED or DELEGATION_INVALID when the delegation cannot be used;
@@ -62,7 +63,7 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.AuthorizeSourceOperationContext(ctx, req.GetPrefix(), req.GetSecret(), business.SourceDelegationRef{
+	authority, err := service.AuthorizeSourceOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), business.SourceDelegationRef{
 		DelegationID: req.GetDelegationId(),
 		SourceID:     req.GetSourceId(),
 	})
@@ -81,6 +82,9 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 	if err := service.RecordSourceOperationContextMint(ctx, authority); err != nil {
 		return nil, mapSourceDelegationError(err)
 	}
+	if err := service.FenceModuleMint(ctx, authority.ModuleWorkContextAuthority); err != nil {
+		return nil, err
+	}
 	return &gen.ModuleMintSourceOperationContextResponse{
 		Token:            token.Encoded(),
 		ExpiresAt:        timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
@@ -95,9 +99,10 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 }
 
 func mapSourceDelegationError(err error) error {
+	if mapped := moduleIdentityError(err, codes.Unauthenticated, "module source operation context denied"); mapped != nil {
+		return mapped
+	}
 	switch {
-	case errors.Is(err, business.ErrModuleRegistrationDenied):
-		return status.Error(codes.Unauthenticated, "module source operation context denied")
 	case errors.Is(err, business.ErrSourceDelegationMissing):
 		return sourceDelegationRefusal(codes.FailedPrecondition, SourceDelegationMissingReason,
 			"the source has no active delegation to this module; a person must connect or reconnect it")

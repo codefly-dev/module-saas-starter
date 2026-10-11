@@ -2,7 +2,6 @@ package business
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -117,20 +116,20 @@ func TestOneRequestReadsTheCommittedRevisionOnce(t *testing.T) {
 // the consumer's revision confirmation all go through the durable fence — and
 // with the revision unreadable, they refuse rather than answer from memory.
 func TestMintsAndRevisionConfirmationReadTheCommittedRevision(t *testing.T) {
-	setup := func(store *fakeEnvelopeStore) *Service {
+	setup := func(store *fakeEnvelopeStore) (*Service, string) {
 		s := &Service{store: reviewControlPlaneStore{}}
-		s.SetModuleIdentitySecrets(map[string][sha256.Size]byte{testModulePrefix: sha256.Sum256([]byte("example-secret"))})
 		grant := parseTestEnvelope(t).Principals[testModulePrefix].Grant
+		grant.Workload = ModuleWorkload{Namespace: "acme-prod", ServiceAccount: "reports", Container: "app"}
 		s.installDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID(testModulePrefix): grant}, 3)
 		s.SetModuleEnvelopeStore(store)
-		return s
+		return s, bindTestModule(s, testModulePrefix)
 	}
 	ctx := context.Background()
 
-	current := setup(&fakeEnvelopeStore{latest: 3})
-	identity, err := current.ModuleAuthorizeWorkContext(ctx, testModulePrefix, "example-secret")
+	current, token := setup(&fakeEnvelopeStore{latest: 3})
+	identity, err := current.ModuleAuthorizeWorkContext(ctx, testModulePrefix, token)
 	require.NoError(t, err)
-	operation, err := current.ModuleAuthorizeOperationContext(ctx, testModulePrefix, "example-secret", "run")
+	operation, err := current.ModuleAuthorizeOperationContext(ctx, testModulePrefix, token, "run")
 	require.NoError(t, err)
 	subjects := []ModuleOperationRevisionSubject{{PrincipalID: identity.PrincipalID, Scopes: operation.Scopes}}
 	handled, err := current.CheckModuleOperationContextRevision(ctx, identity.Tenant, identity.PrincipalID, operation.Revision, subjects)
@@ -142,10 +141,10 @@ func TestMintsAndRevisionConfirmationReadTheCommittedRevision(t *testing.T) {
 		"a committed revision this replica cannot read":       {latest: 3, revisionErr: errors.New("unreadable")},
 	} {
 		t.Run(name, func(t *testing.T) {
-			stale := setup(store)
-			_, err := stale.ModuleAuthorizeWorkContext(ctx, testModulePrefix, "example-secret")
+			stale, token := setup(store)
+			_, err := stale.ModuleAuthorizeWorkContext(ctx, testModulePrefix, token)
 			require.Equal(t, codes.Unavailable, status.Code(err))
-			_, err = stale.ModuleAuthorizeOperationContext(ctx, testModulePrefix, "example-secret", "run")
+			_, err = stale.ModuleAuthorizeOperationContext(ctx, testModulePrefix, token, "run")
 			require.Equal(t, codes.Unavailable, status.Code(err))
 			handled, err := stale.CheckModuleOperationContextRevision(ctx, identity.Tenant, identity.PrincipalID, operation.Revision, subjects)
 			require.True(t, handled, "a module context is still the module path's to answer")
