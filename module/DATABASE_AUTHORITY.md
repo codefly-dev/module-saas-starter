@@ -587,7 +587,7 @@ partition offload planned in
 
 Audit retention is a partition drop, and a dropped partition cannot be
 recovered. `audit_events_drop_partitions_before(cutoff)`, as migration
-`31_audit_retention_partition_bounds` defines it, drops a monthly partition only
+`32_audit_retention_partition_bounds` defines it, drops a monthly partition only
 when the upper bound PostgreSQL records for it ends by the cutoff. A partition's
 bounds are the midnights of the session zone that created it, so the function
 reads each bound from `pg_get_expr(relpartbound)`, never from the month in the
