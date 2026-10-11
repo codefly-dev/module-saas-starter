@@ -606,9 +606,10 @@ the database's default isolation, and that is how `RunRetention` calls it. The
 function waits ten seconds at most for its lock (`lock_timeout`, 55P03 when it
 expires, and nothing dropped), and takes no lock when nothing is due.
 `RunRetention` removes nothing for a window that is not a positive number of
-days, and counts a window back by the calendar, so the cutoff it passes is
-always in the past. `pkg/infra/postgres_audit_retention_test.go` holds each rule
-against PostgreSQL.
+days, and counts a window back in days of 24 hours, so the cutoff it passes is
+exactly the window before the run, and always in the past.
+`pkg/infra/postgres_audit_retention_test.go` holds the function's rules against
+PostgreSQL, and the retention tests in `pkg/business` hold the window's.
 
 ## SECURITY DEFINER functions list pg_temp last
 

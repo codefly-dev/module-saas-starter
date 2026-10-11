@@ -91,10 +91,12 @@ func TestRetentionRemovesNothingForAWindowThatIsNotAPositiveNumberOfDays(t *test
 	}
 }
 
-// A window is counted back from the run by the calendar, so however long it is,
-// the cutoff is before the run. A window reaching back past the earliest instant
-// a timestamp can hold has nothing older than it, and removes nothing.
-func TestRetentionCutoffIsAlwaysBeforeTheRun(t *testing.T) {
+// A window is counted back from the run in days of 24 hours, so its cutoff is
+// exactly the window before the run however long the window is, including past
+// the 106751 days a time.Duration can hold. A window reaching back past the
+// earliest instant a timestamp can hold has nothing older than it, and removes
+// nothing.
+func TestRetentionCutoffIsExactlyTheWindowBeforeTheRun(t *testing.T) {
 	for _, days := range []int{1, 365, 106751, 106752, 150000, 213503, 213504, 213600, 999999, 2_000_000, 9999999, 2147483647} {
 		var policies []*business.RetentionPolicy
 		for _, resource := range retainedResourceTypes {
@@ -103,9 +105,12 @@ func TestRetentionCutoffIsAlwaysBeforeTheRun(t *testing.T) {
 		store := newRetentionStoreFake(policies...)
 		_, start, end := runRetention(t, store)
 
-		// A day either side absorbs a zone's offset changing across the window.
-		earliest, latest := start.AddDate(0, 0, -days-1), end.AddDate(0, 0, -days+1)
-		reachable := !start.AddDate(0, 0, -days).Before(time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC))
+		// The run reads the clock between start and end, so its cutoff is the
+		// window before some instant between them, to the nanosecond.
+		window := int64(days) * 24 * 60 * 60
+		earliest := time.Unix(start.Unix()-window, int64(start.Nanosecond()))
+		latest := time.Unix(end.Unix()-window, int64(end.Nanosecond()))
+		reachable := !earliest.Before(time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC))
 		for _, resource := range retainedResourceTypes {
 			cutoffs := store.cutoffs[resource]
 			if !reachable {
@@ -114,9 +119,9 @@ func TestRetentionCutoffIsAlwaysBeforeTheRun(t *testing.T) {
 			}
 			require.Len(t, cutoffs, 1, "retention_days=%d: %s", days, resource)
 			cutoff := cutoffs[0]
-			require.True(t, cutoff.Before(start), "retention_days=%d: the %s cutoff %s is before the run", days, resource, cutoff)
 			require.False(t, cutoff.Before(earliest) || cutoff.After(latest),
-				"retention_days=%d: the %s cutoff %s is %d days before the run", days, resource, cutoff, days)
+				"retention_days=%d: the %s cutoff %s is %d days of 24 hours before the run, between %s and %s",
+				days, resource, cutoff, days, earliest, latest)
 		}
 	}
 }

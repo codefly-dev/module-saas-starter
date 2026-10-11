@@ -21,17 +21,19 @@ type githubAppSetupRetentionStore interface {
 var earliestStoredInstant = time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC)
 
 // retentionCutoff returns the instant before which a record has outlived a
-// window of days, counted back from now by the calendar, and whether any record
-// can be that old. A window that is not a positive number of days is an error:
-// read literally, zero days reaches every record written before now, and fewer
-// reach records written after it. Counting by the calendar keeps the cutoff
-// before now however long the window is; a window reaching back past
-// earliestStoredInstant has nothing older than its cutoff to remove.
+// window of days, counted back from now, and whether any record can be that
+// old. A window that is not a positive number of days is an error: read
+// literally, zero days reaches every record written before now, and fewer
+// reach records written after it. A day is 24 hours wherever the process runs:
+// the window is counted back in UTC, where every day has 24, so the cutoff is
+// exactly days*24h before now, and stays before now however long the window
+// is, where a time.Duration overflows past 106751 days. A window reaching back
+// past earliestStoredInstant has nothing older than its cutoff to remove.
 func retentionCutoff(now time.Time, days int) (before time.Time, anyOlder bool, err error) {
 	if days <= 0 {
 		return time.Time{}, false, fmt.Errorf("a retention window is a positive number of days, not %d", days)
 	}
-	before = now.AddDate(0, 0, -days)
+	before = now.UTC().AddDate(0, 0, -days)
 	return before, !before.Before(earliestStoredInstant), nil
 }
 
