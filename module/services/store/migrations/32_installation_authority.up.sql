@@ -45,8 +45,6 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-ALTER FUNCTION public.installation_registry_on_insert() OWNER TO app_control_plane;
-REVOKE ALL ON FUNCTION public.installation_registry_on_insert() FROM PUBLIC;
 CREATE TRIGGER installation_registry_on_insert BEFORE INSERT ON public.installations
     FOR EACH ROW EXECUTE FUNCTION public.installation_registry_on_insert();
 
@@ -110,8 +108,6 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-ALTER FUNCTION public.cancel_installation_work() OWNER TO app_job_worker;
-REVOKE ALL ON FUNCTION public.cancel_installation_work() FROM PUBLIC;
 CREATE TRIGGER cancel_installation_work AFTER UPDATE ON public.installations
     FOR EACH ROW EXECUTE FUNCTION public.cancel_installation_work();
 
@@ -135,9 +131,6 @@ LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp AS $$
                         AND m.user_id::text = NULLIF(current_setting('app.current_user_id', true), '')))))
     );
 $$;
-ALTER FUNCTION public.module_job_authority_current(jsonb) OWNER TO app_control_plane;
-REVOKE ALL ON FUNCTION public.module_job_authority_current(jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.module_job_authority_current(jsonb) TO app_job_worker, app_tenant;
 
 CREATE FUNCTION public.lock_module_job_authority(stamp jsonb) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -159,9 +152,6 @@ BEGIN
     IF NOT FOUND THEN RAISE EXCEPTION 'revoked_authority' USING ERRCODE = 'check_violation'; END IF;
 END;
 $$;
-ALTER FUNCTION public.lock_module_job_authority(jsonb) OWNER TO app_control_plane;
-REVOKE ALL ON FUNCTION public.lock_module_job_authority(jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.lock_module_job_authority(jsonb) TO app_job_worker, app_tenant;
 
 -- Tenant writes can validate the revision without reading platform policy.
 CREATE FUNCTION public.check_installation_envelope(expected bigint) RETURNS void
@@ -173,12 +163,30 @@ BEGIN
     END IF;
 END;
 $$;
-ALTER FUNCTION public.check_installation_envelope(bigint) OWNER TO app_control_plane;
-REVOKE ALL ON FUNCTION public.check_installation_envelope(bigint) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_installation_envelope(bigint) TO app_tenant, app_control_plane;
 
 -- The envelope is one policy subject: a tenancy replacement and every resulting
 -- uninstall commit under the same externally witnessed receipt.
 ALTER TABLE public.policy_log_commits DROP CONSTRAINT policy_log_commits_subject_kind_check;
 ALTER TABLE public.policy_log_commits ADD CONSTRAINT policy_log_commits_subject_kind_check
     CHECK (subject_kind IN ('principal','binding','installation','team_membership','scope_grant','organization','module_envelope'));
+
+-- Every object exists before any ACL moves: CREATE TRIGGER needs EXECUTE, and once
+-- the migrator no longer owns a definer its GRANT or REVOKE is a no-op. Then each
+-- definer takes its canonical owner, with no schema creation authority left at runtime.
+REVOKE ALL ON FUNCTION public.installation_registry_on_insert() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.cancel_installation_work() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.module_job_authority_current(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.module_job_authority_current(jsonb) TO app_job_worker, app_tenant;
+REVOKE ALL ON FUNCTION public.lock_module_job_authority(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.lock_module_job_authority(jsonb) TO app_job_worker, app_tenant;
+REVOKE ALL ON FUNCTION public.check_installation_envelope(bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.check_installation_envelope(bigint) TO app_tenant, app_control_plane;
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+ALTER FUNCTION public.installation_registry_on_insert() OWNER TO app_control_plane;
+ALTER FUNCTION public.module_job_authority_current(jsonb) OWNER TO app_control_plane;
+ALTER FUNCTION public.lock_module_job_authority(jsonb) OWNER TO app_control_plane;
+ALTER FUNCTION public.check_installation_envelope(bigint) OWNER TO app_control_plane;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
+GRANT CREATE ON SCHEMA public TO app_job_worker;
+ALTER FUNCTION public.cancel_installation_work() OWNER TO app_job_worker;
+REVOKE CREATE ON SCHEMA public FROM app_job_worker;
