@@ -31,7 +31,9 @@ export {
 } from "./contracts.js";
 export type {
 	Dashboard,
+	DashboardColumns,
 	DashboardLayout,
+	DashboardSection,
 	DataGraph,
 	DerivedMetric,
 	EventDeclaration,

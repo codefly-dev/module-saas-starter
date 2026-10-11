@@ -25,8 +25,14 @@ describe("fromDashboardData", () => {
 		expect(view.columns).toBe(3);
 		expect(view.accent).toBe("#7c3aed");
 		expect(view.widgets).toHaveLength(1);
-		expect(view.widgets[0]).toMatchObject({ id: "trend", visualization: "line" });
-		expect(view.widgets[0].series.total).toBe(3);
+		expect(view.widgets[0]).toMatchObject({
+			id: "trend",
+			visualization: "line",
+		});
+		// `fromDashboardData` bridges an ALREADY-resolved result, so the series
+		// it produces is never the `null` the view model allows for a widget
+		// still being resolved.
+		expect(view.widgets[0].series?.total).toBe(3);
 	});
 
 	it("defaults layout to grid when the source omits it", () => {
@@ -34,4 +40,25 @@ describe("fromDashboardData", () => {
 		expect(view.layout).toBe("grid");
 		expect(view.widgets).toEqual([]);
 	});
+});
+
+it("preserves sections, columns and widget spans from the SDK", () => {
+	const data = {
+		columns: 3 as const,
+		sections: [{ id: "summary", title: "Summary", columns: 4 as const }],
+		widgets: [
+			{
+				id: "total",
+				visualization: "number" as const,
+				span: 2 as const,
+				section: "summary",
+				series: { points: [], total: 0 },
+			},
+		],
+	};
+	const view = fromDashboardData(data);
+	expect(view.columns).toBe(3);
+	expect(view.sections).toEqual(data.sections);
+	expect(view.widgets[0]).toMatchObject({ span: 2, section: "summary" });
+	expect(fromDashboardData(data, { columns: 1 }).columns).toBe(1);
 });

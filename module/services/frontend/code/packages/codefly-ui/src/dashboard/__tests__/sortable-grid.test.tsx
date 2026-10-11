@@ -252,3 +252,17 @@ describe("SortableGrid", () => {
 		expect(animate).not.toHaveBeenCalled();
 	});
 });
+
+it("does not turn a drop on another section into a swap with the nearest allowed tile", () => {
+	const onSwap = vi.fn();
+	render(
+		<SortableGrid
+			ids={["a", "b", "c", "d"]}
+			onSwap={onSwap}
+			renderItem={(id) => id}
+			canSwap={(a, b) => ["a", "b"].includes(a) === ["a", "b"].includes(b)}
+		/>,
+	);
+	dragTo("a", center("d"))();
+	expect(onSwap).not.toHaveBeenCalled();
+});

@@ -74,6 +74,10 @@ export type SortableGridProps = {
 	itemLabel?: (id: string) => string;
 	/** Classes for the list, which lay the tiles out (for example `grid grid-cols-2 gap-4`). */
 	className?: string;
+	/** Place sortable nodes in the kit's dashboard geometry under one drag context. */
+	renderLayout?: (nodes: ReadonlyMap<string, ReactNode>) => ReactNode;
+	/** Constrain a drop when the declaration keeps tiles in separate sections. */
+	canSwap?: (draggedId: string, targetId: string) => boolean;
 };
 
 // The tile under the pointer. In the gap between tiles it is the nearest one,
@@ -112,9 +116,7 @@ const GLIDE: KeyframeAnimationOptions = {
 // Where each tile is drawn now, transforms included.
 function drawnRects(list: HTMLElement): Map<string, DOMRect> {
 	const rects = new Map<string, DOMRect>();
-	for (const tile of list.querySelectorAll<HTMLElement>(
-		":scope > [data-sortable-id]",
-	)) {
+	for (const tile of list.querySelectorAll<HTMLElement>("[data-sortable-id]")) {
 		rects.set(tile.dataset.sortableId ?? "", tile.getBoundingClientRect());
 	}
 	return rects;
@@ -137,7 +139,7 @@ class GlidingList extends Component<{
 	className?: string;
 	children: ReactNode;
 }> {
-	private list = createRef<HTMLUListElement>();
+	private list = createRef<HTMLDivElement>();
 
 	getSnapshotBeforeUpdate(previous: { order: string }) {
 		const list = this.list.current;
@@ -154,7 +156,7 @@ class GlidingList extends Component<{
 		const list = this.list.current;
 		if (!before || !list || prefersReducedMotion()) return;
 		for (const tile of list.querySelectorAll<HTMLElement>(
-			":scope > [data-sortable-id]",
+			"[data-sortable-id]",
 		)) {
 			const from = before.get(tile.dataset.sortableId ?? "");
 			if (!from) continue;
@@ -171,9 +173,10 @@ class GlidingList extends Component<{
 
 	render() {
 		return (
-			<ul ref={this.list} className={this.props.className}>
+			// biome-ignore lint/a11y/useSemanticElements: A composed layout contains section headings and nested grids, not direct li children.
+			<div role="list" ref={this.list} className={this.props.className}>
 				{this.props.children}
-			</ul>
+			</div>
 		);
 	}
 }
@@ -211,7 +214,9 @@ function SortableTile({
 		[listeners],
 	);
 	return (
-		<li
+		// biome-ignore lint/a11y/useSemanticElements: The item can sit inside a dashboard span wrapper rather than a ul.
+		<div
+			role="listitem"
 			ref={setNodeRef}
 			{...pressListeners}
 			data-sortable-id={id}
@@ -228,7 +233,7 @@ function SortableTile({
 			}}
 		>
 			{children}
-		</li>
+		</div>
 	);
 }
 
@@ -239,6 +244,8 @@ export function SortableGrid({
 	renderOverlay = renderItem,
 	itemLabel = (id) => id,
 	className,
+	renderLayout,
+	canSwap = () => true,
 }: SortableGridProps) {
 	// A stable id keeps the ids dnd-kit writes into the page the same on the
 	// server and the client.
@@ -274,12 +281,28 @@ export function SortableGrid({
 		<DndContext
 			id={contextId}
 			sensors={sensors}
-			collisionDetection={tileUnderPointer}
+			collisionDetection={(args) =>
+				tileUnderPointer({
+					...args,
+					droppableRects: new Map(
+						[...args.droppableRects].filter(([id]) =>
+							canSwap(String(args.active.id), String(id)),
+						),
+					),
+					droppableContainers: args.droppableContainers.filter((container) =>
+						canSwap(String(args.active.id), String(container.id)),
+					),
+				})
+			}
 			accessibility={{ announcements }}
 			onDragStart={({ active }) => setDragged(String(active.id))}
 			onDragEnd={({ active, over }) => {
 				setDragged(null);
-				if (over && over.id !== active.id) {
+				if (
+					over &&
+					over.id !== active.id &&
+					canSwap(String(active.id), String(over.id))
+				) {
 					onSwap(String(active.id), String(over.id));
 				}
 			}}
@@ -287,11 +310,17 @@ export function SortableGrid({
 		>
 			<SortableContext items={items} strategy={rectSwappingStrategy}>
 				<GlidingList order={order} className={className}>
-					{ids.map((id) => (
-						<SortableTile key={id} id={id} sorting={dragged !== null}>
-							{renderItem(id)}
-						</SortableTile>
-					))}
+					{(() => {
+						const nodes = new Map(
+							ids.map((id) => [
+								id,
+								<SortableTile key={id} id={id} sorting={dragged !== null}>
+									{renderItem(id)}
+								</SortableTile>,
+							]),
+						);
+						return renderLayout ? renderLayout(nodes) : [...nodes.values()];
+					})()}
 				</GlidingList>
 			</SortableContext>
 			{/* On a drop the copy glides into the tile's new slot, or back to its

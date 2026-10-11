@@ -8,6 +8,11 @@ export type MetricState =
 	| "provider_unavailable"
 	| "not_configured"
 	| "sample"
+	// The series resolved, but no single number summarises it: a distinct
+	// count, an average, a percentile or a ratio has no scalar total across
+	// several groups, and summing or averaging those summaries would
+	// misreport the result. Distinct from `no_data`, where nothing matched.
+	| "no_total"
 	| "ready";
 
 const stateLabels: Record<Exclude<MetricState, "ready">, string> = {
@@ -18,6 +23,7 @@ const stateLabels: Record<Exclude<MetricState, "ready">, string> = {
 	provider_unavailable: "Provider unavailable",
 	not_configured: "Not configured",
 	sample: "Sample data",
+	no_total: "No total",
 };
 
 export function assertSampleModeAllowed(

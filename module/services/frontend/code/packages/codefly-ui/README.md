@@ -36,6 +36,15 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   (`Banner`, `EmptyState`, `ErrorState`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
   `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
   is `<Chat>`. React only: no plugin runtime, no host context.
+  `<Dashboard>` paints with the **metric tier** — `StatTile` in compact rows for scalar
+  widgets, `metric-chart`'s line/area/bar over `ChartSeries` for series ones —
+  which is the tier the host's own operations pages use, so a solution's
+  dashboard and the host's own are the same picture. `DashboardWidget` is that
+  renderer for one widget, exported for a consumer that resolves each widget in
+  its own query; `slots` take header actions, a layout, a per-widget renderer
+  and an empty state, so a consumer composes its own features around the
+  renderer rather than beside it. What each widget and each coverage state
+  draws is tabulated in the module's `AUDIT_METRICS.md`.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
   `@codefly-dev/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
   component stays pure, the same split as `runDashboard` → `<Dashboard>`.
@@ -106,7 +115,7 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/plugin-host/ui`  | Client UI adapters (`PluginErrorBoundary`)          |
 | `@codefly-dev/ui/skin`            | `resolveSkin`, skin types                           |
 | `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
-| `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
+| `@codefly-dev/ui/dashboard`       | `Dashboard`, `DashboardWidget`, metric tiles + charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
 | `@codefly-dev/ui/board`           | `Board` (React-only)                                |
@@ -633,3 +642,18 @@ Version 0.12.3 refreshes the default preview palette from appearance contract 2.
 Version 0.12.4 also makes destructive/danger Badge text mix 30% toward the active
 foreground, retaining its status hue while meeting small-text contrast on its
 tinted background in the tested default and supplied light/dark skins.
+
+### Declared dashboard geometry
+
+`DashboardView.sections` names bands with `id`, `title`, optional `description`
+and `columns`; a widget's `section` refers to one. Ungrouped widgets appear first,
+then sections in declared order. Consecutive scalars default to four columns,
+series to two, with natural-height cards. `columns` overrides both defaults and
+`span` applies to every widget, clamped responsively. `stack` ignores both hints.
+`fromDashboardData` preserves these fields from the SDK.
+
+The `layout` slot receives the tiles and a `renderLayout(nodesById)` callback.
+Pass that callback to `SortableGrid.renderLayout` to retain exactly the default
+geometry under one drag context, including drops across scalar/chart bands.
+`SortableGrid.canSwap` can constrain drops to declared sections. Keep widget IDs
+stable across declaration changes; never persist positional indexes.

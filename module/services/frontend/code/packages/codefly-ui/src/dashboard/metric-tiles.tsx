@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
-import type { ComponentProps, KeyboardEvent } from "react";
+import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
 import {
 	CardRoot as Card,
 	CardContent,
@@ -28,8 +28,14 @@ export interface Metric {
 	/** Stable identity for list keying; falls back to position when omitted. */
 	id?: string;
 	label: string;
-	/** The computed value as a plain number — `Number(bigint)` a bigint source. */
-	value: number;
+	/**
+	 * The computed value as a plain number — `Number(bigint)` a bigint source.
+	 * `null` when no number exists: it renders as a dash, never as `0`. A
+	 * withheld total and a zero are different answers, and a tile that drew
+	 * `null` as `0` would report the second when the pipeline said the first.
+	 * {@link state} says which of partial / empty / no-total withheld it.
+	 */
+	value: number | null;
 	/**
 	 * How {@link value} is rendered. `"percent"` treats the value as an
 	 * already-scaled percentage (45 → "45%"), not a fraction — unlike
@@ -70,6 +76,7 @@ const valuelessStates: MetricState[] = [
 	"no_data",
 	"not_configured",
 	"provider_unavailable",
+	"no_total",
 ];
 
 export function formatMetricValue(
@@ -110,13 +117,20 @@ function MetricValue({
 	if (metric.state === "loading") {
 		return <Skeleton className={cn("h-8 w-24", className)} />;
 	}
-	const valueless = !!metric.state && valuelessStates.includes(metric.state);
+	// No number to show: either none exists, or the state is one for which none
+	// is meaningful. A unit with no value to qualify is noise, so it goes too.
+	if (
+		metric.value === null ||
+		(metric.state && valuelessStates.includes(metric.state))
+	) {
+		return <span className={cn("type-metric-value", className)}>—</span>;
+	}
 	// Standalone figures use the font's proportional digits — tabular-nums is
 	// for columns that must align, and looks loose at display sizes.
 	return (
 		<span className={cn("type-metric-value", className)}>
-			{valueless ? "—" : formatMetricValue(metric.value, metric.format)}
-			{!valueless && metric.unit && (
+			{formatMetricValue(metric.value, metric.format)}
+			{metric.unit && (
 				<span className="ml-1 type-metric-unit text-muted-foreground">
 					{metric.unit}
 				</span>
@@ -225,12 +239,18 @@ function selectableCard(metric: Metric): {
  * A single headline number — label, value, optional delta and trend sparkline,
  * with a freshness badge when the metric isn't `ready`. The compact building
  * block of a {@link KPIRow}.
+ *
+ * `actions` puts controls in the header beside the badge, for a caller that
+ * owns the tile as well as the number — a dashboard whose viewer can drag,
+ * remove or interrogate each tile. Without it the tile is purely presentational.
  */
 export function StatTile({
 	metric,
+	actions,
 	className,
 }: {
 	metric: Metric;
+	actions?: ReactNode;
 	className?: string;
 }) {
 	const selectable = selectableCard(metric);
@@ -240,10 +260,16 @@ export function StatTile({
 			{...selectable.props}
 		>
 			<div className="flex items-center justify-between gap-2">
-				<span className="type-metric-label text-muted-foreground">
+				<span
+					data-slot="metric-label"
+					className="min-w-0 flex-1 truncate type-metric-label text-muted-foreground"
+				>
 					{metric.label}
 				</span>
 				{metric.state && <MetricStateBadge state={metric.state} />}
+				{actions != null && (
+					<div className="flex shrink-0 items-center">{actions}</div>
+				)}
 			</div>
 			<div className="flex items-end justify-between gap-3">
 				<div className="flex flex-col gap-1">
@@ -281,7 +307,10 @@ export function MetricCard({
 	return (
 		<Card className={cn(selectable.className, className)} {...selectable.props}>
 			<CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-				<span className="type-metric-heading text-muted-foreground">
+				<span
+					data-slot="metric-label"
+					className="type-metric-heading text-muted-foreground"
+				>
 					{metric.label}
 				</span>
 				{metric.state && <MetricStateBadge state={metric.state} />}
@@ -316,19 +345,27 @@ export function MetricCard({
 /**
  * A responsive row of {@link StatTile}s — the handful of headline numbers a
  * dashboard leads with.
+ *
+ * Pass `metrics` and the row draws a tile per metric. Pass `children` instead
+ * when the tiles need something a {@link Metric} cannot carry (a per-tile
+ * control, a key the caller chooses): the row then only lays out the tiles
+ * given, so its geometry still lives here and is not copied to the call site.
  */
 export function KPIRow({
 	metrics,
+	children,
 	className,
 }: {
-	metrics: Metric[];
+	metrics?: Metric[];
+	children?: ReactNode;
 	className?: string;
 }) {
 	return (
 		<div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-4", className)}>
-			{metrics.map((metric, i) => (
-				<StatTile key={metric.id ?? i} metric={metric} />
-			))}
+			{children ??
+				metrics?.map((metric, i) => (
+					<StatTile key={metric.id ?? i} metric={metric} />
+				))}
 		</div>
 	);
 }
