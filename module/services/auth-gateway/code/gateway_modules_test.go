@@ -188,6 +188,7 @@ func TestGateway_ModuleWorkContext_TakesOnlyTheProjectedTokenBearer(t *testing.T
 type fakeAccountsWorkContextMint struct {
 	code             codes.Code
 	lastInternal     string
+	lastPeer         string
 	lastPrefix       string
 	lastOrganization string
 	lastToken        string
@@ -204,6 +205,7 @@ func (f *fakeAccountsWorkContextMint) handle(ctx context.Context, dec func(any) 
 	f.lastOrganization = req.GetOrganizationId()
 	f.lastToken = req.GetServiceAccountToken()
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		f.lastPeer = strings.Join(md.Get(workloadSPIFFEHeader), ",")
 		if values := md.Get("x-codefly-internal-token"); len(values) > 0 {
 			f.lastInternal = values[0]
 		}

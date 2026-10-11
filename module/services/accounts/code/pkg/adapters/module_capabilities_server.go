@@ -88,6 +88,17 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	// This RPC is on the internal tier. The gateway creates this attestation
+	// from its verified TLS connection, never from an HTTP request header.
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if peers := md.Get("x-codefly-workload-spiffe-id"); len(peers) != 0 {
+			peer := ""
+			if len(peers) == 1 {
+				peer = peers[0]
+			}
+			ctx = business.WithWorkloadPeer(ctx, peer)
+		}
+	}
 	authority, err := service.ModuleAuthorizeWorkContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetOrganizationId())
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.PermissionDenied, "module work context denied"); mapped != nil {

@@ -40,6 +40,25 @@ func main() {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
 	httpPort = httpNet.Port
+	workloadNet, err := codefly.For(ctx).Endpoint("workload").API("http").ResolveNetworkInstance()
+	if err != nil || workloadNet == nil || workloadNet.Port == 0 {
+		panic(fmt.Sprintf("Codefly workload endpoint is unavailable: %v", err))
+	}
+	workload, err := loadWorkloadIdentity(func(key string) (string, error) {
+		return codefly.For(ctx).WorkspaceValue("workload-identity", key)
+	})
+	if err != nil {
+		panic(err)
+	}
+	workloadTLS, err := workload.serverTLSConfig()
+	if err != nil {
+		panic(err)
+	}
+	workloadListener, err := net.Listen("tcp", fmt.Sprintf(":%d", workloadNet.Port))
+	if err != nil {
+		panic(fmt.Sprintf("workload listener: %v", err))
+	}
+	defer workloadListener.Close()
 	var otelProvider *wooltel.Provider
 	var otelMetricProvider *otelMetrics
 	if observabilityEnabled() {
@@ -174,7 +193,7 @@ func main() {
 	routeEntries := append(restEntries, connectEntries...)
 
 	// Private HTTP API gateway listener behind the frontend product entry.
-	var httpServer *http.Server
+	var httpServer, workloadServer *http.Server
 	var rateLimiter *RateLimiter
 	if httpPort > 0 {
 		// Build upstream map from codefly network mappings.
@@ -233,6 +252,7 @@ func main() {
 		// reach this replica without restarting it.
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
+		gateway.workload = workload
 		// The per-viewer solution entitlement read (#949), over the same internal
 		// connection. It is not a cache: the answer is per viewer and must not
 		// outlive a revoke, so every request asks.
@@ -261,6 +281,17 @@ func main() {
 			IdleTimeout:       120 * time.Second,
 			MaxHeaderBytes:    1 << 20, // 1 MiB
 		}
+		workloadServer = &http.Server{
+			Handler: workload.handler(httpServer.Handler), TLSConfig: workloadTLS,
+			ReadHeaderTimeout: httpServer.ReadHeaderTimeout, ReadTimeout: httpServer.ReadTimeout,
+			IdleTimeout: httpServer.IdleTimeout, MaxHeaderBytes: httpServer.MaxHeaderBytes,
+		}
+		go func() {
+			if err := workloadServer.ServeTLS(workloadListener, "", ""); err != nil && err != http.ErrServerClosed {
+				log.Printf("workload server: %v", err)
+				stop()
+			}
+		}()
 		go func() {
 			fmt.Printf("auth-gateway API gateway (HTTP) listening on :%d (api: %s, routes: %d)\n",
 				httpPort, apiHTTPURL, len(routeEntries))
@@ -282,6 +313,14 @@ func main() {
 				log.Printf("shutdown: HTTP gateway drain error: %v", err)
 			} else {
 				log.Println("shutdown: HTTP gateway drained")
+			}
+			drainCancel()
+		}
+
+		if workloadServer != nil {
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := workloadServer.Shutdown(drainCtx); err != nil {
+				log.Printf("shutdown: workload drain: %v", err)
 			}
 			drainCancel()
 		}

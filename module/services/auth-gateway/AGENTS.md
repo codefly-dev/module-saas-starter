@@ -108,6 +108,26 @@ bearer: identity is stripped there and no ext_authz check runs, so the gateway
 has nothing to bind, and both halves say no rather than one promising what the
 other drops.
 
+## Workload TLS endpoint and solution upstreams
+
+`workload` (`api: http`) serves the same mux over TLS 1.3 with required, verified
+client certificates. The `workload-identity` workspace group supplies all five
+projected file paths; absent or unreadable files fail boot naming their key.
+The pinned SDK's `CertificateReloader` supplies both certificate callbacks.
+Every handshake checks a single SPIFFE URI against the live caller file; every
+request checks it again so keep-alive connections cannot outlive revocation.
+
+On this endpoint `/modules/_work-context` uses the SVID plus projected bearer.
+The gateway conveys its verified peer to accounts on the authenticated internal
+RPC. Accounts binds it to TokenReview and the applied presence; a mismatch is
+403. Caller-supplied identity headers never attest a peer. The plain `rest`
+module mint still requires the internal token and keeps its existing behavior.
+
+Solutions are proxied only over TLS 1.3 with the gateway SVID. The server's chain
+and single SPIFFE URI must match the applied presence read alongside its registry
+record. Missing or ambiguous identities fail closed. The existing DNS/address
+guard remains the only dial path. Module upstream transport remains unchanged.
+
 ## Brokering a module's Work Context
 
 `POST /modules/_work-context` takes the

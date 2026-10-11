@@ -50,13 +50,11 @@ type Gateway struct {
 	// clients is this replica's view of the registered-client registry: which
 	// browser origins each first-party client speaks from (track 0016).
 	clients *clientRegistryCache
-	// registeredTransport re-validates a runtime-registered upstream's resolved
-	// address at dial time (SSRF / DNS-rebinding defense). Both federated module
-	// and solution routes use it: a solution upstream is durable now (#534) but
-	// still names a host its registrant chose, and it receives forwarded user
-	// bearers. Catalog upstreams are static trusted config and keep the default
-	// transport.
+	// registeredTransport guards module upstream DNS/address resolution.
+	// Solutions use the same guarded dialer with per-destination workload TLS;
+	// catalog upstreams keep the default transport.
 	registeredTransport http.RoundTripper
+	workload            *workloadIdentity
 	// solutionEntitlements answers what one viewer may use (#949). Set after
 	// construction, like workContext: a nil client fails the entitlement surface
 	// closed rather than answering an empty projection, which would retract every
@@ -464,6 +462,7 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	// token. Never expose these capabilities to the frontend upstream.
 	r.Header.Del("X-Codefly-Gateway-Token")
 	r.Header.Del("X-Codefly-Internal-Token")
+	r.Header.Del(workloadSPIFFEHeader)
 	r.Header.Del("X-Codefly-Public-Origin")
 	if isAccountsRoute(entry) && g.authz != nil && g.authz.gatewayToken != "" {
 		r.Header.Set("X-Codefly-Gateway-Token", g.authz.gatewayToken)
@@ -482,6 +481,15 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		// time (SSRF / DNS-rebinding defense). Catalog upstreams keep the default
 		// transport.
 		proxy.Transport = g.registeredTransport
+	}
+	if entry != nil && strings.HasPrefix(entry.Service, solutionServicePrefix) {
+		transport, err := g.workload.upstreamTransport(entry.WorkloadSPIFFEID)
+		if err != nil || upstream.Scheme != "https" {
+			httpError(w, http.StatusBadGateway, "solution workload identity unavailable")
+			return
+		}
+		defer transport.CloseIdleConnections()
+		proxy.Transport = transport
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())

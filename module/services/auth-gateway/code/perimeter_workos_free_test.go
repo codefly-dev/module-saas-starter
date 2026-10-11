@@ -53,12 +53,16 @@ var allowedPerimeterConfigDeps = map[string]bool{
 	// to require a token's resource audience to name it, so the origin a client
 	// is sent to and the origin a token is accepted at are one operator-pinned
 	// value rather than two headers that can disagree.
-	"application":   true,
-	"gateway":       true,
-	"gateway-trust": true,
-	"internal-auth": true,
-	"observability": true,
-	"security":      true,
+	"application": true,
+	// workload-identity carries only file paths to this workload's own SVID,
+	// trust bundle and admitted-caller list, all projected by the platform.
+	// Reviewed for #1074: no external-IdP material and no provider endpoint.
+	"workload-identity": true,
+	"gateway":           true,
+	"gateway-trust":     true,
+	"internal-auth":     true,
+	"observability":     true,
+	"security":          true,
 }
 
 // TestPerimeter_WorkspaceConfigExcludesIdentity asserts the ext_authz check's
@@ -148,6 +152,10 @@ func fileImports(t *testing.T, path string) []string {
 var httpAllowedPerimeterFiles = map[string]bool{
 	"gateway.go":           true,
 	"gateway_solutions.go": true,
+	// workload_identity.go builds the gateway's mutual-TLS listener and the
+	// in-mesh transport it proxies to solutions with, holding each peer to a
+	// SPIFFE ID from delivered presence. It reaches no external IdP.
+	"workload_identity.go": true,
 	// gateway_solution_credential.go serves the solution registration-token
 	// exchange and verifies the resulting credential with local Ed25519 crypto
 	// against this cluster's own published key set. Its only network call is the

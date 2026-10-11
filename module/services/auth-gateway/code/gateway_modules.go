@@ -172,7 +172,8 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		return true
 	}
 
-	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+	_, workloadRequest := workloadPeer(r.Context())
+	if g.authz == nil || (!workloadRequest && !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token"))) {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
@@ -202,7 +203,11 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		logModuleExchangeRefusal("module-work-context", payload.Prefix, err)
 		switch status.Code(err) {
 		case codes.PermissionDenied:
-			httpError(w, http.StatusUnauthorized, "unauthorized")
+			if workloadRequest {
+				httpError(w, http.StatusForbidden, "forbidden")
+			} else {
+				httpError(w, http.StatusUnauthorized, "unauthorized")
+			}
 		case codes.InvalidArgument:
 			httpError(w, http.StatusBadRequest, "invalid request")
 		case codes.Unavailable:
@@ -337,6 +342,15 @@ func (s *ExtAuthz) mintModuleWorkContext(
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	// Replace, never append to, caller metadata. Only the verified listener
+	// context may attest a workload to accounts' internal mint.
+	md, _ := metadata.FromOutgoingContext(ctx)
+	md = md.Copy()
+	md.Delete(workloadSPIFFEHeader)
+	if id, ok := workloadPeer(ctx); ok {
+		md.Set(workloadSPIFFEHeader, id)
+	}
+	ctx = metadata.NewOutgoingContext(ctx, md)
 	response := &accountsv1.ModuleMintWorkContextResponse{}
 	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, OrganizationId: organizationID}
 	if err := s.backendConn.Invoke(ctx, mintModuleWorkContextMethod, request, response); err != nil {

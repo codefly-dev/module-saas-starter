@@ -141,7 +141,7 @@ func (f *fakeSolutionRegistry) undeclare(alias string) {
 
 func (f *fakeSolutionRegistry) List(
 	_ context.Context, req *accountsv1.ListSolutionRegistrationsRequest,
-) (*accountsv1.ListSolutionRegistrationsResponse, error) {
+) (*solutionRegistrySnapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listCalls++
@@ -157,7 +157,11 @@ func (f *fakeSolutionRegistry) List(
 		listed.Status = fakeSolutionStatus(listed, time.Now())
 		out.Registrations = append(out.Registrations, listed)
 	}
-	return out, nil
+	ids := make(map[string]string)
+	for _, record := range out.Registrations {
+		ids[record.GetSolutionId()] = "spiffe://acme.test/ns/acme-prod/sa/" + record.GetSolutionId()
+	}
+	return &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: out, workloadIDs: ids}, nil
 }
 
 // fakeSolutionStatus mirrors business.(*SolutionRegistration).Status, ordering

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"strings"
 	"testing"
 
 	"accounts/pkg/business"
@@ -400,4 +401,40 @@ func TestModuleCallerReadsTheVerifiedPrincipalAndTenant(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, principalID, caller.PrincipalID)
 	require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
+}
+
+// Exercise the real TokenReview/BindExecution path through the mint adapter.
+// A refusal happens before signing or recording a credential.
+func TestWorkloadPeerMintMatchesReviewedTokenAndDeliveredPresence(t *testing.T) {
+	const peer = "spiffe://acme.test/ns/acme-prod/sa/module"
+	declared := strings.Replace(documentsPrincipals, `"workload":{`, `"workload":{"spiffe_id":"`+peer+`",`, 1)
+	for _, test := range []struct {
+		name, peer, declaration string
+		allowed                 bool
+	}{
+		{"matching", peer, declared, true},
+		{"another service account", "spiffe://acme.test/ns/acme-prod/sa/other", declared, false},
+		{"another namespace", "spiffe://acme.test/ns/other/sa/module", declared, false},
+		{"another trust domain", "spiffe://other.test/ns/acme-prod/sa/module", declared, false},
+		{"absent declared identity", peer, documentsPrincipals, false},
+		{"empty attestation", "", declared, false},
+		// TLS and presence agree, but the reviewed token names another SA.
+		{"presence differs from reviewed token", peer, strings.Replace(declared, `"service_account":"module"`, `"service_account":"other"`, 1), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := installModuleWorkContextService(t, test.declaration)
+			installModuleWorkContextAuthority(t)
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-workload-spiffe-id", test.peer))
+			response, err := ModuleCapabilitiesSingleton().MintModuleWorkContext(ctx, &gen.ModuleMintWorkContextRequest{Prefix: "documents", ServiceAccountToken: moduleToken(t, "documents")})
+			if test.allowed {
+				require.NoError(t, err)
+				require.NotEmpty(t, response.GetToken())
+				require.Equal(t, 1, store.recordAttempts())
+			} else {
+				require.Equal(t, codes.PermissionDenied, status.Code(err))
+				require.Nil(t, response)
+				require.Zero(t, store.recordAttempts())
+			}
+		})
+	}
 }

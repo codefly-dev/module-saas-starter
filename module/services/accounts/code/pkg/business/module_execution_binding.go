@@ -310,6 +310,15 @@ var ErrExecutionAuthorityUnreconciled = errors.New(
 // audience is what makes the token a credential FOR this host.
 const executionTokenAudience = "accounts"
 
+// WithWorkloadPeer carries the gateway's verified TLS identity through the
+// internal mint. Absence is the existing plain module mint; a present but empty
+// value is a refused attestation, never permission to omit the binding.
+func WithWorkloadPeer(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, workloadPeerContextKey{}, id)
+}
+
+type workloadPeerContextKey struct{}
+
 // BindExecution establishes what a caller is running and holds it against what
 // the authority document approves. The caller passes its mint snapshot; both
 // the declared container and the workload-owner lookup use that same registry.
@@ -359,6 +368,13 @@ func (s *Service) BindExecution(
 		// and nothing about the caller has been decided.
 		return nil, fmt.Errorf("%w: %w", ErrExecutionUnbound, err)
 	}
+	if peer, presented := ctx.Value(workloadPeerContextKey{}).(string); presented {
+		identity, err := ParseKubernetesSPIFFEID(peer)
+		if err != nil || peer != grant.Workload.SPIFFEID ||
+			identity.Namespace != reviewed.Namespace || identity.ServiceAccount != reviewed.ServiceAccount {
+			return nil, fmt.Errorf("%w: TLS workload identity differs from reviewed token or delivered presence", ErrExecutionIdentityMismatch)
+		}
+	}
 	if reviewed.PodUID == "" || reviewed.PodName == "" {
 		return nil, fmt.Errorf("%w: the token authenticates %s/%s but names no pod",
 			ErrExecutionNotBoundToken, reviewed.Namespace, reviewed.ServiceAccount)
@@ -366,8 +382,8 @@ func (s *Service) BindExecution(
 
 	// THE TOKEN'S LIFETIME IS THE REPLAY WINDOW. A projected token is a bearer
 	// credential: TokenReview proves the cluster issued it to this pod, never
-	// that the pod is the one presenting it. The host cannot close that here
-	// (see "Replay" in services/accounts/AGENTS.md); it can bound it, and it
+	// that the pod is the one presenting it. The workload listener additionally
+	// binds its TLS peer above. For plain module mints the host
 	// bounds it to the shortest projection Kubernetes issues.
 	if reviewed.IssuedAt.IsZero() || reviewed.ExpiresAt.IsZero() {
 		return nil, fmt.Errorf("%w: the review reported no issue or expiry time", ErrExecutionTokenLifetime)
