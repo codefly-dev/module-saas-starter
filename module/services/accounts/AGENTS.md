@@ -285,12 +285,14 @@ Its authority is declared in the `module-capabilities` group's
 Every refusal of the **caller's authority** on this surface is
 `Unauthenticated` or `PERMISSION_DENIED` and names no reason: an identity it
 cannot prove, a prefix no composition registered, a tenant it is not bound to, a
-queue or namespace outside its grant, and — from the mesh, before accounts is
-reached at all — a procedure the authority endpoint does not serve. A malformed
-request is `INVALID_ARGUMENT` whatever the caller's authority (an unknown
-notification category or type, a destination that is not a same-origin path). A
-**person** the surface is asked to act on who is not a member of the named
-tenant is `FAILED_PRECONDITION`. That holds on each surface that takes a person:
+queue or namespace outside its grant, and a procedure the authority endpoint
+does not serve — the last enforced twice, by the mesh `AuthorizationPolicy` and
+again in-process by the interceptor (`grpc_auth_interceptor.go`, "RPC is not
+exposed on the module authority endpoint"), which is also where a missing or
+wrong internal credential is refused. A malformed request is `INVALID_ARGUMENT`
+whatever the caller's authority (an unknown notification category or type, a
+destination that is not a same-origin path). A **person** the surface is asked
+to act on who is not a member of the named tenant is `FAILED_PRECONDITION`. That holds on each surface that takes a person:
 `NotifyUser`, subject-scoped `EnqueueJob` and `ListSubjectVisibility`.
 
 The split is what lets a module drive the surface from a journal with retries. A
@@ -310,6 +312,15 @@ one, under domain `saas.accounts.v1`:
 | `TENANT_MEMBERSHIP_MISSING` (`business.ModuleTenantMembershipMissingReason`) | the person named is not a member of the tenant | nobody's — final for that person |
 | `NOTIFICATION_IDEMPOTENCY_CONFLICT` (`business.ModuleNotificationIdempotencyConflictReason`) | the idempotency key was used for different content | the calling module's; a retry never clears it |
 | `SUBJECT_VISIBILITY_SET_TOO_LARGE` (`business.ModuleSubjectVisibilitySetTooLargeReason`) | the viewer's set exceeds `ModuleSubjectVisibilityMaxSet` | an administrator's, by changing the hierarchy |
+| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+
+Only `TENANT_MEMBERSHIP_MISSING` is final. **An absent or unrecognised reason is
+retainable, never final:** the table is what the surface answers today, not a
+promise about every future refusal, so a consumer that reads "no reason I know"
+as "done" turns the next refusal added here into silently discarded work. That
+is not hypothetical — `LIVE_AUTHORITY_UNAVAILABLE` carried no reason until
+#1032, and an unconfigured host was therefore indistinguishable on the wire from
+a departed person.
 
 A reason is only meaningful together with the domain the same call answered
 with: the `Mint*` exchanges' refusals carry theirs under

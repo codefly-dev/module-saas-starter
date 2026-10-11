@@ -2592,9 +2592,9 @@ export const ModuleCapabilitiesService: GenService<{
    * NotifyUser delivers a notification subject to category policy. A recipient
    * who is not a member of the tenant is FAILED_PRECONDITION with reason
    * TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
-   * already used for different content is FAILED_PRECONDITION too, with reason
-   * NOTIFICATION_IDEMPOTENCY_CONFLICT, so the reason — not the code — says
-   * which of the two happened; see REFUSALS.
+   * already used for different content, and a host that cannot re-read live
+   * authority, are FAILED_PRECONDITION too under their own reasons, so the
+   * reason — not the code — says which happened; see REFUSALS.
    *
    * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.NotifyUser
    */

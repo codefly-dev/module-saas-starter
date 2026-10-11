@@ -31,7 +31,23 @@ without dropping it for a module whose principal or identity secret is wrong.
 also answer `FAILED_PRECONDITION` with reason
 `NOTIFICATION_IDEMPOTENCY_CONFLICT` when an idempotency key was already used
 for different content, which is the sender's own bug and must not be dropped as
-a departed recipient.
+a departed recipient; and with `LIVE_AUTHORITY_UNAVAILABLE` when the host cannot
+re-read live module authority, which is an operator's to repair and whose work a
+sender must retain. An absent or unrecognised reason is retainable too — only
+`TENANT_MEMBERSHIP_MISSING` is final.
+
+**The consuming side of this distinction is not done, and this host cannot
+finish it.** The host now answers these facts separably; a sender only benefits
+once it reads them. At the time of writing the Go SDK facade wraps the error
+without exporting a membership sentinel, and the consuming notification adapter
+classifies `PermissionDenied` and *every* `FAILED_PRECONDITION` as terminal — so
+an unregistered principal, a rotated secret and an unconfigured host still let a
+journal cursor advance past notifications nobody received, which correcting the
+configuration afterwards does not retry. That defect lives in those
+repositories, predates this contract, and is theirs to fix: the sentinel keyed on
+code, domain and reason, then the adapter repinned to it. Until that lands, read
+this section as describing what the host guarantees, not what any consumer
+currently does.
 
 The host shell renders the bell, SSE unread updates, inbox and banner. The
 banner requests unread items in the active organization before pagination and

@@ -174,7 +174,7 @@ func (s *Service) AuthorizeModuleCapability(
 		// narrowing, so it must not authorize capabilities at all rather than
 		// authorize them on the declared ceiling alone — which is the state this
 		// file exists to end.
-		return nil, status.Error(codes.FailedPrecondition,
+		return nil, moduleRefusal(codes.FailedPrecondition, ModuleLiveAuthorityUnavailableReason,
 			"this host cannot re-read live module authority, so no capability may be exercised")
 	}
 

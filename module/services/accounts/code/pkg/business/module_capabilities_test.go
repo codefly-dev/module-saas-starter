@@ -884,6 +884,38 @@ func TestModuleNotifyUser_NonMemberRejected(t *testing.T) {
 	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
 }
 
+// A host that cannot re-read live module authority refuses every capability
+// before it reads any membership, and that refusal shares FailedPrecondition
+// with the one this surface documents as FINAL. Without a reason of its own a
+// consumer cannot tell "this operator's host is misconfigured, retain the work"
+// from "this person is gone, drop it" — so an outage would silently consume the
+// journal. The reason is what makes them separable.
+func TestModuleSurfaceUnconfiguredAuthorityNamesItsOwnReason(t *testing.T) {
+	svc, err := business.NewService(fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}})
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	// Deliberately no SetModuleAuthorityReads: this is the unconfigured host.
+	svc.SetModuleCapabilities(&fakeJobBackend{}, &fakeJobBackend{}, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
+	})
+
+	_, notify := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+		Tenant: moduleTenantA, UserID: moduleUserA, Title: "Title", Body: "Body", Type: "info", Category: "security",
+	})
+	requireRefusal(t, notify, codes.FailedPrecondition, business.ModuleLiveAuthorityUnavailableReason)
+
+	_, enqueue := svc.ModuleEnqueueJob(context.Background(), moduleCaller(), moduleTenantA,
+		subjectScopedJob(moduleUserA, "documents"))
+	requireRefusal(t, enqueue, codes.FailedPrecondition, business.ModuleLiveAuthorityUnavailableReason)
+
+	// The recipient here IS a member, so a reason naming membership would be
+	// wrong about the world as well as unhelpful.
+	if business.ModuleLiveAuthorityUnavailableReason == business.ModuleTenantMembershipMissingReason {
+		t.Fatal("the operator condition and the departed person must not share a reason")
+	}
+}
+
 // A module driving this surface from a journal with retries has to decide what a
 // refusal means. A recipient who is no longer a member is final for that
 // recipient and nothing a retry resolves; a composition missing its

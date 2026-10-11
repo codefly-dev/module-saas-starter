@@ -510,6 +510,14 @@ const (
 	// the surface can serve whole. A fact about the tenant's hierarchy, which an
 	// administrator can change — never a statement about the viewer.
 	ModuleSubjectVisibilitySetTooLargeReason = "SUBJECT_VISIBILITY_SET_TOO_LARGE"
+	// ModuleLiveAuthorityUnavailableReason: this host cannot re-read live module
+	// authority, so it may exercise no capability at all. An operator's
+	// condition, and never a fact about the caller or about the person a call
+	// names — so the work is the module's to RETAIN and retry once the host is
+	// repaired, exactly unlike a departed person. It is reached before any
+	// membership read, so without a reason of its own it is indistinguishable
+	// on the wire from the one refusal this surface documents as final.
+	ModuleLiveAuthorityUnavailableReason = "LIVE_AUTHORITY_UNAVAILABLE"
 )
 
 // moduleRefusal types a refusal of this surface with the reason a consumer keys
