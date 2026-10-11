@@ -318,7 +318,8 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// free. The entitlement LISTING already wrapped its work this way; the proxy
 	// did not.
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch g.admitViewerSolution(r.Context(), org, viewer, routing) {
+		admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, routing)
+		switch admission {
 		case viewerSolutionNotEntitled:
 			// A verdict on this organization's admission, named so a client can
 			// tell it from an ext_authz denial on the credential: one is fixed by
@@ -333,6 +334,23 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 			// is simply down.
 			httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
 			return
+		}
+		// WHICH INSTALLATION admitted this viewer, forwarded to the runtime.
+		//
+		// A solution's runtime cannot mint anything for a composed module without
+		// it: the host requires every mint to name an installation, an
+		// organization is not an installation — one org may hold several — and the
+		// runtime deliberately will NOT read one out of a capability a caller
+		// carried, because inbound that carrier is caller-controlled. So the only
+		// party that can supply it is the hop that just resolved the consent, and
+		// until this it was supplied by nobody: a runtime asking for a module
+		// refused before it reached the mint.
+		//
+		// Gateway-owned like the identity projection beside it, and on
+		// untrustedAuthHeaders, so a caller's own value is replaced rather than
+		// forwarded.
+		if installation != "" {
+			r.Header.Set(installationConfinementHeader, installation)
 		}
 		// The destination is the one this request's single resolution named, and
 		// the one whose identity the authority just admitted.
@@ -523,8 +541,29 @@ func (g *Gateway) confineResourceMintToItsConsumer(w http.ResponseWriter, r *htt
 	}
 	org := r.Header.Get("X-Org-Id")
 	viewer := r.Header.Get("X-User-Id")
-	switch g.admitViewerSolution(r.Context(), org, viewer, routing) {
+	admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, routing)
+	switch admission {
 	case viewerSolutionAdmitted:
+		if installation == "" {
+			// Admitted with no installation named. Nothing produces this — the
+			// admission comes FROM a matched entitlement, which carries one — so
+			// it is an authority that broke its contract, and a mint is not
+			// issued on a ceiling nobody can be held to. The alternative is a
+			// confined mint accounts would judge against no consumer at all,
+			// which is the unconfined mint this whole half closes.
+			httpError(w, http.StatusServiceUnavailable,
+				"the authority that decides this consumer's installation named none")
+			return false
+		}
+		// The consent this mint is held to. Accounts resolves this installation's
+		// declared audiences and its agent's standing grants and refuses anything
+		// outside them (StartTask), so the ceiling is the one an administrator
+		// actually consented to rather than the viewer's whole authority.
+		//
+		// Set AFTER stripAllIdentityHeaders and the identity projection, like the
+		// projection itself: the name is on untrustedAuthHeaders, so whatever a
+		// caller sent under it is already gone.
+		r.Header.Set(installationConfinementHeader, installation)
 		return true
 	case viewerSolutionNotEntitled:
 		httpError(w, http.StatusForbidden,

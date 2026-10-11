@@ -453,6 +453,25 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
+	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes(), mintContentReads(req.GetAudience()))
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// A CONFINED CREDENTIAL IS HELD TO ITS CONSUMER'S CEILING, before the
+	// viewer's own authority is resolved at all.
+	//
+	// The order is the point, not a convenience. This is a ceiling, so a mint
+	// outside it must be refused whatever the person could otherwise have
+	// minted, and the refusal must say which rule turned it away. Running it
+	// after the authority resolution would let an incidental refusal arrive
+	// first and read as the reason — the organization binding in particular is
+	// also enforced, for its own purposes, by the membership lookup's verified
+	// database scope, and that refusal names a database scope rather than a
+	// consumer. Runs for a resource-confined request only; every other mint
+	// reaches the viewer's authority below exactly as before.
+	if err := s.holdConfinedMintToItsConsumer(ctx, req, permissions, scopes); err != nil {
+		return nil, err
+	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
 	if err != nil {
 		return nil, err
@@ -462,10 +481,6 @@ func (s *WorkContextAuthorityServer) StartTask(
 		return nil, err
 	}
 	sessionID := callerSessionID(ctx, req.GetSessionId())
-	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes(), mintContentReads(req.GetAudience()))
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	facts, err := s.resolveAuthority(
 		ctx, req.GetOrgId(), ownerID, req.GetActorPrincipalId(), permissions,
 	)
@@ -509,6 +524,116 @@ func (s *WorkContextAuthorityServer) StartTask(
 		return nil, err
 	}
 	return issuedWorkContext(token, signed), nil
+}
+
+// holdConfinedMintToItsConsumer bounds a mint made with a RESOURCE-CONFINED
+// credential by the consumer that credential was delivered to
+// (register finding SA-F-MCPAUD, round 3).
+//
+// Until this, nothing in this service read the confinement at all. The perimeter
+// admitted a resource-bound credential at this one procedure and stamped which
+// resource it named; the mint then issued for any audience in the host's
+// vocabulary, any scope within the VIEWER's own authority, and any organization
+// the viewer is a member of. So a credential delivered to one third-party client
+// for one solution could mint a viewer-owned capability in another organization,
+// addressed to a consumer that solution has nothing to do with — and the
+// perimeter's own entitlement check, which asks about the credential's
+// organization, could not see any of it, because the body is what names the
+// organization and the audience.
+//
+// Three refusals, and each is a different question:
+//
+//  1. THE ORGANIZATION. The capability is issued for the organization the
+//     credential itself names, and no other. The perimeter checked this
+//     consumer's installation against THAT organization; a body naming a second
+//     one would be a capability for an organization whose consent nobody asked
+//     about. Membership is not consent: a person belongs to several
+//     organizations and a client was delivered to one.
+//
+//     This binding was ALREADY enforced, incidentally: authorizeOwner's
+//     membership lookup opens with RequireVerifiedDatabaseScope, which compares
+//     the requested organization against the verified identity the perimeter
+//     projected. So a cross-organization mint was refused before this — the
+//     round-3 review's reading that it was not came from a harness whose
+//     accounts was a double, and the real procedure refuses it. It is restated
+//     here because the ceiling is where it belongs and because the incidental
+//     refusal is about a database scope: it would survive a change to the
+//     membership path that this rule must not survive, and it names something
+//     other than the consumer for an operator reading the refusal.
+//
+//  2. THE AUDIENCE, and 3. THE SCOPES, both against the INSTALLATION the
+//     perimeter admitted under, which is an administrator's recorded consent to
+//     this consumer: its declared `allowed_audiences`, narrowed to what this host
+//     still serves, and its agent principal's standing scope grants. The viewer's
+//     own authority continues to bound the mint below; this is the second,
+//     narrower bound, and a capability must be inside both.
+//
+// What this does NOT re-derive is which installation the resource names. The
+// perimeter resolved resource → declared binding → target → the entitlement that
+// admitted this viewer, and it states the installation from that one answer.
+// Asking again here would be a second resolution that could disagree with the
+// one admission was decided on, and the header is the perimeter's own, stripped
+// from caller input like every identity header beside it. What this DOES check is
+// that the resource is one this host issues at its own origin, so a confinement
+// this service cannot account for refuses rather than passing through unread.
+//
+// It fails CLOSED in every undecidable case: a confinement with no installation,
+// an installation that cannot be resolved, a host with no configured origin. A
+// capability issued on an unanswered question is the failure this whole finding
+// is about.
+func (s *WorkContextAuthorityServer) holdConfinedMintToItsConsumer(
+	ctx context.Context,
+	req *gen.StartTaskWorkContextRequest,
+	permissions []business.WorkContextPermission,
+	scopes []*basev0.WorkScopeV1,
+) error {
+	resource, confined := accountsauth.VerifiedResourceConfinement(ctx)
+	if !confined {
+		return nil
+	}
+	origin, configured := accountsauth.ConfiguredPublicOrigin()
+	if !configured {
+		// This deployment cannot say what any resource identifier IS, so it
+		// cannot judge one. The perimeter refuses a confined credential in the
+		// same state, so the two sides agree rather than one admitting what the
+		// other cannot account for.
+		return status.Error(codes.FailedPrecondition,
+			"this host has no configured public address, so it cannot account for the resource this credential is confined to")
+	}
+	if _, err := accountsauth.RequireResourceAtOrigin(resource, origin); err != nil {
+		return status.Error(codes.PermissionDenied,
+			"the credential is confined to a resource this host does not issue")
+	}
+	caller, authenticated := accountsauth.VerifiedRequestIdentity(ctx)
+	if !authenticated || caller.OrgID == uuid.Nil {
+		return status.Error(codes.PermissionDenied,
+			"a confined credential names no organization, so there is none to hold this mint to")
+	}
+	if caller.OrgID.String() != req.GetOrgId() {
+		// Neither organization is named. One is the caller's own and the other is
+		// theirs to read off the request they sent; printing them would make this
+		// refusal an oracle for which organizations a person belongs to.
+		return status.Error(codes.PermissionDenied,
+			"a capability minted with a credential delivered to one consumer is issued only for that credential's own organization")
+	}
+	installation, admitted := accountsauth.VerifiedInstallation(ctx)
+	if !admitted {
+		return status.Error(codes.FailedPrecondition,
+			"a confined credential reached this mint without the installation it was admitted under, so there is no consented ceiling to hold it to")
+	}
+	consumer, err := s.resolveInstallationAuthority(ctx, req.GetOrgId(), installation, permissions)
+	if err != nil {
+		return err
+	}
+	if consumer.Actor == nil {
+		// A healthy resolve always names the installation's agent. Fail closed
+		// rather than treat a missing ceiling as an absent one: enforceActorCeiling
+		// reads a nil actor as unrestricted, which is the most permissive reading
+		// of the state that says least.
+		return status.Error(codes.Internal,
+			"the consumer's installation resolved without an agent principal, so its ceiling could not be read")
+	}
+	return enforceActorCeiling(ctx, consumer.Actor, req.GetAudience(), scopes)
 }
 
 // StartInstallationTask is the headless mint. It opens with a service credential

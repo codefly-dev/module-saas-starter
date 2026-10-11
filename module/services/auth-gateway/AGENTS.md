@@ -127,43 +127,67 @@ do on their behalf. No RPC does that today, and adding one is a descriptor chang
 Two things to settle with it, because they are the reason it is not a small change:
 the mint is per request on the proxy path, so its latency and its failure mode become
 the failure mode of all federated traffic; and the authority to narrow TO is the
-installation's ceiling, which the host cannot currently look up from a solution id
-either (see `module/SOLUTION_REGISTRATION.md`).
+installation's ceiling. That second one is no longer unreachable — the entitlement
+authority answers it on the path that resolves consent, and this gateway now states
+it as `x-codefly-installation-id` (see below) — but it is answered for one request
+at a time, not as a lookup from a solution id (see
+`module/SOLUTION_REGISTRATION.md`).
 
 **A consumer written against the old behaviour does NOT have to change for the
 bearer.** Two things do change at the edge: a declared upstream no longer receives
-the caller's cookie, and a resource-bound token is confined — it reaches the solution
-its resource names, plus exactly one host route, the Work Context mint, and only for
-a consumer the organization installed and the viewer was granted. Anything replaying
-such a token elsewhere stops working, deliberately.
+the caller's cookie, and a resource-bound token is confined — it reaches the three
+places below and nowhere else. Anything replaying such a token elsewhere stops
+working, deliberately.
 
-## One host route for a resource-confined credential
+## Three places for a resource-confined credential
 
 A token issued for a solution's MCP endpoint (RFC 8707 resource indicator) is held
 by a third-party client and, once forwarded, by the runtime it dialled. It reaches:
 
-- that solution's own routes, where the resource and the path agree; and
-- `/saas.accounts.v1.WorkContextService/StartTask` on this host, and nothing else
-  here.
+- that solution's own routes, where the resource and the path agree;
+- `/saas.accounts.v1.WorkContextService/StartTask`, the delegation mint; and
+- `/v1/<alias>/*` for a DECLARED MODULE, and only in the company of a verified
+  capability for that module minted on this person's behalf.
 
-The mint is admitted because the runtime's MCP viewer path needs it: it derives a
-module gateway by minting a viewer-owned Work Context, carrying the person's bearer
-beside its own workload attestation, and its module credential does not stand in for
-the person's. Refusing every host route refused the viewer's own tool call.
+The second and third exist because the consumer's own work needs them, and they are
+one flow, not two. The runtime's MCP viewer path derives a module gateway by minting
+a viewer-owned Work Context — carrying the person's bearer, because its own service
+credential does not stand in for the person — and then calls the module with that
+capability AND the same bearer, since a declared upstream still authenticates by the
+bearer (`SA-F-BEARER`, above). Admitting the mint alone moved the failure one request
+later: the tool minted and was then refused at the module.
 
-It is admitted CONFINED. `ext_authz` stamps `x-codefly-resource` with the resource
-the credential names, and the gateway then requires the solution that resource names
-to be one the organization installed and the viewer holds a grant reaching — the
-same question, through the same authority, as every proxied request to that solution.
-An authority that cannot be asked answers 503; a capability is not issued on an
-unanswered question.
+**Admitting the bearer at module routes on its own would have been the confinement
+deleted, not relocated** — a one-solution credential with the person's whole
+authority at every declared module. So the pairing is the admission:
+`gateway_module_capability.go` requires a capability for THAT module, owned by the
+bearer's own subject, in its own organization, minted in its own session. The session
+binding is what makes "minted under the consumer's ceiling" a fact rather than an
+inference: a capability for the same module could otherwise have come from the same
+person's ordinary browser session, where no consumer ceiling applies.
 
-The stamp is on both `untrustedAuthHeaders` and `canonicalUpstreamAuthHeaders`, so a
-caller cannot assert a resource and cannot lift its own confinement. The consumer
-check runs on the HTTP gateway path, where the registry and the entitlement authority
-live; a deployment driving `ext_authz` from Envoy gets the route confinement and the
-carried resource but not that check, the same asymmetry the gateway credential
-already has.
+**The ceiling itself is accounts', not this gateway's.** `ext_authz` stamps
+`x-codefly-resource`; the gateway resolves the solution that resource names, requires
+the organization to have installed it and the viewer to hold a grant reaching it —
+the same question, through the same authority, as every proxied request to that
+solution — and states WHICH installation admitted the request as
+`x-codefly-installation-id`. Accounts then refuses a mint for another organization,
+for an audience that installation does not declare, or for scopes outside its
+agent's standing grants. An authority that cannot be asked answers 503; a capability
+is not issued on an unanswered question.
+
+Both stamps are on `untrustedAuthHeaders`, so a caller can assert neither and cannot
+pick its own ceiling. The consumer check and the installation stamp run on the HTTP
+gateway path, where the registry and the entitlement authority live; a deployment
+driving `ext_authz` from Envoy gets the route confinement and the carried resource
+but neither the consumer check nor the module pairing — the same asymmetry the
+gateway credential already has, and in the same direction: Envoy mode refuses the
+module route rather than admitting it unpaired.
+
+`x-codefly-installation-id` is also what a solution's runtime reads to name an
+installation on every mint it makes. It will not take one out of a capability a
+caller carried — inbound, that carrier is caller-controlled — so the hop that
+resolved the consent is the only party that can supply it.
 
 ## A registered client calls without a proxy
 
@@ -194,9 +218,19 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
   upstream. A token issued to one client is therefore useless from another's
   page, on catalog, solution, and declared-module routes alike.
 - `X-Codefly-Public-Origin` — the WebAuthn relying party, the origin an OAuth
-  start is validated against — is derived from that registration. The frontend's
-  internal-token path still establishes it too; the registration is the stronger
-  claim, since it names the client rather than only the process that forwarded.
+  start is validated against — is NOT derived from that registration, and was.
+  A registered client's own origin was stamped as the verified public origin,
+  which made the host's relying party and its sign-in redirect target a value a
+  client chose by registering it; accounts' readers all compare the forwarded
+  origin against the configured one, so the two authorities disagreed and the
+  weaker one was the one that named the client. The configured origin is the
+  authority, and the frontend's internal-token path is what establishes it.
+  A registered client therefore does NOT get a verified origin of its own: a
+  WebAuthn ceremony and a `BeginOAuth` redirect for such a client resolve against
+  the configured origin or the static allowlist, which is also the only reading
+  compatible with one relying-party id per deployment. Cross-origin access for
+  the client is unaffected — that is the CORS decision above, from the same
+  registration.
 
 **The grant on a forwarded response is this gateway's, and only this gateway's.**
 Every proxied response has its `access-control-*` headers stripped before the

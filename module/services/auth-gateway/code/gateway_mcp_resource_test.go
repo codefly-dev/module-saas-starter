@@ -867,16 +867,19 @@ func TestGateway_MCPToken_ReachesTheMintAndNothingElseOnTheHost(t *testing.T) {
 				"authorization": "Bearer " + token,
 			}))
 			require.NoError(t, err)
-			require.NotNil(t, response.GetDeniedResponse(), "every host route but the mint stays refused")
+			require.NotNil(t, response.GetDeniedResponse(),
+				"every one of this host's own procedures but the mint stays refused")
 			require.Equal(t, int32(401), int32(response.GetDeniedResponse().GetStatus().GetCode()))
 		})
 	}
 }
 
 // An ordinary session credential is NOT confined, and must not arrive looking as
-// though it were. The header's presence is the whole signal accounts reads, so a
-// value stamped for a token that names no resource would impose a confinement on
-// the browser's own session — refusing the product rather than a replay.
+// though it were. A NON-EMPTY value is what tells accounts the mint is confined —
+// it then resolves the installed consumer and holds the mint to that
+// installation's declared audiences and standing grants — so a value stamped for
+// a token that names no resource would impose a stranger's ceiling on the
+// browser's own session, refusing the product rather than a replay.
 func TestGateway_SessionTokenCarriesNoResourceConfinement(t *testing.T) {
 	withPublicBase(t, testPublicBase)
 	s, key := newTestExtAuthz(t)

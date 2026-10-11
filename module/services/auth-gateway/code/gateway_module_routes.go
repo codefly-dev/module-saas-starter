@@ -128,11 +128,25 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 		return true
 	}
 
-	// THE ROUTE IS RESOLVED, SO THE AUDIENCE IS KNOWN. A module route's target is
-	// the module capability surface, so that is what a capability presented here
-	// must name — the same derivation as a solution route, with the audience the
-	// host's vocabulary gives this kind.
-	if g.rejectInvalidWorkContext(w, r, moduleCapabilitiesAudience) {
+	// THE ROUTE IS RESOLVED, SO THE AUDIENCE IS KNOWN — and this route serves TWO
+	// kinds of consumer, so two audiences are permitted and no more.
+	//
+	//   - moduleCapabilitiesAudience: a declared module's OWN identity, minted by
+	//     accounts' StartModuleTask from the module's service credential.
+	//   - the alias: a VIEWER's delegated capability for this module. Accounts
+	//     refuses to mint the capability audience from any caller-supplied mint
+	//     (requireMintableAudience — a context addressed to it is read as a module
+	//     identity), so the audience a person's capability for this module can
+	//     carry is the module's own name, which is the name this route was
+	//     resolved on and the one a consuming runtime declares and asks for.
+	//
+	// Expecting ONLY the capability audience here was therefore an expectation no
+	// viewer capability could satisfy: with the edge verifier wired, every
+	// delegated capability presented at a declared module route was refused.
+	// Listing both is not a widening — a solution's audience is still refused
+	// here, which is the A-for-B rule this derivation exists for.
+	capability, rejected := g.verifiedWorkContext(w, r, moduleCapabilitiesAudience, alias)
+	if rejected {
 		return true
 	}
 
@@ -140,8 +154,16 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 	// identity, run ext_authz, require a valid credential. A bearer-less call is
 	// denied here, so a declared module adds a proxy target and never widens the
 	// authenticated surface.
+	//
+	// The verified capability is carried INTO the check, because it is what lets a
+	// resource-confined credential be admitted here at all: ext_authz pairs the
+	// two and refuses the credential when no capability of this person's accompanies
+	// it (gateway_module_capability.go carries the whole rule). A deployment with
+	// no edge verifier records nothing, so such a credential stays refused — the
+	// same direction as every other asymmetry between this path and Envoy's.
 	stripAllIdentityHeaders(r)
-	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
+	ctx := withPresentedModuleCapability(r.Context(), capability, alias)
+	checkResp, err := g.authz.Check(ctx, buildCheckRequest(r))
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "auth check failed")
 		return true
@@ -180,13 +202,21 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 		return true
 	}
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch g.admitViewerSolution(r.Context(), org, viewer, routing) {
+		admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, routing)
+		switch admission {
 		case viewerSolutionNotEntitled:
 			httpError(w, http.StatusForbidden, "module is not installed for this organization")
 			return
 		case viewerSolutionUndecidable:
 			httpError(w, http.StatusServiceUnavailable, "module installation authority unavailable")
 			return
+		}
+		// Which installation admitted this viewer, forwarded for the same reason
+		// it is forwarded to a solution: the consent is a fact about the request,
+		// and the upstream that serves it is the one that needs it. Gateway-owned
+		// and on untrustedAuthHeaders, so a caller's own value is already gone.
+		if installation != "" {
+			r.Header.Set(installationConfinementHeader, installation)
 		}
 		g.proxyTo(w, r, routing.Upstream, entry)
 	}))

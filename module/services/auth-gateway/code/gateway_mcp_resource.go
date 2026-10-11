@@ -99,9 +99,9 @@ func publicBaseURL() string {
 	return strings.TrimSuffix(strings.TrimSpace(workspaceEnv("application", "APP_BASE_URL")), "/")
 }
 
-// workContextMintProcedure is the ONE host route a resource-bound token reaches:
-// the delegation mint. It is the full gRPC/Connect procedure name, which is also
-// the request path on both transports.
+// workContextMintProcedure is the one of this host's OWN procedures that a
+// resource-bound token reaches: the delegation mint. It is the full gRPC/Connect
+// procedure name, which is also the request path on both transports.
 //
 // Named as a constant and compared whole. A prefix match would admit any
 // procedure beginning with it, and this is the one place where the difference
@@ -110,10 +110,9 @@ func publicBaseURL() string {
 const workContextMintProcedure = "/saas.accounts.v1.WorkContextService/StartTask"
 
 // isWorkContextMintPath reports whether a FULL request path addresses the
-// delegation mint — the single host route a resource-confined credential is
-// admitted at.
+// delegation mint.
 //
-// Why there is exactly one, and why it is this one:
+// Why the mint is admitted at all:
 //
 // A resource-bound token is held by a third-party MCP client and, once
 // forwarded, by the solution runtime it dialled. Confinement exists so that
@@ -126,12 +125,20 @@ const workContextMintProcedure = "/saas.accounts.v1.WorkContextService/StartTask
 // refusing this route refuses the viewer's own tool call, which is a product
 // regression and not a security property.
 //
-// So the mint is admitted and nothing else is. Everything a resource token could
-// otherwise have reached — this host's own API, another declared module's routes,
-// the rest of the Work Context surface — stays refused, which is the escape the
-// confinement was added to close. What the mint then issues is bounded on the
-// accounts side, where the viewer's own authority, the host audience vocabulary
-// and the stamped resource below decide what may be minted.
+// So the mint is admitted and no other procedure of this host's is. Everything
+// else a resource token could otherwise have reached — this host's own API, the
+// rest of the Work Context surface — stays refused, which is the escape the
+// confinement was added to close.
+//
+// What the mint then ISSUES is bounded on the accounts side, from the stamped
+// resource and the stamped installation: the viewer's own authority, the host
+// audience vocabulary, and the installed consumer's declared audiences and
+// standing grants all have to admit it (see accounts' StartTask).
+//
+// A DECLARED MODULE's routes are the one other place such a credential is
+// admitted, and not by this function: they are not a host procedure, and the
+// admission is a pairing with a verified capability for that module rather than
+// a path (gateway_module_capability.go).
 func isWorkContextMintPath(path string) bool {
 	pathOnly, _, _ := strings.Cut(path, "?")
 	return pathOnly == workContextMintProcedure

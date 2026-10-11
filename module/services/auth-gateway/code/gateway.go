@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/sdk-go/workcontext"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -493,9 +494,12 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		removeCallerCookie(r.Header)
 		// The bearer is a separate question, and SA-F-BEARER is recorded OPEN
 		// rather than closed here: see removePersonsSessionCredential and the PR
-		// body. What this route does enforce is confinement — ExtAuthz admits a
-		// resource-bound token only at the solution its resource names — so a
-		// credential an upstream receives cannot be replayed across this host.
+		// body. What this route does enforce is confinement: ExtAuthz admits a
+		// resource-bound token at the solution its resource names, at the
+		// delegation mint, and at a declared module route only in the company of
+		// this person's verified capability for that module — three named places,
+		// so a credential an upstream receives cannot be replayed across the rest
+		// of this host.
 	}
 	if entry != nil && entry.UpstreamPath != "" {
 		r.URL.Path = entry.UpstreamPath
@@ -767,17 +771,35 @@ func injectHeaders(r *http.Request, headers []*corev3.HeaderValueOption) {
 //
 // A-for-B therefore refuses with the audience error rather than with a 404: the
 // route resolves, and the capability presented to it names another consumer.
-func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Request, expected string) bool {
+func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Request, expected ...string) bool {
+	_, rejected := g.verifiedWorkContext(w, r, expected...)
+	return rejected
+}
+
+// verifiedWorkContext is rejectInvalidWorkContext with the verified claims
+// handed back, for the one caller that holds the capability to more than its
+// audience.
+//
+// The claims are nil in three different situations, which is why the second
+// return value exists rather than a nil check standing in for it: this edge
+// verifies no capability at all (`g.workContext == nil`), the request presents
+// none, or one was presented and refused. The first two are "carry on", the
+// third is terminal — and a caller that read "no claims" as the first would
+// admit a request whose capability had just been refused.
+func (g *Gateway) verifiedWorkContext(
+	w http.ResponseWriter, r *http.Request, expected ...string,
+) (*basev0.WorkContextV1, bool) {
 	if g.workContext == nil {
-		return false
+		return nil, false
 	}
 	raw := r.Header.Get(workcontext.WorkContextHeaderName)
 	if raw == "" {
-		return false
+		return nil, false
 	}
 	token, err := workcontext.ParseWorkContextToken(raw)
+	var claims *basev0.WorkContextV1
 	if err == nil {
-		err = g.workContext.Verify(r.Context(), token, expected)
+		claims, err = g.workContext.VerifyAny(r.Context(), token, expected...)
 	}
 	if err != nil {
 		// Log the cause (not the token) so a wall of 401s can be told apart:
@@ -785,9 +807,9 @@ func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Reques
 		// cannot reach, which the static 401 body deliberately does not reveal.
 		log.Printf("WARN: blocked request: method=%s path=%s reason=invalid_work_context err=%v", r.Method, r.URL.Path, err)
 		httpError(w, http.StatusUnauthorized, "invalid work context")
-		return true
+		return nil, true
 	}
-	return false
+	return claims, false
 }
 
 // stripAllIdentityHeaders removes every identity header from the request, in
@@ -841,10 +863,15 @@ var untrustedAuthHeaders = []string{
 	solutionPublisherHeader,
 	clientIDHeader,
 	// The resource a confined credential was issued for. Stamped by ext_authz on
-	// the one host route that admits such a credential, and read by accounts as a
+	// the paths that admit such a credential, and read by accounts as a
 	// ceiling on what the mint may issue — so a caller able to set it could lift
 	// its own confinement, or impose one on somebody else's request.
 	resourceConfinementHeader,
+	// WHICH INSTALLATION the authority admitted this request under. It selects
+	// the consent a confined mint is held to, and it is what a solution's
+	// runtime names on every mint it makes, so a caller able to set it would
+	// choose its own ceiling — or spend another organization's installation.
+	installationConfinementHeader,
 }
 
 // resourceConfinementHeader carries the RFC 8707 resource a credential is bound
@@ -853,6 +880,27 @@ var untrustedAuthHeaders = []string{
 // confined credential — so accounts reads a VALUE rather than inferring anything
 // from a header's absence, and a caller cannot assert one by supplying it.
 const resourceConfinementHeader = "x-codefly-resource"
+
+// installationConfinementHeader carries WHICH installation the entitlement
+// authority admitted a request under, from the hop that resolved the consent to
+// the services that need it.
+//
+// Two readers, one fact:
+//
+//   - accounts, at a resource-confined Work Context mint, where it is the
+//     ceiling: the mint may issue only for an audience this installation
+//     declares and within its agent's standing grants.
+//   - a solution's runtime, on a proxied request, where it is what the runtime
+//     must name on every mint of its own. It will not take one from a carried
+//     capability — inbound that carrier is caller-controlled — so this hop is
+//     the only party that can supply it.
+//
+// Stamped only where an admission actually named one, which is only where the
+// authority admitted the request. It is NOT stamped on an allow decision the way
+// resourceConfinementHeader is, because ext_authz does not consult the
+// entitlement authority and an empty value here would be a claim this process
+// cannot make.
+const installationConfinementHeader = "x-codefly-installation-id"
 
 // solutionIdentityHeader and solutionPublisherHeader are the headers accounts
 // reads to decide which registered solution a Work Context mint is for. This

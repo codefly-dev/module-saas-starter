@@ -416,9 +416,24 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 	resourceConfined := ""
 	if binding == resourceBound {
 		solutionID, isSolutionPath := solutionIDFromPath(path)
+		// The verified capability a declared module route established, if this
+		// request is on one. Read before the switch so the arm below does not
+		// resolve it twice, and nil on every other path and in Envoy mode.
+		pairing := presentedModuleCapability(ctx)
 		switch {
 		case isSolutionPath && resourceAudienceAdmits(resource, solutionID, s.publicBase):
 			// The solution its own resource names. Admitted, as before.
+		case pairing != nil:
+			// A DECLARED MODULE ROUTE, together with a verified capability for
+			// that module minted on this person's behalf in this session
+			// (gateway_module_capability.go carries the whole rule). This is the
+			// consumer's own work — the module its solution declared it consumes —
+			// and it is admitted only in that company.
+			if err := pairing.admitsConfinedCredential(claims); err != nil {
+				recordJWTRejection(ctx, jwtRejectionWrongResource)
+				return deny(401, err.Error()), nil
+			}
+			resourceConfined = resource
 		case isWorkContextMintPath(path):
 			// THE ONE HOST ROUTE (isWorkContextMintPath carries the reasoning).
 			//
@@ -487,13 +502,18 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		hdr("x-credential-kind", credentialKindSession),
 	}
 	if resourceConfined != "" {
-		// The resource this credential was issued for. Non-empty on exactly one
-		// host route — the delegation mint — and on a solution's own paths, where
-		// the resource and the path already agree.
+		// The resource this credential was issued for, stamped on the paths where
+		// a resource-bound credential is admitted AS a confined one: the
+		// delegation mint, and a declared module route reached in the company of
+		// this person's capability for that module. A solution's own paths do NOT
+		// stamp it — there the resource and the path already agree, and the
+		// upstream is the consumer the resource names.
 		//
-		// Accounts reads it as a ceiling on the mint: a capability minted under it
-		// may act for the consumer that resource names and for no other. Empty is
-		// an ordinary unbound session, and allow() stamps the empty value rather
+		// At the mint, accounts reads it as the ceiling: it resolves the installed
+		// consumer the resource names and refuses an organization other than this
+		// credential's, an audience that consumer does not declare, and scopes
+		// outside its installation's standing grants (StartTask). Empty is an
+		// ordinary unbound session, and allow() stamps the empty value rather
 		// than omitting the header, so the two are distinguishable without either
 		// being a missing-header inference.
 		//
