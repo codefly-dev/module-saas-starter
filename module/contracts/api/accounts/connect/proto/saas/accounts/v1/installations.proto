@@ -148,6 +148,22 @@ message InstallSolutionRequest {
   // whose newest generation was refused would record consent to a release this
   // host never admitted.
   string target_id = 12 [(buf.validate.field).string.uuid = true];
+  // Installed consent as JSON: capabilities, queues, namespaces,
+  // external_namespaces, resources, read_audiences, operation_audiences and
+  // artifact_policies, with the same shapes as the module envelope grant.
+  // Must be a subset of the current ceiling. Omitted selects that ceiling;
+  // an explicit {} grants nothing. Tenant and identity are never scope fields.
+  optional string scope = 13 [(buf.validate.field).string = {min_len: 2 max_bytes: 1048576}];
+
+}
+
+// An org administrator may only remove installed authority. The host reads
+// the current revision and serializes the narrowing with other lifecycle acts.
+message NarrowInstallationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  // Same JSON shape as InstallSolution.scope; {} removes all capability access.
+  string scope = 3 [(buf.validate.field).string = {min_len: 2 max_bytes: 1048576}];
 }
 
 message UninstallSolutionRequest {
@@ -274,6 +290,34 @@ service InstallationService {
     };
     option (google.api.http) = {
       post: "/v1/installations/{installation_id}:uninstall"
+      body: "*"
+    };
+  }
+
+  // Narrowing is witnessed in the policy log before commit, then atomically
+  // bumps the installation revision, cancels its org's work and records audit.
+  rpc NarrowInstallation(NarrowInstallationRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.installation.narrowed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}:narrow"
       body: "*"
     };
   }

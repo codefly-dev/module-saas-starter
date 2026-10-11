@@ -45,8 +45,6 @@ const (
 	ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
 	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
 	ModuleCapabilitiesService_FetchDatasourceFiles_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles"
-	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
-	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
 	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
 	ModuleCapabilitiesService_MintModuleOperationContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext"
 	ModuleCapabilitiesService_MintSourceOperationContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext"
@@ -147,24 +145,15 @@ type ModuleCapabilitiesServiceClient interface {
 	// metadata reset_at) and a RetryInfo; a batch past its limits is
 	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
 	FetchDatasourceFiles(ctx context.Context, in *FetchDatasourceFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceFilesFrame], error)
-	// MintModuleRegistration issues the signed, prefix-bound credential a composed
-	// module presents to the gateway to federate its REST surface. Authorized by
-	// the module's own registration secret, not the shared cluster token.
-	MintModuleRegistration(ctx context.Context, in *ModuleMintRegistrationRequest, opts ...grpc.CallOption) (*ModuleMintRegistrationResponse, error)
-	// MintSolutionRegistration issues the signed, solution-bound credential a
-	// solution presents to the gateway and to the frontend to register, update, or
-	// delete its upstream and its Module-Federation remote. Authorized by the
-	// solution's own registration secret, declared separately from the module
-	// secrets because a solution remote executes in the host origin.
-	MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error)
 	// MintModuleWorkContext issues the Work Context a composed module presents to
 	// this surface: owner and sole actor are the module service principal derived
-	// from its registration prefix. Authorized by the module's own registration
-	// secret, like the credential exchange above.
+	// from its prefix. Authorized by the pod's projected ServiceAccount token, held
+	// against the workload the principal declares and the build the authority
+	// document approves; a pod running anything else is issued nothing.
 	MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error)
 	// MintModuleOperationContext issues, with no person present, a Work Context
 	// addressed to one of the calling module's installed operation audiences.
-	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// Authorized by the pod's projected token like MintModuleWorkContext; owner
 	// and sole actor are the module service principal, the tenant is the one its
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
@@ -173,7 +162,7 @@ type ModuleCapabilitiesServiceClient interface {
 	// sync runs with: owned by the person who connected the source, actored by
 	// the calling module's service principal, in the source's organization, with
 	// exactly the source_delegation_scopes of the binding the person delegated
-	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// to. Authorized by the pod's projected token like MintModuleWorkContext;
 	// every mint re-checks that the delegation is active, the source exists, the
 	// person is still an owner or admin of the organization, and the binding is
 	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
@@ -459,26 +448,6 @@ func (c *moduleCapabilitiesServiceClient) FetchDatasourceFiles(ctx context.Conte
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ModuleCapabilitiesService_FetchDatasourceFilesClient = grpc.ServerStreamingClient[FetchDatasourceFilesFrame]
 
-func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Context, in *ModuleMintRegistrationRequest, opts ...grpc.CallOption) (*ModuleMintRegistrationResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ModuleMintRegistrationResponse)
-	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintModuleRegistration_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SolutionMintRegistrationResponse)
-	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModuleMintWorkContextResponse)
@@ -649,24 +618,15 @@ type ModuleCapabilitiesServiceServer interface {
 	// metadata reset_at) and a RetryInfo; a batch past its limits is
 	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
 	FetchDatasourceFiles(*FetchDatasourceFilesRequest, grpc.ServerStreamingServer[FetchDatasourceFilesFrame]) error
-	// MintModuleRegistration issues the signed, prefix-bound credential a composed
-	// module presents to the gateway to federate its REST surface. Authorized by
-	// the module's own registration secret, not the shared cluster token.
-	MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error)
-	// MintSolutionRegistration issues the signed, solution-bound credential a
-	// solution presents to the gateway and to the frontend to register, update, or
-	// delete its upstream and its Module-Federation remote. Authorized by the
-	// solution's own registration secret, declared separately from the module
-	// secrets because a solution remote executes in the host origin.
-	MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error)
 	// MintModuleWorkContext issues the Work Context a composed module presents to
 	// this surface: owner and sole actor are the module service principal derived
-	// from its registration prefix. Authorized by the module's own registration
-	// secret, like the credential exchange above.
+	// from its prefix. Authorized by the pod's projected ServiceAccount token, held
+	// against the workload the principal declares and the build the authority
+	// document approves; a pod running anything else is issued nothing.
 	MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error)
 	// MintModuleOperationContext issues, with no person present, a Work Context
 	// addressed to one of the calling module's installed operation audiences.
-	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// Authorized by the pod's projected token like MintModuleWorkContext; owner
 	// and sole actor are the module service principal, the tenant is the one its
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
@@ -675,7 +635,7 @@ type ModuleCapabilitiesServiceServer interface {
 	// sync runs with: owned by the person who connected the source, actored by
 	// the calling module's service principal, in the source's organization, with
 	// exactly the source_delegation_scopes of the binding the person delegated
-	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// to. Authorized by the pod's projected token like MintModuleWorkContext;
 	// every mint re-checks that the delegation is active, the source exists, the
 	// person is still an owner or admin of the organization, and the binding is
 	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
@@ -773,12 +733,6 @@ func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceBlob(*FetchDa
 }
 func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceFiles(*FetchDatasourceFilesRequest, grpc.ServerStreamingServer[FetchDatasourceFilesFrame]) error {
 	return status.Error(codes.Unimplemented, "method FetchDatasourceFiles not implemented")
-}
-func (UnimplementedModuleCapabilitiesServiceServer) MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method MintModuleRegistration not implemented")
-}
-func (UnimplementedModuleCapabilitiesServiceServer) MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method MintSolutionRegistration not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintModuleWorkContext not implemented")
@@ -1244,42 +1198,6 @@ func _ModuleCapabilitiesService_FetchDatasourceFiles_Handler(srv interface{}, st
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ModuleCapabilitiesService_FetchDatasourceFilesServer = grpc.ServerStreamingServer[FetchDatasourceFilesFrame]
 
-func _ModuleCapabilitiesService_MintModuleRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ModuleMintRegistrationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ModuleCapabilitiesServiceServer).MintModuleRegistration(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ModuleCapabilitiesService_MintModuleRegistration_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ModuleCapabilitiesServiceServer).MintModuleRegistration(ctx, req.(*ModuleMintRegistrationRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ModuleCapabilitiesService_MintSolutionRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SolutionMintRegistrationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ModuleCapabilitiesServiceServer).MintSolutionRegistration(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ModuleCapabilitiesServiceServer).MintSolutionRegistration(ctx, req.(*SolutionMintRegistrationRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _ModuleCapabilitiesService_MintModuleWorkContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModuleMintWorkContextRequest)
 	if err := dec(in); err != nil {
@@ -1518,14 +1436,6 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSubjectVisibility",
 			Handler:    _ModuleCapabilitiesService_ListSubjectVisibility_Handler,
-		},
-		{
-			MethodName: "MintModuleRegistration",
-			Handler:    _ModuleCapabilitiesService_MintModuleRegistration_Handler,
-		},
-		{
-			MethodName: "MintSolutionRegistration",
-			Handler:    _ModuleCapabilitiesService_MintSolutionRegistration_Handler,
 		},
 		{
 			MethodName: "MintModuleWorkContext",

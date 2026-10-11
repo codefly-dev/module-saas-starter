@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/installationtest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
@@ -56,6 +57,7 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 	require.NoError(t, err)
 	registry := business.ModulePrincipalRegistry{business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg}}
 	service.SetModuleCapabilities(nil, nil, registry)
+	installCurrentInstallationCaller(t, service, readOrg)
 	parent := mint("example", "definitions", "read")
 	request := func(token string) *connect.Request[gen.ModuleCurrentInstallationRequest] {
 		r := connect.NewRequest(&gen.ModuleCurrentInstallationRequest{InstallationId: id, ParentWorkContextToken: token})
@@ -163,6 +165,7 @@ func TestCurrentInstallationDelegationCurrentChecks(t *testing.T) {
 	service, err = business.NewService(store)
 	require.NoError(t, err)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg}})
+	installCurrentInstallationCaller(t, service, readOrg)
 	authority := &readExchangeAuthority{facts: facts.facts}
 	workContextSingleton.authority = authority
 	journal := &readExchangeJournal{}
@@ -193,4 +196,19 @@ func TestCurrentInstallationDelegationCurrentChecks(t *testing.T) {
 	facts.facts.OrganizationRevision++
 	require.Error(t, invoke())
 	require.Equal(t, before, store.reads)
+}
+
+func installCurrentInstallationCaller(t *testing.T, svc *business.Service, org string) {
+	t.Helper()
+	installations := &installationtest.Store{}
+	registry := svc.ModulePrincipals()
+	for principal, grant := range registry {
+		grant.PresenceBinding = "acme.test." + grant.Prefix
+		registry[principal] = grant
+		scope := business.FullInstallationScope(grant)
+		_, err := installations.InstallSolution(context.Background(), &business.InstallSolutionParams{OrgID: org, RegistryPrincipalID: principal, RegistryBindingID: grant.PresenceBinding, Scope: &scope})
+		require.NoError(t, err)
+	}
+	svc.SetModulePrincipals(registry)
+	svc.SetModuleAuthorityReads(installations, nil)
 }

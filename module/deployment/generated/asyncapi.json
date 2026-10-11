@@ -1032,6 +1032,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.installation.narrowed": {
+      "address": "saas.installation.narrowed",
+      "title": "saas.installation.narrowed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.installation.narrowed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.installation.ownership_transferred": {
       "address": "saas.installation.ownership_transferred",
       "title": "saas.installation.ownership_transferred",
@@ -1263,17 +1274,6 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
-    "saas.module.registration_minted": {
-      "address": "saas.module.registration_minted",
-      "title": "saas.module.registration_minted",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.module.registration_minted"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
     "saas.module.work_context_minted": {
       "address": "saas.module.work_context_minted",
       "title": "saas.module.work_context_minted",
@@ -1390,6 +1390,17 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.org.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.platform.module_envelope_written": {
+      "address": "saas.platform.module_envelope_written",
+      "title": "saas.platform.module_envelope_written",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.platform.module_envelope_written"
         }
       },
       "x-visibility": "external",
@@ -1632,17 +1643,6 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.solution.registration_deleted"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
-    "saas.solution.registration_minted": {
-      "address": "saas.solution.registration_minted",
-      "title": "saas.solution.registration_minted",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.solution.registration_minted"
         }
       },
       "x-visibility": "external",
@@ -2674,6 +2674,13 @@
       },
       "title": "saas publishes saas.installation.created"
     },
+    "send:saas.installation.narrowed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.installation.narrowed"
+      },
+      "title": "saas publishes saas.installation.narrowed"
+    },
     "send:saas.installation.ownership_transferred": {
       "action": "send",
       "channel": {
@@ -2821,13 +2828,6 @@
       },
       "title": "saas publishes saas.module.org_admins_notified"
     },
-    "send:saas.module.registration_minted": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.module.registration_minted"
-      },
-      "title": "saas publishes saas.module.registration_minted"
-    },
     "send:saas.module.work_context_minted": {
       "action": "send",
       "channel": {
@@ -2904,6 +2904,13 @@
         "$ref": "#/channels/saas.org.updated"
       },
       "title": "saas publishes saas.org.updated"
+    },
+    "send:saas.platform.module_envelope_written": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.platform.module_envelope_written"
+      },
+      "title": "saas publishes saas.platform.module_envelope_written"
     },
     "send:saas.platform.role_granted": {
       "action": "send",
@@ -3058,13 +3065,6 @@
         "$ref": "#/channels/saas.solution.registration_deleted"
       },
       "title": "saas publishes saas.solution.registration_deleted"
-    },
-    "send:saas.solution.registration_minted": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.solution.registration_minted"
-      },
-      "title": "saas publishes saas.solution.registration_minted"
     },
     "send:saas.sso.disabled": {
       "action": "send",
@@ -3951,6 +3951,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.installation.narrowed": {
+        "name": "saas.installation.narrowed",
+        "title": "saas.installation.narrowed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.installation.ownership_transferred": {
         "name": "saas.installation.ownership_transferred",
         "title": "saas.installation.ownership_transferred",
@@ -4098,13 +4105,6 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
-      "saas.module.registration_minted": {
-        "name": "saas.module.registration_minted",
-        "title": "saas.module.registration_minted",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
       "saas.module.work_context_minted": {
         "name": "saas.module.work_context_minted",
         "title": "saas.module.work_context_minted",
@@ -4178,6 +4178,13 @@
       "saas.org.updated": {
         "name": "saas.org.updated",
         "title": "saas.org.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.platform.module_envelope_written": {
+        "name": "saas.platform.module_envelope_written",
+        "title": "saas.platform.module_envelope_written",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
@@ -4332,13 +4339,6 @@
       "saas.solution.registration_deleted": {
         "name": "saas.solution.registration_deleted",
         "title": "saas.solution.registration_deleted",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
-      "saas.solution.registration_minted": {
-        "name": "saas.solution.registration_minted",
-        "title": "saas.solution.registration_minted",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

@@ -21,7 +21,7 @@ every one of its types external, so every platform type stays subscribable as
 before, while a type a solution or a composed module **declares** at runtime is
 eligible only when its producer declared it `external` and the operator granted
 its namespace external delivery (`external_namespaces` on the producer's
-`MODULE_PRINCIPALS` entry). `AuditService/ListAuditEventTypes` reports the
+module registry entry). `AuditService/ListAuditEventTypes` reports the
 answer per type as `webhook_eligible`, and `CreateSubscription` refuses a name
 this deployment would never deliver rather than storing a registration that can
 never fire.

@@ -63,6 +63,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/jobs", Procedure: "/saas.accounts.v1.PlatformAdminService/ListJobs"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/jobs/operations", Procedure: "/saas.accounts.v1.PlatformAdminService/GetJobOperations"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/jobs/{job_id}", Procedure: "/saas.accounts.v1.PlatformAdminService/GetJob"},
+		{Service: "accounts", Method: "GET", Path: "/v1/platform/module-envelope", Procedure: "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/organizations/{org_id}/entitlements", Procedure: "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/sessions", Procedure: "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/users", Procedure: "/saas.accounts.v1.PlatformAdminService/SearchUsers"},
@@ -111,6 +112,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/installations", Procedure: "/saas.accounts.v1.InstallationService/InstallSolution"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}/teams", Procedure: "/saas.accounts.v1.InstallationService/GrantInstallationToTeam"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}/teams/{team_id}:revoke", Procedure: "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam"},
+		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:narrow", Procedure: "/saas.accounts.v1.InstallationService/NarrowInstallation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:transferOwnership", Procedure: "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:uninstall", Procedure: "/saas.accounts.v1.InstallationService/UninstallSolution"},
 		{Service: "accounts", Method: "POST", Path: "/v1/invitations", Procedure: "/saas.accounts.v1.InvitationService/CreateInvitation"},
@@ -169,5 +171,6 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "PUT", Path: "/v1/consent/preferences", Procedure: "/saas.accounts.v1.ConsentService/UpdatePreferences"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/organizations/{org_id}/settings", Procedure: "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/platform/feature-flags/{name}", Procedure: "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"},
+		{Service: "accounts", Method: "PUT", Path: "/v1/platform/module-envelope", Procedure: "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope"},
 	}
 }

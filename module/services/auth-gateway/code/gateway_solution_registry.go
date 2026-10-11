@@ -376,24 +376,11 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	if !found || record.GetTombstonedAt() != nil {
 		return nil, solutionUnregistered
 	}
-	// The kind the record's DECLARATION states, before anything else about it is
-	// read. A record declared as the other kind is a verdict on this surface, not
-	// a missing route: the module surface carries no per-viewer admission, so
-	// serving a solution here would drop its installation check entirely, and
-	// serving a module on the solution surface would ask for a consent no
-	// organisation gives a composed module.
-	//
-	// UNSPECIFIED fails BOTH checks. It is not a third kind — it is what a reader
-	// decodes from a writer that did not set the field — so a record carrying it
-	// is served by neither surface rather than by the one that needs less
-	// authority. accounts and this gateway ship as one module package at one
-	// version, which is what makes that refusal a deployment invariant rather
-	// than an outage waiting for a rolling update.
+	// The declaration positively identifies the routing surface. Both kinds
+	// require organization consent; an unspecified kind is served by neither.
 	switch surface {
 	case moduleSurface:
-		// A record with NO declaration fails this too, and must: the module
-		// surface has no admission layer behind it, so the kind check is the only
-		// place such a record can be refused.
+		// A record with no declaration has no module routing identity.
 		if !declaredModuleKind(record) {
 			return nil, solutionWrongKind
 		}

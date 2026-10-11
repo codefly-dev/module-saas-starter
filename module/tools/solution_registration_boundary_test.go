@@ -426,38 +426,6 @@ func TestSolutionProjectionsDoNotDeriveIdentityLocally(t *testing.T) {
 	}
 }
 
-// TestSolutionAndModuleRegistrationCredentialsAreSeparate keeps the two
-// registrant kinds from collapsing into one grant. A solution remote executes in
-// the host origin with the viewer's credentials; a module federates a REST
-// prefix. Holding one credential must never confer the other, which requires
-// both a separate declaration and a separate audience.
-func TestSolutionAndModuleRegistrationCredentialsAreSeparate(t *testing.T) {
-	moduleDir := findModuleDir(t)
-
-	minter, err := os.ReadFile(filepath.Join(moduleDir, "services/accounts/code/pkg/auth/ed25519/minter.go"))
-	if err != nil {
-		t.Fatalf("read minter: %v", err)
-	}
-	for _, audience := range []string{
-		`ModuleRegistrationAudience = "module-registration"`,
-		`SolutionRegistrationAudience = "solution-registration"`,
-	} {
-		if !strings.Contains(string(minter), audience) {
-			t.Errorf("minter no longer declares %s", audience)
-		}
-	}
-
-	federation, err := os.ReadFile(filepath.Join(moduleDir, "configurations/local/federation.env"))
-	if err != nil {
-		t.Fatalf("read federation configuration: %v", err)
-	}
-	for _, key := range []string{"MODULE_REGISTRATION_SECRETS", "SOLUTION_REGISTRATION_SECRETS"} {
-		if !strings.Contains(string(federation), key) {
-			t.Errorf("federation configuration no longer declares %s", key)
-		}
-	}
-}
-
 // TestViewerGatedSurfacesConsultTheStampedViewer requires the coupling
 // registrationSurfaces forbids, for the files that server-render per-viewer
 // content.

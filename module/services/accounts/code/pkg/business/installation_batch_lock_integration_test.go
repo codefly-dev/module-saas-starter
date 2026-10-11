@@ -14,6 +14,7 @@ import (
 	"accounts/pkg/infra"
 	"accounts/pkg/infra/storetx"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -149,6 +150,159 @@ func TestDeleteOrganizationSerializesWithAnotherInstallationUninstall(t *testing
 			}
 			require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_REVOKED, installation.Status)
 		}
+		return nil
+	}))
+}
+
+// Report the real transactions as they enter the store; all statements and
+// triggers still run in production code. The principal row lock below is the
+// barrier between the standalone uninstall's grant DELETE and principal UPDATE.
+type uninstallMembershipOrderStore struct {
+	*infra.PostgresStore
+	uninstallStarted chan uint32
+	deletionStarted  chan uint32
+	uninstallOnce    sync.Once
+}
+
+func (s *uninstallMembershipOrderStore) UninstallSolution(ctx context.Context, orgID, installationID string) (*gen.Installation, bool, error) {
+	s.uninstallOnce.Do(func() { s.uninstallStarted <- storetx.Tx(ctx).Conn().PgConn().PID() })
+	return s.PostgresStore.UninstallSolution(ctx, orgID, installationID)
+}
+
+func (s *uninstallMembershipOrderStore) ActiveInstallationIDs(ctx context.Context, orgID string) ([]string, error) {
+	s.deletionStarted <- storetx.Tx(ctx).Conn().PgConn().PID()
+	return s.PostgresStore.ActiveInstallationIDs(ctx, orgID)
+}
+
+// If membership deletion precedes the batch lock, it takes the authorization
+// revision while the standalone uninstall holds its installation and standing
+// grant. Releasing the principal barrier then closes that lock cycle (40P01),
+// aborts a narrowing, and leaves its already-recorded policy receipt uncommitted.
+func TestDeleteOrganizationWaitsForUninstallBeforeMembershipDeletion(t *testing.T) {
+	clearData(t)
+	admin, orgID := mustUserAndOrg(t, testCtx, "uninstall-order@example.com", "uninstall-order", "Acme")
+	installationID, _, _ := installForExposure(t, admin, orgID)
+	var org *gen.Organization
+	var agentID, grantID string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		org, err = testStore.GetOrganization(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		// Require an actual standing grant; an empty DELETE cannot reproduce
+		// the lock inversion this regression is meant to exercise.
+		return storetx.Tx(ctx).QueryRow(ctx, `
+			SELECT i.agent_principal_id, g.id
+			FROM installations i
+			JOIN scope_nodes n ON n.id = i.root_scope_node_id
+			JOIN scope_grants g ON g.org_id = i.org_id AND g.subject_kind = 'principal'
+			  AND g.subject_id = i.agent_principal_id AND g.scope_path = n.scope_path
+			WHERE i.id = $1 AND i.org_id = $2 AND i.status = 'active'`, installationID, orgID).Scan(&agentID, &grantID)
+	}))
+
+	store := &uninstallMembershipOrderStore{
+		PostgresStore:    testStore,
+		uninstallStarted: make(chan uint32, 1), deletionStarted: make(chan uint32, 1),
+	}
+	testService.SetStore(store)
+	ctx, cancel := context.WithTimeout(testCtx, 30*time.Second)
+	var workers sync.WaitGroup
+	t.Cleanup(func() {
+		cancel()
+		workers.Wait()
+		testService.SetStore(testStore)
+		closeEveryGap(t, testCtx)
+	})
+	mark := testPolicyLog.mark()
+	uninstalled, deleted := make(chan error, 1), make(chan error, 1)
+	require.NoError(t, testStore.WithControlPlane(ctx, func(barrierCtx context.Context) error {
+		tx := storetx.Tx(barrierCtx)
+		var lockedID string
+		if err := tx.QueryRow(barrierCtx, `SELECT id FROM principals WHERE id = $1 AND org_id = $2 FOR UPDATE`, agentID, orgID).Scan(&lockedID); err != nil {
+			return err
+		}
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			uninstalled <- testService.UninstallSolution(ctx, admin, orgID, installationID)
+		}()
+		var uninstallPID uint32
+		select {
+		case uninstallPID = <-store.uninstallStarted:
+		case err := <-uninstalled:
+			t.Fatalf("standalone uninstall did not reach its installation: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		requireInstallationBackendBlockedBy(t, ctx, uninstallPID, tx.Conn().PgConn().PID())
+
+		// Prove the pause is after the real grant DELETE, but before the
+		// principal trigger takes the authorization revision. Neither probe
+		// writes data; the failed NOWAIT probe rolls back its own transaction.
+		require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+			var id string
+			return storetx.Tx(ctx).QueryRow(ctx, `
+				SELECT org_id FROM organization_authorization_revisions
+				WHERE org_id = $1 FOR UPDATE NOWAIT`, orgID).Scan(&id)
+		}))
+		err := testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+			var id string
+			return storetx.Tx(ctx).QueryRow(ctx, `SELECT id FROM scope_grants WHERE id = $1 FOR KEY SHARE NOWAIT`, grantID).Scan(&id)
+		})
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, err, &pgErr, "the real standing-grant DELETE must hold its row")
+		require.Equal(t, "55P03", pgErr.Code, "the standing grant must be locked by the paused uninstall")
+
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			deleted <- testService.DeleteOrganization(ctx, admin, &gen.DeleteOrganizationRequest{OrgId: orgID, ConfirmSlug: org.Slug})
+		}()
+		var deletionPID uint32
+		select {
+		case deletionPID = <-store.deletionStarted:
+		case err := <-deleted:
+			t.Fatalf("deletion did not reach its installation batch: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		requireInstallationBackendBlockedBy(t, ctx, deletionPID, uninstallPID)
+		return nil // Release the principal so uninstall and then deletion can commit.
+	}))
+	uninstallErr, deletionErr := <-uninstalled, <-deleted
+	require.NoError(t, uninstallErr, "standalone uninstall must complete without 40P01")
+	require.NoError(t, deletionErr, "organization deletion must complete without 40P01")
+
+	entries := testPolicyLog.appended(mark)
+	require.Len(t, entries, 2, "both narrowings must be witnessed")
+	require.Equal(t, installationID, entries[0].SubjectID)
+	require.Equal(t, orgID, entries[1].SubjectID)
+	for _, entry := range entries {
+		requireCommitted(t, testCtx, entry.OperationID) // Assert before cleanup can close a gap.
+	}
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		archived, err := testStore.GetOrganization(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		require.NotNil(t, archived.ArchivedAt)
+		installation, _, err := testStore.GetInstallation(ctx, orgID, installationID)
+		if err != nil {
+			return err
+		}
+		require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_REVOKED, installation.Status)
+		var grants, members int
+		var revoked bool
+		if err := storetx.Tx(ctx).QueryRow(ctx, `
+			SELECT (SELECT count(*) FROM scope_grants WHERE id = $1),
+			       (SELECT count(*) FROM organization_members WHERE org_id = $2),
+			       (SELECT revoked_at IS NOT NULL FROM principals WHERE id = $3)`, grantID, orgID, agentID).Scan(&grants, &members, &revoked); err != nil {
+			return err
+		}
+		require.Zero(t, grants)
+		require.Zero(t, members)
+		require.True(t, revoked)
 		return nil
 	}))
 }

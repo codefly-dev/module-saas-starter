@@ -51,18 +51,47 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 	return WorkContextSingleton().VerifyModuleWorkContext(values[0])
 }
 
-// MintModuleWorkContext issues that Work Context. Like MintModuleRegistration it
-// takes none itself — this is where a module obtains its identity, so it
-// authenticates with the identity secret its composition provisioned and the
-// principal it acts as is derived from the prefix that secret is bound to.
+// moduleIdentityError maps a failure to prove a module's identity onto the
+// mint's answer, or returns nil for any other error.
+//
+// Two answers and never a third. A VERDICT — the token was reviewed and refused,
+// it is another workload's, the pod runs an unapproved build, the prefix names
+// no declared principal — is `denied` with a fixed message, so a caller probing
+// the mint cannot tell which check it failed; the cause is logged by the
+// business layer. The host NOT KNOWING — the API server unreachable, no
+// execution reviewer wired, a container not yet reporting an image — is
+// Unavailable: nothing was decided, and a retry may succeed.
+func moduleIdentityError(err error, denied codes.Code, message string) error {
+	switch {
+	case errors.Is(err, business.ErrExecutionUnbound):
+		return status.Error(codes.Unavailable,
+			"the host could not establish what the caller is running, so nothing was minted")
+	case errors.Is(err, business.ErrModuleIdentityDenied):
+		return status.Error(denied, message)
+	}
+	return nil
+}
+
+// MintModuleWorkContext issues that Work Context. It takes none itself — this
+// is where a module obtains its identity — so it authenticates with the pod's
+// projected ServiceAccount token: accounts reviews it, reads the pod it names
+// and holds the image that pod is running against the build the principal's
+// authority document approves. The principal is derived from the prefix, which
+// the token must back.
 func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, req *gen.ModuleMintWorkContextRequest) (*gen.ModuleMintWorkContextResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.ModuleAuthorizeWorkContext(req.GetPrefix(), req.GetSecret())
+	authority, err := service.ModuleAuthorizeWorkContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetOrganizationId())
 	if err != nil {
-		if errors.Is(err, business.ErrModuleRegistrationDenied) {
-			return nil, status.Error(codes.PermissionDenied, "module work context denied")
+		if mapped := moduleIdentityError(err, codes.PermissionDenied, "module work context denied"); mapped != nil {
+			return nil, mapped
 		}
 		return nil, err
 	}
@@ -80,7 +109,7 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	}
 	// The signer lives on the Work Context authority, which owns this cluster's
 	// signing key; this RPC lives here so the gateway can broker it from the same
-	// minimal-import proto as the registration exchange.
+	// minimal-import proto as the other module mints.
 	token, signed, err := WorkContextSingleton().StartModuleTask(authority)
 	if err != nil {
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
@@ -91,6 +120,9 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	// The record is written only once the capability exists, and the capability is
 	// withheld when the record cannot be committed.
 	if err := service.RecordModuleWorkContextMint(ctx, req.GetPrefix(), authority); err != nil {
+		return nil, err
+	}
+	if err := service.FenceModuleMint(ctx, authority); err != nil {
 		return nil, err
 	}
 	return &gen.ModuleMintWorkContextResponse{
@@ -109,19 +141,27 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 // binding yields; the caller supplies neither.
 //
 // Codes: Unauthenticated when the module's identity is not proven (unknown
-// prefix, wrong secret, no identity digests); PermissionDenied when the proven
-// module names a binding it may not mint headless; FailedPrecondition when the
-// declared tenant is missing or the issuer is unconfigured.
+// prefix, a token refused or for another workload, an unapproved build);
+// Unavailable when the host could not establish the caller's execution;
+// PermissionDenied when the proven module names a binding it may not mint
+// headless; FailedPrecondition when the declared tenant is missing or the
+// issuer is unconfigured.
 func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Context, req *gen.ModuleMintOperationContextRequest) (*gen.ModuleMintOperationContextResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.ModuleAuthorizeOperationContext(req.GetPrefix(), req.GetSecret(), req.GetBinding())
+	authority, err := service.ModuleAuthorizeOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetBinding(), req.GetOrganizationId())
 	if err != nil {
-		switch {
-		case errors.Is(err, business.ErrModuleRegistrationDenied):
-			return nil, status.Error(codes.Unauthenticated, "module operation context denied")
-		case errors.Is(err, business.ErrModuleOperationContextRefused):
+		if mapped := moduleIdentityError(err, codes.Unauthenticated, "module operation context denied"); mapped != nil {
+			return nil, mapped
+		}
+		if errors.Is(err, business.ErrModuleOperationContextRefused) {
 			return nil, status.Error(codes.PermissionDenied, "operation binding is not mintable without a person present")
 		}
 		return nil, err
@@ -145,6 +185,9 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 	if err := service.RecordModuleOperationContextMint(ctx, req.GetPrefix(), authority); err != nil {
 		return nil, err
 	}
+	if err := service.FenceModuleMint(ctx, authority.ModuleWorkContextAuthority); err != nil {
+		return nil, err
+	}
 	return &gen.ModuleMintOperationContextResponse{
 		Token:       token.Encoded(),
 		ExpiresAt:   timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
@@ -155,52 +198,13 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 	}, nil
 }
 
-// MintModuleRegistration issues the credential a composed module presents to the
-// gateway to federate its REST prefix. Unlike every other method here it takes
-// no Work Context: a module registers at startup, before any user request
-// exists, so the caller is authorized by its own registration secret rather than
-// by a forwarded principal. The internal-credential gate on this listener still
-// applies.
-func (s *ModuleCapabilitiesServer) MintModuleRegistration(ctx context.Context, req *gen.ModuleMintRegistrationRequest) (*gen.ModuleMintRegistrationResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	token, expiresAt, err := service.ModuleMintRegistration(ctx, req.GetPrefix(), req.GetSecret())
-	if err != nil {
-		if errors.Is(err, business.ErrModuleRegistrationDenied) {
-			return nil, status.Error(codes.PermissionDenied, "module registration denied")
-		}
-		return nil, err
-	}
-	return &gen.ModuleMintRegistrationResponse{
-		Token:     token,
-		ExpiresAt: timestamppb.New(expiresAt),
-	}, nil
-}
-
-// MintSolutionRegistration issues the credential a solution presents to the
-// gateway and to the frontend to register, update, or delete its upstream and
-// its Module-Federation remote. Like MintModuleRegistration it takes no Work
-// Context and authorizes on the solution's own registration secret, declared
-// separately from the module secrets.
-func (s *ModuleCapabilitiesServer) MintSolutionRegistration(ctx context.Context, req *gen.SolutionMintRegistrationRequest) (*gen.SolutionMintRegistrationResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	token, expiresAt, err := service.SolutionMintRegistration(ctx, req.GetSolutionId(), req.GetSecret())
-	if err != nil {
-		if errors.Is(err, business.ErrSolutionRegistrationDenied) {
-			return nil, status.Error(codes.PermissionDenied, "solution registration denied")
-		}
-		return nil, err
-	}
-	return &gen.SolutionMintRegistrationResponse{
-		Token:     token,
-		ExpiresAt: timestamppb.New(expiresAt),
-	}, nil
-}
-
 func (s *ModuleCapabilitiesServer) EnqueueJob(ctx context.Context, req *gen.ModuleEnqueueJobRequest) (*gen.ModuleEnqueueJobResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -216,6 +220,12 @@ func (s *ModuleCapabilitiesServer) EnqueueJob(ctx context.Context, req *gen.Modu
 }
 
 func (s *ModuleCapabilitiesServer) ClaimJobs(ctx context.Context, req *gen.ModuleClaimJobsRequest) (*gen.ModuleClaimJobsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -236,6 +246,12 @@ func (s *ModuleCapabilitiesServer) ClaimJobs(ctx context.Context, req *gen.Modul
 }
 
 func (s *ModuleCapabilitiesServer) HeartbeatJob(ctx context.Context, req *gen.ModuleHeartbeatJobRequest) (*gen.ModuleHeartbeatJobResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -251,6 +267,12 @@ func (s *ModuleCapabilitiesServer) HeartbeatJob(ctx context.Context, req *gen.Mo
 }
 
 func (s *ModuleCapabilitiesServer) AckJob(ctx context.Context, req *gen.ModuleAckJobRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -265,6 +287,12 @@ func (s *ModuleCapabilitiesServer) AckJob(ctx context.Context, req *gen.ModuleAc
 }
 
 func (s *ModuleCapabilitiesServer) NackJob(ctx context.Context, req *gen.ModuleNackJobRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -281,6 +309,12 @@ func (s *ModuleCapabilitiesServer) NackJob(ctx context.Context, req *gen.ModuleN
 // NotifyOrgAdmins returns only whether any administrator received the
 // notification: the recipients stay the host's.
 func (s *ModuleCapabilitiesServer) NotifyOrgAdmins(ctx context.Context, req *gen.ModuleNotifyOrgAdminsRequest) (*gen.ModuleNotifyOrgAdminsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -304,6 +338,12 @@ func (s *ModuleCapabilitiesServer) NotifyOrgAdmins(ctx context.Context, req *gen
 }
 
 func (s *ModuleCapabilitiesServer) NotifyUser(ctx context.Context, req *gen.ModuleNotifyUserRequest) (*gen.ModuleNotifyUserResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -328,6 +368,12 @@ func (s *ModuleCapabilitiesServer) NotifyUser(ctx context.Context, req *gen.Modu
 }
 
 func (s *ModuleCapabilitiesServer) RequestApproval(ctx context.Context, req *gen.ModuleRequestApprovalRequest) (*gen.ModuleRequestApprovalResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -358,6 +404,12 @@ func (s *ModuleCapabilitiesServer) RequestApproval(ctx context.Context, req *gen
 }
 
 func (s *ModuleCapabilitiesServer) GetApproval(ctx context.Context, req *gen.ModuleGetApprovalRequest) (*gen.ModuleApproval, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -373,6 +425,12 @@ func (s *ModuleCapabilitiesServer) GetApproval(ctx context.Context, req *gen.Mod
 }
 
 func (s *ModuleCapabilitiesServer) CancelApproval(ctx context.Context, req *gen.ModuleCancelApprovalRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -436,6 +494,12 @@ func moduleAuditDeclarations(types []*gen.ModuleAuditEventTypeDeclaration) []bus
 }
 
 func (s *ModuleCapabilitiesServer) DeclareAuditEventTypes(ctx context.Context, req *gen.ModuleDeclareAuditEventTypesRequest) (*gen.ModuleDeclareAuditEventTypesResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -455,6 +519,12 @@ func (s *ModuleCapabilitiesServer) DeclareAuditEventTypes(ctx context.Context, r
 }
 
 func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -470,6 +540,12 @@ func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.
 }
 
 func (s *ModuleCapabilitiesServer) ListSubjectVisibility(ctx context.Context, req *gen.ModuleListSubjectVisibilityRequest) (*gen.ModuleListSubjectVisibilityResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -496,7 +572,12 @@ func (s *ModuleCapabilitiesServer) ListSubjectVisibility(ctx context.Context, re
 // buffered whole in the business layer (it is already capped there), so this
 // handler's only job is to slice it into bounded wire frames.
 func (s *ModuleCapabilitiesServer) FetchDatasourceBlob(req *gen.FetchDatasourceBlobRequest, stream grpc.ServerStreamingServer[gen.FetchDatasourceBlobChunk]) error {
-	return streamDatasourceBlob(stream.Context(), req, stream)
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(stream.Context())
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+	return streamDatasourceBlob(ctx, req, stream)
 }
 
 // datasourceBlobChunkBytes bounds each streamed frame. It sits well under the
@@ -515,6 +596,12 @@ type datasourceBlobSender interface {
 // receiver can size its buffer and label the content from the first frame; an
 // empty blob still yields exactly one frame so that metadata always arrives.
 func streamDatasourceBlob(ctx context.Context, req *gen.FetchDatasourceBlobRequest, stream datasourceBlobSender) error {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return err
 	}
@@ -560,7 +647,12 @@ func writeDatasourceBlobFrames(content []byte, contentType string, stream dataso
 // bounded data frames. The business layer reads the batch from the source's
 // repository mirror in request order, so nothing is buffered beyond one frame.
 func (s *ModuleCapabilitiesServer) FetchDatasourceFiles(req *gen.FetchDatasourceFilesRequest, stream grpc.ServerStreamingServer[gen.FetchDatasourceFilesFrame]) error {
-	return streamDatasourceFiles(stream.Context(), req, stream)
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(stream.Context())
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+	return streamDatasourceFiles(ctx, req, stream)
 }
 
 // datasourceFilesSender is the send half both the gRPC and Connect server
@@ -570,6 +662,12 @@ type datasourceFilesSender interface {
 }
 
 func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesRequest, stream datasourceFilesSender) error {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return err
 	}
@@ -622,6 +720,12 @@ func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesReq
 }
 
 func (s *ModuleCapabilitiesServer) PlaceRecord(ctx context.Context, req *gen.ModulePlaceRecordRequest) (*gen.ModulePlaceRecordResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -637,6 +741,12 @@ func (s *ModuleCapabilitiesServer) PlaceRecord(ctx context.Context, req *gen.Mod
 }
 
 func (s *ModuleCapabilitiesServer) PublishEvent(ctx context.Context, req *gen.ModulePublishEventRequest) (*gen.ModulePublishEventResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -652,6 +762,12 @@ func (s *ModuleCapabilitiesServer) PublishEvent(ctx context.Context, req *gen.Mo
 }
 
 func (s *ModuleCapabilitiesServer) Subscribe(ctx context.Context, req *gen.ModuleSubscribeRequest) (*gen.ModuleSubscribeResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -667,6 +783,12 @@ func (s *ModuleCapabilitiesServer) Subscribe(ctx context.Context, req *gen.Modul
 }
 
 func (s *ModuleCapabilitiesServer) Unsubscribe(ctx context.Context, req *gen.ModuleUnsubscribeRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -681,6 +803,12 @@ func (s *ModuleCapabilitiesServer) Unsubscribe(ctx context.Context, req *gen.Mod
 }
 
 func (s *ModuleCapabilitiesServer) ListSubscriptions(ctx context.Context, req *gen.ModuleListSubscriptionsRequest) (*gen.ModuleListSubscriptionsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -700,6 +828,12 @@ func (s *ModuleCapabilitiesServer) ListSubscriptions(ctx context.Context, req *g
 }
 
 func (s *ModuleCapabilitiesServer) ReplayEvents(ctx context.Context, req *gen.ModuleReplayEventsRequest) (*gen.ModuleReplayEventsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}

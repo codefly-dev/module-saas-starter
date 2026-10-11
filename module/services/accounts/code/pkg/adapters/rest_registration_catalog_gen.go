@@ -139,6 +139,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/platform/feature-flags":           {},
 	"GET /v1/platform/jobs":                    {},
 	"GET /v1/platform/jobs/operations":         {},
+	"GET /v1/platform/module-envelope":         {},
 	"GET /v1/platform/sessions":                {},
 	"GET /v1/platform/users":                   {},
 	"GET /v1/platform/waitlist":                {},
@@ -207,6 +208,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/work-contexts:root-session":      {},
 	"POST /v1/work-contexts:task":              {},
 	"PUT /v1/consent/preferences":              {},
+	"PUT /v1/platform/module-envelope":         {},
 }
 
 type catalogRESTTemplateRoute struct {
@@ -260,6 +262,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+/teams$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+/teams/[^/]+:revoke$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:narrow$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:transferOwnership$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:uninstall$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/invitations/[^/]+:resend$")},

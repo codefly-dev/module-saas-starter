@@ -23,9 +23,7 @@ func TestModuleAuthorityProceduresExcludeHostOnlyMethods(t *testing.T) {
 		// relationship with. Same class as ConsumeUsage below.
 		"/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
 		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
 		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-		"/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
 		"/saas.accounts.v1.APIKeyService/ValidateAPIKey",
 		"/saas.accounts.v1.ClientRegistryService/ListRegisteredClients",
 		"/saas.accounts.v1.IdentityService/ResolveIdentity",
@@ -87,12 +85,12 @@ func TestModuleAuthorityValidationRefusesACallerUnboundProcedure(t *testing.T) {
 	}
 
 	// A Mint* method is on the capability surface, so the service-prefix rule
-	// alone would admit it; it authenticates with the module's identity secret
+	// alone would admit it; it authenticates with the module pod's projected token
 	// rather than a Work Context and the gateway brokers it.
 	moduleAuthorityProcedures = append(append([]string(nil), restore...),
 		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
 	err := ValidateModuleAuthorityProcedures()
-	if err == nil || !strings.Contains(err.Error(), "identity secret") {
+	if err == nil || !strings.Contains(err.Error(), "projected ServiceAccount token") {
 		t.Errorf("a Mint* capability method must be refused by name, got %v", err)
 	}
 }

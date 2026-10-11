@@ -557,7 +557,10 @@ func TestABindingHoldsForEveryLaterClusterCall(t *testing.T) {
 	host := infra.WithInitialRootsForTest(local.host(t), pemOf(local.authority, deployed.authority))
 	require.NoError(t, host.BindToAuthority(context.Background(), local.fingerprint))
 
-	_, err := host.ReviewToken(context.Background(), "a-delivery-job-token", "accounts")
+	// A projected token as a module mint presents it: ReviewToken is the
+	// execution reviewer BindExecution asks, and it reads the token's lifetime.
+	token := infra.ProjectedTokenForTest(10 * time.Minute)
+	_, err := host.ReviewToken(context.Background(), token, "accounts")
 	require.NoError(t, err, "the control: before the switch, the bound cluster answers")
 
 	// The switch: the address now reaches a backend under the deployed
@@ -565,9 +568,14 @@ func TestABindingHoldsForEveryLaterClusterCall(t *testing.T) {
 	// call dials — and handshakes — afresh.
 	local.serving.Store(servingCertificateUnder(t, deployed.authority, deployed.authorityKey))
 	local.server.CloseClientConnections()
-	_, err = host.ReviewToken(context.Background(), "a-delivery-job-token", "accounts")
+	_, err = host.ReviewToken(context.Background(), token, "accounts")
 	require.ErrorIs(t, err, infra.ErrKubernetesUnavailable,
 		"a backend under another authority must break authentication, not answer it")
+	// The pod read a module mint makes after the review runs on the same bound
+	// client (#1056): it breaks too, rather than reading a pod from elsewhere.
+	_, err = host.ReadPod(context.Background(), "acme-prod", "worker-7c9f")
+	require.ErrorIs(t, err, infra.ErrKubernetesUnavailable,
+		"a pod read under another authority must fail, not answer")
 }
 
 // ATTACK (review finding 2, redirects): the API server answers a TokenReview

@@ -1899,6 +1899,46 @@
         ]
       }
     },
+    "/v1/installations/{installationId}:narrow": {
+      "post": {
+        "summary": "Narrowing is witnessed in the policy log before commit, then atomically\nbumps the installation revision, cancels its org's work and records audit.",
+        "operationId": "InstallationService_NarrowInstallation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceNarrowInstallationBody"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
     "/v1/installations/{installationId}:transferOwnership": {
       "post": {
         "summary": "TransferInstallationOwnership reassigns the owner of record and replaces the\nco-owner succession set. This is how a \"connection owner left the org\"\nfailure is repaired: an admin transfers the installation to a current admin,\nrestoring its health.",
@@ -3729,6 +3769,60 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/PlatformAdminServiceReplayJobBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/module-envelope": {
+      "get": {
+        "summary": "GetModuleEnvelope reads the current module envelope: the authority ceiling\nevery module principal on this host is derived inside.",
+        "operationId": "PlatformAdminService_GetModuleEnvelope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      },
+      "put": {
+        "summary": "PutModuleEnvelope writes the next revision of the module envelope. It takes\neffect at the next check with no restart: the module registry is derived\nagain from it, so a narrowing removes what the new ceiling no longer allows.",
+        "operationId": "PlatformAdminService_PutModuleEnvelope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeRequest"
             }
           }
         ],
@@ -6197,6 +6291,19 @@
         }
       }
     },
+    "InstallationServiceNarrowInstallationBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Same JSON shape as InstallSolution.scope; {} removes all capability access."
+        }
+      },
+      "description": "An org administrator may only remove installed authority. The host reads\nthe current revision and serializes the narrowing with other lifecycle acts."
+    },
     "InstallationServiceRevokeInstallationFromTeamBody": {
       "type": "object",
       "properties": {
@@ -8250,6 +8357,15 @@
         }
       }
     },
+    "v1GetModuleEnvelopeResponse": {
+      "type": "object",
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope",
+          "description": "The current revision. Absent when no envelope has been written, which\ngrants no module anything."
+        }
+      }
+    },
     "v1GetOrgEntitlementsResponse": {
       "type": "object",
       "properties": {
@@ -8515,6 +8631,10 @@
         "targetId": {
           "type": "string",
           "description": "The solution target being installed, from ListAvailableSolutions. Required.\n\nAn installer chooses an identity, never an address. The target must be LIVE\nand ACCEPTED when the install lands: installing a withdrawn target would\nrecord consent to a presence that already ended, and installing a target\nwhose newest generation was refused would record consent to a release this\nhost never admitted."
+        },
+        "scope": {
+          "type": "string",
+          "description": "Installed consent as JSON: capabilities, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences and\nartifact_policies, with the same shapes as the module envelope grant.\nMust be a subset of the current ceiling. Omitted selects that ceiling;\nan explicit {} grants nothing. Tenant and identity are never scope fields."
         }
       }
     },
@@ -9678,6 +9798,29 @@
     "v1MarkAllNotificationsReadRequest": {
       "type": "object"
     },
+    "v1ModuleEnvelope": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string",
+          "format": "int64",
+          "description": "The revision, from 1. A delivered authority document names the revision\nit was rendered against and is inside this one only."
+        },
+        "document": {
+          "type": "string",
+          "description": "The whole ceiling at this revision, as JSON: `revision`,\n`approved_builds`, and `principals` keyed by module prefix, each with the\nwhole authority units this host admits (`bindings`: id, revision, scope,\nqueue, namespace, binding_key, lookup_method), the workloads it may run as\n(`workload_identities`: spiffe_id, container), its `scope_ceilings` and its\n`grant` ceiling (tenant, cross_tenant, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences,\nartifact_policies)."
+        },
+        "writtenBy": {
+          "type": "string",
+          "description": "The platform administrator who wrote this revision."
+        },
+        "writtenAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "ModuleEnvelope is one revision of the module envelope: the authority ceiling a\nplatform super_admin writes, which every module principal on this host is\nderived inside. Revisions are append-only; the current ceiling is the\nhighest."
+    },
     "v1Notification": {
       "type": "object",
       "properties": {
@@ -10255,6 +10398,28 @@
         "withdrawnAt": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "v1PutModuleEnvelopeRequest": {
+      "type": "object",
+      "properties": {
+        "expectedRevision": {
+          "type": "string",
+          "format": "int64",
+          "description": "The revision this write replaces: the one the caller read, 0 when none has\nbeen written. A write whose expected revision is not the current one is\nrefused with ABORTED, and nothing is written."
+        },
+        "document": {
+          "type": "string",
+          "description": "The whole ceiling, as JSON, carrying revision expected_revision + 1."
+        }
+      }
+    },
+    "v1PutModuleEnvelopeResponse": {
+      "type": "object",
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope"
         }
       }
     },

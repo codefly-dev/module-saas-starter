@@ -336,7 +336,7 @@ func TestANarrowingTheLogRefusesChangesNothing(t *testing.T) {
 
 	adminID, orgID := mustUserAndOrg(t, ctx, "plrefuse@example.com", "plrefuse", "Refuse Co")
 	roleID := seedInstallableRole(t, ctx, orgID)
-	targetID, _ := declarePresence(t, "plrefuse-solution")
+	targetID, alias := declarePresence(t, "plrefuse-solution")
 	installation, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
 		OrgID:           orgID,
 		AgentIdentifier: "acme.example/plrefuse:1.0.0",
@@ -365,7 +365,7 @@ func TestANarrowingTheLogRefusesChangesNothing(t *testing.T) {
 		"a refused append records no receipt, so there is no gap")
 
 	// The installation is untouched: the narrowing did not happen.
-	_, err = testStore.LiveModuleAuthority(ctx, business.ModulePrincipalID("plrefuse"), orgID, installation.Id)
+	_, err = testStore.LiveModuleAuthority(ctx, business.ModulePrincipalID(alias), orgID, installation.Id)
 	require.NoError(t, err, "a refused append must leave authority exactly as it was")
 }
 
