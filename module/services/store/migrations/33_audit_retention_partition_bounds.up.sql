@@ -1,4 +1,4 @@
--- Migration 32: audit retention drops a partition only when the range
+-- Migration 33: audit retention drops a partition only when the range
 -- PostgreSQL records for it ends by the cutoff, and decides which under lock.
 --
 -- audit_events_drop_partitions_before is how audit retention runs, on a

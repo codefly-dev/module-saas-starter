@@ -1,7 +1,7 @@
--- Reverts migration 32: audit_events_drop_partitions_before returns to choosing
+-- Reverts migration 33: audit_events_drop_partitions_before returns to choosing
 -- partitions by the month in their name, read in the calling session's time
 -- zone, and to dropping them with no decision under lock and no lock_timeout.
--- Retention then holds none of migration 32's rules: what it drops depends on
+-- Retention then holds none of migration 33's rules: what it drops depends on
 -- the zone of the session that runs it and of the one that created each
 -- partition, it accepts a cutoff that is not in the past, and a partition being
 -- detached, or detached while it ran, is dropped like any other.
