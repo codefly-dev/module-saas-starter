@@ -6,6 +6,7 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/authorization.proto";
 import "saas/policy/v1/options.proto";
 
 // ============================================================================
@@ -389,6 +390,177 @@ service InstallationService {
     // every downstream composer and not a side effect of adding a read.
     option (google.api.http) = {get: "/v1/installations:listAvailable"};
   }
+
+  // ListOrganizationInstallations is an organisation administrator's view of
+  // what that organisation has installed: each active installation with its live
+  // health, the catalogue row of the target it installed, the scope path of its
+  // authority root, and the teams a grant reaches there.
+  //
+  // It is the org-admin companion to the internal ListInstallations, and it is a
+  // separate method rather than a relaxed policy on that one: ListInstallations
+  // is read by the gateway for an organisation it projected from a verified
+  // identity, and a bare tenant credential must never reach it. This one binds
+  // the organisation to the caller's own admin membership, exactly as
+  // ListAvailableSolutions does, so no organisation's administrator can read
+  // another's. The one exception is inherited, not added here: a platform
+  // super administrator (not impersonating) passes the organisation-admin check
+  // for every organisation, as on every other organisation-admin method, and so
+  // may list any organisation's installations.
+  rpc ListOrganizationInstallations(ListOrganizationInstallationsRequest) returns (ListOrganizationInstallationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/installations"};
+  }
+
+  // GrantInstallationToTeam exposes an installation to a team: a scope grant of
+  // the given role to the team at the installation's authority-root node. The
+  // host resolves that node from the installation, so a caller never names a
+  // scope path. The role must permit using a solution, or the grant would expose
+  // nothing; the team must belong to the organisation. Using a solution is the
+  // minimum the role must permit, not a ceiling: the team holds everything the
+  // role permits beneath the installation's authority root, exactly as a
+  // GrantScope of that role at that node would give it. Emits scope.granted, the
+  // same event and audit record as any other scope grant, because it is one.
+  // Organisation-admin, with the same platform super administrator exception
+  // ListOrganizationInstallations describes.
+  rpc GrantInstallationToTeam(GrantInstallationToTeamRequest) returns (GrantInstallationToTeamResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.scope.granted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}/teams"
+      body: "*"
+    };
+  }
+
+  // RevokeInstallationFromTeam removes one team grant at an installation's
+  // authority-root node. It is a narrowing, so it runs under the policy log
+  // exactly as RevokeScope does: a host that cannot witness the narrowing refuses
+  // it, and says so, rather than revoking unwitnessed. It removes the one grant
+  // at the authority root that granted_teams reports; a team that also reaches
+  // the installation from a grant above keeps that reach. Organisation-admin,
+  // with the same platform super administrator exception.
+  rpc RevokeInstallationFromTeam(RevokeInstallationFromTeamRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.scope.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}/teams/{team_id}:revoke"
+      body: "*"
+    };
+  }
+}
+
+message ListOrganizationInstallationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Page bound. 0 -> server default; capped as ListInstallations is.
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 3;
+}
+
+// OrganizationInstallation is one active installation as its organisation's
+// administrator manages it.
+message OrganizationInstallation {
+  Installation installation = 1;
+  // Resolved live, exactly as ListInstallations resolves it.
+  InstallationHealth health = 2;
+  // The catalogue row of the installed target, from the same accepted applied
+  // state ListAvailableSolutions serves: its route alias, applied release and
+  // generations. Absent when this host no longer offers the target — the
+  // installation outlives the presence it was consented to, and an absent row
+  // says so rather than naming a release the host does not apply.
+  AvailableSolution target = 3;
+  // The scope path of the installation's authority-root node: where a grant
+  // that exposes it is written. Read from the node, never derived from its id.
+  string root_scope_path = 4;
+  // Teams an active grant reaches at this installation, in the two kinds the
+  // platform Catalogue keeps apart: granted at its authority root, and inherited
+  // from a grant above it. Only the first is exposure granted to this
+  // installation; RevokeInstallationFromTeam removes those.
+  repeated CollectionReadGrant granted_teams = 5;
+  repeated CollectionReadGrant inherited_teams = 6;
+}
+
+message ListOrganizationInstallationsResponse {
+  repeated OrganizationInstallation installations = 1;
+  // Set when more installations remain; pass it back as page_token.
+  string next_page_token = 2;
+}
+
+message GrantInstallationToTeamRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  string team_id = 3 [(buf.validate.field).string.uuid = true];
+  // The role the team holds at the installation's authority root. It must permit
+  // using a solution (or carry the wildcard); a role that does not would expose
+  // nothing, and is refused rather than written. Everything else the role
+  // permits is granted too, beneath that root.
+  string role_id = 4 [(buf.validate.field).string.uuid = true];
+}
+
+message GrantInstallationToTeamResponse {
+  ScopeGrant grant = 1;
+}
+
+message RevokeInstallationFromTeamRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  string team_id = 3 [(buf.validate.field).string.uuid = true];
+  // The role of the grant being removed, as granted_teams reports it. A team may
+  // hold more than one role at the same node, and each is its own grant.
+  string role_id = 4 [(buf.validate.field).string.uuid = true];
 }
 
 // AvailableSolution is one installable solution target: its immutable identity,
