@@ -25,13 +25,13 @@ same-origin path once more before navigating.
 A recipient who is not a member answers `FAILED_PRECONDITION` with the
 `google.rpc.ErrorInfo` reason `TENANT_MEMBERSHIP_MISSING`, separate from the way
 the calling module's own failures are refused. A failure of the caller's
-**authority** — an identity it cannot prove, a principal no composition
-registered, a tenant it is not bound to, a queue or namespace its grant does not
+**authority** — an identity it cannot prove, a principal the host does not
+admit, a tenant it is not bound to, a queue or namespace its grant does not
 cover — answers `UNAUTHENTICATED` or `PERMISSION_DENIED`; a malformed request
 answers `INVALID_ARGUMENT` whatever the caller's authority; and an operational
 condition of the host answers `FAILED_PRECONDITION` under its own reason. So a
 sender driving the call from a journal can drop the notice for a departed person
-without dropping it for a module whose principal or identity secret is wrong.
+without dropping it for a module the host does not admit as a principal.
 **Key on that reason, never on the code:** `NotifyUser` and `NotifyOrgAdmins`
 also answer `FAILED_PRECONDITION` with reason
 `NOTIFICATION_IDEMPOTENCY_CONFLICT` when an idempotency key was already used

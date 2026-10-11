@@ -922,8 +922,8 @@ func TestModuleSurfaceUnconfiguredAuthorityNamesItsOwnReason(t *testing.T) {
 
 // A module driving this surface from a journal with retries has to decide what a
 // refusal means. A recipient who is no longer a member is final for that
-// recipient and nothing a retry resolves; a composition missing its
-// MODULE_PRINCIPALS entry, or naming a tenant it was never bound to, is an
+// recipient and nothing a retry resolves; a composition this host does not
+// admit as a principal, or naming a tenant it was never bound to, is an
 // operator's to fix and its work is worth holding. So of the facts below only
 // the member one answers FailedPrecondition with a reason, and every refusal of
 // the caller's authority keeps PermissionDenied (or Unauthenticated) and names

@@ -358,7 +358,7 @@ until its first pass.
 
 Every refusal of the **caller's authority** on this surface is
 `Unauthenticated` or `PERMISSION_DENIED` and names no reason: an identity it
-cannot prove, a prefix no composition registered, a tenant it is not bound to, a
+cannot prove, a prefix this host does not admit, a tenant it is not bound to, a
 queue or namespace outside its grant, and a procedure the authority endpoint
 does not serve — the last enforced twice, by the mesh `AuthorizationPolicy` and
 again in-process by the interceptor (`grpc_auth_interceptor.go`, "RPC is not
@@ -371,8 +371,9 @@ to act on who is not a member of the named tenant is `FAILED_PRECONDITION`. That
 
 The split is what lets a module drive the surface from a journal with retries. A
 departed person is final for that person and nothing a retry resolves, while a
-composition missing its `MODULE_PRINCIPALS` entry or holding a rotated identity
-secret is an operator's to fix and its work is worth holding; conflated under
+composition this host does not admit as a module principal, or whose workload
+it cannot bind to an approved build, is an operator's to fix and its work is
+worth holding; conflated under
 one code a consumer has to choose which of the two it silently gets wrong.
 
 **The code alone is not the discriminator — the reason is.** This surface

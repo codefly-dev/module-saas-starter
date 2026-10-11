@@ -31,16 +31,16 @@ import "saas/policy/v1/options.proto";
 // tenants and enqueue global inbox work.
 //
 // REFUSALS. Every refusal of the CALLER'S AUTHORITY is Unauthenticated or
-// PermissionDenied — an identity it cannot prove, a principal no composition
-// registered, a tenant it is not bound to, a queue or namespace its grant does
+// PermissionDenied — an identity it cannot prove, a principal this host does
+// not admit, a tenant it is not bound to, a queue or namespace its grant does
 // not cover — and so is the endpoint refusing a procedure it does not serve. A
 // malformed request is InvalidArgument instead, whatever the caller's authority
 // (an unknown notification category or type, a destination that is not a
 // same-origin path). A person this surface is asked to act on who is not a
 // member of the named tenant is FAILED_PRECONDITION, so a module driving this
 // surface from a journal with retries can drop the work for a departed person
-// without also dropping it for a composition whose MODULE_PRINCIPALS entry or
-// identity secret is wrong.
+// without also dropping it for a composition this host does not admit as a
+// module principal, or whose workload it cannot bind to an approved build.
 //
 // FAILED_PRECONDITION ALONE IS NOT A DISCRIMINATOR. This surface answers it to
 // several unrelated facts, and only one of them is final — so a consumer keys

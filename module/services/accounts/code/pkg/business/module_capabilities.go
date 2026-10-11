@@ -562,8 +562,8 @@ func moduleRefusal(code codes.Code, reason, message string) error {
 // under a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
 // consumer driving this surface from a journal can tell a departed person —
 // final for that person, and nothing the module may retry its way out of —
-// from a composition whose MODULE_PRINCIPALS entry or identity secret is wrong,
-// which is an operator's to fix and whose work is worth holding. The audit
+// from a composition this host does not admit as a module principal, which is
+// an operator's to fix and whose work is worth holding. The audit
 // surface's own member check already answers this way
 // (resolveModuleAuditActor).
 func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string) error {
