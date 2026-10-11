@@ -1903,6 +1903,25 @@ func configuredSolutionHostBindingReconciler(
 	if err != nil {
 		return nil, fmt.Errorf("the declared-presence surface has no input: a delivered carrier is authorised by TokenReview, and this host cannot reach its api server: %w", err)
 	}
+	// A LOCAL PROFILE IS PROVEN AGAINST THIS CLUSTER BEFORE ANYTHING IS
+	// ADMITTED, and a host that cannot prove it does not start (issue #1063).
+	//
+	// A verification policy that declares itself local admits a developer's
+	// own identity, and it is bound to ONE cluster by that cluster's
+	// certificate authority. The proof is that the API server this host
+	// reviews tokens with completes a TLS handshake under that authority alone
+	// — the one fact about its deployment the host can establish without
+	// trusting the composition, which delivers this process's environment and
+	// writes neither the trust anchor nor the projected CA. A deployed host
+	// handed a local profile fails here, by name, rather than admitting a
+	// person. A deployed policy is bound to no cluster and this does nothing.
+	//
+	// Not left to this call alone: until it succeeds the verifier itself
+	// refuses every carrier under a local policy, so a boot path that forgot to
+	// ask would refuse developers, never admit them somewhere else.
+	if err := verifier.ProveLocalCluster(context.Background(), kubernetes); err != nil {
+		return nil, err
+	}
 	service.SetSolutionDelivery(verifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by

@@ -58,6 +58,10 @@ type KubernetesClient struct {
 	// working some hours later — which presents as the API server refusing the
 	// host's own identity, the single most confusing failure available here.
 	tokenPath string
+	// authority is the cluster CA bundle the kubelet projected, as read at
+	// construction: the roots this client trusts, and what a local verification
+	// policy's cluster binding is proven against (ServesUnderAuthority).
+	authority []byte
 }
 
 // NewKubernetesClient builds the client from the in-cluster environment.
@@ -89,6 +93,7 @@ func NewKubernetesClient() (*KubernetesClient, error) {
 	return &KubernetesClient{
 		endpoint:  "https://" + host + ":" + port,
 		tokenPath: inClusterTokenPath,
+		authority: authority,
 		http: &http.Client{
 			// A bounded timeout, because every caller of this is on a request
 			// path that must fail rather than hang. The delivered namespaces are

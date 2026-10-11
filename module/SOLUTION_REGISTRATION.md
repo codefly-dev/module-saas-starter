@@ -494,7 +494,7 @@ The host side of that:
 
 | Policy | What it checks | Where it is usable |
 | --- | --- | --- |
-| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer. **Never a key.** | everywhere, including a laptop. **The trust root is not yet pushed to the config plane, so it refuses at boot**, see below. |
+| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer for a workflow; exact issuer and address for a person, in a local profile only (§8). The Fulcio chain, the Rekor entry and its signed entry timestamp, an observer timestamp, and an embedded SCT from a CT log the root names are all required, for every signer. **Never a key.** | everywhere, including a laptop. **The trust root is not yet pushed to the config plane, so it refuses at boot**, see below. |
 
 There is no second row. `local` was deleted — §8 argues why at length — and this
 table listed it until the code had already stopped accepting it. A configuration
@@ -837,12 +837,125 @@ allowlist names the reviewed-change workflow identity and nothing else, so a
 locally signed document is refused there by the **ordinary** check that refuses any
 unlisted identity — not by a mode flag, not by a coordinate comparison, and not by
 a code path that exists only to be disabled. There is no `local` trust policy
-because there is no local trust *mechanism*: one verifier, one policy shape, two
-sets of listed identities.
+because there is no local trust *mechanism*: one verifier, one verification
+strength, two sets of listed identities.
 
-A deployed host that somehow listed a developer identity would be misconfigured in
-exactly the way an allowlist is designed to make visible — it is a reviewable line
-in the policy, which is the property the signing decision was taken for.
+A person is not a workflow, though, and the workload rule cannot list one: a
+signer must name a source repository or a build config, because a workflow
+identity alone matches that workflow in every repository that runs it — and a
+person's certificate carries neither. So a person is its own signer **kind**, and
+it is admitted only by a verification policy that **declares itself local** and is
+**bound to one cluster** (issue #1063). A deployed host refuses it twice over: a
+policy with no `local` block that lists a person fails validation at boot, and a
+`local` policy on any host but the cluster it is bound to fails the cluster proof
+at boot. The next section is the profile, and why the binding is the one it is.
+
+### The local profile's trust anchor
+
+A local host reads the same two documents from the same fixed anchor,
+`infra.SolutionHostTrustAnchorPath`, mounted into its pod the way a deployed host's
+is. The composition writes neither: they are the host's local profile, provided
+with the cluster (codefly-dev/cli#954, "Local runs", lists what it must contain).
+
+**`trusted_root.json` — the Sigstore public-good trusted root**, unchanged. A
+developer signs through the public-good Fulcio and Rekor exactly as the release
+workflow does, and the CLI checks every carrier against this root before it is
+written, so the local root and the deployed root are the same file. It must carry
+the CT log keys: an SCT is required from every signer.
+
+**`verification_policy.json` — the local profile.** One `person` signer per
+developer the environment's `host.developers` lists, and a `local` block naming
+the cluster:
+
+```json
+{
+  "local": {
+    "clusterCertificateAuthoritySha256": "<lowercase hex SHA-256 of the cluster CA certificate's DER>"
+  },
+  "signers": [
+    {
+      "name": "developer",
+      "kind": "person",
+      "issuer": "https://github.com/login/oauth",
+      "subjectAlternativeName": "developer@example.com",
+      "domains": ["<host.domain>"]
+    }
+  ]
+}
+```
+
+- **A person is exactly an issuer and an address.** The issuer is the provider
+  the certificate names (an absolute https URL); the subject alternative name is
+  the verified e-mail address. Both are matched exactly. A `*`, surrounding
+  space, a URI subject, or any repository, build-config or ref field is refused
+  at boot — each would read as narrow and admit more, and a URI subject would
+  admit a workflow with none of the repository narrowing a workload requires.
+  The same person listed twice is refused, because which entry's domains apply
+  would depend on the order of the document.
+- **`domains` is the signer → ownership-domain map**, unchanged for a person: the
+  developer speaks for the domains its entry lists, each of which
+  `SOLUTION_HOST_OWNERSHIP_DOMAINS` must accept or the boot is refused by name.
+- **Verification is the full Sigstore check against the trusted root** — the
+  Fulcio chain, the Rekor entry and its signed entry timestamp, an observer
+  timestamp, the embedded SCT — through the same verifier at the same strength a
+  release is checked at. Admitting a person changes who is listed, never how much
+  is checked.
+
+**The `local` block binds the profile to one cluster**, by the SHA-256 of the
+certificate authority the cluster's API server serves under — the certificate
+Kubernetes projects into every pod as the service account's `ca.crt`. For a k3d
+cluster:
+
+```bash
+kubectl --context <cluster.context> -n default get configmap kube-root-ca.crt \
+  -o jsonpath='{.data.ca\.crt}' | openssl x509 -outform der | shasum -a 256
+```
+
+At boot, before a carrier is read, the host proves it runs in that cluster: the
+projected CA bundle must hold a certificate with that fingerprint, **and** the API
+server the host reviews tokens with must complete a TLS handshake whose only root
+is that certificate. Until the proof succeeds a local profile admits nothing,
+so a boot path that skipped it would refuse developers rather than admit them
+elsewhere. A host that cannot prove it — a deployed host handed a local profile,
+or a local host whose cluster was recreated — refuses to start, naming the
+fingerprints its cluster does project.
+
+**Why the cluster's authority, and not anything simpler.** The decisive question
+is how a host that is not the developer's refuses a local profile **without
+trusting anything the composition controls** — and the composition delivers this
+process's workspace environment, which is why the anchor's path is a constant.
+
+- *A setting, a coordinate prefix, any environment value* — refused. The
+  composition could declare itself local; the deleted `local` trust policy died of
+  exactly this, its gate a string an operator declared.
+- *The trusted root* — cannot tell them apart: it is the same public-good root.
+- *A cluster's self-description* — a `+k3s` server version, a node's provider
+  ID — is a convention, not a property. A deployed cell may run k3s.
+- *The `kube-system` namespace UID* — unforgeable through an authenticated API
+  server, but it needs a cluster-scoped read this host does not otherwise hold, to
+  learn what the handshake establishes with no grant at all.
+- ***The certificate authority the API server proves it serves under*** — chosen.
+  It is the one fact about its own deployment the host can establish without the
+  composition: the kubelet projects the CA, and the handshake is made against the
+  pinned certificate **alone**. A CA bundle carrying the developer's authority
+  beside the deployed cluster's own does not pass — the deployed API server's
+  chain ends at its own authority — and neither does a redirected
+  `KUBERNETES_SERVICE_HOST`, which would need the private key of the developer's
+  cluster.
+
+**The cost:** a local profile is valid in exactly one cluster. Recreating the
+cluster mints a new authority and the profile must be rewritten — one copy of the
+fingerprint the boot refusal prints.
+
+**The residual risk, precisely:** the binding is to *one cluster*, not to the
+word "local". Nothing a host can observe distinguishes a developer's cluster from
+a production one by kind, so whoever writes a deployed host's trust anchor could
+deliberately pin *that* cluster's authority and admit a person there. That grants
+nothing new — the anchor's writer can already list any workflow identity — and it
+cannot happen by accident: a local profile copied to another cluster names the
+wrong authority and refuses the boot. The composition can do neither: it writes
+neither the anchor nor the projected CA, and cannot make a server hold a key the
+pinned authority certified.
 
 ### What a local run must therefore supply
 
@@ -854,9 +967,11 @@ build and is fine because the generation moves with it; workloads running as Pod
 with projected service-account tokens for audience `accounts`; and the documents
 signed with the developer's keyless identity and POSTed to the same
 `/platform/_delivery/*` endpoints. The local host is configured with its local
-coordinate and an allowlist containing that developer identity.
+coordinate and the local profile above: the public-good root, and a policy bound
+to its cluster that lists that developer as a person.
 
-Nothing on the host is conditional on any of it. That is the point.
+Nothing on the host is conditional on any of it but the policy document on its
+trust anchor, which the composition does not write. That is the point.
 
 ### The three fields a local run looks unable to fill, and why it can
 

@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"encoding/pem"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 )
 
@@ -193,38 +193,6 @@ func VerifySignedEntity(
 	return verifier.(*keylessBundleVerifier).verifySignedEntity(entity, payload)
 }
 
-// NewKeylessVerifierWithoutPolicyValidation builds the keyless verifier over
-// trust material and a policy WITHOUT running the policy's boot validation.
-//
-// It exists for one reason, and the reason is a limitation worth stating rather
-// than hiding. Production policy hygiene requires every signer to name a source
-// repository or a build config, because a workflow identity alone matches that
-// same workflow path in every fork of a repository. The in-process Sigstore used
-// in tests mints leaf certificates carrying ONLY the OIDC issuer extension — it
-// has no way to emit `SourceRepositoryURI` — so no certificate it can produce
-// satisfies a policy that production would accept.
-//
-// So the accept path is exercised with a policy shape production REFUSES, and
-// the refusal of that shape is asserted separately by the Validate tests. What
-// is genuinely not covered end to end is the extension matching itself: that
-// `SourceRepositoryURI` and `SourceRepositoryRef` are compared at all is
-// delegated to sigstore-go and exercised only by its own suite.
-func NewKeylessVerifierWithoutPolicyValidation(
-	trustedMaterial trustedMaterialForTest, policy *SolutionHostVerificationPolicy,
-) (any, error) {
-	verifier, err := verify.NewVerifier(trustedMaterial,
-		verify.WithTransparencyLog(1),
-		verify.WithObserverTimestamps(1),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &keylessBundleVerifier{verifier: verifier, policy: policy}, nil
-}
-
-// trustedMaterialForTest is root.TrustedMaterial under a local name.
-type trustedMaterialForTest = root.TrustedMaterial
-
 // KeylessSignerDomains reads the signer-to-domain mapping off a verifier built
 // by either constructor, so a test can assert the mapping travels with the
 // policy it came from.
@@ -257,7 +225,16 @@ func NewKubernetesClientForTestWithToken(t testingT, server *httptest.Server, to
 		endpoint:  server.URL,
 		tokenPath: tokenPath,
 		http:      server.Client(),
+		authority: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}),
 	}
+}
+
+// WithProjectedAuthorityForTest replaces the CA bundle a test client believes
+// the kubelet projected, so a test can hand it a bundle naming a cluster other
+// than the one serving — or both.
+func WithProjectedAuthorityForTest(client *KubernetesClient, bundle []byte) *KubernetesClient {
+	client.authority = bundle
+	return client
 }
 
 // testingT is the sliver of *testing.T these helpers need, so export_test.go
