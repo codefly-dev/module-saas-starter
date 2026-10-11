@@ -392,8 +392,8 @@ func (s *approvedBuildScenario) authority(
 		Host:             solutionhost.HostTarget{Coordinate: productionPathCoordinate, Component: "saas-host"},
 		OwnershipDomain:  productionPathDomain,
 		EnvelopeRevision: solutionhost.FixtureEnvelopeRevision,
-		// The subject module's own declarations are written out, [] when it
-		// declares none (core#735): an omitted list is refused as a dropped one.
+		// This subject owns no queues, audit namespaces or scope vocabulary.
+		// Core requires explicit declarations, including on tombstones.
 		Queues:        []string{},
 		Namespaces:    []string{},
 		ScopeCeilings: []solutionhost.ScopeCeiling{},

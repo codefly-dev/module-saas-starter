@@ -73,7 +73,7 @@ func signAsWorkflow(t *testing.T, sigstore *sigstoreWithCT, identity, issuer str
 // "this is signed" does not say "by someone entitled to this name".
 func TestKeylessVerifierAcceptsAnAllowlistedSigner(t *testing.T) {
 	sigstore := newSigstoreWithCT(t)
-	payload := []byte(`{"schema":"codefly/solution-host-binding/v2"}`)
+	payload := []byte(`{"schema":"codefly/solution-host-binding/v1"}`)
 	entity := signAsWorkflow(t, sigstore, testIdentity, testIssuer, payload)
 
 	verifier := keylessVerifierFor(t, sigstore)

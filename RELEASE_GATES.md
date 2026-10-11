@@ -219,6 +219,13 @@ input. Regenerated recipes accompanying that input must match the pinned agent's
 effective build recipe byte-for-byte; an unselected, missing, ambiguous or
 different recipe fails the build-evidence gate. Deleting obsolete generated
 copies is allowed. Image proposals belong in the image contract alongside topology adoption.
+To reproduce this check locally, set `CODEFLY_BASE` to the pull request event's
+base SHA when running `node scripts/ci/build-images.mjs check`. Without it,
+the command checks coverage only; it does not inspect recipe proposals. The
+same variable enables proposed-recipe comparisons in `build-images.mjs evidence`.
+A successful image build and matching materials alone do not establish that a
+generated-file change belongs in the PR. Reproduce recipes using the CI-pinned
+CLI and the released agents selected by the service manifests.
 Every topology service must declare image coverage, even if its recipe is absent
 from the checkout. Redis and Vault explicitly use the existing Codefly vendor
 image audit; an unknown agent is an error.
@@ -436,7 +443,7 @@ reverse, fails the `release-contract` job.
 | `docs-sync` | the generated interface docs and the story-trace tests (#516) | `node module/tools/interface-docs-gate.mjs check`, `node module/tools/story-trace-gate.mjs tests` |
 | `kit-version` | the published frontend kit's version moves whenever its content does, since a registry version is immutable once served | `node --test scripts/ci/kit-version.test.mjs`, `node scripts/ci/kit-version.mjs check` |
 | `marketing` | the marketing runtime builds in isolation from the app, and the public config is current | `node module/tools/generate-public-config.mjs --check`, `node module/tools/marketing-extraction.mjs` |
-| `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, the exported API contract, and the published module-authority client against the real host | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check`, `go test ./...` in `qualification/module-authority` |
+| `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, the exported API contract, and the published module-authority client against the real host | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check`, `codefly generate runnables saas-starter --check`, `go test ./...` in `qualification/module-authority` |
 | `module-package` | the package contract, protobuf compatibility, generator determinism, published conformance suites, and byte-identical archive builds | `go test ./...` **in `module/tools` only**, `go run ./cmd/module-package …`, `buf breaking`, `npm run test:published-plugin-contract` |
 | `scoped-pools` | the authority of the pools the store's logins reach: the scoped reader, the scoped writer and the request pool, judged against a native PostgreSQL the suite provisions and widens one grant at a time | `python3 scripts/qualify-scoped-pools.py --postgres-bin "$(pg_config --bindir)"`, which runs `go test -race ./qualification/scopedpools` and fails unless every declared test in that package ran and passed |
 

@@ -13,25 +13,23 @@ The installation contract also declares `POST
 accepts `org_id`, `installation_id` and JSON `scope`, logs the narrowing before
 commit, increments revision and cancels only that installation's organisation's
 work. `POST /v1/installations` accepts optional JSON `scope` bounded by the
-module ceiling. These additions require the coordinator's complete regeneration;
-the checked-in generated counts below describe the preceding projection.
+module ceiling. The complete regeneration includes these additions and the callable-source routes below.
 
 ## Current surface
 
-The accounts projection contains 165 descriptor routes across 29 services
-(counted from `generated/rest-surface.json` when the organization-installation
-routes of issue #1061 landed; recount from that file, which is the source):
+The accounts projection contains 172 descriptor routes across 30 services,
+counted from `generated/rest-surface.json`:
 
-- 18 public routes and 147 authenticated routes;
-- 140 OpenAPI paths and 165 operations;
-- zero of the 54 internal RPCs;
+- 18 public routes and 154 authenticated routes;
+- 145 OpenAPI paths and 172 operations;
+- zero internal RPCs;
 - fifteen explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing and Resend email webhooks, the two GitHub
   delivery receivers, the public status surface, the subscriptions stream,
   checkout, free-plan, portal, and the four OAuth 2 authorization-server routes
   (metadata, authorize validation, authorize grant, token).
 
-The generated runtime therefore authorizes 180 REST routes in total. Descriptor
+The generated runtime therefore authorizes 187 REST routes in total. Descriptor
 routes and extensions remain separate so an extension can never be mistaken
 for a protobuf procedure or inherit policy by path similarity.
 
@@ -42,6 +40,22 @@ without that assertion changing. The totals on this page are derived from it by
 hand and nothing reads them — which is why the extension count sat at "seven"
 from the day `/v1/subscriptions/stream` landed until it was corrected here. Read
 the pinned set, not this paragraph, when the answer has to be right.
+
+The source-declaration routes share
+`/v1/organizations/{org_id}/datasources/{source_id}/operations`: POST replaces the
+set as an organization administrator, and GET lists it under the viewer's current
+source-boundary read permission. Both require membership and enforce personal
+source ownership. They are descriptor routes; the explicit extension set is
+unchanged.
+
+POST `/v1/organizations/{org_id}/datasources/{source_id}/operations/{operation}:invoke`
+calls the declaration. GET `/v1/datasource-operation-receipts/{effect_id}` recovers
+its receipt using the verified identity's organization. Both use the Connect
+implementation through the existing REST transcoder, including the same receipt
+wrapper, source-boundary gate, and personal ownership ceiling. Effect identity
+may be supplied in the body or `X-Codefly-Effect-Id`; conflicting carriers are
+refused. The REST header matcher also forwards the Work Context without granting
+it trust. See [CALLABLE_SOURCES.md](./CALLABLE_SOURCES.md) for the wire contract.
 
 ## Sources and generated artifacts
 
@@ -57,7 +71,7 @@ the pinned set, not this paragraph, when the answer has to be right.
 | `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Fifteen explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
-The strict binding file covers every surface service exactly once. Twenty-five
+The strict binding file covers every surface service exactly once. Twenty-six
 services use generated grpc-gateway registration; `PrincipalService`,
 `DelegationService`, `InstallationService` and `WorkContextService` use the
 modular `permissions` plugin registration. An
@@ -71,10 +85,10 @@ Accounts registers only catalog-selected services and wraps grpc-gateway in a
 generated method/path allowlist. The allowlist is defense in depth: unknown,
 wrong-method, and internal paths return 404 before reaching grpc-gateway. The
 transcoder dials the generated Connect port, whose Connect-Go handler serves
-Connect, gRPC, and gRPC-Web for all 29 services; it no longer depends on the
+Connect, gRPC, and gRPC-Web for all 36 services; it no longer depends on the
 incomplete legacy raw-gRPC registration set.
 
-Auth-gateway loads the 165 descriptor routes from generated Go and joins each
+Auth-gateway loads the 172 descriptor routes from generated Go and joins each
 one to generated authorization metadata by canonical procedure. One
 extension-only YAML file owns the fifteen routes without protobuf procedures.
 Startup rejects disabled extension entries and any method/path collision with a
@@ -94,8 +108,8 @@ verifies every operation against `rest-surface.json`, rejects missing or
 unexpected routes, normalizes path-parameter spelling, adds
 `x-codefly-rest-schema` and `x-codefly-owner`, prunes unreachable definitions,
 and writes the public document to `openapi/api.swagger.json`. The current raw
-and public documents both have 165 operations; pruning reduces definitions
-from 314 to 311.
+and public documents both have 172 operations; pruning reduces definitions
+from 327 to 324.
 
 ## Regeneration
 
@@ -103,10 +117,25 @@ Run from `module/services/accounts`, with Docker running and a Codefly CLI at
 or above 0.1.160:
 
 ```sh
-codefly generate proto --proto ./proto --output .. --template accounts/proto/buf.gen.yaml
+codefly generate proto --proto ./proto --path saas --output .. --template accounts/proto/buf.gen.yaml
 cd code
 go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 ```
+
+The adapters step also emits `generated/api-contract-surfaces.json` from the
+complete Connect registration catalog and the authority listener's allowlist.
+Module `contracts.codefly.yaml` selects it with
+`schema: codefly/module-contracts-config/v1` and
+`surfaces: {accounts: generated/api-contract-surfaces.json}`. Paths are relative
+to the named service; the CLI owns this configuration, outside agent `spec`.
+`generated/gateway-routes.json` cannot substitute because it excludes
+internal methods. From the workspace root, run `codefly generate contracts
+saas-starter` and `codefly generate runnables saas-starter`, then repeat both
+with `--check`. Generation and CI use released CLI v0.1.185, carrying #947,
+without a local override. Host Go modules pin v0.18.0 and are tested with
+`GOWORK=off`. The explicit inventory remains a labelled stopgap for missing
+agent/Core listener metadata; its replacement contract is described in
+[CALLABLE_SOURCES.md](./CALLABLE_SOURCES.md#generation-and-qualification).
 
 The first line is the whole proto step. It runs the versioned proto companion
 image with the service's own template, `proto/buf.gen.yaml`, which declares
@@ -149,3 +178,11 @@ module credential separately from its current signed parent and an installed
 policy selector; neither an ordinary HTTP authorization header nor generic
 perimeter access grants consent. See `MODULE_INSTALLATION.md` for the exact
 identity, policy and lifecycle contract.
+
+The receipt-maintenance methods `PruneSourceOperationReceipts` and
+`LookupPruneSourceOperationReceipts` are authenticated, admin-only Connect
+operations with no `google.api.http` mapping. They add no public REST route.
+Input schema refusals from Invoke include BadRequest FieldViolation JSON
+pointers; provider refusals carry their known decimal `provider_status` in
+ErrorInfo metadata. The `SOURCE_OPERATION_OUTCOME_UNKNOWN` reason distinguishes
+an unresolved, non-redispatchable effect from an ordinary provider refusal.

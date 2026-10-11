@@ -84,6 +84,10 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"dashboards":                           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"installations":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_sources":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_source_operations":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_operation_attempts":        {selectRows: true, insertRows: true, deleteRows: true},
+	"codefly_effect_receipts":              {selectRows: true, insertRows: true, deleteRows: true},
+	"datasource_oauth_consumed_states":     {selectRows: true, insertRows: true, deleteRows: true},
 	"datasource_account_links":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_group_bindings":            {selectRows: true, insertRows: true, deleteRows: true},
 	"datasource_domains":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
@@ -365,6 +369,13 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			}
 			// Executable consent is written under the verified tenant/user only.
 			if relation == "executable_artifact_approvals" {
+				want = relationPrivileges{}
+			}
+			// Callable-source declarations, OAuth state, attempts and receipts
+			// are tenant-only. The control plane must not read or mutate them.
+			switch relation {
+			case "datasource_source_operations", "datasource_oauth_consumed_states",
+				"datasource_operation_attempts", "codefly_effect_receipts":
 				want = relationPrivileges{}
 			}
 			if relation == "feature_flags" {

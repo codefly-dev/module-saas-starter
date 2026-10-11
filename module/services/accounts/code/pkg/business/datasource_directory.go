@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/datasource/connector"
 	"accounts/pkg/datasource/github"
 	"accounts/pkg/githubconnector"
@@ -158,6 +159,9 @@ func (s *Service) datasourceAccountLinker(connectorKey string) DatasourceAccount
 		}
 		return nil
 	}
+	if provider, ok := s.datasourceOAuth[connectorKey]; ok {
+		return oauthAccountLinker{s: s, descriptor: provider}
+	}
 	if connectorKey == github.ConnectorKey && s.githubConnector != nil && s.githubAppClientID != "" && s.githubAppClientSecret != "" {
 		return githubAccountLinker{s: s}
 	}
@@ -193,11 +197,13 @@ func (g githubAccountLinker) ResolveAccount(ctx context.Context, code string) (s
 // datasourceLinkClaims is the signed body of a link state: it binds the sign-in
 // to one organization, one person and one connector, for a short while.
 type datasourceLinkClaims struct {
-	OrgID     string `json:"o"`
-	UserID    string `json:"u"`
-	Connector string `json:"c"`
-	ExpiresAt int64  `json:"e"`
-	Nonce     string `json:"n"`
+	SourceID    string `json:"s,omitempty"`
+	RedirectURI string `json:"r,omitempty"`
+	OrgID       string `json:"o"`
+	UserID      string `json:"u"`
+	Connector   string `json:"c"`
+	ExpiresAt   int64  `json:"e"`
+	Nonce       string `json:"n"`
 }
 
 func (s *Service) signDatasourceLinkState(claims datasourceLinkClaims) (string, error) {
@@ -250,10 +256,25 @@ var errDatasourceLinkStateRejected = errors.New("datasource: link state rejected
 
 // BeginDatasourceAccountLink returns where the calling person signs in to the
 // provider to prove which account is theirs.
-func (s *Service) BeginDatasourceAccountLink(ctx context.Context, actorID, orgID, connectorKey, redirectURI string) (*DatasourceAccountLinkHandle, error) {
+func (s *Service) BeginDatasourceAccountLink(ctx context.Context, actorID, orgID, connectorKey, redirectURI string, sourceIDs ...string) (*DatasourceAccountLinkHandle, error) {
 	linker := s.datasourceAccountLinker(connectorKey)
 	if linker == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "This deployment cannot link %s accounts: no sign-in with that provider is configured.", connectorKey)
+	}
+	sourceID := ""
+	if _, ok := linker.(oauthAccountLinker); ok {
+		if len(sourceIDs) != 1 || sourceIDs[0] == "" {
+			return nil, status.Error(codes.InvalidArgument, "personal source id required")
+		}
+		sourceID = sourceIDs[0]
+		src, err := s.GetDatasourceSource(ctx, orgID, sourceID)
+		if err != nil || src.PersonalOwnerUserID != actorID || src.Provider != connectorKey {
+			return nil, status.Error(codes.PermissionDenied, "source is not owned by this member")
+		}
+		u, err := url.Parse(redirectURI)
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Fragment != "" {
+			return nil, status.Error(codes.InvalidArgument, "valid OAuth redirect URI required")
+		}
 	}
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {
@@ -261,7 +282,7 @@ func (s *Service) BeginDatasourceAccountLink(ctx context.Context, actorID, orgID
 	}
 	expires := time.Now().UTC().Add(datasourceAccountLinkStateTTL)
 	state, err := s.signDatasourceLinkState(datasourceLinkClaims{
-		OrgID: orgID, UserID: actorID, Connector: connectorKey, ExpiresAt: expires.Unix(),
+		OrgID: orgID, UserID: actorID, Connector: connectorKey, ExpiresAt: expires.Unix(), SourceID: sourceID, RedirectURI: redirectURI,
 		Nonce: base64.RawURLEncoding.EncodeToString(nonce),
 	})
 	if err != nil {
@@ -285,9 +306,11 @@ func (s *Service) CompleteDatasourceAccountLink(ctx context.Context, actorID, or
 	if linker == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "This deployment cannot link %s accounts.", claims.Connector)
 	}
+	oauthRef := ""
+	ctx = context.WithValue(ctx, oauthLinkStateKey{}, oauthLinkState{claims: claims, state: state, credentialRef: &oauthRef})
 	accountID, login, err := linker.ResolveAccount(ctx, code)
 	if err != nil {
-		if errors.Is(err, githubconnector.ErrUserCodeRejected) {
+		if errors.Is(err, githubconnector.ErrUserCodeRejected) || errors.Is(err, errDatasourceLinkStateRejected) || errors.Is(err, apisource.ErrRefreshRejected) {
 			return nil, status.Error(codes.PermissionDenied, "The provider did not accept that sign-in. Start the account link again.")
 		}
 		return nil, status.Error(codes.Unavailable, "Could not read the signed-in account from the provider. Retry shortly.")
@@ -301,6 +324,14 @@ func (s *Service) CompleteDatasourceAccountLink(ctx context.Context, actorID, or
 	}
 	var stored *DatasourceAccountLink
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if oauthRef != "" {
+			if _, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, claims.SourceID); err != nil {
+				return err
+			}
+			if err := s.store.UpdateDatasourceSourceCredential(ctx, orgID, claims.SourceID, oauthRef); err != nil {
+				return err
+			}
+		}
 		out, err := s.store.UpsertDatasourceAccountLink(ctx, link)
 		if err != nil {
 			return err
