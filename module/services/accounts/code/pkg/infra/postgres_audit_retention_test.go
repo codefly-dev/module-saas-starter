@@ -852,6 +852,21 @@ func retentionAwaitWaiters(t *testing.T, relation string, n int) {
 	}, 10*time.Second, 20*time.Millisecond, "%d sessions never waited for %s", n, relation)
 }
 
+// retentionAwaitHolding waits until a session holds relation ACCESS EXCLUSIVE.
+// Retention holding audit_events is trying for the partitions it chose, one
+// after another, without queueing for them; holding one of them, it has moved
+// on to the next.
+func retentionAwaitHolding(t *testing.T, relation string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var held int
+		err := testPool.QueryRow(testCtx, `
+			SELECT count(*) FROM pg_locks
+			 WHERE relation = to_regclass($1) AND mode = 'AccessExclusiveLock' AND granted`, relation).Scan(&held)
+		return err == nil && held > 0
+	}, 10*time.Second, 20*time.Millisecond, "nothing came to hold %s", relation)
+}
+
 // retentionKeepPolicy puts the audit_events retention policy back as it is now
 // once the test is over, whatever the test changes it to, or if it deletes it.
 func retentionKeepPolicy(t *testing.T) {
@@ -873,19 +888,19 @@ func retentionKeepPolicy(t *testing.T) {
 }
 
 // Holding audit_events does not stop a partition being renamed, and LOCK TABLE
-// finds the table it locks by name. Retention chooses March and waits for it
-// behind a reader, and meanwhile an operator renames March away and April to
-// March's name. Locking by that name would reach April, which ends after the
-// cutoff, and drop it and its event. Retention locks March by identity, so it
-// refuses, drops nothing, and April keeps its event. That holds whether March's
-// new name takes it out of retention's names or is another month's, under which
-// March is still due; the next run decides from the catalog as the renames left
-// it.
-func TestRetentionDropsNothingWhenAPartitionItChoseIsRenamedWhileItWaits(t *testing.T) {
+// finds the table it locks by name. Retention chooses March and tries for it
+// while a reader holds it, and meanwhile an operator renames March away and
+// April to March's name. Retention locks the partition it chose, under whatever
+// name it then has, so it never reaches April, which ends after the cutoff, or
+// April's event. Renamed out of retention's names, March is no longer due once
+// retention holds it, and the run drops nothing; renamed to another month's
+// name it is still due, and the run drops it. Either way the next run, deciding
+// from the catalog as the renames left it, finds nothing due.
+func TestRetentionNeverDropsThePartitionThatTookTheNameOfOneItChose(t *testing.T) {
 	const march, april = "audit_events_1994_03", "audit_events_1994_04"
 	for _, tc := range []struct {
 		name, renamed string
-		nextDrops     int64
+		dropped       int64
 	}{
 		{"out of retention's names", "audit_events_1994_03_renamed", 0},
 		{"to another month's name", "audit_events_1993_12", 1},
@@ -918,36 +933,111 @@ func TestRetentionDropsNothingWhenAPartitionItChoseIsRenamedWhileItWaits(t *test
 				dropped, err := retentionCommitted(cutoff)
 				ran <- retentionOutcome{dropped, err}
 			}()
-			retentionAwaitWaiters(t, "public."+march, 2)
+			retentionAwaitHolding(t, "public.audit_events")
 			_, err = reader.Exec(testCtx, `COMMIT`)
 			require.NoError(t, err)
-			require.NoError(t, <-renames, "the premise: the renames committed while retention waited")
+			require.NoError(t, <-renames, "the premise: the renames committed while retention tried for March")
 
 			got := <-ran
-			var pgErr *pgconn.PgError
-			require.ErrorAs(t, got.err, &pgErr, "retention refused")
-			require.Equal(t, "55000", pgErr.Code, "object_not_in_prerequisite_state")
-			require.Zero(t, got.dropped)
+			if tc.dropped == 0 {
+				var pgErr *pgconn.PgError
+				require.ErrorAs(t, got.err, &pgErr, "retention refused")
+				require.Equal(t, "55000", pgErr.Code, "object_not_in_prerequisite_state")
+			} else {
+				require.NoError(t, got.err)
+			}
+			require.Equal(t, tc.dropped, got.dropped)
 			asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
 				require.Equal(t, int64(1), retentionOwnerRows(t, ctx, conn, march, org), "April, under March's name, keeps its event")
-				require.Equal(t, int64(1), retentionOwnerRows(t, ctx, conn, tc.renamed, org), "and March, renamed, its own")
 			})
+			exists, _ := retentionPartitionRows(t, tc.renamed)
+			require.Equal(t, tc.dropped == 0, exists, "March is dropped only while it is still due")
 
 			dropped, err := retentionCommitted(cutoff)
 			require.NoError(t, err)
-			require.Equal(t, tc.nextDrops, dropped, "the next run decides from the catalog as the renames left it")
-			exists, _ := retentionPartitionRows(t, march)
-			require.True(t, exists, "and April is never due")
+			require.Zero(t, dropped, "the next run decides from the catalog as the renames left it")
 		})
 	}
+}
+
+// A rename that hands the name of a partition retention is trying for to a
+// table another session holds costs retention no second wait. Retention holds
+// audit_events, which every audit write queues behind, so its ten seconds are
+// ten seconds in all: it tries for March under the name March has at each
+// attempt, and never queues for whatever table holds March's old name.
+func TestARenameWhileRetentionTriesForAPartitionCostsItNoSecondWait(t *testing.T) {
+	const march, april, moved, tmp = "audit_events_1985_03", "audit_events_1985_04", "audit_events_1985_03_moved", "audit_events_1985_04_tmp"
+	for _, table := range []string{march, april, moved, tmp} {
+		retentionDropTableAfter(t, table)
+	}
+	org := uuid.NewString()
+	retentionProvisionMonth(t, "1985-03-15", time.Date(1985, 3, 10, 12, 0, 0, 0, time.UTC), org)
+	retentionProvisionMonth(t, "1985-04-15", time.Date(1985, 4, 10, 12, 0, 0, 0, time.UTC), org)
+
+	reader := retentionSession(t)
+	_, err := reader.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+march+` IN ACCESS SHARE MODE`)
+	require.NoError(t, err)
+	// The operator holds April first, then waits for March behind the reader.
+	operator := retentionSession(t)
+	renames := make(chan error, 1)
+	go func() {
+		_, err := operator.Exec(testCtx, `BEGIN;
+			ALTER TABLE public.`+april+` RENAME TO `+tmp+`;
+			ALTER TABLE public.`+march+` RENAME TO `+moved+`;
+			ALTER TABLE public.`+tmp+` RENAME TO `+march+`;
+			COMMIT`)
+		renames <- err
+	}()
+	retentionAwaitWaiters(t, "public."+march, 1)
+	// A second reader queues for March by name behind the operator: granted
+	// March, it follows the name to April and keeps April to the end.
+	follower := retentionSession(t)
+	followed := make(chan error, 1)
+	go func() {
+		_, err := follower.Exec(testCtx, `BEGIN; LOCK TABLE public.`+march+` IN ACCESS SHARE MODE`)
+		followed <- err
+	}()
+	retentionAwaitWaiters(t, "public."+march, 2)
+
+	type outcome struct {
+		dropped int64
+		err     error
+		elapsed time.Duration
+	}
+	ran := make(chan outcome, 1)
+	go func() {
+		started := time.Now()
+		dropped, err := retentionCommitted(time.Date(1985, 4, 1, 0, 0, 0, 0, time.UTC))
+		ran <- outcome{dropped, err, time.Since(started)}
+	}()
+	retentionAwaitHolding(t, "public.audit_events")
+	time.Sleep(6 * time.Second)
+	_, err = reader.Exec(testCtx, `COMMIT`)
+	require.NoError(t, err)
+	require.NoError(t, <-renames, "the premise: the renames committed while retention tried for March")
+	require.NoError(t, <-followed, "the premise: the follower holds the table that took March's name")
+
+	select {
+	case got := <-ran:
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, got.err, &pgErr, "March, renamed out of retention's names, is no longer due")
+		require.Equal(t, "55000", pgErr.Code, "object_not_in_prerequisite_state")
+		require.Zero(t, got.dropped)
+		require.Less(t, got.elapsed, 11*time.Second, "ten seconds of waiting in all, with audit_events held")
+	case <-time.After(30 * time.Second):
+		t.Fatal("retention went on waiting past its ten seconds")
+	}
+	_, err = follower.Exec(testCtx, `ROLLBACK`)
+	require.NoError(t, err)
 }
 
 // Renaming a partition out of retention's names keeps it from retention, and
 // does so even while a run that chose it waits for a lock: the run, holding
 // every partition it chose, reads which are due once more, and drops none when
-// one is no longer. Retention chooses February and March and waits behind a
-// reader for February; an operator renames March out of retention's names
-// meanwhile. The run drops nothing, and the next one drops February alone.
+// one is no longer. Retention chooses February and March and tries for
+// February while a reader holds it; an operator renames March out of
+// retention's names meanwhile. The run drops nothing, and the next one drops
+// February alone.
 func TestRetentionKeepsAPartitionRenamedOutOfItsNamesWhileItWaits(t *testing.T) {
 	const february, march, kept = "audit_events_1994_02", "audit_events_1994_03", "audit_events_1994_03_kept"
 	org := uuid.NewString()
@@ -966,9 +1056,9 @@ func TestRetentionKeepsAPartitionRenamedOutOfItsNamesWhileItWaits(t *testing.T) 
 		dropped, err := retentionCommitted(cutoff)
 		ran <- retentionOutcome{dropped, err}
 	}()
-	retentionAwaitWaiters(t, "public."+february, 1)
+	retentionAwaitHolding(t, "public.audit_events")
 	_, err = retentionSession(t).Exec(testCtx, `ALTER TABLE public.`+march+` RENAME TO `+kept)
-	require.NoError(t, err, "the premise: March is renamed while retention waits for February")
+	require.NoError(t, err, "the premise: March is renamed while retention tries for February")
 	_, err = reader.Exec(testCtx, `COMMIT`)
 	require.NoError(t, err)
 
@@ -986,9 +1076,154 @@ func TestRetentionKeepsAPartitionRenamedOutOfItsNamesWhileItWaits(t *testing.T) 
 	})
 }
 
+// Dropping a range partition also locks the DEFAULT partition ACCESS
+// EXCLUSIVE, since the DEFAULT partition's constraint changes, and the DROP
+// waits for it within what remains of retention's ten seconds. One reader holds
+// a due partition for six seconds and another holds the DEFAULT partition
+// throughout: retention gives up at ten seconds, drops nothing, and the next
+// run, with the DEFAULT partition free, drops the partition.
+func TestRetentionWaitsForTheDefaultPartitionWithinItsTenSeconds(t *testing.T) {
+	const march, defaultPartition = "audit_events_1986_03", "audit_events_default_probe"
+	retentionDropTableAfter(t, defaultPartition)
+	retentionDropTableAfter(t, march)
+	retentionProvisionMonth(t, "1986-03-15", time.Date(1986, 3, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		_, err := conn.Exec(ctx, `CREATE TABLE public.`+defaultPartition+` PARTITION OF public.audit_events DEFAULT`)
+		require.NoError(t, err)
+	})
+
+	t.Run("the premise: the drop locks the DEFAULT partition", func(t *testing.T) {
+		const february = "audit_events_1986_02"
+		retentionDropTableAfter(t, february)
+		retentionProvisionMonth(t, "1986-02-15", time.Date(1986, 2, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+		var held bool
+		require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+			if _, err := testStore.DropAuditPartitionsBefore(ctx, time.Date(1986, 3, 1, 0, 0, 0, 0, time.UTC)); err != nil {
+				return err
+			}
+			return storetx.Tx(ctx).QueryRow(ctx, `
+				SELECT EXISTS (SELECT 1 FROM pg_locks
+				                WHERE pid = pg_backend_pid() AND relation = to_regclass($1)
+				                  AND mode = 'AccessExclusiveLock' AND granted)`, "public."+defaultPartition).Scan(&held)
+		}))
+		require.True(t, held)
+	})
+
+	reader := retentionSession(t)
+	_, err := reader.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+march+` IN ACCESS SHARE MODE`)
+	require.NoError(t, err)
+	defaultReader := retentionSession(t)
+	_, err = defaultReader.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+defaultPartition+` IN ACCESS SHARE MODE`)
+	require.NoError(t, err)
+
+	type outcome struct {
+		dropped int64
+		err     error
+		elapsed time.Duration
+	}
+	cutoff := time.Date(1986, 4, 1, 0, 0, 0, 0, time.UTC)
+	ran := make(chan outcome, 1)
+	go func() {
+		started := time.Now()
+		dropped, err := retentionCommitted(cutoff)
+		ran <- outcome{dropped, err, time.Since(started)}
+	}()
+	retentionAwaitHolding(t, "public.audit_events")
+	time.Sleep(6 * time.Second)
+	_, err = reader.Exec(testCtx, `COMMIT`)
+	require.NoError(t, err)
+
+	select {
+	case got := <-ran:
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, got.err, &pgErr, "retention gave up for want of the DEFAULT partition")
+		require.Equal(t, "55P03", pgErr.Code, "lock_not_available")
+		require.Zero(t, got.dropped)
+		require.Less(t, got.elapsed, 11*time.Second, "ten seconds of waiting in all, with audit_events held")
+	case <-time.After(30 * time.Second):
+		t.Fatal("retention went on waiting past its ten seconds")
+	}
+	exists, rows := retentionPartitionRows(t, march)
+	require.True(t, exists, "a run that gave up dropped nothing")
+	require.Equal(t, int64(1), rows)
+
+	_, err = defaultReader.Exec(testCtx, `COMMIT`)
+	require.NoError(t, err)
+	dropped, err := retentionCommitted(cutoff)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), dropped, "with the DEFAULT partition free, the next run drops March")
+}
+
+// A run drops everything it chose or nothing. A view on March makes March's
+// DROP fail after February's has gone through, and February comes back with
+// it, event and all.
+func TestRetentionDropsEverythingItChoseOrNothing(t *testing.T) {
+	const february, march, view = "audit_events_1987_02", "audit_events_1987_03", "audit_events_1987_03_probe"
+	org := uuid.NewString()
+	retentionDropTableAfter(t, february)
+	retentionDropTableAfter(t, march)
+	retentionProvisionMonth(t, "1987-02-15", time.Date(1987, 2, 10, 12, 0, 0, 0, time.UTC), org)
+	retentionProvisionMonth(t, "1987-03-15", time.Date(1987, 3, 10, 12, 0, 0, 0, time.UTC), org)
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		_, err := conn.Exec(ctx, `CREATE VIEW public.`+view+` AS SELECT id FROM public.`+march)
+		require.NoError(t, err)
+	})
+	t.Cleanup(func() {
+		asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+			_, err := conn.Exec(ctx, `DROP VIEW IF EXISTS public.`+view)
+			require.NoError(t, err)
+		})
+	})
+
+	dropped, err := retentionCommitted(time.Date(1987, 4, 1, 0, 0, 0, 0, time.UTC))
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr, "March's DROP fails")
+	require.Equal(t, "2BP01", pgErr.Code, "dependent_objects_still_exist")
+	require.Zero(t, dropped)
+	for _, partition := range []string{february, march} {
+		exists, rows := retentionPartitionRows(t, partition)
+		require.True(t, exists, partition)
+		require.Equal(t, int64(1), rows, partition)
+	}
+}
+
+// A partition detached and attached again with wider bounds while retention
+// waits for audit_events ends after the cutoff once retention holds the lock,
+// and is kept.
+func TestRetentionKeepsAPartitionReattachedWithWiderBoundsWhileItWaits(t *testing.T) {
+	const march = "audit_events_1988_03"
+	retentionDropTableAfter(t, march)
+	retentionProvisionMonth(t, "1988-03-15", time.Date(1988, 3, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+	release := retentionHoldReader(t)
+	operator := retentionSession(t)
+	reattached := make(chan error, 1)
+	go func() {
+		_, err := operator.Exec(testCtx, `BEGIN;
+			ALTER TABLE public.audit_events DETACH PARTITION public.`+march+`;
+			ALTER TABLE public.audit_events ATTACH PARTITION public.`+march+` FOR VALUES FROM ('1988-03-01 00:00+00') TO ('1988-07-01 00:00+00');
+			COMMIT`)
+		reattached <- err
+	}()
+	retentionAwaitQueuedLocks(t, 1)
+	ran := make(chan retentionOutcome, 1)
+	go func() {
+		dropped, err := retentionCommitted(time.Date(1988, 4, 1, 0, 0, 0, 0, time.UTC))
+		ran <- retentionOutcome{dropped, err}
+	}()
+	retentionAwaitQueuedLocks(t, 2)
+	release()
+
+	require.NoError(t, <-reattached, "the premise: the partition was attached again, wider, while retention waited")
+	got := <-ran
+	require.NoError(t, got.err)
+	require.Zero(t, got.dropped, "it ends after the cutoff now")
+	exists, _ := retentionPartitionRows(t, march)
+	require.True(t, exists)
+}
+
 // A run holds the audit_events policy it keeps to until it commits. A change
-// to the policy made while the run waits for a lock -- on audit_events, or on
-// the partition it drops -- waits in turn for the run: whether it extends the
+// to the policy made while the run waits for audit_events, or tries for the
+// partition it drops, waits in turn for the run: whether it extends the
 // window or deletes the policy to keep every record, it cannot commit under a
 // run that decided by the policy it replaces. It goes through once the run
 // has committed.
@@ -1012,7 +1247,11 @@ func TestAPolicyChangeWaitsForARetentionRunUnderWay(t *testing.T) {
 					dropped, err := retentionCommitted(time.Date(1994, 2, 1, 0, 0, 0, 0, time.UTC))
 					ran <- retentionOutcome{dropped, err}
 				}()
-				retentionAwaitWaiters(t, "public."+held, 1)
+				if held == "audit_events" {
+					retentionAwaitWaiters(t, "public.audit_events", 1)
+				} else {
+					retentionAwaitHolding(t, "public.audit_events")
+				}
 
 				operator := retentionSession(t)
 				_, err = operator.Exec(testCtx, `BEGIN; SET LOCAL lock_timeout = '1s'; `+change.statement)
@@ -1160,11 +1399,12 @@ func TestRetentionRunsAtReadCommittedWhateverTheDatabaseDefault(t *testing.T) {
 }
 
 // The function waits ten seconds in all for its locks, not ten for each:
-// lock_timeout bounds one wait, and a run that drops two partitions waits up to
-// three times, each time holding audit_events ACCESS EXCLUSIVE, which audit
-// writes queue behind. Two sessions each hold a due partition; the first lets go
-// after six seconds, the second not until the run is over. The run gives up
-// when its ten seconds are spent, drops nothing, and a later run drops both.
+// lock_timeout bounds one wait, and a run that drops two partitions waits for
+// audit_events and then for each partition, holding audit_events ACCESS
+// EXCLUSIVE, which audit writes queue behind. Two sessions each hold a due
+// partition; the first lets go after six seconds, the second not until the run
+// is over. The run gives up when its ten seconds are spent, drops nothing, and
+// a later run drops both.
 func TestRetentionWaitsTenSecondsInAllForItsLocks(t *testing.T) {
 	retentionRetire(t, "1993-01-01")
 	for _, day := range []string{"1992-01-15", "1992-02-15"} {
@@ -1183,16 +1423,6 @@ func TestRetentionWaitsTenSecondsInAllForItsLocks(t *testing.T) {
 		t.Cleanup(release)
 		return release
 	}
-	awaitWaitingFor := func(partition string) {
-		require.Eventually(t, func() bool {
-			var waiting int
-			err := testPool.QueryRow(testCtx, `
-				SELECT count(*) FROM pg_locks
-				 WHERE relation = to_regclass('public.' || $1) AND mode = 'AccessExclusiveLock' AND NOT granted`,
-				partition).Scan(&waiting)
-			return err == nil && waiting > 0
-		}, 10*time.Second, 20*time.Millisecond, "retention never waited for %s", partition)
-	}
 	releaseFirst := hold("audit_events_1992_01")
 	releaseSecond := hold("audit_events_1992_02")
 
@@ -1207,10 +1437,12 @@ func TestRetentionWaitsTenSecondsInAllForItsLocks(t *testing.T) {
 		dropped, err := retentionCommitted(time.Date(1992, 3, 1, 0, 0, 0, 0, time.UTC))
 		ran <- outcome{dropped, err, time.Since(started)}
 	}()
-	awaitWaitingFor("audit_events_1992_01")
+	// Holding audit_events, retention tries for the first partition, then,
+	// holding that, for the second.
+	retentionAwaitHolding(t, "public.audit_events")
 	time.Sleep(6 * time.Second)
 	releaseFirst()
-	awaitWaitingFor("audit_events_1992_02")
+	retentionAwaitHolding(t, "public.audit_events_1992_01")
 
 	select {
 	case got := <-ran:
@@ -1252,6 +1484,44 @@ func TestARetentionPolicyKeepsRecordsForAPositiveNumberOfDays(t *testing.T) {
 				require.NoError(t, attempt.Rollback(ctx))
 			}
 		}
+	})
+}
+
+// Migration 33 down, then up again, leaves every audit maintenance function as
+// it found it -- definition, owner and grants -- and a second up refuses rather
+// than apply twice.
+func TestTheRetentionMigrationReplaysDownThenUp(t *testing.T) {
+	read := func(direction string) string {
+		paths, err := filepath.Glob("../../../../store/migrations/*_audit_retention_partition_bounds." + direction + ".sql")
+		require.NoError(t, err)
+		require.Len(t, paths, 1, "the migration's %s half", direction)
+		body, err := os.ReadFile(paths[0])
+		require.NoError(t, err)
+		return string(body)
+	}
+	up, down := read("up"), read("down")
+	const functions = `
+		SELECT string_agg(p.oid::regprocedure::text || ' ' || pg_get_userbyid(p.proowner) || ' ' ||
+		                  coalesce(p.proacl::text, '') || ' ' || md5(pg_get_functiondef(p.oid)), E'\n' ORDER BY 1)
+		  FROM pg_proc p
+		 WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'audit%'`
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		tx, err := conn.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback(ctx) }()
+		var before, after string
+		require.NoError(t, tx.QueryRow(ctx, functions).Scan(&before))
+		_, err = tx.Exec(ctx, down)
+		require.NoError(t, err, "down")
+		_, err = tx.Exec(ctx, up)
+		require.NoError(t, err, "up again")
+		require.NoError(t, tx.QueryRow(ctx, functions).Scan(&after))
+		require.Equal(t, before, after)
+
+		_, err = tx.Exec(ctx, up)
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, err, &pgErr, "a second up refuses")
+		require.Equal(t, "42710", pgErr.Code, "duplicate_object: the constraint is there already")
 	})
 }
 

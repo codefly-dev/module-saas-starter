@@ -84,10 +84,11 @@ provider responses into an incident channel.
    `pg_stat_activity`. The next run, a day later or at the next restart, tries
    again, and partitions are provisioned three months ahead, so one refusal does
    not stop audit writes.
-3. SQLSTATE 55000 means an audit partition retention chose, or provisioning was
-   bringing in step, was renamed or dropped while it waited for its lock, and
-   nothing was dropped or changed. Look for the session renaming or dropping
-   audit partitions; the next run decides again from the catalog as it stands.
+3. SQLSTATE 55000 means an audit partition retention chose was renamed out of
+   its names, or a partition it or provisioning was locking was dropped, while
+   it waited for the lock, and nothing was dropped or changed. Look for the
+   session renaming or dropping audit partitions; the next run decides again
+   from the catalog as it stands.
 4. A `policy` failure is a `data_retention_policies` window that is not a
    positive number of days, and SQLSTATE 22023 from the audit drop is a cutoff
    later than the `audit_events` policy allows by the database's clock. Correct

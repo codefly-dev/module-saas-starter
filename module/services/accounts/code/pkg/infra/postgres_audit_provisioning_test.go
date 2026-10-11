@@ -209,15 +209,17 @@ func TestProvisioningWaitsTenSecondsInAllForItsLocks(t *testing.T) {
 	})
 }
 
-// Bringing a partition in step locks it by identity, as retention does. While a
-// call waits for a partition out of step, an operator renames it away and
-// another partition to its name: the call refuses rather than lock that other
-// one in its place, and a refused call changes neither. The partition is out of
-// step for want of policies, so the call reads it without opening it and waits
-// first for its lock.
-func TestBringingAPartitionInStepRefusesOneRenamedWhileItWaits(t *testing.T) {
-	const target, other, renamed = "audit_events_1993_06", "audit_events_1993_07", "audit_events_1993_06_renamed"
-	for _, table := range []string{target, other, renamed} {
+// Bringing a partition in step locks the partition, not its name. While
+// provisioning tries for a partition out of step, an operator renames it away
+// and another partition to its name, and a reader that queued for the old name
+// ends up holding that other partition to the end. Provisioning brings the
+// partition it listed in step, under its new name, without waiting for that
+// reader, and leaves the other partition as it was. The partition is out of
+// step for want of policies, so provisioning reads it without opening it, and
+// its first wait is for the partition's lock.
+func TestBringingAPartitionInStepLocksThePartitionNotItsName(t *testing.T) {
+	const target, other, renamed, tmp = "audit_events_1993_06", "audit_events_1993_07", "audit_events_1993_06_renamed", "audit_events_1993_07_tmp"
+	for _, table := range []string{target, other, renamed, tmp} {
 		retentionDropTableAfter(t, table)
 	}
 	retentionProvisionMonth(t, "1993-06-15", time.Date(1993, 6, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
@@ -227,6 +229,9 @@ func TestBringingAPartitionInStepRefusesOneRenamedWhileItWaits(t *testing.T) {
 			`SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass('public.' || $1)`, table).Scan(&count))
 		return count
 	}
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.EnsureAuditPartitions(ctx, 3)
+	}), "the premise: every month provisioning makes exists")
 	operator := retentionSession(t)
 	_, err := operator.Exec(testCtx, `DO $$
 		DECLARE
@@ -237,38 +242,120 @@ func TestBringingAPartitionInStepRefusesOneRenamedWhileItWaits(t *testing.T) {
 			END LOOP;
 		END $$`)
 	require.NoError(t, err)
+	inStep := policies(other)
 	require.Zero(t, policies(target), "the premise: a partition out of step")
-	require.Positive(t, policies(other))
+	require.Positive(t, inStep)
 
 	reader := retentionSession(t)
 	_, err = reader.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+target+` IN ACCESS SHARE MODE`)
 	require.NoError(t, err)
+	// The operator holds the other partition first, then waits for the target
+	// behind the reader.
 	renames := make(chan error, 1)
 	go func() {
 		_, err := operator.Exec(testCtx, `BEGIN;
+			ALTER TABLE public.`+other+` RENAME TO `+tmp+`;
 			ALTER TABLE public.`+target+` RENAME TO `+renamed+`;
-			ALTER TABLE public.`+other+` RENAME TO `+target+`;
+			ALTER TABLE public.`+tmp+` RENAME TO `+target+`;
 			COMMIT`)
 		renames <- err
 	}()
 	retentionAwaitWaiters(t, "public."+target, 1)
-	secured := make(chan error, 1)
+	follower := retentionSession(t)
+	followed := make(chan error, 1)
 	go func() {
-		secured <- testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-			_, err := storetx.Tx(ctx).Exec(ctx, `SELECT audit_events_ensure_partition('1993-06-15'::date)`)
-			return err
-		})
+		_, err := follower.Exec(testCtx, `BEGIN; LOCK TABLE public.`+target+` IN ACCESS SHARE MODE`)
+		followed <- err
 	}()
 	retentionAwaitWaiters(t, "public."+target, 2)
+
+	type outcome struct {
+		err     error
+		elapsed time.Duration
+	}
+	provisioned := make(chan outcome, 1)
+	go func() {
+		started := time.Now()
+		err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+			return testStore.EnsureAuditPartitions(ctx, 3)
+		})
+		provisioned <- outcome{err, time.Since(started)}
+	}()
+	// Provisioning is at the target: trying for it, or queued for it.
+	require.Eventually(t, func() bool {
+		var waiting int
+		err := reader.QueryRow(testCtx, `
+			SELECT count(*) FROM pg_stat_activity
+			 WHERE query LIKE '%audit_events_provision_partitions%' AND pid <> pg_backend_pid()
+			   AND (wait_event = 'PgSleep' OR wait_event_type = 'Lock')`).Scan(&waiting)
+		return err == nil && waiting > 0
+	}, 10*time.Second, 20*time.Millisecond, "provisioning never came to the target")
 	_, err = reader.Exec(testCtx, `COMMIT`)
 	require.NoError(t, err)
-	require.NoError(t, <-renames, "the premise: the renames committed while the call waited")
+	require.NoError(t, <-renames, "the premise: the renames committed while provisioning tried for the target")
+	require.NoError(t, <-followed, "the premise: the follower holds the partition that took the target's name")
 
-	var pgErr *pgconn.PgError
-	require.ErrorAs(t, <-secured, &pgErr, "the call refused")
-	require.Equal(t, "55000", pgErr.Code, "object_not_in_prerequisite_state")
-	require.Zero(t, policies(renamed), "the partition it was to bring in step is as it was")
-	require.Positive(t, policies(target), "and so is the one that took its name")
+	select {
+	case got := <-provisioned:
+		require.NoError(t, got.err, "provisioning did not wait for the follower")
+		require.Less(t, got.elapsed, 11*time.Second)
+	case <-time.After(30 * time.Second):
+		t.Fatal("provisioning went on waiting past its ten seconds")
+	}
+	require.Equal(t, inStep, policies(renamed), "the partition it listed is in step, under its new name")
+	require.Equal(t, inStep, policies(target), "and the one that took its name is as it was")
+	_, err = follower.Exec(testCtx, `ROLLBACK`)
+	require.NoError(t, err)
+}
+
+// Bringing every partition in step reads the list of partitions holding
+// audit_events ACCESS SHARE, so a retention run cannot drop one it has listed
+// before it reaches it. The call starts while retention waits for audit_events
+// behind a reader, and queues behind retention; retention drops a partition,
+// and the call, listing what is left, brings every partition in step. That
+// holds for the store's provisioning call and for the one operators run.
+func TestBringingEveryPartitionInStepSurvivesARetentionRunThatDropsOne(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(ctx context.Context) error
+	}{
+		{"provisioning", func(ctx context.Context) error { return testStore.EnsureAuditPartitions(ctx, 3) }},
+		{"securing every partition", func(ctx context.Context) error {
+			_, err := storetx.Tx(ctx).Exec(ctx, `SELECT audit_events_secure_all_partitions()`)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const march = "audit_events_1989_03"
+			retentionDropTableAfter(t, march)
+			retentionProvisionMonth(t, "1989-03-15", time.Date(1989, 3, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+			call := func() error { return testStore.WithControlPlane(testCtx, tc.call) }
+			require.NoError(t, call(), "the premise: the call succeeds with nothing else running")
+
+			release := retentionHoldReader(t)
+			ran := make(chan retentionOutcome, 1)
+			go func() {
+				dropped, err := retentionCommitted(time.Date(1989, 4, 1, 0, 0, 0, 0, time.UTC))
+				ran <- retentionOutcome{dropped, err}
+			}()
+			retentionAwaitQueuedLocks(t, 1)
+			called := make(chan error, 1)
+			go func() { called <- call() }()
+			require.Eventually(t, func() bool {
+				var waiting int
+				err := testPool.QueryRow(testCtx, `
+					SELECT count(*) FROM pg_locks
+					 WHERE relation = 'public.audit_events'::regclass AND mode = 'AccessShareLock' AND NOT granted`).Scan(&waiting)
+				return err == nil && waiting > 0
+			}, 10*time.Second, 20*time.Millisecond, "the call never queued behind retention")
+			release()
+
+			got := <-ran
+			require.NoError(t, got.err)
+			require.Equal(t, int64(1), got.dropped, "the premise: retention dropped a partition while the call waited")
+			require.NoError(t, <-called, "every partition left is brought in step")
+		})
+	}
 }
 
 // Provisioning and retention are DDL on the audit table, so execute on their

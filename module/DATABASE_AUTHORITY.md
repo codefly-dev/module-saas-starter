@@ -614,21 +614,26 @@ When something is due the function locks `audit_events` `ACCESS EXCLUSIVE` and
 decides again from the catalog as it stands once the lock is held, so a
 partition detached while it waited is left alone. That lock stops a partition
 being created, attached, detached or given other bounds, but not renamed, and
-`LOCK TABLE` finds the table it locks by name: a partition renamed away while
-the function waits for it, and another renamed to its name, would lead it on to
-that other one, and to a wait for it too. So it locks each partition it chose by
-identity, refusing unless the lock it holds is on that very partition, and,
-holding them all, decides a third time. It drops them only if exactly those are
-still due, and otherwise drops nothing (55000). Only a READ COMMITTED statement
-reads the catalog as it stands, so the function refuses any other isolation
-level (25000). `DropAuditPartitionsBefore` opens its own control-plane
+`LOCK TABLE` finds the table it locks by name: a partition renamed away while a
+`LOCK TABLE` waits for it, and another renamed to its name, would lead that
+`LOCK TABLE` on to the other one, and to a second wait. So the function locks
+each partition it chose by identity, under the name it has at that moment, with
+`LOCK TABLE ... NOWAIT` tried again until its deadline rather than a wait in the
+lock queue, and refuses unless the lock it holds is on that very partition.
+Holding them all, it decides a third time. It drops them only if exactly those
+are still due, and otherwise drops nothing (55000). Only a READ COMMITTED
+statement reads the catalog as it stands, so the function refuses any other
+isolation level (25000). `DropAuditPartitionsBefore` opens its own control-plane
 transaction at READ COMMITTED when its caller has none, whatever the database's
 default isolation, and that is how `RunRetention` calls it. The function waits
-ten seconds in all for its locks, not ten for each: it takes each in a statement
-of its own, after setting `lock_timeout` to what remains of ten seconds from its
-start, and gives up with 55P03, dropping nothing, once nothing does. When
-nothing is due it takes no lock at all: it reads bounds with
-`pg_get_expr(relpartbound, 0)`, which does not open the partition.
+ten seconds in all for its locks, not ten for each: it takes the policy's table
+and `audit_events` each in a statement of its own, after setting `lock_timeout`
+to what remains of ten seconds from its start, and each partition it locks with
+`NOWAIT`, tried again until then. Each `DROP` runs under what remains too, which
+bounds its wait for the DEFAULT partition, if there is one, which dropping a
+range partition also locks. It gives up with 55P03, dropping nothing, once
+nothing remains. When nothing is due it takes no lock at all: it reads bounds
+with `pg_get_expr(relpartbound, 0)`, which does not open the partition.
 
 `RunRetention` counts every window back from the database's clock, in days of
 24 hours, so the cutoff it passes is exactly the window before the database's
@@ -660,7 +665,12 @@ all for every lock it takes, like retention, before giving up with 55P03 and
 creating nothing. The months ahead are provisioned in advance, so a call that
 gives up leaves the next one time to try again. Bringing a partition in step
 locks it only when it is out of step, by identity as retention does, and decides
-again under that lock what to change.
+again under that lock what to change. A partition locked that way is tried again
+rather than waited for in the queue, so one that other sessions keep in use
+throughout can make the call give up at its deadline, and the next run tries
+again. Bringing every partition in step reads the list of partitions holding
+`audit_events` `ACCESS SHARE`, so a retention run cannot drop a partition the
+call has listed before it reaches it.
 
 A new partition's bounds are UTC midnights, whatever the zone of the session
 that provisions it. A partition an earlier release cut at another zone's

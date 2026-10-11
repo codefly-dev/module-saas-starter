@@ -53,38 +53,44 @@
 --
 -- It decides under lock, from the catalog as it stands once the lock is held.
 -- When something is due the function locks audit_events ACCESS EXCLUSIVE and
--- reads the catalog again: from then until the drop commits, no partition can be
--- created, attached, detached or given other bounds. That lock does not stop a
--- partition being renamed, and LOCK TABLE finds the table it locks by name: were
--- a partition renamed away while the function waited for it, and another
--- renamed to its name, LOCK TABLE would lock that other one. So the function
--- locks each partition it chose by identity, refusing unless the lock it holds
--- is on that very partition, and, holding them all, reads the catalog a third
--- time. It drops them only if exactly those are still due, and otherwise drops
--- nothing, with object_not_in_prerequisite_state (55000). Each read sees what
--- committed while the function waited only if it takes a snapshot of its own,
--- which a statement does at READ COMMITTED. At REPEATABLE READ or SERIALIZABLE
--- every statement reads the snapshot the transaction took first, before the
--- lock, in which a partition detached meanwhile is still attached and due. The
--- function therefore runs only at READ COMMITTED, and refuses any other level
--- with invalid_transaction_state (25000); the store's retention call opens its
--- transaction at READ COMMITTED, whatever the database default. The lock order
--- is the one inserters use (parent, then partition), so it cannot deadlock with
--- them, and a writer that arrives meanwhile waits for the drop to commit.
+-- reads the catalog again: from then until the drop commits, no partition can
+-- be created, attached, detached or given other bounds. That lock does not stop
+-- a partition being renamed, and LOCK TABLE finds the table it locks by name:
+-- were a partition renamed away while the function waited for it, and another
+-- renamed to its name, a waiting LOCK TABLE would go on to lock that other one.
+-- So the function locks each partition it chose by identity, under the name it
+-- has at that moment and without waiting in LOCK TABLE, refusing unless the
+-- lock it holds is on that very partition. Holding them all, it reads the
+-- catalog a third time. It drops them only if exactly those are still due, and
+-- otherwise drops nothing, with object_not_in_prerequisite_state (55000). Each
+-- read sees what committed while the function waited only if it takes a
+-- snapshot of its own, which a statement does at READ COMMITTED. At REPEATABLE
+-- READ or SERIALIZABLE every statement reads the snapshot the transaction took
+-- first, before the lock, in which a partition detached meanwhile is still
+-- attached and due. The function therefore runs only at READ COMMITTED, and
+-- refuses any other level with invalid_transaction_state (25000); the store's
+-- retention call opens its transaction at READ COMMITTED, whatever the database
+-- default. The lock order is the one inserters use (parent, then partition), so
+-- it cannot deadlock with them, and a writer that arrives meanwhile waits for
+-- the drop to commit.
 --
 -- It waits ten seconds at most, in all. lock_timeout bounds one wait, and the
 -- function may wait more than once: for the policy's table, for audit_events,
--- then for each partition it drops. So it takes each lock in a statement of its
--- own, after setting lock_timeout to what remains of ten seconds from its start,
--- and refuses with lock_not_available (55P03) once nothing does. A run that
+-- then for each partition it drops. So it takes the policy's table and
+-- audit_events each in a statement of its own, after setting lock_timeout to
+-- what remains of ten seconds from its start, and a partition with
+-- LOCK TABLE ... NOWAIT, tried again until those ten seconds are spent. Each
+-- DROP runs under what remains too, which bounds its wait for the DEFAULT
+-- partition, if there is one: dropping a range partition locks it as well. It
+-- refuses with lock_not_available (55P03) once nothing remains. A run that
 -- cannot have its locks in time drops nothing, and the next scheduled run tries
 -- again, instead of holding audit writes behind it for as long as a reader
--- runs. When nothing is due the function takes no lock at all: a partition comes
--- due about once a month, and locking the table on every run would stall audit
--- writes behind any long reader for a drop that never happens. It reads bounds
--- without opening the partitions (pg_get_expr with no relation, which a bound,
--- holding no column reference, does not need), so that read waits for nothing
--- either.
+-- runs. When nothing is due the function takes no lock at all: a partition
+-- comes due about once a month, and locking the table on every run would stall
+-- audit writes behind any long reader for a drop that never happens. It reads
+-- bounds without opening the partitions (pg_get_expr with no relation, which a
+-- bound, holding no column reference, does not need), so that read waits for
+-- nothing either.
 --
 -- PROVISIONING, audit_events_provision_partitions, which the store calls at
 -- startup and on each retention tick, creates the months from the previous one
@@ -97,7 +103,9 @@
 -- partition, in a statement of its own, within the budget, deciding again under
 -- the lock what to create. Bringing a partition's row security in step locks
 -- the partition only when it is out of step, by identity as retention does, and
--- decides again under that lock what to change.
+-- decides again under that lock what to change. Bringing every partition in
+-- step reads the list of partitions holding audit_events ACCESS SHARE, so none
+-- it lists can be dropped before it reaches it.
 --
 -- A new partition's bounds are UTC midnights, whatever the zone of the session
 -- that creates it, so its range no longer depends on who provisioned it. A
@@ -138,10 +146,10 @@ ALTER TABLE public.data_retention_policies
 -- function returns, to what remains before deadline, and refuses once nothing
 -- does. Every audit partition function calls it before each statement that may
 -- wait for a lock, and each such statement waits for one lock at most, so the
--- waits of one call add up to its budget at most. The one exception is a LOCK
--- TABLE that a rename leads from the partition it was asked for to another
--- table, which waits for that table too; audit_partition_lock then refuses.
--- Owned by the migration principal and called only from the functions below.
+-- waits of one call add up to its budget at most. A partition is locked by
+-- audit_partition_lock, which never waits in LOCK TABLE and stops trying at the
+-- same deadline. Owned by the migration principal and called only from the
+-- functions below.
 CREATE FUNCTION public.audit_partition_lock_budget(deadline timestamp with time zone) RETURNS void
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
@@ -159,14 +167,21 @@ $$;
 
 REVOKE ALL ON FUNCTION public.audit_partition_lock_budget(timestamp with time zone) FROM PUBLIC;
 
--- audit_partition_lock(target, deadline) locks target ACCESS EXCLUSIVE, waiting
--- for it only until deadline, and refuses unless the lock it then holds is on
--- target itself. LOCK TABLE finds the table it locks by name, and a name can
--- pass to another table while the lock is awaited: were target renamed away and
--- another table renamed to its name meanwhile, LOCK TABLE would go on to lock
--- that other one, waiting for it too. Once target is held it cannot be renamed,
--- so each statement after this one that names it reaches it. Owned by the
--- migration principal and called only from the functions below.
+-- audit_partition_lock(target, deadline) locks target ACCESS EXCLUSIVE before
+-- deadline, and refuses unless the lock it then holds is on target itself.
+-- LOCK TABLE finds the table it locks by name, and a name can pass to another
+-- table while a lock is awaited: were target renamed away and another table
+-- renamed to its name meanwhile, a waiting LOCK TABLE would go on to that other
+-- table and wait for it too, with the same lock_timeout, past the deadline. So
+-- this never waits in LOCK TABLE. It tries with NOWAIT, under the name target
+-- has at that moment, and tries again every 50 milliseconds until deadline, so a
+-- partition renamed meanwhile is still the one it locks. Trying again gives up
+-- the place a waiting lock keeps in the queue: retention tries holding
+-- audit_events ACCESS EXCLUSIVE, which every query through the parent waits for,
+-- so only a session using the partition directly can hold it off. Once target
+-- is held it cannot be renamed, so each statement after this one that names it
+-- reaches it. Owned by the migration principal and called only from the
+-- functions below.
 CREATE FUNCTION public.audit_partition_lock(target regclass, deadline timestamp with time zone) RETURNS void
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
@@ -174,20 +189,25 @@ CREATE FUNCTION public.audit_partition_lock(target regclass, deadline timestamp 
 DECLARE
     named text;
 BEGIN
-    SELECT format('%I.%I', n.nspname, c.relname) INTO named
-      FROM pg_catalog.pg_class c
-      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-     WHERE c.oid = target;
-    IF named IS NOT NULL THEN
-        PERFORM public.audit_partition_lock_budget(deadline);
+    LOOP
+        SELECT format('%I.%I', n.nspname, c.relname) INTO named
+          FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         WHERE c.oid = target;
+        EXIT WHEN named IS NULL;
         BEGIN
-            EXECUTE format('LOCK TABLE %s IN ACCESS EXCLUSIVE MODE', named);
-        EXCEPTION WHEN undefined_table THEN
-            -- Renamed away while it waited, its name left to no table: the
-            -- check below refuses.
+            EXECUTE format('LOCK TABLE %s IN ACCESS EXCLUSIVE MODE NOWAIT', named);
+            EXIT;
+        EXCEPTION WHEN lock_not_available OR undefined_table THEN
+            -- Held by another session, or renamed since it was looked up.
             NULL;
         END;
-    END IF;
+        IF clock_timestamp() >= deadline THEN
+            RAISE EXCEPTION 'audit partition maintenance has waited for its locks as long as it may'
+                USING ERRCODE = 'lock_not_available';
+        END IF;
+        PERFORM pg_sleep(least(0.05, extract(epoch FROM deadline - clock_timestamp())));
+    END LOOP;
     IF NOT EXISTS (
         SELECT 1 FROM pg_catalog.pg_locks l
          WHERE l.locktype = 'relation'
@@ -197,7 +217,7 @@ BEGIN
            AND l.mode = 'AccessExclusiveLock'
            AND l.granted
     ) THEN
-        RAISE EXCEPTION 'audit partition % was renamed or dropped while maintenance waited for its lock', coalesce(named, target::text)
+        RAISE EXCEPTION 'audit partition % was dropped, or its name passed to another table, while maintenance waited for its lock', coalesce(named, target::text)
             USING ERRCODE = 'object_not_in_prerequisite_state',
                   HINT = 'Nothing was changed. The next run decides again from the catalog as it then stands.';
     END IF;
@@ -246,12 +266,12 @@ CREATE OR REPLACE FUNCTION public.audit_events_drop_partitions_before(cutoff tim
     SET timezone TO 'UTC'
     AS $$
 DECLARE
-    deadline    CONSTANT timestamp with time zone := clock_timestamp() + interval '10 seconds';
-    window_days integer;
-    latest      timestamp with time zone;
-    due         regclass[];
-    part        regclass;
-    dropped     integer := 0;
+    deadline     CONSTANT timestamp with time zone := clock_timestamp() + interval '10 seconds';
+    window_days  integer;
+    latest       timestamp with time zone;
+    due          regclass[];
+    part         regclass;
+    dropped      integer := 0;
 BEGIN
     FOR pass IN 1..2 LOOP
         -- Pass 1 reads the policy with no lock, to refuse a cutoff it does not
@@ -321,6 +341,10 @@ BEGIN
                   HINT = 'The next run decides again from the catalog as it then stands.';
     END IF;
     FOREACH part IN ARRAY due LOOP
+        -- Dropping a range partition also locks the DEFAULT partition, if
+        -- there is one, by identity, since its constraint changes: the first
+        -- DROP waits for it no longer than what remains.
+        PERFORM public.audit_partition_lock_budget(deadline);
         EXECUTE format('DROP TABLE %s', part);
         dropped := dropped + 1;
     END LOOP;
@@ -524,6 +548,10 @@ DECLARE
     deadline CONSTANT timestamp with time zone := clock_timestamp() + interval '10 seconds';
     part     regclass;
 BEGIN
+    -- Holding audit_events, no partition listed below can be dropped or
+    -- detached before it is reached.
+    PERFORM public.audit_partition_lock_budget(deadline);
+    LOCK TABLE ONLY public.audit_events IN ACCESS SHARE MODE;
     FOR part IN
         SELECT inhrelid::regclass FROM pg_catalog.pg_inherits
          WHERE inhparent = 'public.audit_events'::regclass
@@ -556,6 +584,10 @@ BEGIN
     PERFORM public.audit_events_create_partitions(
         ARRAY(SELECT (this_month + make_interval(months => m))::date FROM generate_series(-1, months_ahead) AS m ORDER BY m),
         deadline);
+    -- Holding audit_events, no partition listed below can be dropped or
+    -- detached before it is reached.
+    PERFORM public.audit_partition_lock_budget(deadline);
+    LOCK TABLE ONLY public.audit_events IN ACCESS SHARE MODE;
     FOR part IN
         SELECT inhrelid::regclass FROM pg_catalog.pg_inherits
          WHERE inhparent = 'public.audit_events'::regclass
