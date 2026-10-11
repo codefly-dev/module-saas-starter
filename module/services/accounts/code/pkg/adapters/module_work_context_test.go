@@ -9,6 +9,7 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/sdk-go/workcontext"
@@ -98,7 +99,7 @@ func installModuleWorkContextService(t *testing.T, declaredPrincipals string) *r
 	store := &recordingModuleStore{tenantExists: true}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	registry, err := business.ParseModulePrincipalRegistry(declaredPrincipals)
+	registry, err := moduleregistrytest.Parse(declaredPrincipals)
 	require.NoError(t, err)
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
@@ -344,7 +345,7 @@ func TestMintModuleWorkContextFailsClosed(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			store := installModuleWorkContextService(t, documentsPrincipals)
 			token := moduleToken(t, "documents")
-			registry, err := business.ParseModulePrincipalRegistry(test.principals)
+			registry, err := moduleregistrytest.Parse(test.principals)
 			require.NoError(t, err)
 			service.SetModuleCapabilities(nil, nil, registry)
 			installModuleWorkContextAuthority(t)

@@ -11,6 +11,7 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -508,7 +509,7 @@ func TestNoModuleSecretAuthenticatesAMint(t *testing.T) {
 	}
 	service, err := business.NewService(nil)
 	require.NoError(t, err)
-	registry, err := business.ParseModulePrincipalRegistry(
+	registry, err := moduleregistrytest.Parse(
 		`{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},"tenant":"` + tenant + `"}}`)
 	require.NoError(t, err)
 	service.SetModuleCapabilities(nil, nil, registry)

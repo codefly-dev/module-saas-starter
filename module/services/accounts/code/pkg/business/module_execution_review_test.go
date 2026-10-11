@@ -25,7 +25,7 @@ func bindAgainst(t *testing.T, pod *PodExecution) error {
 	t.Helper()
 	service := boundService(&fakeExecutionReviewer{reviewed: reviewedPod(), pod: pod},
 		&fakeExecutionAuthority{digest: approvedBare, incarnation: 3})
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	return err
 }
 
@@ -43,7 +43,7 @@ func TestAWorkloadSharedByTwoPrincipalsMintsAsNeither(t *testing.T) {
 		"principal-beta":  {Prefix: "beta", Tenant: "22222222-2222-4222-8222-222222222222", Workload: shared},
 	})
 	for _, principal := range []string{"principal-alpha", "principal-beta"} {
-		_, err := service.BindExecution(context.Background(), principal, "token")
+		_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), principal, "token")
 		require.ErrorIs(t, err, ErrExecutionWorkloadAmbiguous, principal)
 		require.Contains(t, err.Error(), "principal-alpha")
 		require.Contains(t, err.Error(), "principal-beta")
@@ -56,9 +56,9 @@ func TestAWorkloadSharedByTwoPrincipalsMintsAsNeither(t *testing.T) {
 		"principal-beta": {Prefix: "beta", Tenant: "22222222-2222-4222-8222-222222222222",
 			Workload: ModuleWorkload{ServiceAccount: "beta", Namespace: "acme-prod", Container: "worker"}},
 	})
-	_, err := service.BindExecution(context.Background(), "principal-alpha", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-alpha", "token")
 	require.NoError(t, err)
-	_, err = service.BindExecution(context.Background(), "principal-beta", "token")
+	_, err = service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-beta", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch)
 }
 
@@ -132,7 +132,7 @@ func TestAContainerThatStopsBetweenReviewAndReadMintsNothing(t *testing.T) {
 	reviewer := &stoppingReviewer{fakeExecutionReviewer: fakeExecutionReviewer{reviewed: reviewedPod(), pod: pod}}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 3})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 
 	require.ErrorIs(t, err, ErrExecutionNotRunning)
 	require.Equal(t, "uid-alpha", pod.UID, "the UID did not change, which is why the UID check alone admitted it")
@@ -154,7 +154,7 @@ func TestATokenLongerLivedThanTheMinimumProjectionMintsNothing(t *testing.T) {
 	bind := func(reviewed *ReviewedExecutionToken) error {
 		service := boundService(&fakeExecutionReviewer{reviewed: reviewed, pod: runningPodWith()},
 			&fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
-		_, err := service.BindExecution(context.Background(), "principal-1", "token")
+		_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 		return err
 	}
 	hour := reviewedPod()

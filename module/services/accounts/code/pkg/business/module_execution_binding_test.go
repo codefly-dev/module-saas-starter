@@ -161,7 +161,7 @@ func TestApprovedRunningImageBinds(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 7})
 
-	identity, err := service.BindExecution(context.Background(), "principal-1", "token")
+	identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.NoError(t, err)
 	require.Equal(t, RunningDigest(approvedRef), identity.Running)
 	require.Equal(t, uint64(7), identity.Incarnation,
@@ -185,7 +185,7 @@ func TestDigestComparisonIsOnTheDigestNotTheSpelling(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedRef, incarnation: 1})
 
-	identity, err := service.BindExecution(context.Background(), "principal-1", "token")
+	identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), identity.Incarnation)
 }
@@ -218,7 +218,7 @@ func TestAPodThatAskedForTheApprovedImageAndRunsAnotherIsRefused(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionNotApproved)
 	// The refusal names BOTH, because an operator told only "not approved" would
 	// go reading the authority document when the registry is what moved.
@@ -237,7 +237,7 @@ func TestAPodRunningWhatItAskedForAndWhatIsApprovedIsAdmitted(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 4})
 
-	identity, err := service.BindExecution(context.Background(), "principal-1", "token")
+	identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.NoError(t, err)
 	require.Equal(t, RunningDigest(approvedRef), identity.Running)
 	require.Equal(t, DeclaredDigest(approvedRef), identity.Declared,
@@ -253,7 +253,7 @@ func TestUnapprovedRunningImageIsRefused(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionNotApproved)
 	require.NotErrorIs(t, err, ErrExecutionUnbound,
 		"this is a verdict about the caller, not a failure to establish one")
@@ -269,7 +269,7 @@ func TestReplacementPodAtTheSameNameIsRefused(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch)
 	require.Contains(t, err.Error(), "uid-alpha")
 	require.Contains(t, err.Error(), "uid-beta")
@@ -286,7 +286,7 @@ func TestNonBoundTokenIsRefusedRatherThanSkipped(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionNotBoundToken)
 	require.Empty(t, reviewer.askedPod, "no pod is read for a token that names none")
 }
@@ -301,7 +301,7 @@ func TestUnknownPrincipalIsRefusedNotMintedUnbound(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{err: ErrUnknownExecutionPrincipal})
 
-	_, err := service.BindExecution(context.Background(), "stranger", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "stranger", "token")
 	require.ErrorIs(t, err, ErrUnknownExecutionPrincipal)
 }
 
@@ -322,7 +322,7 @@ func TestNothingIsIssuedWhenTheApiIsUnavailable(t *testing.T) {
 	service := boundService(
 		&fakeExecutionReviewer{reviewErr: unreachable},
 		&fakeExecutionAuthority{digest: approvedBare})
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnbound)
 	require.NotErrorIs(t, err, ErrExecutionNotApproved)
 
@@ -330,7 +330,7 @@ func TestNothingIsIssuedWhenTheApiIsUnavailable(t *testing.T) {
 	service = boundService(
 		&fakeExecutionReviewer{reviewed: reviewedPod(), runErr: unreachable},
 		&fakeExecutionAuthority{digest: approvedBare})
-	_, err = service.BindExecution(context.Background(), "principal-1", "token")
+	_, err = service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnbound)
 
 	// Unreadable authority document.
@@ -340,7 +340,7 @@ func TestNothingIsIssuedWhenTheApiIsUnavailable(t *testing.T) {
 			running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
 		},
 		&fakeExecutionAuthority{err: unreachable})
-	_, err = service.BindExecution(context.Background(), "principal-1", "token")
+	_, err = service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnbound)
 	require.NotErrorIs(t, err, ErrExecutionNotApproved)
 }
@@ -355,7 +355,7 @@ func TestARejectedTokenIsAVerdictNotAnOutage(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 
 	require.ErrorIs(t, err, ErrExecutionTokenRejected)
 	require.NotErrorIs(t, err, ErrExecutionUnbound)
@@ -375,7 +375,7 @@ func TestTheApprovalIsLookedUpByTheDocumentsNameForThePrincipal(t *testing.T) {
 	authority := &fakeExecutionAuthority{digest: approvedBare, incarnation: 2}
 	service := boundService(reviewer, authority)
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 
 	require.NoError(t, err)
 	require.Equal(t, "worker", authority.asked, "the declared grant's prefix, as the authority document names it")
@@ -385,7 +385,7 @@ func TestTheApprovalIsLookedUpByTheDocumentsNameForThePrincipal(t *testing.T) {
 // than minting a capability that claims it did.
 func TestUnwiredHostCannotBindExecution(t *testing.T) {
 	service := &Service{store: noopControlPlaneStore{}}
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnbound)
 }
 
@@ -399,7 +399,7 @@ func TestContainerWithNoImageIdIsUnboundNotUnapproved(t *testing.T) {
 		},
 		&fakeExecutionAuthority{digest: approvedBare})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnbound)
 	require.NotErrorIs(t, err, ErrExecutionNotApproved)
 }
@@ -414,7 +414,7 @@ func TestMissingContainerIsAMismatchNotANonMatch(t *testing.T) {
 		},
 		&fakeExecutionAuthority{digest: approvedBare})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch)
 	require.NotErrorIs(t, err, ErrExecutionNotApproved)
 }
@@ -442,7 +442,7 @@ func TestNoContainerDeclaredReadsNoPodAtAll(t *testing.T) {
 	service := boundServiceFor(reviewer, &fakeExecutionAuthority{digest: approvedBare},
 		ModuleWorkload{ServiceAccount: "worker", Namespace: "acme-prod"})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrUnknownExecutionPrincipal)
 	require.Empty(t, reviewer.askedPod,
 		"a principal whose workload is not fully declared must not cause a pod read at all")
@@ -477,7 +477,7 @@ func TestPrincipalBearingNoApprovedBuildIsRefusedNotMintedUnbound(t *testing.T) 
 		},
 		&fakeExecutionAuthority{err: ErrNoApprovedBuild})
 
-	identity, err := service.BindExecution(context.Background(), "principal-1", "token")
+	identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.Error(t, err, "execution binding is unconditional: there is nothing to mint")
 	require.Nil(t, identity, "no identity is returned, so none can be sealed")
 	require.ErrorIs(t, err, ErrNoApprovedBuild,
@@ -520,7 +520,7 @@ func TestEveryBoundExecutionCarriesARunningDigest(t *testing.T) {
 				},
 				answer.authority)
 
-			identity, err := service.BindExecution(context.Background(), "principal-1", "token")
+			identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 			if err != nil {
 				require.Nil(t, identity,
 					"a refusal returns no identity, or a caller could seal the one it was handed anyway")
@@ -609,7 +609,7 @@ func TestACallerCannotNameAnotherPrincipalsPrefix(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 7})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch,
 		"a caller running the approved image must still be refused when it is not the declared workload")
 	require.Contains(t, err.Error(), "intruder",
@@ -629,7 +629,7 @@ func TestACallerInAnotherNamespaceIsRefused(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 7})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch)
 	require.Contains(t, err.Error(), "acme-staging")
 }
@@ -645,7 +645,7 @@ func TestAnUndeclaredPrincipalIsUnknownRatherThanUnapproved(t *testing.T) {
 	}
 	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 7})
 
-	_, err := service.BindExecution(context.Background(), "principal-unheard-of", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-unheard-of", "token")
 	require.ErrorIs(t, err, ErrUnknownExecutionPrincipal)
 	require.NotErrorIs(t, err, ErrNoApprovedBuild,
 		"an unknown principal must not read as one that bears no build, which would mint an unbound capability")
@@ -668,7 +668,7 @@ func TestAPartiallyDeclaredWorkloadAuthenticatesNobody(t *testing.T) {
 			service := boundServiceFor(reviewer,
 				&fakeExecutionAuthority{digest: approvedBare, incarnation: 7}, workload)
 
-			_, err := service.BindExecution(context.Background(), "principal-1", "token")
+			_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 			require.ErrorIs(t, err, ErrUnknownExecutionPrincipal)
 		})
 	}
@@ -689,11 +689,11 @@ func TestTheContainerReadIsTheDeclaredOneNotTheCallersChoice(t *testing.T) {
 		&fakeExecutionAuthority{digest: approvedBare, incarnation: 7},
 		ModuleWorkload{ServiceAccount: "worker", Namespace: "acme-prod", Container: "declared-app"})
 
-	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnapprovedContainer,
 		"an approved image in a container the principal does not declare must not stand in for the declared one")
 
 	reviewer.container = "declared-app"
-	_, err = service.BindExecution(context.Background(), "principal-1", "token")
+	_, err = service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.NoError(t, err)
 }

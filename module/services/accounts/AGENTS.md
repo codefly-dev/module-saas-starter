@@ -55,7 +55,7 @@ remain enforced. `ModuleEmitAuditEvent` can emit only a type owned by the caller
 solution scope and an authorized namespace. `business.AuditEventResolver` resolves
 stored schemas for payload validation and PII redaction.
 
-The principal directory lists stored identities. The `MODULE_PRINCIPALS` map
+The principal directory lists stored identities. The module principal registry
 below supplies declared authority to capability checks only.
 
 See [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence)
@@ -145,7 +145,7 @@ require.
 `PlatformAdminService.ListPlatformCatalogue` (super administrators, page
 `/admin/platform/catalogue`) lists every composed module and every solution
 with what it declares, what runs and where it is installed. It **adds no store**:
-modules come from the `MODULE_PRINCIPALS` registry (`Service.modulePrincipals`),
+modules come from the module principal registry (`Service.modulePrincipals`),
 solutions from `solution_registrations` (read with tombstones, so an
 installation of a deregistered solution sits beside its tombstone rather than
 reading as a solution nobody registered), and installations from
@@ -266,8 +266,79 @@ is derived from the
 declared module prefix (`business.ModulePrincipalID`) — nothing is
 hand-authored as an opaque id.
 
-Its authority is declared in the `module-capabilities` group's
-`MODULE_PRINCIPALS`, a JSON map keyed by that prefix:
+Its authority is its entry in the **module principal registry**, which no
+configuration declares. The module principal reconciler derives the whole
+registry on every reconcile pass (and on a delivery or an envelope write,
+without waiting for the tick) and installs it tagged with the envelope revision
+it was derived from — the only production writer — so installing, narrowing or
+withdrawing a module takes effect with no restart. An entry exists only while
+three inputs agree:
+
+- **the module envelope** — the authority ceiling a platform super_admin writes
+  through `PlatformAdminService/PutModuleEnvelope` (`requirePlatformRole`, so
+  never through an impersonated session; audited as
+  `saas.platform.module_envelope_written`; append-only and revisioned in
+  `module_envelopes`; fresh MFA required, an unenrolled administrator refused).
+  Per module prefix it lists the WHOLE authority units the host admits (id
+  `<presence binding>:<binding>:<operation>`, revision, scope, queue, namespace,
+  binding key, lookup method — the audience is the grant's), the workload
+  identities the principal may run as (SPIFFE ID and container), the scope
+  ceilings, and the grant ceiling below.
+- **a live authority document inside that envelope** — signed, delivered,
+  re-verified on every pass against the host's CURRENT signer-to-domain policy
+  (a document that no longer verifies is refused by name), over a presence
+  binding no ADMITTED tombstone in the whole inbox history ever withdrew — one
+  addressed to this host and speaking for the binding's OWNER, the domain of
+  the presence generation this host admitted and applied (never a delivered
+  row core's admission refused); a withdrawal is terminal for the
+  binding, whatever later generation or authority id follows, and a foreign
+  tombstone is refused at receipt and ignored in history — and held by core's
+  `ValidateAgainst` to the envelope's
+  own units (exact containment: a unit that differs from the admitted one in any
+  field puts the whole document outside, and it grants nothing).
+- **the applied presence document** the authority is granted over — the workload
+  running the approved build gives the entry's `workload` (namespace and service
+  account from its SPIFFE ID, read by the one strict parser
+  `ParseKubernetesSPIFFEID`, container from the presence), and only when the
+  envelope allows that exact identity, so a later presence generation cannot
+  move the principal to another workload. One workload (namespace and service
+  account) maps to exactly one principal: the envelope refuses an overlap when
+  written and the derivation omits it.
+
+The entry is the envelope's grant bounded by the document: queues and namespaces
+the document also declares, resources its scope ceilings name, and each
+operation audience only for a binding whose `invoke` unit the document grants,
+every operation's scopes intersected with the unit's scope. A principal granted
+by two live documents, whose workload is not allowed or has no single answer,
+or whose entry fails validation is **omitted by name, never widened**. Within an
+authority id the newest generation is the answer (the inbox is append-only);
+across ids a principal moves only to a document inside the envelope.
+
+**The registry is fenced by the committed envelope revision.** Every module
+authority decision — `AuthorizeModuleCapability`, the work-context and
+headless operation-context mints, the source-delegation mint, and the
+revision confirmations behind `CheckAuthorizationRevision` — takes its grant
+from ONE registry snapshot, reads the committed revision from the store (once
+per request under `WithModuleEnvelopeRevisionMemo`), and refuses with
+`ErrModuleRegistryStale` (Unavailable, a pass requested) unless that snapshot
+was derived from exactly it; a replica that has seen a newer revision serves
+nothing from the older registry. Every mint, including the installer token route,
+passes that one capture into `BindExecution` and the grant resolvers: principal,
+workload owners, declared container, tenant and operation/source grants cannot
+come from different generations. Source mints still take their tenant from the
+person's delegation, checked against the captured module grant. After binding,
+and again after signing and audit recording, `FenceModuleMint` reads the committed
+revision afresh, bypassing the request's earlier memo. A registry replacement or
+a different committed revision withholds the capability with `Unavailable` (HTTP
+503 on the installer route); the final fence is the mint's release decision.
+
+A pass reads the withdrawal history and the envelope first; when another input cannot be read it never combines fresh and
+stale inputs, and publishes a DEGRADED registry — the last published entries,
+kept only where still derived from the current revision, not withdrawn, their
+presence not withdrawn by delivery, and their signer still admitted — or an
+empty one when the history itself cannot be read. The credential's tenant must be the current
+grant's (unless `cross_tenant`), so moving a principal's tenant revokes
+credentials sealed for the old one at the next check. The grant ceiling's keys:
 
 | Key | Grants |
 | --- | --- |
@@ -279,7 +350,9 @@ Its authority is declared in the `module-capabilities` group's
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
-**Unset means no module may call the surface.**
+**No envelope written, or no delivered authority inside it, means no module may
+call the surface** — accounts starts with an empty registry and serves no module
+until its first pass.
 
 ## Minting a module Work Context
 
@@ -310,8 +383,8 @@ image, approved incarnation. The response carries
   reports no image yet. Execution binding is wired only with delivered authority
   (`configuredSolutionHostBindingReconciler`), so **a host with no delivery mints
   for no module**, and a module run outside Kubernetes has no token to present.
-- The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
-  for that principal, so a module cannot name a tenant by asking.
+- The tenant is **not requestable** — it is the one the module envelope's grant
+  declares for that principal, so a module cannot name a tenant by asking.
 - The capability's effective authority **is, in a running deployment today, the
   LIVE half alone.** `min(sealed, live)` is the target — blocker decision **B1**,
   which *reverses* what this file said before it — and it is **not yet reached**.
@@ -476,7 +549,8 @@ could not run is `ErrExecutionUnbound`, not one.
 
 - **The workload identifies exactly one principal, and it is the one asked
   for.** A token authenticates a ServiceAccount in a namespace, never a prefix.
-  The reviewed `(namespace, ServiceAccount)` is resolved over the WHOLE registry;
+  The reviewed `(namespace, ServiceAccount)` is resolved over the WHOLE captured
+  registry, the same snapshot that supplied the container and tenant;
   zero or several owners is `ErrExecutionWorkloadAmbiguous` /
   `ErrExecutionIdentityMismatch`. Two principals sharing a ServiceAccount mint as
   neither — before, either one's pod minted as both.
@@ -649,7 +723,7 @@ request adds only a
   `headless_scopes` stops the next mint; an issued child outlives it by at most
   a minute.
 - It is sealed with a non-zero authorization revision — a digest of the module's
-  whole `MODULE_PRINCIPALS` entry — and `CheckAuthorizationRevision` confirms it
+  whole module registry entry — and `CheckAuthorizationRevision` confirms it
   from that declaration rather than the database: owner a declared module
   principal, its declared tenant, the current entry's digest, only the module
   principal as subject, scopes within one binding's `headless_scopes`. Anything
@@ -796,7 +870,7 @@ viewer may read out.
   authority that held then — so the host writes an instant rather than expiring
   entries on a timer.
 - **Authority is the caller's principal, its bound tenant, and the viewer's
-  membership of that tenant.** There is no `MODULE_PRINCIPALS` key for it: like
+  membership of that tenant.** There is no registry key for it: like
   notify, approvals and audit, it is a capability any declared module holds on
   the tenant it is bound to. The membership check is what stops a module bound to
   one tenant from using another tenant's subject as a probe.

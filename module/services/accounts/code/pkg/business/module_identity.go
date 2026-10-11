@@ -7,6 +7,7 @@ import (
 	"regexp"
 
 	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
 )
 
 // Module identity: how a composed module proves which module it is, once per
@@ -57,6 +58,9 @@ type ModuleWorkContextAuthority struct {
 	// its ServiceAccount, the image it is running and the approved build's
 	// incarnation. Every mint carries one; there is no unbound module identity.
 	Execution ExecutionIdentity
+
+	// The immutable registry used for the entire mint, including its release fence.
+	snapshot *installedModuleRegistry
 }
 
 // ModuleAuthorizeWorkContext resolves the identity a composed module may be
@@ -71,31 +75,67 @@ type ModuleWorkContextAuthority struct {
 func (s *Service) ModuleAuthorizeWorkContext(
 	ctx context.Context, prefix, serviceAccountToken string,
 ) (ModuleWorkContextAuthority, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	identity, _, err := s.authorizeModuleIdentity(ctx, snapshot, prefix, serviceAccountToken)
+	return identity, err
+}
+
+// authorizeModuleIdentity derives every identity fact from the mint's one
+// fenced capture. Binding and the operation/source resolvers receive that same
+// capture, so a replacement cannot lend an old workload a new grant or tenant.
+func (s *Service) authorizeModuleIdentity(
+	ctx context.Context, snapshot *installedModuleRegistry, prefix, serviceAccountToken string,
+) (ModuleWorkContextAuthority, ModulePrincipalGrant, error) {
 	if !registrationIdentityPattern.MatchString(prefix) || len(prefix) > 63 {
-		return ModuleWorkContextAuthority{}, fmt.Errorf("%w: malformed prefix", ErrModuleIdentityDenied)
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, fmt.Errorf("%w: malformed prefix", ErrModuleIdentityDenied)
 	}
 	principalID := ModulePrincipalID(prefix)
-	grant, registered := s.declaredModules()[principalID]
+	grant, registered, err := s.currentModuleGrantFromSnapshot(ctx, snapshot, principalID)
+	if err != nil {
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, err
+	}
 	if !registered {
-		return ModuleWorkContextAuthority{}, fmt.Errorf("%w: %s is not a declared module principal",
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, fmt.Errorf("%w: %s is not a declared module principal",
 			ErrModuleIdentityDenied, prefix)
 	}
-	execution, err := s.BindExecution(ctx, principalID, serviceAccountToken)
+	execution, err := s.BindExecution(ctx, snapshot, principalID, serviceAccountToken)
 	if err != nil {
 		if errors.Is(err, ErrExecutionUnbound) {
-			// Not a verdict: the host could not tell. Passed through so the
-			// adapter answers "retry", never "you are not this module".
-			return ModuleWorkContextAuthority{}, err
+			return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, err
 		}
 		wool.Get(ctx).In("ModuleAuthorizeWorkContext").Warn(
 			"module identity refused", wool.Field("prefix", prefix), wool.ErrField(err))
-		return ModuleWorkContextAuthority{}, fmt.Errorf("%w: %w", ErrModuleIdentityDenied, err)
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, fmt.Errorf("%w: %w", ErrModuleIdentityDenied, err)
 	}
-	return ModuleWorkContextAuthority{
+	identity := ModuleWorkContextAuthority{
 		PrincipalID: principalID,
 		Tenant:      grant.Tenant,
 		Execution:   *execution,
-	}, nil
+		snapshot:    snapshot,
+	}
+	if err := s.FenceModuleMint(ctx, identity); err != nil {
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, err
+	}
+	return identity, grant, nil
+}
+
+// FenceModuleMint withholds a capability if its captured registry was replaced
+// or a different envelope revision committed while it was being minted. Call
+// after signing and recording, immediately before returning the token. The
+// request's earlier memoized revision cannot answer this final check.
+func (s *Service) FenceModuleMint(ctx context.Context, authority ModuleWorkContextAuthority) error {
+	snapshot := authority.snapshot
+	if snapshot == nil {
+		return wrapStatus(codes.Unavailable, ErrModuleRegistryStale, "module mint has no registry snapshot")
+	}
+	fresh := context.WithValue(ctx, moduleEnvelopeRevisionMemoKey{}, &moduleEnvelopeRevisionMemo{})
+	if err := s.fenceModuleRegistrySnapshot(fresh, snapshot); err != nil {
+		return err
+	}
+	if s.modulePrincipals.Load() != snapshot {
+		return wrapStatus(codes.Unavailable, ErrModuleRegistryStale, "module registry was replaced during the mint")
+	}
+	return nil
 }
 
 // ErrModuleTenantUnknown reports that a module principal's declared tenant

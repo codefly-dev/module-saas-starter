@@ -174,6 +174,29 @@ Four distinctions the projections keep:
   ancestor node (the organization root) does reach a solution node, because that is
   the scope tree's own hierarchical rule and the same union `CheckAccess` resolves
   — narrowing tighter here would hide what an authority check permits.
+- **An organization administrator writes that grant by installation and team**
+  (`InstallationService.GrantInstallationToTeam`, issue #1061), never by scope
+  path: the host resolves the installation's authority-root node in the same
+  transaction that writes the grant, refuses a team of another organization, and
+  refuses a role that does not permit `(solution, use)` — a grant of one would be
+  written and reveal nothing. That permission is the minimum, not a ceiling: the
+  team holds everything the role permits beneath the installation's root, as a
+  `GrantScope` of that role at that node would give it. The resolution holds a
+  share lock on the installation row to commit, and uninstall locks the same row
+  before it touches any grant, so both take the installation lock before any
+  trigger-acquired lock: a grant and an uninstall serialize, without a lock cycle,
+  and a grant never lands on an installation already uninstalled. The
+  write is `GrantScope`'s own body, so it emits the same `scope.granted` event
+  and audit record. `RevokeInstallationFromTeam`
+  is `RevokeScope` after the same resolution: a narrowing under the policy log,
+  refused in the host's words when the log cannot witness it.
+  `ListOrganizationInstallations` is the administrator's read of the same state —
+  each active installation with its health, installed target, authority-root path
+  and the teams granted there or inherited from above. It is org-admin and bound to
+  the caller's own organization (a platform super administrator, who passes
+  every organization-admin check, is the inherited exception), unlike the
+  internal `ListInstallations` the gateway reads for a projected tenant. It reads
+  the installations and their exposure on one repeatable-read snapshot.
 - An unreadable registry is still `503`, and a missing or malformed `client` still
   `400`. Neither ever renders as an empty list.
 
@@ -421,17 +444,27 @@ no authority behind it activates nothing. The build is asked **about** rather
 than read out of either document — reading it out of the document that approves
 it would make the question answer itself.
 
-The **ceiling** is Core's `Envelope`: who may hold which binding, and which
-builds are approved, at one revision. It is read from the same platform-owned
-trust anchor as the trust root (`authority_envelope.json`), and never out of a
-delivered document — "an envelope a document carried would be a document
-declaring its own ceiling", and containment is tested against the envelope's own
-grants, so an envelope assembled from the delivery tree answers itself. Absence
-and damage are different answers: no envelope delivered is a complete deployment
-that answers no authority question, while an envelope that is delivered and
-cannot be read refuses the boot, because reading a damaged ceiling as "no
-ceiling" turns a corrupted file into a silently narrower system and reading it
-permissively turns it into a wider one.
+The **ceiling** is the module envelope: a durable, append-only, revisioned
+record (`module_envelopes`) a platform super_admin writes at runtime through
+`PlatformAdminService/PutModuleEnvelope`, audited and never through an
+impersonated session. Per module principal it admits whole authority units,
+the workload identities the principal may run as, scope ceilings and the grant
+ceiling, and lists the approved builds. Every reconcile
+pass and every activation reads the CURRENT revision and hands Core's
+`ValidateAgainst` its projection for the document being judged, so containment
+is Core's exact rule and a narrowing takes effect at the next check with no
+restart. It is never read out of a delivered document — "an envelope a document
+carried would be a document declaring its own ceiling". Absence and damage are
+different answers: no revision written is a complete deployment that grants no
+module anything, while a revision that cannot be read leaves what the last pass
+installed serving, because reading a damaged ceiling as "no ceiling" withdraws
+every module on a transient error and reading it permissively widens them.
+
+The **module principal registry** every capability decision reads is derived
+from this ceiling each pass: for every live authority document inside it, each
+principal's entry is the envelope's grant bounded by what the document grants,
+with the workload read from the applied presence the document names
+([services/accounts/AGENTS.md](services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
 **This host applies authority to nothing**, and that is stated rather than
 defaulted. Core requires either the applied authority record or an explicit
@@ -921,8 +954,11 @@ only what the kubelet puts in its pod — the CA bundle and its own token:
    removed rather than argued with.
 2. **The API server authenticates this pod's own token.** Over a transport whose
    only root is the pinned certificate and which follows no redirect, the host
-   submits a TokenReview of its own projected token and requires it to come back
-   as a bound service account in its own namespace. A genuine API server accepts
+   submits a TokenReview of its own projected token and requires the answer to
+   name exactly this pod — the namespace, service account, pod name and pod UID
+   the token's own claims name (the namespace also matching the
+   kubelet-projected namespace file); an answer about any other identity, or a
+   token naming no pod, is refused. A genuine API server accepts
    only tokens its own cluster minted, so a server that merely holds a
    certificate under the pinned authority — the developer's real cluster, relayed
    to a deployed pod — refuses the deployed pod's token.
@@ -985,8 +1021,13 @@ pod's real cluster minted.
   read — so the local profile gives it nothing it lacked. The composition holds
   none of the three by itself: it delivers workspace environment, and neither the
   pod spec, the projected CA nor the developer's cluster key.
-- *Two clusters sharing one CA and accepting each other's tokens* are one cluster
-  to this check.
+- *A CA is not a cluster boundary when it is shared or cloned.* Clusters sharing
+  one authority are one cluster to this check, and anyone holding that
+  authority's key can run a server the check accepts and answer its TokenReview
+  as it likes — whether or not the genuine servers accept each other's tokens.
+  The own-identity comparison checks that an honest API server answered about
+  this pod; it cannot stop a control plane that is itself hostile and copies the
+  expected claims back.
 
 **The cost:** a local profile is valid in exactly one cluster. Recreating the
 cluster mints a new authority and the profile must be rewritten — one copy of the
@@ -1055,9 +1096,10 @@ unreadable-mount sibling exist for that reason.
 envelope, and the tempting shortcut is to let the delivered authority *be* the
 ceiling. That collapses two of the three terms in `binding ∩ envelope ∩
 installation`, so a developer would exercise a different authorisation shape than
-production computes. A local envelope file in the host's `local` configuration
-profile — same schema as the reviewed one, authored by the developer — keeps the
-structure identical at the cost of one more file.
+production computes. A local run writes its own envelope revision through the same
+`PutModuleEnvelope` a deployed host uses — same schema as the reviewed one,
+authored by the developer — which keeps the structure identical at the cost of
+one more write.
 
 ### If the local-cluster requirement is judged too expensive
 

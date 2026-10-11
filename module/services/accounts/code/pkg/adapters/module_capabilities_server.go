@@ -116,6 +116,9 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	if err := service.RecordModuleWorkContextMint(ctx, req.GetPrefix(), authority); err != nil {
 		return nil, err
 	}
+	if err := service.FenceModuleMint(ctx, authority); err != nil {
+		return nil, err
+	}
 	return &gen.ModuleMintWorkContextResponse{
 		Token:       token.Encoded(),
 		ExpiresAt:   timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
@@ -168,6 +171,9 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 	}
 	// Written once the capability exists; withheld when it cannot be committed.
 	if err := service.RecordModuleOperationContextMint(ctx, req.GetPrefix(), authority); err != nil {
+		return nil, err
+	}
+	if err := service.FenceModuleMint(ctx, authority.ModuleWorkContextAuthority); err != nil {
 		return nil, err
 	}
 	return &gen.ModuleMintOperationContextResponse{

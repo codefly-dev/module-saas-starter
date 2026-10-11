@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -77,7 +78,7 @@ func reviewClient(t *testing.T, spec, status string) *KubernetesClient {
 
 func reviewService(t *testing.T, client *KubernetesClient, registry string) *business.Service {
 	t.Helper()
-	parsed, err := business.ParseModulePrincipalRegistry(registry)
+	parsed, err := moduleregistrytest.Parse(registry)
 	require.NoError(t, err)
 	service := &business.Service{}
 	service.SetModulePrincipals(parsed)

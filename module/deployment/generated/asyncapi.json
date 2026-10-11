@@ -1384,6 +1384,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.platform.module_envelope_written": {
+      "address": "saas.platform.module_envelope_written",
+      "title": "saas.platform.module_envelope_written",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.platform.module_envelope_written"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.platform.role_granted": {
       "address": "saas.platform.role_granted",
       "title": "saas.platform.role_granted",
@@ -2876,6 +2887,13 @@
       },
       "title": "saas publishes saas.org.updated"
     },
+    "send:saas.platform.module_envelope_written": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.platform.module_envelope_written"
+      },
+      "title": "saas publishes saas.platform.module_envelope_written"
+    },
     "send:saas.platform.role_granted": {
       "action": "send",
       "channel": {
@@ -4135,6 +4153,13 @@
       "saas.org.updated": {
         "name": "saas.org.updated",
         "title": "saas.org.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.platform.module_envelope_written": {
+        "name": "saas.platform.module_envelope_written",
+        "title": "saas.platform.module_envelope_written",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

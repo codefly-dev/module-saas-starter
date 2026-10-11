@@ -17,6 +17,8 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Every way a module obtains a capability, held to the same behaviour through
@@ -147,6 +149,65 @@ func TestEveryModuleMintIsBoundToTheRunningBuild(t *testing.T) {
 					capability, err := mint(token(t, prefix))
 					require.Error(t, err)
 					require.Empty(t, capability, "a refused mint must hand out no capability")
+				})
+			}
+		})
+	}
+}
+
+// A revision can commit after identity binding, while the issuance is recorded.
+// Every real entrypoint must withhold the already signed token at its final fence.
+type mintEnvelopeStore struct {
+	latest uint64
+}
+
+func (s *mintEnvelopeStore) LatestModuleEnvelopeRevision(context.Context) (uint64, error) {
+	return s.latest, nil
+}
+func (*mintEnvelopeStore) LatestModuleEnvelopeRecord(context.Context) (*business.ModuleEnvelopeRecord, error) {
+	panic("not used")
+}
+func (*mintEnvelopeStore) AppendModuleEnvelopeRecord(context.Context, *business.ModuleEnvelopeRecord, uint64) error {
+	panic("not used")
+}
+
+type mintAuditCallback struct{ duringRecord func() }
+
+func (mintAuditCallback) Emit(context.Context, business.AuditEntry) {}
+func (a mintAuditCallback) EmitTx(context.Context, business.AuditEntry) error {
+	a.duringRecord()
+	return nil
+}
+
+func TestEveryModuleMintFencesAuthorityAfterSigning(t *testing.T) {
+	for _, entry := range mintEntrypoints() {
+		t.Run(entry.name, func(t *testing.T) {
+			for _, change := range []string{"unchanged", "committed revision", "registry replacement"} {
+				t.Run(change, func(t *testing.T) {
+					prefix, mint := entry.install(t)
+					envelope := &mintEnvelopeStore{}
+					service.SetModuleEnvelopeStore(envelope)
+					service.SetAuditEmitter(mintAuditCallback{duringRecord: func() {
+						switch change {
+						case "committed revision":
+							envelope.latest++
+						case "registry replacement":
+							service.SetModulePrincipals(nil)
+						}
+					}})
+					capability, err := mint(moduleToken(t, prefix))
+					if change == "unchanged" {
+						require.NoError(t, err)
+						require.NotEmpty(t, capability)
+					} else {
+						require.Error(t, err)
+						require.Empty(t, capability, "the signed token must be withheld")
+						if entry.name == "installer token route" {
+							require.ErrorContains(t, err, "HTTP 503")
+						} else {
+							require.Equal(t, codes.Unavailable, status.Code(err))
+						}
+					}
 				})
 			}
 		})

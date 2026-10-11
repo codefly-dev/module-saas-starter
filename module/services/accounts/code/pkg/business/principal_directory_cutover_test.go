@@ -9,7 +9,7 @@ import (
 
 func TestListPrincipals_DoesNotProjectDeclaredAuthority(t *testing.T) {
 	const org = "019f6bf7-6a01-7001-8001-0000000000c1"
-	registry, err := ParseModulePrincipalRegistry(`{
+	registry, err := parseRegistryFixture(`{
 		"example": {"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + org + `"},
 		"worker": {"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-6a01-7001-8001-0000000000c2","cross_tenant":true}
 	}`)

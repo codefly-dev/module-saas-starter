@@ -13,14 +13,6 @@
 #
 # A. CAPABILITY DECISIONS that must be routed through
 #    Service.AuthorizeModuleCapability. These are the real outstanding work.
-module_operation_context.go:ModuleAuthorizeOperationContext
-module_operation_context.go:CheckModuleOperationContextRevision
-# The identity mint moved file when its secret was deleted (#1056); it is the
-# same entry, not a new one — it now binds the caller's execution, and the
-# installation check is #1057's.
-module_identity.go:ModuleAuthorizeWorkContext
-source_delegation.go:AuthorizeSourceOperationContext
-source_delegation.go:AuthorizeDelegationReferenceExchange
 # Arrived with main's executable-artifact consent (#1025), which landed while
 # this gate lived on a branch, so neither side could see the other. Both decide
 # authority off the declared ceiling: the revocation decides who may withdraw
@@ -40,14 +32,10 @@ current_installation.go:ModuleCurrentInstallation
 solution_audit_events.go:admitDeclaredAuditEventTypesWritten
 solution_audit_events.go:releasedAuditNamespace
 source_delegation.go:recordSourceDelegationsTx
-# A classification helper: it asks only WHETHER a principal is a declared module,
-# to pick the delegation's shape. Its answer is used by callers in group A, which
-# is where the authority decision belongs.
-source_delegation.go:sourceDelegationShape
 # ExecutableArtifactPolicyFor resolves WHICH declared policy a module installed,
 # so a caller can compare an artifact against it. It decides nothing: every
-# caller of it is a group-A path that makes the authority decision itself. Same
-# shape as sourceDelegationShape above, and it arrived with #1025.
+# caller of it is a group-A path that makes the authority decision itself. It
+# arrived with #1025.
 executable_artifacts.go:ExecutableArtifactPolicyFor
 #
 # C. NOT capability decisions at all: accessors and listings over the registry,
@@ -71,9 +59,9 @@ module_capabilities.go:ModuleContentResources
 # (enforceActorCeiling, resolveAuthority). Routing it would need a caller it does
 # not have.
 #
-# "Re-read it live" has no meaning for the registry half either: which modules a
-# composition declares is a deployment fact, like group D's workload binding. The
-# half that DOES move at runtime — the declared, non-tombstoned solution bindings
+# The registry half lists delivered prefixes as vocabulary; naming a module
+# grants it no authority. Its capability paths check the fenced grant. The
+# other half — the declared, non-tombstoned solution bindings
 # — is read live from the database on every call, deliberately uncached, so a
 # withdrawn solution leaves the vocabulary at once.
 work_context_audience.go:HostAudiences
@@ -88,19 +76,3 @@ work_context_audience.go:HostAudiences
 # working — a direct field read was a way past it — and the honest disposition is
 # to list the path rather than go back to the spelling that hid it.
 platform_catalogue.go:ListPlatformCatalogue
-#
-# D. AUTHENTICATION, which runs BEFORE any capability decision and reads an
-#    IDENTITY fact rather than an authority one. Routing it through
-#    AuthorizeModuleCapability would invert the order: that call decides what an
-#    already-authenticated caller may do, and this is what establishes who the
-#    caller is.
-#
-#    The value read is the principal's declared workload — the Kubernetes service
-#    account, namespace and container its pods run as. There is NO live source
-#    for it and there should not be: it is a deployment fact, fixed by the
-#    composition, and the whole point of comparing it against a TokenReview is
-#    that the declaration is the thing the caller cannot influence. "Re-read it
-#    live" has no meaning here, so group A's disposition does not apply, and
-#    group C's "needs an explicit marker" is the closest but still wrong — these
-#    are accessors, this is a check.
-module_execution_binding.go:BindExecution

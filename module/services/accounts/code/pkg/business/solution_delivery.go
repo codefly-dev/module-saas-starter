@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -142,6 +141,10 @@ type SolutionDeliveryStore interface {
 	// ListNewestDeliveredDocuments returns the newest generation per document
 	// for one kind — the desired set.
 	ListNewestDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
+
+	// ListDeliveredDocuments returns every delivered generation of one kind:
+	// the history a terminal withdrawal is read from.
+	ListDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
 }
 
 // SolutionDeliveryCarrierAuthorizer decides whether the CALLER may deliver this
@@ -216,6 +219,12 @@ func (s *Service) ReceiveSolutionDelivery(
 			ErrSolutionDeliveryDomainNotGranted, received.signer, received.ownershipDomain)
 	}
 
+	if carrier.Kind == SolutionDeliveryAuthority {
+		if err := s.admitAuthorityTarget(ctx, received.payload); err != nil {
+			return "", nil, err
+		}
+	}
+
 	if err := s.deliveryCarrier.AuthorizeCarrier(
 		ctx, credential, carrier.Kind, received.carrierNamespaces); err != nil {
 		return "", nil, err
@@ -242,9 +251,49 @@ func (s *Service) ReceiveSolutionDelivery(
 		return "", nil, err
 	}
 	if inserted {
+		// A new document changes what the host should apply and which module
+		// principals the registry holds, so a pass is requested now rather than
+		// at the next tick. An exact replay changes nothing and asks for none.
+		s.requestRegistryPass()
 		return SolutionDeliveryAccepted, record, nil
 	}
 	return SolutionDeliveryReplayed, record, nil
+}
+
+// admitAuthorityTarget refuses an authority document — a grant or a tombstone —
+// that cannot speak for the binding it names: one addressed to another host,
+// or one asserting an ownership domain other than the binding's OWNER (the
+// domain of the presence generation this host admitted and applied — never a
+// delivered row core refused). The signer
+// check above only proves the signer may speak for the domain the document
+// ASSERTS; without this, an accepted signer for one domain could deliver a
+// tombstone naming another domain's binding and withdraw it permanently.
+// Reconciliation applies the same rule to what is already stored.
+func (s *Service) admitAuthorityTarget(ctx context.Context, payload []byte) error {
+	document, err := solutionhost.AuthorityFromVerified(payload)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
+	}
+	if s.deliveryCoordinate != "" && document.Host.Coordinate != s.deliveryCoordinate {
+		return fmt.Errorf("%w: authority %q targets host %q, and this host is %q",
+			ErrSolutionDeliveryDomainNotGranted, document.Authority, document.Host.Coordinate, s.deliveryCoordinate)
+	}
+	owners, err := s.admittedBindingOwners(ctx)
+	if err != nil {
+		return err
+	}
+	if domain, known := owners[document.PresenceBinding]; known && domain != document.OwnershipDomain {
+		return fmt.Errorf("%w: authority %q speaks for domain %q over binding %q, which domain %q owns",
+			ErrSolutionDeliveryDomainNotGranted, document.Authority, document.OwnershipDomain, document.PresenceBinding, domain)
+	}
+	return nil
+}
+
+// SetSolutionDeliveryCoordinate names the host coordinate this host answers
+// for, so delivery refuses an authority document addressed to another host at
+// receipt. Boot wiring, beside SetSolutionDelivery.
+func (s *Service) SetSolutionDeliveryCoordinate(coordinate string) {
+	s.deliveryCoordinate = coordinate
 }
 
 // receivedSolutionDelivery is one verified document read into the shape the
@@ -456,34 +505,15 @@ func declaredNamespaces(document *solutionhost.SolutionHostBinding) []string {
 	seen := map[string]bool{}
 	var namespaces []string
 	for _, workload := range document.Workloads {
-		namespace := spiffeNamespace(workload.Identity.SPIFFEID)
-		if namespace == "" || seen[namespace] {
+		identity, err := ParseKubernetesSPIFFEID(workload.Identity.SPIFFEID)
+		namespace := identity.Namespace
+		if err != nil || seen[namespace] {
 			continue
 		}
 		seen[namespace] = true
 		namespaces = append(namespaces, namespace)
 	}
 	return namespaces
-}
-
-// spiffeNamespace reads the namespace out of `spiffe://<trust domain>/ns/<ns>/sa/<account>`.
-//
-// It returns empty rather than guessing when the shape is not that: core
-// validates the SPIFFE ID's form, so an ID reaching here in another shape is one
-// core accepted and this host does not understand — and inventing a namespace
-// from it would authorise a carrier against a name nobody wrote.
-func spiffeNamespace(id string) string {
-	_, path, found := strings.Cut(id, "://")
-	if !found {
-		return ""
-	}
-	segments := strings.Split(path, "/")
-	for index := 0; index+1 < len(segments); index++ {
-		if segments[index] == "ns" {
-			return segments[index+1]
-		}
-	}
-	return ""
 }
 
 // solutionDeliveryContentHash is the idempotency key's content half: sha256 over

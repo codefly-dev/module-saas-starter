@@ -74,7 +74,7 @@ func newFollowService(t *testing.T) *Service {
 	withCurrentAuthority(svc)
 	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(ModulePrincipalRegistry{
-		followPrincipal: {Namespaces: []string{"scope"}},
+		followPrincipal: {Tenant: followTenant, Namespaces: []string{"scope"}},
 	})
 	svc.SetModuleEventTransport(events.NewFakeTransport(nil, time.Second))
 	return svc

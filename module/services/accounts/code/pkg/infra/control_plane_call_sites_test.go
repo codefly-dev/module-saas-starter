@@ -25,7 +25,7 @@ const controlPlaneCallSitesGolden = "testdata/control_plane_call_sites.txt"
 // TestControlPlaneCallSites is the static half of the control-plane audit whose
 // runtime half is ControlPlaneCounters. It lists every place outside tests, in
 // the whole accounts module, that reaches cross-tenant authority — a
-// WithControlPlane or withControlPlaneTx reference, a business.System()
+// WithControlPlane, WithControlPlaneReadSnapshot or withControlPlaneTx reference, a business.System()
 // identity (As(System()), on its own, or taken as a function value), a System
 // identity built without naming System (Identity's system field set in a
 // literal, positionally, by assignment or through its address, anywhere but
@@ -76,6 +76,19 @@ func TestControlPlaneCallSites(t *testing.T) {
 			"new call sites:\n  %s\ncall sites no longer present:\n  %s",
 			controlPlaneCallSitesGolden, strings.Join(added, "\n  "), strings.Join(removed, "\n  "))
 	}
+}
+
+func TestControlPlaneScanIncludesReadSnapshots(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "snapshot.go", `package business
+func read(ctx context.Context, store Store) {
+	store.WithControlPlaneReadSnapshot(ctx, func(context.Context) error { return nil })
+	run := store.WithControlPlaneReadSnapshot
+	_ = run
+}`, parser.SkipObjectResolution)
+	require.NoError(t, err)
+	sites, err := controlPlaneSitesIn(file)
+	require.NoError(t, err)
+	require.Equal(t, []string{"read: WithControlPlaneReadSnapshot", "read: WithControlPlaneReadSnapshot"}, sites)
 }
 
 // TestNoTenantRebindingOutsideInfra fails on a string literal, in a non-test Go
@@ -462,7 +475,7 @@ func controlPlaneSitesIn(file *ast.File) ([]string, error) {
 				consumed[n.Sel] = true
 				name, isBinder := binder(n)
 				switch {
-				case n.Sel.Name == "WithControlPlane", n.Sel.Name == "withControlPlaneTx":
+				case n.Sel.Name == "WithControlPlane", n.Sel.Name == "WithControlPlaneReadSnapshot", n.Sel.Name == "withControlPlaneTx":
 					record(n.Sel.Name)
 				case n.Sel.Name == "controlPlane":
 					record("controlPlane")

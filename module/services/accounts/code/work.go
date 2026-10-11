@@ -188,15 +188,20 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetWebhookJobProducer(store)
 
 	// Module-facing capability surface (issue #463): a request-scoped
-	// transactional producer for tenant/subject enqueue, the privileged worker
-	// store for claim/lease/finalize and global inbox enqueue, and the registry
-	// declaring which queues each module service principal may use. The registry
-	// is deployment-provided; an unset value denies every caller (fail-closed).
-	modulePrincipals, err := business.ParseModulePrincipalRegistry(workspaceEnv("module-capabilities", "MODULE_PRINCIPALS"))
-	if err != nil {
-		return nil, fmt.Errorf("parse module principal registry: %w", err)
-	}
-	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
+	// transactional producer for tenant/subject enqueue and the privileged
+	// worker store for claim/lease/finalize and global inbox enqueue.
+	//
+	// NO REGISTRY IS READ HERE. The module principal registry is derived, each
+	// reconcile pass, from the delivered authority documents inside the module
+	// envelope a platform super_admin writes, and swapped in live — so the host
+	// starts with an empty registry, which denies every module caller until the
+	// first pass installs what delivery and the envelope agree on. Nothing in
+	// this process's environment can name a module principal.
+	service.SetModuleCapabilities(store, jobStore, nil)
+	// The envelope's persistence, wired whether or not this host receives
+	// deliveries: a platform super_admin can write the ceiling before the first
+	// document arrives.
+	service.SetModuleEnvelopeStore(store)
 	// Explicit organization delegation is separate from module identity. A
 	// projected policy is refreshed by the delivery system and read per call.
 	installerHandler, err := configuredModuleInstaller(service)
@@ -1908,6 +1913,7 @@ func configuredSolutionHostBindingReconciler(
 		return nil, err
 	}
 	service.SetSolutionDelivery(verifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	service.SetSolutionDeliveryCoordinate(coordinate)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
 	// the gateway because a solution runtime is an independently deployed
@@ -1919,21 +1925,10 @@ func configuredSolutionHostBindingReconciler(
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
-	// The AUTHORITY CEILING, from the same platform-owned anchor as the trust
-	// root and for the same two reasons: a document must never carry its own
-	// ceiling, and a ceiling the composition could point at is a ceiling the
-	// composition chose.
-	//
-	// Absence and damage are different answers. No envelope delivered is a
-	// complete deployment that answers no authority question — presence
-	// reconciles and every activation refuses by name — while an envelope that
-	// IS delivered and cannot be read refuses the boot, because reading a
-	// damaged ceiling as "no ceiling" turns a corrupted file into a silently
-	// narrower system and reading it permissively turns it into a wider one.
-	envelope, _, err := infra.ReadSolutionAuthorityEnvelope()
-	if err != nil {
-		return nil, err
-	}
+	// The AUTHORITY CEILING is the module envelope a platform super_admin
+	// writes at runtime, read by every pass and every activation from the
+	// store — never a file read once here, and never out of a delivered
+	// document, because a document must never carry its own ceiling.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:          business.NewDeliveredSolutionHostBindings(service),
 		Verifier:        verifier,
@@ -1941,11 +1936,14 @@ func configuredSolutionHostBindingReconciler(
 		Domains:         domains,
 		DomainsBySigner: domainsBySigner,
 		Interval:        interval,
-		Envelope:        envelope,
+		Envelopes:       service,
 	})
 	if err != nil {
 		return nil, err
 	}
+	// A delivery or an envelope write asks for a pass now, so what it changes
+	// is in force within one pass instead of one interval.
+	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
 
 	// EXECUTION-BOUND MINTING, wired here because this is where both of its
 	// independent sources exist.

@@ -13,11 +13,14 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/sdk-go/workcontext"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const moduleInstallationPrefix = "/v1/module-installations/"
 
 type moduleInstallationService interface {
+	FenceModuleMint(context.Context, business.ModuleWorkContextAuthority) error
 	ModuleAuthorizeWorkContext(context.Context, string, string) (business.ModuleWorkContextAuthority, error)
 	VerifyModuleTenant(context.Context, business.ModuleWorkContextAuthority) error
 	RecordModuleWorkContextMint(context.Context, string, business.ModuleWorkContextAuthority) error
@@ -188,7 +191,7 @@ func (h *ModuleInstallationHTTPHandler) token(w http.ResponseWriter, r *http.Req
 		return
 	}
 	authority, err := h.service.ModuleAuthorizeWorkContext(r.Context(), req.Prefix, serviceAccountToken)
-	if errors.Is(err, business.ErrExecutionUnbound) {
+	if errors.Is(err, business.ErrExecutionUnbound) || status.Code(err) == codes.Unavailable {
 		// The host could not establish what the caller is running. Not a
 		// verdict, so not a 403: an installer that retries may succeed.
 		installerError(w, http.StatusServiceUnavailable, "installer execution could not be established")
@@ -209,6 +212,10 @@ func (h *ModuleInstallationHTTPHandler) token(w http.ResponseWriter, r *http.Req
 	}
 	if err = h.service.RecordModuleWorkContextMint(r.Context(), req.Prefix, authority); err != nil {
 		installerError(w, http.StatusServiceUnavailable, "installer audit unavailable")
+		return
+	}
+	if err = h.service.FenceModuleMint(r.Context(), authority); err != nil {
+		installerError(w, http.StatusServiceUnavailable, "installer authority changed during mint")
 		return
 	}
 	installerJSON(w, http.StatusOK, map[string]any{"token": token, "expiresAt": expires, "principalId": authority.PrincipalID, "tenant": authority.Tenant})

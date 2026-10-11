@@ -241,13 +241,18 @@ func TestEveryModuleMintIsExecutionBound(t *testing.T) {
 	links := []struct {
 		file, function, callee string
 	}{
-		{"business/module_identity.go", "ModuleAuthorizeWorkContext", "BindExecution"},
-		{"business/module_operation_context.go", "ModuleAuthorizeOperationContext", "ModuleAuthorizeWorkContext"},
-		{"business/source_delegation.go", "AuthorizeSourceOperationContext", "ModuleAuthorizeWorkContext"},
+		{"business/module_identity.go", "ModuleAuthorizeWorkContext", "authorizeModuleIdentity"},
+		{"business/module_identity.go", "authorizeModuleIdentity", "BindExecution"},
+		{"business/module_operation_context.go", "ModuleAuthorizeOperationContext", "authorizeModuleIdentity"},
+		{"business/source_delegation.go", "AuthorizeSourceOperationContext", "authorizeModuleIdentity"},
 		{"adapters/module_capabilities_server.go", "MintModuleWorkContext", "ModuleAuthorizeWorkContext"},
 		{"adapters/module_capabilities_server.go", "MintModuleOperationContext", "ModuleAuthorizeOperationContext"},
 		{"adapters/source_delegation.go", "MintSourceOperationContext", "AuthorizeSourceOperationContext"},
 		{"adapters/module_installations_http.go", "token", "ModuleAuthorizeWorkContext"},
+		{"adapters/module_capabilities_server.go", "MintModuleWorkContext", "FenceModuleMint"},
+		{"adapters/module_capabilities_server.go", "MintModuleOperationContext", "FenceModuleMint"},
+		{"adapters/source_delegation.go", "MintSourceOperationContext", "FenceModuleMint"},
+		{"adapters/module_installations_http.go", "token", "FenceModuleMint"},
 	}
 	for _, link := range links {
 		path := filepath.Join(code, link.file)
@@ -334,10 +339,10 @@ func blockCalls(node ast.Node, callee string) bool {
 // call in a literal nobody invokes satisfied the gate.
 func TestTheMintGateIgnoresAClosureThatNeverRuns(t *testing.T) {
 	for source, want := range map[string]bool{
-		"func token() {\n _ = func() { service.ModuleAuthorizeWorkContext() }\n mint()\n}":     false,
-		"func token() {\n go func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}":    false,
-		"func token() {\n defer func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}": false,
-		"func token() {\n func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}":       true,
+		"func token() {\n _ = func() { service.ModuleAuthorizeWorkContext() }\n mint()\n}":                           false,
+		"func token() {\n go func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}":                          false,
+		"func token() {\n defer func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}":                       false,
+		"func token() {\n func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}":                             true,
 		"func token() {\n if _, err := service.ModuleAuthorizeWorkContext(); err != nil {\n  return\n }\n mint()\n}": true,
 	} {
 		parsed, err := parser.ParseFile(token.NewFileSet(), "example.go", "package example\n"+source, 0)

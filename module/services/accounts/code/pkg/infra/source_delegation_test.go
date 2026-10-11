@@ -11,6 +11,7 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/moduleregistrytest"
 	"accounts/pkg/datasource/github"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
@@ -73,7 +74,7 @@ func delegationRegistryWith(t *testing.T, otherTenant string, crossTenant bool) 
 	if crossTenant {
 		cross = `"cross_tenant":true,`
 	}
-	registry, err := business.ParseModulePrincipalRegistry(`{` +
+	registry, err := moduleregistrytest.Parse(`{` +
 		`"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
@@ -563,7 +564,7 @@ func TestSourceDelegation_BindingChanged(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
-	widened, err := business.ParseModulePrincipalRegistry(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + w.otherOrg + `","operation_audiences":{` +
+	widened, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + w.otherOrg + `","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +

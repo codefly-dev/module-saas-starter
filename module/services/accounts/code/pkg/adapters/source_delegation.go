@@ -82,6 +82,9 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 	if err := service.RecordSourceOperationContextMint(ctx, authority); err != nil {
 		return nil, mapSourceDelegationError(err)
 	}
+	if err := service.FenceModuleMint(ctx, authority.ModuleWorkContextAuthority); err != nil {
+		return nil, err
+	}
 	return &gen.ModuleMintSourceOperationContextResponse{
 		Token:            token.Encoded(),
 		ExpiresAt:        timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),

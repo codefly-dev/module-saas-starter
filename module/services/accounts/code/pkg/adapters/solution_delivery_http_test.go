@@ -71,6 +71,12 @@ func (f *fakeDeliveryStore) ListNewestDeliveredDocuments(
 	return nil, nil
 }
 
+func (f *fakeDeliveryStore) ListDeliveredDocuments(
+	context.Context, business.SolutionDeliveryKind,
+) ([]*business.SolutionDeliveryRecord, error) {
+	return nil, nil
+}
+
 type fakeCarrierAuthorizer struct {
 	err error
 	// seenNamespaces records what the document declared, because a presence

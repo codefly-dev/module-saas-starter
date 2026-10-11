@@ -22,10 +22,10 @@ approval; it does not implement an organization-admin policy publication API.
 The installation Job proves which module it is like every module does: with its
 pod's projected ServiceAccount token (audience `accounts`). There is no installer
 secret — `MODULE_IDENTITY_SECRETS` is deleted (#1056). Declare the identity as a
-module principal bound to the approved organization, with the Job's workload
-(ServiceAccount, namespace, container); its authority document must approve the
-build the Job runs, or it mints nothing.
-It needs no queues, event namespaces, cross-tenant grant or administrator role.
+module principal allowed by the platform super_admin's module envelope, bound
+to the approved organization, with the Job's workload (ServiceAccount, namespace,
+container); its authority document must approve the build the Job runs, or it
+mints nothing. It needs no queues, event namespaces, cross-tenant grant or administrator role.
 The existing `ModulePrincipalID(prefix)` derives its system identity. This is
 separate from the module's application agent, and needs no agent registration
 or human API key to bootstrap itself.
@@ -308,7 +308,8 @@ and revocation require a person-present current organization administrator and
 the installed activation permission. A delegated actor may check a prior
 approval, but cannot turn the owner's identity into consent.
 
-The composition declares `MODULE_PRINCIPALS[<module>].artifact_policies[<id>]`:
+A platform super_admin declares `artifact_policies[<id>]` in the module's
+grant in the module envelope:
 
 ```json
 {

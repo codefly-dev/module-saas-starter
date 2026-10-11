@@ -311,14 +311,15 @@ var ErrExecutionAuthorityUnreconciled = errors.New(
 const executionTokenAudience = "accounts"
 
 // BindExecution establishes what a caller is running and holds it against what
-// the authority document approves.
+// the authority document approves. The caller passes its mint snapshot; both
+// the declared container and the workload-owner lookup use that same registry.
 //
 // THE ORDER IS LOAD-BEARING, and it is: authenticate, then read the pod the
 // token named, then compare. Reading the pod first would mean reading a pod the
 // caller named, which is a caller-supplied input; the token is what makes the
 // pod reference trustworthy.
 func (s *Service) BindExecution(
-	ctx context.Context, principalID, token string,
+	ctx context.Context, snapshot *installedModuleRegistry, principalID, token string,
 ) (*ExecutionIdentity, error) {
 	if s.executionReviewer == nil || s.executionAuthority == nil {
 		return nil, fmt.Errorf("%w: this host has no execution reviewer wired", ErrExecutionUnbound)
@@ -332,7 +333,7 @@ func (s *Service) BindExecution(
 	// declaration for is refused as unknown rather than as unapproved: nothing
 	// is known about it, so nothing can be approved for it, and the two must
 	// not read alike.
-	grant, declared := s.declaredModules()[principalID]
+	grant, declared := snapshot.registry[principalID]
 	if !declared || !grant.Workload.declared() {
 		return nil, fmt.Errorf("%w: %s declares no workload identity", ErrUnknownExecutionPrincipal, principalID)
 	}
@@ -341,7 +342,7 @@ func (s *Service) BindExecution(
 	// images the approval was tested against — a pod's containers do not all
 	// run the same image, so naming a sibling picks the comparison.
 	containerName := grant.Workload.Container
-	modules := s.declaredModules()
+	modules := snapshot.registry
 
 	// 1. Authenticate. The API server checks the audience, so a token minted
 	//    for anything else is rejected before this host reasons about it.
