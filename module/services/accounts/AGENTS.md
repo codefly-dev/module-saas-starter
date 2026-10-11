@@ -354,6 +354,55 @@ credentials sealed for the old one at the next check. The grant ceiling's keys:
 call the surface** — accounts starts with an empty registry and serves no module
 until its first pass.
 
+### A non-member person is not a refusal of the module
+
+Every refusal of the **caller's authority** on this surface is
+`Unauthenticated` or `PERMISSION_DENIED` and names no reason: an identity it
+cannot prove, a prefix this host does not admit, a tenant it is not bound to, a
+queue or namespace outside its grant, and a procedure the authority endpoint
+does not serve — the last enforced twice, by the mesh `AuthorizationPolicy` and
+again in-process by the interceptor (`grpc_auth_interceptor.go`, "RPC is not
+exposed on the module authority endpoint"), which is also where a missing or
+wrong internal credential is refused. A malformed request is `INVALID_ARGUMENT`
+whatever the caller's authority (an unknown notification category or type, a
+destination that is not a same-origin path). A **person** the surface is asked
+to act on who is not a member of the named tenant is `FAILED_PRECONDITION`. That holds on each surface that takes a person:
+`NotifyUser`, subject-scoped `EnqueueJob` and `ListSubjectVisibility`.
+
+The split is what lets a module drive the surface from a journal with retries. A
+departed person is final for that person and nothing a retry resolves, while a
+composition this host does not admit as a module principal, or whose workload
+it cannot bind to an approved build, is an operator's to fix and its work is
+worth holding; conflated under
+one code a consumer has to choose which of the two it silently gets wrong.
+
+**The code alone is not the discriminator — the reason is.** This surface
+answers `FAILED_PRECONDITION` to several unrelated facts, so a consumer reads
+the `google.rpc.ErrorInfo` reason and never the code or the message text. On
+the notify and subject-visibility methods every `FAILED_PRECONDITION` names
+one, under domain `saas.accounts.v1`:
+
+| Reason | Fact | Whose to fix |
+| --- | --- | --- |
+| `TENANT_MEMBERSHIP_MISSING` (`business.ModuleTenantMembershipMissingReason`) | the person named is not a member of the tenant | nobody's — final for that person |
+| `NOTIFICATION_IDEMPOTENCY_CONFLICT` (`business.ModuleNotificationIdempotencyConflictReason`) | the idempotency key was used for different content | the calling module's; a retry never clears it |
+| `SUBJECT_VISIBILITY_SET_TOO_LARGE` (`business.ModuleSubjectVisibilitySetTooLargeReason`) | the viewer's set exceeds `ModuleSubjectVisibilityMaxSet` | an administrator's, by changing the hierarchy |
+| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+
+Only `TENANT_MEMBERSHIP_MISSING` is final. **An absent or unrecognised reason is
+retainable, never final:** the table is what the surface answers today, not a
+promise about every future refusal, so a consumer that reads "no reason I know"
+as "done" turns the next refusal added here into silently discarded work. That
+is not hypothetical — `LIVE_AUTHORITY_UNAVAILABLE` carried no reason until
+#1032, and an unconfigured host was therefore indistinguishable on the wire from
+a departed person.
+
+A reason is only meaningful together with the domain the same call answered
+with: the `Mint*` exchanges' refusals carry theirs under
+`accounts.saas.codefly.dev` (`adapters.SolutionRegistryErrorDomain`, see
+[Source delegations](#source-delegations-a-sync-runs-with-the-connecting-persons-authority)),
+so matching on a bare reason across the whole service is wrong.
+
 ## Minting a module Work Context
 
 The identity itself is a **Work Context**. The auth-gateway brokers the exchange
