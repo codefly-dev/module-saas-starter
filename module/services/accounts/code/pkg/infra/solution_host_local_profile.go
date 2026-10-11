@@ -20,12 +20,9 @@ import (
 // The local profile: how a developer's own identity is admitted on the host of
 // a local cluster, and how every other host refuses it (issue #1063).
 //
-// A local run signs delivery with the DEVELOPER'S OIDC identity through the
-// same Sigstore keyless flow a release uses (codefly-dev/cli#918). A person's
-// certificate carries no repository and no workflow, so the workload rule —
-// name a repository or a build config — cannot admit it. A person is therefore
-// its own signer kind, and it is valid only in a policy that declares itself
-// local.
+// A local run signs with the developer's own platform key. A person is its
+// own signer kind because that key may be admitted only by a policy bound to
+// the developer's cluster.
 //
 // THE QUESTION THIS FILE ANSWERS is how a host that is NOT the developer's
 // cluster refuses a local policy, without trusting anything the composition
@@ -37,9 +34,6 @@ import (
 //     the hole SolutionHostTrustAnchorPath was made a constant to close, and
 //     the deleted `local` trust policy died of the same thing — its gate was a
 //     string an operator declared.
-//   - The trusted root. A local profile and a deployed one use the SAME root:
-//     the developer signs through the public-good Fulcio and Rekor, exactly as
-//     the release workflow does, so the root cannot tell them apart.
 //   - Heuristics about the cluster — a `+k3s` server version, a node's
 //     provider ID. Refused: they are conventions, not properties. A deployed
 //     cell may run k3s, and a version string proves nothing about whose
@@ -96,7 +90,7 @@ import (
 //     can observe distinguishes a developer's cluster from a production one by
 //     kind, so whoever writes a deployed host's trust anchor could deliberately
 //     pin THAT cluster's CA and admit a person there. That is no new authority —
-//     the anchor's writer can already list any workload identity — and it
+//     the anchor's writer can already pin any signing key — and it
 //     cannot happen by accident: a copied profile names the wrong authority;
 //   - an attacker who can REPLACE this pod's projected CA bundle with exactly
 //     the pinned certificate (pod-spec control, or a write to the namespace's
@@ -148,26 +142,6 @@ func (profile *SolutionHostLocalProfile) validate() error {
 // nothing else.
 type SolutionHostClusterAuthority interface {
 	BindToAuthority(ctx context.Context, fingerprint string) error
-}
-
-// ProveLocalCluster proves a local policy is on its own cluster, and from then
-// on lets it admit carriers. A deployed policy is bound to no cluster: this
-// does nothing for it, and it never needed to.
-func (v *keylessBundleVerifier) ProveLocalCluster(ctx context.Context, cluster SolutionHostClusterAuthority) error {
-	if v.policy.Local == nil {
-		return nil
-	}
-	if cluster == nil {
-		return fmt.Errorf("%w: the verification policy is a local profile and this host has no cluster to prove it against",
-			ErrSolutionHostLocalPolicyOutsideItsCluster)
-	}
-	if err := cluster.BindToAuthority(ctx, v.policy.Local.ClusterCertificateAuthoritySHA256); err != nil {
-		return fmt.Errorf("the verification policy on the trust anchor is a local profile bound to the cluster whose certificate authority is %s, "+
-			"and this host is not running in it — a host in any other cluster refuses a local profile: %w",
-			v.policy.Local.ClusterCertificateAuthoritySHA256, err)
-	}
-	v.localClusterProven.Store(true)
-	return nil
 }
 
 // BindToAuthority binds this client — the one every TokenReview and pod read

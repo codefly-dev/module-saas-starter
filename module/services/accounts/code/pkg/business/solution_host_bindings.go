@@ -184,11 +184,9 @@ type SolutionHostBindingReconciler struct {
 	source  SolutionHostBindingSource
 	host    solutionhost.Host
 
-	// verifier is this host's attestation check. core holds no verifier and
-	// never will: signing is keyless over a workload identity, so verifying is
-	// a trust root and an identity policy that belong to the deployment, not to
-	// a library every binary imports.
-	verifier solutionhost.BundleVerifier
+	// verifier uses the platform's pins; core checks the envelope and the
+	// signer's ownership domains before returning an admitted document.
+	verifier *solutionhost.Verifier
 
 	interval time.Duration
 	now      func() time.Time
@@ -238,7 +236,7 @@ type SolutionHostBindingReconcilerConfig struct {
 	// required: without one there is no way to construct the verified value
 	// core's Admit takes, so a host with no verifier admits nothing at all
 	// rather than falling back to admitting everything.
-	Verifier solutionhost.BundleVerifier
+	Verifier *solutionhost.Verifier
 
 	// Coordinate is the host this reconciler answers for.
 	Coordinate string
@@ -589,7 +587,7 @@ func (r *SolutionHostBindingReconciler) Shutdown(ctx context.Context) error {
 // misleading reason string on a row whose applied generation is untouched, which
 // is why the attribution is kept and why the reason is coarse.
 func verifySolutionHostBindingDocuments(
-	ctx context.Context, verifier solutionhost.BundleVerifier, documents []SolutionHostBindingDocument,
+	ctx context.Context, verifier *solutionhost.Verifier, documents []SolutionHostBindingDocument,
 ) ([]deliveredSolutionHostBinding, []unparsedSolutionHostBinding) {
 	verified := make([]deliveredSolutionHostBinding, 0, len(documents))
 	var problems []unparsedSolutionHostBinding

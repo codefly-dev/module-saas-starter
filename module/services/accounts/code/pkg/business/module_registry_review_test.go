@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 
+	"accounts/internal/deliverytest"
+
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -260,7 +262,7 @@ func authorityRecord(t *testing.T, document *solutionhost.AuthorityDocument) *So
 	payload, err := document.CanonicalBytes()
 	require.NoError(t, err)
 	return &SolutionDeliveryRecord{Kind: SolutionDeliveryAuthority, DocumentID: document.Authority,
-		Generation: document.Generation, Payload: payload, Bundle: json.RawMessage(solutionhost.FixtureBundle)}
+		Generation: document.Generation, Payload: payload, Bundle: deliverytest.Envelope(t, payload, reviewSigner(document.OwnershipDomain))}
 }
 
 func presenceRecord(t *testing.T, document *solutionhost.SolutionHostBinding) *SolutionDeliveryRecord {
@@ -268,7 +270,7 @@ func presenceRecord(t *testing.T, document *solutionhost.SolutionHostBinding) *S
 	payload, err := document.CanonicalBytes()
 	require.NoError(t, err)
 	return &SolutionDeliveryRecord{Kind: SolutionDeliveryPresence, DocumentID: document.Binding,
-		Generation: document.Generation, Payload: payload, Bundle: json.RawMessage(solutionhost.FixtureBundle)}
+		Generation: document.Generation, Payload: payload, Bundle: deliverytest.Envelope(t, payload, reviewSigner(document.OwnershipDomain))}
 }
 
 func tombstoneOf(t *testing.T, document *solutionhost.AuthorityDocument) *solutionhost.AuthorityDocument {
@@ -287,7 +289,7 @@ type registryReview struct {
 	reconciler *ModulePrincipalReconciler
 	inbox      *registryReviewInbox
 	store      *registryReviewStore
-	verifier   *stubBundleVerifier
+	verifier   *solutionhost.Verifier
 	authority  *solutionhost.AuthorityDocument
 	presence   *solutionhost.SolutionHostBinding
 }
@@ -318,7 +320,7 @@ func newRegistryReview(t *testing.T) *registryReview {
 	store.inbox = inbox
 	inbox.deliver(presenceRecord(t, presence))
 	inbox.deliver(authorityRecord(t, authority))
-	verifier := &stubBundleVerifier{signer: "example-signer"}
+	verifier := deliverytest.Verifier(t, map[string][]string{"example-signer": {authority.OwnershipDomain}, "foreign-signer": {"other-domain"}})
 	service := &Service{store: store, deliveryStore: inbox}
 	service.SetModuleEnvelopeStore(&fakeEnvelopeStore{latest: 3, record: &ModuleEnvelopeRecord{Revision: 3, Document: encodeEnvelope(t, testEnvelopeDocument())}})
 	service.SetModuleAuthorityReads(reviewLiveAuthority{service: service}, nil)
@@ -350,7 +352,7 @@ func TestAWithdrawalIsHonouredWhenTheNewestDocumentNoLongerVerifies(t *testing.T
 	later := *r.authority
 	later.Generation = 3
 	r.inbox.deliver(authorityRecord(t, &later))
-	r.verifier.err = errors.New("signer no longer verifies")
+	*r.verifier = solutionhost.Verifier{}
 
 	before := r.inbox.historyReads
 	err := r.reconciler.RunOnce(context.Background())
@@ -395,7 +397,7 @@ func TestAnUnverifiableDocumentGrantsNothingAtANewRevision(t *testing.T) {
 	document := testEnvelopeDocument()
 	document["revision"] = float64(4)
 	r.service.SetModuleEnvelopeStore(&fakeEnvelopeStore{latest: 4, record: &ModuleEnvelopeRecord{Revision: 4, Document: encodeEnvelope(t, document)}})
-	r.verifier.err = errors.New("inbox cannot verify")
+	*r.verifier = solutionhost.Verifier{}
 	require.Error(t, r.reconciler.RunOnce(context.Background()))
 	require.Empty(t, r.service.ModulePrincipals())
 }
@@ -459,7 +461,7 @@ func TestAnUnverifiableAuthorityDoesNotSurviveAFailedPresenceRead(t *testing.T) 
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newRegistryReview(t)
-			r.verifier.err = errors.New("signer removed from verification trust policy")
+			*r.verifier = solutionhost.Verifier{}
 			r.store.appliedErr = errors.New("applied presence unreadable")
 			fail(r.store)
 			require.ErrorIs(t, r.reconciler.RunOnce(context.Background()), ErrModulePrincipalInputsUnreadable)
@@ -492,20 +494,20 @@ func TestARefusedForeignPresenceEstablishesNoOwnership(t *testing.T) {
 		require.True(t, r.present())
 
 		policy := map[string][]string{"example-signer": {r.authority.OwnershipDomain}, "foreign-signer": {"other-domain"}}
-		r.service.SetSolutionDelivery(&stubBundleVerifier{signer: "foreign-signer"}, r.inbox, permissiveCarrier{}, policy)
+		r.service.SetSolutionDelivery(deliverytest.Verifier(t, map[string][]string{"foreign-signer": {"other-domain"}}), r.inbox, permissiveCarrier{}, policy)
 		r.service.SetSolutionDeliveryCoordinate(r.authority.Host.Coordinate)
 		foreign := *r.presence
 		foreign.OwnershipDomain, foreign.Generation = "other-domain", 1
 		foreign.Workloads = append([]solutionhost.Workload(nil), r.presence.Workloads...)
 		foreign.Workloads[0].Identity.SPIFFEID = "spiffe://acme.test/ns/other-prod/sa/other"
 		_, _, err = r.service.ReceiveSolutionDelivery(context.Background(),
-			SolutionDeliveryCarrier{Kind: SolutionDeliveryPresence, Raw: carrierOver(t, presenceRecord(t, &foreign).Payload)}, "carrier")
+			SolutionDeliveryCarrier{Kind: SolutionDeliveryPresence, Raw: deliverytest.Carrier(t, presenceRecord(t, &foreign).Payload, "foreign-signer")}, "carrier")
 		require.NoError(t, err, "receipt keeps the row; core's admission is what refuses it")
 		host := r.reconciler.activation.reconciler.host
 		state, ok := r.store.applied[0].AppliedState()
 		require.True(t, ok)
 		host.Applied = []solutionhost.Applied{state}
-		foreignDelivered, err := solutionhost.VerifyDelivered(context.Background(), carrierOf(presenceRecord(t, &foreign)), &stubBundleVerifier{signer: "foreign-signer"})
+		foreignDelivered, err := solutionhost.VerifyDelivered(context.Background(), carrierOf(presenceRecord(t, &foreign)), deliverytest.Verifier(t, map[string][]string{"foreign-signer": {"other-domain"}}))
 		require.NoError(t, err)
 		_, err = host.Admit(foreignDelivered)
 		require.ErrorIs(t, err, solutionhost.ErrWrongDomain)
@@ -521,7 +523,7 @@ func TestARefusedForeignPresenceEstablishesNoOwnership(t *testing.T) {
 	t.Run("refused at receipt", func(t *testing.T) {
 		r := setup(t)
 		_, _, err := r.service.ReceiveSolutionDelivery(context.Background(),
-			SolutionDeliveryCarrier{Kind: SolutionDeliveryAuthority, Raw: carrierOver(t, authorityRecord(t, foreignTombstone(r)).Payload)}, "carrier")
+			SolutionDeliveryCarrier{Kind: SolutionDeliveryAuthority, Raw: reviewCarrier(t, authorityRecord(t, foreignTombstone(r)).Payload)}, "carrier")
 		require.ErrorIs(t, err, ErrSolutionDeliveryDomainNotGranted)
 	})
 	t.Run("ignored in history", func(t *testing.T) {
@@ -551,10 +553,10 @@ func TestAForeignTombstoneWithdrawsNothing(t *testing.T) {
 			tombstone.Authority = "other-authority"
 			mutate(tombstone)
 			policy := map[string][]string{"example-signer": {r.authority.OwnershipDomain, "other-domain"}}
-			r.service.SetSolutionDelivery(&stubBundleVerifier{signer: "example-signer"}, r.inbox, permissiveCarrier{}, policy)
+			r.service.SetSolutionDelivery(deliverytest.Verifier(t, policy), r.inbox, permissiveCarrier{}, policy)
 			r.service.SetSolutionDeliveryCoordinate(r.authority.Host.Coordinate)
 			_, _, err := r.service.ReceiveSolutionDelivery(context.Background(),
-				SolutionDeliveryCarrier{Kind: SolutionDeliveryAuthority, Raw: carrierOver(t, authorityRecord(t, tombstone).Payload)}, "carrier")
+				SolutionDeliveryCarrier{Kind: SolutionDeliveryAuthority, Raw: deliverytest.Carrier(t, authorityRecord(t, tombstone).Payload, "example-signer")}, "carrier")
 			require.ErrorIs(t, err, ErrSolutionDeliveryDomainNotGranted)
 		})
 		t.Run(name+" in history is ignored", func(t *testing.T) {
@@ -751,4 +753,21 @@ func (*fakeEnvelopeStore) ModuleInstallations(context.Context) ([]ModuleInstalla
 
 func (f reviewLiveAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
 	return ctx, func() {}, nil
+}
+
+// The foreign-domain cases are signed by a distinct key, so their signatures
+// remain valid while admission decides whether that key may change this binding.
+func reviewSigner(domain string) string {
+	if domain == "other-domain" {
+		return "foreign-signer"
+	}
+	return "example-signer"
+}
+
+func reviewCarrier(t *testing.T, payload []byte) []byte {
+	var header struct {
+		OwnershipDomain string `json:"ownership_domain"`
+	}
+	require.NoError(t, json.Unmarshal(payload, &header))
+	return deliverytest.Carrier(t, payload, reviewSigner(header.OwnershipDomain))
 }

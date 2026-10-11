@@ -105,7 +105,7 @@ func newKubernetesHTTPClient(roots *x509.CertPool) *http.Client {
 // It refuses when the environment is not a cluster, rather than constructing a
 // client that will fail on first use. A host configured to verify executions
 // that cannot reach the API server must say so at boot, for the same reason the
-// keyless trust policy refuses at boot: "I cannot perform this check" and "this
+// pinned-key trust policy refuses at boot: "I cannot perform this check" and "this
 // caller failed the check" must not be the same observable.
 func NewKubernetesClient() (*KubernetesClient, error) {
 	host := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST"))

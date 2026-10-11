@@ -618,8 +618,7 @@ func (a *SolutionAuthorityActivation) newestDelivered(
 // is refused by the same check that refuses one off the wire.
 func carrierOf(record *SolutionDeliveryRecord) *solutionhost.Signed {
 	return &solutionhost.Signed{
-		Schema:   solutionhost.SchemaSignedV1,
 		Document: record.Payload,
-		Bundle:   record.Bundle,
+		Envelope: record.Bundle,
 	}
 }

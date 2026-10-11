@@ -4,10 +4,10 @@ package infra_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
+	"accounts/internal/deliverytest"
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
 
@@ -47,7 +47,7 @@ func TestRegistrySnapshotCannotRestoreAuthorityDuringFirstAdmission(t *testing.T
 	require.NoError(t, err)
 	replica.SetModuleEnvelopeStore(testStore)
 	replica.SetModuleAuthorityReads(testStore, nil)
-	verifier := productionPathVerifier{signer: productionPathSigner}
+	verifier := productionVerifier(t)
 	policy := map[string][]string{productionPathSigner: {productionPathDomain}}
 	replica.SetSolutionDelivery(verifier, testStore, nil, policy)
 	presenceReconciler := newRegistryReconciler(t, replica, verifier, policy, replica)
@@ -110,7 +110,7 @@ func TestControlPlaneReadSnapshotKeepsPresenceAndWithdrawalHistoryTogether(t *te
 	withdrawal := &business.SolutionDeliveryRecord{
 		Kind: business.SolutionDeliveryAuthority, DocumentID: document.Authority,
 		Generation: document.Generation, ContentHash: fixtureDigest(string(payload)),
-		Payload: payload, Bundle: json.RawMessage(solutionhost.FixtureBundle),
+		Payload: payload, Bundle: deliverytest.Envelope(t, payload, solutionhost.FixtureDeliveredBy),
 		SignerIdentity: productionPathSigner, OwnershipDomain: document.OwnershipDomain, ReceivedAt: now,
 	}
 	assertVisible := func(ctx context.Context, want bool) {

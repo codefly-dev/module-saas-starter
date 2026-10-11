@@ -158,7 +158,7 @@ type Service struct {
 	// The delivery inbox's wiring. All three or none: ReceiveSolutionDelivery
 	// fails closed and names the gap when any is absent, because a deployment
 	// that mounted the endpoint without a verifier must not accept documents.
-	deliveryVerifier        solutionhost.BundleVerifier
+	deliveryVerifier        *solutionhost.Verifier
 	deliveryStore           SolutionDeliveryStore
 	deliveryCarrier         SolutionDeliveryCarrierAuthorizer
 	deliveryDomainsBySigner map[string][]string
@@ -242,7 +242,7 @@ func (s *Service) SetPolicyLog(log PolicyLog, store PolicyLogStore) {
 // fields: an atomic that is only ever written once reads as a claim that
 // something might replace it.
 func (s *Service) SetSolutionDelivery(
-	verifier solutionhost.BundleVerifier,
+	verifier *solutionhost.Verifier,
 	store SolutionDeliveryStore,
 	carrier SolutionDeliveryCarrierAuthorizer,
 	domainsBySigner map[string][]string,

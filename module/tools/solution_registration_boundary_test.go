@@ -273,35 +273,19 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// That the host is the second layer, not the perimeter. Without this
 		// line the check above reads as the only thing standing in the way.
 		"The host's SA-and-namespace check is the second",
-		// The named refusal. The library collapses these two; the distinction
-		// is the difference between "fix your signer" and "investigate".
-		"refused BY NAME",
-		// WHERE the check goes, which is the load-bearing half. The obvious
-		// implementation — classify the verifier's error — cannot work: the
-		// verifier emits the same words for "the signer never logged" and "the
-		// root cannot check the log it did".
-		"Check it BEFORE the verifier runs",
-		// And that a signed timestamp is not evidence of logging. This is the
-		// case a looser "has it got anything?" check admits silently.
-		"does not stand in for transparency evidence",
+		// The platform-key contract: carriers supply no trust, and the pinned
+		// identity is the key ID even when the host gives it another label.
+		"exactly one signature",
+		"No carrier may nominate its own key",
+		"The attested identity is **the key ID**",
 		// The delivery response taxonomy, pinned because a Job's retry policy is
 		// written against it. The 401/503 split especially: an earlier draft
 		// grouped on HTTP class and made a reviewable refusal retryable.
 		"what a retry would change",
 		"The review ran and refused",
-		// That there is ONE policy, and that the second one is gone rather than
-		// merely discouraged. These two pins replaced "the local policy is
-		// coordinate-bound" and "keyless is NOT YET AVAILABLE", both of which
-		// described a host that no longer exists — and the first of which
-		// documented a gate that was a string comparison against an
-		// operator-declared value.
 		"The `local` trust policy is deleted.",
-		"one verifier, one policy shape, two sets of listed identities",
-		// That a bundle is required and must be an object. A renderer whose
-		// pipeline has no signing step yet reaches for the field it can fill —
-		// `null` — and nothing in the carrier's own shape would have told it
-		// that produces a document the host treats as unsigned.
-		"A bundle must be present and be a JSON object",
+		"one verifier, one policy",
+		"An envelope must be present and be a JSON object",
 		// That what lands in a row is derived from the attested bytes rather
 		// than from whatever the pass was holding. This is the claim that makes
 		// the stored digest meaningful, and it is a property of the dependency,
