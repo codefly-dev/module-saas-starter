@@ -40,6 +40,18 @@ func (s *PostgresStore) LiveModuleAuthority(ctx context.Context, principalID, or
 	err = func() error {
 		var scope []byte
 		var revision, epoch, envelope uint64
+		// Lock order is target, then installation — the order target withdrawal
+		// takes (solution_targets FOR UPDATE, then its installations), so a
+		// capability check and a withdrawal can never wait on each other in a
+		// cycle. Targets are locked first, in id order, in their own statement.
+		if _, err := tx.Exec(ctx, `
+   SELECT 1 FROM public.solution_targets t
+   WHERE t.id IN (SELECT i.target_id FROM public.installations i
+     WHERE i.org_id = $1::uuid AND i.registry_principal_id = $2::uuid
+       AND ($3 = '' OR i.id::text = $3) AND i.status = 'active')
+   ORDER BY t.id FOR SHARE`, orgID, principalID, installationID); err != nil {
+			return err
+		}
 		err := tx.QueryRow(ctx, `
    SELECT i.id::text, i.revision, i.registry_binding_id, i.scope,
       COALESCE((SELECT revision FROM public.principal_authorization_revisions
@@ -49,7 +61,7 @@ func (s *PostgresStore) LiveModuleAuthority(ctx context.Context, principalID, or
    JOIN public.solution_targets t ON t.id = i.target_id AND t.binding_id = i.registry_binding_id
    WHERE i.org_id = $1::uuid AND i.registry_principal_id = $2::uuid
      AND ($3 = '' OR i.id::text = $3) AND i.status = 'active'
-     AND t.closed_generation IS NULL FOR SHARE OF i, t`, orgID, principalID, installationID,
+     AND t.closed_generation IS NULL FOR SHARE OF i`, orgID, principalID, installationID,
 		).Scan(&live.InstallationID, &revision, &live.RegistryBindingID, &scope, &epoch, &envelope)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return business.ErrModuleInstallationInactive
