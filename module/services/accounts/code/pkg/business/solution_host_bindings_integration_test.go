@@ -900,8 +900,10 @@ func testReconcilerAcceptingDomains(
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
 		business.SolutionHostBindingReconcilerConfig{
-			Source:          source,
-			Verifier:        deliverytest.Verifier(t, map[string][]string{testSignerIdentity: {testOwnershipDomain}}),
+			Source: source,
+			// The key is pinned for every domain the host grants it, so only
+			// the rule under test can refuse.
+			Verifier:        deliverytest.Verifier(t, map[string][]string{testSignerIdentity: domains}),
 			Coordinate:      testHostCoordinate,
 			Domains:         domains,
 			DomainsBySigner: map[string][]string{testSignerIdentity: domains},
