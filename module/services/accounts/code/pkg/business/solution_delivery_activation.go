@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/codefly-dev/core/solutionhost"
 )
@@ -285,6 +286,14 @@ func (a *SolutionAuthorityActivation) deliveredAuthority(
 	if err != nil {
 		return nil, err
 	}
+	withdrawn, err := a.withdrawnBindings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if authority, gone := withdrawn[binding]; gone {
+		return nil, fmt.Errorf("%w: authority %q withdrew binding %q, and a withdrawal is terminal for it — a later generation or a new authority id does not reinstate it",
+			ErrSolutionAuthorityWithdrawn, authority, binding)
+	}
 	var live []*solutionhost.DeliveredAuthority
 	for _, one := range delivered {
 		if one.document.PresenceBinding != binding {
@@ -355,30 +364,108 @@ func (a *SolutionAuthorityActivation) verifiedAuthority(
 	return read, nil
 }
 
-// liveAuthorityDocuments returns the authority documents that are in force:
-// every re-verified document that is not a tombstone.
+// withdrawnBindings reads the WHOLE authority history and returns every
+// presence binding a tombstone was ever delivered over, with the authority that
+// withdrew it.
 //
-// A tombstone is DROPPED rather than reported, and that is the removal the
-// approved-build view needs — a withdrawn authority leaves its principals with
-// no entry, so they go back to being unknown and are refused. Reporting it as
-// an error instead would make one withdrawal stop the whole view from being
-// rebuilt, which keeps the withdrawn build serving: the opposite of what the
-// withdrawal asked for.
-func (a *SolutionAuthorityActivation) liveAuthorityDocuments(
-	ctx context.Context,
-) ([]*solutionhost.AuthorityDocument, error) {
+// The whole history, not the newest generation per authority id. A withdrawal
+// is terminal for the binding, and the newest-per-id read hides it as soon as a
+// later generation of the SAME id is delivered: generation 2 withdraws, a live
+// generation 3 supersedes it in that read, and the binding is granted again.
+// Nothing deletes from the inbox, so the tombstone is still there to be read.
+//
+// Rows are decoded rather than re-verified. A stored row was verified when it
+// was received, and the only thing taken from it here is the fact that it
+// WITHDRAWS — a reading that can only remove authority, so a signer since
+// removed from the policy cannot use it to grant anything.
+func (a *SolutionAuthorityActivation) withdrawnBindings(ctx context.Context) (map[string]string, error) {
+	service := a.reconciler.service
+	if service.deliveryStore == nil {
+		return nil, fmt.Errorf("%w: this host has no delivery inbox wired", ErrSolutionAuthorityCeilingUnavailable)
+	}
+	var records []*SolutionDeliveryRecord
+	if err := service.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		records, err = service.deliveryStore.ListDeliveredDocuments(ctx, SolutionDeliveryAuthority)
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("read the authority delivery history: %w", err)
+	}
+	withdrawn := map[string]string{}
+	for _, record := range records {
+		document, err := solutionhost.AuthorityFromVerified(record.Payload)
+		if err != nil {
+			return nil, fmt.Errorf("read delivered authority %s generation %d: %w", record.DocumentID, record.Generation, err)
+		}
+		if document.Removed {
+			if _, already := withdrawn[document.PresenceBinding]; !already {
+				withdrawn[document.PresenceBinding] = document.Authority
+			}
+		}
+	}
+	return withdrawn, nil
+}
+
+// ErrSolutionAuthoritySignerNotGranted reports an authority document whose
+// signer the host's CURRENT policy no longer lets speak for its ownership
+// domain, or whose domain the host no longer accepts. The signature still
+// verifies; the policy that made it authoritative has moved.
+var ErrSolutionAuthoritySignerNotGranted = errors.New("the authority's signer may no longer speak for its ownership domain on this host")
+
+// liveVerifiedAuthority is one authority document in force, with the signer
+// that delivered it.
+type liveVerifiedAuthority struct {
+	document *solutionhost.AuthorityDocument
+	signer   string
+}
+
+// liveAuthority returns the authority documents in force, and the reasons the
+// others are not: every re-verified newest-generation document that is not a
+// tombstone, over a presence binding no tombstone in the WHOLE history ever
+// withdrew, whose signer the host's current policy still lets speak for its
+// ownership domain.
+//
+// The policy is re-applied on every read, as delivery applied it on receipt.
+// A signer's domain removed from the policy, or a domain the host stopped
+// accepting, stops that signer's documents granting anything — a signature
+// that still verifies is authentic, not authorized.
+//
+// A tombstone is DROPPED rather than reported: a withdrawn authority leaves its
+// principals with no entry. A document refused for a withdrawal or for policy
+// is reported, by name, and the rest stay in force.
+func (a *SolutionAuthorityActivation) liveAuthority(ctx context.Context) ([]liveVerifiedAuthority, []error, error) {
 	read, err := a.verifiedAuthority(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	live := make([]*solutionhost.AuthorityDocument, 0, len(read))
+	withdrawn, err := a.withdrawnBindings(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	host := a.reconciler.host
+	var (
+		live     []liveVerifiedAuthority
+		refusals []error
+	)
 	for _, one := range read {
-		if one.document.Removed {
+		document := one.document
+		if document.Removed {
 			continue
 		}
-		live = append(live, one.document)
+		if authority, gone := withdrawn[document.PresenceBinding]; gone {
+			refusals = append(refusals, fmt.Errorf("%w: authority %q generation %d is over binding %q, which authority %q withdrew",
+				ErrSolutionAuthorityWithdrawn, document.Authority, document.Generation, document.PresenceBinding, authority))
+			continue
+		}
+		signer := one.delivered.DeliveredBy()
+		if !slices.Contains(host.Domains, document.OwnershipDomain) || !slices.Contains(host.DomainsBySigner[signer], document.OwnershipDomain) {
+			refusals = append(refusals, fmt.Errorf("%w: authority %q generation %d, signer %q, domain %q",
+				ErrSolutionAuthoritySignerNotGranted, document.Authority, document.Generation, signer, document.OwnershipDomain))
+			continue
+		}
+		live = append(live, liveVerifiedAuthority{document: document, signer: signer})
 	}
-	return live, nil
+	return live, refusals, nil
 }
 
 // deliveredPresence reads the newest delivered presence document for one

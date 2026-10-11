@@ -540,11 +540,12 @@ message ModuleEnvelope {
   int64 revision = 1;
   // The whole ceiling at this revision, as JSON: `revision`,
   // `approved_builds`, and `principals` keyed by module prefix, each with the
-  // authority unit IDs this host admits (`bindings`), its `scope_ceilings`
-  // and its `grant` ceiling (tenant, cross_tenant, queues, namespaces,
+  // whole authority units this host admits (`bindings`: id, revision, scope,
+  // queue, namespace, binding_key, lookup_method), the workloads it may run as
+  // (`workload_identities`: spiffe_id, container), its `scope_ceilings` and its
+  // `grant` ceiling (tenant, cross_tenant, queues, namespaces,
   // external_namespaces, resources, read_audiences, operation_audiences,
-  // artifact_policies). It names no workload: which pods a principal runs as
-  // is read from delivered presence.
+  // artifact_policies).
   string document = 2;
   // The platform administrator who wrote this revision.
   string written_by = 3;
@@ -1023,7 +1024,7 @@ service PlatformAdminService {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
       tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      mfa: MFA_REQUIREMENT_RECENT_STEP_UP
       audit: {
         events: "saas.platform.module_envelope_written"
         emission: AUDIT_EMISSION_SUCCESS

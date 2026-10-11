@@ -143,6 +143,10 @@ type ModuleAuthorityStore interface {
 	LiveModuleAuthority(ctx context.Context, principalID, orgID, installationID string) (*LiveModuleAuthority, error)
 }
 
+// ErrModuleTenantNotCurrent reports a credential bound to a tenant its
+// principal's current grant no longer names.
+var ErrModuleTenantNotCurrent = errors.New("the credential's tenant is not the module principal's current tenant")
+
 // LiveModuleAuthority is what the live read answers.
 type LiveModuleAuthority struct {
 	InstallationID       string
@@ -167,6 +171,20 @@ func (s *Service) AuthorizeModuleCapability(
 ) (*ModuleCapabilityAuthority, error) {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
+		return nil, err
+	}
+	// THE TENANT IS THE CURRENT GRANT'S. A credential seals the tenant it was
+	// minted for, and the envelope can move a principal to another tenant at
+	// runtime; a credential minted before the move would otherwise go on
+	// acting in the old tenant under the new grant. A cross-tenant principal
+	// names its tenant per mint, so for it the bound org is not compared.
+	if !grant.CrossTenant && caller.BoundOrg != grant.Tenant {
+		return nil, wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent,
+			"principal %s credential is bound to %s and its current tenant is %s", caller.PrincipalID, caller.BoundOrg, grant.Tenant)
+	}
+	// THE REVISION FENCE: the registry the grant came from must be derived
+	// from the committed envelope, or a narrowing it predates is not applied.
+	if err := s.fenceModuleRegistry(ctx); err != nil {
 		return nil, err
 	}
 	if s.moduleAuthority == nil {

@@ -15,6 +15,8 @@ import (
 	modulecontract "github.com/codefly-dev/core/contracts/module"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // The module ENVELOPE: the authority ceiling a platform super_admin writes at
@@ -30,10 +32,18 @@ import (
 // WHAT IT HOLDS. Per module principal — keyed by the module's prefix, the name
 // its authority document grants to — three things, and nothing else:
 //
-//   - bindings: the authority unit IDs this host admits for the principal,
-//     exactly as delivery names them (<presence binding>:<binding>:<operation>).
-//     A document granting a unit that is not listed is OUTSIDE the envelope and
-//     grants nothing at all — the core rule that containment is exact.
+//   - bindings: the WHOLE authority units this host admits for the principal —
+//     id (as delivery names it, <presence binding>:<binding>:<operation>),
+//     revision, scope, queue, namespace, binding key and lookup method; the
+//     audience is the grant's for that binding. Core's containment is exact
+//     element equality against these units, so a document whose unit differs
+//     in any field — a wider scope, another revision, another key — is OUTSIDE
+//     the envelope and grants nothing at all.
+//   - workload_identities: the workloads the principal may run as (SPIFFE ID
+//     and authenticating container). The workload is read from delivered
+//     presence, and it binds only when it is one of these, so a later presence
+//     generation naming another service account or container does not move
+//     the principal without a new envelope revision.
 //   - scope_ceilings: the subject module's own vocabulary this host allows it to
 //     declare, held whole.
 //   - grant: the ceiling of the registry entry the principal can be given —
@@ -87,13 +97,36 @@ type ModuleEnvelope struct {
 
 // ModuleEnvelopePrincipal is the ceiling for one module principal.
 type ModuleEnvelopePrincipal struct {
-	// Bindings are the authority unit IDs this host admits for the principal.
-	Bindings []string
+	// Units are the whole authority units this host admits for the principal,
+	// built from the envelope alone: the audience is the grant's operation
+	// audience for the unit's binding. They are what core's exact containment
+	// compares a delivered unit against, so no field of them may come from the
+	// document being judged.
+	Units []solutionhost.AuthorityBinding
+	// WorkloadIdentities are the workloads the principal may run as.
+	WorkloadIdentities []ModuleWorkloadIdentity
 	// ScopeCeilings are the vocabulary entries the subject module may declare.
 	ScopeCeilings []solutionhost.ScopeCeiling
 	// Grant is the registry entry's ceiling. Prefix is the key it is filed
 	// under and Workload is always empty: the workload is derived.
 	Grant ModulePrincipalGrant
+}
+
+// ModuleWorkloadIdentity is one workload a principal may run as: the SPIFFE ID
+// the presence document names for it and its authenticating container.
+type ModuleWorkloadIdentity struct {
+	SPIFFEID  string `json:"spiffe_id"`
+	Container string `json:"container"`
+}
+
+// workload is the identity as the registry holds it: namespace and service
+// account read from the SPIFFE ID.
+func (w ModuleWorkloadIdentity) workload() ModuleWorkload {
+	return ModuleWorkload{
+		ServiceAccount: spiffeServiceAccount(w.SPIFFEID),
+		Namespace:      spiffeNamespace(w.SPIFFEID),
+		Container:      w.Container,
+	}
 }
 
 // ModuleEnvelopeRecord is one stored revision: the document as written, and who
@@ -115,6 +148,10 @@ type ModuleEnvelopeStore interface {
 	// revision is expectedRevision (0 = none written), and returns
 	// ErrModuleEnvelopeConflict otherwise. The store fills WrittenAt.
 	AppendModuleEnvelopeRecord(ctx context.Context, record *ModuleEnvelopeRecord, expectedRevision uint64) error
+	// LatestModuleEnvelopeRevision is the highest revision written, 0 when
+	// none. It is the fence every capability check reads: a registry derived
+	// from an older revision than this serves nothing.
+	LatestModuleEnvelopeRevision(ctx context.Context) (uint64, error)
 }
 
 // ModuleEnvelopeSource is what the reconcilers read the CURRENT ceiling from on
@@ -133,9 +170,23 @@ type moduleEnvelopeWire struct {
 }
 
 type moduleEnvelopePrincipalWire struct {
-	Bindings      []string                    `json:"bindings"`
-	ScopeCeilings []solutionhost.ScopeCeiling `json:"scope_ceilings"`
-	Grant         moduleEnvelopeGrantWire     `json:"grant"`
+	Bindings           []moduleEnvelopeUnitWire    `json:"bindings"`
+	WorkloadIdentities []ModuleWorkloadIdentity    `json:"workload_identities"`
+	ScopeCeilings      []solutionhost.ScopeCeiling `json:"scope_ceilings"`
+	Grant              moduleEnvelopeGrantWire     `json:"grant"`
+}
+
+// moduleEnvelopeUnitWire is one admitted unit as an administrator writes it.
+// The audience is not here: it is the grant's operation audience for the
+// unit's binding, so the two can never disagree.
+type moduleEnvelopeUnitWire struct {
+	ID           string `json:"id"`
+	Revision     uint64 `json:"revision"`
+	Scope        string `json:"scope"`
+	Queue        string `json:"queue,omitempty"`
+	Namespace    string `json:"namespace,omitempty"`
+	BindingKey   string `json:"binding_key,omitempty"`
+	LookupMethod string `json:"lookup_method,omitempty"`
 }
 
 // moduleEnvelopeGrantWire is a registry entry's ceiling as an administrator
@@ -294,43 +345,111 @@ func parseModuleEnvelopePrincipal(prefix string, wire moduleEnvelopePrincipalWir
 		return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q admits no authority unit, so no delivered document can ever be inside its ceiling", prefix)
 	}
 	seen := make(map[string]bool, len(wire.Bindings))
-	for _, id := range wire.Bindings {
-		if !envelopeIDPattern.MatchString(id) {
-			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q admits unit %q, which is not a valid authority binding ID", prefix, id)
+	units := make([]solutionhost.AuthorityBinding, 0, len(wire.Bindings))
+	for _, declared := range wire.Bindings {
+		unit, err := parseEnvelopeUnit(prefix, grant, declared)
+		if err != nil {
+			return ModuleEnvelopePrincipal{}, err
 		}
-		if seen[id] {
-			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q admits unit %q twice", prefix, id)
+		if seen[unit.ID] {
+			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q admits unit %q twice", prefix, unit.ID)
 		}
-		seen[id] = true
-		unit, ok := parseAuthorityUnitID(id)
-		if !ok {
-			return ModuleEnvelopePrincipal{}, fmt.Errorf(
-				"module principal %q admits unit %q, which is not <presence binding>:<binding>:<operation> with an operation of %s",
-				prefix, id, strings.Join(authorityOperations, ", "))
+		seen[unit.ID] = true
+		units = append(units, unit)
+	}
+	// The workloads the principal may run as. Required: a principal whose
+	// workload no administrator approved would take whatever service account
+	// the next presence generation names.
+	if len(wire.WorkloadIdentities) == 0 {
+		return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q allows no workload identity, so no delivered presence can ever bind it", prefix)
+	}
+	for _, identity := range wire.WorkloadIdentities {
+		if err := identity.workload().validateForm(prefix); err != nil {
+			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q allows workload identity %q in container %q, which does not name a service account in a namespace: %w",
+				prefix, identity.SPIFFEID, identity.Container, err)
 		}
-		// Every admitted unit names an operation audience the grant holds, and
-		// an operation that audience can grant. A unit with nothing to bound it
-		// would be admitted and then grant nothing, which reads as a unit that
-		// works.
-		audience, declared := grant.OperationAudiences[unit.binding]
-		if !declared {
-			return ModuleEnvelopePrincipal{}, fmt.Errorf(
-				"module principal %q admits unit %q for binding %q, which its grant declares no operation audience for",
-				prefix, id, unit.binding)
-		}
-		if unit.operation == modulecontract.OperationHeadless && audience.HeadlessScopes == nil {
-			return ModuleEnvelopePrincipal{}, fmt.Errorf(
-				"module principal %q admits headless unit %q, and binding %q grants no headless scopes",
-				prefix, id, unit.binding)
+		if !strings.HasPrefix(identity.SPIFFEID, "spiffe://") {
+			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q allows workload identity %q, which is not a SPIFFE ID", prefix, identity.SPIFFEID)
 		}
 	}
 	if err := validateEnvelopeScopeCeilings(prefix, wire.ScopeCeilings); err != nil {
 		return ModuleEnvelopePrincipal{}, err
 	}
 	return ModuleEnvelopePrincipal{
-		Bindings:      slices.Clone(wire.Bindings),
-		ScopeCeilings: slices.Clone(wire.ScopeCeilings),
-		Grant:         grant,
+		Units:              units,
+		WorkloadIdentities: slices.Clone(wire.WorkloadIdentities),
+		ScopeCeilings:      slices.Clone(wire.ScopeCeilings),
+		Grant:              grant,
+	}, nil
+}
+
+// parseEnvelopeUnit builds one whole admitted unit from the envelope alone and
+// holds it to the grant it sits under: its binding names an operation audience
+// the grant declares, its scope is canonical and within that operation's
+// scopes, and its queue and namespace are ones the grant allows. A unit the
+// grant could never honour is refused here, where the administrator reads the
+// reason, instead of being admitted and then clipped away.
+func parseEnvelopeUnit(prefix string, grant ModulePrincipalGrant, declared moduleEnvelopeUnitWire) (solutionhost.AuthorityBinding, error) {
+	refuse := func(format string, args ...any) (solutionhost.AuthorityBinding, error) {
+		return solutionhost.AuthorityBinding{}, fmt.Errorf("module principal %q admits unit %q: "+format,
+			append([]any{prefix, declared.ID}, args...)...)
+	}
+	if !envelopeIDPattern.MatchString(declared.ID) {
+		return refuse("not a valid authority binding ID")
+	}
+	unit, ok := parseAuthorityUnitID(declared.ID)
+	if !ok {
+		return refuse("not <presence binding>:<binding>:<operation> with an operation of %s", strings.Join(authorityOperations, ", "))
+	}
+	if declared.Revision == 0 {
+		return refuse("revision starts at 1")
+	}
+	audience, defined := grant.OperationAudiences[unit.binding]
+	if !defined {
+		return refuse("binding %q has no operation audience in the grant", unit.binding)
+	}
+	var allowed []ModuleOperationScope
+	switch unit.operation {
+	case modulecontract.OperationInvoke:
+		allowed = audience.InvokeScopes
+	case modulecontract.OperationLookup:
+		allowed = audience.LookupScopes
+	case modulecontract.OperationHeadless:
+		if audience.HeadlessScopes == nil {
+			return refuse("binding %q grants no headless scopes", unit.binding)
+		}
+		allowed = audience.HeadlessScopes
+	}
+	values := strings.Split(declared.Scope, ",")
+	if declared.Scope == "" || !slices.IsSorted(values) {
+		return refuse("scope %q is not the sorted, comma-joined kind:action values delivery writes", declared.Scope)
+	}
+	for index, value := range values {
+		kind, action, found := strings.Cut(value, ":")
+		if !found || !envelopeKindPattern.MatchString(kind) || !envelopeActionPattern.MatchString(action) || index > 0 && values[index-1] == value {
+			return refuse("scope value %q is not one kind:action", value)
+		}
+		if !slices.ContainsFunc(allowed, func(scope ModuleOperationScope) bool {
+			return scope.ResourceKind == kind && slices.Contains(scope.Actions, action)
+		}) {
+			return refuse("scope %q is wider than binding %q allows for %s", value, unit.binding, unit.operation)
+		}
+	}
+	if declared.Queue != "" && !slices.Contains(grant.Queues, declared.Queue) {
+		return refuse("queue %q is not one the grant allows", declared.Queue)
+	}
+	if declared.Namespace != "" && !slices.Contains(grant.Namespaces, declared.Namespace) {
+		return refuse("namespace %q is not one the grant allows", declared.Namespace)
+	}
+	for _, field := range []string{declared.BindingKey, declared.LookupMethod} {
+		if field != "" && !validOperationValue(field, 256) {
+			return refuse("binding key or lookup method %q is not a single-line value", field)
+		}
+	}
+	return solutionhost.AuthorityBinding{
+		ID: declared.ID, Revision: declared.Revision, Audience: audience.Audience, Scope: declared.Scope,
+		Queue: declared.Queue, Namespace: declared.Namespace,
+		BindingKey: declared.BindingKey, LookupMethod: declared.LookupMethod,
 	}, nil
 }
 
@@ -358,48 +477,35 @@ func validateEnvelopeScopeCeilings(prefix string, ceilings []solutionhost.ScopeC
 	return nil
 }
 
-// admits reports whether this principal's ceiling admits one unit a document
-// over presenceBinding grants it.
-//
-// Exact, and on every dimension the envelope speaks to: the unit ID is listed;
-// it is filed under the document's own presence binding, so a unit admitted for
-// one instance of a module cannot be claimed by another; its audience is the
-// audience the grant's operation audience for that binding names; and a queue
-// or namespace it carries is one the grant allows.
-func (p ModuleEnvelopePrincipal) admits(presenceBinding string, unit solutionhost.AuthorityBinding) bool {
-	if !slices.Contains(p.Bindings, unit.ID) {
-		return false
+// unitsOver are the units this principal's ceiling admits over one presence
+// binding: the units filed under it, so a unit admitted for one instance of a
+// module is never offered to a document over another.
+func (p ModuleEnvelopePrincipal) unitsOver(presenceBinding string) []solutionhost.AuthorityBinding {
+	var over []solutionhost.AuthorityBinding
+	for _, unit := range p.Units {
+		if parsed, ok := parseAuthorityUnitID(unit.ID); ok && parsed.presenceBinding == presenceBinding {
+			over = append(over, unit)
+		}
 	}
-	parsed, ok := parseAuthorityUnitID(unit.ID)
-	if !ok || parsed.presenceBinding != presenceBinding {
-		return false
-	}
-	audience, declared := p.Grant.OperationAudiences[parsed.binding]
-	if !declared || audience.Audience != unit.Audience {
-		return false
-	}
-	if unit.Queue != "" && !slices.Contains(p.Grant.Queues, unit.Queue) {
-		return false
-	}
-	if unit.Namespace != "" && !slices.Contains(p.Grant.Namespaces, unit.Namespace) {
-		return false
-	}
-	return true
+	return over
 }
 
 // authorityEnvelopeFor projects this ceiling into core's Envelope for ONE
 // authority document, which core's ValidateAgainst then holds the document to.
 //
-// Per document, and that is what keeps containment exact. Core's Envelope lists
-// whole (principal, unit) pairs; this record admits unit IDs and bounds each
-// unit's audience, queue and namespace through the principal's grant. So the
-// projection is the document's own units that this ceiling admits for the
-// principal holding them — any unit it does not admit is absent, and core then
-// refuses the whole document as claiming more than its envelope allows. The
-// queues, namespaces and scope ceilings are those of the principals the
-// document grants to, never the union of the host's: a document for one module
-// cannot declare another module's queue and pass because someone else may own
-// it.
+// EVERY FIELD OF EVERY GRANT COMES FROM THE ENVELOPE. Core's containment is
+// exact element equality between the document's (principal, unit) pairs and
+// the envelope's, so the envelope side must be the host's own: the units the
+// administrator admitted, whole — id, revision, audience, scope, queue,
+// namespace, binding key, lookup method. A document whose unit differs in any
+// of those is outside and grants nothing. The first version appended the
+// DOCUMENT'S units to this list once their id was admitted, which made the
+// ceiling partly the document's own — a wider scope or another revision
+// compared equal to itself.
+//
+// Per document, too: the units are those filed under the document's presence
+// binding, for the principals the document grants to, and the queues,
+// namespaces and scope ceilings are those principals', never the host's union.
 func (e *ModuleEnvelope) authorityEnvelopeFor(document *solutionhost.AuthorityDocument) solutionhost.Envelope {
 	if e == nil {
 		return solutionhost.Envelope{}
@@ -422,10 +528,8 @@ func (e *ModuleEnvelope) authorityEnvelopeFor(document *solutionhost.AuthorityDo
 		envelope.Queues = append(envelope.Queues, entry.Grant.Queues...)
 		envelope.Namespaces = append(envelope.Namespaces, entry.Grant.Namespaces...)
 		envelope.ScopeCeilings = append(envelope.ScopeCeilings, entry.ScopeCeilings...)
-		for _, unit := range principal.Bindings {
-			if entry.admits(document.PresenceBinding, unit) {
-				envelope.Grants = append(envelope.Grants, solutionhost.EnvelopeGrant{Principal: principal.Principal, Binding: unit})
-			}
+		for _, unit := range entry.unitsOver(document.PresenceBinding) {
+			envelope.Grants = append(envelope.Grants, solutionhost.EnvelopeGrant{Principal: principal.Principal, Binding: unit})
 		}
 	}
 	return envelope
@@ -472,6 +576,9 @@ func (s *Service) CurrentModuleEnvelope(ctx context.Context) (*ModuleEnvelope, e
 	if record == nil {
 		return nil, nil
 	}
+	// Observed BEFORE it is parsed: a revision that is committed and cannot be
+	// read still fences the registry derived from the one before it.
+	s.observeModuleEnvelopeRevision(record.Revision)
 	envelope, err := ParseModuleEnvelope(record.Document)
 	if err != nil {
 		return nil, fmt.Errorf("stored module envelope revision %d no longer validates: %w", record.Revision, err)
@@ -549,6 +656,52 @@ func (s *Service) PutModuleEnvelope(
 		}
 		return nil, wool.Get(ctx).In("PutModuleEnvelope").Wrapf(err, "cannot write the module envelope")
 	}
+	// This replica fences its registry at once — it serves nothing derived
+	// from the replaced ceiling — and asks for the pass that derives the new
+	// one. Every other replica fences at its next capability check, which reads
+	// the committed revision (fenceModuleRegistry).
+	s.observeModuleEnvelopeRevision(record.Revision)
 	s.requestRegistryPass()
 	return record, nil
+}
+
+// ErrModuleRegistryStale reports a registry derived from an envelope revision
+// older than the committed one. The registry may hold what the newer ceiling
+// withdrew, so nothing is authorized from it until a pass derives the current
+// one; the refusal is Unavailable because the caller's retry succeeds once it
+// has.
+var ErrModuleRegistryStale = errors.New("the module registry predates the committed module envelope")
+
+// fenceModuleRegistry is the revision fence every capability decision passes:
+// it reads the committed envelope revision from the store and refuses when the
+// registry this replica serves was derived from an older one.
+//
+// Durable and per replica. The registry is in memory and each replica derives
+// its own, on its own pass; the committed revision is in the store. Comparing
+// the two at authorization is what makes a narrowing written on one replica —
+// or committed while a pass was reading the previous ceiling — refuse at the
+// next check on every replica, rather than at each one's next pass.
+func (s *Service) fenceModuleRegistry(ctx context.Context) error {
+	if s.moduleEnvelopes == nil {
+		return nil
+	}
+	var latest uint64
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		latest, err = s.moduleEnvelopes.LatestModuleEnvelopeRevision(ctx)
+		return err
+	}); err != nil {
+		return status.Errorf(codes.Unavailable, "cannot read the committed module envelope revision: %v", err)
+	}
+	s.observeModuleEnvelopeRevision(latest)
+	var derived uint64
+	if installed := s.modulePrincipals.Load(); installed != nil {
+		derived = installed.envelopeRevision
+	}
+	if latest > derived {
+		s.requestRegistryPass()
+		return wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+			"the registry was derived from envelope revision %d and revision %d is committed", derived, latest)
+	}
+	return nil
 }

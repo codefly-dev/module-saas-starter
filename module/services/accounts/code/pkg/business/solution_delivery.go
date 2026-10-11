@@ -142,6 +142,10 @@ type SolutionDeliveryStore interface {
 	// ListNewestDeliveredDocuments returns the newest generation per document
 	// for one kind — the desired set.
 	ListNewestDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
+
+	// ListDeliveredDocuments returns every delivered generation of one kind:
+	// the history a terminal withdrawal is read from.
+	ListDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
 }
 
 // SolutionDeliveryCarrierAuthorizer decides whether the CALLER may deliver this

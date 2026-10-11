@@ -3497,11 +3497,12 @@ type ModuleEnvelope struct {
 	Revision int64 `protobuf:"varint,1,opt,name=revision,proto3" json:"revision,omitempty"`
 	// The whole ceiling at this revision, as JSON: `revision`,
 	// `approved_builds`, and `principals` keyed by module prefix, each with the
-	// authority unit IDs this host admits (`bindings`), its `scope_ceilings`
-	// and its `grant` ceiling (tenant, cross_tenant, queues, namespaces,
+	// whole authority units this host admits (`bindings`: id, revision, scope,
+	// queue, namespace, binding_key, lookup_method), the workloads it may run as
+	// (`workload_identities`: spiffe_id, container), its `scope_ceilings` and its
+	// `grant` ceiling (tenant, cross_tenant, queues, namespaces,
 	// external_namespaces, resources, read_audiences, operation_audiences,
-	// artifact_policies). It names no workload: which pods a principal runs as
-	// is read from delivered presence.
+	// artifact_policies).
 	Document string `protobuf:"bytes,2,opt,name=document,proto3" json:"document,omitempty"`
 	// The platform administrator who wrote this revision.
 	WrittenBy     string                 `protobuf:"bytes,3,opt,name=written_by,json=writtenBy,proto3" json:"written_by,omitempty"`
@@ -4043,7 +4044,7 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x16ListEventSubscriptions\x12-.saas.events.v1.ListEventSubscriptionsRequest\x1a..saas.events.v1.ListEventSubscriptionsResponse\"A\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02#\x12!/v1/platform/events/subscriptions\x12\xb0\x01\n" +
 	"\x15ListPlatformCatalogue\x12..saas.accounts.v1.ListPlatformCatalogueRequest\x1a/.saas.accounts.v1.ListPlatformCatalogueResponse\"6\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/platform/catalogue\x12\xaa\x01\n" +
 	"\x11GetModuleEnvelope\x12*.saas.accounts.v1.GetModuleEnvelopeRequest\x1a+.saas.accounts.v1.GetModuleEnvelopeResponse\"<\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/platform/module-envelope\x12\xd6\x01\n" +
-	"\x11PutModuleEnvelope\x12*.saas.accounts.v1.PutModuleEnvelopeRequest\x1a+.saas.accounts.v1.PutModuleEnvelopeResponse\"h\xc2\xf3\x18=\b\x02\x10\x010\x04:)\n" +
+	"\x11PutModuleEnvelope\x12*.saas.accounts.v1.PutModuleEnvelopeRequest\x1a+.saas.accounts.v1.PutModuleEnvelopeResponse\"h\xc2\xf3\x18=\b\x02\x10\x010\x03:)\n" +
 	"%saas.platform.module_envelope_written\x10\x02@\x01H\x05P\x03X\x03`\x05x\x02\x82\xd3\xe4\x93\x02!:\x01*\x1a\x1c/v1/platform/module-envelopeB\xba\x01\n" +
 	"\x14com.saas.accounts.v1B\x12PlatformAdminProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 

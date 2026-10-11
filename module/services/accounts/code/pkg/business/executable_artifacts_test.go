@@ -160,7 +160,7 @@ func TestExecutableArtifactConsentNeverInferredFromRun(t *testing.T) {
 	s, err := NewService(store)
 	require.NoError(t, err)
 	registry := ModulePrincipalRegistry{caller.PrincipalID: {Prefix: "example", Tenant: tenant, ArtifactPolicies: map[string]ExecutableArtifactPolicy{"definitions": artifactTestPolicy()}}}
-	s.modulePrincipals.Store(&registry)
+	s.storeModulePrincipals(registry)
 	decide := func(action string) (*ExecutableArtifactApproval, error) {
 		return s.DecideExecutableArtifact(context.Background(), caller, tenant, uuid.NewString(), "example", action, req)
 	}
@@ -271,7 +271,7 @@ func TestAReplacementBindingUnderTheSameAliasInheritsNoArtifactApproval(t *testi
 		Prefix: "example", Tenant: tenant,
 		ArtifactPolicies: map[string]ExecutableArtifactPolicy{"definitions": artifactTestPolicy()},
 	}}
-	s.modulePrincipals.Store(&registry)
+	s.storeModulePrincipals(registry)
 	decide := func(action string) (*ExecutableArtifactApproval, error) {
 		return s.DecideExecutableArtifact(context.Background(), caller, tenant, uuid.NewString(), "example", action, req)
 	}

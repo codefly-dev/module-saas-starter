@@ -424,8 +424,9 @@ it would make the question answer itself.
 The **ceiling** is the module envelope: a durable, append-only, revisioned
 record (`module_envelopes`) a platform super_admin writes at runtime through
 `PlatformAdminService/PutModuleEnvelope`, audited and never through an
-impersonated session. Per module principal it admits authority unit IDs, scope
-ceilings and the grant ceiling, and lists the approved builds. Every reconcile
+impersonated session. Per module principal it admits whole authority units,
+the workload identities the principal may run as, scope ceilings and the grant
+ceiling, and lists the approved builds. Every reconcile
 pass and every activation reads the CURRENT revision and hands Core's
 `ValidateAgainst` its projection for the document being judged, so containment
 is Core's exact rule and a narrowing takes effect at the next check with no

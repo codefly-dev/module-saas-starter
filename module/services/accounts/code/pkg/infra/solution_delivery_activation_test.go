@@ -135,10 +135,10 @@ func (c staticCeiling) CurrentModuleEnvelope(context.Context) (*business.ModuleE
 const productionPathPrincipal = "operator"
 
 // moduleCeiling is the module envelope that admits exactly the (principal,
-// unit) pairs given, at one revision, approving the builds given. Each unit's
-// ID follows delivery's convention, and the principal's grant declares the
-// operation audience, queue and namespace the unit names, so the envelope
-// admits the unit and nothing wider.
+// unit) pairs given, whole, at one revision, approving the builds given. Each
+// unit's ID follows delivery's convention, and the principal's grant declares
+// the operation audience, queue and namespace the unit names. These tests read
+// activation and approved builds, which take no workload, so it allows none.
 func moduleCeiling(
 	revision uint64, builds []solutionhost.ImageDigest, grants ...solutionhost.EnvelopeGrant,
 ) *business.ModuleEnvelope {
@@ -149,7 +149,9 @@ func moduleCeiling(
 	}
 	for _, grant := range grants {
 		entry := envelope.Principals[grant.Principal]
-		entry.Bindings = append(entry.Bindings, grant.Binding.ID)
+		// The whole unit is the envelope's own, so a document whose unit
+		// differs in any field is outside it.
+		entry.Units = append(entry.Units, grant.Binding)
 		parts := strings.Split(grant.Binding.ID, ":")
 		if entry.Grant.OperationAudiences == nil {
 			entry.Grant.OperationAudiences = map[string]business.ModuleOperationAudience{}

@@ -268,33 +268,54 @@ hand-authored as an opaque id.
 Its authority is its entry in the **module principal registry**, which no
 configuration declares. The module principal reconciler derives the whole
 registry on every reconcile pass (and on a delivery or an envelope write,
-without waiting for the tick) and swaps it in with `SetModulePrincipals`, its
-only production writer — so installing, narrowing or withdrawing a module takes
-effect with no restart. An entry exists only while three inputs agree:
+without waiting for the tick) and installs it tagged with the envelope revision
+it was derived from — the only production writer — so installing, narrowing or
+withdrawing a module takes effect with no restart. An entry exists only while
+three inputs agree:
 
 - **the module envelope** — the authority ceiling a platform super_admin writes
   through `PlatformAdminService/PutModuleEnvelope` (`requirePlatformRole`, so
   never through an impersonated session; audited as
   `saas.platform.module_envelope_written`; append-only and revisioned in
-  `module_envelopes`). Per module prefix it lists the authority unit IDs the host
-  admits (`<presence binding>:<binding>:<operation>`), the scope ceilings, and
-  the grant ceiling below. It names no workload.
+  `module_envelopes`; fresh MFA required, an unenrolled administrator refused).
+  Per module prefix it lists the WHOLE authority units the host admits (id
+  `<presence binding>:<binding>:<operation>`, revision, scope, queue, namespace,
+  binding key, lookup method — the audience is the grant's), the workload
+  identities the principal may run as (SPIFFE ID and container), the scope
+  ceilings, and the grant ceiling below.
 - **a live authority document inside that envelope** — signed, delivered,
-  re-verified on every pass, held to the projection of the envelope by core's
-  `ValidateAgainst` (exact containment: a unit the envelope does not admit puts
-  the whole document outside it, and it grants nothing).
+  re-verified on every pass against the host's CURRENT signer-to-domain policy,
+  over a presence binding no tombstone in the whole inbox history ever withdrew
+  (a withdrawal is terminal for the binding, whatever later generation or
+  authority id follows), and held by core's `ValidateAgainst` to the envelope's
+  own units (exact containment: a unit that differs from the admitted one in any
+  field puts the whole document outside, and it grants nothing).
 - **the applied presence document** the authority is granted over — the workload
   running the approved build gives the entry's `workload` (namespace and service
-  account from its SPIFFE ID, container from the presence).
+  account from its SPIFFE ID, container from the presence), and only when the
+  envelope allows that exact identity, so a later presence generation cannot
+  move the principal to another workload.
 
 The entry is the envelope's grant bounded by the document: queues and namespaces
 the document also declares, resources its scope ceilings name, and each
 operation audience only for a binding whose `invoke` unit the document grants,
 every operation's scopes intersected with the unit's scope. A principal granted
-by two live documents, rewound below the generation already served, whose
-workload has no single answer, or whose entry fails validation is **omitted by
-name, never widened**; an unreadable envelope, inbox or applied state keeps the
-previous registry serving. The grant ceiling's keys:
+by two live documents, whose workload is not allowed or has no single answer,
+or whose entry fails validation is **omitted by name, never widened**. Within an
+authority id the newest generation is the answer (the inbox is append-only);
+across ids a principal moves only to a document inside the envelope.
+
+**The registry is fenced by the committed envelope revision.** Every capability
+check (`AuthorizeModuleCapability`) reads the highest revision from the store
+and refuses with `ErrModuleRegistryStale` (Unavailable, a pass requested) when
+the registry was derived from an older one, and a replica that has seen a newer
+revision serves nothing from the older registry — so a narrowing written on one
+replica, or committed while a pass was reading the previous ceiling, refuses
+the next check everywhere. An unreadable inbox or applied state derives from the
+last inputs read, held to the CURRENT envelope; an unreadable envelope installs
+nothing and the fence refuses. The credential's tenant must be the current
+grant's (unless `cross_tenant`), so moving a principal's tenant revokes
+credentials sealed for the old one at the next check. The grant ceiling's keys:
 
 | Key | Grants |
 | --- | --- |

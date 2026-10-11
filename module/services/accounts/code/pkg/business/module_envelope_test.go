@@ -27,19 +27,34 @@ func testUnitID(binding, operation string) string {
 	return testPresenceBinding + ":" + binding + ":" + operation
 }
 
+const (
+	testSPIFFEID  = "spiffe://acme.test/ns/acme-prod/sa/reports"
+	testContainer = "app"
+)
+
+// testEnvelopeUnits are the whole units the test envelope admits: the run
+// binding's invoke, lookup and headless operations, each narrower than the
+// grant's audience allows.
+func testEnvelopeUnits() []any {
+	return []any{
+		map[string]any{"id": testUnitID("run", "invoke"), "revision": float64(1), "scope": "profiles:read"},
+		map[string]any{"id": testUnitID("run", "lookup"), "revision": float64(1), "scope": "profiles:read", "lookup_method": "directory"},
+		map[string]any{"id": testUnitID("run", "headless"), "revision": float64(1), "scope": "profiles:read"},
+	}
+}
+
 // testEnvelopeDocument is a valid envelope: the `run` binding admitted for
-// invoke, lookup and headless, scope ceilings on the module's own kind, and a
-// grant wider than any one delivery asks for.
+// invoke, lookup and headless, one allowed workload, scope ceilings on the
+// module's own kind, and a grant wider than any one delivery asks for.
 func testEnvelopeDocument() map[string]any {
 	return map[string]any{
 		"revision":        float64(3),
 		"approved_builds": []any{string(testEnvelopeBuild)},
 		"principals": map[string]any{
 			testModulePrefix: map[string]any{
-				"bindings": []any{
-					testUnitID("run", "invoke"), testUnitID("run", "lookup"), testUnitID("run", "headless"),
-				},
-				"scope_ceilings": []any{map[string]any{"resource_kind": "reports", "actions": []any{"read", "write"}}},
+				"bindings":            testEnvelopeUnits(),
+				"workload_identities": []any{map[string]any{"spiffe_id": testSPIFFEID, "container": testContainer}},
+				"scope_ceilings":      []any{map[string]any{"resource_kind": "reports", "actions": []any{"read", "write"}}},
 				"grant": map[string]any{
 					"tenant":              strings.ToUpper(testEnvelopeTenant),
 					"queues":              []any{"reports.render", "reports.export"},
@@ -81,10 +96,16 @@ func parseTestEnvelope(t *testing.T) *ModuleEnvelope {
 	return envelope
 }
 
-func testUnit(binding, operation, scope string) solutionhost.AuthorityBinding {
-	return solutionhost.AuthorityBinding{
-		ID: testUnitID(binding, operation), Revision: 1, Audience: testProducerAudience, Scope: scope,
+// testUnit is the unit delivery would write for one admitted operation —
+// identical, field for field, to the one the envelope admits.
+func testUnit(binding, operation string) solutionhost.AuthorityBinding {
+	unit := solutionhost.AuthorityBinding{
+		ID: testUnitID(binding, operation), Revision: 1, Audience: testProducerAudience, Scope: "profiles:read",
 	}
+	if operation == "lookup" {
+		unit.LookupMethod = "directory"
+	}
+	return unit
 }
 
 // testAuthority is a valid authority document over testPresenceBinding granting
@@ -155,14 +176,30 @@ func TestModuleEnvelopeRefusesWhatItCannotMean(t *testing.T) {
 		},
 		"no admitted unit": func(d map[string]any) { principal(d)["bindings"] = []any{} },
 		"a unit outside delivery's convention": func(d map[string]any) {
-			principal(d)["bindings"] = []any{testPresenceBinding + ":run:reconcile"}
+			principal(d)["bindings"] = []any{map[string]any{"id": testPresenceBinding + ":run:reconcile", "revision": float64(1), "scope": "profiles:read"}}
 		},
 		"a unit for an audience the grant does not declare": func(d map[string]any) {
-			principal(d)["bindings"] = []any{testUnitID("other", "invoke")}
+			principal(d)["bindings"] = []any{map[string]any{"id": testUnitID("other", "invoke"), "revision": float64(1), "scope": "profiles:read"}}
 		},
 		"a headless unit with no headless scopes": func(d map[string]any) {
 			audience := grant(d)["operation_audiences"].(map[string]any)["run"].(map[string]any)
 			delete(audience, "headless_scopes")
+		},
+		"a unit scope wider than its operation allows": func(d map[string]any) {
+			principal(d)["bindings"] = []any{map[string]any{"id": testUnitID("run", "lookup"), "revision": float64(1), "scope": "profiles:read,profiles:write"}}
+		},
+		"a unit scope that is not canonical": func(d map[string]any) {
+			principal(d)["bindings"] = []any{map[string]any{"id": testUnitID("run", "invoke"), "revision": float64(1), "scope": "profiles:write,profiles:read"}}
+		},
+		"a unit with no revision": func(d map[string]any) {
+			principal(d)["bindings"] = []any{map[string]any{"id": testUnitID("run", "invoke"), "scope": "profiles:read"}}
+		},
+		"a unit with a queue the grant does not allow": func(d map[string]any) {
+			principal(d)["bindings"] = []any{map[string]any{"id": testUnitID("run", "invoke"), "revision": float64(1), "scope": "profiles:read", "queue": "payments.settle"}}
+		},
+		"no allowed workload": func(d map[string]any) { principal(d)["workload_identities"] = []any{} },
+		"a workload identity that names no service account": func(d map[string]any) {
+			principal(d)["workload_identities"] = []any{map[string]any{"spiffe_id": "spiffe://acme.test/workload/reports", "container": testContainer}}
 		},
 		"a scope ceiling with no action": func(d map[string]any) {
 			principal(d)["scope_ceilings"] = []any{map[string]any{"resource_kind": "reports", "actions": []any{}}}
@@ -178,41 +215,52 @@ func TestModuleEnvelopeRefusesWhatItCannotMean(t *testing.T) {
 }
 
 // TestTheProjectionAdmitsOnlyWhatTheEnvelopeListsForThisDocument is the one
-// ceiling: core's containment rule, handed the projection of this record.
+// ceiling: core's containment rule, handed the projection of this record —
+// built from the envelope alone.
 func TestTheProjectionAdmitsOnlyWhatTheEnvelopeListsForThisDocument(t *testing.T) {
 	envelope := parseTestEnvelope(t)
 
-	inside := testAuthority(t, testUnit("run", "invoke", "profiles:invoke,profiles:read"))
+	inside := testAuthority(t, testUnit("run", "invoke"), testUnit("run", "lookup"))
 	require.NoError(t, inside.ValidateAgainst(envelope.authorityEnvelopeFor(inside)))
 
+	changed := func(mutate func(*solutionhost.AuthorityBinding)) *solutionhost.AuthorityDocument {
+		unit := testUnit("run", "invoke")
+		mutate(&unit)
+		return testAuthority(t, unit)
+	}
 	for name, document := range map[string]*solutionhost.AuthorityDocument{
-		"a unit the envelope does not list": testAuthority(t,
-			testUnit("run", "invoke", "profiles:read"), testUnit("audit", "invoke", "profiles:read")),
-		"a unit with another audience": testAuthority(t, solutionhost.AuthorityBinding{
-			ID: testUnitID("run", "invoke"), Revision: 1, Audience: "someone-else", Scope: "profiles:read",
-		}),
+		// FINDING 7: every field of an admitted unit is the envelope's, so a
+		// document that keeps the admitted id and changes anything else is
+		// outside — it cannot supply its own ceiling.
+		"a wider scope under an admitted id":         changed(func(u *solutionhost.AuthorityBinding) { u.Scope = "profiles:delete,profiles:read" }),
+		"another revision under an admitted id":      changed(func(u *solutionhost.AuthorityBinding) { u.Revision = 2 }),
+		"a binding key the envelope did not admit":   changed(func(u *solutionhost.AuthorityBinding) { u.BindingKey = "other-key" }),
+		"a lookup method the envelope did not admit": changed(func(u *solutionhost.AuthorityBinding) { u.LookupMethod = "scan" }),
+		"another audience":                           changed(func(u *solutionhost.AuthorityBinding) { u.Audience = "someone-else" }),
+		"a queue the envelope did not admit":         changed(func(u *solutionhost.AuthorityBinding) { u.Queue = "reports.render" }),
+		"a unit the envelope does not list":          testAuthority(t, testUnit("run", "invoke"), testUnit("audit", "invoke")),
 		"a queue the grant does not allow": func() *solutionhost.AuthorityDocument {
-			document := testAuthority(t, testUnit("run", "invoke", "profiles:read"))
+			document := testAuthority(t, testUnit("run", "invoke"))
 			document.Queues = []string{"payments.settle"}
 			return document
 		}(),
 		"a wider scope ceiling": func() *solutionhost.AuthorityDocument {
-			document := testAuthority(t, testUnit("run", "invoke", "profiles:read"))
+			document := testAuthority(t, testUnit("run", "invoke"))
 			document.ScopeCeilings = []solutionhost.ScopeCeiling{{ResourceKind: "reports", Actions: []string{"admin", "read", "write"}}}
 			return document
 		}(),
 		"another principal claiming the module's unit": func() *solutionhost.AuthorityDocument {
-			document := testAuthority(t, testUnit("run", "invoke", "profiles:read"))
+			document := testAuthority(t, testUnit("run", "invoke"))
 			document.Principals[0].Principal = "impostor"
 			return document
 		}(),
 		"a build the envelope did not approve": func() *solutionhost.AuthorityDocument {
-			document := testAuthority(t, testUnit("run", "invoke", "profiles:read"))
+			document := testAuthority(t, testUnit("run", "invoke"))
 			document.ApprovedBuild = solutionhost.ImageDigest("sha256:" + strings.Repeat("0", 64))
 			return document
 		}(),
 		"another envelope revision": func() *solutionhost.AuthorityDocument {
-			document := testAuthority(t, testUnit("run", "invoke", "profiles:read"))
+			document := testAuthority(t, testUnit("run", "invoke"))
 			document.EnvelopeRevision = 2
 			return document
 		}(),
@@ -226,7 +274,7 @@ func TestTheProjectionAdmitsOnlyWhatTheEnvelopeListsForThisDocument(t *testing.T
 	t.Run("a unit filed under another presence binding", func(t *testing.T) {
 		// Same unit id, delivered over a different presence binding: the unit
 		// the envelope admitted names one instance of the module, never another.
-		document := testAuthority(t, testUnit("run", "invoke", "profiles:read"))
+		document := testAuthority(t, testUnit("run", "invoke"))
 		document.PresenceBinding = "acme.test.reports-copy"
 		require.ErrorIs(t, document.ValidateAgainst(envelope.authorityEnvelopeFor(document)),
 			solutionhost.ErrOutsideEnvelope)
@@ -234,15 +282,10 @@ func TestTheProjectionAdmitsOnlyWhatTheEnvelopeListsForThisDocument(t *testing.T
 }
 
 // TestTheDerivedEntryIsTheEnvelopeBoundedByTheDocument is the intersection:
-// never wider than the envelope, never wider than what delivery asked for.
+// never wider than the grant, never wider than the admitted unit.
 func TestTheDerivedEntryIsTheEnvelopeBoundedByTheDocument(t *testing.T) {
 	envelope := parseTestEnvelope(t)
-	units := []solutionhost.AuthorityBinding{
-		// The document asks for less than the envelope allows on invoke, and
-		// for an action on lookup the envelope never allowed.
-		testUnit("run", "invoke", "profiles:read"),
-		testUnit("run", "lookup", "profiles:delete,profiles:read"),
-	}
+	units := []solutionhost.AuthorityBinding{testUnit("run", "invoke"), testUnit("run", "lookup")}
 	document := testAuthority(t, units...)
 	require.NoError(t, document.ValidateAgainst(envelope.authorityEnvelopeFor(document)))
 
@@ -252,7 +295,7 @@ func TestTheDerivedEntryIsTheEnvelopeBoundedByTheDocument(t *testing.T) {
 
 	require.Equal(t, testModulePrefix, grant.Prefix)
 	require.Equal(t, testEnvelopeTenant, grant.Tenant)
-	require.Equal(t, testWorkload, grant.Workload, "the workload is the presence's, never the envelope's")
+	require.Equal(t, testWorkload, grant.Workload, "the workload is the one passed in, never read from the grant")
 	require.Equal(t, []string{"reports.render"}, grant.Queues, "only queues the document declares too")
 	require.Equal(t, []string{"reports"}, grant.Namespaces, "only namespaces the document declares too")
 	require.Equal(t, []string{"reports"}, grant.ExternalNamespaces, "external delivery only within the namespaces kept")
@@ -262,24 +305,21 @@ func TestTheDerivedEntryIsTheEnvelopeBoundedByTheDocument(t *testing.T) {
 	run := grant.OperationAudiences["run"]
 	require.Equal(t, testProducerAudience, run.Audience)
 	require.Equal(t, []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"read"}, ResourceIDs: []string{"standard"}}},
-		run.InvokeScopes, "invoke is cut to the unit's scope, and resource ids stay the envelope's")
-	require.Equal(t, []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"read"}, ResourceIDs: []string{"standard"}}}, run.LookupScopes,
-		"lookup keeps no action the envelope never allowed, whatever the document asks for")
+		run.InvokeScopes, "invoke is cut to the admitted unit's scope though the grant allows write, and resource ids stay the grant's")
+	require.Equal(t, []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"read"}, ResourceIDs: []string{"standard"}}}, run.LookupScopes)
 	require.Nil(t, run.HeadlessScopes, "no headless unit was granted, so nothing may be minted headless")
 	require.NoError(t, ValidateModulePrincipalGrant(testModulePrefix, grant))
 }
 
-// TestAnAudienceTheIntersectionEmptiesIsOmittedByName: what the document grants
-// and what the envelope allows have nothing in common, so the binding cannot be
-// installed — it is dropped and the reason returned, never widened to either
-// side.
-func TestAnAudienceTheIntersectionEmptiesIsOmittedByName(t *testing.T) {
+// TestAnAudienceWithoutItsLookupIsOmittedByName: a document granting the
+// invoke unit and not the lookup one leaves an audience the registry cannot
+// hold, so it is dropped and the reason returned — never filled in from the
+// envelope.
+func TestAnAudienceWithoutItsLookupIsOmittedByName(t *testing.T) {
 	envelope := parseTestEnvelope(t)
-	units := []solutionhost.AuthorityBinding{
-		testUnit("run", "invoke", "profiles:delete"),
-		testUnit("run", "lookup", "profiles:read"),
-	}
+	units := []solutionhost.AuthorityBinding{testUnit("run", "invoke")}
 	document := testAuthority(t, units...)
+	require.NoError(t, document.ValidateAgainst(envelope.authorityEnvelopeFor(document)))
 	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], document, units, testWorkload)
 	require.NoError(t, err)
 	require.Empty(t, grant.OperationAudiences)
@@ -289,30 +329,49 @@ func TestAnAudienceTheIntersectionEmptiesIsOmittedByName(t *testing.T) {
 }
 
 // TestAHeadlessUnitGrantsOnlyWhatBothSidesAllow: headless is the module acting
-// alone, so it exists only when the document grants the headless unit, and then
-// only within the envelope's headless scopes.
+// alone, so it exists only when the document grants the headless unit.
 func TestAHeadlessUnitGrantsOnlyWhatBothSidesAllow(t *testing.T) {
 	envelope := parseTestEnvelope(t)
-	units := []solutionhost.AuthorityBinding{
-		testUnit("run", "invoke", "profiles:read,profiles:write"),
-		testUnit("run", "lookup", "profiles:read"),
-		testUnit("run", "headless", "profiles:read,profiles:write"),
-	}
+	units := []solutionhost.AuthorityBinding{testUnit("run", "invoke"), testUnit("run", "lookup"), testUnit("run", "headless")}
 	document := testAuthority(t, units...)
 	grant, _, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], document, units, testWorkload)
 	require.NoError(t, err)
 	require.Equal(t, []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"read"}, ResourceIDs: []string{"standard"}}},
-		grant.OperationAudiences["run"].HeadlessScopes, "write is the document's ask and not the envelope's allowance")
+		grant.OperationAudiences["run"].HeadlessScopes)
 }
 
 // TestAnEntryWithoutAWorkloadIsNeverInstalled: the derived entry is validated
 // whole, so a workload the presence could not resolve omits the principal.
 func TestAnEntryWithoutAWorkloadIsNeverInstalled(t *testing.T) {
 	envelope := parseTestEnvelope(t)
-	units := []solutionhost.AuthorityBinding{testUnit("run", "invoke", "profiles:read"), testUnit("run", "lookup", "profiles:read")}
+	units := []solutionhost.AuthorityBinding{testUnit("run", "invoke"), testUnit("run", "lookup")}
 	document := testAuthority(t, units...)
 	_, _, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], document, units, ModuleWorkload{})
 	require.ErrorContains(t, err, "must declare its workload identity")
+}
+
+// TestOnlyAnApprovedWorkloadBindsThePrincipal is finding 6: a presence running
+// the approved build under a service account, namespace or container the
+// envelope does not allow binds nothing.
+func TestOnlyAnApprovedWorkloadBindsThePrincipal(t *testing.T) {
+	envelope := parseTestEnvelope(t)
+	entry := envelope.Principals[testModulePrefix]
+	document := testAuthority(t, testUnit("run", "invoke"))
+
+	workload, err := approvedWorkload(entry, []ModuleWorkloadIdentity{{SPIFFEID: testSPIFFEID, Container: testContainer}}, document)
+	require.NoError(t, err)
+	require.Equal(t, ModuleWorkload{ServiceAccount: "reports", Namespace: "acme-prod", Container: testContainer}, workload)
+
+	for name, retargeted := range map[string]ModuleWorkloadIdentity{
+		"another service account": {SPIFFEID: "spiffe://acme.test/ns/acme-prod/sa/intruder", Container: testContainer},
+		"another namespace":       {SPIFFEID: "spiffe://acme.test/ns/elsewhere/sa/reports", Container: testContainer},
+		"another container":       {SPIFFEID: testSPIFFEID, Container: "sidecar"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := approvedWorkload(entry, []ModuleWorkloadIdentity{retargeted}, document)
+			require.ErrorIs(t, err, ErrModuleWorkloadNotApproved)
+		})
+	}
 }
 
 func TestSpiffeIdentityIsReadNeverGuessed(t *testing.T) {

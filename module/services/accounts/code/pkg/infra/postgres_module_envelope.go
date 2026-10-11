@@ -68,4 +68,15 @@ func (s *PostgresStore) AppendModuleEnvelopeRecord(
 	return err
 }
 
+// LatestModuleEnvelopeRevision is the highest revision written, 0 when none —
+// the fence every capability check reads, so it reads one integer.
+func (s *PostgresStore) LatestModuleEnvelopeRevision(ctx context.Context) (uint64, error) {
+	var revision int64
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx,
+		`SELECT COALESCE(max(revision), 0) FROM public.module_envelopes`).Scan(&revision); err != nil {
+		return 0, err
+	}
+	return uint64(revision), nil //nolint:gosec // the column is CHECKed positive
+}
+
 var _ business.ModuleEnvelopeStore = (*PostgresStore)(nil)

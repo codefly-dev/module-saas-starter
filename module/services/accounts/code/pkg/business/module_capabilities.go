@@ -427,6 +427,14 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 	}
 	grant, ok := s.declaredModules()[caller.PrincipalID]
 	if !ok {
+		// A registry fenced by a newer committed ceiling holds nothing, and the
+		// refusal says so: the caller's retry succeeds once a pass derives the
+		// current registry, which a plain "not registered" would not tell it.
+		if s.moduleRegistryFenced() {
+			s.requestRegistryPass()
+			return ModulePrincipalGrant{}, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+				"principal %s: a newer module envelope is committed than the registry was derived from", caller.PrincipalID)
+		}
 		return ModulePrincipalGrant{}, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	return grant, nil

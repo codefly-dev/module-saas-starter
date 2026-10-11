@@ -9570,7 +9570,7 @@
         },
         "document": {
           "type": "string",
-          "description": "The whole ceiling at this revision, as JSON: `revision`,\n`approved_builds`, and `principals` keyed by module prefix, each with the\nauthority unit IDs this host admits (`bindings`), its `scope_ceilings`\nand its `grant` ceiling (tenant, cross_tenant, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences,\nartifact_policies). It names no workload: which pods a principal runs as\nis read from delivered presence."
+          "description": "The whole ceiling at this revision, as JSON: `revision`,\n`approved_builds`, and `principals` keyed by module prefix, each with the\nwhole authority units this host admits (`bindings`: id, revision, scope,\nqueue, namespace, binding_key, lookup_method), the workloads it may run as\n(`workload_identities`: spiffe_id, container), its `scope_ceilings` and its\n`grant` ceiling (tenant, cross_tenant, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences,\nartifact_policies)."
         },
         "writtenBy": {
           "type": "string",

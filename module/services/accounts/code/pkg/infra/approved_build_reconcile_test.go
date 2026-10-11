@@ -107,7 +107,12 @@ func TestWithdrawnAuthorityMakesThePrincipalUnknownAgain(t *testing.T) {
 // first thing it ever saw, and generation 3 followed by generation 2 is accepted
 // twice. The ordering rule is a property of the sequence of PASSES.
 func TestARewindAcrossPassesIsRefused(t *testing.T) {
-	scenario := newApprovedBuildScenario(t, "abr")
+	// A withdrawal is terminal for the binding, so the rewind is staged
+	// without one: authority "a" moves on to another principal, and "b" — a
+	// different id over the same binding — names this one at a lower
+	// generation.
+	other := "oth-" + uniqueAlias("abr")
+	scenario := newApprovedBuildScenario(t, "abr", other)
 
 	scenario.deliverAuthority(t, scenario.authority(t, "a", 3, false, scenario.principal))
 	scenario.runPass(t)
@@ -118,9 +123,9 @@ func TestARewindAcrossPassesIsRefused(t *testing.T) {
 	// The inbox keeps the NEWEST generation per document, so a lower generation
 	// has to arrive under a different authority id to be in the inbox at all —
 	// which is also the shape that matters, since generations are monotonic per
-	// authority id and two ids are not comparable. Withdraw the first so the
-	// pass is not merely ambiguous, then deliver the lower one.
-	scenario.deliverAuthority(t, scenario.authority(t, "a", 4, true, scenario.principal))
+	// authority id and two ids are not comparable. Move the first on to another
+	// principal so the pass is not merely ambiguous, then deliver the lower one.
+	scenario.deliverAuthority(t, scenario.authority(t, "a", 4, false, other))
 	scenario.deliverAuthority(t, scenario.authority(t, "b", 2, false, scenario.principal))
 
 	reasons := scenario.reconciler.RunOnce(testCtx)

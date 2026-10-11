@@ -198,7 +198,7 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 		return nil
 	}
 
-	documents, err := r.activation.liveAuthorityDocuments(ctx)
+	live, refused, err := r.activation.liveAuthority(ctx)
 	switch {
 	case errors.Is(err, ErrSolutionAuthorityCeilingUnavailable):
 		// No delivery inbox wired: the same "answers nothing" posture as no
@@ -222,9 +222,10 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 	// call a delivery writer could approve any image at all by signing a
 	// document that names it, which is the entire check this view feeds.
 	//
-	inside := make([]*solutionhost.AuthorityDocument, 0, len(documents))
-	var outside []error
-	for _, document := range documents {
+	inside := make([]*solutionhost.AuthorityDocument, 0, len(live))
+	outside := refused
+	for _, one := range live {
+		document := one.document
 		if err := document.ValidateAgainst(envelope.authorityEnvelopeFor(document)); err != nil {
 			// Per document, not per pass: a document outside the ceiling is one
 			// delivery writer's problem, and the principals it names simply get
@@ -236,7 +237,7 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 		}
 		inside = append(inside, document)
 	}
-	documents = inside
+	documents := inside
 
 	// Which principals more than one live document grants to. Collected over
 	// the whole inbox before anything is approved, because the second document

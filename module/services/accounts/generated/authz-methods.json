@@ -7544,7 +7544,7 @@
         "permissions": [],
         "scopes": [],
         "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
+        "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
             "saas.platform.module_envelope_written"
@@ -7566,7 +7566,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "317d0474580b9f608cee88800a0d599d7344a7af9194fa73021e9040140a8dae",
+      "policy_sha256": "f291952d9b1fbb97dad7ac5752b5f20ebc2bd30ffe47b8859cd70ac7b066f68c",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

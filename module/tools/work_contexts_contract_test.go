@@ -41,17 +41,23 @@ const (
 // choosing an id by hand can exceed.
 var resourceIDBound = regexp.MustCompile(`sortedUniqueOperationValues\(scope\.ResourceIDs,\s*(\d+)\)`)
 
-// registryWriter is the one setter that replaces the registry every capability
-// decision reads.
-const registryWriter = "SetModulePrincipals"
+// registryWriters are the setters that replace the registry every capability
+// decision reads: the derived install, tagged with the envelope revision the
+// fence compares, and the untagged one tests state a registry with.
+var registryWriters = []string{"installDerivedModulePrincipals", "SetModulePrincipals"}
 
-// writesRegistry reports a *call* to the setter. Counting calls against
+// writesRegistry reports a *call* to a setter. Counting calls against
 // declarations rather than matching a call's shape is deliberate: a qualified
 // call (`service.Set...`) and a receiver call inside the declaring package read
 // differently, and a check that only recognised one form would miss the very
 // change it exists to catch.
 func writesRegistry(body string) bool {
-	return strings.Count(body, registryWriter+"(") > strings.Count(body, ") "+registryWriter+"(")
+	for _, writer := range registryWriters {
+		if strings.Count(body, writer+"(") > strings.Count(body, ") "+writer+"(") {
+			return true
+		}
+	}
+	return false
 }
 
 // readsModulePrincipalsVariable reports source that names the retired

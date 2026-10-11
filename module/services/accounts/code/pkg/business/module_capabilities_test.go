@@ -132,7 +132,7 @@ func newModuleService(t *testing.T, backend *fakeJobBackend) *business.Service {
 	}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, Queues: []string{"datasource", "documents"}},
 	})
 	return svc
 }
@@ -145,7 +145,7 @@ func newModuleServiceWithStore(t *testing.T, store business.Store, backend *fake
 	}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
 	})
 	return svc
 }
@@ -875,7 +875,7 @@ func TestApprovalResumeEnqueuedOnQuorum(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"documents"}},
+		modulePrincSvc: {Tenant: moduleTenantA, Queues: []string{"documents"}},
 	})
 	id, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
 		OrgID: moduleTenantA, Resource: "document_quarantine", Action: "release", RequestedBy: "requester-1",
@@ -929,7 +929,7 @@ func TestApprovalResumeStampsCompletingDecider(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"documents"}},
+		modulePrincSvc: {Tenant: moduleTenantA, Queues: []string{"documents"}},
 	})
 	id, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
 		OrgID: moduleTenantA, Resource: "document_quarantine", Action: "release", RequestedBy: "requester-1",
@@ -1117,7 +1117,7 @@ func newVisibilityService(t *testing.T, store business.Store, crossTenant bool) 
 	}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", CrossTenant: crossTenant},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, CrossTenant: crossTenant},
 	})
 	return svc
 }
@@ -1625,5 +1625,29 @@ func TestAMalformedModuleWorkloadIsRefusedAtParseNotAtTheMint(t *testing.T) {
 					"or the operator goes looking at the caller: %v", fixture.field, err)
 			}
 		})
+	}
+}
+
+// TestACredentialForThePrincipalsOldTenantIsRefused: the envelope moved the
+// principal to tenant B, and a credential sealed for tenant A is still valid.
+// The capability check compares the credential's tenant with the CURRENT
+// grant's, so it refuses — naming the reason — instead of acting in A under
+// B's grant.
+func TestACredentialForThePrincipalsOldTenantIsRefused(t *testing.T) {
+	backend := &fakeJobBackend{}
+	svc, err := business.NewService(fakeTxStore{})
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantB, Queues: []string{"documents"}},
+	})
+	_, err = svc.ModuleEnqueueJob(context.Background(), moduleCaller(), moduleTenantA, orgScopedJob(moduleTenantA, "documents"))
+	if !errors.Is(err, business.ErrModuleTenantNotCurrent) {
+		t.Fatalf("enqueue under the old tenant: got %v, want ErrModuleTenantNotCurrent", err)
+	}
+	if len(backend.enqueued) != 0 {
+		t.Fatalf("a refused credential enqueued %d jobs", len(backend.enqueued))
 	}
 }

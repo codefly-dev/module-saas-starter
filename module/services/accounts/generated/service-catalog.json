@@ -9978,7 +9978,7 @@
         "permissions": [],
         "scopes": [],
         "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
+        "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
             "saas.platform.module_envelope_written"

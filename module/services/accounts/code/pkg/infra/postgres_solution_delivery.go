@@ -125,4 +125,40 @@ func (s *PostgresStore) ListNewestDeliveredDocuments(
 	return records, rows.Err()
 }
 
+// ListDeliveredDocuments returns EVERY delivered generation of one kind, oldest
+// first. The desired set is the newest per document; this is the history, and
+// it is what a withdrawal is read from: a tombstone superseded by a later
+// generation of the same document is still a withdrawal that happened, and the
+// newest-per-document read would hide it.
+func (s *PostgresStore) ListDeliveredDocuments(
+	ctx context.Context, kind business.SolutionDeliveryKind,
+) ([]*business.SolutionDeliveryRecord, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+		SELECT `+solutionDeliveryColumns+`
+		  FROM public.solution_delivery_documents
+		 WHERE kind = $1
+		 ORDER BY document_id, generation`, string(kind))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := []*business.SolutionDeliveryRecord{}
+	for rows.Next() {
+		var (
+			record     business.SolutionDeliveryRecord
+			kindText   string
+			generation int64
+		)
+		if err := rows.Scan(&kindText, &record.DocumentID, &generation, &record.ContentHash,
+			&record.Payload, &record.Bundle, &record.SignerIdentity, &record.OwnershipDomain,
+			&record.ReceivedAt); err != nil {
+			return nil, err
+		}
+		record.Kind = business.SolutionDeliveryKind(kindText)
+		record.Generation = uint64(generation) //nolint:gosec // CHECKed positive
+		records = append(records, &record)
+	}
+	return records, rows.Err()
+}
+
 var _ business.SolutionDeliveryStore = (*PostgresStore)(nil)

@@ -126,7 +126,15 @@ type Service struct {
 	// validated registry, so a straddling request sees two coherent ceilings,
 	// never a half-built one; threading a request-scoped snapshot through every
 	// call site is still owed.
-	modulePrincipals atomic.Pointer[ModulePrincipalRegistry]
+	modulePrincipals atomic.Pointer[installedModuleRegistry]
+
+	// envelopeRevisionSeen is the highest module envelope revision this
+	// replica has seen committed — by its own write, by a reconcile pass, or by
+	// the fence read every capability check makes. A registry derived from an
+	// older revision serves nothing (declaredModules), so a narrowing committed
+	// anywhere takes effect on this replica at the first check that sees it,
+	// not at its next pass.
+	envelopeRevisionSeen atomic.Uint64
 
 	// declaredAudienceBindings caches the DECLARED, NON-TOMBSTONED solution
 	// binding ids the host's audience vocabulary is derived from
@@ -245,10 +253,41 @@ func (s *Service) SetSolutionDelivery(
 // unreachable from outside, and mutated by nothing. Callers index it and must
 // not write to it.
 func (s *Service) declaredModules() ModulePrincipalRegistry {
-	if registry := s.modulePrincipals.Load(); registry != nil {
-		return *registry
+	installed := s.modulePrincipals.Load()
+	if installed == nil {
+		return ModulePrincipalRegistry{}
 	}
-	return ModulePrincipalRegistry{}
+	// THE FENCE (moduleRegistryFenced). A registry derived from an envelope revision older than one
+	// this replica knows is committed may hold grants that revision withdrew,
+	// so it serves nothing until a pass derives one from the current ceiling.
+	// Only where an envelope store is wired: a registry stated directly (a
+	// test) carries no revision to compare.
+	if s.moduleEnvelopes != nil && s.envelopeRevisionSeen.Load() > installed.envelopeRevision {
+		return ModulePrincipalRegistry{}
+	}
+	return installed.registry
+}
+
+// moduleRegistryFenced reports whether this replica knows of a committed
+// envelope revision newer than the one its registry was derived from.
+func (s *Service) moduleRegistryFenced() bool {
+	if s.moduleEnvelopes == nil {
+		return false
+	}
+	installed := s.modulePrincipals.Load()
+	var derived uint64
+	if installed != nil {
+		derived = installed.envelopeRevision
+	}
+	return s.envelopeRevisionSeen.Load() > derived
+}
+
+// installedModuleRegistry is one published registry and the envelope revision
+// it was derived from. Published together through one pointer, so a reader can
+// never pair one pass's registry with another pass's revision.
+type installedModuleRegistry struct {
+	registry         ModulePrincipalRegistry
+	envelopeRevision uint64
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
@@ -294,6 +333,24 @@ func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 	s.storeModulePrincipals(registry)
 }
 
+// installDerivedModulePrincipals publishes a registry derived from one envelope
+// revision. The reconciler is its only caller.
+func (s *Service) installDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64) {
+	s.observeModuleEnvelopeRevision(envelopeRevision)
+	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision})
+}
+
+// observeModuleEnvelopeRevision records that a revision is committed. It only
+// grows, so a stale observation can never lift the fence.
+func (s *Service) observeModuleEnvelopeRevision(revision uint64) {
+	for {
+		seen := s.envelopeRevisionSeen.Load()
+		if revision <= seen || s.envelopeRevisionSeen.CompareAndSwap(seen, revision) {
+			return
+		}
+	}
+}
+
 // storeModulePrincipals publishes a registry the service alone can reach.
 //
 // maps.Clone of a nil map is nil, and an unset pointer and a nil registry both
@@ -301,8 +358,7 @@ func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 // writer clearing the registry denies every module caller rather than leaving
 // the previous one serving.
 func (s *Service) storeModulePrincipals(registry ModulePrincipalRegistry) {
-	owned := maps.Clone(registry)
-	s.modulePrincipals.Store(&owned)
+	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry)})
 }
 
 // SetModuleEventTransport wires the domain-event pub/sub transport backing

@@ -38,6 +38,11 @@ func newPlacementService(t *testing.T, store business.Store, grant business.Modu
 		t.Fatalf("NewService: %v", err)
 	}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	if grant.Tenant == "" {
+		// A registry entry always names its tenant; the capability check
+		// compares the credential's to it.
+		grant.Tenant = moduleTenantA
+	}
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{modulePrincSvc: grant})
 	return svc
 }

@@ -147,8 +147,8 @@ admins already hold every permission. See `AUTHZ.md` "Built-in role catalog
 import".
 
 A platform super_admin then allows the binding for the **calling** principal in
-its `grant` in the module envelope, beside the authority unit IDs the host admits
-for it:
+its `grant` in the module envelope, beside the whole authority units the host
+admits for it and the workload it may run as:
 
 ```json
 {
@@ -156,7 +156,13 @@ for it:
   "approved_builds": ["sha256:<the consumer's approved build>"],
   "principals": {
     "example-consumer": {
-      "bindings": ["<presence binding>:run:invoke", "<presence binding>:run:lookup"],
+      "bindings": [
+        {"id": "<presence binding>:run:invoke", "revision": 1, "scope": "example-producer.profiles:invoke,example-producer.profiles:read"},
+        {"id": "<presence binding>:run:lookup", "revision": 1, "scope": "example-producer.profiles:read"}
+      ],
+      "workload_identities": [
+        {"spiffe_id": "spiffe://<trust domain>/ns/<namespace>/sa/<service account>", "container": "<container>"}
+      ],
       "scope_ceilings": [],
       "grant": {
         "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661",
@@ -188,9 +194,10 @@ for it:
 The producer's own principal lists `example-producer.profiles` under its
 grant's `resources`. The consumer's registry entry is this grant bounded by the
 authority document delivery signed for it: the `run` audience exists only while
-the document grants the `invoke` unit, and each operation keeps only the actions
-the document's unit for it also grants — `resource_ids` stay the envelope's,
-because a unit cannot name one.
+the document grants the `invoke` unit, each unit the document grants must be the
+admitted one field for field (a wider scope puts the whole document outside the
+envelope), and each operation keeps only the actions its unit grants —
+`resource_ids` stay the envelope's, because a unit cannot name one.
 
 `example-consumer` redeems it with `ExchangeDelegatedOperationAudience`,
 supplying its retained parent, the binding id `run`, and whether this is an

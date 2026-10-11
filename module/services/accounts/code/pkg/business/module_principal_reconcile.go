@@ -34,21 +34,38 @@ import (
 // applied on this host. Its entry is the envelope's grant intersected with what
 // the document asks for — never wider than either.
 //
-// THE PREVIOUS REGISTRY SURVIVES ONLY AN UNREADABLE INPUT. If the envelope, the
-// inbox or the applied state cannot be read, nothing was judged and the last
-// registry keeps serving: reading a failed read as "no modules" would withdraw
-// every module on a transient error. Every other outcome is a fresh registry,
-// and a principal the inputs describe incoherently — two live documents, a
-// rewound generation, a workload that cannot be resolved, an entry that fails
-// validation — is OMITTED by name and never widened. The host-wide inbox is why
-// omission is per principal: one module's bad delivery must not take every
-// other module off the host.
+// A NARROWING IS NEVER UNDONE BY A READ FAILURE. Each pass reads the current
+// envelope first. If the envelope itself cannot be read, nothing is installed —
+// and the revision fence (fenceModuleRegistry, declaredModules) refuses every
+// check against a registry older than the committed revision, so the old
+// registry cannot keep serving past a narrowing it predates. If the envelope is
+// read and the inbox or the applied state is not, the registry is derived from
+// the last inputs read successfully, held to the CURRENT envelope: whatever the
+// new ceiling withdrew is gone, and nothing it does not allow is installed.
+//
+// A principal the inputs describe incoherently — two live documents, a
+// withdrawn binding, a signer the policy no longer admits, a workload the
+// envelope does not allow, an entry that fails validation — is OMITTED by name
+// and never widened. The host-wide inbox is why omission is per principal: one
+// module's bad delivery must not take every other module off the host.
+//
+// GENERATIONS. The inbox keeps every generation and the desired set is the
+// newest per authority id, so within an id a lower generation can never be the
+// answer — that order is durable, in the store, on every replica. Across ids
+// generations are not comparable, and a principal granted by two live
+// documents is refused. A principal moving from one authority to another — X
+// stops naming it, Y names it — is accepted only because Y is inside the
+// current envelope: its units are filed under Y's presence binding, so the
+// envelope admitting them is the administrator's approval of the move. An
+// earlier version kept per-principal generation marks in memory, which made
+// that answer depend on whether the process had restarted.
 
 var (
-	// ErrModulePrincipalInputsUnreadable reports that the envelope, the
-	// authority inbox or the applied presence could not be read, so the
-	// registry was not replaced.
-	ErrModulePrincipalInputsUnreadable = errors.New("the module registry's inputs could not be established, so the registry is unchanged")
+	// ErrModulePrincipalInputsUnreadable reports that an input could not be
+	// read. When the envelope could not be read the registry is unchanged
+	// (and fenced); otherwise it was derived from the last inputs read, held
+	// to the current envelope.
+	ErrModulePrincipalInputsUnreadable = errors.New("an input of the module registry could not be read")
 
 	// ErrModulePrincipalOmitted reports a principal left out of the registry
 	// this pass, with the reason beside it.
@@ -62,21 +79,29 @@ var (
 	// ErrModuleAuthorityOutsideEnvelope reports a live authority document the
 	// current envelope does not hold. It grants nothing.
 	ErrModuleAuthorityOutsideEnvelope = errors.New("delivered authority is outside the current envelope")
+
+	// ErrModuleWorkloadNotApproved reports a principal whose applied presence
+	// runs its approved build under a workload the envelope does not allow.
+	ErrModuleWorkloadNotApproved = errors.New("the presence names a workload the envelope does not allow for this principal")
 )
 
 // ModulePrincipalReconciler derives the module registry and installs it.
 type ModulePrincipalReconciler struct {
 	activation *SolutionAuthorityActivation
 
-	// mutex serializes passes. The registry swap and the high-water marks are
-	// one decision, so two passes interleaving could install one pass's
-	// registry with the other's marks.
+	// mutex serializes passes and guards the cached inputs.
 	mutex sync.Mutex
-	// marks is the highest authority generation this host has served per
-	// principal. It only grows, and it outlives each registry for the reason
-	// the approved-build view's does: a later pass carrying a lower generation
-	// is a rewind to refuse, not a fresh start.
-	marks map[string]uint64
+	// cachedAuthority and cachedApplied are the last authority and presence
+	// inputs read successfully. A pass whose read of one fails derives from
+	// the cached one, held to the envelope it DID read — so a narrowing takes
+	// effect even while the inbox is unreadable.
+	cachedAuthority *cachedAuthorityRead
+	cachedApplied   map[string]*SolutionHostBindingRecord
+}
+
+type cachedAuthorityRead struct {
+	live     []liveVerifiedAuthority
+	refusals []error
 }
 
 // NewModulePrincipalReconciler builds the reconciler over the activation
@@ -86,15 +111,14 @@ func NewModulePrincipalReconciler(activation *SolutionAuthorityActivation) (*Mod
 	if activation == nil || activation.reconciler == nil {
 		return nil, errors.New("the module principal reconciler requires the authority activation reader, which owns document re-verification and the ceiling")
 	}
-	return &ModulePrincipalReconciler{activation: activation, marks: map[string]uint64{}}, nil
+	return &ModulePrincipalReconciler{activation: activation}, nil
 }
 
-// RunOnce derives the registry from the current inputs and installs it.
+// RunOnce derives the registry from the current inputs and installs it, tagged
+// with the envelope revision it was derived from.
 //
 // It returns every refusal joined: a principal omitted, an operation audience
-// omitted, a document outside the ceiling. A non-nil return with the registry
-// replaced is the normal shape of a host that holds one bad delivery; only
-// ErrModulePrincipalInputsUnreadable means nothing was installed.
+// omitted, a document outside the ceiling, an input that could not be read.
 func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -102,56 +126,51 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 
 	envelope, err := r.activation.currentEnvelope(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrModulePrincipalInputsUnreadable, err)
+		// Nothing installed; the fence refuses what this registry predates.
+		return fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, err)
 	}
 	if envelope == nil {
 		// No ceiling has ever been written: nothing is allowed, so nothing is
 		// granted. Not an unreadable input — the empty registry is the answer.
-		service.SetModulePrincipals(ModulePrincipalRegistry{})
+		service.installDerivedModulePrincipals(ModulePrincipalRegistry{}, 0)
 		return nil
 	}
-	read, err := r.activation.verifiedAuthority(ctx)
+
+	var failures []error
+	live, refusals, err := r.activation.liveAuthority(ctx)
 	switch {
 	case errors.Is(err, ErrSolutionAuthorityCeilingUnavailable):
 		// No delivery inbox wired: no document can ever be delivered, so no
 		// principal can ever be asked for.
-		service.SetModulePrincipals(ModulePrincipalRegistry{})
+		service.installDerivedModulePrincipals(ModulePrincipalRegistry{}, envelope.Revision)
 		return nil
 	case err != nil:
-		return fmt.Errorf("%w: %w", ErrModulePrincipalInputsUnreadable, err)
+		failures = append(failures, fmt.Errorf("%w: the authority inbox: %w", ErrModulePrincipalInputsUnreadable, err))
+		if r.cachedAuthority != nil {
+			live, refusals = r.cachedAuthority.live, r.cachedAuthority.refusals
+		} else {
+			live, refusals = nil, nil
+		}
+	default:
+		r.cachedAuthority = &cachedAuthorityRead{live: live, refusals: refusals}
 	}
-	records, err := service.ListSolutionHostBindings(ctx)
-	if err != nil {
-		return fmt.Errorf("%w: read applied presence: %w", ErrModulePrincipalInputsUnreadable, err)
-	}
-	applied := make(map[string]*SolutionHostBindingRecord, len(records))
-	for _, record := range records {
-		applied[record.BindingID] = record
+	applied := r.cachedApplied
+	if records, err := service.ListSolutionHostBindings(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("%w: the applied presence: %w", ErrModulePrincipalInputsUnreadable, err))
+	} else {
+		applied = make(map[string]*SolutionHostBindingRecord, len(records))
+		for _, record := range records {
+			applied[record.BindingID] = record
+		}
+		r.cachedApplied = applied
 	}
 
-	var refusals []error
-	// A withdrawal is terminal for the presence binding it is over, whatever
-	// authority id a later grant is signed under — the rule activation holds,
-	// held here too, so a rename cannot reinstate what a tombstone withdrew.
-	withdrawn := map[string]string{}
-	for _, one := range read {
-		if one.document.Removed {
-			withdrawn[one.document.PresenceBinding] = one.document.Authority
-		}
-	}
+	refusals = append(slices.Clone(refusals), failures...)
 	var inside []*solutionhost.AuthorityDocument
-	for _, one := range read {
+	for _, one := range live {
 		document := one.document
-		if document.Removed {
-			continue
-		}
-		if authority, gone := withdrawn[document.PresenceBinding]; gone && authority != document.Authority {
-			refusals = append(refusals, fmt.Errorf("%w: authority %q over binding %q, which authority %q withdrew",
-				ErrSolutionAuthorityWithdrawn, document.Authority, document.PresenceBinding, authority))
-			continue
-		}
-		// THE CEILING, through core: the projection of the current envelope for
-		// this document, held by core's own containment rule.
+		// THE CEILING, through core: the projection of the current envelope
+		// for this document — the host's own units, whole.
 		if err := document.ValidateAgainst(envelope.authorityEnvelopeFor(document)); err != nil {
 			refusals = append(refusals, fmt.Errorf("%w: authority %q generation %d: %w",
 				ErrModuleAuthorityOutsideEnvelope, document.Authority, document.Generation, err))
@@ -170,10 +189,9 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		}
 	}
 
-	marks := maps.Clone(r.marks)
 	next := ModulePrincipalRegistry{}
 	for _, document := range inside {
-		workload, workloadErr := r.workloadFor(document, applied[document.PresenceBinding])
+		candidates, workloadErr := r.workloadsFor(document, applied[document.PresenceBinding])
 		for _, principal := range document.Principals {
 			prefix := principal.Principal
 			omit := func(reason error) {
@@ -184,10 +202,6 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 				named := slices.Clone(authorities)
 				sort.Strings(named)
 				omit(fmt.Errorf("granted by authorities %v, whose generations are not comparable", named))
-				continue
-			}
-			if mark, had := marks[prefix]; had && document.Generation < mark {
-				omit(fmt.Errorf("generation %d is below the %d already served", document.Generation, mark))
 				continue
 			}
 			entry, declared := envelope.Principals[prefix]
@@ -202,6 +216,11 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 				omit(workloadErr)
 				continue
 			}
+			workload, err := approvedWorkload(entry, candidates, document)
+			if err != nil {
+				omit(err)
+				continue
+			}
 			grant, omitted, err := deriveModulePrincipalGrant(prefix, entry, document, principal.Bindings, workload)
 			refusals = append(refusals, omitted...)
 			if err != nil {
@@ -209,87 +228,100 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 				continue
 			}
 			next[ModulePrincipalID(prefix)] = grant
-			marks[prefix] = document.Generation
 		}
 	}
 
-	service.SetModulePrincipals(next)
-	r.marks = marks
+	service.installDerivedModulePrincipals(next, envelope.Revision)
 	return errors.Join(refusals...)
 }
 
-// workloadFor resolves the Kubernetes identity a document's principals run as,
-// from the presence this host APPLIED for the binding the document is granted
-// over.
+// workloadsFor reads the workloads a document's principals could run as, from
+// the presence this host APPLIED for the binding the document is granted over:
+// every distinct (SPIFFE ID, container) running the build the document is
+// approved for.
 //
 // Applied, not merely delivered: a generation this host refused is not running
-// here, and a workload read from it would bind a principal to pods nothing
-// admitted. The applied record holds the canonical document this host
-// reconciled, written only by the reconcile pass.
-//
-// The authenticating workload is the one running the build the document is
-// approved for — delivery approves the image digest of the container that
-// presents the module's identity — and its namespace and service account are
-// read from the SPIFFE ID the presence document names for it. More than one
-// distinct identity running that build has no single answer and is refused.
-func (r *ModulePrincipalReconciler) workloadFor(
+// here. The applied record holds the canonical document this host reconciled,
+// written only by the reconcile pass. Which of these the principal may BE is
+// the envelope's to say (approvedWorkload).
+func (r *ModulePrincipalReconciler) workloadsFor(
 	document *solutionhost.AuthorityDocument, record *SolutionHostBindingRecord,
-) (ModuleWorkload, error) {
+) ([]ModuleWorkloadIdentity, error) {
 	host := r.activation.reconciler.host
 	if document.Host.Coordinate != host.Coordinate {
-		return ModuleWorkload{}, fmt.Errorf("the document grants on host %q, and this host is %q", document.Host.Coordinate, host.Coordinate)
+		return nil, fmt.Errorf("the document grants on host %q, and this host is %q", document.Host.Coordinate, host.Coordinate)
 	}
 	if record == nil || record.Applied == nil {
-		return ModuleWorkload{}, fmt.Errorf("presence binding %q has no applied generation on this host", document.PresenceBinding)
+		return nil, fmt.Errorf("presence binding %q has no applied generation on this host", document.PresenceBinding)
 	}
 	if record.Applied.Removed {
-		return ModuleWorkload{}, fmt.Errorf("presence binding %q is withdrawn on this host", document.PresenceBinding)
+		return nil, fmt.Errorf("presence binding %q is withdrawn on this host", document.PresenceBinding)
 	}
 	if record.Applied.Domain != document.OwnershipDomain {
-		return ModuleWorkload{}, fmt.Errorf("presence binding %q was applied under ownership domain %q and the document speaks for %q",
+		return nil, fmt.Errorf("presence binding %q was applied under ownership domain %q and the document speaks for %q",
 			document.PresenceBinding, record.Applied.Domain, document.OwnershipDomain)
 	}
 	if record.Applied.Generation < document.EffectiveFrom {
-		return ModuleWorkload{}, fmt.Errorf("the document is effective from presence generation %d and binding %q has applied %d",
+		return nil, fmt.Errorf("the document is effective from presence generation %d and binding %q has applied %d",
 			document.EffectiveFrom, document.PresenceBinding, record.Applied.Generation)
 	}
 	presence, err := solutionhost.Parse([]byte(record.Applied.Document))
 	if err != nil {
-		return ModuleWorkload{}, fmt.Errorf("read the applied presence for binding %q: %w", document.PresenceBinding, err)
+		return nil, fmt.Errorf("read the applied presence for binding %q: %w", document.PresenceBinding, err)
 	}
 	if presence.Binding != document.PresenceBinding {
-		return ModuleWorkload{}, fmt.Errorf("the applied presence for binding %q names binding %q", document.PresenceBinding, presence.Binding)
+		return nil, fmt.Errorf("the applied presence for binding %q names binding %q", document.PresenceBinding, presence.Binding)
 	}
 	// Both halves of the tuple name the ceiling they were rendered against,
-	// and they must agree — core's activation rule — so authority rendered
-	// against one envelope revision never binds to presence rendered against
-	// another.
+	// and they must agree — core's activation rule.
 	if presence.EnvelopeRevision != document.EnvelopeRevision {
-		return ModuleWorkload{}, fmt.Errorf("the applied presence for binding %q names envelope revision %d and the document names %d",
+		return nil, fmt.Errorf("the applied presence for binding %q names envelope revision %d and the document names %d",
 			document.PresenceBinding, presence.EnvelopeRevision, document.EnvelopeRevision)
 	}
-	var found []ModuleWorkload
+	var found []ModuleWorkloadIdentity
 	for _, workload := range presence.Workloads {
 		if workload.Image.Digest != document.ApprovedBuild {
 			continue
 		}
-		candidate := ModuleWorkload{
-			ServiceAccount: spiffeServiceAccount(workload.Identity.SPIFFEID),
-			Namespace:      spiffeNamespace(workload.Identity.SPIFFEID),
-			Container:      workload.Container,
-		}
+		candidate := ModuleWorkloadIdentity{SPIFFEID: workload.Identity.SPIFFEID, Container: workload.Container}
 		if !slices.Contains(found, candidate) {
 			found = append(found, candidate)
 		}
 	}
-	switch len(found) {
-	case 0:
-		return ModuleWorkload{}, fmt.Errorf("no workload of applied presence binding %q runs the approved build %s", document.PresenceBinding, document.ApprovedBuild)
-	case 1:
-		return found[0], nil
+	if len(found) == 0 {
+		return nil, fmt.Errorf("no workload of applied presence binding %q runs the approved build %s", document.PresenceBinding, document.ApprovedBuild)
 	}
-	return ModuleWorkload{}, fmt.Errorf("%d distinct workloads of applied presence binding %q run the approved build %s, so the principal's identity has no single answer",
-		len(found), document.PresenceBinding, document.ApprovedBuild)
+	return found, nil
+}
+
+// approvedWorkload is the one workload a principal runs as: the workload of the
+// applied presence running its approved build, and only when the envelope
+// allows that exact identity — SPIFFE ID and container.
+//
+// The envelope pins it because nothing else does. An image digest is not an
+// identity: a later presence generation can run the same build under another
+// service account, namespace or container, and binding the principal to
+// whatever the newest presence names would move its authority to a workload
+// nobody approved. Several allowed identities running the build have no single
+// answer and are refused.
+func approvedWorkload(
+	entry ModuleEnvelopePrincipal, candidates []ModuleWorkloadIdentity, document *solutionhost.AuthorityDocument,
+) (ModuleWorkload, error) {
+	var allowed []ModuleWorkloadIdentity
+	for _, candidate := range candidates {
+		if slices.Contains(entry.WorkloadIdentities, candidate) {
+			allowed = append(allowed, candidate)
+		}
+	}
+	switch len(allowed) {
+	case 0:
+		return ModuleWorkload{}, fmt.Errorf("%w: binding %q runs build %s as %v",
+			ErrModuleWorkloadNotApproved, document.PresenceBinding, document.ApprovedBuild, candidates)
+	case 1:
+		return allowed[0].workload(), nil
+	}
+	return ModuleWorkload{}, fmt.Errorf("%d allowed workloads of binding %q run build %s, so the principal's identity has no single answer",
+		len(allowed), document.PresenceBinding, document.ApprovedBuild)
 }
 
 // spiffeServiceAccount reads the service account out of
