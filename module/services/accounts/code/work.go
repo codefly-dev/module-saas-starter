@@ -1922,7 +1922,11 @@ func configuredSolutionHostBindingReconciler(
 	if err := verifier.ProveLocalCluster(context.Background(), kubernetes); err != nil {
 		return nil, err
 	}
-	service.SetSolutionDelivery(verifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	keyVerifier, err := verifier.Verifier()
+	if err != nil {
+		return nil, err
+	}
+	service.SetSolutionDelivery(keyVerifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
 	service.SetSolutionDeliveryCoordinate(coordinate)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
@@ -1941,7 +1945,7 @@ func configuredSolutionHostBindingReconciler(
 	// document, because a document must never carry its own ceiling.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:          business.NewDeliveredSolutionHostBindings(service),
-		Verifier:        verifier,
+		Verifier:        keyVerifier,
 		Coordinate:      coordinate,
 		Domains:         domains,
 		DomainsBySigner: domainsBySigner,

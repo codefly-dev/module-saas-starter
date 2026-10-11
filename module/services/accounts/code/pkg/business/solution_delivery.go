@@ -49,16 +49,13 @@ func (kind SolutionDeliveryKind) Valid() bool {
 // SolutionDeliveryCarrier is one received carrier: the canonical payload and the
 // attestation over exactly those bytes.
 //
-// The two travel together and are stored together. A payload without its bundle
+// The two travel together and are stored together. A payload without its envelope
 // is a document nobody can re-verify, which is the state that made a restore
 // unable to re-check what it had accepted.
 type SolutionDeliveryCarrier struct {
 	Kind SolutionDeliveryKind
-	// Raw is the carrier exactly as delivered — `{schema, document, bundle}` —
-	// parsed by core's ParseSigned rather than unmarshalled here. Core's
-	// Signed.validate checks the carrier's own schema, which an ad-hoc
-	// two-field unmarshal skips: a hand-built carrier claiming any schema used
-	// to reach the bundle verifier.
+	// Raw is the delivered {document, envelope} carrier. Core's strict parser
+	// refuses unknown fields and missing envelopes before verification.
 	Raw []byte
 }
 
@@ -70,7 +67,9 @@ type SolutionDeliveryRecord struct {
 	// ContentHash is sha256 of the canonical payload, `sha256:<64 hex>`.
 	ContentHash string
 	Payload     []byte
-	Bundle      []byte
+	// Bundle retains its storage name, but holds the DSSE envelope verbatim
+	// so reconciliation can verify the same bytes under the current pins.
+	Bundle []byte
 	// SignerIdentity is what the verifier attested, and OwnershipDomain is what
 	// the document asserts. Both recorded at receipt so an operator can see who
 	// delivered what without re-running verification — and so a later narrowing
@@ -173,9 +172,8 @@ type SolutionDeliveryCarrierAuthorizer interface {
 //
 // The ORDER is the contract, and it is signature-first:
 //
-//  1. parse the carrier (core's ParseSigned, so the carrier's own schema is
-//     checked);
-//  2. verify the bundle against the trust root and the identity allowlist,
+//  1. parse the carrier with core's strict ParseSigned;
+//  2. verify the envelope against the pinned keys and their ownership domains,
 //     WITH THE READER FOR THE KIND THE PATH NAMES;
 //  3. check the attested signer may speak for the domain the document asserts;
 //  4. authorise the CALLER as a carrier for this kind;
@@ -236,7 +234,7 @@ func (s *Service) ReceiveSolutionDelivery(
 		Generation:      received.generation,
 		ContentHash:     solutionDeliveryContentHash(received.payload),
 		Payload:         received.payload,
-		Bundle:          signed.Bundle,
+		Bundle:          signed.Envelope,
 		SignerIdentity:  received.signer,
 		OwnershipDomain: received.ownershipDomain,
 		ReceivedAt:      time.Now().UTC(),
@@ -410,15 +408,18 @@ func (s *Service) receiveDeliveredAuthority(
 // "the bytes are wrong", because the two have different response codes and a
 // caller acts differently on each.
 //
-// core's VerifyDelivered does two things behind one error: it hands the payload
-// and bundle to this host's verifier, and it then reads the attested bytes with
-// the reader for the kind. Only the first is about the SIGNER. A schema
+// Core verifies the envelope, reads the canonical document of the requested
+// kind, then checks the pinned key's ownership domains. Signature and domain
+// refusals are about the SIGNER. A schema
 // mismatch, a payload that is not its own canonical encoding, or a document
 // core will not parse are all facts about the bytes — which is why a genuine
 // authority document POSTed to /presence is 400 rather than 403. Answering 403
 // would send an operator to look at the signing identity for a delivery that
 // was signed perfectly well and simply sent to the wrong path.
 func classifySolutionDeliveryVerification(err error) error {
+	if errors.Is(err, solutionhost.ErrWrongDomain) {
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryDomainNotGranted, err)
+	}
 	if errors.Is(err, solutionhost.ErrUnsigned) {
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryUnattested, err)
 	}
@@ -562,9 +563,8 @@ func (d *DeliveredSolutionHostBindings) Documents(ctx context.Context) ([]Soluti
 	documents := make([]SolutionHostBindingDocument, 0, len(records))
 	for _, record := range records {
 		carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-			Schema:   solutionhost.SchemaSignedV1,
 			Document: record.Payload,
-			Bundle:   record.Bundle,
+			Envelope: record.Bundle,
 		})
 		if err != nil {
 			// A row that cannot be put back into a carrier is a defect in what

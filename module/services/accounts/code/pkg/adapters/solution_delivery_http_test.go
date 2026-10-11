@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"accounts/internal/deliverytest"
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
 
@@ -31,34 +32,18 @@ import (
 // grouping on HTTP class. A test that only checked "it is an error" would have
 // passed against that draft.
 
-type fakeDeliveryVerifier struct {
-	signer string
-	err    error
-	// payloads records what was verified, so "the bundle is checked over
-	// exactly these bytes" is observable rather than assumed.
-	payloads [][]byte
-}
-
-func (f *fakeDeliveryVerifier) VerifyBundle(
-	_ context.Context, payload []byte, _ json.RawMessage,
-) (string, error) {
-	f.payloads = append(f.payloads, payload)
-	if f.err != nil {
-		return "", f.err
-	}
-	return f.signer, nil
-}
-
 type fakeDeliveryStore struct {
 	inserted bool
 	err      error
 	calls    int
+	payloads [][]byte
 }
 
 func (f *fakeDeliveryStore) RecordDeliveredDocument(
-	_ context.Context, _ *business.SolutionDeliveryRecord,
+	_ context.Context, record *business.SolutionDeliveryRecord,
 ) (bool, error) {
 	f.calls++
+	f.payloads = append(f.payloads, record.Payload)
 	if f.err != nil {
 		return false, f.err
 	}
@@ -94,18 +79,22 @@ func (f *fakeCarrierAuthorizer) AuthorizeCarrier(
 	return f.err
 }
 
-// deliveryHarness wires a service whose delivery half is fakes.
+// deliveryHarness uses real signatures with a fake inbox and carrier authorizer.
 type deliveryHarness struct {
 	handler  http.Handler
-	verifier *fakeDeliveryVerifier
+	verifier *solutionhost.Verifier
 	store    *fakeDeliveryStore
 	carrier  *fakeCarrierAuthorizer
 }
 
 func newDeliveryHarness(t *testing.T, signer string, domains map[string][]string) *deliveryHarness {
 	t.Helper()
+	pinDomains := domains
+	if len(pinDomains) == 0 {
+		pinDomains = map[string][]string{signer: {"acme"}}
+	}
 	harness := &deliveryHarness{
-		verifier: &fakeDeliveryVerifier{signer: signer},
+		verifier: deliverytest.Verifier(t, pinDomains),
 		store:    &fakeDeliveryStore{inserted: true},
 		carrier:  &fakeCarrierAuthorizer{},
 	}
@@ -140,7 +129,7 @@ func TestDeliveryUnknownKindIs404(t *testing.T) {
 		recorder := harness.post(path, []byte("{}"))
 		require.Equal(t, http.StatusNotFound, recorder.Code, "path %s", path)
 	}
-	require.Zero(t, harness.verifier.payloads, "an unknown kind must not reach verification")
+	require.Zero(t, harness.store.payloads, "an unknown kind must not reach the inbox")
 }
 
 // A GET gets 405 WITH Allow, so a probe learns the method rather than reading a
@@ -163,7 +152,7 @@ func TestDeliveryOversizedBodyIs400(t *testing.T) {
 		[]byte(strings.Repeat("a", (1<<20)+1)))
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.Zero(t, harness.verifier.payloads, "an oversized body must not reach verification")
+	require.Zero(t, harness.store.payloads, "an oversized body must not reach the inbox")
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +211,7 @@ func TestCarrierNotAuthorizedIs403(t *testing.T) {
 // operator reads the wrong cause in both directions.
 func TestUnattestedCarrierIs403AndIsRefusedBeforeTheCaller(t *testing.T) {
 	harness := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	harness.verifier.err = errors.New("no accepted signer")
+	*harness.verifier = solutionhost.Verifier{}
 
 	recorder := harness.post(SolutionDeliveryPrefix+"presence",
 		signedPresenceCarrier(t, "acme", "acme-prod"))
@@ -323,18 +312,20 @@ func TestNewGenerationIs202AndAnExactReplayIs200(t *testing.T) {
 // configuration, would behave identically on the happy path.
 func TestVerificationCoversThePayloadAndNamespacesComeFromTheDocument(t *testing.T) {
 	harness := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	recorder := harness.post(SolutionDeliveryPrefix+"presence",
-		signedPresenceCarrier(t, "acme", "acme-prod"))
+	raw := signedPresenceCarrier(t, "acme", "acme-prod")
+	recorder := harness.post(SolutionDeliveryPrefix+"presence", raw)
 	require.Equal(t, http.StatusAccepted, recorder.Code)
 
-	require.Len(t, harness.verifier.payloads, 1)
-	require.NotEmpty(t, harness.verifier.payloads[0])
+	require.Len(t, harness.store.payloads, 1)
+	signed, err := solutionhost.ParseSigned(raw)
+	require.NoError(t, err)
+	require.Equal(t, []byte(signed.Document), harness.store.payloads[0])
 	require.Equal(t, []string{"acme-prod"}, harness.carrier.seenNamespaces,
 		"the presence namespace is a property of the SIGNED document, not of host configuration")
 }
 
 // signedPresenceCarrier builds a carrier core's ParseSigned accepts, with a
-// bundle the fake verifier stands in for.
+// real envelope the pinned verifier checks.
 //
 // Built through core's own types and `MarshalSigned` over `CanonicalBytes`, not
 // a hand-written JSON literal: the signing input IS the canonical encoding, and
@@ -387,15 +378,9 @@ func signedPresenceCarrier(t *testing.T, domain, namespace string) []byte {
 	}
 	require.NoError(t, document.Validate(), "the fixture must be a valid binding")
 
-	canonical, err := document.CanonicalBytes()
+	canonical, err := solutionhost.SignedPayload(document)
 	require.NoError(t, err)
-	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-		Schema:   solutionhost.SchemaSignedV1,
-		Document: canonical,
-		Bundle:   json.RawMessage(solutionhost.FixtureBundle),
-	})
-	require.NoError(t, err)
-	return carrier
+	return deliverytest.Carrier(t, canonical, "signer")
 }
 
 // deliveryNoopStore satisfies business.Store without implementing it.

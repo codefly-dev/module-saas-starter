@@ -4,11 +4,11 @@ package infra_test
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"accounts/internal/deliverytest"
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -175,7 +175,7 @@ func activationFor(
 	reconciler, err := business.NewSolutionHostBindingReconciler(service,
 		business.SolutionHostBindingReconcilerConfig{
 			Source:          business.NewDeliveredSolutionHostBindings(service),
-			Verifier:        productionPathVerifier{signer: productionPathSigner},
+			Verifier:        deliverytest.Verifier(t, map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}}),
 			Coordinate:      coordinate,
 			Domains:         []string{solutionhost.FixtureDomain, productionPathDomain},
 			DomainsBySigner: map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}},
@@ -334,11 +334,5 @@ func productionPathAuthorityCarrier(t *testing.T, document *solutionhost.Authori
 	t.Helper()
 	payload, err := solutionhost.SignedPayloadFor(document)
 	require.NoError(t, err)
-	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-		Schema:   solutionhost.SchemaSignedV1,
-		Document: payload,
-		Bundle:   json.RawMessage(solutionhost.FixtureBundle),
-	})
-	require.NoError(t, err)
-	return carrier
+	return deliverytest.Carrier(t, payload, productionPathSigner)
 }

@@ -98,7 +98,7 @@ func newRegistryScenario(t *testing.T, label string) *registryScenario {
 	scenario.prefix = "mod-" + scenario.primary.solutionID
 	scenario.resource = scenario.prefix + ".reports"
 	grantPlatformRoleForTest(t, scenario.admin, "super_admin")
-	scenario.reconciler = newRegistryReconciler(t, delivery.service, productionPathVerifier{signer: productionPathSigner},
+	scenario.reconciler = newRegistryReconciler(t, delivery.service, productionVerifier(t),
 		map[string][]string{productionPathSigner: {productionPathDomain}}, delivery.service)
 	return scenario
 }
@@ -114,7 +114,7 @@ func newRegistryDelivery(t *testing.T) *productionPathDelivery {
 }
 
 func newRegistryReconciler(
-	t *testing.T, service *business.Service, verifier solutionhost.BundleVerifier,
+	t *testing.T, service *business.Service, verifier *solutionhost.Verifier,
 	domainsBySigner map[string][]string, envelopes business.ModuleEnvelopeSource,
 ) *business.SolutionHostBindingReconciler {
 	t.Helper()
@@ -434,7 +434,7 @@ func TestANarrowingOnOneReplicaRefusesTheNextCheckOnAnother(t *testing.T) {
 	s.established(t)
 
 	other := newRegistryDelivery(t)
-	otherReconciler := newRegistryReconciler(t, other.service, productionPathVerifier{signer: productionPathSigner},
+	otherReconciler := newRegistryReconciler(t, other.service, productionVerifier(t),
 		map[string][]string{productionPathSigner: {productionPathDomain}}, other.service)
 	if err := otherReconciler.RunOnce(testCtx); err != nil {
 		require.NotErrorIs(t, err, business.ErrModulePrincipalInputsUnreadable)
@@ -470,7 +470,7 @@ func TestAPassThatReadThePreviousCeilingDoesNotServeAfterANarrowing(t *testing.T
 	require.NoError(t, err)
 
 	s.putEnvelope(t, envelopeOptions{none: true})
-	inFlight := newRegistryReconciler(t, s.delivery.service, productionPathVerifier{signer: productionPathSigner},
+	inFlight := newRegistryReconciler(t, s.delivery.service, productionVerifier(t),
 		map[string][]string{productionPathSigner: {productionPathDomain}}, staleCeiling{envelope: previous})
 	_ = inFlight.ModulePrincipals().RunOnce(testCtx)
 
@@ -480,30 +480,19 @@ func TestAPassThatReadThePreviousCeilingDoesNotServeAfterANarrowing(t *testing.T
 	require.ErrorIs(t, err, business.ErrModuleRegistryStale)
 }
 
-// switchVerifier verifies until told to refuse, as a host whose signer policy
-// moved under rows already stored would.
-type switchVerifier struct{ refuse atomic.Bool }
-
-func (v *switchVerifier) VerifyBundle(ctx context.Context, payload []byte, bundle json.RawMessage) (string, error) {
-	if v.refuse.Load() {
-		return "", errors.New("this signer is no longer admitted")
-	}
-	return productionPathVerifier{signer: productionPathSigner}.VerifyBundle(ctx, payload, bundle)
-}
-
 // TestANarrowingHoldsWhileTheInboxIsUnreadable (finding 4): the envelope is
 // narrowed and the documents no longer verify. The registry is derived from
 // the NEW ceiling — the narrowing takes effect — rather than the previous
 // registry being kept.
 func TestANarrowingHoldsWhileTheInboxIsUnreadable(t *testing.T) {
 	s := newRegistryScenario(t, "unb")
-	verifier := &switchVerifier{}
+	verifier := productionVerifier(t)
 	s.reconciler = newRegistryReconciler(t, s.delivery.service, verifier,
 		map[string][]string{productionPathSigner: {productionPathDomain}}, s.delivery.service)
 	s.established(t)
 
 	s.putEnvelope(t, envelopeOptions{none: true})
-	verifier.refuse.Store(true)
+	*verifier = solutionhost.Verifier{}
 	err := s.reconciler.ModulePrincipals().RunOnce(testCtx)
 	require.ErrorIs(t, err, business.ErrSolutionAuthorityUnverifiable, "a document that no longer verifies is refused by name")
 	_, present := s.entry()
@@ -537,7 +526,7 @@ func TestAWithdrawalIsTerminalForTheBinding(t *testing.T) {
 	_, err := s.reconciler.AuthorityActivation().Activate(testCtx, s.primary.binding, s.primary.build)
 	require.ErrorIs(t, err, business.ErrSolutionAuthorityWithdrawn, "activation reads the same history")
 
-	restarted := newRegistryReconciler(t, s.delivery.service, productionPathVerifier{signer: productionPathSigner},
+	restarted := newRegistryReconciler(t, s.delivery.service, productionVerifier(t),
 		map[string][]string{productionPathSigner: {productionPathDomain}}, s.delivery.service)
 	_ = restarted.ModulePrincipals().RunOnce(testCtx)
 	_, present = s.entry()
@@ -593,7 +582,7 @@ func TestAPrincipalMovesToAnotherAuthorityOnlyInsideTheEnvelope(t *testing.T) {
 	require.True(t, present, "inside the envelope, the replacement authority holds the principal")
 	require.Equal(t, second.namespace, grant.Workload.Namespace, "and binds it to the replacement's approved workload")
 
-	restarted := newRegistryReconciler(t, s.delivery.service, productionPathVerifier{signer: productionPathSigner},
+	restarted := newRegistryReconciler(t, s.delivery.service, productionVerifier(t),
 		map[string][]string{productionPathSigner: {productionPathDomain}}, s.delivery.service)
 	_ = restarted.ModulePrincipals().RunOnce(testCtx)
 	again, present := s.entry()
@@ -608,7 +597,7 @@ func TestARevokedSignerDomainGrantsNothing(t *testing.T) {
 	s := newRegistryScenario(t, "sig")
 	s.established(t)
 
-	narrowed := newRegistryReconciler(t, s.delivery.service, productionPathVerifier{signer: productionPathSigner},
+	narrowed := newRegistryReconciler(t, s.delivery.service, productionVerifier(t),
 		map[string][]string{productionPathSigner: {solutionhost.FixtureDomain}}, s.delivery.service)
 	refusals := narrowed.ModulePrincipals().RunOnce(testCtx)
 	_, present := s.entry()

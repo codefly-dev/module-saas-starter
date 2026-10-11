@@ -3,9 +3,6 @@
 package infra_test
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"testing"
 	"time"
 
@@ -254,7 +251,7 @@ func TestAnUnverifiableDocumentApprovesNothing(t *testing.T) {
 	// re-verification on every pass exists for.
 	refusing, err := business.NewApprovedBuildReconciler(
 		activationForVerifier(t, scenario.delivery.service, productionPathCoordinate,
-			scenario.envelope, refusingBundleVerifier{}))
+			scenario.envelope, &solutionhost.Verifier{}))
 	require.NoError(t, err)
 	require.ErrorIs(t, refusing.RunOnce(testCtx), business.ErrSolutionAuthorityUnverifiable)
 	_, _, err = refusing.ApprovedBuild(testCtx, scenario.principal)
@@ -416,27 +413,12 @@ func (s *approvedBuildScenario) authority(
 	return document
 }
 
-// refusingBundleVerifier attests nothing, which is what a host whose signer
-// policy no longer admits a delivery writer looks like to a row already stored.
-//
-// It refuses at the BUNDLE rather than by returning an unexpected signer
-// identity, so the refusal happens in core's verification and not in this
-// host's domain policy — the two produce different errors, and the one under
-// test is "this row can no longer be verified at all".
-type refusingBundleVerifier struct{}
-
-func (refusingBundleVerifier) VerifyBundle(
-	context.Context, []byte, json.RawMessage,
-) (string, error) {
-	return "", errors.New("this signer is no longer admitted")
-}
-
 // activationForVerifier is activationFor with the attestation check as a
 // parameter, for the one test that needs a reader over the same inbox that can
 // no longer verify it.
 func activationForVerifier(
 	t *testing.T, service *business.Service, coordinate string,
-	envelope *business.ModuleEnvelope, verifier solutionhost.BundleVerifier,
+	envelope *business.ModuleEnvelope, verifier *solutionhost.Verifier,
 ) *business.SolutionAuthorityActivation {
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(service,

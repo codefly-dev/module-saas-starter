@@ -13,11 +13,10 @@ import (
 // The trust anchor's location must be out of the composition's reach BY
 // CONSTRUCTION, and this is the gate that keeps it there.
 //
-// The hole this closes was real and shipped: the keyless verifier read its
+// The hole this closes was real and shipped: the delivery verifier read its
 // directory from `SOLUTION_HOST_TRUST_MOUNT`, a workspace environment value.
 // Workspace environment is delivered by the COMPOSITION, so a composition could
-// repoint the verifier at a verification policy and a trust root it wrote
-// itself, sign its own presence documents with a key that policy listed, and
+// repoint the verifier at a verification policy it wrote itself, sign its own presence documents with a key that policy listed, and
 // pass every downstream check — because every check was against an anchor the
 // composition chose.
 //
@@ -41,7 +40,7 @@ func TestTrustAnchorPathIsNotConfigurable(t *testing.T) {
 		for _, suffix := range []string{"MOUNT", "DIR", "PATH", "ROOT", "ANCHOR"} {
 			if strings.Contains(key, suffix) {
 				t.Fatalf("work.go reads %q from workspace environment, which the COMPOSITION delivers.\n\n"+
-					"That lets a composition point the verifier at a policy and root it wrote itself, so its own "+
+					"That lets a composition point the verifier at a policy it wrote itself, so its own "+
 					"documents are checked against an anchor it chose — and no downstream check recovers from "+
 					"that, because the checks use those inputs.\n\n"+
 					"The anchor's location is a constant (infra.SolutionHostTrustAnchorPath). A deployment that "+
@@ -59,6 +58,7 @@ func TestTrustAnchorPathIsNotConfigurable(t *testing.T) {
 	//    path with extra steps: a caller that CAN pass one is a caller that can
 	//    be given one, and the next edit gives it the env var back.
 	requireConstructorTakesNoPath(t, verifier, "NewSolutionHostBundleVerifier")
+	requireConstructorTakesNoPath(t, filepath.Join(accountsCode, "pkg", "infra", "solution_host_key_verifier.go"), "NewSolutionHostKeyVerifier")
 }
 
 // requireLiteralStringConst checks a named const is declared with a string

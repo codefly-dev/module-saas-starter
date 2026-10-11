@@ -15,14 +15,7 @@ import (
 	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/sigstore/sigstore-go/pkg/verify"
 )
-
-// VerifySignedEntityInput is verify.SignedEntity under a local name, exported so
-// an external test can embed it when building a signed entity with one field
-// changed — which is how the transparency-evidence refusal is exercised without
-// hand-assembling a bundle.
-type VerifySignedEntityInput = verify.SignedEntity
 
 // IdentityScopeProbe exposes the scope query ListAdministeredOrganizations runs,
 // so a test can assert what admits a control-plane transaction. Deciding on the
@@ -181,27 +174,10 @@ func (s *PostgresStore) ScanAsControlPlane(
 	})
 }
 
-// VerifySignedEntity exposes the keyless verifier's DECISION, so a test can
-// drive it with an in-process Sigstore instead of a hand-assembled bundle
-// document.
-//
-// Exported for tests deliberately rather than testing through VerifyBundle's
-// JSON: the thing worth proving is that the policy accepts and refuses the right
-// identities against a real trust root, and a bundle written by hand proves only
-// that the decoder works. The path under test is the one production takes — the
-// JSON entry point decodes and calls straight into this.
-func VerifySignedEntity(
-	verifier any, entity VerifySignedEntityInput, payload []byte,
-) (string, error) {
-	return verifier.(*keylessBundleVerifier).verifySignedEntity(entity, payload)
-}
-
-// KeylessSignerDomains reads the signer-to-domain mapping off a verifier built
-// by either constructor, so a test can assert the mapping travels with the
-// policy it came from.
-func KeylessSignerDomains(verifier any) map[string][]string {
-	return verifier.(*keylessBundleVerifier).SignerDomains()
-}
+// ReadSolutionHostKeyVerifier exposes file loading without making the production
+// anchor configurable. Only tests may supply a directory.
+var ReadSolutionHostKeyVerifier = readSolutionHostKeyVerifier
+var NewSolutionHostKeyVerifierFrom = newSolutionHostKeyVerifier
 
 // NewKubernetesClientForTest points the client at a test API server, using a
 // throwaway token file.
