@@ -93,7 +93,7 @@ func run(ctx context.Context, stop func()) error {
 	if err != nil {
 		return err
 	}
-	port := codefly.For(ctx).WithDefaultNetwork().API(grpcEndpointName).NetworkInstance().Port
+	port := codefly.For(ctx).API(grpcEndpointName).NetworkInstance().Port
 	if port == 0 {
 		return fmt.Errorf("Codefly did not inject a port for the %q endpoint", grpcEndpointName)
 	}
