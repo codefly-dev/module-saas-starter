@@ -588,6 +588,104 @@ attached or detached, now needs a `BYPASSRLS` role to read every row, which the
 partition offload planned in
 [ADR 0006](./docs/adr/0006-audit-sink-and-retention-tiers.md) has to provision.
 
+## Audit retention drops a partition by its recorded range, under lock
+
+Audit retention is a partition drop, and a dropped partition cannot be
+recovered. `audit_events_drop_partitions_before(cutoff)`, as migration
+`34_audit_retention_partition_bounds` defines it, drops a monthly partition only
+when the upper bound PostgreSQL records for it ends by the cutoff. Earlier
+releases cut a partition's bounds at the midnights of the session zone that
+created it, so the function reads each bound from `pg_get_expr(relpartbound)`,
+never from the month in the name, and renders and reads it under a `DateStyle`
+and `TimeZone` it pins, never the caller's. It never drops a partition whose
+bounds are not a bounded range (`DEFAULT`, `MINVALUE`, `MAXVALUE`) or whose
+detach has begun.
+
+The cutoff is one the `audit_events` retention policy allows by the database's
+clock. The function refuses (SQLSTATE 22023) a cutoff later than the start of
+its transaction less the policy's window, a missing one, and any when there is
+no policy, so a caller whose clock runs ahead cannot drop a partition still
+inside the window. Once something is due it reads the policy again, with a row
+lock (`FOR SHARE NOWAIT`) it holds until it commits, and checks the cutoff
+against that, so the window it keeps to is the one in force when it commits: a
+change to the policy made while a run waits for its locks waits in turn for the
+run, and one already under way when the run reads the policy makes the run
+refuse (55P03) rather than wait. A window is a positive number of days:
+`data_retention_policies` refuses any other with a check constraint, and the
+migration that added it refuses to apply while a policy holds one, naming it,
+rather than leave retention to guess what it meant.
+
+When something is due the function locks `audit_events` `ACCESS EXCLUSIVE` and
+decides again from the catalog as it stands once the lock is held, so a
+partition detached while it waited is left alone. That lock stops a partition
+being created, attached, detached or given other bounds, but not renamed, and
+`LOCK TABLE` finds the table it locks by name: a partition renamed away while a
+`LOCK TABLE` waits for it, and another renamed to its name, would lead that
+`LOCK TABLE` on to the other one, and to a second wait. So the function locks
+each partition it chose by identity, under the name it has at that moment, with
+`LOCK TABLE ... NOWAIT` tried again until its deadline rather than a wait in the
+lock queue, and refuses unless the lock it holds is on that very partition.
+Holding them all, it decides a third time. It drops them only if exactly those
+are still due, and otherwise drops nothing (55000). Only a READ COMMITTED
+statement reads the catalog as it stands, so the function refuses any other
+isolation level (25000). `DropAuditPartitionsBefore` opens its own control-plane
+transaction at READ COMMITTED when its caller has none, whatever the database's
+default isolation, and that is how `RunRetention` calls it. The function waits
+ten seconds in all for its locks, not ten for each: it takes the policy's table
+and `audit_events` each in a statement of its own, after setting `lock_timeout`
+to what remains of ten seconds from its start, and each partition it locks with
+`NOWAIT`, tried again until then. Each `DROP` runs under what remains too, which
+bounds its wait for the DEFAULT partition, if there is one, which dropping a
+range partition also locks. It gives up with 55P03, dropping nothing, once
+nothing remains. When nothing is due it takes no lock at all: it reads bounds
+with `pg_get_expr(relpartbound, 0)`, which does not open the partition.
+
+`RunRetention` counts every window back from the database's clock, in days of
+24 hours, so the cutoff it passes is exactly the window before the database's
+present, and always in the past. It refuses a window that is not a positive
+number of days. A run goes on past a part that fails and returns every failure
+together; the scheduler logs that as an error and sets the gauge
+`saas.retention.failing` to 1 for each failed part, and back to 0 once a run no
+longer fails it. The alert pack's `retention_failures` alert fires while a part
+reads 1, from the first scrape after the failure, and CI tests it with
+`promtool` ([MEASUREMENT_RUNBOOKS.md](./MEASUREMENT_RUNBOOKS.md#retention)).
+`pkg/infra/postgres_audit_retention_test.go` holds the function's rules against
+PostgreSQL, and the retention tests in `pkg/business` hold the window's.
+
+## Audit partitions are provisioned at UTC midnights, within ten seconds of waiting
+
+`audit_events_provision_partitions(months_ahead)` is the store's one
+provisioning call, at startup and on every retention run, whatever the
+policies. It creates the partitions of the months from the previous one to
+`months_ahead` ahead, by the database's clock in UTC, then brings every
+partition's row-level security in step with the parent's.
+`audit_events_ensure_partition(month)` and `audit_events_secure_all_partitions()`
+remain for migrations and operators. Execute on all three stays with
+`app_control_plane`.
+
+Creating a partition locks `audit_events` `ACCESS EXCLUSIVE`, which audit writes
+queue behind, so provisioning takes that lock only when a month lacks its
+partition, decides again under the lock what to create, and waits ten seconds in
+all for every lock it takes, like retention, before giving up with 55P03 and
+creating nothing. The months ahead are provisioned in advance, so a call that
+gives up leaves the next one time to try again. Bringing a partition in step
+locks it only when it is out of step, by identity as retention does, and decides
+again under that lock what to change. A partition locked that way is tried again
+rather than waited for in the queue, so one that other sessions keep in use
+throughout can make the call give up at its deadline, and the next run tries
+again. Bringing every partition in step reads the list of partitions holding
+`audit_events` `ACCESS SHARE`, so a retention run cannot drop a partition the
+call has listed before it reaches it.
+
+A new partition's bounds are UTC midnights, whatever the zone of the session
+that provisions it. A partition an earlier release cut at another zone's
+midnight still borders it, and a range from UTC midnight would overlap one cut
+west of UTC or leave a gap after one cut east of it, where an insert would find
+no partition. So a new partition starts where its predecessor ends, and ends
+where its successor starts, when that neighbour's bound lies within a day of
+the UTC midnight. `pkg/infra/postgres_audit_provisioning_test.go` holds these
+rules against PostgreSQL.
+
 ## SECURITY DEFINER functions list pg_temp last
 
 A `SECURITY DEFINER` function runs with its owner's authority. Unless its

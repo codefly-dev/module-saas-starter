@@ -7,6 +7,15 @@ import (
 	"accounts/pkg/business"
 )
 
+// DatabaseNow reads the database's clock, the one every retention cutoff is
+// counted from: the policy window is the database's, and an application clock
+// running ahead must not move it.
+func (s *PostgresStore) DatabaseNow(ctx context.Context) (time.Time, error) {
+	var now time.Time
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now)
+	return now, err
+}
+
 func (s *PostgresStore) GetRetentionPolicies(ctx context.Context) ([]*business.RetentionPolicy, error) {
 	q := s.getQueryExecutor(ctx)
 	rows, err := q.Query(ctx, `

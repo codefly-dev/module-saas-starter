@@ -3,6 +3,7 @@ package business
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
@@ -16,56 +17,162 @@ type githubAppSetupRetentionStore interface {
 	DeleteExpiredGitHubAppSetups(ctx context.Context, before time.Time) (int64, error)
 }
 
-// RunRetention loads all data retention policies and deletes records older
-// than the configured retention period for each resource type. Returns a
-// summary of deleted counts per resource type.
+// earliestStoredInstant is the earliest instant a PostgreSQL timestamp with
+// time zone can hold, 24 November 4714 BC at 00:00 UTC. No record is older.
+var earliestStoredInstant = time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC)
+
+// retentionCutoff returns the instant before which a record has outlived a
+// window of days, counted back from now, and whether any record can be that
+// old. A window that is not a positive number of days is an error: read
+// literally, zero days reaches every record written before now, and fewer
+// reach records written after it. A day is 24 hours wherever the process runs:
+// the window is counted back in UTC, where every day has 24, so the cutoff is
+// exactly days*24h before now, and stays before now however long the window
+// is, where a time.Duration overflows past 106751 days. A window reaching back
+// past earliestStoredInstant has nothing older than its cutoff to remove.
+func retentionCutoff(now time.Time, days int) (before time.Time, anyOlder bool, err error) {
+	if days <= 0 {
+		return time.Time{}, false, fmt.Errorf("a retention window is a positive number of days, not %d", days)
+	}
+	before = now.UTC().AddDate(0, 0, -days)
+	return before, !before.Before(earliestStoredInstant), nil
+}
+
+// RetentionStep names the part of a retention run that failed.
+type RetentionStep string
+
+const (
+	// RetentionStepLoad is reading the policies, or the database clock every
+	// cutoff is counted from.
+	RetentionStepLoad RetentionStep = "load"
+	// RetentionStepProvision is provisioning audit partitions.
+	RetentionStepProvision RetentionStep = "provision"
+	// RetentionStepPolicy is a policy no run can apply: its window is not a
+	// positive number of days.
+	RetentionStepPolicy RetentionStep = "policy"
+	// RetentionStepRemove is removing a resource's expired records.
+	RetentionStepRemove RetentionStep = "remove"
+)
+
+// RetentionFailure is one failed part of a retention run.
+type RetentionFailure struct {
+	Resource string
+	Step     RetentionStep
+	Err      error
+}
+
+// RetentionError is a retention run that did not do all it should. A run goes
+// on past a failing part, so the error lists every failure, and the counts the
+// run returns beside it are those of the parts that succeeded.
+type RetentionError struct {
+	Failures []RetentionFailure
+}
+
+func (e *RetentionError) Error() string {
+	parts := make([]string, len(e.Failures))
+	for i, f := range e.Failures {
+		parts[i] = fmt.Sprintf("%s %s: %v", f.Resource, f.Step, f.Err)
+	}
+	return "retention failed: " + strings.Join(parts, "; ")
+}
+
+func (e *RetentionError) Unwrap() []error {
+	errs := make([]error, len(e.Failures))
+	for i, f := range e.Failures {
+		errs[i] = f.Err
+	}
+	return errs
+}
+
+// RunRetention provisions audit partitions, then deletes, for each resource
+// with a retention policy, the records older than its window, counted back from
+// the database's clock. It returns the number of records removed per resource.
+// A failing part does not stop the others, and every failure comes back in one
+// *RetentionError beside the counts of the parts that succeeded, so the caller
+// reports a run that did not do all it should rather than a log line.
 //
 // Cross-tenant by nature: retention is a platform-wide cleanup that
 // must touch every tenant's rows. audit_events + webhook_deliveries
 // are RLS-protected — wrap each delete in WithControlPlane so the policy
 // lets the cross-tenant scan through. sessions and notifications are
-// in the skip-list (user-scoped) but we still bypass for symmetry.
+// in the skip-list (user-scoped) but we still bypass for symmetry. The audit
+// partition drop runs in a control-plane transaction the store opens for it.
 func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 	w := wool.Get(ctx).In("RunRetention")
 
-	policies, err := s.store.GetRetentionPolicies(ctx)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot load retention policies")
+	deleted := make(map[string]int64)
+	var failures []RetentionFailure
+	fail := func(resource string, step RetentionStep, err error) {
+		failures = append(failures, RetentionFailure{Resource: resource, Step: step, Err: err})
+	}
+	outcome := func() (map[string]int64, error) {
+		if len(failures) > 0 {
+			return deleted, &RetentionError{Failures: failures}
+		}
+		return deleted, nil
 	}
 
-	deleted := make(map[string]int64)
+	// Audit writes need the months ahead to have partitions whatever the
+	// policies say, so they are provisioned on every run, policy or none.
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.store.EnsureAuditPartitions(ctx, 3)
+	}); err != nil {
+		fail("audit_events", RetentionStepProvision, err)
+	}
+
+	// Every cutoff is counted from the database's clock. The windows are the
+	// database's records, and a process clock running ahead would otherwise
+	// remove records still inside them.
+	now, err := s.store.DatabaseNow(ctx)
+	if err != nil {
+		fail("data_retention_policies", RetentionStepLoad, fmt.Errorf("read the database clock: %w", err))
+		return outcome()
+	}
+
+	policies, err := s.store.GetRetentionPolicies(ctx)
+	if err != nil {
+		fail("data_retention_policies", RetentionStepLoad, err)
+	}
 	for _, p := range policies {
-		before := time.Now().Add(-time.Duration(p.RetentionDays) * 24 * time.Hour)
+		before, anyOlder, windowErr := retentionCutoff(now, p.RetentionDays)
+		if windowErr != nil {
+			fail(p.ResourceType, RetentionStepPolicy, windowErr)
+			continue
+		}
 
 		var count int64
-		bypassErr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			var bErr error
-			switch p.ResourceType {
-			case "audit_events":
-				// audit_events is append-only and range-partitioned by
-				// created_at: retention drops whole partitions older than the
-				// window (DDL that sidesteps the immutability trigger) rather
-				// than issuing a row DELETE the trigger would reject. Provision
-				// upcoming partitions on the same cycle so writes never hit a
-				// missing range.
-				if ensureErr := s.store.EnsureAuditPartitions(ctx, 3); ensureErr != nil {
-					w.Warn(fmt.Sprintf("audit partition provisioning failed: %v", ensureErr))
+		var removeErr error
+		switch {
+		case !anyOlder:
+			// Nothing is older than the cutoff.
+		case p.ResourceType == "audit_events":
+			// audit_events is append-only and range-partitioned by created_at:
+			// retention drops whole partitions older than the window (DDL that
+			// sidesteps the immutability trigger) rather than issuing a row
+			// DELETE the trigger would reject. The drop decides which partitions
+			// are due once it holds its lock, from the catalog as it stands then,
+			// which takes a transaction of its own: the store opens one at READ
+			// COMMITTED, outside the one that provisioned partitions above.
+			count, removeErr = s.store.DropAuditPartitionsBefore(ctx, before)
+		default:
+			removeErr = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+				var bErr error
+				switch p.ResourceType {
+				case "sessions":
+					count, bErr = s.store.DeleteOldSessions(ctx, before)
+				case "webhook_deliveries":
+					count, bErr = s.store.DeleteOldWebhookDeliveries(ctx, before)
+				case "notifications":
+					count, bErr = s.store.DeleteOldNotifications(ctx, before)
+				default:
+					w.Debug("unknown retention resource type", wool.Field("type", p.ResourceType))
 				}
-				count, bErr = s.store.DropAuditPartitionsBefore(ctx, before)
-			case "sessions":
-				count, bErr = s.store.DeleteOldSessions(ctx, before)
-			case "webhook_deliveries":
-				count, bErr = s.store.DeleteOldWebhookDeliveries(ctx, before)
-			case "notifications":
-				count, bErr = s.store.DeleteOldNotifications(ctx, before)
-			default:
-				w.Debug("unknown retention resource type", wool.Field("type", p.ResourceType))
-			}
-			return bErr
-		})
+				return bErr
+			})
+		}
 
-		if bypassErr != nil {
-			w.Warn(fmt.Sprintf("retention cleanup for %s failed: %v", p.ResourceType, bypassErr))
+		if removeErr != nil {
+			fail(p.ResourceType, RetentionStepRemove, removeErr)
 			continue
 		}
 		deleted[p.ResourceType] = count
@@ -79,15 +186,14 @@ func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 	// retention data. Remove expired rows after a short forensic window even
 	// when an operator has not configured a generic retention policy.
 	if ceremonyStore, ok := s.store.(authenticationCeremonyRetentionStore); ok {
-		bypassErr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			webauthn, mfaLogin, clientCodes, err := ceremonyStore.DeleteExpiredAuthenticationCeremonies(ctx, time.Now().Add(-24*time.Hour))
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			webauthn, mfaLogin, clientCodes, err := ceremonyStore.DeleteExpiredAuthenticationCeremonies(ctx, now.Add(-24*time.Hour))
 			deleted["webauthn_ceremonies"] = webauthn
 			deleted["mfa_login_transactions"] = mfaLogin
 			deleted["client_authorization_codes"] = clientCodes
 			return err
-		})
-		if bypassErr != nil {
-			w.Warn("authentication ceremony cleanup failed", wool.ErrField(bypassErr))
+		}); err != nil {
+			fail("authentication_ceremonies", RetentionStepRemove, err)
 		}
 	}
 
@@ -96,17 +202,16 @@ func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 	// on the same forensic window so an abandoned connect attempt does not leave
 	// a row behind permanently.
 	if setupStore, ok := s.store.(githubAppSetupRetentionStore); ok {
-		bypassErr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			setups, err := setupStore.DeleteExpiredGitHubAppSetups(ctx, time.Now().Add(-24*time.Hour))
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			setups, err := setupStore.DeleteExpiredGitHubAppSetups(ctx, now.Add(-24*time.Hour))
 			deleted["github_app_setups"] = setups
 			return err
-		})
-		if bypassErr != nil {
-			w.Warn("github app setup cleanup failed", wool.ErrField(bypassErr))
+		}); err != nil {
+			fail("github_app_setups", RetentionStepRemove, err)
 		}
 	}
 
-	return deleted, nil
+	return outcome()
 }
 
 // PurgeExpiredWorkContextReplays reclaims single-use replay markers whose

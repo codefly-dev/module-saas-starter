@@ -112,6 +112,26 @@ jobs:
         run: node module/tools/migration-pairing-gate.mjs check
       - name: Validate every service test-target catalog
         run: node module/tools/test-targets-gate.mjs check
+      # The alert pack is PromQL that no service runs, so an alert that cannot
+      # fire goes unnoticed until the failure it was for. promtool evaluates
+      # each alert in slo_pack.json, as the Prometheus rule its id and
+      # expression make, over the series the pack's rule tests feed it.
+      - name: Test the alert pack's rules with promtool
+        env:
+          PROMETHEUS_VERSION: "3.15.0"
+          PROMETHEUS_SHA256: 2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0
+        run: |
+          work="$(mktemp -d)"
+          archive="prometheus-${PROMETHEUS_VERSION}.linux-amd64"
+          curl -fsSL -o "${work}/${archive}.tar.gz" \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${archive}.tar.gz"
+          echo "${PROMETHEUS_SHA256}  ${work}/${archive}.tar.gz" | sha256sum -c -
+          tar -xzf "${work}/${archive}.tar.gz" -C "${work}" --strip-components=1 "${archive}/promtool"
+          pack=module/services/accounts/code/pkg/metrics
+          jq '{groups: [{name: "slo_pack", rules: [.alerts[] | {alert: .id, expr: .expression}]}]}' \
+            "${pack}/slo_pack.json" > "${work}/slo_pack.rules.json"
+          cp "${pack}/slo_pack_test.yml" "${work}/"
+          "${work}/promtool" test rules "${work}/slo_pack_test.yml"
       # The author and committer email are the half of the naming boundary the tree scan cannot
       # see, and the half that cannot be scrubbed: they are part of the commit object, so
       # changing one rewrites every descendant hash. Scoped to the commits this change proposes
