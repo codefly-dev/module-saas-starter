@@ -3,9 +3,12 @@ package infra
 import (
 	"context"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"time"
 
 	"accounts/pkg/infra/internal/txbind"
 
@@ -294,4 +297,14 @@ func EnvelopedColumns() []EnvelopedColumn {
 		})
 	}
 	return out
+}
+
+// ProjectedTokenForTest is a JWT-shaped projected ServiceAccount token valid
+// for lifetime. Its signature is whatever API server the test stands up to
+// judge; a module mint reads its iat and exp once that server authenticates it.
+func ProjectedTokenForTest(lifetime time.Duration) string {
+	now := time.Now().Unix()
+	claims, _ := json.Marshal(map[string]any{"iat": now, "exp": now + int64(lifetime/time.Second)})
+	encode := base64.RawURLEncoding.EncodeToString
+	return encode([]byte(`{"alg":"RS256"}`)) + "." + encode(claims) + "." + encode([]byte("signature"))
 }
