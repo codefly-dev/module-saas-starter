@@ -29,6 +29,12 @@ enum InstallationStatus {
   INSTALLATION_STATUS_UNSPECIFIED = 0;
   INSTALLATION_STATUS_ACTIVE = 1;
   INSTALLATION_STATUS_REVOKED = 2;
+  // Installed, and waiting for the solution to acknowledge its standard install
+  // step. Nothing can use a pending installation.
+  INSTALLATION_STATUS_PENDING = 3;
+  // The solution refused its install step, or never answered within the
+  // attempt budget. Nothing can use it; an administrator may retry it.
+  INSTALLATION_STATUS_FAILED = 4;
 }
 
 // InstallationHealth is resolved live from current authority facts, never
@@ -88,6 +94,9 @@ message Installation {
   // uninstalling: the installation-identity cutover, or a tenancy narrowing that
   // withdrew this organisation. Empty on an active row.
   string revoked_reason = 12 [(buf.validate.field).string.max_len = 512];
+  // Why the install step failed: the solution's bounded refusal reason, or a
+  // fixed reason when it never answered. Empty unless status is FAILED.
+  string failure_reason = 13 [(buf.validate.field).string.max_len = 512];
 }
 
 message InstallSolutionRequest {
@@ -164,6 +173,11 @@ message NarrowInstallationRequest {
   string installation_id = 2 [(buf.validate.field).string.uuid = true];
   // Same JSON shape as InstallSolution.scope; {} removes all capability access.
   string scope = 3 [(buf.validate.field).string = {min_len: 2 max_bytes: 1048576}];
+}
+
+message RetryInstallationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
 }
 
 message UninstallSolutionRequest {
@@ -318,6 +332,34 @@ service InstallationService {
     };
     option (google.api.http) = {
       post: "/v1/installations/{installation_id}:narrow"
+      body: "*"
+    };
+  }
+
+  // RetryInstallation runs a failed installation's install step again, at the
+  // same revision. The installation is pending until the solution acknowledges.
+  rpc RetryInstallation(RetryInstallationRequest) returns (Installation) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.installation.retried"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}:retry"
       body: "*"
     };
   }

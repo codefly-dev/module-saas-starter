@@ -113,6 +113,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}/teams", Procedure: "/saas.accounts.v1.InstallationService/GrantInstallationToTeam"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}/teams/{team_id}:revoke", Procedure: "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:narrow", Procedure: "/saas.accounts.v1.InstallationService/NarrowInstallation"},
+		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:retry", Procedure: "/saas.accounts.v1.InstallationService/RetryInstallation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:transferOwnership", Procedure: "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:uninstall", Procedure: "/saas.accounts.v1.InstallationService/UninstallSolution"},
 		{Service: "accounts", Method: "POST", Path: "/v1/invitations", Procedure: "/saas.accounts.v1.InvitationService/CreateInvitation"},

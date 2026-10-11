@@ -13,17 +13,28 @@ The installation contract also declares `POST
 accepts `org_id`, `installation_id` and JSON `scope`, logs the narrowing before
 commit, increments revision and cancels only that installation's organisation's
 work. `POST /v1/installations` accepts optional JSON `scope` bounded by the
-module ceiling. These additions require the coordinator's complete regeneration;
-the checked-in generated counts below describe the preceding projection.
+module ceiling. A solution installation remains pending until its install step
+acknowledges. `POST /v1/installations/{installation_id}:retry` moves failed consent
+back to pending at the same revision; the administrator sees the bounded failure
+reason through installation reads. The retry handler also requires recent MFA.
+The descriptor currently still declares `MFA_REQUIREMENT_NONE`; aligning that
+policy requires proto regeneration by the coordinator.
+
+The gateway consumes the private `POST /internal/installation-steps/claim` and
+`finish` endpoints on accounts' discovered REST endpoint. They require the
+internal credential, handle only the installation queue and are absent from the
+public routing catalogs and module authority listener. The callback uses the
+registered target's workload mTLS transport and carries the installation agent's
+Work Context. Five transient attempts exhaust the run. A scope narrowing queues
+a new revision while keeping an already-active installation usable.
 
 ## Current surface
 
-The accounts projection contains 165 descriptor routes across 29 services
-(counted from `generated/rest-surface.json` when the organization-installation
-routes of issue #1061 landed; recount from that file, which is the source):
+The accounts projection contains 169 descriptor routes across 29 services
+(counted from `generated/rest-surface.json`; recount from that file, which is the source):
 
-- 18 public routes and 147 authenticated routes;
-- 140 OpenAPI paths and 165 operations;
+- 18 public routes and 151 authenticated routes;
+- 143 OpenAPI paths and 169 operations;
 - zero of the 54 internal RPCs;
 - fifteen explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing and Resend email webhooks, the two GitHub
@@ -31,7 +42,7 @@ routes of issue #1061 landed; recount from that file, which is the source):
   checkout, free-plan, portal, and the four OAuth 2 authorization-server routes
   (metadata, authorize validation, authorize grant, token).
 
-The generated runtime therefore authorizes 180 REST routes in total. Descriptor
+The generated runtime therefore authorizes 184 REST routes in total. Descriptor
 routes and extensions remain separate so an extension can never be mistaken
 for a protobuf procedure or inherit policy by path similarity.
 

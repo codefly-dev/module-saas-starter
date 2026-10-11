@@ -54,6 +54,7 @@ func installForExposure(t *testing.T, adminID, orgID string) (installationID, ta
 		RoleID:          agentRole,
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installation)
 	return installation.GetId(), targetID, alias
 }
 
@@ -285,6 +286,7 @@ func TestGrantInstallationToTeamSerializesWithUninstall(t *testing.T) {
 			RootScopeLabel: "Exposed", RoleID: agentRole,
 		})
 		require.NoError(t, err)
+		acknowledgeInstallation(t, reinstalled)
 		require.NotEqual(t, w.installation, reinstalled.GetId())
 		require.Empty(t, entitledInstallations(t, w.org, w.inTeam))
 	})

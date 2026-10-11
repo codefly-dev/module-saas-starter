@@ -51,6 +51,16 @@ export function useUninstallSolution(orgId: string) {
 	});
 }
 
+export function useRetryInstallation(orgId: string) {
+	const service = useInstallationService();
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (installationId: string) =>
+			service.retryInstallation({ orgId, installationId }),
+		onSettled: () => invalidate(queryClient, orgId),
+	});
+}
+
 export interface TeamExposure {
 	installationId: string;
 	teamId: string;

@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import type {
-	AvailableSolution,
-	OrganizationInstallation,
+import {
+	type AvailableSolution,
+	InstallationStatus,
+	type OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 
@@ -42,7 +43,7 @@ export function useAvailableSolutions(orgId: string) {
 }
 
 /**
- * This organization's active installations, from ListOrganizationInstallations:
+ * This organization's current installations, from ListOrganizationInstallations:
  * each with its live health, the catalogue row of the target it installed, and
  * the teams it is exposed to. The organization is bound to the caller's own
  * administration by the host, so this reads nothing but its own.
@@ -52,6 +53,12 @@ export function useInstallations(orgId: string) {
 	return useQuery({
 		queryKey: solutionInstallationKeys.installed(orgId),
 		enabled: !!orgId,
+		refetchInterval: (query) =>
+			query.state.data?.some(
+				(row) => row.installation?.status === InstallationStatus.PENDING,
+			)
+				? 2000
+				: false,
 		queryFn: async () => {
 			const installations: OrganizationInstallation[] = [];
 			let pageToken = "";

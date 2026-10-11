@@ -24,6 +24,7 @@ const (
 	InstallationService_InstallSolution_FullMethodName               = "/saas.accounts.v1.InstallationService/InstallSolution"
 	InstallationService_UninstallSolution_FullMethodName             = "/saas.accounts.v1.InstallationService/UninstallSolution"
 	InstallationService_NarrowInstallation_FullMethodName            = "/saas.accounts.v1.InstallationService/NarrowInstallation"
+	InstallationService_RetryInstallation_FullMethodName             = "/saas.accounts.v1.InstallationService/RetryInstallation"
 	InstallationService_TransferInstallationOwnership_FullMethodName = "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"
 	InstallationService_GetInstallation_FullMethodName               = "/saas.accounts.v1.InstallationService/GetInstallation"
 	InstallationService_ListInstallations_FullMethodName             = "/saas.accounts.v1.InstallationService/ListInstallations"
@@ -54,6 +55,9 @@ type InstallationServiceClient interface {
 	// Narrowing is witnessed in the policy log before commit, then atomically
 	// bumps the installation revision, cancels its org's work and records audit.
 	NarrowInstallation(ctx context.Context, in *NarrowInstallationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// RetryInstallation runs a failed installation's install step again, at the
+	// same revision. The installation is pending until the solution acknowledges.
+	RetryInstallation(ctx context.Context, in *RetryInstallationRequest, opts ...grpc.CallOption) (*Installation, error)
 	// TransferInstallationOwnership reassigns the owner of record and replaces the
 	// co-owner succession set. This is how a "connection owner left the org"
 	// failure is repaired: an admin transfers the installation to a current admin,
@@ -163,6 +167,16 @@ func (c *installationServiceClient) NarrowInstallation(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *installationServiceClient) RetryInstallation(ctx context.Context, in *RetryInstallationRequest, opts ...grpc.CallOption) (*Installation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Installation)
+	err := c.cc.Invoke(ctx, InstallationService_RetryInstallation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *installationServiceClient) TransferInstallationOwnership(ctx context.Context, in *TransferInstallationOwnershipRequest, opts ...grpc.CallOption) (*Installation, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Installation)
@@ -254,6 +268,9 @@ type InstallationServiceServer interface {
 	// Narrowing is witnessed in the policy log before commit, then atomically
 	// bumps the installation revision, cancels its org's work and records audit.
 	NarrowInstallation(context.Context, *NarrowInstallationRequest) (*emptypb.Empty, error)
+	// RetryInstallation runs a failed installation's install step again, at the
+	// same revision. The installation is pending until the solution acknowledges.
+	RetryInstallation(context.Context, *RetryInstallationRequest) (*Installation, error)
 	// TransferInstallationOwnership reassigns the owner of record and replaces the
 	// co-owner succession set. This is how a "connection owner left the org"
 	// failure is repaired: an admin transfers the installation to a current admin,
@@ -341,6 +358,9 @@ func (UnimplementedInstallationServiceServer) UninstallSolution(context.Context,
 }
 func (UnimplementedInstallationServiceServer) NarrowInstallation(context.Context, *NarrowInstallationRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method NarrowInstallation not implemented")
+}
+func (UnimplementedInstallationServiceServer) RetryInstallation(context.Context, *RetryInstallationRequest) (*Installation, error) {
+	return nil, status.Error(codes.Unimplemented, "method RetryInstallation not implemented")
 }
 func (UnimplementedInstallationServiceServer) TransferInstallationOwnership(context.Context, *TransferInstallationOwnershipRequest) (*Installation, error) {
 	return nil, status.Error(codes.Unimplemented, "method TransferInstallationOwnership not implemented")
@@ -434,6 +454,24 @@ func _InstallationService_NarrowInstallation_Handler(srv interface{}, ctx contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(InstallationServiceServer).NarrowInstallation(ctx, req.(*NarrowInstallationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InstallationService_RetryInstallation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetryInstallationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).RetryInstallation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_RetryInstallation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).RetryInstallation(ctx, req.(*RetryInstallationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -582,6 +620,10 @@ var InstallationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NarrowInstallation",
 			Handler:    _InstallationService_NarrowInstallation_Handler,
+		},
+		{
+			MethodName: "RetryInstallation",
+			Handler:    _InstallationService_RetryInstallation_Handler,
 		},
 		{
 			MethodName: "TransferInstallationOwnership",

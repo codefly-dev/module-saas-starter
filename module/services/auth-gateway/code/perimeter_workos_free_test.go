@@ -152,6 +152,8 @@ func fileImports(t *testing.T, path string) []string {
 var httpAllowedPerimeterFiles = map[string]bool{
 	"gateway.go":           true,
 	"gateway_solutions.go": true,
+	// Calls the installed solution's install endpoint over the in-mesh workload-identity transport; no external IdP.
+	"gateway_installation_jobs.go": true,
 	// workload_identity.go builds the gateway's mutual-TLS listener and the
 	// in-mesh transport it proxies to solutions with, holding each peer to a
 	// SPIFFE ID from delivered presence. It reaches no external IdP.

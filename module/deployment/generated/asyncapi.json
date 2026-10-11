@@ -1054,6 +1054,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.installation.retried": {
+      "address": "saas.installation.retried",
+      "title": "saas.installation.retried",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.installation.retried"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.installation.revoked": {
       "address": "saas.installation.revoked",
       "title": "saas.installation.revoked",
@@ -2688,6 +2699,13 @@
       },
       "title": "saas publishes saas.installation.ownership_transferred"
     },
+    "send:saas.installation.retried": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.installation.retried"
+      },
+      "title": "saas publishes saas.installation.retried"
+    },
     "send:saas.installation.revoked": {
       "action": "send",
       "channel": {
@@ -3961,6 +3979,13 @@
       "saas.installation.ownership_transferred": {
         "name": "saas.installation.ownership_transferred",
         "title": "saas.installation.ownership_transferred",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.installation.retried": {
+        "name": "saas.installation.retried",
+        "title": "saas.installation.retried",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

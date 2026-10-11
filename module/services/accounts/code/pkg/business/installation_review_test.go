@@ -32,6 +32,15 @@ func TestInstallationArtifactPolicyAtEveryDecision(t *testing.T) {
 		_, err = s.DecideExecutableArtifact(context.Background(), caller, tenant, uuid.NewString(), "example", action, req)
 		require.NoError(t, err)
 	}
+	// HOST-INST-002, HOST-INST-004: even retained approvals are unavailable.
+	for _, state := range []gen.InstallationStatus{gen.InstallationStatus_INSTALLATION_STATUS_PENDING, gen.InstallationStatus_INSTALLATION_STATUS_FAILED} {
+		store.installation.Status = state
+		for _, action := range []string{"approve", "authorize"} {
+			_, err = s.DecideExecutableArtifact(context.Background(), caller, tenant, uuid.NewString(), "example", action, req)
+			require.Error(t, err)
+		}
+	}
+	store.installation.Status = gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE
 	live.rows[tenant+"/"+caller.PrincipalID].Scope.ArtifactPolicies = nil
 	live.rows[tenant+"/"+caller.PrincipalID].InstallationRevision++
 	for _, action := range []string{"approve", "authorize"} {

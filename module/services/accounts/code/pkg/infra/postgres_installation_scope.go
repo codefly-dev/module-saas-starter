@@ -65,6 +65,16 @@ func (s *PostgresStore) NarrowInstallationScope(ctx context.Context, orgID, id s
 	}
 	// The trigger owns revision increments and cancellation for ALL writers,
 	// including target withdrawal and organization deletion.
-	_, err = executor.Exec(ctx, `UPDATE public.installations SET scope=$3::jsonb WHERE id=$1::uuid AND org_id=$2::uuid AND scope IS DISTINCT FROM $3::jsonb`, id, orgID, encoded)
-	return err
+	tag, err := executor.Exec(ctx, `UPDATE public.installations SET scope=$3::jsonb WHERE id=$1::uuid AND org_id=$2::uuid AND scope IS DISTINCT FROM $3::jsonb`, id, orgID, encoded)
+	if err != nil || tag.RowsAffected() == 0 {
+		return err
+	}
+	var kind string
+	if err := executor.QueryRow(ctx, `SELECT kind FROM installations WHERE id=$1 AND org_id=$2`, id, orgID).Scan(&kind); err != nil {
+		return err
+	}
+	if kind == "module" {
+		return nil
+	}
+	return s.EnqueueInstallationStep(ctx, orgID, id, "narrow")
 }

@@ -1939,6 +1939,45 @@
         ]
       }
     },
+    "/v1/installations/{installationId}:retry": {
+      "post": {
+        "summary": "RetryInstallation runs a failed installation's install step again, at the\nsame revision. The installation is pending until the solution acknowledges.",
+        "operationId": "InstallationService_RetryInstallation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceRetryInstallationBody"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
     "/v1/installations/{installationId}:transferOwnership": {
       "post": {
         "summary": "TransferInstallationOwnership reassigns the owner of record and replaces the\nco-owner succession set. This is how a \"connection owner left the org\"\nfailure is repaired: an admin transfers the installation to a current admin,\nrestoring its health.",
@@ -6304,6 +6343,14 @@
       },
       "description": "An org administrator may only remove installed authority. The host reads\nthe current revision and serializes the narrowing with other lifecycle acts."
     },
+    "InstallationServiceRetryInstallationBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        }
+      }
+    },
     "InstallationServiceRevokeInstallationFromTeamBody": {
       "type": "object",
       "properties": {
@@ -8680,6 +8727,10 @@
         "revokedReason": {
           "type": "string",
           "description": "Why a revoked installation was revoked, when it was not an administrator\nuninstalling: the installation-identity cutover, or a tenancy narrowing that\nwithdrew this organisation. Empty on an active row."
+        },
+        "failureReason": {
+          "type": "string",
+          "description": "Why the install step failed: the solution's bounded refusal reason, or a\nfixed reason when it never answered. Empty unless status is FAILED."
         }
       },
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node."
@@ -8702,10 +8753,12 @@
       "enum": [
         "INSTALLATION_STATUS_UNSPECIFIED",
         "INSTALLATION_STATUS_ACTIVE",
-        "INSTALLATION_STATUS_REVOKED"
+        "INSTALLATION_STATUS_REVOKED",
+        "INSTALLATION_STATUS_PENDING",
+        "INSTALLATION_STATUS_FAILED"
       ],
       "default": "INSTALLATION_STATUS_UNSPECIFIED",
-      "description": "InstallationStatus is the lifecycle of an installation row. An uninstall is a\nsoft delete (status=revoked, revoked_at set) so the agent, grants, and audit\ntrail remain resolvable."
+      "description": "InstallationStatus is the lifecycle of an installation row. An uninstall is a\nsoft delete (status=revoked, revoked_at set) so the agent, grants, and audit\ntrail remain resolvable.\n\n - INSTALLATION_STATUS_PENDING: Installed, and waiting for the solution to acknowledge its standard install\nstep. Nothing can use a pending installation.\n - INSTALLATION_STATUS_FAILED: The solution refused its install step, or never answered within the\nattempt budget. Nothing can use it; an administrator may retry it."
     },
     "v1Invitation": {
       "type": "object",

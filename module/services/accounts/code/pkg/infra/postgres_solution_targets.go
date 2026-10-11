@@ -172,7 +172,7 @@ func (s *PostgresStore) RevokeInstallationsOfTarget(
 	// Consume the whole result first, then update only the locked batch.
 	locked, err := executor.Query(ctx, `
 		SELECT id FROM public.installations
-		 WHERE target_id = $1::uuid AND status = 'active'
+		 WHERE target_id = $1::uuid AND status <> 'revoked'
 		 ORDER BY id FOR UPDATE`, targetID)
 	if err != nil {
 		return nil, err
@@ -183,8 +183,8 @@ func (s *PostgresStore) RevokeInstallationsOfTarget(
 	}
 	rows, err := executor.Query(ctx, `
 		UPDATE public.installations
-		   SET status = 'revoked', revoked_at = $3, revoked_reason = $2
-		 WHERE target_id = $1::uuid AND status = 'active' AND id = ANY($4::uuid[])
+		   SET status = 'revoked', revoked_at = $3, revoked_reason = $2, failure_reason = NULL
+		 WHERE target_id = $1::uuid AND status <> 'revoked' AND id = ANY($4::uuid[])
 		RETURNING id::text, org_id::text`, targetID, reason, now, ids)
 	if err != nil {
 		return nil, err
@@ -236,7 +236,7 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 		       b.applied_release, t.opened_generation, b.applied_generation,
 		       ($1 <> '' AND EXISTS (
 		           SELECT 1 FROM public.installations i
-		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.status = 'active'
+		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.status <> 'revoked'
 		       ))
 		  FROM public.solution_targets t
 		  JOIN public.solution_host_bindings b ON b.binding_id = t.binding_id

@@ -794,5 +794,6 @@ func (s *registryScenario) install(t *testing.T, org string) *gen.Installation {
 		OrgID: org, TargetID: target, AgentIdentifier: "acme.example/registry:1.0.0", RoleID: role,
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installation)
 	return installation
 }

@@ -5,7 +5,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
-import type { AvailableSolution } from "@/gen/saas/accounts/v1/installations_pb";
+import {
+	type AvailableSolution,
+	InstallationStatus,
+} from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
 import {
 	mayKeepRetainedRows,
@@ -51,6 +54,7 @@ import {
 import {
 	useGrantInstallationToTeam,
 	useInstallSolution,
+	useRetryInstallation,
 	useRevokeInstallationFromTeam,
 	useUninstallSolution,
 } from "../service/mutations";
@@ -172,7 +176,9 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 							{ targetId: installing.targetId, values },
 							{
 								onSuccess: () => {
-									toast.success(`${installing.routeAlias} installed`);
+									toast.success(
+										`${installing.routeAlias} installation pending`,
+									);
 									setInstalling(null);
 								},
 								onError: (error) =>
@@ -293,6 +299,7 @@ function InstalledSection({
 	query: ReturnType<typeof useInstallations>;
 }) {
 	const uninstall = useUninstallSolution(orgId);
+	const retry = useRetryInstallation(orgId);
 	const revoke = useRevokeInstallationFromTeam(orgId);
 	const grant = useGrantInstallationToTeam(orgId);
 	const [confirming, setConfirming] = useState<InstalledRow | null>(null);
@@ -309,6 +316,18 @@ function InstalledSection({
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
+
+	const runRetry = (row: InstalledRow) => {
+		setRefusal(null);
+		retry.mutate(row.installationId, {
+			onSuccess: () => toast.success(`${name(row)} installation pending`),
+			onError: (error) =>
+				setRefusal({
+					title: `The host refused to retry ${name(row)}`,
+					reason: hostRefusal(error),
+				}),
+		});
+	};
 
 	const runUninstall = (row: InstalledRow) => {
 		setRefusal(null);
@@ -389,6 +408,7 @@ function InstalledSection({
 								<TableRow>
 									<TableHead>Solution</TableHead>
 									<TableHead>Revision</TableHead>
+									<TableHead>Status</TableHead>
 									<TableHead>Health</TableHead>
 									<TableHead>Teams</TableHead>
 									<TableHead>Installed</TableHead>
@@ -405,25 +425,56 @@ function InstalledSection({
 											<Fact view={row.revision} />
 										</TableCell>
 										<TableCell>
-											<Fact view={row.health} />
+											<Fact view={row.lifecycle} />
+											{row.failureReason && (
+												<p className="mt-1 text-sm text-muted-foreground">
+													{row.failureReason}
+												</p>
+											)}
 										</TableCell>
 										<TableCell>
-											<TeamExposure
-												row={row}
-												name={name(row)}
-												revoking={revoke.isPending}
-												granting={grant.isPending}
-												onGrant={() => {
-													grant.reset();
-													setGranting(row);
-												}}
-												onRevoke={(team) => runRevoke(row, team)}
-											/>
+											{row.status === InstallationStatus.ACTIVE ? (
+												<Fact view={row.health} />
+											) : (
+												<span className="text-sm text-muted-foreground">
+													Unavailable
+												</span>
+											)}
+										</TableCell>
+										<TableCell>
+											{row.status === InstallationStatus.ACTIVE ? (
+												<TeamExposure
+													row={row}
+													name={name(row)}
+													revoking={revoke.isPending}
+													granting={grant.isPending}
+													onGrant={() => {
+														grant.reset();
+														setGranting(row);
+													}}
+													onRevoke={(team) => runRevoke(row, team)}
+												/>
+											) : (
+												<span className="text-sm text-muted-foreground">
+													Available after activation
+												</span>
+											)}
 										</TableCell>
 										<TableCell className="text-sm text-muted-foreground">
 											{formatDate(row.installedAt)}
 										</TableCell>
 										<TableCell className="text-right">
+											{row.status === InstallationStatus.FAILED && (
+												<Button
+													variant="outline"
+													size="sm"
+													disabled={retry.isPending || uninstall.isPending}
+													aria-label={`Retry ${name(row)}`}
+													onClick={() => runRetry(row)}
+												>
+													Retry
+												</Button>
+											)}
 											<Button
 												variant="outline"
 												size="sm"

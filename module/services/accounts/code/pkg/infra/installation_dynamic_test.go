@@ -22,7 +22,7 @@ type dynamicInstall struct {
 	envelope                               uint64
 }
 
-func newDynamicInstall(t *testing.T, target, binding, principal string) dynamicInstall {
+func newDynamicInstall(t *testing.T, target, binding, principal string, pending ...bool) dynamicInstall {
 	t.Helper()
 	owner := seedUser(t)
 	seedHumanPrincipal(t, owner, "Jane Doe")
@@ -53,6 +53,9 @@ func newDynamicInstall(t *testing.T, target, binding, principal string) dynamicI
 			OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, Kind: "solution", RegistryBindingID: binding, RegistryPrincipalID: principal, Scope: &scope, EnvelopeRevision: revision})
 		return err
 	}))
+	if len(pending) == 0 || !pending[0] {
+		acknowledgeInstallation(t, installation)
+	}
 	return dynamicInstall{org, owner, target, binding, principal, installation, grant, revision}
 }
 

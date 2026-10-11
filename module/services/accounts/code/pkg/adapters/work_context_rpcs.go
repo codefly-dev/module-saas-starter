@@ -553,6 +553,12 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err != nil {
 		return nil, err
 	}
+	return s.signInstallationTask(ctx, req, facts, scopes)
+}
+
+// Shared by the ordinary headless mint and the leased install step. Only the
+// latter resolves pending consent; neither path changes ordinary use admission.
+func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
 	// An installation context is always agent-actored; a nil actor means the store
 	// broke its contract (a healthy resolve always names the agent). Fail closed
 	// rather than mint an unattributed token.
@@ -562,6 +568,12 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
+	return s.issueInstallationTask(ctx, req, facts, scopes)
+}
+
+// issueInstallationTask signs already resolved, bounded authority and journals
+// the actor in the caller's transaction when one is present.
+func (s *WorkContextAuthorityServer) issueInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
 	actors := []*basev0.WorkActorV1{{
 		PrincipalId:   facts.Actor.ID,
 		PrincipalKind: facts.Actor.Kind,

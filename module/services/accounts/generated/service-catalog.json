@@ -173,6 +173,7 @@
         "/saas.accounts.v1.InstallationService/ListInstallations",
         "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
         "/saas.accounts.v1.InstallationService/NarrowInstallation",
+        "/saas.accounts.v1.InstallationService/RetryInstallation",
         "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
         "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
         "/saas.accounts.v1.InstallationService/UninstallSolution"
@@ -4635,6 +4636,65 @@
       },
       "policy_tier": "org_admin",
       "description": "Narrow an installation's scope, bump its revision and cancel the organization's affected work.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/RetryInstallation",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "RetryInstallation",
+      "input_type": "saas.accounts.v1.RetryInstallationRequest",
+      "output_type": "saas.accounts.v1.Installation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/installations/{installation_id}:retry",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.installation.retried"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Run a failed installation's install step again; the installation is pending until the solution acknowledges.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

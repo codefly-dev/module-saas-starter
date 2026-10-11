@@ -42,6 +42,9 @@ func (s *authorityInstallationStore) GetOrganizationBySlug(context.Context, stri
 func (s *authorityInstallationStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
 	return nil, nil
 }
+func (s *authorityInstallationStore) ListAvailableSolutionTargets(_ context.Context, query business.AvailableSolutionQuery) ([]*business.AvailableSolutionTarget, error) {
+	return []*business.AvailableSolutionTarget{{TargetID: query.TargetID, BindingID: "acme.test.installation", RouteAlias: "example", Kind: "solution"}}, nil
+}
 func (s *authorityInstallationStore) ReconcileModuleInstallation(context.Context, *business.InstallSolutionParams, []string, bool) (*business.ModuleInstallationResult, error) {
 	s.calls++
 	result := s.result
@@ -76,6 +79,7 @@ func authorityInstallationFixture(t *testing.T, module string) (*business.Servic
 	// installer's path validates it like every other write path. These two are
 	// declared module prefixes, declared the way a composition declares them.
 	service.SetModulePrincipals(business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("example"):        {Prefix: "example", PresenceBinding: "acme.test.installation"},
 		business.ModulePrincipalID("example.api"):    {Prefix: "example.api"},
 		business.ModulePrincipalID("example.worker"): {Prefix: "example.worker"},
 	})
@@ -257,6 +261,14 @@ func TestInstallationAuthorityIsOptInAndAbsentHasNoReference(t *testing.T) {
 	result, err = svc.ReconcileModuleInstallation(context.Background(), caller, policy, req, false)
 	require.NoError(t, err)
 	require.Nil(t, result.AuthorityReference)
+	// HOST-INST-002, HOST-INST-004: an existing unacknowledged installation
+	// cannot produce a verified authority reference through the installer.
+	for _, state := range []string{"pending", "failed"} {
+		store.result.State = state
+		result, err = svc.ReconcileModuleInstallation(context.Background(), caller, policy, req, false)
+		require.NoError(t, err)
+		require.Nil(t, result.AuthorityReference)
+	}
 }
 func TestInstallationAuthorityCanonicalGolden(t *testing.T) {
 	svc, _, caller, policy, req := authorityInstallationFixture(t, "example-one")

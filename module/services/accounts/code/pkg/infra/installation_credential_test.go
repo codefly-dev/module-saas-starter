@@ -226,6 +226,7 @@ func TestUnsealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.
 		replacement, err = testStore.InstallSolution(ctx, &installParams)
 		return err
 	}))
+	acknowledgeInstallation(t, replacement)
 	require.NotEqual(t, installation.Id, replacement.Id)
 	enqueue.Job.IdempotencyKey = business.NewIDString()
 	_, err = svc.ModuleEnqueueJob(ctx, caller(t), org, enqueue)

@@ -120,6 +120,7 @@ var published = [...]PublishedEvent{
 	{Type: "saas.installation.created", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.installation.narrowed", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.installation.ownership_transferred", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
+	{Type: "saas.installation.retried", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.installation.revoked", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.invitation.accepted", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.invitation.created", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},

@@ -253,6 +253,7 @@ func main() {
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
 		gateway.workload = workload
+		go gateway.runInstallationJobs(ctx, apiHTTPURL)
 		// The per-viewer solution entitlement read (#949), over the same internal
 		// connection. It is not a cache: the answer is per viewer and must not
 		// outlive a revoke, so every request asks.
