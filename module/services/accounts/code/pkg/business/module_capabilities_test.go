@@ -1246,13 +1246,15 @@ func TestModuleListSubjectVisibility_CrossTenantRejected(t *testing.T) {
 	requireCode(t, err, codes.PermissionDenied)
 }
 
-// A module bound to one tenant must not learn anything about a subject in
-// another: the tenant guard alone does not settle that, because a cross-tenant
-// principal may legitimately name tenant B while the viewer belongs to neither.
+// A module must not learn anything about a person who does not belong to the
+// tenant it names: the tenant guard alone does not settle that. It settles
+// which tenant the principal may act on, which is a fact about the module;
+// whether the person it names is a member of that tenant is a separate one,
+// and it is the one refused here — before the visibility read runs.
 func TestModuleListSubjectVisibility_ViewerOutsideTenantRejected(t *testing.T) {
 	store := &fakeVisibilityStore{fakeTxStore: fakeTxStore{members: map[string]bool{}}}
-	svc := newVisibilityService(t, store, true)
-	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantB, moduleUserA)
+	svc := newVisibilityService(t, store, false)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
 	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
 	if store.gotViewer != "" {
 		t.Fatal("membership must be settled before the visibility read runs")
