@@ -159,28 +159,40 @@ function SolutionWidget({
 	// from the dashboard instead of from a table. A transient failure says
 	// nothing about authority, so those values stay and read as stale.
 	//
-	// Hiding the snapshot for the refusal alone is not enough, and that was
-	// this component's bug: the cached snapshot survived the refusal, so the
-	// NEXT error — a 503, a dropped connection — made it eligible again and
-	// handed the refused values straight back, with no authorized read in
-	// between. A refusal therefore latches: the snapshot stays ineligible
-	// until a successful read replaces it.
+	// A refusal DELETES the snapshots rather than marking them ineligible.
+	// Two earlier attempts marked instead, and both leaked: hiding the values
+	// for the refusal alone let the next transient error hand them back, and a
+	// latch beside them in the cache was a second entry with its own lifetime
+	// — garbage-collected on its own schedule, and cleared by a cached success
+	// for another revision of the graph, neither of which is a fresh grant.
+	// Nothing restorable is left here, so there is no second thing to keep in
+	// step: only a later successful read can put values back.
 	const outcome = readOutcome(isError, error);
-	const authorized = !isError && data !== undefined;
-	// The latch lives in the query cache, beside the snapshot it guards, for
-	// two reasons: it outlives this component (a latch in state or a ref
-	// forgets on remount, and the snapshot does not), and it expires with the
-	// cache that holds the values, so neither can outlast the other.
-	const latchKey = refusedLatchKey(solutionId, dashboardId, widget.id, orgId);
-	const latched = client.getQueryData<boolean>(latchKey) === true;
 	const widgetId = widget.id;
 	useEffect(() => {
-		const key = refusedLatchKey(solutionId, dashboardId, widgetId, orgId);
-		if (outcome === "forbidden") client.setQueryData(key, true);
-		else if (authorized) client.setQueryData(key, false);
-	}, [client, outcome, authorized, solutionId, dashboardId, widgetId, orgId]);
+		if (outcome !== "forbidden") return;
+		// Every cached revision of this widget's series, not just the one this
+		// render resolved: the graph is the last part of the query key, so a
+		// dashboard whose declaration has changed since — a different title is
+		// enough — has its own entry holding the same refused numbers.
+		//
+		// Reset, not remove: removing destroys the query this component is
+		// observing, which leaves it with nothing to refetch and no way back
+		// even once authority returns. A reset discards the data and keeps the
+		// query, so the only route to values on screen is a read that succeeds.
+		client.resetQueries({
+			queryKey: ["solution-widget", solutionId, dashboardId, widgetId, orgId],
+			exact: false,
+		});
+	}, [client, outcome, solutionId, dashboardId, widgetId, orgId]);
 
-	const refused = outcome === "forbidden" || (!authorized && latched);
+	const refused = outcome === "forbidden";
+	// `!refused` covers the one render between the refusal arriving and the
+	// effect above clearing the cache, where `data` is still the old success.
+	// No test distinguishes it, and that is worth saying rather than implying:
+	// the renderer answers a refusal before it reads the series, so nothing
+	// reaches the screen through this window either way. It is the host's half
+	// of one rule stated in two places, not the mechanism.
 	const retained =
 		!refused && mayKeepRetainedRows(outcome) ? (data?.series ?? null) : null;
 
@@ -194,19 +206,6 @@ function SolutionWidget({
 			actions={actions}
 		/>
 	);
-}
-
-// Where a widget's refusal latch is kept in the query cache. Not a read: it
-// holds a boolean this component writes, under its own prefix so it can never
-// be mistaken for a resolved widget. Built by a function rather than inline so
-// the effect below depends on its parts and not on a fresh array each render.
-function refusedLatchKey(
-	solutionId: string,
-	dashboardId: string,
-	widgetId: string,
-	orgId: string,
-): readonly string[] {
-	return ["solution-widget-refused", solutionId, dashboardId, widgetId, orgId];
 }
 
 // The host's read classification as the renderer's presentational one. A read

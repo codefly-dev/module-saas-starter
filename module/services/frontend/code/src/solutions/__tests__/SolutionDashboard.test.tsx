@@ -328,6 +328,141 @@ describe("SolutionDashboards", () => {
 		},
 	);
 
+	it("does not resurrect them once the caches have had time to expire", async () => {
+		// The shape this replaced marked the snapshot ineligible from a second
+		// cache entry, which had its own garbage-collection clock: five
+		// minutes later the mark was gone and the values were not, so a retry
+		// handed them back. Deleting the snapshot leaves nothing with a
+		// lifetime of its own to fall out of step.
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		// Past the default five-minute gcTime, on the cache's own clock.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(300_001);
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
+	});
+
+	it("does not resurrect them on a remount", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client, unmount } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		unmount();
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		renderInApp(
+			<SolutionDashboards graph={graph} solutionId="example" />,
+			client,
+		);
+		await act(async () => {
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
+	});
+
+	it("does not leave the same numbers behind under another graph revision", async () => {
+		// The graph is the last part of the query key, so a declaration that
+		// differs only in a dashboard title has its own cache entry holding
+		// the same numbers. A refusal has to reach every revision of them.
+		const renamed: DataGraph = {
+			...graph,
+			dashboards: [{ ...graph.dashboards[0], title: "Activity (renamed)" }],
+		};
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client, unmount } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+		unmount();
+
+		// A second revision, cached under its own key.
+		const second = renderInApp(
+			<SolutionDashboards graph={renamed} solutionId="example" />,
+			client,
+		);
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+		second.unmount();
+
+		// Back to the first revision, whose refresh fails transiently.
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		renderInApp(
+			<SolutionDashboards graph={graph} solutionId="example" />,
+			client,
+		);
+		await act(async () => {
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
+	});
+
 	it("lets a successful authorized read lift the refusal", async () => {
 		server.use(
 			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
