@@ -378,7 +378,7 @@ func TestDeliveringAuthorityChangesTheRegistryWithNoRestart(t *testing.T) {
 	grant, _ := s.entry()
 	require.Equal(t, s.prefix, grant.Prefix, "the principal is the module's own name")
 	require.Equal(t, s.tenant, grant.Tenant)
-	require.Equal(t, business.ModuleWorkload{ServiceAccount: "api", Namespace: s.primary.namespace, Container: "api"}, grant.Workload,
+	require.Equal(t, business.ModuleWorkload{SPIFFEID: s.primary.spiffeID(), ServiceAccount: "api", Namespace: s.primary.namespace, Container: "api"}, grant.Workload,
 		"the workload is the applied presence's, and one the envelope allows")
 	require.Equal(t, []string{"reports.render"}, grant.Queues)
 	require.Equal(t, []string{s.resource}, grant.Resources)

@@ -22,7 +22,7 @@ import (
 func registerSolutionUpstream(t *testing.T, gw *Gateway, id string) *fakeUpstream {
 	t.Helper()
 	fake := &fakeUpstream{body: "solution-response"}
-	srv := httptest.NewServer(fake)
+	srv := newSolutionTestServer(t, gw, id, fake)
 	t.Cleanup(srv.Close)
 	registerSolutionHalves(t, gw, id, srv.URL)
 	return fake

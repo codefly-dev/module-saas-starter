@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"strings"
 	"testing"
 
 	"accounts/pkg/business"
@@ -400,4 +401,112 @@ func TestModuleCallerReadsTheVerifiedPrincipalAndTenant(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, principalID, caller.PrincipalID)
 	require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
+}
+
+// Exercise the real TokenReview/BindExecution path through the mint adapter.
+// A refusal happens before signing or recording a credential.
+func TestWorkloadPeerMintMatchesReviewedTokenAndDeliveredPresence(t *testing.T) {
+	const peer = "spiffe://acme.test/ns/acme-prod/sa/module"
+	declared := strings.Replace(documentsPrincipals, `"workload":{`, `"workload":{"spiffe_id":"`+peer+`",`, 1)
+	for _, test := range []struct {
+		name, peer, declaration string
+		allowed                 bool
+	}{
+		{"matching", peer, declared, true},
+		{"another service account", "spiffe://acme.test/ns/acme-prod/sa/other", declared, false},
+		{"another namespace", "spiffe://acme.test/ns/other/sa/module", declared, false},
+		{"another trust domain", "spiffe://other.test/ns/acme-prod/sa/module", declared, false},
+		{"absent declared identity", peer, documentsPrincipals, false},
+		{"empty attestation", "", declared, false},
+		// TLS and presence agree, but the reviewed token names another SA.
+		{"presence differs from reviewed token", peer, strings.Replace(declared, `"service_account":"module"`, `"service_account":"other"`, 1), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := installModuleWorkContextService(t, test.declaration)
+			installModuleWorkContextAuthority(t)
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-workload-spiffe-id", test.peer))
+			response, err := ModuleCapabilitiesSingleton().MintModuleWorkContext(ctx, &gen.ModuleMintWorkContextRequest{Prefix: "documents", ServiceAccountToken: moduleToken(t, "documents")})
+			if test.allowed {
+				require.NoError(t, err)
+				require.NotEmpty(t, response.GetToken())
+				require.Equal(t, 1, store.recordAttempts())
+			} else {
+				require.Equal(t, codes.PermissionDenied, status.Code(err))
+				require.Nil(t, response)
+				require.Zero(t, store.recordAttempts())
+			}
+		})
+	}
+}
+
+func TestWorkloadPeerEveryMintBindsReviewedServiceAccount(t *testing.T) {
+	const peer = "spiffe://acme.test/ns/acme-prod/sa/module"
+	for _, kind := range []string{"work context", "operation context", "source delegation"} {
+		t.Run(kind, func(t *testing.T) {
+			for _, test := range []struct {
+				name         string
+				peers        []string
+				declaredPeer string
+				allowed      bool
+			}{
+				{"matching", []string{peer}, peer, true},
+				{"another service account", []string{"spiffe://acme.test/ns/acme-prod/sa/other"}, peer, false},
+				// Presence and TLS agree, but the reviewed token is for module, not other.
+				{"TLS and presence differ from token", []string{"spiffe://acme.test/ns/acme-prod/sa/other"}, "spiffe://acme.test/ns/acme-prod/sa/other", false},
+				{"another trust domain", []string{"spiffe://other.test/ns/acme-prod/sa/module"}, peer, false},
+				{"empty attestation", []string{""}, peer, false},
+				{"ambiguous attestation", []string{peer, peer}, peer, false},
+				{"plain endpoint", nil, peer, true},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					prefix := "documents"
+					var audit *validatingAudit
+					switch kind {
+					case "source delegation":
+						_, audit = installSourceDelegationService(t)
+						prefix = "docstore"
+					default:
+						_, audit = installModuleOperationContextService(t, headlessPrincipals)
+						installModuleWorkContextAuthority(t)
+					}
+					// Keep the reviewed namespace/ServiceAccount independent of the full
+					// SPIFFE ID delivered in presence, so agreement with both is required.
+					registry := moduleExecution.registry
+					grant := registry[business.ModulePrincipalID(prefix)]
+					grant.Workload.SPIFFEID = test.declaredPeer
+					registry[business.ModulePrincipalID(prefix)] = grant
+					service.SetModuleCapabilities(nil, nil, registry)
+					ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{"x-codefly-workload-spiffe-id": test.peers})
+					token := moduleToken(t, prefix)
+					var issued string
+					var err error
+					denied := codes.Unauthenticated
+					switch kind {
+					case "work context":
+						var response *gen.ModuleMintWorkContextResponse
+						response, err = ModuleCapabilitiesSingleton().MintModuleWorkContext(ctx, &gen.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: token})
+						issued = response.GetToken()
+						denied = codes.PermissionDenied
+					case "operation context":
+						var response *gen.ModuleMintOperationContextResponse
+						response, err = ModuleCapabilitiesSingleton().MintModuleOperationContext(ctx, &gen.ModuleMintOperationContextRequest{Prefix: prefix, ServiceAccountToken: token, Binding: "model"})
+						issued = response.GetToken()
+					case "source delegation":
+						var response *gen.ModuleMintSourceOperationContextResponse
+						response, err = ModuleCapabilitiesSingleton().MintSourceOperationContext(ctx, &gen.ModuleMintSourceOperationContextRequest{Prefix: prefix, ServiceAccountToken: token, Delegation: &gen.ModuleMintSourceOperationContextRequest_SourceId{SourceId: delegationSource}})
+						issued = response.GetToken()
+					}
+					if test.allowed {
+						require.NoError(t, err)
+						require.NotEmpty(t, issued)
+						require.Len(t, audit.entries, 1)
+					} else {
+						require.Equal(t, denied, status.Code(err), "%v", err)
+						require.Empty(t, issued)
+						require.Empty(t, audit.entries, "a refused identity records no issuance")
+					}
+				})
+			}
+		})
+	}
 }

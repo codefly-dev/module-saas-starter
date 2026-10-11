@@ -128,7 +128,7 @@ func (w ModuleWorkloadIdentity) workload() ModuleWorkload {
 	if err != nil {
 		return ModuleWorkload{Container: w.Container}
 	}
-	return ModuleWorkload{ServiceAccount: identity.ServiceAccount, Namespace: identity.Namespace, Container: w.Container}
+	return ModuleWorkload{SPIFFEID: w.SPIFFEID, ServiceAccount: identity.ServiceAccount, Namespace: identity.Namespace, Container: w.Container}
 }
 
 // ModuleEnvelopeRecord is one stored revision: the document as written, and who

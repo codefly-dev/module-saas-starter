@@ -72,6 +72,24 @@ func moduleIdentityError(err error, denied codes.Code, message string) error {
 	return nil
 }
 
+// moduleMintWorkloadPeer imports the attestation for the shared BindExecution
+// check. An empty or ambiguous attestation is present and fails that check;
+// absence preserves the plain module endpoint.
+func moduleMintWorkloadPeer(ctx context.Context) context.Context {
+	// This RPC is on the internal tier. The gateway creates this attestation
+	// from its verified TLS connection, never from an HTTP request header.
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if peers := md.Get("x-codefly-workload-spiffe-id"); len(peers) != 0 {
+			peer := ""
+			if len(peers) == 1 {
+				peer = peers[0]
+			}
+			ctx = business.WithWorkloadPeer(ctx, peer)
+		}
+	}
+	return ctx
+}
+
 // MintModuleWorkContext issues that Work Context. It takes none itself — this
 // is where a module obtains its identity — so it authenticates with the pod's
 // projected ServiceAccount token: accounts reviews it, reads the pod it names
@@ -88,6 +106,7 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	ctx = moduleMintWorkloadPeer(ctx)
 	authority, err := service.ModuleAuthorizeWorkContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetOrganizationId())
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.PermissionDenied, "module work context denied"); mapped != nil {
@@ -156,6 +175,7 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	ctx = moduleMintWorkloadPeer(ctx)
 	authority, err := service.ModuleAuthorizeOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetBinding(), req.GetOrganizationId())
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.Unauthenticated, "module operation context denied"); mapped != nil {

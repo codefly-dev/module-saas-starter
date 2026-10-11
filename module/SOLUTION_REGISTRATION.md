@@ -559,6 +559,32 @@ twice under two names, which Core would refuse as a binding declared twice.
 
 ## 7b. The host's own control paths, and which part a consumer may hardcode
 
+The current solution mint is `POST /modules/_work-context` on the gateway's
+`workload` endpoint (`api: http`, transported over TLS 1.3). Codefly resolves its
+address and port. A solution presents its X.509-SVID and projected ServiceAccount
+token as `Authorization: Bearer`; it needs no shared internal token on this
+listener. The gateway verifies the client chain and single SPIFFE URI SAN against
+`workload-identity/TRUST_BUNDLE_FILE` and `ALLOWED_CALLERS_FILE`. Accounts' existing
+TokenReview/BindExecution path requires that URI to equal both the reviewed
+namespace/ServiceAccount identity and the SPIFFE ID in applied presence. A
+mismatch returns 403, logs the mint refusal, and issues no credential.
+
+The `workload-identity` group supplies `CERT_FILE`, `KEY_FILE`,
+`TRUST_BUNDLE_FILE`, `ALLOWED_CALLERS_FILE`, and `TOKEN_FILE` as readable paths;
+missing files fail startup with the key named. The SDK certificate reloader
+keeps the last good pair during rotation. Trust is reread for each handshake;
+caller admission rereads the newline-separated, `#`-commented allowlist for each
+handshake and request, so revocation also affects existing connections.
+
+Solution proxy traffic uses TLS 1.3, presents the gateway SVID, verifies the
+server chain, and requires exactly the SPIFFE URI declared by the applied
+presence. The registry read joins matching registration and applied-generation
+records; a missing, inconsistent or ambiguous workload identity is not proxied.
+Dial-time address revalidation still rejects off-mesh and metadata destinations.
+The plain `rest` endpoint retains its existing routes, including module-authority
+mints with the internal token and projected bearer. Those module mints and module
+upstreams retain their existing in-cluster transport contract.
+
 Three repositories independently invented the string `/platform/_credential`
 from a design note, and nothing failed at build time. This section exists so the
 next one reads a contract instead of guessing, and so the hardcoding question has
@@ -790,6 +816,13 @@ audience `accounts` only ever authenticates that pod. The gateway→accounts
 brokering pattern is the same one `GET /solutions/_entitlements` already uses.
 
 ## 8. Local runs: one attestation path, not a local mode
+
+Local solution traffic follows the same mutual-TLS contract as deployed traffic:
+the platform projects rotating SVIDs, trust and peer files, and the gateway uses
+its resolved `workload` endpoint for solution mints. Its solution proxy presents
+the gateway SVID and checks applied presence for the destination's SPIFFE ID.
+Plain-HTTP solution listeners and mints are not a supported local mode. Module
+SDK mints continue to use the plain in-cluster endpoint described in §7b.
 
 Binding a credential to an approved execution means reading what the workload
 actually runs: `TokenReview` on its projected service-account token, then the pod

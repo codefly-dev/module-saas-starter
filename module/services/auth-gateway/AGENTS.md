@@ -108,6 +108,43 @@ bearer: identity is stripped there and no ext_authz check runs, so the gateway
 has nothing to bind, and both halves say no rather than one promising what the
 other drops.
 
+## Workload TLS endpoint and solution upstreams
+
+`workload` (`api: http`) serves the same mux over TLS 1.3 with required, verified
+client certificates when the `workload-identity` workspace group supplies
+`CERT_FILE`, `KEY_FILE`, `TRUST_BUNDLE_FILE`, and `ALLOWED_CALLERS_FILE`. If all
+four values are absent, the gateway boots with only its existing plain endpoints,
+does not resolve or open the workload endpoint, and logs once at info that no
+workload identity is projected. Solution mints remain unreachable over mTLS and
+solution proxying stays refused without a workload identity. Any partial set of
+values or missing/unreadable supplied file fails boot naming its key. Keep the
+`workload-identity` workspace dependency declared: renders use it to select
+consumers of the projection.
+The pinned SDK's `CertificateReloader` supplies both certificate callbacks.
+Every handshake checks a single SPIFFE URI against the live caller file; every
+request checks it again so keep-alive connections cannot outlive revocation.
+The caller file must be published atomically, as the kubelet publishes a
+ConfigMap volume (written whole, swapped behind one symlink); a mid-write mix
+of two lists is indistinguishable from a complete list, so an in-place rewrite
+is outside the contract. A truncated write is refused whole.
+
+On this endpoint every module mint (`/modules/_work-context`,
+`/modules/_operation-context`, `/modules/_source-operation-context`) conveys
+the verified SVID peer to accounts on the authenticated internal RPC. Accounts
+binds it to TokenReview and the applied presence before signing. Caller-supplied
+identity headers never attest a peer. Plain `rest` module mints still require
+the internal token and keep their existing behavior.
+
+SPIFFE comparisons use the certificate's raw URI SAN, without URL normalization.
+The live caller file must end in a newline; an incomplete or invalid snapshot
+admits nobody, including on an existing connection. Entries trim only ASCII
+space, tab and CR, with `#` introducing a comment.
+
+Solutions are proxied only over TLS 1.3 with the gateway SVID. The server's chain
+and single SPIFFE URI must match the applied presence read alongside its registry
+record. Missing or ambiguous identities fail closed. The existing DNS/address
+guard remains the only dial path. Module upstream transport remains unchanged.
+
 ## Brokering a module's Work Context
 
 `POST /modules/_work-context` takes the
