@@ -135,7 +135,7 @@ pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: 
 pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: WithControlPlane
 pkg/business/solution_delivery.go: (*Service).ReceiveSolutionDelivery: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).newestDelivered: WithControlPlane
-pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).withdrawnBindings: WithControlPlane
+pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).readRegistryInputs: WithControlPlaneReadSnapshot
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionHostBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionTargets: WithControlPlane
@@ -195,6 +195,7 @@ pkg/infra/postgres_webhook_secrets.go: (*PostgresStore).MigrateLegacyWebhookSecr
 pkg/infra/scoped.go: (*Scoped).Within: WithControlPlane
 pkg/infra/scoped.go: (*Scoped).Within: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithControlPlane: withControlPlaneTx
+pkg/infra/tenant_tx.go: (*PostgresStore).WithControlPlaneReadSnapshot: withControlPlaneTx
 pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgTx: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgTx: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithUserTx: txbind.BindRequest

@@ -304,6 +304,14 @@ func (s *PostgresStore) WithControlPlane(ctx context.Context, fn func(ctx contex
 	return s.withControlPlaneTx(ctx, pgx.TxOptions{}, fn)
 }
 
+// WithControlPlaneReadSnapshot runs fn in one control-plane transaction at
+// REPEATABLE READ and READ ONLY, so every store read inside it answers from one
+// committed snapshot.
+func (s *PostgresStore) WithControlPlaneReadSnapshot(ctx context.Context, fn func(ctx context.Context) error) error {
+	recordControlPlane(ctx)
+	return s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, fn)
+}
+
 func (s *PostgresStore) withControlPlaneTx(ctx context.Context, options pgx.TxOptions, fn func(ctx context.Context) error) error {
 	tx, err := s.controlPlane.BeginTx(ctx, options)
 	if err != nil {

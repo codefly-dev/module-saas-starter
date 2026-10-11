@@ -198,13 +198,16 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 		return nil
 	}
 
-	withdrawn, err := r.activation.withdrawnBindings(ctx)
 	var (
 		live    []liveVerifiedAuthority
 		refused []error
 	)
+	inputs, err := r.activation.readRegistryInputs(ctx)
 	if err == nil {
-		live, refused, err = r.activation.liveAuthority(ctx, withdrawn)
+		var withdrawn map[string]string
+		if withdrawn, err = r.activation.withdrawnIn(inputs); err == nil {
+			live, refused = r.activation.liveAuthorityIn(ctx, inputs, withdrawn)
+		}
 	}
 	switch {
 	case errors.Is(err, ErrSolutionAuthorityCeilingUnavailable):

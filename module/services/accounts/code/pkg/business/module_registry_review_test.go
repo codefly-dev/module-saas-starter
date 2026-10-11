@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -158,22 +160,47 @@ type registryReviewStore struct {
 	Store
 	applied    []*SolutionHostBindingRecord
 	appliedErr error
-	// appliedSucceed is how many applied-state reads still succeed before
-	// appliedErr applies — so a test can fail the derivation's read while the
-	// ownership read before it succeeds.
-	appliedSucceed int
+	inbox      *registryReviewInbox
+	// A failed commit invalidates all reads, including a successful owner read.
+	snapshotCommitErr error
+	afterAppliedRead  func()
 }
 
 func (*registryReviewStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }
 
-func (s *registryReviewStore) ListSolutionHostBindings(context.Context) ([]*SolutionHostBindingRecord, error) {
-	if s.appliedErr != nil && s.appliedSucceed > 0 {
-		s.appliedSucceed--
-		return s.applied, nil
+// The fake stores share the context's snapshot, as the Postgres store methods
+// share its transaction. Records are immutable; deliveries replace the slices.
+type registryReviewSnapshotKey struct{}
+
+type registryReviewSnapshot struct {
+	applied []*SolutionHostBindingRecord
+	newest  map[SolutionDeliveryKind][]*SolutionDeliveryRecord
+	history map[SolutionDeliveryKind][]*SolutionDeliveryRecord
+}
+
+func (s *registryReviewStore) WithControlPlaneReadSnapshot(ctx context.Context, fn func(context.Context) error) error {
+	snapshot := &registryReviewSnapshot{applied: slices.Clone(s.applied)}
+	if s.inbox != nil {
+		snapshot.newest, snapshot.history = maps.Clone(s.inbox.newest), maps.Clone(s.inbox.history)
 	}
-	return s.applied, s.appliedErr
+	if err := fn(context.WithValue(ctx, registryReviewSnapshotKey{}, snapshot)); err != nil {
+		return err
+	}
+	return s.snapshotCommitErr
+}
+
+func (s *registryReviewStore) ListSolutionHostBindings(ctx context.Context) ([]*SolutionHostBindingRecord, error) {
+	records := s.applied
+	if snapshot, ok := ctx.Value(registryReviewSnapshotKey{}).(*registryReviewSnapshot); ok {
+		records = snapshot.applied
+	}
+	if after := s.afterAppliedRead; after != nil {
+		s.afterAppliedRead = nil
+		after()
+	}
+	return records, s.appliedErr
 }
 
 // registryReviewInbox is the delivery inbox, kind by kind: the newest
@@ -186,15 +213,21 @@ type registryReviewInbox struct {
 	newestErr map[SolutionDeliveryKind]error
 }
 
-func (s *registryReviewInbox) ListNewestDeliveredDocuments(_ context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error) {
+func (s *registryReviewInbox) ListNewestDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error) {
 	if err := s.newestErr[kind]; err != nil {
 		return nil, err
+	}
+	if snapshot, ok := ctx.Value(registryReviewSnapshotKey{}).(*registryReviewSnapshot); ok {
+		return snapshot.newest[kind], nil
 	}
 	return s.newest[kind], nil
 }
 
-func (s *registryReviewInbox) ListDeliveredDocuments(_ context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error) {
+func (s *registryReviewInbox) ListDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error) {
 	s.historyReads++
+	if snapshot, ok := ctx.Value(registryReviewSnapshotKey{}).(*registryReviewSnapshot); ok {
+		return snapshot.history[kind], nil
+	}
 	return s.history[kind], nil
 }
 
@@ -282,6 +315,7 @@ func newRegistryReview(t *testing.T) *registryReview {
 			SolutionHostBindingGeneration: SolutionHostBindingGeneration{Generation: 1, Document: string(canonical)}},
 	}}}
 	inbox := &registryReviewInbox{newest: map[SolutionDeliveryKind][]*SolutionDeliveryRecord{}, history: map[SolutionDeliveryKind][]*SolutionDeliveryRecord{}}
+	store.inbox = inbox
 	inbox.deliver(presenceRecord(t, presence))
 	inbox.deliver(authorityRecord(t, authority))
 	verifier := &stubBundleVerifier{signer: "example-signer"}
@@ -380,14 +414,17 @@ func TestAFailedPresenceReadNeverAddsAuthority(t *testing.T) {
 		r.store.appliedErr = errors.New("applied state unreadable")
 	}
 
-	for name, succeed := range map[string]int{
-		"every applied-state read fails":                 0,
-		"only the derivation's applied-state read fails": 1,
+	for name, fail := range map[string]func(*registryReviewStore){
+		"the applied-state read fails": func(s *registryReviewStore) { s.appliedErr = errors.New("applied state unreadable") },
+		"the snapshot commit fails after the owner read": func(s *registryReviewStore) {
+			s.appliedErr = nil
+			s.snapshotCommitErr = errors.New("snapshot commit failed")
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newRegistryReview(t)
 			newer(r)
-			r.store.appliedSucceed = succeed
+			fail(r.store)
 			require.ErrorIs(t, r.reconciler.RunOnce(context.Background()), ErrModulePrincipalInputsUnreadable)
 			after, present := r.service.ModulePrincipals()[ModulePrincipalID(testModulePrefix)]
 			require.Empty(t, after.OperationAudiences["run"].HeadlessScopes, "a degraded pass is never wider than the last confirmed one")
@@ -403,7 +440,6 @@ func TestAFailedPresenceReadNeverAddsAuthority(t *testing.T) {
 		require.NoError(t, removed.Validate())
 		r.inbox.deliver(presenceRecord(t, &removed))
 		newer(r)
-		r.store.appliedSucceed = 1
 		require.ErrorIs(t, r.reconciler.RunOnce(context.Background()), ErrModulePrincipalInputsUnreadable)
 		require.False(t, r.present(), "the withdrawn presence takes its principal with it even while applied state is unreadable")
 	})
@@ -412,17 +448,20 @@ func TestAFailedPresenceReadNeverAddsAuthority(t *testing.T) {
 // TestAnUnverifiableAuthorityDoesNotSurviveAFailedPresenceRead is the third
 // review's residual A: the verifier refuses the document this pass while the
 // applied-state read fails. The refusal is known, so the degraded pass drops
-// the cached entry — whichever applied read failed.
+// the cached entry, including when the snapshot fails after reading the owner.
 func TestAnUnverifiableAuthorityDoesNotSurviveAFailedPresenceRead(t *testing.T) {
-	for name, succeed := range map[string]int{
-		"every applied-state read fails":                 0,
-		"only the derivation's applied-state read fails": 1,
+	for name, fail := range map[string]func(*registryReviewStore){
+		"the applied-state read fails": func(s *registryReviewStore) { s.appliedErr = errors.New("applied state unreadable") },
+		"the snapshot commit fails after the owner read": func(s *registryReviewStore) {
+			s.appliedErr = nil
+			s.snapshotCommitErr = errors.New("snapshot commit failed")
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newRegistryReview(t)
 			r.verifier.err = errors.New("signer removed from verification trust policy")
 			r.store.appliedErr = errors.New("applied presence unreadable")
-			r.store.appliedSucceed = succeed
+			fail(r.store)
 			require.ErrorIs(t, r.reconciler.RunOnce(context.Background()), ErrModulePrincipalInputsUnreadable)
 			require.False(t, r.present(), "a cached grant never survives a document this pass refused")
 			_, err := r.service.AuthorizeModuleCapability(context.Background(), ModuleCaller{PrincipalID: ModulePrincipalID(testModulePrefix), BoundOrg: testEnvelopeTenant})
@@ -647,4 +686,61 @@ func TestAReferenceExchangeFencesAnUnobservantReplica(t *testing.T) {
 		_, err := s.AuthorizeDelegationReferenceExchange(context.Background(), caller, store.delegation.ID, "run", false)
 		require.Equal(t, codes.Unavailable, status.Code(err))
 	}
+}
+
+// The reviewer's interleaving, inverted: neither committed state grants a
+// principal. Before admission it has no presence; after admission its owner's
+// tombstone is terminal. A pass spanning the commit must grant nothing too.
+func TestFirstAdmissionBetweenOwnerAndDerivationReadsCannotRestoreWithdrawnAuthority(t *testing.T) {
+	r := newRegistryReview(t)
+	applied := r.store.applied
+	r.store.applied = nil
+	r.inbox.deliver(authorityRecord(t, tombstoneOf(t, r.authority)))
+	renamed := *r.authority
+	renamed.Authority = "renamed-authority"
+	r.inbox.deliver(authorityRecord(t, &renamed))
+	ctx := context.Background()
+	require.ErrorIs(t, r.reconciler.RunOnce(ctx), ErrModulePrincipalOmitted)
+	require.False(t, r.present(), "no applied presence before the concurrent admission")
+
+	// Core really admits the presence: the authority tombstone does not prevent
+	// another replica committing this first presence generation.
+	delivered, err := solutionhost.VerifyDelivered(ctx, carrierOf(presenceRecord(t, r.presence)), r.verifier)
+	require.NoError(t, err)
+	_, err = r.reconciler.activation.reconciler.host.Admit(delivered)
+	require.NoError(t, err)
+	committed := false
+	r.store.afterAppliedRead = func() {
+		r.store.applied = applied
+		committed = true
+	}
+	err = r.reconciler.RunOnce(ctx)
+	require.True(t, committed, "the other replica committed after the owner read")
+	require.False(t, r.present(), "the renamed grant must not combine new presence with an ownerless withdrawal map")
+	require.ErrorIs(t, err, ErrModulePrincipalOmitted)
+	grant, err := r.service.AuthorizeModuleCapability(ctx, ModuleCaller{PrincipalID: ModulePrincipalID(testModulePrefix), BoundOrg: testEnvelopeTenant})
+	require.Error(t, err)
+	require.Nil(t, grant)
+
+	// No delivery or envelope change: the next snapshot sees both the admitted
+	// owner and the tombstone, and still grants nothing.
+	require.ErrorIs(t, r.reconciler.RunOnce(ctx), ErrSolutionAuthorityWithdrawn)
+	require.False(t, r.present())
+}
+
+func TestRegistryInputsKeepConcurrentWithdrawalInTheNextSnapshot(t *testing.T) {
+	r := newRegistryReview(t)
+	removed := authorityRecord(t, tombstoneOf(t, r.authority))
+	r.store.afterAppliedRead = func() { r.inbox.deliver(removed) }
+	inputs, err := r.reconciler.activation.readRegistryInputs(context.Background())
+	require.NoError(t, err)
+	withdrawn, err := r.reconciler.activation.withdrawnIn(inputs)
+	require.NoError(t, err)
+	require.Empty(t, withdrawn, "history must be from the same snapshot as the applied presence")
+	require.Len(t, inputs.newestAuthority, 1)
+	require.Equal(t, r.authority.Generation, inputs.newestAuthority[0].Generation)
+
+	// The committed withdrawal is visible on the following pass.
+	require.NoError(t, r.reconciler.RunOnce(context.Background()))
+	require.False(t, r.present())
 }

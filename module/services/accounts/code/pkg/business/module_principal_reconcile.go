@@ -35,19 +35,13 @@ import (
 // the document asks for — never wider than either.
 //
 // A READ FAILURE NEVER ADDS AUTHORITY, AND NEVER KEEPS ONE A REVOCATION
-// REMOVED. Each pass reads the withdrawal history and the envelope before
-// anything else, independently of the newest documents. When every input is
-// read, the registry is derived from them. When one is not, nothing new is
-// derived — fresh documents are never combined with stale inputs — and the
-// pass publishes a DEGRADED registry instead: the entries of the last registry
-// it published, kept only where that registry was derived from the current
-// envelope revision, the binding is not withdrawn, its presence has not been
-// withdrawn by delivery, and its signer is still admitted for its domain. So a
-// degraded registry is never wider than the last confirmed one and still
-// honours every revocation that could be read. If the withdrawal history
-// itself cannot be read, nothing can be honoured, and the degraded registry is
-// empty. If the envelope cannot be read, nothing is stamped with a revision the
-// fence would accept for a newer ceiling.
+// REMOVED. Each pass reads applied presence and the delivery inbox in one
+// snapshot, then derives withdrawals before verifying the newest documents.
+// A failed snapshot publishes an empty degraded registry: partial reads cannot
+// establish authority. If only the envelope cannot be read, the last registry
+// is narrowed by the snapshot's withdrawals, presence tombstones and documents
+// still in force under the current signer policy. Nothing is stamped with a
+// revision the fence would accept for a newer ceiling.
 //
 // A principal the inputs describe incoherently — two live documents, a
 // withdrawn binding, a document that no longer verifies, a signer the policy no
@@ -182,11 +176,15 @@ func (r *ModulePrincipalReconciler) degraded(
 func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	service := r.activation.reconciler.service
 
-	// THE REVOCATIONS FIRST, independently of everything else.
-	withdrawn, historyErr := r.activation.withdrawnBindings(ctx)
-	if errors.Is(historyErr, ErrSolutionAuthorityCeilingUnavailable) {
+	// THE INPUTS, IN ONE SNAPSHOT, before anything else: the applied presence,
+	// the authority history and the newest generations, read in one
+	// repeatable-read transaction. The withdrawals, the documents in force and
+	// the workloads are all derived from this one read, so a binding admitted
+	// on another replica mid-pass is either wholly visible — owner, tombstone
+	// and presence together — or not at all.
+	inputs, inputsErr := r.activation.readRegistryInputs(ctx)
+	if errors.Is(inputsErr, ErrSolutionAuthorityCeilingUnavailable) {
 		// No delivery inbox wired: no document can ever be delivered, so no
 		// principal can ever be asked for.
 		envelope, err := r.activation.currentEnvelope(ctx)
@@ -200,20 +198,43 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}, revision: revision})
 		return nil
 	}
+	var (
+		withdrawn map[string]string
+		presence  map[string]bool
+		live      []liveVerifiedAuthority
+		refusals  []error
+		inForce   map[string]uint64
+	)
+	if inputsErr == nil {
+		// THE REVOCATIONS FIRST, independently of document verification.
+		withdrawn, inputsErr = r.activation.withdrawnIn(inputs)
+	}
+	if inputsErr == nil {
+		presence, inputsErr = withdrawnPresenceIn(inputs)
+	}
+	if inputsErr == nil {
+		live, refusals = r.activation.liveAuthorityIn(ctx, inputs, withdrawn)
+		// The documents in force this pass: a cached entry never outlives one
+		// this pass refused or superseded.
+		inForce = make(map[string]uint64, len(live))
+		for _, one := range live {
+			inForce[one.document.Authority] = one.document.Generation
+		}
+	}
+
 	envelope, envelopeErr := r.activation.currentEnvelope(ctx)
 	if envelopeErr != nil {
 		// The ceiling is unknown, so nothing is stamped with a new revision:
-		// the last registry is narrowed by whatever revocation could be read
-		// and keeps its own revision, which the fence refuses once a newer one
-		// is committed.
+		// the last registry is narrowed by the revocations the snapshot could
+		// establish and keeps its own revision, which the fence refuses once a
+		// newer one is committed.
 		if r.last != nil {
-			presence, presenceErr := r.activation.withdrawnPresence(ctx)
-			if historyErr != nil || presenceErr != nil {
-				withdrawn, presence = nil, nil
+			if inputsErr != nil {
+				withdrawn, presence, inForce = nil, nil, nil
 			}
-			r.publish(r.degraded(r.last.revision, withdrawn, presence, nil))
+			r.publish(r.degraded(r.last.revision, withdrawn, presence, inForce))
 		}
-		return errors.Join(fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, envelopeErr), historyErr)
+		return errors.Join(fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, envelopeErr), inputsErr)
 	}
 	if envelope == nil {
 		// No ceiling has ever been written: nothing is allowed, so nothing is
@@ -221,43 +242,14 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}})
 		return nil
 	}
-	if historyErr != nil {
+	if inputsErr != nil {
 		// No revocation can be established, so no entry can be kept.
 		r.publish(r.degraded(envelope.Revision, nil, nil, nil))
-		return fmt.Errorf("%w: the withdrawal history: %w", ErrModulePrincipalInputsUnreadable, historyErr)
+		return fmt.Errorf("%w: %w", ErrModulePrincipalInputsUnreadable, inputsErr)
 	}
 
-	live, refusals, liveErr := r.activation.liveAuthority(ctx, withdrawn)
-	records, appliedErr := service.ListSolutionHostBindings(ctx)
-	if liveErr != nil || appliedErr != nil {
-		presence, presenceErr := r.activation.withdrawnPresence(ctx)
-		if presenceErr != nil {
-			presence = nil
-		}
-		// The documents still in force, when the newest read succeeded: the
-		// refusals this pass made are known, and a cached entry never
-		// outlives one.
-		var inForce map[string]uint64
-		if liveErr == nil {
-			inForce = make(map[string]uint64, len(live))
-			for _, one := range live {
-				inForce[one.document.Authority] = one.document.Generation
-			}
-		}
-		r.publish(r.degraded(envelope.Revision, withdrawn, presence, inForce))
-		var failures []error
-		for _, failure := range []struct {
-			input string
-			err   error
-		}{{"the authority inbox", liveErr}, {"the applied presence", appliedErr}, {"the presence inbox", presenceErr}} {
-			if failure.err != nil {
-				failures = append(failures, fmt.Errorf("%w: %s: %w", ErrModulePrincipalInputsUnreadable, failure.input, failure.err))
-			}
-		}
-		return errors.Join(failures...)
-	}
-	applied := make(map[string]*SolutionHostBindingRecord, len(records))
-	for _, record := range records {
+	applied := make(map[string]*SolutionHostBindingRecord, len(inputs.applied))
+	for _, record := range inputs.applied {
 		applied[record.BindingID] = record
 	}
 
