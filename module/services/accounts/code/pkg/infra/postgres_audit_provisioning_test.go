@@ -222,7 +222,7 @@ func TestOnlyTheControlPlaneProvisionsOrRetiresAuditPartitions(t *testing.T) {
 		{"audit_events_secure_all_partitions()", true},
 		{"audit_events_drop_partitions_before(timestamptz)", true},
 		{"audit_events_create_partitions(date[], timestamptz)", false},
-		{"audit_events_secure_partition(regclass, timestamptz)", false},
+		{"audit_events_secure_partition_within(regclass, timestamptz)", false},
 		{"audit_events_secure_partition(regclass)", false},
 		{"audit_partition_lock_budget(timestamptz)", false},
 	} {

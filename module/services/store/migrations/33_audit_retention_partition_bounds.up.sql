@@ -91,9 +91,10 @@
 -- ends where its successor starts, when that neighbour's bound lies within a day
 -- of the UTC midnight; every other partition stays out of its range.
 --
--- The signatures, return values, owners and grants of the existing functions are
--- unchanged: CREATE OR REPLACE keeps the owner and the ACL. Their search_path
--- lists pg_catalog first and pg_temp last, like every other definer function here.
+-- The signatures, return values, owners and grants of the existing functions
+-- are unchanged: CREATE OR REPLACE keeps the owner and the ACL. Their
+-- search_path lists pg_catalog first and pg_temp last, like every other definer
+-- function here.
 
 DO $$
 DECLARE
@@ -226,13 +227,14 @@ BEGIN
 END;
 $$;
 
--- audit_events_secure_partition(target, deadline) brings one partition's row
--- security in step with the parent's, as migration 11's did, and waits for its
--- locks only until deadline. A policy's expressions render only with their table
--- open, which waits for a session holding the table ACCESS EXCLUSIVE, so the
--- parent's and the partition's are read in statements of their own; a partition
--- already in step takes no lock beyond those reads.
-CREATE FUNCTION public.audit_events_secure_partition(target regclass, deadline timestamp with time zone) RETURNS void
+-- audit_events_secure_partition_within(target, deadline) brings one partition's
+-- row security in step with the parent's, as migration 11's
+-- audit_events_secure_partition did, and waits for its locks only until
+-- deadline. A policy's expressions render only with their table open, which
+-- waits for a session holding the table ACCESS EXCLUSIVE, so the parent's and
+-- the partition's are read in statements of their own; a partition already in
+-- step takes no lock beyond those reads.
+CREATE FUNCTION public.audit_events_secure_partition_within(target regclass, deadline timestamp with time zone) RETURNS void
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
@@ -304,7 +306,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.audit_events_secure_partition(regclass, timestamp with time zone) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.audit_events_secure_partition_within(regclass, timestamp with time zone) FROM PUBLIC;
 
 -- The one-argument form, which migrations 11 and 13 called, keeps its signature
 -- and gets a budget of its own.
@@ -314,13 +316,14 @@ CREATE OR REPLACE FUNCTION public.audit_events_secure_partition(target regclass)
     SET lock_timeout TO '10s'
     AS $$
 BEGIN
-    PERFORM public.audit_events_secure_partition(target, clock_timestamp() + interval '10 seconds');
+    PERFORM public.audit_events_secure_partition_within(target, clock_timestamp() + interval '10 seconds');
 END;
 $$;
 
 -- audit_events_create_partitions creates the partition of each month in months
--- that has none, with UTC bounds that meet its neighbours, waiting for its lock
--- only until deadline. Owned by the migration principal and called only from the
+-- that has none, with UTC bounds that meet its neighbours, and secures each one
+-- in the transaction that creates it, waiting for its locks only until
+-- deadline. Owned by the migration principal and called only from the
 -- provisioning functions below.
 CREATE FUNCTION public.audit_events_create_partitions(months date[], deadline timestamp with time zone) RETURNS void
     LANGUAGE plpgsql
@@ -378,6 +381,7 @@ BEGIN
 
         EXECUTE format('CREATE TABLE public.%I PARTITION OF public.audit_events FOR VALUES FROM (%L) TO (%L)',
                        part_name, lo, hi);
+        PERFORM public.audit_events_secure_partition_within(to_regclass('public.' || quote_ident(part_name)), deadline);
     END LOOP;
 END;
 $$;
@@ -399,7 +403,7 @@ BEGIN
     PERFORM public.audit_events_create_partitions(ARRAY[month], deadline);
     part := to_regclass('public.' || quote_ident('audit_events_' || to_char(month, 'YYYY_MM')));
     IF part IS NOT NULL THEN
-        PERFORM public.audit_events_secure_partition(part, deadline);
+        PERFORM public.audit_events_secure_partition_within(part, deadline);
     END IF;
 END;
 $$;
@@ -418,7 +422,7 @@ BEGIN
          WHERE inhparent = 'public.audit_events'::regclass
          ORDER BY inhrelid
     LOOP
-        PERFORM public.audit_events_secure_partition(part, deadline);
+        PERFORM public.audit_events_secure_partition_within(part, deadline);
     END LOOP;
 END;
 $$;
@@ -450,7 +454,7 @@ BEGIN
          WHERE inhparent = 'public.audit_events'::regclass
          ORDER BY inhrelid
     LOOP
-        PERFORM public.audit_events_secure_partition(part, deadline);
+        PERFORM public.audit_events_secure_partition_within(part, deadline);
     END LOOP;
 END;
 $$;

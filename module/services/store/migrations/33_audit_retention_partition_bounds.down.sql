@@ -158,5 +158,5 @@ $$;
 
 DROP FUNCTION public.audit_events_provision_partitions(integer);
 DROP FUNCTION public.audit_events_create_partitions(date[], timestamp with time zone);
-DROP FUNCTION public.audit_events_secure_partition(regclass, timestamp with time zone);
+DROP FUNCTION public.audit_events_secure_partition_within(regclass, timestamp with time zone);
 DROP FUNCTION public.audit_partition_lock_budget(timestamp with time zone);
