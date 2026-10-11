@@ -225,6 +225,11 @@ func productionPathAuthority(
 		Host:             solutionhost.HostTarget{Coordinate: productionPathCoordinate, Component: "saas-host"},
 		OwnershipDomain:  productionPathDomain,
 		EnvelopeRevision: solutionhost.FixtureEnvelopeRevision,
+		// The subject module's own declarations are written out, [] when it
+		// declares none (core#735): an omitted list is refused as a dropped one.
+		Queues:        []string{},
+		Namespaces:    []string{},
+		ScopeCeilings: []solutionhost.ScopeCeiling{},
 	}
 	if !removed {
 		document.ApprovedBuild = build
