@@ -259,13 +259,14 @@ func TestMintModuleWorkContextReportsAnUnconfiguredAuthority(t *testing.T) {
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
 
-// One module's pod cannot mint as another prefix, even when the two share a
-// ServiceAccount and a namespace: the running build is held against the build
-// approved for the principal ASKED FOR, and billing's pod runs billing's build.
+// One module's pod cannot mint as another prefix: its token authenticates its
+// own ServiceAccount, which identifies exactly one principal, and that is not
+// the one it asked for. (Two principals SHARING a ServiceAccount mint as
+// neither — TestAWorkloadSharedByTwoPrincipalsMintsAsNeither.)
 func TestMintModuleWorkContextBindsTheTokenToItsOwnPrefix(t *testing.T) {
 	store := installModuleWorkContextService(t,
 		`{"documents":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"`+moduleWorkContextTenant+`"},`+
-			`"billing":{"queues":["billing"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"`+moduleWorkContextTenant+`"}}`)
+			`"billing":{"queues":["billing"],"workload":{"service_account":"billing","namespace":"acme-prod","container":"app"},"tenant":"`+moduleWorkContextTenant+`"}}`)
 	installModuleWorkContextAuthority(t)
 
 	_, err := mintModuleWorkContext(t, "billing", moduleToken(t, "documents"))

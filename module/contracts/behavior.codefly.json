@@ -10,19 +10,27 @@
         "credential": "the module pod's projected ServiceAccount token, minted for the audience accounts and re-read from its projection before every mint",
         "checks": [
           "TokenReview with the audience accounts: a token for any other audience, cluster or an expired one is refused",
-          "the token's ServiceAccount and namespace equal the workload the principal declares",
-          "the pod the TOKEN names is read, its live UID equals the token's, and the declared container's RUNNING image (status imageID, never the spec's image) equals the build the principal's authority document approves"
+          "the token was projected for at most 600 seconds (its iat and exp, read after TokenReview authenticated it)",
+          "the token's ServiceAccount and namespace identify exactly one declared principal, and it is the one asked for",
+          "the pod the TOKEN names is read: its live UID equals the token's, it is Running and not being deleted",
+          "the declared container is a regular container in state running, and its RUNNING image (status imageID, never the spec's image) equals the build the principal's authority document approves",
+          "no other container may run in the pod: no other regular container, no init container still running or restartable, and no ephemeral container in any state; init containers that completed are tolerated and never supply the digest"
         ],
         "refusals": {
           "verdict": "the token is refused, belongs to another workload, or the pod runs an unapproved build: nothing is minted, and the caller is not told which check failed",
-          "unbound": "the host could not establish the execution (API server unreachable, no execution binding wired, no image id yet): nothing is minted, and the answer is retryable"
+          "unbound": "the host could not establish the execution (API server unreachable, no execution binding wired, the pod or container not started yet, no image id): nothing is minted, and the answer is retryable"
         },
         "rules": [
           "No secret proves a module's identity. MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and SOLUTION_REGISTRATION_SECRETS are deleted, with both registration mints.",
           "Execution binding is wired only with delivered authority; a host with no delivery mints for no module.",
           "Every mint record names the execution it was bound to: namespace, ServiceAccount, pod, pod UID, container, running image and approved incarnation."
         ],
-        "limitation": "The Work Context does not yet SEAL the installation id and revision: the host signs the sdk-go encoding, which carries no seal, and module principals hold no installation until #1057. The execution is bound at mint and recorded, not sealed."
+        "limitation": "The Work Context does not yet SEAL the installation id and revision: the host signs the sdk-go encoding, which carries no seal, and module principals hold no installation until #1057. The execution is bound at mint and recorded, not sealed.",
+        "replay": {
+          "closed": "a token from another workload, audience or cluster; a replaced pod; an unapproved build or container; a stopped container or terminating pod; a token older than 600 seconds",
+          "residual": "the projected token is a bearer credential: a peer holding a copied, still-valid token of an approved running pod and the broker's perimeter credential can mint as that pod's principal until the token expires",
+          "closingOption": "request-origin identity: the mesh's pod-specific mTLS identity of the connection, conveyed by the broker and required to name the reviewed pod UID — an owner decision, not built"
+        }
       }
     },
     {

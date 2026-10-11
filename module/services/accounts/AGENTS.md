@@ -472,6 +472,54 @@ principal — its **prefix** — never by the registry key
 reviewed and refused is `ErrExecutionTokenRejected`, a verdict; a review that
 could not run is `ErrExecutionUnbound`, not one.
 
+**What a mint requires, in full** (review round 1 on #1056 found each missing):
+
+- **The workload identifies exactly one principal, and it is the one asked
+  for.** A token authenticates a ServiceAccount in a namespace, never a prefix.
+  The reviewed `(namespace, ServiceAccount)` is resolved over the WHOLE registry;
+  zero or several owners is `ErrExecutionWorkloadAmbiguous` /
+  `ErrExecutionIdentityMismatch`. Two principals sharing a ServiceAccount mint as
+  neither — before, either one's pod minted as both.
+- **The pod is one security boundary.** Every container in it can read the
+  projected token, so the pod may hold only the authenticating container plus
+  init containers that ran to completion. Any other regular container, an init
+  container still running or restartable (a native sidecar), and an ephemeral
+  (debug) container in ANY state is `ErrExecutionUnapprovedContainer`. The
+  approval names one container's build; until it names an inventory with a
+  digest per container, a pod with a mesh or logging sidecar mints nothing.
+- **Only a live regular container supplies the digest.** The pod must be
+  `Running` with no `deletionTimestamp`, and the declared container must be a
+  regular container in state `running`; a stopped container keeps its approved
+  `imageID` in status and a completed init container still reports one, and
+  neither counts (`ErrExecutionNotRunning`). Not started yet — pod `Pending`,
+  container `waiting` — is `ErrExecutionUnbound`: retryable, not a verdict.
+- **The token lives at most 600 seconds** (`MaxExecutionTokenLifetime`,
+  Kubernetes' minimum `expirationSeconds`), read from the iat/exp of a token the
+  API server has just authenticated. A longer one, or one whose lifetime cannot
+  be read, is refused.
+
+**Replay, stated precisely.** A projected ServiceAccount token is a BEARER
+credential. TokenReview proves the cluster issued it to a named pod and that the
+pod still exists; it does not prove the pod is the party presenting it. So:
+
+- **Closed here:** a token from another workload, another audience or another
+  cluster; a replaced pod at the same name; a pod running an unapproved build or
+  any unapproved container; a stopped container or a pod being deleted; a token
+  older than 10 minutes.
+- **Not closed — the residual:** a peer that has COPIED a still-valid token
+  from an approved, running pod (and holds the broker's perimeter credential)
+  can mint as that pod's principal for the rest of that token's lifetime, and
+  the mint record attributes it to the victim pod. TokenReview cannot close
+  this, and nothing on this host can tell the copy from the original.
+- **The strongest closing option — an owner decision, not built:** bind each
+  mint to request-origin identity. The mesh's pod-specific mTLS identity of the
+  connection that carried the request is conveyed by the broker in a header only
+  the broker can set, and accounts requires it to name the same pod UID the
+  TokenReview did. A copied token is then useless from any other pod. It needs
+  the mesh to issue per-pod (not per-ServiceAccount) identities, and the gateway
+  to forward the verified peer, so it is a platform decision rather than a change
+  to this mint.
+
 **Three digest types, and conflating any two defeats the check.** They are
 separate Go types rather than three strings for exactly that reason:
 

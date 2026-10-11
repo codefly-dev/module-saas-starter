@@ -42,7 +42,7 @@ const delegationPrincipals = `{"docstore":{"workload":{"service_account":"module
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 	`"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}},` +
-	`"reports":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + delegationOrg + `"}}`
+	`"reports":{"workload":{"service_account":"reports","namespace":"acme-prod","container":"app"},"tenant":"` + delegationOrg + `"}}`
 
 type sourceDelegationMemoryStore struct {
 	business.Store

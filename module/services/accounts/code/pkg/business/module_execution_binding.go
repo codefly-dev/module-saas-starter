@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 )
 
 // Execution-bound minting: what the caller IS RUNNING, established independently
@@ -71,6 +73,31 @@ var ErrExecutionIdentityMismatch = errors.New("the presented token's pod does no
 // error types and must not guess from a message.
 var ErrExecutionTokenRejected = errors.New("the presented token was reviewed and refused")
 
+// ErrExecutionTokenLifetime reports a token valid for longer than
+// MaxExecutionTokenLifetime, or one whose lifetime the review did not report.
+// A verdict: the token is acceptable to Kubernetes and not to this host.
+var ErrExecutionTokenLifetime = errors.New("the presented token outlives the 600-second projection this host requires")
+
+// ErrExecutionWorkloadAmbiguous reports a reviewed workload (namespace and
+// ServiceAccount) that this host's registry maps to more than one principal,
+// or to none. A token authenticates a ServiceAccount, never a prefix, so a
+// ServiceAccount shared by two principals proves neither: refused rather than
+// resolved by trusting the prefix the caller asked for.
+var ErrExecutionWorkloadAmbiguous = errors.New("the presented token's workload does not identify exactly one module principal")
+
+// ErrExecutionNotRunning reports a pod or container that is not live: a pod
+// being deleted or no longer Running, or an authenticating container that has
+// terminated. A verdict — the host read it — and distinct from a container
+// that has not started yet, which is ErrExecutionUnbound.
+var ErrExecutionNotRunning = errors.New("the presented token's pod is not running its authenticating container")
+
+// ErrExecutionUnapprovedContainer reports a pod holding a container the
+// approval does not cover: a sidecar, a running or restartable init container,
+// or an ephemeral (debug) container. Any of them can read the projected token,
+// so the pod is one security boundary and every container in it must be
+// approved.
+var ErrExecutionUnapprovedContainer = errors.New("the presented token's pod runs a container the approval does not cover")
+
 // ErrExecutionNotBoundToken reports a token that names no pod at all.
 //
 // A legacy non-bound service account token authenticates the SERVICE ACCOUNT and
@@ -134,9 +161,10 @@ type ExecutionReviewer interface {
 	// attributes to it. The audience is checked by the API server, so a token
 	// minted for another audience is rejected there rather than here.
 	ReviewToken(ctx context.Context, token, audience string) (*ReviewedExecutionToken, error)
-	// RunningContainer reads what a container is running, from the pod's
-	// status.
-	RunningContainer(ctx context.Context, namespace, pod, container string) (*RunningContainerStatus, error)
+	// ReadPod reads the pod the token named: its lifecycle and EVERY container
+	// in it — regular, init and ephemeral — with each one's live state, so the
+	// host can refuse a pod in which anything it has not approved can run.
+	ReadPod(ctx context.Context, namespace, pod string) (*PodExecution, error)
 }
 
 // ReviewedExecutionToken is a TokenReview's answer.
@@ -145,17 +173,69 @@ type ReviewedExecutionToken struct {
 	Namespace      string
 	PodName        string
 	PodUID         string
+	// IssuedAt and ExpiresAt are the token's own iat and exp, read from a token
+	// the API server has just authenticated. They bound how long a copied
+	// token stays useful, which is the one thing about replay this host can
+	// hold a token to (see MaxExecutionTokenLifetime).
+	IssuedAt  time.Time
+	ExpiresAt time.Time
 }
 
-// RunningContainerStatus is a pod read's answer.
-type RunningContainerStatus struct {
+// ContainerKind is where a container sits in a pod spec.
+type ContainerKind string
+
+const (
+	ContainerRegular   ContainerKind = "regular"
+	ContainerInit      ContainerKind = "init"
+	ContainerEphemeral ContainerKind = "ephemeral"
+)
+
+// ContainerState is a container's live state as its status reports it.
+type ContainerState string
+
+const (
+	ContainerRunning    ContainerState = "running"
+	ContainerWaiting    ContainerState = "waiting"
+	ContainerTerminated ContainerState = "terminated"
+	// ContainerStateUnknown is a container the spec declares and the status
+	// does not (yet) report.
+	ContainerStateUnknown ContainerState = "unknown"
+)
+
+// PodExecution is a pod read's answer: what the pod is and everything in it
+// that can run.
+type PodExecution struct {
 	UID string
+	// Phase is status.phase ("Pending", "Running", "Succeeded", ...).
+	Phase string
+	// Terminating reports a deletionTimestamp: the pod is being torn down.
+	Terminating bool
+	Containers  []ContainerExecution
+}
+
+// ContainerExecution is one container of a pod, from its spec and status.
+type ContainerExecution struct {
+	Name  string
+	Kind  ContainerKind
+	State ContainerState
 	// ImageID is from the container's STATUS: what it runs.
 	ImageID string
 	// DeclaredImage is from the pod's SPEC: what it asked to run.
 	DeclaredImage string
-	Found         bool
+	// Restartable is an init container with restartPolicy Always — a sidecar
+	// that runs beside the application rather than before it.
+	Restartable bool
 }
+
+// PodPhaseRunning is the only pod phase an execution can be bound in.
+const PodPhaseRunning = "Running"
+
+// MaxExecutionTokenLifetime is the longest-lived projected token this host
+// accepts: Kubernetes' minimum `expirationSeconds`, 600. A ServiceAccount token
+// is a bearer credential — whoever holds a copy can present it — so its
+// lifetime is the replay window, and the host holds every token to the
+// shortest the platform can issue rather than to whatever a renderer chose.
+const MaxExecutionTokenLifetime = 600 * time.Second
 
 // ExecutionAuthority answers what a principal's approved build is.
 //
@@ -261,6 +341,7 @@ func (s *Service) BindExecution(
 	// images the approval was tested against — a pod's containers do not all
 	// run the same image, so naming a sibling picks the comparison.
 	containerName := grant.Workload.Container
+	modules := s.declaredModules()
 
 	// 1. Authenticate. The API server checks the audience, so a token minted
 	//    for anything else is rejected before this host reasons about it.
@@ -282,15 +363,35 @@ func (s *Service) BindExecution(
 			ErrExecutionNotBoundToken, reviewed.Namespace, reviewed.ServiceAccount)
 	}
 
-	// THE CALLER MUST BE THE WORKLOAD THE PRINCIPAL DECLARES. Without this the
-	// principal is a bare claim: a module holding its own valid token could
-	// name another module's prefix, and the comparison below would test that
-	// other principal's approved build against THIS caller's running image —
-	// which passes whenever the two share an image, and a shared base image is
-	// ordinary. A verdict rather than "unbound": the host established exactly
-	// who the caller is, and it is not who it says it is.
-	if reviewed.ServiceAccount != grant.Workload.ServiceAccount ||
-		reviewed.Namespace != grant.Workload.Namespace {
+	// THE TOKEN'S LIFETIME IS THE REPLAY WINDOW. A projected token is a bearer
+	// credential: TokenReview proves the cluster issued it to this pod, never
+	// that the pod is the one presenting it. The host cannot close that here
+	// (see "Replay" in services/accounts/AGENTS.md); it can bound it, and it
+	// bounds it to the shortest projection Kubernetes issues.
+	if reviewed.IssuedAt.IsZero() || reviewed.ExpiresAt.IsZero() {
+		return nil, fmt.Errorf("%w: the review reported no issue or expiry time", ErrExecutionTokenLifetime)
+	}
+	if lifetime := reviewed.ExpiresAt.Sub(reviewed.IssuedAt); lifetime > MaxExecutionTokenLifetime {
+		return nil, fmt.Errorf("%w: it is valid for %s", ErrExecutionTokenLifetime, lifetime)
+	}
+
+	// THE CALLER'S WORKLOAD MUST IDENTIFY EXACTLY ONE PRINCIPAL, AND IT MUST BE
+	// THE ONE ASKED FOR. A token authenticates a ServiceAccount in a namespace;
+	// it says nothing about a prefix. Checking only that the ASKED-FOR
+	// principal declares this workload let two principals sharing a
+	// ServiceAccount (and an approved image) each be minted from either one's
+	// token: alpha's own pod asked for prefix=beta and got beta's tenant. So
+	// the workload is resolved to its principal over the WHOLE registry, and
+	// anything but exactly one owner is refused — never resolved by trusting
+	// the prefix the caller asked for. A verdict, not "unbound": the host
+	// established exactly who the caller is.
+	owners := principalsDeclaringWorkload(modules, reviewed.Namespace, reviewed.ServiceAccount)
+	switch {
+	case len(owners) > 1:
+		return nil, fmt.Errorf("%w: %s/%s is declared by %d principals (%s)",
+			ErrExecutionWorkloadAmbiguous, reviewed.Namespace, reviewed.ServiceAccount,
+			len(owners), strings.Join(owners, ", "))
+	case len(owners) == 0 || owners[0] != principalID:
 		return nil, fmt.Errorf(
 			"%w: %s is declared to run as %s/%s, the presented token authenticates %s/%s",
 			ErrExecutionIdentityMismatch, principalID,
@@ -299,34 +400,22 @@ func (s *Service) BindExecution(
 	}
 
 	// 2. Read the pod the TOKEN named — never one the caller named.
-	running, err := s.executionReviewer.RunningContainer(
-		ctx, reviewed.Namespace, reviewed.PodName, containerName)
+	pod, err := s.executionReviewer.ReadPod(ctx, reviewed.Namespace, reviewed.PodName)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrExecutionUnbound, err)
 	}
-	if !running.Found {
-		// A missing container is NOT a non-match: the host has established
-		// nothing about what is running, so it cannot say the caller is
-		// unapproved.
-		return nil, fmt.Errorf("%w: container %s is not in pod %s/%s",
-			ErrExecutionIdentityMismatch, containerName, reviewed.Namespace, reviewed.PodName)
-	}
-	if running.UID != reviewed.PodUID {
+	if pod.UID != reviewed.PodUID {
 		// The pod name resolved to a DIFFERENT pod than the token was issued
 		// for — a replacement at the same name. This is the check the UID
 		// exists for, and comparing names instead would admit it silently.
 		return nil, fmt.Errorf("%w: the token names pod uid %s, live pod %s/%s is uid %s",
 			ErrExecutionIdentityMismatch, reviewed.PodUID,
-			reviewed.Namespace, reviewed.PodName, running.UID)
+			reviewed.Namespace, reviewed.PodName, pod.UID)
 	}
-	if running.ImageID == "" {
-		// A container with no imageID is not yet running an identifiable image
-		// (still pulling, or a runtime that does not report one). Nothing has
-		// been established.
-		return nil, fmt.Errorf("%w: container %s in pod %s/%s reports no image id",
-			ErrExecutionUnbound, containerName, reviewed.Namespace, reviewed.PodName)
+	app, err := authenticatingContainer(pod, containerName, reviewed)
+	if err != nil {
+		return nil, err
 	}
-
 	// 3. Compare against what the authority approves.
 	//
 	// The approval is looked up by the name the AUTHORITY DOCUMENT gives the
@@ -364,7 +453,7 @@ func (s *Service) BindExecution(
 		return nil, fmt.Errorf("%w: %w", ErrExecutionUnbound, err)
 	}
 
-	if !digestsEqual(string(approved), running.ImageID) {
+	if !digestsEqual(string(approved), app.ImageID) {
 		// The declared image is named in the refusal precisely because the
 		// interesting case is when it MATCHES the approval and the running image
 		// does not: that is a moved tag, and an operator reading only "not
@@ -373,7 +462,7 @@ func (s *Service) BindExecution(
 		return nil, fmt.Errorf(
 			"%w: principal %s is approved for %s, pod %s/%s asked for %s and is running %s",
 			ErrExecutionNotApproved, principalID, approved,
-			reviewed.Namespace, reviewed.PodName, running.DeclaredImage, running.ImageID)
+			reviewed.Namespace, reviewed.PodName, app.DeclaredImage, app.ImageID)
 	}
 
 	return &ExecutionIdentity{
@@ -383,10 +472,98 @@ func (s *Service) BindExecution(
 		PodName:        reviewed.PodName,
 		PodUID:         reviewed.PodUID,
 		ContainerName:  containerName,
-		Running:        RunningDigest(running.ImageID),
-		Declared:       DeclaredDigest(running.DeclaredImage),
+		Running:        RunningDigest(app.ImageID),
+		Declared:       DeclaredDigest(app.DeclaredImage),
 		Incarnation:    incarnation,
 	}, nil
+}
+
+// principalsDeclaringWorkload returns, sorted, every principal whose declared
+// workload runs as serviceAccount in namespace. The container is deliberately
+// not part of the key: a token authenticates the ServiceAccount, and every
+// container in a pod can read it.
+func principalsDeclaringWorkload(modules ModulePrincipalRegistry, namespace, serviceAccount string) []string {
+	var owners []string
+	for id, grant := range modules {
+		if grant.Workload.Namespace == namespace && grant.Workload.ServiceAccount == serviceAccount {
+			owners = append(owners, id)
+		}
+	}
+	slices.Sort(owners)
+	return owners
+}
+
+// authenticatingContainer holds a pod read to what an execution-bound mint
+// requires, and returns the container whose running image the approval is
+// compared against.
+//
+// THE POD IS ONE SECURITY BOUNDARY. Every container in it can read the
+// projected token, so approving one container's image while another runs
+// beside it approves the other too. The approval covers exactly one container
+// — the one the principal declares — so:
+//
+//   - the pod must be Running and not being deleted;
+//   - the authenticating container must be a REGULAR container in state
+//     Running; an init container never authenticates, and a completed one
+//     never supplies the digest;
+//   - no other regular container, no init container that is still running or
+//     restartable (a sidecar), and no ephemeral container in any state may be
+//     present. Init containers that ran to completion before the application
+//     started are the only others tolerated.
+//
+// A pod that has not started its container yet is ErrExecutionUnbound — the
+// host could not establish a live execution, and a retry may — while a pod or
+// container that has stopped or is being deleted is a verdict.
+func authenticatingContainer(pod *PodExecution, name string, reviewed *ReviewedExecutionToken) (*ContainerExecution, error) {
+	where := reviewed.Namespace + "/" + reviewed.PodName
+	if pod.Terminating {
+		return nil, fmt.Errorf("%w: pod %s is being deleted", ErrExecutionNotRunning, where)
+	}
+	switch pod.Phase {
+	case PodPhaseRunning:
+	case "Pending", "":
+		return nil, fmt.Errorf("%w: pod %s is %q, not yet Running", ErrExecutionUnbound, where, pod.Phase)
+	default:
+		return nil, fmt.Errorf("%w: pod %s is %s", ErrExecutionNotRunning, where, pod.Phase)
+	}
+	var app *ContainerExecution
+	var unapproved []string
+	for i := range pod.Containers {
+		container := &pod.Containers[i]
+		switch {
+		case container.Kind == ContainerRegular && container.Name == name:
+			app = container
+		case container.Kind == ContainerInit && !container.Restartable && container.State == ContainerTerminated:
+			// Ran to completion before the application started. Tolerated,
+			// and never a source of the digest.
+		default:
+			unapproved = append(unapproved, string(container.Kind)+" "+container.Name)
+		}
+	}
+	if len(unapproved) > 0 {
+		return nil, fmt.Errorf("%w: pod %s also holds %s, which the approval for container %s does not cover",
+			ErrExecutionUnapprovedContainer, where, strings.Join(unapproved, ", "), name)
+	}
+	if app == nil {
+		// A missing container is NOT a non-match: the host has established
+		// nothing about what is running, so it cannot say the caller is
+		// unapproved.
+		return nil, fmt.Errorf("%w: container %s is not a container of pod %s",
+			ErrExecutionIdentityMismatch, name, where)
+	}
+	switch app.State {
+	case ContainerRunning:
+	case ContainerTerminated:
+		return nil, fmt.Errorf("%w: container %s in pod %s has terminated", ErrExecutionNotRunning, name, where)
+	default:
+		return nil, fmt.Errorf("%w: container %s in pod %s is %s, not running", ErrExecutionUnbound, name, where, app.State)
+	}
+	if app.ImageID == "" {
+		// A container with no imageID is not running an identifiable image
+		// (a runtime that does not report one). Nothing has been established.
+		return nil, fmt.Errorf("%w: container %s in pod %s reports no image id", ErrExecutionUnbound, name, where)
+	}
+	return app, nil
 }
 
 // digestsEqual compares an approved digest with a running imageID.

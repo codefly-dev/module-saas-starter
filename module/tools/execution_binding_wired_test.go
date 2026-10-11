@@ -266,30 +266,88 @@ func TestEveryModuleMintIsExecutionBound(t *testing.T) {
 }
 
 // functionCalls reports whether the named function's body contains a call to
-// callee (as a bare name or a selector).
+// callee (as a bare name or a selector) that EXECUTES when the function runs.
+//
+// A call inside a function literal counts only when that literal is itself
+// invoked where it stands (`func() { ... }()`). Review round 1 found the gate
+// accepting `_ = func() { service.ModuleAuthorizeWorkContext(...) }` followed by
+// an unchecked mint: the identity call was syntactically present and never ran.
+// A literal handed to something else (a goroutine, a callback, a deferred
+// call) is not followed either — whether it runs is no longer this function's
+// to say — so this gate stays supplemental to the behavioural tests that drive
+// each entrypoint (TestEveryModuleMintIsBoundToTheRunningBuild in accounts).
 func functionCalls(file *ast.File, function, callee string) bool {
 	for _, declaration := range file.Decls {
 		declared, ok := declaration.(*ast.FuncDecl)
 		if !ok || declared.Name.Name != function || declared.Body == nil {
 			continue
 		}
-		found := false
-		ast.Inspect(declared.Body, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok || found {
-				return !found
-			}
-			switch invoked := call.Fun.(type) {
+		return blockCalls(declared.Body, callee)
+	}
+	return false
+}
+
+// blockCalls walks node for a call to callee, entering a function literal only
+// where it is invoked in place.
+func blockCalls(node ast.Node, callee string) bool {
+	found := false
+	ast.Inspect(node, func(current ast.Node) bool {
+		if found {
+			return false
+		}
+		switch typed := current.(type) {
+		case *ast.FuncLit:
+			// Reached only when not invoked in place: skipped.
+			return false
+		case *ast.DeferStmt, *ast.GoStmt:
+			// Runs after the function returns, or concurrently with it: never
+			// before the mint it would have to gate.
+			return false
+		case *ast.CallExpr:
+			switch invoked := typed.Fun.(type) {
 			case *ast.Ident:
 				found = invoked.Name == callee
 			case *ast.SelectorExpr:
 				found = invoked.Sel.Name == callee
+			case *ast.FuncLit:
+				// Invoked in place: its body runs, so walk it, then the
+				// arguments, and do not let Inspect reach the literal again.
+				if blockCalls(invoked.Body, callee) {
+					found = true
+					return false
+				}
+				for _, argument := range typed.Args {
+					if blockCalls(argument, callee) {
+						found = true
+						return false
+					}
+				}
+				return false
 			}
-			return !found
-		})
-		return found
+		}
+		return !found
+	})
+	return found
+}
+
+// TestTheMintGateIgnoresAClosureThatNeverRuns is the review's probe, kept: a
+// call in a literal nobody invokes satisfied the gate.
+func TestTheMintGateIgnoresAClosureThatNeverRuns(t *testing.T) {
+	for source, want := range map[string]bool{
+		"func token() {\n _ = func() { service.ModuleAuthorizeWorkContext() }\n mint()\n}":     false,
+		"func token() {\n go func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}":    false,
+		"func token() {\n defer func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}": false,
+		"func token() {\n func() { service.ModuleAuthorizeWorkContext() }()\n mint()\n}":       true,
+		"func token() {\n if _, err := service.ModuleAuthorizeWorkContext(); err != nil {\n  return\n }\n mint()\n}": true,
+	} {
+		parsed, err := parser.ParseFile(token.NewFileSet(), "example.go", "package example\n"+source, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := functionCalls(parsed, "token", "ModuleAuthorizeWorkContext"); got != want {
+			t.Errorf("functionCalls = %v, want %v for:\n%s", got, want, source)
+		}
 	}
-	return false
 }
 
 // TestNoModuleOrSolutionSecretIsRead holds the deletion (#1056): the three

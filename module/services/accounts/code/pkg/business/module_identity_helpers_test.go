@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // testModuleExecution is the two independent sources a module mint is bound by,
@@ -17,6 +18,7 @@ type testModuleExecution struct {
 	mu          sync.Mutex
 	tokens      map[string]ReviewedExecutionToken
 	audiences   map[string]string
+	containers  map[string]string // token -> the declared container its pod runs
 	running     map[string]string // pod uid -> running image id
 	approved    map[string]ApprovedDigest
 	unreachable bool
@@ -31,7 +33,7 @@ func bindTestModule(s *Service, prefix string) string {
 	execution, ok := s.executionReviewer.(*testModuleExecution)
 	if !ok {
 		execution = &testModuleExecution{
-			tokens: map[string]ReviewedExecutionToken{}, audiences: map[string]string{},
+			tokens: map[string]ReviewedExecutionToken{}, audiences: map[string]string{}, containers: map[string]string{},
 			running: map[string]string{}, approved: map[string]ApprovedDigest{},
 		}
 		s.SetExecutionBinding(execution, execution)
@@ -42,11 +44,14 @@ func bindTestModule(s *Service, prefix string) string {
 	n := len(execution.tokens) + 1
 	token := fmt.Sprintf("projected-%s-%d", prefix, n)
 	uid := fmt.Sprintf("uid-%s-%d", prefix, n)
+	now := time.Now().UTC()
 	execution.tokens[token] = ReviewedExecutionToken{
 		ServiceAccount: grant.Workload.ServiceAccount, Namespace: grant.Workload.Namespace,
 		PodName: fmt.Sprintf("%s-%d", prefix, n), PodUID: uid,
+		IssuedAt: now, ExpiresAt: now.Add(MaxExecutionTokenLifetime),
 	}
 	execution.audiences[token] = executionTokenAudience
+	execution.containers[token] = grant.Workload.Container
 	execution.running[uid] = testModuleImage
 	execution.approved[prefix] = ApprovedDigest(testModuleImage)
 	return token
@@ -65,12 +70,15 @@ func (e *testModuleExecution) ReviewToken(_ context.Context, token, audience str
 	return &reviewed, nil
 }
 
-func (e *testModuleExecution) RunningContainer(_ context.Context, _, pod, container string) (*RunningContainerStatus, error) {
+func (e *testModuleExecution) ReadPod(_ context.Context, _, pod string) (*PodExecution, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for _, reviewed := range e.tokens {
+	for token, reviewed := range e.tokens {
 		if reviewed.PodName == pod {
-			return &RunningContainerStatus{UID: reviewed.PodUID, ImageID: e.running[reviewed.PodUID], Found: container != ""}, nil
+			return &PodExecution{UID: reviewed.PodUID, Phase: PodPhaseRunning, Containers: []ContainerExecution{{
+				Name: e.containers[token], Kind: ContainerRegular, State: ContainerRunning,
+				ImageID: e.running[reviewed.PodUID],
+			}}}, nil
 		}
 	}
 	return nil, fmt.Errorf("pod %s not found", pod)

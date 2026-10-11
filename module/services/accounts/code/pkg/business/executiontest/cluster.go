@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"time"
 
 	"accounts/pkg/business"
 )
@@ -46,14 +47,17 @@ type issuedToken struct {
 	account   string
 	pod       string
 	uid       string
+	issuedAt  time.Time
+	expiresAt time.Time
 }
 
 type podKey struct{ namespace, name string }
 
 type pod struct {
-	uid        string
-	containers map[string]string // container -> running imageID
-	declared   map[string]string // container -> spec image
+	uid         string
+	phase       string
+	terminating bool
+	containers  []business.ContainerExecution
 }
 
 type approval struct {
@@ -89,6 +93,18 @@ func (c *Cluster) RunWithAudience(workload Workload, image, audience string) str
 	return c.run("projected."+random(16), workload, image, audience)
 }
 
+// RunWithLifetime is Run with a projected token valid for lifetime, the way a
+// projection rendered with another expirationSeconds would be.
+func (c *Cluster) RunWithLifetime(workload Workload, image string, lifetime time.Duration) string {
+	token := c.run("projected."+random(16), workload, image, Audience)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	issued := c.tokens[token]
+	issued.expiresAt = issued.issuedAt.Add(lifetime)
+	c.tokens[token] = issued
+	return token
+}
+
 // RunWithToken is Run for a test that names the token itself, so a fixture
 // shared by many tests can hold it as a constant.
 func (c *Cluster) RunWithToken(token string, workload Workload, image string) string {
@@ -101,15 +117,68 @@ func (c *Cluster) run(token string, workload Workload, image, audience string) s
 	name := workload.ServiceAccount + "-" + random(4)
 	uid := random(16)
 	c.pods[podKey{workload.Namespace, name}] = &pod{
-		uid:        uid,
-		containers: map[string]string{workload.Container: image},
-		declared:   map[string]string{workload.Container: image},
+		uid:   uid,
+		phase: business.PodPhaseRunning,
+		containers: []business.ContainerExecution{{
+			Name: workload.Container, Kind: business.ContainerRegular, State: business.ContainerRunning,
+			ImageID: image, DeclaredImage: image,
+		}},
 	}
+	now := time.Now().UTC().Truncate(time.Second)
 	c.tokens[token] = issuedToken{
 		audience: audience, namespace: workload.Namespace, account: workload.ServiceAccount,
-		pod: name, uid: uid,
+		pod: name, uid: uid, issuedAt: now, expiresAt: now.Add(business.MaxExecutionTokenLifetime),
 	}
 	return token
+}
+
+// pod returns the pod a token names. The caller holds c.mu.
+func (c *Cluster) podOf(token string) *pod {
+	issued := c.tokens[token]
+	return c.pods[podKey{issued.namespace, issued.pod}]
+}
+
+// AddContainer puts another container in the pod a token names: a sidecar
+// (regular), an init container, or an ephemeral (debug) container, in state.
+func (c *Cluster) AddContainer(token string, container business.ContainerExecution) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if running := c.podOf(token); running != nil {
+		running.containers = append(running.containers, container)
+	}
+}
+
+// SetContainerState changes the live state of one container of the pod a token
+// names, keeping its UID and image id: a stop between review and read.
+func (c *Cluster) SetContainerState(token, name string, state business.ContainerState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if running := c.podOf(token); running != nil {
+		for i := range running.containers {
+			if running.containers[i].Name == name {
+				running.containers[i].State = state
+			}
+		}
+	}
+}
+
+// SetPhase sets the pod's phase, and Delete marks it terminating; both keep
+// its UID.
+func (c *Cluster) SetPhase(token, phase string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if running := c.podOf(token); running != nil {
+		running.phase = phase
+	}
+}
+
+// Delete marks the pod a token names as being deleted.
+func (c *Cluster) Delete(token string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if running := c.podOf(token); running != nil {
+		running.terminating = true
+	}
 }
 
 // Replace swaps the pod a token names for a new pod at the same name, the way a
@@ -117,8 +186,7 @@ func (c *Cluster) run(token string, workload Workload, image, audience string) s
 func (c *Cluster) Replace(token string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	issued := c.tokens[token]
-	if running, ok := c.pods[podKey{issued.namespace, issued.pod}]; ok {
+	if running := c.podOf(token); running != nil {
 		running.uid = random(16)
 	}
 }
@@ -128,10 +196,9 @@ func (c *Cluster) Replace(token string) {
 func (c *Cluster) Retag(token, image string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	issued := c.tokens[token]
-	if running, ok := c.pods[podKey{issued.namespace, issued.pod}]; ok {
-		for name := range running.containers {
-			running.containers[name] = image
+	if running := c.podOf(token); running != nil {
+		for i := range running.containers {
+			running.containers[i].ImageID = image
 		}
 	}
 }
@@ -164,13 +231,13 @@ func (c *Cluster) ReviewToken(_ context.Context, token, audience string) (*busin
 		Namespace:      issued.namespace,
 		PodName:        issued.pod,
 		PodUID:         issued.uid,
+		IssuedAt:       issued.issuedAt,
+		ExpiresAt:      issued.expiresAt,
 	}, nil
 }
 
-// RunningContainer answers as a pod read does.
-func (c *Cluster) RunningContainer(
-	_ context.Context, namespace, name, container string,
-) (*business.RunningContainerStatus, error) {
+// ReadPod answers as a pod read does.
+func (c *Cluster) ReadPod(_ context.Context, namespace, name string) (*business.PodExecution, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.Unreachable {
@@ -180,9 +247,9 @@ func (c *Cluster) RunningContainer(
 	if !ok {
 		return nil, fmt.Errorf("pod %s/%s not found", namespace, name)
 	}
-	image, found := running.containers[container]
-	return &business.RunningContainerStatus{
-		UID: running.uid, ImageID: image, DeclaredImage: running.declared[container], Found: found,
+	return &business.PodExecution{
+		UID: running.uid, Phase: running.phase, Terminating: running.terminating,
+		Containers: append([]business.ContainerExecution(nil), running.containers...),
 	}, nil
 }
 

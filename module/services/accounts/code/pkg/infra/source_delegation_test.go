@@ -79,11 +79,11 @@ func delegationRegistryWith(t *testing.T, otherTenant string, crossTenant bool) 
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read","write"]}]}}},` +
-		`"` + runtimeModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
+		`"` + runtimeModule + `":{"workload":{"service_account":"runtime","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
 		`"ingest":{"audience":"docstore-ingest",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}]}}},` +
-		`"` + otherModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `","operation_audiences":{` +
+		`"` + otherModule + `":{"workload":{"service_account":"reports","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `","operation_audiences":{` +
 		`"sync":{"audience":"reportservice",` +
 		`"invoke_scopes":[{"resource_kind":"reports","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"reports","actions":["read"]}],` +

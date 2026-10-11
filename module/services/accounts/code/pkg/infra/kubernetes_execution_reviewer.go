@@ -32,28 +32,28 @@ func (c *KubernetesClient) ReviewToken(
 		}
 		return nil, err
 	}
+	// The lifetime is read only once the API server has authenticated the
+	// token, so it is the cluster's own statement, not the caller's. A module
+	// mint needs it (the lifetime bounds a copied token's use); a delivery
+	// carrier's review does not, which is why it is read here and not in
+	// reviewToken.
+	issuedAt, expiresAt, err := authenticatedTokenLifetime(token)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", business.ErrExecutionTokenRejected, err)
+	}
 	return &business.ReviewedExecutionToken{
 		ServiceAccount: reviewed.ServiceAccount,
 		Namespace:      reviewed.Namespace,
 		PodName:        reviewed.PodName,
 		PodUID:         reviewed.PodUID,
+		IssuedAt:       issuedAt,
+		ExpiresAt:      expiresAt,
 	}, nil
 }
 
-// RunningContainer reads what a container asked to run and what it runs.
-func (c *KubernetesClient) RunningContainer(
-	ctx context.Context, namespace, pod, container string,
-) (*business.RunningContainerStatus, error) {
-	image, err := c.runningContainer(ctx, namespace, pod, container)
-	if err != nil {
-		return nil, err
-	}
-	return &business.RunningContainerStatus{
-		UID:           image.UID,
-		ImageID:       image.ImageID,
-		DeclaredImage: image.DeclaredImage,
-		Found:         image.Found,
-	}, nil
+// ReadPod reads the pod a reviewed token named, with every container in it.
+func (c *KubernetesClient) ReadPod(ctx context.Context, namespace, pod string) (*business.PodExecution, error) {
+	return c.readPod(ctx, namespace, pod)
 }
 
 var _ business.ExecutionReviewer = (*KubernetesClient)(nil)

@@ -239,7 +239,11 @@ relaxation of the delegated exchange.
 The module authenticates exactly as for its own Work Context — its pod's
 projected ServiceAccount token (audience `accounts`), which `BindExecution` holds
 against the workload its principal declares and the build its authority document
-approves (#1056) — and names one of its installed operation bindings. Nothing else is requestable.
+approves (#1056) — and names one of its installed operation bindings. What the
+binding requires (one principal per ServiceAccount, every container of the pod
+approved, a running regular container in a running pod, a token of at most 600
+seconds) and the replay it does NOT close are stated in
+[services/accounts/AGENTS.md](services/accounts/AGENTS.md#establishing-what-a-caller-is-running). Nothing else is requestable.
 The host mints a child Work Context with:
 
 - `aud` = the binding's `audience`;

@@ -106,7 +106,7 @@ func (c *SolutionDeliveryCarrierCheck) AuthorizeCarrier(
 		return fmt.Errorf("%w: no bearer token was presented", ErrCarrierUnauthenticated)
 	}
 
-	reviewed, err := c.kubernetes.ReviewToken(ctx, token, deliveryTokenAudience)
+	reviewed, err := c.kubernetes.reviewToken(ctx, token, deliveryTokenAudience)
 	if err != nil {
 		if errors.Is(err, ErrTokenRejected) {
 			return fmt.Errorf("%w: %w", ErrCarrierUnauthenticated, err)
