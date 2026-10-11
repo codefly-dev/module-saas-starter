@@ -1,4 +1,4 @@
--- Reverts migration 33. Retention and provisioning give up its rules: what
+-- Reverts migration 34. Retention and provisioning give up its rules: what
 -- retention drops depends again on the zone of the session that runs it and of
 -- the one that created each partition, it accepts a cutoff the policy does not
 -- allow, a partition being detached, or detached or renamed while it ran, is
@@ -13,8 +13,8 @@
 -- audit_events_secure_partition as migration 11 did, and
 -- audit_events_secure_all_partitions as migration 13 did -- search_path
 -- included. CREATE OR REPLACE replaces every SET clause, so lock_timeout,
--- DateStyle and TimeZone go with migration 33, and keeps owners and grants. The
--- functions migration 33 added are dropped once nothing calls them.
+-- DateStyle and TimeZone go with migration 34, and keeps owners and grants. The
+-- functions migration 34 added are dropped once nothing calls them.
 
 ALTER TABLE public.data_retention_policies
     DROP CONSTRAINT data_retention_policies_retention_days_positive;

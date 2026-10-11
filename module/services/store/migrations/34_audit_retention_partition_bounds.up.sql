@@ -1,4 +1,4 @@
--- Migration 33: audit retention and audit partition provisioning act on the
+-- Migration 34: audit retention and audit partition provisioning act on the
 -- ranges PostgreSQL records, decide under lock, and wait ten seconds at most;
 -- a retention window is a positive number of days.
 --

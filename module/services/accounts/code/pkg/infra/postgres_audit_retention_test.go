@@ -56,7 +56,7 @@ func retentionEnsureMonth(t *testing.T, ctx context.Context, tx pgx.Tx, zone, da
 }
 
 // retentionLegacyMonth creates the monthly partition holding day the way
-// releases before migration 33 did, from a session in zone: its bounds are that
+// releases before migration 34 did, from a session in zone: its bounds are that
 // zone's midnights. Deployments still hold partitions cut this way, and
 // retention and provisioning are held to them too.
 func retentionLegacyMonth(t *testing.T, ctx context.Context, tx pgx.Tx, zone, day string) {
@@ -1487,7 +1487,7 @@ func TestARetentionPolicyKeepsRecordsForAPositiveNumberOfDays(t *testing.T) {
 	})
 }
 
-// Migration 33 down, then up again, leaves every audit maintenance function as
+// Migration 34 down, then up again, leaves every audit maintenance function as
 // it found it -- definition, owner and grants -- and a second up refuses rather
 // than apply twice.
 func TestTheRetentionMigrationReplaysDownThenUp(t *testing.T) {
