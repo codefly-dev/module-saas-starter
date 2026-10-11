@@ -213,6 +213,73 @@ describe("a number widget", () => {
 		expect(screen.queryByText(/%/)).toBeNull();
 	});
 
+	it("deltas the two latest buckets whatever order the series arrives in", () => {
+		// The resolver appends one point per bucket in the order the aggregate
+		// returned them, with no sort, and a delta's sign is drawn as a colour
+		// — so reading "previous" and "latest" off the last two array positions
+		// would paint a decline green for a series delivered newest-first.
+		const forward = [
+			{ key: "2026-09-01T00:00:00Z", value: 10 },
+			{ key: "2026-09-02T00:00:00Z", value: 5 },
+		];
+		const reading = (points: typeof forward) => {
+			const { unmount } = show({
+				id: "w",
+				title: "Logins",
+				visualization: "number",
+				series: { points, total: 15 },
+			});
+			const text = screen.getByText(/%/).textContent;
+			unmount();
+			return text;
+		};
+		const ordered = reading(forward);
+		expect(ordered).toContain("50%");
+		// A halving, drawn as a fall, not a doubling drawn as a rise.
+		expect(ordered).toContain("−");
+		expect(reading([...forward].reverse())).toBe(ordered);
+	});
+
+	it("orders the sparkline by time too, so the trend and the delta agree", () => {
+		const { container } = show({
+			id: "w",
+			visualization: "number",
+			series: {
+				points: [
+					{ key: "2026-09-03T00:00:00Z", value: 9 },
+					{ key: "2026-09-01T00:00:00Z", value: 1 },
+					{ key: "2026-09-02T00:00:00Z", value: 5 },
+				],
+				total: 15,
+			},
+		});
+		// The sparkline's path rises monotonically: 1, 5, 9 in time order, not
+		// 9, 1, 5 in array order.
+		const paths = [...container.querySelectorAll("svg path")];
+		const d = paths[paths.length - 1]?.getAttribute("d") ?? "";
+		const ys = [...d.matchAll(/[ML][\d.]+,([\d.]+)/g)].map((m) => Number(m[1]));
+		expect(ys).toHaveLength(3);
+		// Smaller y is higher on screen, so a rising series falls in y.
+		expect(ys[0]).toBeGreaterThan(ys[1]);
+		expect(ys[1]).toBeGreaterThan(ys[2]);
+	});
+
+	it("reads `format: percent` as an already-scaled percentage, not a share", () => {
+		// The field is bound structurally, so nothing on the wire distinguishes
+		// a producer whose own `percent` means a 0-to-1 share. This pins the
+		// kit's convention: a producer with the other one must scale first, and
+		// finds out here rather than by shipping a hundredfold error.
+		show({
+			id: "w",
+			title: "MFA adoption",
+			visualization: "number",
+			series: { points: [{ key: "all", value: 45 }], total: 45 },
+			format: "percent",
+		});
+		expect(screen.getByText("45%")).toBeTruthy();
+		expect(screen.queryByText("4,500%")).toBeNull();
+	});
+
 	it("gives no delta for a rise from zero, which is not a percentage", () => {
 		show({
 			id: "w",
@@ -307,6 +374,32 @@ describe("a widget still being resolved, or that failed", () => {
 		expect(screen.queryByText("No data")).toBeNull();
 	});
 
+	it("keeps a series a failed refresh left behind, and marks it stale", () => {
+		// A refresh that did not land is not an absence of data. Blanking the
+		// tile would throw away values that are still the best available.
+		const { container } = show(
+			{
+				id: "chart",
+				title: "Logins",
+				visualization: "line",
+				series: byCategory,
+				failed: true,
+			},
+			{
+				id: "tile",
+				title: "Total",
+				visualization: "number",
+				series: daily,
+				failed: true,
+			},
+		);
+		expect(screen.queryByText("Unable to load.")).toBeNull();
+		expect(screen.getAllByText("Stale")).toHaveLength(2);
+		expect(screen.getByRole("table", { name: "Logins" })).toBeTruthy();
+		expect(screen.getByText("8")).toBeTruthy();
+		expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
+	});
+
 	it("says a failed widget failed, and does not wait forever on its missing series", () => {
 		// A failed resolution leaves no series behind, so a renderer that tested
 		// for the series first would draw every failure as an endless wait.
@@ -355,6 +448,57 @@ describe("the default layout", () => {
 				(node) => node.textContent,
 			),
 		).toEqual(["A", "B", "C", "D"]);
+	});
+
+	it("keeps a scalar that declares a span in the grid, with its span", () => {
+		// A span is a request for grid width, which the KPI row's own geometry
+		// cannot grant, so a scalar that declares one stays a grid item rather
+		// than having the field silently dropped.
+		const { container } = render(
+			<Dashboard
+				data={{
+					columns: 2,
+					widgets: [
+						{
+							id: "wide",
+							title: "W",
+							visualization: "number",
+							series: daily,
+							span: 2,
+						},
+						{ id: "plain", title: "P", visualization: "number", series: daily },
+					],
+				}}
+			/>,
+		);
+		const rows = [
+			...container.querySelectorAll('section > div > div[class*="grid"]'),
+		];
+		expect(rows).toHaveLength(2);
+		// The spanning scalar is a card in the grid...
+		expect(rows[0].className).toContain("sm:grid-cols-2");
+		expect(rows[0].firstElementChild?.className).toContain("sm:col-span-2");
+		// ...and only the one that asked for nothing becomes a headline number.
+		expect(rows[1].className).toContain("lg:grid-cols-2");
+	});
+
+	it("caps the KPI row at the dashboard's declared column count", () => {
+		const { container } = render(
+			<Dashboard
+				data={{
+					columns: 2,
+					widgets: [
+						{ id: "a", title: "A", visualization: "number", series: daily },
+						{ id: "b", title: "B", visualization: "number", series: daily },
+					],
+				}}
+			/>,
+		);
+		const row = container.querySelector(
+			'section > div > div[class*="grid"]',
+		) as HTMLElement;
+		expect(row.className).toContain("lg:grid-cols-2");
+		expect(row.className).not.toContain("lg:grid-cols-4");
 	});
 
 	it("stacks every widget in a row of its own for a stack layout", () => {

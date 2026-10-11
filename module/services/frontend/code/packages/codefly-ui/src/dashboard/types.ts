@@ -49,7 +49,15 @@ export interface DashboardWidgetView {
 	failed?: boolean;
 	/** Grid columns this widget spans (1–4); ignored in a stack. */
 	span?: 1 | 2 | 3 | 4;
-	/** How a scalar widget's value is rendered. Defaults to a plain number. */
+	/**
+	 * How a scalar widget's value is rendered. Defaults to a plain number.
+	 *
+	 * `"percent"` takes a value that is ALREADY a percentage: 45 renders "45%".
+	 * It does not take a share — 0.4 renders "0.4%", not "40%". A producer whose
+	 * own `percent` means a 0-to-1 share must scale it before it reaches here,
+	 * because this field is bound structurally (see `fromDashboardData`) and
+	 * nothing on the wire can tell the two conventions apart.
+	 */
 	format?: MetricFormat;
 	/** Suffix after a scalar widget's value, e.g. "req/s". */
 	unit?: string;

@@ -103,6 +103,34 @@ function walk(dir: string, out: string[] = []): string[] {
 	return out;
 }
 
+/**
+ * `export *` clauses in the kit's entry points, by the module they name.
+ *
+ * The export scan below reads `export { … }` blocks, so a star re-export is
+ * invisible to it: the kit's root and plugin-host entry points use one, and
+ * four capitalised names reach consumers only that way. None collides with a
+ * host declaration today, but a partial miss is indistinguishable from success
+ * — the `kit.size` sanity check passes at 309 whether those four are in it or
+ * not — so the gate refuses a star it cannot resolve rather than quietly
+ * covering less than it claims.
+ */
+function starReExports(
+	entryPoints: { path: string; source: string }[],
+): string[] {
+	const unresolved: string[] = [];
+	for (const { path, source } of entryPoints) {
+		for (const star of source.matchAll(
+			/export\s+\*\s+from\s*["']([^"']+)["']/g,
+		)) {
+			// A star onto another of the kit's own entry points resolves: that
+			// file is itself in this list and its named exports are read there.
+			if (star[1].startsWith("./") || star[1].startsWith("../")) continue;
+			unresolved.push(`${path} → ${star[1]}`);
+		}
+	}
+	return unresolved;
+}
+
 /** Every capitalised name the kit's entry points export. */
 function kitExports(entryPoints: string[]): Set<string> {
 	const names = new Set<string>();
@@ -124,27 +152,94 @@ function kitExports(entryPoints: string[]): Set<string> {
 }
 
 /**
+ * Modules of this app that exist only to re-export the kit — the host's own
+ * import surface. `src/shared/ui/index.ts` says so in its first line ("Host
+ * convenience imports; presentation is implemented by the shared kit"), and
+ * most of the app reaches the kit through it rather than through
+ * `@codefly-dev/ui` directly.
+ *
+ * They are kit sources for the purposes of the rule below. Without this, the
+ * gate's verdict depended on which path a wrapper imported through: the same
+ * `Badge` wrapper passed when it imported `@codefly-dev/ui/layout` and failed
+ * when it imported the identical component from `@/shared/ui`. A gate that
+ * rejects the house style is one that gets an exception entry per correct file,
+ * and then gets deleted.
+ */
+const KIT_SURFACES = [
+	"src/shared/ui/index.ts",
+	"src/components/charts/chart.tsx",
+	"src/components/charts/index.ts",
+	"src/components/sparkline.tsx",
+	"src/components/metric-state.tsx",
+];
+
+const KIT_SPECIFIER = /^@codefly-dev\/(?:ui|saas-ui)(?:\/|$)/;
+
+/**
+ * The named bindings an `import`/`export … from` clause carries, as
+ * published-name → exporter's-own-name. The two differ under an alias, and
+ * which one a check wants is the whole question: a wrapper is recognised by the
+ * exporter's name, so renaming the alias cannot turn a re-implementation into
+ * a wrapper.
+ */
+function namedBindings(
+	source: string,
+	isWanted: (specifier: string) => boolean,
+): Map<string, string> {
+	const bindings = new Map<string, string>();
+	const clause =
+		/(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+	for (const block of source.matchAll(clause)) {
+		if (!isWanted(block[2])) continue;
+		for (const raw of block[1].split(",")) {
+			const parts = raw
+				.trim()
+				.replace(/^type\s+/, "")
+				.split(/\s+as\s+/)
+				.map((part) => part.trim());
+			const exported = parts[0];
+			if (exported) bindings.set(parts[1] ?? exported, exported);
+		}
+	}
+	return bindings;
+}
+
+/**
  * The names a file imports FROM the kit, under the kit's own spelling: the `X`
  * of `import { X as KitX } from "@codefly-dev/ui/layout"`. A wrapper is
  * recognised by this, not by its alias, so renaming the alias cannot turn a
  * re-implementation into a wrapper.
+ *
+ * An import through a host surface counts too, under the name THAT surface
+ * publishes — which is not always the kit's: `src/shared/ui` re-exports
+ * `CardRoot` as `Card`, so importing `Card` from there composes `CardRoot` and
+ * a declaration named `Card` beside it is still a second `Card`, exactly as if
+ * it had imported `CardRoot` directly.
  */
-function kitImports(source: string): Set<string> {
-	const imported = new Set<string>();
-	const from =
-		/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']@codefly-dev\/(?:ui|saas-ui)(?:\/[\w./-]+)?["']/g;
-	for (const block of source.matchAll(from)) {
-		for (const raw of block[1].split(",")) {
-			const name = raw
-				.trim()
-				.replace(/^type\s+/, "")
-				.split(/\s+as\s+/)[0]
-				.trim();
-			if (name) imported.add(name);
-		}
+function kitImports(source: string, surface: Map<string, string>): Set<string> {
+	const composed = new Set<string>();
+	for (const kitName of namedBindings(source, (specifier) =>
+		KIT_SPECIFIER.test(specifier),
+	).values()) {
+		composed.add(kitName);
 	}
-	return imported;
+	// Through a host surface, the name imported is the one THAT file publishes,
+	// so it is resolved back to the kit's own. `src/shared/ui` re-exports
+	// `CardRoot` as `Card`, so importing `Card` from there composes `CardRoot`
+	// — and a declaration named `Card` beside it is still a second `Card`,
+	// exactly as if it had imported `CardRoot` directly. Resolving the alias is
+	// what keeps those two spellings of one import judged the same way.
+	for (const published of namedBindings(source, (specifier) =>
+		HOST_SURFACE_SPECIFIER.test(specifier),
+	).values()) {
+		const kitName = surface.get(published);
+		if (kitName) composed.add(kitName);
+	}
+	return composed;
 }
+
+const HOST_SURFACE_SPECIFIER =
+	/^@\/(?:shared\/ui|components\/charts|components\/sparkline|components\/metric-state)(?:\/|$)/;
 
 /**
  * A component declaration, exported or module-local, at any indentation — a
@@ -180,10 +275,13 @@ function findOffences(
 	files: { path: string; source: string }[],
 	kit: Set<string>,
 	allowed: Record<string, string> = ALLOWED,
+	/** Published name → kit name for the host's own surfaces; see {@link KIT_SURFACES}. */
+	surface: Map<string, string> = new Map(),
 ): Offence[] {
 	const offences: Offence[] = [];
 	for (const { path, source } of files) {
-		const composed = kitImports(source);
+		if (KIT_SURFACES.includes(path)) continue;
+		const composed = kitImports(source, surface);
 		const routeFile = ROUTE_CONVENTION.test(path);
 		const seen = new Set<string>();
 		for (const declaration of source.matchAll(DECLARATION)) {
@@ -212,11 +310,31 @@ function appSources(): { path: string; source: string }[] {
 		}));
 }
 
-function kitNames(): Set<string> {
-	const entries = walk(join(appRoot, "packages/codefly-ui/src"))
+function kitEntryPoints(): { path: string; source: string }[] {
+	return walk(join(appRoot, "packages/codefly-ui/src"))
 		.filter((file) => /[/\\]index\.ts$/.test(file))
-		.map((file) => readFileSync(file, "utf8"));
-	return kitExports(entries);
+		.map((file) => ({
+			path: relative(appRoot, file).replaceAll("\\", "/"),
+			source: readFileSync(file, "utf8"),
+		}));
+}
+
+function kitNames(): Set<string> {
+	return kitExports(kitEntryPoints().map((entry) => entry.source));
+}
+
+/** Each host surface's published name → the kit name behind it. */
+function hostSurface(): Map<string, string> {
+	const surface = new Map<string, string>();
+	for (const path of KIT_SURFACES) {
+		const source = readFileSync(join(appRoot, path), "utf8");
+		for (const [published, kitName] of namedBindings(source, (specifier) =>
+			KIT_SPECIFIER.test(specifier),
+		)) {
+			surface.set(published, kitName);
+		}
+	}
+	return surface;
 }
 
 describe("the host app composes the kit rather than re-implementing it", () => {
@@ -227,11 +345,24 @@ describe("the host app composes the kit rather than re-implementing it", () => {
 			"the kit's entry points were not readable, so this gate proves nothing",
 		).toBeGreaterThan(100);
 
-		const offences = findOffences(appSources(), kit).map(
+		const offences = findOffences(
+			appSources(),
+			kit,
+			ALLOWED,
+			hostSurface(),
+		).map(
 			({ name, path }) =>
 				`${name} in ${path} — @codefly-dev/ui already exports it. Compose the kit's component, or add "${name} in ${path}" to ALLOWED with what the two things are and why neither can stand in for the other.`,
 		);
 		expect(offences).toEqual([]);
+	});
+
+	it("reads every name the kit exports, star re-exports included", () => {
+		// The gate covers what it can parse. A star onto a package outside the
+		// kit's own tree is not parsed, so it is refused rather than missed.
+		expect(starReExports(kitEntryPoints())).toEqual([
+			"packages/codefly-ui/src/plugin-host/index.ts → @codefly-dev/saas-plugin-react",
+		]);
 	});
 
 	it("cannot build a kit-shaped primitive: the library for building them is not a dependency", () => {
@@ -285,9 +416,16 @@ describe("the host app composes the kit rather than re-implementing it", () => {
 // another route. Each fixture is a source that is not in the tree, so these
 // hold whatever the tree happens to contain.
 describe("the detector", () => {
-	const kit = new Set(["Card", "CardRoot", "StatTile", "Page"]);
+	const kit = new Set(["Card", "CardRoot", "StatTile", "Page", "Badge"]);
+	// What the host's surfaces publish, as `src/shared/ui` really does it: one
+	// name straight through, one renaming a kit primitive to another kit
+	// component's name.
+	const surface = new Map([
+		["Badge", "Badge"],
+		["Card", "CardRoot"],
+	]);
 	const detect = (path: string, source: string) =>
-		findOffences([{ path, source }], kit, {}).map(
+		findOffences([{ path, source }], kit, {}, surface).map(
 			(o) => `${o.name} in ${o.path}`,
 		);
 
@@ -393,6 +531,48 @@ describe("the detector", () => {
 				export default function Page() { return <Card title="x" />; }`,
 			),
 		).toEqual(["Card in src/app/admin/users/page.tsx"]);
+	});
+
+	it("lets a wrapper compose the kit through the host's own import surface", () => {
+		// The path a wrapper imports through must not change the verdict. This
+		// is the same component, and the same wrapper, as the kit-direct case
+		// above; `@/shared/ui` publishes `Badge` straight from the kit.
+		expect(
+			detect(
+				"src/features/x/ui/badge.tsx",
+				`import { Badge as KitBadge } from "@/shared/ui";
+				export function Badge(props: ComponentProps<typeof KitBadge>) {
+					return <KitBadge {...props} data-analytics="x" />;
+				}`,
+			),
+		).toEqual([]);
+	});
+
+	it("resolves the surface's alias, so one import is judged one way either way", () => {
+		// `@/shared/ui` publishes the kit's `CardRoot` under the name `Card`, so
+		// importing `Card` from there composes `CardRoot` — and a declaration
+		// named `Card` is a second `Card`, exactly as the kit-direct form of
+		// this is caught above. Without resolving the alias the two spellings
+		// of one import would get opposite verdicts.
+		expect(
+			detect(
+				"src/features/x/ui/card.tsx",
+				`import { Card as HostCard } from "@/shared/ui";
+				export function Card({ title }: { title: string }) {
+					return <HostCard className="p-4 shadow-sm">{title}</HostCard>;
+				}`,
+			),
+		).toEqual(["Card in src/features/x/ui/card.tsx"]);
+	});
+
+	it("does not read the host's surfaces themselves as duplicates", () => {
+		// A surface file re-exports under a kit name by construction.
+		expect(
+			detect(
+				"src/shared/ui/index.ts",
+				`export { CardRoot as Card, Badge } from "@codefly-dev/ui/layout";`,
+			),
+		).toEqual([]);
 	});
 
 	it("ignores a name the kit does not export", () => {

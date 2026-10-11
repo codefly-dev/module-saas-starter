@@ -260,8 +260,12 @@ export function StatTile({
 			{...selectable.props}
 		>
 			<div className="flex items-center justify-between gap-2">
+				{/* Truncated because the header also carries a badge and, for a
+				    caller that owns the tile, its controls — with the full text
+				    in `title`, as BarList does, so clipping it does not lose it. */}
 				<span
 					data-slot="metric-label"
+					title={metric.label}
 					className="min-w-0 flex-1 truncate type-metric-label text-muted-foreground"
 				>
 					{metric.label}
@@ -355,11 +359,10 @@ export function KPIRow({
 	metrics,
 	children,
 	className,
-}: {
-	metrics?: Metric[];
-	children?: ReactNode;
-	className?: string;
-}) {
+}: { className?: string | false } & (
+	| { metrics: Metric[]; children?: never }
+	| { children: ReactNode; metrics?: never }
+)) {
 	return (
 		<div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-4", className)}>
 			{children ??

@@ -227,6 +227,12 @@ does not have to ask which half of the kit its dashboard will get.
 | `line` / `area` / `bar` | the kit's metric chart over a `ChartSeries` — axes from the appearance palette, a crosshair readout, a legend for two or more series, and every exact value in a visually-hidden data table | the chart's own **No data** plot, plus a **No data** badge on the card | the observed points still plot, with a **Partial data** badge on the card | nothing: a series widget shows no total |
 | `table` | key/value rows | **No data yet.** | a **Partial data** badge on the card | — |
 
+A scalar widget's `format` names how its value is written, and `percent` takes a
+value that is **already a percentage**: 45 renders "45%". It is not a share —
+0.4 renders "0.4%". A producer whose own `percent` means a 0-to-1 share scales it
+before it reaches the view, because the field is bound structurally and nothing
+on the wire distinguishes the two conventions.
+
 Two of those cells are the contract, not presentation. A `null` total renders as
 a dash and never as `0`, because "cannot say" and "nothing happened" are
 different answers and only one of them is in the data; and a series with no
@@ -234,7 +240,17 @@ points is no data rather than a zero, because the aggregate omits a bucket
 instead of emitting an empty one. A sparkline and a bucket delta are drawn
 **only** for a time-bucketed series: a line through counts grouped by event type
 or region would assert an order, and a delta between two of them a change over
-time, that a categorical grouping does not have.
+time, that a categorical grouping does not have. Both read the series in **time**
+order, taken from the parsed bucket keys rather than from the order the
+aggregate returned them in, so a series delivered newest-first reports the same
+change — a delta's sign is drawn as a colour, and getting it from an array
+position would paint a decline as a green rise.
+
+A widget whose resolution **failed** says so only when it has nothing else to
+say. With a series still in hand — a refresh that did not land — the tile draws
+that series and carries a **Stale** badge instead, because values that are old
+are still better than a blank card. Only a failure with nothing behind it reads
+as "Unable to load."
 
 A host composes its own features around that renderer — `<Dashboard>`'s slots
 take header actions, a layout (the host's solution dashboard passes a

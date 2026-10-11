@@ -46,6 +46,19 @@ const COL_SPAN: Record<1 | 2 | 3 | 4, string> = {
 	4: "sm:col-span-2 lg:col-span-4",
 };
 
+// The KPI row's own column count, capped at the dashboard's DECLARED one.
+// `KPIRow` is four across, which is what headline numbers want; a dashboard
+// that declared fewer columns did not ask for more, and one that declared none
+// did not ask for two either — so this is applied only when there is a
+// declaration to honour. `cn` resolves these against the row's own defaults
+// per breakpoint.
+const KPI_COLS: Record<1 | 2 | 3 | 4, string> = {
+	1: "grid-cols-1 sm:grid-cols-1 lg:grid-cols-1",
+	2: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2",
+	3: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+	4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+};
+
 const GRID_COLS: Record<1 | 2 | 3 | 4, string> = {
 	1: "grid-cols-1",
 	2: "grid-cols-1 sm:grid-cols-2",
@@ -59,13 +72,30 @@ function widgetTitle(widget: DashboardWidgetView): string {
 }
 
 /**
- * Whether the series is bucketed over time, so its points are a trend rather
- * than a set of categories. Only a time-bucketed series earns a sparkline and
- * a bucket-over-bucket delta: drawing a line through counts grouped by event
- * type or region would assert an order and a direction the data does not have.
+ * The series' values in time order, or `null` when it is not a trend at all.
+ *
+ * Only a series whose every key is a time bucket earns a sparkline and a
+ * bucket-over-bucket delta: drawing a line through counts grouped by event type
+ * or region would assert an order and a direction the data does not have.
+ *
+ * The order comes from the parsed timestamps rather than from the array,
+ * because nothing guarantees the array is chronological — the resolver appends
+ * one point per bucket in whatever order the aggregate returned them, and
+ * `ChartSeries` documents x-order as the producer's responsibility. Reading
+ * "previous" and "latest" off the last two positions would, for a series
+ * delivered newest-first, report the change with the wrong sign — and a delta's
+ * sign is drawn as a colour, so a decline would read as a green rise.
  */
-function isTimeBucketed(points: SeriesPoint[]): boolean {
-	return points.length > 1 && points.every((p) => parseTimeKey(p.key) !== null);
+function trendValues(points: SeriesPoint[]): number[] | null {
+	if (points.length < 2) return null;
+	const dated: { at: number; value: number }[] = [];
+	for (const point of points) {
+		const at = parseTimeKey(point.key);
+		if (at === null) return null;
+		dated.push({ at: at.getTime(), value: point.value });
+	}
+	dated.sort((a, b) => a.at - b.at);
+	return dated.map((point) => point.value);
 }
 
 /**
@@ -88,14 +118,14 @@ function seriesState(series: WidgetSeries): MetricState | undefined {
 }
 
 /**
- * Change from the second-to-last bucket to the last, as the signed fraction
+ * Change from the second-latest bucket to the latest, as the signed fraction
  * `StatTile` renders. A change from zero is not a percentage, so it is no
  * delta at all rather than an infinite one.
  */
-function lastBucketDelta(points: SeriesPoint[]): number | undefined {
-	if (points.length < 2) return undefined;
-	const previous = points[points.length - 2].value;
-	const latest = points[points.length - 1].value;
+function lastBucketDelta(trend: number[]): number | undefined {
+	if (trend.length < 2) return undefined;
+	const previous = trend[trend.length - 2];
+	const latest = trend[trend.length - 1];
 	if (previous === 0) return undefined;
 	return (latest - previous) / Math.abs(previous);
 }
@@ -105,8 +135,8 @@ function widgetMetric(
 	widget: DashboardWidgetView,
 	series: WidgetSeries,
 ): Metric {
-	const trend = isTimeBucketed(series.points);
-	const delta = trend ? lastBucketDelta(series.points) : undefined;
+	const trend = trendValues(series.points);
+	const delta = trend ? lastBucketDelta(trend) : undefined;
 	return {
 		id: widget.id,
 		label: widgetTitle(widget),
@@ -117,7 +147,7 @@ function widgetMetric(
 		format: widget.format,
 		unit: widget.unit,
 		higherIsBetter: widget.higherIsBetter,
-		series: trend ? series.points.map((p) => p.value) : undefined,
+		series: trend ?? undefined,
 		delta,
 		// Only named when there is a delta: `MetricDelta` reads a label with no
 		// delta as "no data <label>", which is a different (and here untrue)
@@ -162,6 +192,10 @@ function WidgetBody({
 			return (
 				<MetricBarChart series={chartSeries(widget, series)} title={title} />
 			);
+		case "number":
+			// A scalar is drawn as a tile by DashboardWidget, never as a card
+			// body. The case is here so the switch stays exhaustive.
+			return null;
 		case "table":
 			return series.points.length === 0 ? (
 				<p className="py-6 type-body text-muted-foreground">No data yet.</p>
@@ -182,8 +216,15 @@ function WidgetBody({
 					</table>
 				</div>
 			);
-		default:
-			return null;
+		default: {
+			// Compile-time exhaustiveness: a new WidgetVisualization must be
+			// handled here or this assignment fails to type-check. Without it a
+			// visualization the metric tier has no mark for draws a titled card
+			// with an empty body, which is indistinguishable from a widget whose
+			// query returned nothing.
+			const unhandled: never = widget.visualization;
+			return unhandled;
+		}
 	}
 }
 
@@ -220,11 +261,16 @@ export function DashboardWidget({
 	const { series } = widget;
 	const title = widgetTitle(widget);
 
-	// `failed` is read BEFORE the series, not after: a failed resolution leaves
-	// no series behind, so testing for the series first would draw every
-	// failure as a wait that never ends.
+	// Three states, not two. A failure with nothing behind it is a failure; a
+	// failure with a series still in hand is a refresh that did not land, and
+	// blanking the tile would throw away values that are still the best
+	// available. `stale` is the kit's own word for that, and it outranks the
+	// coverage badge because it is the more actionable of the two.
+	const lost = widget.failed === true && series === null;
+	const stale = widget.failed === true && series !== null;
+
 	if (widget.visualization === "number") {
-		const metric: Metric = widget.failed
+		const metric: Metric = lost
 			? {
 					id: widget.id,
 					label: title,
@@ -233,7 +279,7 @@ export function DashboardWidget({
 				}
 			: series === null
 				? { id: widget.id, label: title, value: null, state: "loading" }
-				: widgetMetric(widget, series);
+				: { ...widgetMetric(widget, series), ...(stale && { state: "stale" }) };
 		return <StatTile metric={metric} actions={actions} className={className} />;
 	}
 
@@ -241,8 +287,8 @@ export function DashboardWidget({
 	// description slot — the line under the title that says what this card is —
 	// so a reader meets "Partial data" where they meet the title, as they do on
 	// a tile, instead of as a sentence pushed above the geometry.
-	const state =
-		widget.failed || series === null ? undefined : seriesState(series);
+	const state: MetricState | undefined =
+		series === null ? undefined : stale ? "stale" : seriesState(series);
 	return (
 		<Card
 			title={title}
@@ -250,7 +296,7 @@ export function DashboardWidget({
 			actions={actions}
 			className={className}
 		>
-			{widget.failed ? (
+			{lost ? (
 				<p className="py-6 type-body text-destructive">Unable to load.</p>
 			) : series === null ? (
 				<Skeleton className="h-24 w-full" />
@@ -309,14 +355,25 @@ export interface DashboardSlots {
 function layoutRuns(tiles: DashboardTile[]): DashboardTile[][] {
 	const runs: DashboardTile[][] = [];
 	for (const tile of tiles) {
-		const scalar = tile.widget.visualization === "number";
 		const previous = runs[runs.length - 1];
-		const sameKind =
-			previous && (previous[0].widget.visualization === "number") === scalar;
-		if (sameKind) previous.push(tile);
-		else runs.push([tile]);
+		if (previous && inKpiRow(previous[0].widget) === inKpiRow(tile.widget)) {
+			previous.push(tile);
+		} else {
+			runs.push([tile]);
+		}
 	}
 	return runs;
+}
+
+/**
+ * Whether this widget belongs in a KPI row rather than in the card grid.
+ *
+ * A scalar that declares a `span` is asking for a card's width, which the KPI
+ * row's own geometry cannot give it, so it stays a grid item and keeps its
+ * span. Only a scalar that asked for nothing becomes a headline number.
+ */
+function inKpiRow(widget: DashboardWidgetView): boolean {
+	return widget.visualization === "number" && !widget.span;
 }
 
 function Tiles({ tiles }: { tiles: DashboardTile[] }) {
@@ -332,10 +389,13 @@ function Tiles({ tiles }: { tiles: DashboardTile[] }) {
 function DefaultLayout({
 	tiles,
 	columns,
+	declaredColumns,
 	grid,
 }: {
 	tiles: DashboardTile[];
 	columns: 1 | 2 | 3 | 4;
+	/** `data.columns` as declared, or undefined when the view named none. */
+	declaredColumns?: 1 | 2 | 3 | 4;
 	grid: boolean;
 }) {
 	if (!grid) {
@@ -348,8 +408,11 @@ function DefaultLayout({
 	return (
 		<div className="space-y-4">
 			{layoutRuns(tiles).map((run) =>
-				run[0].widget.visualization === "number" ? (
-					<KPIRow key={run[0].id}>
+				inKpiRow(run[0].widget) ? (
+					<KPIRow
+						key={run[0].id}
+						className={declaredColumns && KPI_COLS[declaredColumns]}
+					>
 						<Tiles tiles={run} />
 					</KPIRow>
 				) : (
@@ -386,12 +449,13 @@ export function Dashboard({
 		id: widget.id,
 		widget,
 		node: slots?.renderWidget?.(widget) ?? (
-			// A scalar tile sits in a KPIRow, whose own geometry sets its width,
-			// so a span only applies to a card in the grid.
+			// A span is a request for grid width, so it applies to anything the
+			// grid lays out. A scalar that declares one is kept out of the KPI
+			// row for exactly that reason — see `inKpiRow`.
 			<DashboardWidget
 				widget={widget}
 				className={
-					isGrid && widget.visualization !== "number" && widget.span
+					isGrid && widget.span
 						? COL_SPAN[Math.min(widget.span, columns) as 1 | 2 | 3 | 4]
 						: undefined
 				}
@@ -414,7 +478,12 @@ export function Dashboard({
 			) : slots?.layout ? (
 				slots.layout(tiles)
 			) : (
-				<DefaultLayout tiles={tiles} columns={columns} grid={isGrid} />
+				<DefaultLayout
+					tiles={tiles}
+					columns={columns}
+					declaredColumns={data.columns}
+					grid={isGrid}
+				/>
 			)}
 		</Section>
 	);
