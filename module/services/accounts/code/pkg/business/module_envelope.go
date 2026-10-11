@@ -792,18 +792,29 @@ func (s *Service) committedModuleEnvelopeRevision(ctx context.Context) (uint64, 
 // does not hold and that is not fenced; a fenced or stale registry is an
 // error, so a caller never mistakes "not current" for "not a module".
 func (s *Service) currentModuleGrant(ctx context.Context, principalID string) (ModulePrincipalGrant, bool, error) {
+	grant, found, _, err := s.currentModuleGrantIn(ctx, principalID)
+	return grant, found, err
+}
+
+// currentModuleGrantIn is currentModuleGrant that also returns the fenced
+// snapshot, so a decision that needs a SECOND principal's grant — a delegator
+// beside its caller — reads it from the same registry the fence passed, never
+// from a later load.
+func (s *Service) currentModuleGrantIn(
+	ctx context.Context, principalID string,
+) (ModulePrincipalGrant, bool, *installedModuleRegistry, error) {
 	snapshot := s.moduleRegistrySnapshot()
 	grant, found := snapshot.registry[principalID]
 	if !found {
 		if s.moduleEnvelopes != nil && s.envelopeRevisionSeen.Load() > snapshot.envelopeRevision {
 			s.requestRegistryPass()
-			return ModulePrincipalGrant{}, false, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+			return ModulePrincipalGrant{}, false, nil, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
 				"principal %s: a newer module envelope is committed than the registry was derived from", principalID)
 		}
-		return ModulePrincipalGrant{}, false, nil
+		return ModulePrincipalGrant{}, false, nil, nil
 	}
 	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
-		return ModulePrincipalGrant{}, true, err
+		return ModulePrincipalGrant{}, true, nil, err
 	}
-	return grant, true, nil
+	return grant, true, snapshot, nil
 }

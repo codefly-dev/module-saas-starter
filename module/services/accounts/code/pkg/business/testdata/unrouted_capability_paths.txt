@@ -13,7 +13,6 @@
 #
 # A. CAPABILITY DECISIONS that must be routed through
 #    Service.AuthorizeModuleCapability. These are the real outstanding work.
-source_delegation.go:AuthorizeDelegationReferenceExchange
 # Arrived with main's executable-artifact consent (#1025), which landed while
 # this gate lived on a branch, so neither side could see the other. Both decide
 # authority off the declared ceiling: the revocation decides who may withdraw

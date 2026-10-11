@@ -538,10 +538,15 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 func (s *Service) AuthorizeDelegationReferenceExchange(
 	ctx context.Context, caller ModuleCaller, delegationID, bindingID string, lookup bool,
 ) (SourceOperationContextAuthority, error) {
-	grant, err := s.moduleCapability(ctx, caller)
+	// ONE FENCED SNAPSHOT for both principals: the caller's grant and the
+	// delegator's are read from the same registry, so a registry installed
+	// while this decision is in flight can never pair one revision's caller
+	// with another revision's delegator.
+	callerAuthority, snapshot, err := s.authorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return SourceOperationContextAuthority{}, err
 	}
+	grant := callerAuthority.Grant
 	if delegationID == "" || bindingID == "" {
 		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
 	}
@@ -564,7 +569,7 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		}
 		// The delegating module is the one the person granted to, which is not
 		// the caller: the caller is the module that grant authorizes calling.
-		delegating, declared := s.declaredModules()[ModulePrincipalID(delegation.ModulePrefix)]
+		delegating, declared := snapshot.registry[ModulePrincipalID(delegation.ModulePrefix)]
 		if !declared {
 			return ErrSourceDelegationInvalid
 		}

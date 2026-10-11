@@ -198,7 +198,14 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 		return nil
 	}
 
-	live, refused, err := r.activation.liveAuthority(ctx)
+	withdrawn, err := r.activation.withdrawnBindings(ctx)
+	var (
+		live    []liveVerifiedAuthority
+		refused []error
+	)
+	if err == nil {
+		live, refused, err = r.activation.liveAuthority(ctx, withdrawn)
+	}
 	switch {
 	case errors.Is(err, ErrSolutionAuthorityCeilingUnavailable):
 		// No delivery inbox wired: the same "answers nothing" posture as no

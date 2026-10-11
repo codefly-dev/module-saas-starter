@@ -158,6 +158,10 @@ type registryReviewStore struct {
 	Store
 	applied    []*SolutionHostBindingRecord
 	appliedErr error
+	// appliedSucceed is how many applied-state reads still succeed before
+	// appliedErr applies — so a test can fail the derivation's read while the
+	// ownership read before it succeeds.
+	appliedSucceed int
 }
 
 func (*registryReviewStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
@@ -165,6 +169,10 @@ func (*registryReviewStore) WithControlPlane(ctx context.Context, fn func(contex
 }
 
 func (s *registryReviewStore) ListSolutionHostBindings(context.Context) ([]*SolutionHostBindingRecord, error) {
+	if s.appliedErr != nil && s.appliedSucceed > 0 {
+		s.appliedSucceed--
+		return s.applied, nil
+	}
 	return s.applied, s.appliedErr
 }
 
@@ -360,8 +368,8 @@ func TestAnUnverifiableDocumentGrantsNothingAtANewRevision(t *testing.T) {
 
 // TestAFailedPresenceReadNeverAddsAuthority is finding 2, scenario B: the
 // applied-state read fails while a fresh authority generation adds a headless
-// unit. Fresh and stale inputs are never combined: the pass publishes the last
-// confirmed entry or less, and honours a presence withdrawal delivery has made.
+// unit. Fresh and stale inputs are never combined, and a cached entry never
+// outlives the document it came from — superseded here by generation 2.
 func TestAFailedPresenceReadNeverAddsAuthority(t *testing.T) {
 	newer := func(r *registryReview) {
 		document := *r.authority
@@ -372,17 +380,20 @@ func TestAFailedPresenceReadNeverAddsAuthority(t *testing.T) {
 		r.store.appliedErr = errors.New("applied state unreadable")
 	}
 
-	t.Run("the fresh headless unit is not combined with stale presence", func(t *testing.T) {
-		r := newRegistryReview(t)
-		before := r.service.ModulePrincipals()[ModulePrincipalID(testModulePrefix)]
-		require.Empty(t, before.OperationAudiences["run"].HeadlessScopes)
-		newer(r)
-		require.ErrorIs(t, r.reconciler.RunOnce(context.Background()), ErrModulePrincipalInputsUnreadable)
-		after, ok := r.service.ModulePrincipals()[ModulePrincipalID(testModulePrefix)]
-		require.True(t, ok)
-		require.Empty(t, after.OperationAudiences["run"].HeadlessScopes, "a degraded pass is never wider than the last confirmed one")
-		require.Equal(t, before, after)
-	})
+	for name, succeed := range map[string]int{
+		"every applied-state read fails":                 0,
+		"only the derivation's applied-state read fails": 1,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRegistryReview(t)
+			newer(r)
+			r.store.appliedSucceed = succeed
+			require.ErrorIs(t, r.reconciler.RunOnce(context.Background()), ErrModulePrincipalInputsUnreadable)
+			after, present := r.service.ModulePrincipals()[ModulePrincipalID(testModulePrefix)]
+			require.Empty(t, after.OperationAudiences["run"].HeadlessScopes, "a degraded pass is never wider than the last confirmed one")
+			require.False(t, present, "the cached entry's document was superseded, so it is not kept")
+		})
+	}
 	t.Run("a presence withdrawal delivery made is honoured", func(t *testing.T) {
 		r := newRegistryReview(t)
 		removed := *r.presence
@@ -392,8 +403,96 @@ func TestAFailedPresenceReadNeverAddsAuthority(t *testing.T) {
 		require.NoError(t, removed.Validate())
 		r.inbox.deliver(presenceRecord(t, &removed))
 		newer(r)
+		r.store.appliedSucceed = 1
 		require.ErrorIs(t, r.reconciler.RunOnce(context.Background()), ErrModulePrincipalInputsUnreadable)
 		require.False(t, r.present(), "the withdrawn presence takes its principal with it even while applied state is unreadable")
+	})
+}
+
+// TestAnUnverifiableAuthorityDoesNotSurviveAFailedPresenceRead is the third
+// review's residual A: the verifier refuses the document this pass while the
+// applied-state read fails. The refusal is known, so the degraded pass drops
+// the cached entry — whichever applied read failed.
+func TestAnUnverifiableAuthorityDoesNotSurviveAFailedPresenceRead(t *testing.T) {
+	for name, succeed := range map[string]int{
+		"every applied-state read fails":                 0,
+		"only the derivation's applied-state read fails": 1,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRegistryReview(t)
+			r.verifier.err = errors.New("signer removed from verification trust policy")
+			r.store.appliedErr = errors.New("applied presence unreadable")
+			r.store.appliedSucceed = succeed
+			require.ErrorIs(t, r.reconciler.RunOnce(context.Background()), ErrModulePrincipalInputsUnreadable)
+			require.False(t, r.present(), "a cached grant never survives a document this pass refused")
+			_, err := r.service.AuthorizeModuleCapability(context.Background(), ModuleCaller{PrincipalID: ModulePrincipalID(testModulePrefix), BoundOrg: testEnvelopeTenant})
+			require.Error(t, err)
+		})
+	}
+}
+
+// TestARefusedForeignPresenceEstablishesNoOwnership is the third review's
+// residual B: the binding is admitted under domain A at generation 5; a foreign
+// signer delivers generation 1 under domain B, which core's lifecycle admission
+// refuses. The owner is the ADMITTED generation's domain, from the applied
+// state — so B's tombstone is refused at receipt and, if stored anyway,
+// withdraws nothing.
+func TestARefusedForeignPresenceEstablishesNoOwnership(t *testing.T) {
+	setup := func(t *testing.T) *registryReview {
+		r := newRegistryReview(t)
+		own := *r.presence
+		own.Generation = 5
+		canonical, err := own.CanonicalBytes()
+		require.NoError(t, err)
+		digest, err := own.Digest()
+		require.NoError(t, err)
+		r.store.applied[0].Applied.Generation, r.store.applied[0].Applied.Document, r.store.applied[0].Applied.Digest = 5, string(canonical), digest
+		r.inbox.history[SolutionDeliveryPresence], r.inbox.newest[SolutionDeliveryPresence] = nil, nil
+		r.inbox.deliver(presenceRecord(t, &own))
+		require.NoError(t, r.reconciler.RunOnce(context.Background()))
+		require.True(t, r.present())
+
+		policy := map[string][]string{"example-signer": {r.authority.OwnershipDomain}, "foreign-signer": {"other-domain"}}
+		r.service.SetSolutionDelivery(&stubBundleVerifier{signer: "foreign-signer"}, r.inbox, permissiveCarrier{}, policy)
+		r.service.SetSolutionDeliveryCoordinate(r.authority.Host.Coordinate)
+		foreign := *r.presence
+		foreign.OwnershipDomain, foreign.Generation = "other-domain", 1
+		foreign.Workloads = append([]solutionhost.Workload(nil), r.presence.Workloads...)
+		foreign.Workloads[0].Identity.SPIFFEID = "spiffe://acme.test/ns/other-prod/sa/other"
+		_, _, err = r.service.ReceiveSolutionDelivery(context.Background(),
+			SolutionDeliveryCarrier{Kind: SolutionDeliveryPresence, Raw: carrierOver(t, presenceRecord(t, &foreign).Payload)}, "carrier")
+		require.NoError(t, err, "receipt keeps the row; core's admission is what refuses it")
+		host := r.reconciler.activation.reconciler.host
+		state, ok := r.store.applied[0].AppliedState()
+		require.True(t, ok)
+		host.Applied = []solutionhost.Applied{state}
+		foreignDelivered, err := solutionhost.VerifyDelivered(context.Background(), carrierOf(presenceRecord(t, &foreign)), &stubBundleVerifier{signer: "foreign-signer"})
+		require.NoError(t, err)
+		_, err = host.Admit(foreignDelivered)
+		require.ErrorIs(t, err, solutionhost.ErrWrongDomain)
+		r.inbox.newest[SolutionDeliveryPresence] = []*SolutionDeliveryRecord{presenceRecord(t, &own)}
+		return r
+	}
+	foreignTombstone := func(r *registryReview) *solutionhost.AuthorityDocument {
+		tombstone := tombstoneOf(t, r.authority)
+		tombstone.Authority, tombstone.OwnershipDomain = "foreign-authority", "other-domain"
+		return tombstone
+	}
+
+	t.Run("refused at receipt", func(t *testing.T) {
+		r := setup(t)
+		_, _, err := r.service.ReceiveSolutionDelivery(context.Background(),
+			SolutionDeliveryCarrier{Kind: SolutionDeliveryAuthority, Raw: carrierOver(t, authorityRecord(t, foreignTombstone(r)).Payload)}, "carrier")
+		require.ErrorIs(t, err, ErrSolutionDeliveryDomainNotGranted)
+	})
+	t.Run("ignored in history", func(t *testing.T) {
+		r := setup(t)
+		r.inbox.deliver(authorityRecord(t, foreignTombstone(r)))
+		if err := r.reconciler.RunOnce(context.Background()); err != nil {
+			require.NotErrorIs(t, err, ErrSolutionAuthorityWithdrawn)
+		}
+		require.True(t, r.present(), "the binding's admitted owner is still domain A")
+		require.Equal(t, r.authority.OwnershipDomain, r.store.applied[0].Applied.Domain)
 	})
 }
 
@@ -458,5 +557,94 @@ func TestAnAdmittedWithdrawalSurvivesRenameAndRestart(t *testing.T) {
 		require.NoError(t, err)
 		require.ErrorIs(t, restarted.RunOnce(context.Background()), ErrSolutionAuthorityWithdrawn)
 		require.False(t, r.present())
+	}
+}
+
+// referenceExchangeStore serves one source delegation, and can run something
+// while it is read — the moment a concurrent registry install would land.
+type referenceExchangeStore struct {
+	Store
+	delegation *SourceDelegation
+	duringGet  func()
+}
+
+func (*referenceExchangeStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *referenceExchangeStore) GetSourceDelegation(context.Context, string, string) (*SourceDelegation, error) {
+	if s.duringGet != nil {
+		s.duringGet()
+	}
+	return s.delegation, nil
+}
+
+func (*referenceExchangeStore) SourceDelegationFacts(context.Context, string, string, string) (*SourceDelegationFacts, error) {
+	return &SourceDelegationFacts{SourceExists: true, MemberRole: "admin", UserStatus: "active", PrincipalRevision: 42}, nil
+}
+
+func (s *referenceExchangeStore) ActiveSourceDelegationsForPrincipal(context.Context, string, string, string) ([]*SourceDelegation, error) {
+	return []*SourceDelegation{s.delegation}, nil
+}
+
+// referenceExchange is revision 3 — a worker allowed to write, and no source
+// module — and revision 4 — the source module restored, the worker narrowed to
+// reads. Neither registry admits a write exchange through the delegation.
+func referenceExchange(t *testing.T) (*Service, *referenceExchangeStore, *fakeEnvelopeStore, ModuleCaller, ModulePrincipalRegistry) {
+	t.Helper()
+	read := []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}}
+	write := []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"write"}}}
+	both := []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
+	sourceBinding := ModuleOperationAudience{Audience: "worker", InvokeScopes: both, LookupScopes: read, SourceDelegationScopes: write}
+	worker := ModulePrincipalGrant{Prefix: "worker", Tenant: testEnvelopeTenant,
+		OperationAudiences: map[string]ModuleOperationAudience{"run": {Audience: "sink", InvokeScopes: both, LookupScopes: read}}}
+	source := ModulePrincipalGrant{Prefix: "source", Tenant: "another-org", OperationAudiences: map[string]ModuleOperationAudience{"sync": sourceBinding}}
+	narrowed := worker
+	narrowed.OperationAudiences = map[string]ModuleOperationAudience{"run": {Audience: "sink", InvokeScopes: read, LookupScopes: read}}
+	store := &referenceExchangeStore{delegation: &SourceDelegation{ID: "example-delegation", OrgID: "delegated-org",
+		PrincipalID: "example-person", SourceID: "example-source", ModulePrefix: "source", BindingID: "sync",
+		BindingDigest: SourceDelegationBindingDigest(sourceBinding)}}
+	s := &Service{store: store}
+	s.SetModuleAuthorityReads(reviewLiveAuthority{}, nil)
+	envelopes := &fakeEnvelopeStore{latest: 3}
+	s.SetModuleEnvelopeStore(envelopes)
+	s.installDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID("worker"): worker}, 3)
+	return s, store, envelopes, ModuleCaller{PrincipalID: ModulePrincipalID("worker"), BoundOrg: testEnvelopeTenant},
+		ModulePrincipalRegistry{ModulePrincipalID("worker"): narrowed, ModulePrincipalID("source"): source}
+}
+
+// TestAReferenceExchangeReadsBothPrincipalsFromOneSnapshot is the third
+// review's residual C: revision 4 is installed after the caller's fence and
+// before the delegator is looked up. Both are read from the snapshot the fence
+// passed, so the revision-3 worker's write is never paired with the revision-4
+// source — and a revision-4 decision refuses too.
+func TestAReferenceExchangeReadsBothPrincipalsFromOneSnapshot(t *testing.T) {
+	s, store, envelopes, caller, newer := referenceExchange(t)
+	_, err := s.AuthorizeDelegationReferenceExchange(context.Background(), caller, store.delegation.ID, "run", false)
+	require.ErrorIs(t, err, ErrSourceDelegationInvalid, "revision 3 has no source module")
+
+	store.duringGet = func() {
+		envelopes.latest = 4
+		s.installDerivedModulePrincipals(newer, 4)
+	}
+	_, err = s.AuthorizeDelegationReferenceExchange(WithModuleEnvelopeRevisionMemo(context.Background()), caller, store.delegation.ID, "run", false)
+	require.ErrorIs(t, err, ErrSourceDelegationInvalid, "the delegator is read from the caller's snapshot, never a later install")
+
+	store.duringGet = nil
+	_, err = s.AuthorizeDelegationReferenceExchange(context.Background(), caller, store.delegation.ID, "run", false)
+	require.ErrorIs(t, err, ErrSourceDelegationInvalid, "revision 4's narrowed worker cannot write either")
+}
+
+// TestAReferenceExchangeFencesAnUnobservantReplica: the exchange refuses a
+// registry older than the committed revision, or one it cannot compare.
+func TestAReferenceExchangeFencesAnUnobservantReplica(t *testing.T) {
+	for _, unreadable := range []bool{false, true} {
+		s, store, envelopes, caller, _ := referenceExchange(t)
+		envelopes.latest = 4
+		if unreadable {
+			envelopes.revisionErr = errors.New("revision unavailable")
+		}
+		_, err := s.AuthorizeDelegationReferenceExchange(context.Background(), caller, store.delegation.ID, "run", false)
+		require.Equal(t, codes.Unavailable, status.Code(err))
 	}
 }

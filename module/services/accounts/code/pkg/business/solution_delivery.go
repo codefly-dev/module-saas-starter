@@ -262,8 +262,9 @@ func (s *Service) ReceiveSolutionDelivery(
 
 // admitAuthorityTarget refuses an authority document — a grant or a tombstone —
 // that cannot speak for the binding it names: one addressed to another host,
-// or one asserting an ownership domain other than the binding's ESTABLISHED one
-// (the domain its first delivered presence generation claimed). The signer
+// or one asserting an ownership domain other than the binding's OWNER (the
+// domain of the presence generation this host admitted and applied — never a
+// delivered row core refused). The signer
 // check above only proves the signer may speak for the domain the document
 // ASSERTS; without this, an accepted signer for one domain could deliver a
 // tombstone naming another domain's binding and withdraw it permanently.
@@ -277,19 +278,11 @@ func (s *Service) admitAuthorityTarget(ctx context.Context, payload []byte) erro
 		return fmt.Errorf("%w: authority %q targets host %q, and this host is %q",
 			ErrSolutionDeliveryDomainNotGranted, document.Authority, document.Host.Coordinate, s.deliveryCoordinate)
 	}
-	var presence []*SolutionDeliveryRecord
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var err error
-		presence, err = s.deliveryStore.ListDeliveredDocuments(ctx, SolutionDeliveryPresence)
-		return err
-	}); err != nil {
-		return err
-	}
-	established, err := establishedPresenceDomains(presence)
+	owners, err := s.admittedBindingOwners(ctx)
 	if err != nil {
 		return err
 	}
-	if domain, known := established[document.PresenceBinding]; known && domain != document.OwnershipDomain {
+	if domain, known := owners[document.PresenceBinding]; known && domain != document.OwnershipDomain {
 		return fmt.Errorf("%w: authority %q speaks for domain %q over binding %q, which domain %q owns",
 			ErrSolutionDeliveryDomainNotGranted, document.Authority, document.OwnershipDomain, document.PresenceBinding, domain)
 	}

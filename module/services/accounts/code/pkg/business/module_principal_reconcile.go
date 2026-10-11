@@ -115,6 +115,8 @@ type modulePrincipalSource struct {
 	presenceBinding string
 	domain          string
 	signer          string
+	authority       string
+	generation      uint64
 }
 
 // NewModulePrincipalReconciler builds the reconciler over the activation
@@ -134,11 +136,15 @@ func (r *ModulePrincipalReconciler) publish(published *publishedModuleRegistry) 
 
 // degraded is the last published registry kept only where it is still
 // confirmed: derived from revision, over a binding neither withdrawn nor with
-// its presence withdrawn, by a signer the host still admits for its domain.
-// Never wider than the last published registry, by construction: it only
-// removes entries.
+// its presence withdrawn, by a signer the host still admits for its domain —
+// and, when this pass could read the newest documents, from a document still in
+// force at the same generation (inForce: authority id → generation). A document
+// this pass refused — it no longer verifies, its signer lost the domain, its
+// binding was withdrawn — or superseded takes its cached entry with it. Never
+// wider than the last published registry, by construction: it only removes
+// entries.
 func (r *ModulePrincipalReconciler) degraded(
-	revision uint64, withdrawn map[string]string, withdrawnPresence map[string]bool,
+	revision uint64, withdrawn map[string]string, withdrawnPresence map[string]bool, inForce map[string]uint64,
 ) *publishedModuleRegistry {
 	kept := &publishedModuleRegistry{registry: ModulePrincipalRegistry{}, revision: revision, sources: map[string]modulePrincipalSource{}}
 	if r.last == nil || r.last.revision != revision || withdrawn == nil || withdrawnPresence == nil {
@@ -155,6 +161,11 @@ func (r *ModulePrincipalReconciler) degraded(
 		}
 		if !slices.Contains(host.Domains, source.domain) || !slices.Contains(host.DomainsBySigner[source.signer], source.domain) {
 			continue
+		}
+		if inForce != nil {
+			if generation, live := inForce[source.authority]; !live || generation != source.generation {
+				continue
+			}
 		}
 		kept.registry[id] = grant
 		kept.sources[id] = source
@@ -200,7 +211,7 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 			if historyErr != nil || presenceErr != nil {
 				withdrawn, presence = nil, nil
 			}
-			r.publish(r.degraded(r.last.revision, withdrawn, presence))
+			r.publish(r.degraded(r.last.revision, withdrawn, presence, nil))
 		}
 		return errors.Join(fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, envelopeErr), historyErr)
 	}
@@ -212,18 +223,28 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 	}
 	if historyErr != nil {
 		// No revocation can be established, so no entry can be kept.
-		r.publish(r.degraded(envelope.Revision, nil, nil))
+		r.publish(r.degraded(envelope.Revision, nil, nil, nil))
 		return fmt.Errorf("%w: the withdrawal history: %w", ErrModulePrincipalInputsUnreadable, historyErr)
 	}
 
-	live, refusals, liveErr := r.activation.liveAuthority(ctx)
+	live, refusals, liveErr := r.activation.liveAuthority(ctx, withdrawn)
 	records, appliedErr := service.ListSolutionHostBindings(ctx)
 	if liveErr != nil || appliedErr != nil {
 		presence, presenceErr := r.activation.withdrawnPresence(ctx)
 		if presenceErr != nil {
 			presence = nil
 		}
-		r.publish(r.degraded(envelope.Revision, withdrawn, presence))
+		// The documents still in force, when the newest read succeeded: the
+		// refusals this pass made are known, and a cached entry never
+		// outlives one.
+		var inForce map[string]uint64
+		if liveErr == nil {
+			inForce = make(map[string]uint64, len(live))
+			for _, one := range live {
+				inForce[one.document.Authority] = one.document.Generation
+			}
+		}
+		r.publish(r.degraded(envelope.Revision, withdrawn, presence, inForce))
 		var failures []error
 		for _, failure := range []struct {
 			input string
@@ -304,7 +325,8 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 			}
 			id := ModulePrincipalID(prefix)
 			next.registry[id] = grant
-			next.sources[id] = modulePrincipalSource{presenceBinding: document.PresenceBinding, domain: document.OwnershipDomain, signer: one.signer}
+			next.sources[id] = modulePrincipalSource{presenceBinding: document.PresenceBinding, domain: document.OwnershipDomain,
+				signer: one.signer, authority: document.Authority, generation: document.Generation}
 		}
 	}
 	refusals = append(refusals, next.oneWorkloadOnePrincipal()...)

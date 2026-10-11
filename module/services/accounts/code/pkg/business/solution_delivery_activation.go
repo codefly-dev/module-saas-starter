@@ -373,14 +373,17 @@ func (a *SolutionAuthorityActivation) verifiedAuthority(
 // so the tombstone is still there to be read.
 //
 // ADMITTED means the tombstone could speak for the binding it names: it targets
-// THIS host's coordinate, and it speaks for the binding's ESTABLISHED ownership
-// domain — the domain the binding's first delivered presence generation claimed,
-// which core then holds every later generation to. A tombstone asserting
-// another domain, or another host, withdraws nothing here: otherwise any
-// accepted signer for any domain could permanently revoke every other domain's
-// bindings by naming them. A binding with no presence delivered yet has no
-// established domain, and a tombstone over it waits — it is re-judged on every
-// read, so it takes effect once presence establishes its own domain.
+// THIS host's coordinate, and it speaks for the binding's OWNER — the ownership
+// domain of the presence generation this host ADMITTED and applied, read from
+// the durable applied state, which core's lifecycle admission then holds every
+// later generation to. A delivered row is never ownership: a presence
+// generation core refused (another domain's claim on the binding, say) sits in
+// the inbox and establishes nothing. A tombstone asserting another domain, or
+// another host, withdraws nothing here: otherwise any accepted signer for any
+// domain could permanently revoke every other domain's bindings by naming them.
+// A binding with no applied presence yet has no owner, and a tombstone over it
+// waits — it is re-judged on every read, so it takes effect once presence is
+// admitted under the same domain.
 //
 // Rows are decoded rather than re-verified, and that is deliberate: this read is
 // independent of whether the newest documents still verify, so a document that
@@ -392,18 +395,15 @@ func (a *SolutionAuthorityActivation) withdrawnBindings(ctx context.Context) (ma
 	if service.deliveryStore == nil {
 		return nil, fmt.Errorf("%w: this host has no delivery inbox wired", ErrSolutionAuthorityCeilingUnavailable)
 	}
-	var authority, presence []*SolutionDeliveryRecord
+	var authority []*SolutionDeliveryRecord
 	if err := service.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
-		if authority, err = service.deliveryStore.ListDeliveredDocuments(ctx, SolutionDeliveryAuthority); err != nil {
-			return err
-		}
-		presence, err = service.deliveryStore.ListDeliveredDocuments(ctx, SolutionDeliveryPresence)
+		authority, err = service.deliveryStore.ListDeliveredDocuments(ctx, SolutionDeliveryAuthority)
 		return err
 	}); err != nil {
 		return nil, fmt.Errorf("read the delivery history: %w", err)
 	}
-	established, err := establishedPresenceDomains(presence)
+	owners, err := service.admittedBindingOwners(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +417,7 @@ func (a *SolutionAuthorityActivation) withdrawnBindings(ctx context.Context) (ma
 		if !document.Removed || document.Host.Coordinate != coordinate {
 			continue
 		}
-		if domain, known := established[document.PresenceBinding]; !known || domain != document.OwnershipDomain {
+		if owner, known := owners[document.PresenceBinding]; !known || owner != document.OwnershipDomain {
 			continue
 		}
 		if _, already := withdrawn[document.PresenceBinding]; !already {
@@ -427,24 +427,23 @@ func (a *SolutionAuthorityActivation) withdrawnBindings(ctx context.Context) (ma
 	return withdrawn, nil
 }
 
-// establishedPresenceDomains is each presence binding's ownership domain: the
-// domain its lowest delivered generation claimed. Core refuses a later
-// generation under another domain, so the first claim is the owner.
-func establishedPresenceDomains(records []*SolutionDeliveryRecord) (map[string]string, error) {
-	lowest := map[string]uint64{}
-	established := map[string]string{}
-	for _, record := range records {
-		document, err := solutionhost.PresenceFromVerified(record.Payload)
-		if err != nil {
-			return nil, fmt.Errorf("read delivered presence %s generation %d: %w", record.DocumentID, record.Generation, err)
-		}
-		if generation, seen := lowest[document.Binding]; seen && generation <= document.Generation {
-			continue
-		}
-		lowest[document.Binding] = document.Generation
-		established[document.Binding] = document.OwnershipDomain
+// admittedBindingOwners is each presence binding's OWNER: the ownership domain
+// of the generation this host admitted and applied, from the durable applied
+// state. Only an admitted generation is ever written there — the reconcile pass
+// writes it under the binding row lock after core's lifecycle admission — so a
+// delivered row core refused can never move it.
+func (s *Service) admittedBindingOwners(ctx context.Context) (map[string]string, error) {
+	records, err := s.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read the admitted presence owners: %w", err)
 	}
-	return established, nil
+	owners := make(map[string]string, len(records))
+	for _, record := range records {
+		if record.Applied != nil && record.Applied.Domain != "" {
+			owners[record.BindingID] = record.Applied.Domain
+		}
+	}
+	return owners, nil
 }
 
 // ErrSolutionAuthoritySignerNotGranted reports an authority document whose
@@ -467,19 +466,19 @@ type liveVerifiedAuthority struct {
 // liveAuthority returns the authority documents in force, and the reasons the
 // others are not.
 //
-// ORDER IS THE POINT. The withdrawal history is read FIRST, independently of
-// the newest documents, so nothing about a newest document — not even its
-// failure to verify — can stop a withdrawal being honoured. Then each newest
+// ORDER IS THE POINT. The caller reads the withdrawal history FIRST
+// (withdrawnBindings) and hands it in, independently of the newest documents,
+// so nothing about a newest document — not even its failure to verify — can
+// stop a withdrawal being honoured, and one pass judges every document against
+// one reading of it. Then each newest
 // document is judged on its own: a tombstone is dropped; a document that no
 // longer verifies, is over a withdrawn binding, or whose signer the host's
 // current policy no longer admits for its domain is REFUSED, by name, and grants
 // nothing — while the rest stay in force. The only error is a read the store
 // could not answer; it never comes with a partial answer.
-func (a *SolutionAuthorityActivation) liveAuthority(ctx context.Context) ([]liveVerifiedAuthority, []error, error) {
-	withdrawn, err := a.withdrawnBindings(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+func (a *SolutionAuthorityActivation) liveAuthority(
+	ctx context.Context, withdrawn map[string]string,
+) ([]liveVerifiedAuthority, []error, error) {
 	records, err := a.newestDelivered(ctx, SolutionDeliveryAuthority)
 	if err != nil {
 		return nil, nil, err

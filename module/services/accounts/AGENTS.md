@@ -287,8 +287,9 @@ three inputs agree:
   re-verified on every pass against the host's CURRENT signer-to-domain policy
   (a document that no longer verifies is refused by name), over a presence
   binding no ADMITTED tombstone in the whole inbox history ever withdrew — one
-  addressed to this host and speaking for the binding's established ownership
-  domain (its first presence generation's); a withdrawal is terminal for the
+  addressed to this host and speaking for the binding's OWNER, the domain of
+  the presence generation this host admitted and applied (never a delivered
+  row core's admission refused); a withdrawal is terminal for the
   binding, whatever later generation or authority id follows, and a foreign
   tombstone is refused at receipt and ignored in history — and held by core's
   `ValidateAgainst` to the envelope's

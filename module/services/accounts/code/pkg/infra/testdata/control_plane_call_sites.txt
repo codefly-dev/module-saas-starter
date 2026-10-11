@@ -134,7 +134,6 @@ pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPl
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
 pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: WithControlPlane
 pkg/business/solution_delivery.go: (*Service).ReceiveSolutionDelivery: WithControlPlane
-pkg/business/solution_delivery.go: (*Service).admitAuthorityTarget: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).newestDelivered: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).withdrawnBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane
