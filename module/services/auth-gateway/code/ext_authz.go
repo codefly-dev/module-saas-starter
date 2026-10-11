@@ -184,6 +184,22 @@ func (s *ExtAuthz) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3
 		token := strings.TrimPrefix(auth, "Bearer ")
 		if token != auth {
 			if strings.HasPrefix(token, "cfly_sk_") {
+				// A tool endpoint is an OAuth protected resource, and an API key
+				// cannot be bound to one: it carries no audience at all, so there
+				// is no resource for it to name and nothing for the confinement
+				// below to judge. Refused HERE, because this branch RETURNS — the
+				// resource rules live in checkJWT, so a key reached a tool path
+				// by never being asked the question.
+				//
+				// Answered like every other refusal at this endpoint: 401 with
+				// the challenge, so a client re-authorizes for the resource
+				// rather than reading "forbidden" and stopping.
+				if isSolutionToolRequestPath(httpReq.GetPath()) {
+					recordJWTRejection(ctx, jwtRejectionGenericAudience)
+					return deny(401, "this endpoint requires a token issued for its own "+
+						"resource; an API key names no resource. Authorize for this "+
+						"resource and retry"), nil
+				}
 				return s.checkAPIKey(ctx, token)
 			}
 			return s.checkJWT(ctx, token, httpReq.GetPath())
@@ -353,7 +369,46 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		recordJWTRejection(ctx, jwtRejectionInvalidAudience)
 		return deny(401, "the token's audience does not name a single valid resource"), nil
 	}
-	if solutionID, isSolutionPath := solutionIDFromPath(path); isSolutionPath {
+	// CONFINEMENT, decided on every path and not only a solution's.
+	//
+	// A resource-bound token names two audiences: the resource, and this host.
+	// The host audience is there so the token VERIFIES — the minter's own
+	// VerifyAccess and this parser both check it, and a token lacking it would be
+	// refused by its issuer (see the minter's two-audience comment). It is a
+	// parser requirement, and it was being read as an authorization one: the
+	// confinement below ran only under a solution path, so a resource token was
+	// admitted, as a full session, at this host's own API, at another declared
+	// module's routes, and at the Work Context surface that mints further
+	// capabilities.
+	//
+	// That is the escape this is here to close. The party holding such a token is
+	// a third-party MCP client and, once forwarded, the solution runtime it
+	// dialled; a credential delivered to one resource must not act as the person
+	// anywhere else. The runtime's own calls to this host are made with the
+	// module credential it was provisioned (`/modules/_work-context` takes the
+	// internal token and the module secret, never a person's bearer), so nothing
+	// legitimate needs a resource token off its own solution's paths.
+	if binding == resourceBound && s.publicBase == "" {
+		// No configured public address, so this process cannot say what ANY
+		// resource identifier is and cannot compare one. It refuses the token
+		// either way — a bound token is not admitted on a guess — but it says
+		// which of the two it is, because an operator fixes the configuration and
+		// a client re-authorizes, and those are different actions. The tool
+		// path's own arm below words this for the endpoint that publishes
+		// metadata; this is the same refusal for every other path.
+		recordJWTRejection(ctx, jwtRejectionWrongResource)
+		return deny(401, "this host has no configured public address, so it cannot "+
+			"state the resource a token must name"), nil
+	}
+	if binding == resourceBound {
+		solutionID, isSolutionPath := solutionIDFromPath(path)
+		if !isSolutionPath || !resourceAudienceAdmits(resource, solutionID, s.publicBase) {
+			recordJWTRejection(ctx, jwtRejectionWrongResource)
+			return deny(401, "the token presented was issued for a different "+
+				"resource than this endpoint"), nil
+		}
+	}
+	if _, isSolutionPath := solutionIDFromPath(path); isSolutionPath {
 		base := s.publicBase
 		switch {
 		case isSolutionToolRequestPath(path):
@@ -384,28 +439,14 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 					"resource; the token presented names only the host. Authorize for "+
 					"this resource and retry"), nil
 			}
-			if !resourceAudienceAdmits(resource, solutionID, base) {
-				recordJWTRejection(ctx, jwtRejectionWrongResource)
-				return deny(401, "the token presented was issued for a different "+
-					"resource than this endpoint"), nil
-			}
-		case binding == resourceBound:
-			// A solution's other routes are the product's own API surface,
-			// reached with an ordinary session. A resource-bound token is still
-			// confined to the solution it names, so one minted for solution A
-			// cannot read solution B's data either.
-			if !resourceAudienceAdmits(resource, solutionID, base) {
-				recordJWTRejection(ctx, jwtRejectionWrongResource)
-				return deny(401, "the token presented was issued for a different "+
-					"resource than this endpoint"), nil
-			}
+			// Which resource it must be is already settled: the confinement
+			// above admitted this token only at the solution its own resource
+			// names, so reaching here means the two agree. What is left for this
+			// arm is the rule confinement cannot express — that an UNBOUND
+			// credential is refused at a tool endpoint even though it is
+			// perfectly good everywhere else on this host.
 		}
 	}
-	// A resource-bound token still reaches the host's own API, which is not a
-	// solution path: the host is where a solution's runtime resolves the
-	// caller's authority, and the token names the host audience too for exactly
-	// that reason (see the minter's two-audience comment).
-
 	hdrs := []*corev3.HeaderValueOption{
 		hdr("x-user-id", claims.Subject),
 		hdr("x-org-id", claims.OrgID),

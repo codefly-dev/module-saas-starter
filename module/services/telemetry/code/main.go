@@ -100,7 +100,7 @@ func main() {
 	ctx = provider.Inject(ctx)
 	defer codefly.CatchPanic(ctx)
 
-	port := codefly.For(ctx).WithDefaultNetwork().API("grpc").NetworkInstance().Port
+	port := codefly.For(ctx).API("grpc").NetworkInstance().Port
 	if port == 0 {
 		log.Fatal("telemetry: Codefly did not inject the collector gRPC port")
 	}

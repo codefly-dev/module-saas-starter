@@ -154,12 +154,29 @@ func TestGateway_MCPToken_ReachesItsOwnSolutionsOtherRoutes(t *testing.T) {
 	require.Equal(t, "/resolve", example.lastPath)
 }
 
-// A resource-bound token still reaches the host's own API. That is not a hole:
-// the host is where a solution's runtime resolves the caller's authority, and
-// the token names the host audience for precisely that reason. Refusing it here
-// would break the runtime without closing anything — nothing a solution can do
-// with the host's API is narrowed by which solution asked.
-func TestGateway_MCPToken_StillReachesTheHostAPI(t *testing.T) {
+// A resource-bound token does NOT reach the host's own API.
+//
+// This asserted the opposite, on the reasoning that "nothing a solution can do
+// with the host's API is narrowed by which solution asked". Two things refute
+// that, and both are checkable here rather than arguable:
+//
+//  1. The holder is not the solution. It is whoever presents the token — the
+//     third-party MCP client it was issued to, and the runtime it was forwarded
+//     to. A bearer admitted at this host's API is that party acting AS the
+//     person, with the person's whole authority, for the token's lifetime. The
+//     Work Context surface is part of that API, so the reach included minting
+//     further capabilities for other audiences: authority amplification, not a
+//     fixed set of things "a solution" could already do.
+//  2. The runtime does not need it. A runtime's calls to this host are made with
+//     the module credential it was provisioned — `/modules/_work-context` takes
+//     the internal token and the module secret and never a person's bearer — so
+//     refusing the person's resource token here breaks no path that exists.
+//
+// The host audience such a token also carries is a PARSER requirement: the
+// minter stamps it so its own VerifyAccess and this gateway's claims parser
+// accept the token at all. Reading it as an authorization grant is what opened
+// the escape.
+func TestGateway_MCPToken_DoesNotReachTheHostAPI(t *testing.T) {
 	withPublicBase(t, testPublicBase)
 	gw, apiFake, _, priv := newGatewayHarness(t)
 
@@ -169,8 +186,8 @@ func TestGateway_MCPToken_StillReachesTheHostAPI(t *testing.T) {
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
-	require.Equal(t, 200, w.Code)
-	require.Equal(t, "/v1/users", apiFake.lastPath)
+	require.Equal(t, 401, w.Code)
+	require.Nil(t, apiFake.lastHeaders, "accounts must not be reached at all")
 }
 
 // A token carrying no resource is the ordinary session credential the host has

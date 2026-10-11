@@ -53,241 +53,12 @@ case remain supported. A changed DNS answer cannot bypass the transport check.
 
 ## 3. Runtime compatibility
 
-<<<<<<< HEAD
 The Module-Federation host checks compatibility before activating a remote.
 The manifest parser validates the snapshot's shape. Runtime requirements include
 `schemaVersion`, `frontend.hostContract`, `frontend.reactRange`,
 `frontend.shared` and `frontend.exposedModule`; host versions live in
 `services/frontend/code/src/solutions/host-runtime.ts`. A failed check leaves the
 remote unavailable and reports the cause in the server log.
-||||||| parent of a3090094 (fix(auth-gateway): a module or solution upstream receives the person's identity, not their session (SA-F-BEARER))
-   **What that does not yet give you, stated plainly because a revocation
-   depends on it.** accounts reads the declaration through the Codefly SDK,
-   which resolves it from the process environment and the runtime's injected
-   carrier. Both are live reads — an edit is observed the moment it reaches
-   them — but **no runtime component updates either one under a running
-   process** (`codefly-dev/cli#740`). So in a deployment that delivers this key
-   as a container environment variable, an edit does not reach accounts at all,
-   and withdrawing a publisher still requires restarting the service. Until that
-   issue closes, treat a revocation as taking effect on restart, not on edit,
-   and do not rely on removing a digest to lock out a publisher whose secret you
-   believe is compromised — delete its registration and restart accounts.
-3. The solution presents that token in `X-Codefly-Solution-Registration` to both
-   `POST /solutions/_register` (gateway, `{id, upstream}`) and
-   `POST /api/solutions/register` (frontend, the manifest). `DELETE` on either
-   withdraws it.
-
-The exchange keeps three outcomes apart, because a registrant acts differently
-on each: `401` means accounts refused the secret — the only answer that means
-"check `SOLUTION_REGISTRATION_SECRETS` and the provisioned secret"; `503` with
-`Retry-After` means accounts could not be reached or did not answer in time (a
-rollout, a restart) and the next attempt may succeed; `502` means accounts
-answered with an error that is neither. The frontend likewise answers `503`, not
-`401`, when it cannot reach the key set it verifies the token against. A
-registrant must not read any 5xx — including a `502` from an ingress or mesh in
-front of a restarting gateway — as a provisioning fault.
-
-`SOLUTION_REGISTRATION_SECRETS` is declared **separately** from
-`MODULE_REGISTRATION_SECRETS`, and the two credentials carry different
-audiences. A module credential federates a REST prefix; a solution credential
-additionally publishes host-origin code. Holding one must never confer the
-other, so neither the configuration nor the token is shared.
-
-### What each half enforces
-
-| Check | Gateway | Frontend |
-| --- | --- | --- |
-| Ed25519 signature against the published JWKS, alg-locked to EdDSA | yes | yes |
-| Issuer, `solution-registration` audience, expiry (with skew leeway) | yes | yes |
-| `solution` claim equals the id in the request | yes (403) | yes (403) |
-| First registration binds the id to `sub`; a different `sub` is refused | yes (409) | yes (409) |
-| Same publisher may move its own endpoint | yes | yes |
-| Delete is owner-bound, and a non-owner's delete is indistinguishable from an unknown id | yes | yes |
-| `jti` burned on use, so a captured credential cannot be replayed | yes | yes |
-| Request body bounded before parsing | yes (256 KiB; the separate token exchange bounds at 4 KiB) | no bound of its own — the manifest is bounded where the gateway accepts it |
-| Id is one catalog-identity segment, so reserved `_…` sub-paths cannot be shadowed | yes | n/a (id comes from the manifest and must equal the claim) |
-| Upstream host must be composition-local; resolved address re-checked at dial time | yes | n/a |
-
-The gateway deliberately allows a solution to **move** its upstream, which
-module federation does not. That is safe only because the publisher is proven on
-every call: an endpoint legitimately changes on a redeploy or a new dev port,
-while a credential holder for one solution can neither claim another's id nor
-redirect it.
-
-### Upstream constraints and the development exception
-
-A solution upstream receives forwarded user bearers, so it is held to the same
-rule as a federated module upstream: loopback and private ranges (the dev and
-in-cluster cases), mesh short names and cluster suffixes — and nothing globally
-routable, no link-local, no cloud-metadata address. The register-time host string
-is only half of it: the **resolved address is re-checked at dial time**, so a
-mesh-looking name whose DNS answer later points off-mesh never receives a
-forwarded bearer. Loopback is an explicit development exception and is tested as
-such.
-
-## 3. Runtime compatibility is enforced, not stored
-
-A declared requirement the host does not check is not a compatibility contract.
-Every requirement is checked **before activation**, so an incompatible remote is
-never handed to a browser. An undeclared major defaults to `1` — the major in
-force when the field was introduced, which is what silence actually asserts — and
-never to the host's current major, which would make every silent manifest
-compatible by definition at exactly the upgrade this check exists for:
-
-| Manifest field | Checked against | Default when absent |
-| --- | --- | --- |
-| `schemaVersion` | `SOLUTION_MANIFEST_SCHEMA_MAJOR` | `1` |
-| `frontend.hostContract` | `SOLUTION_HOST_CONTRACT_MAJOR` (the `SolutionPageProps` the host injects and the `./Page` default it expects) | `1` |
-| `frontend.reactRange` | the host's real React version | unconstrained |
-| `frontend.shared` (per package) | the versions the host publishes into the sealed scope | unconstrained |
-| `frontend.exposedModule` | must be a `./Name` key | — |
-
-Ranges use a deliberately small semver subset (`||` alternatives of
-space-separated `^ ~ >= > <= < =`, a bare version, or `*`). A range outside the
-grammar is **refused**, never approximated: a requirement the host cannot
-evaluate is not one it can honour. The host values live in
-`services/frontend/code/src/solutions/host-runtime.ts`, which the register route
-and the Module-Federation host both read, so the numbers cannot diverge.
-
-A refused registration is refused **whole**. If the id already had a valid
-registration, that registration keeps serving — the last known valid one is never
-replaced by a rejected update. The reasons are returned to the registrant (HTTP
-409, `{"error":"incompatible_runtime","reasons":[…]}`) and logged for the
-operator. If the id has no valid registration to fall back on, its page renders a
-plain "temporarily unavailable" panel instead of a 404, and the technical cause
-stays in the server log.
-=======
-   **What that does not yet give you, stated plainly because a revocation
-   depends on it.** accounts reads the declaration through the Codefly SDK,
-   which resolves it from the process environment and the runtime's injected
-   carrier. Both are live reads — an edit is observed the moment it reaches
-   them — but **no runtime component updates either one under a running
-   process** (`codefly-dev/cli#740`). So in a deployment that delivers this key
-   as a container environment variable, an edit does not reach accounts at all,
-   and withdrawing a publisher still requires restarting the service. Until that
-   issue closes, treat a revocation as taking effect on restart, not on edit,
-   and do not rely on removing a digest to lock out a publisher whose secret you
-   believe is compromised — delete its registration and restart accounts.
-3. The solution presents that token in `X-Codefly-Solution-Registration` to both
-   `POST /solutions/_register` (gateway, `{id, upstream}`) and
-   `POST /api/solutions/register` (frontend, the manifest). `DELETE` on either
-   withdraws it.
-
-The exchange keeps three outcomes apart, because a registrant acts differently
-on each: `401` means accounts refused the secret — the only answer that means
-"check `SOLUTION_REGISTRATION_SECRETS` and the provisioned secret"; `503` with
-`Retry-After` means accounts could not be reached or did not answer in time (a
-rollout, a restart) and the next attempt may succeed; `502` means accounts
-answered with an error that is neither. The frontend likewise answers `503`, not
-`401`, when it cannot reach the key set it verifies the token against. A
-registrant must not read any 5xx — including a `502` from an ingress or mesh in
-front of a restarting gateway — as a provisioning fault.
-
-`SOLUTION_REGISTRATION_SECRETS` is declared **separately** from
-`MODULE_REGISTRATION_SECRETS`, and the two credentials carry different
-audiences. A module credential federates a REST prefix; a solution credential
-additionally publishes host-origin code. Holding one must never confer the
-other, so neither the configuration nor the token is shared.
-
-### What each half enforces
-
-| Check | Gateway | Frontend |
-| --- | --- | --- |
-| Ed25519 signature against the published JWKS, alg-locked to EdDSA | yes | yes |
-| Issuer, `solution-registration` audience, expiry (with skew leeway) | yes | yes |
-| `solution` claim equals the id in the request | yes (403) | yes (403) |
-| First registration binds the id to `sub`; a different `sub` is refused | yes (409) | yes (409) |
-| Same publisher may move its own endpoint | yes | yes |
-| Delete is owner-bound, and a non-owner's delete is indistinguishable from an unknown id | yes | yes |
-| `jti` burned on use, so a captured credential cannot be replayed | yes | yes |
-| Request body bounded before parsing | yes (256 KiB; the separate token exchange bounds at 4 KiB) | no bound of its own — the manifest is bounded where the gateway accepts it |
-| Id is one catalog-identity segment, so reserved `_…` sub-paths cannot be shadowed | yes | n/a (id comes from the manifest and must equal the claim) |
-| Upstream host must be composition-local; resolved address re-checked at dial time | yes | n/a |
-
-The gateway deliberately allows a solution to **move** its upstream, which
-module federation does not. That is safe only because the publisher is proven on
-every call: an endpoint legitimately changes on a redeploy or a new dev port,
-while a credential holder for one solution can neither claim another's id nor
-redirect it.
-
-### Upstream constraints and the development exception
-
-A solution upstream is a host the registrant chose that receives requests made on
-a person's behalf, so it is held to the same rule as a federated module upstream:
-loopback and private ranges (the dev and in-cluster cases), mesh short names and
-cluster suffixes — and nothing globally routable, no link-local, no cloud-metadata
-address. The register-time host string is only half of it: the **resolved address
-is re-checked at dial time**, so a mesh-looking name whose DNS answer later points
-off-mesh never receives one. Loopback is an explicit development exception and is
-tested as such.
-
-A solution upstream does **not** receive the viewer's session credential
-(SP-GW-07). The gateway removes `Authorization` and `Cookie` from every request it
-forwards to a runtime-registered upstream, module or solution, and the upstream
-receives the identity headers `ext_authz` stamped instead — the subject, the tenant,
-the session, the credential kind and the scope ceiling, which name the person
-without carrying their authority. A host access token carries one host-wide audience
-and the person's full authority, so it is not a credential any single upstream
-should hold.
-
-The invariant's other half is **open**: an upstream should receive a host-minted
-context bound to its own audience, and today it receives none. An upstream that
-needs to act on a person's behalf needs that capability from the Work Context
-surface.
-
-## 3. Runtime compatibility is enforced, not stored
-
-A declared requirement the host does not check is not a compatibility contract.
-Every requirement is checked **before activation**, so an incompatible remote is
-never handed to a browser. An undeclared major defaults to `1` — the major in
-force when the field was introduced, which is what silence actually asserts — and
-never to the host's current major, which would make every silent manifest
-compatible by definition at exactly the upgrade this check exists for:
-
-| Manifest field | Checked against | Default when absent |
-| --- | --- | --- |
-| `schemaVersion` | `SOLUTION_MANIFEST_SCHEMA_MAJOR` | `1` |
-| `frontend.hostContract` | `SOLUTION_HOST_CONTRACT_MAJOR` (the `SolutionPageProps` the host injects and the `./Page` default it expects) | `1` |
-| `frontend.reactRange` | the host's real React version | unconstrained |
-| `frontend.shared` (per package) | the versions the host publishes into the sealed scope | unconstrained |
-| `frontend.exposedModule` | must be a `./Name` key | — |
-
-Ranges use a deliberately small semver subset (`||` alternatives of
-space-separated `^ ~ >= > <= < =`, a bare version, or `*`). A range outside the
-grammar is **refused**, never approximated: a requirement the host cannot
-evaluate is not one it can honour. The host values live in
-`services/frontend/code/src/solutions/host-runtime.ts`, which the register route
-and the Module-Federation host both read, so the numbers cannot diverge.
-
-A refused registration is refused **whole**. If the id already had a valid
-registration, that registration keeps serving — the last known valid one is never
-replaced by a rejected update. The reasons are returned to the registrant (HTTP
-409, `{"error":"incompatible_runtime","reasons":[…]}`) and logged for the
-operator. If the id has no valid registration to fall back on, its page renders a
-plain "temporarily unavailable" panel instead of a 404, and the technical cause
-stays in the server log.
->>>>>>> a3090094 (fix(auth-gateway): a module or solution upstream receives the person's identity, not their session (SA-F-BEARER))
-
-## 4a. The host cannot yet require an installation at the proxy
-
-The frontend's solution proxy admits a registered solution to any signed-in viewer
-whose request is same-origin. It does not require that the viewer's organization has
-INSTALLED the solution, so installation governs what an agent may do headlessly but
-not whether a person's browser may reach a solution's endpoints through the host.
-
-This is not a judgement that it should not; it is a missing contract.
-`InstallationService` offers `InstallSolution`, `UninstallSolution`,
-`TransferInstallationOwnership` and `GetInstallation` — and `GetInstallation` takes an
-installation UUID. Nothing answers "does this organization have an installation of the
-solution with this id", which is the question the proxy has to ask. Adding it is a
-descriptor change (contract digests, published clients, a verified regeneration), and
-it is the condition the solution/module lifecycle rework owns.
-
-Until it lands, what bounds the surface is: a registered solution only (404
-otherwise), a same-origin request against the configured public origin (403
-otherwise), the per-viewer projection of the registry, and the gateway's own solution
-admission. None of those is an installation check, and this document should not be
-read as claiming one.
 
 ## 4. Registration, installation, and entitlement are three different things
 
@@ -723,7 +494,7 @@ The host side of that:
 
 | Policy | What it checks | Where it is usable |
 | --- | --- | --- |
-| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer. **Never a key.** | everywhere, including a laptop. **The trust root is not yet pushed to the config plane, so it refuses at boot**, see below. |
+| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer for a workflow; exact issuer and address for a person, in a local profile only (§8). The Fulcio chain, the Rekor entry and its signed entry timestamp, an observer timestamp, and an embedded SCT from a CT log the root names are all required, for every signer. **Never a key.** | everywhere, including a laptop. **The trust root is not yet pushed to the config plane, so it refuses at boot**, see below. |
 
 There is no second row. `local` was deleted — §8 argues why at length — and this
 table listed it until the code had already stopped accepting it. A configuration
@@ -1066,12 +837,169 @@ allowlist names the reviewed-change workflow identity and nothing else, so a
 locally signed document is refused there by the **ordinary** check that refuses any
 unlisted identity — not by a mode flag, not by a coordinate comparison, and not by
 a code path that exists only to be disabled. There is no `local` trust policy
-because there is no local trust *mechanism*: one verifier, one policy shape, two
-sets of listed identities.
+because there is no local trust *mechanism*: one verifier, one verification
+strength, two sets of listed identities.
 
-A deployed host that somehow listed a developer identity would be misconfigured in
-exactly the way an allowlist is designed to make visible — it is a reviewable line
-in the policy, which is the property the signing decision was taken for.
+A person is not a workflow, though, and the workload rule cannot list one: a
+signer must name a source repository or a build config, because a workflow
+identity alone matches that workflow in every repository that runs it — and a
+person's certificate carries neither. So a person is its own signer **kind**, and
+it is admitted only by a verification policy that **declares itself local** and is
+**bound to one cluster** (issue #1063). A deployed host refuses it twice over: a
+policy with no `local` block that lists a person fails validation at boot, and a
+`local` policy on any host but the cluster it is bound to fails the cluster proof
+at boot. The next section is the profile, and why the binding is the one it is.
+
+### The local profile's trust anchor
+
+A local host reads the same two documents from the same fixed anchor,
+`infra.SolutionHostTrustAnchorPath`, mounted into its pod the way a deployed host's
+is. The composition writes neither: they are the host's local profile, provided
+with the cluster (codefly-dev/cli#954, "Local runs", lists what it must contain).
+
+**`trusted_root.json` — the Sigstore public-good trusted root**, unchanged. A
+developer signs through the public-good Fulcio and Rekor exactly as the release
+workflow does, and the CLI checks every carrier against this root before it is
+written, so the local root and the deployed root are the same file. It must carry
+the CT log keys: an SCT is required from every signer.
+
+**`verification_policy.json` — the local profile.** One `person` signer per
+developer the environment's `host.developers` lists, and a `local` block naming
+the cluster:
+
+```json
+{
+  "local": {
+    "clusterCertificateAuthoritySha256": "<lowercase hex SHA-256 of the cluster CA certificate's DER>"
+  },
+  "signers": [
+    {
+      "name": "developer",
+      "kind": "person",
+      "issuer": "https://github.com/login/oauth",
+      "subjectAlternativeName": "developer@example.com",
+      "domains": ["<host.domain>"]
+    }
+  ]
+}
+```
+
+- **A person is exactly an issuer and an address.** The issuer is the provider
+  the certificate names (an absolute https URL); the subject alternative name is
+  the verified e-mail address. Both are matched exactly. A `*`, surrounding
+  space, a URI subject, or any repository, build-config or ref field is refused
+  at boot — each would read as narrow and admit more, and a URI subject would
+  admit a workflow with none of the repository narrowing a workload requires.
+  The same person listed twice is refused, because which entry's domains apply
+  would depend on the order of the document.
+- **`domains` is the signer → ownership-domain map**, unchanged for a person: the
+  developer speaks for the domains its entry lists, each of which
+  `SOLUTION_HOST_OWNERSHIP_DOMAINS` must accept or the boot is refused by name.
+- **Verification is the full Sigstore check against the trusted root** — the
+  Fulcio chain, the Rekor entry and its signed entry timestamp, an observer
+  timestamp, the embedded SCT — through the same verifier at the same strength a
+  release is checked at. Admitting a person changes who is listed, never how much
+  is checked.
+
+**The `local` block binds the profile to one cluster**, by the SHA-256 of the
+certificate authority the cluster's API server serves under — the certificate
+Kubernetes projects into every pod as the service account's `ca.crt`. For a k3d
+cluster:
+
+```bash
+kubectl --context <cluster.context> -n default get configmap kube-root-ca.crt \
+  -o jsonpath='{.data.ca\.crt}' | openssl x509 -outform der | shasum -a 256
+```
+
+At boot, before a carrier is read, the host proves it runs in that cluster, using
+only what the kubelet puts in its pod — the CA bundle and its own token:
+
+1. **The projected CA bundle is exactly the pinned certificate**: one
+   certificate, that fingerprint, nothing else. A bundle carrying any other root
+   is refused outright — the developer's authority beside a deployed cluster's
+   own is the shape every confusion between two clusters needs, so the case is
+   removed rather than argued with.
+2. **The API server authenticates this pod's own token.** Over a transport whose
+   only root is the pinned certificate and which follows no redirect, the host
+   submits a TokenReview of its own projected token and requires the answer to
+   name exactly this pod — the namespace, service account, pod name and pod UID
+   the token's own claims name (the namespace also matching the
+   kubelet-projected namespace file); an answer about any other identity, or a
+   token naming no pod, is refused. A genuine API server accepts
+   only tokens its own cluster minted, so a server that merely holds a
+   certificate under the pinned authority — the developer's real cluster, relayed
+   to a deployed pod — refuses the deployed pod's token.
+3. **The binding lasts for the life of the process.** That pinned,
+   redirect-refusing transport becomes the one the host's cluster client uses for
+   every later call — each TokenReview that authorises a delivery, each pod read.
+   A backend or DNS switch after boot to a server under any other authority breaks
+   authentication instead of continuing under a proof made against someone else.
+
+Until the proof succeeds a local profile admits nothing, so a boot path that
+skipped it would refuse developers rather than admit them elsewhere. A host that
+cannot prove it — a deployed host handed a local profile, or a local host whose
+cluster was recreated — refuses to start, naming the fingerprints its cluster does
+project. Every client this host has for the cluster follows no redirect, local or
+not.
+
+**Why the cluster's authority and the pod's own token, and not anything
+simpler.** The decisive question is how a host that is not the developer's refuses
+a local profile **without trusting anything the composition controls** — and the
+composition delivers this process's workspace environment, which is why the
+anchor's path is a constant.
+
+- *A setting, a coordinate prefix, any environment value* — refused. The
+  composition could declare itself local; the deleted `local` trust policy died of
+  exactly this, its gate a string an operator declared.
+- *The trusted root* — cannot tell them apart: it is the same public-good root.
+- *A cluster's self-description* — a `+k3s` server version, a node's provider
+  ID — is a convention, not a property. A deployed cell may run k3s.
+- *The `kube-system` namespace UID* — unforgeable through an authenticated API
+  server, but it needs a cluster-scoped read this host does not otherwise hold,
+  and the own-token review already binds the pod to the cluster with the
+  TokenReview permission the host has.
+- ***The projected CA, held exactly and for the process lifetime, and the
+  cluster's acceptance of this pod's own token*** — chosen. Both are put in the
+  pod by the kubelet, not by the composition.
+
+**What is guaranteed.** A host whose pod carries the CA bundle and the
+service-account token of any cluster other than the pinned one refuses the
+profile at boot — whatever its workspace environment, its coordinate or its
+`KUBERNETES_SERVICE_HOST`/`PORT` say. A steered API address does not change that:
+the server it reaches must present a chain to the pinned authority (which a
+deployed pod's own bundle does not even contain) and must accept a token only the
+pod's real cluster minted.
+
+**What is not guaranteed, precisely:**
+
+- *The binding is to one cluster, not to the word "local".* Nothing a host can
+  observe distinguishes a developer's cluster from a production one by kind, so
+  whoever writes a deployed host's trust anchor could deliberately pin *that*
+  cluster's authority and admit a person there. That grants nothing new — the
+  anchor's writer can already list any workflow identity — and it cannot happen
+  by accident: a profile copied to another cluster names the wrong authority.
+- *An attacker holding three things at once defeats it:* the power to replace
+  this pod's projected CA bundle with exactly the pinned certificate (pod-spec
+  control, or a write to the namespace's `kube-root-ca.crt` ConfigMap the kubelet
+  projects, which the control plane reconciles back), the power to steer
+  `KUBERNETES_SERVICE_HOST`/`PORT`, **and** the pinned cluster's CA private key, to
+  run a fake API server that accepts any token. Such an attacker already decides
+  every Kubernetes answer this host relies on — every TokenReview, every pod
+  read — so the local profile gives it nothing it lacked. The composition holds
+  none of the three by itself: it delivers workspace environment, and neither the
+  pod spec, the projected CA nor the developer's cluster key.
+- *A CA is not a cluster boundary when it is shared or cloned.* Clusters sharing
+  one authority are one cluster to this check, and anyone holding that
+  authority's key can run a server the check accepts and answer its TokenReview
+  as it likes — whether or not the genuine servers accept each other's tokens.
+  The own-identity comparison checks that an honest API server answered about
+  this pod; it cannot stop a control plane that is itself hostile and copies the
+  expected claims back.
+
+**The cost:** a local profile is valid in exactly one cluster. Recreating the
+cluster mints a new authority and the profile must be rewritten — one copy of the
+fingerprint the boot refusal prints. And the host needs nothing new: it already
+creates TokenReviews.
 
 ### What a local run must therefore supply
 
@@ -1083,9 +1011,11 @@ build and is fine because the generation moves with it; workloads running as Pod
 with projected service-account tokens for audience `accounts`; and the documents
 signed with the developer's keyless identity and POSTed to the same
 `/platform/_delivery/*` endpoints. The local host is configured with its local
-coordinate and an allowlist containing that developer identity.
+coordinate and the local profile above: the public-good root, and a policy bound
+to its cluster that lists that developer as a person.
 
-Nothing on the host is conditional on any of it. That is the point.
+Nothing on the host is conditional on any of it but the policy document on its
+trust anchor, which the composition does not write. That is the point.
 
 ### The three fields a local run looks unable to fill, and why it can
 

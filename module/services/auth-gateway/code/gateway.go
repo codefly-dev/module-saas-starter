@@ -472,10 +472,22 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		}
 	}
 	if isRuntimeRegisteredRoute(entry) {
-		// A resource-bound tool token is forwarded; a host-wide session is not.
-		if !isSolutionToolRequestPath(r.URL.Path) {
-			removePersonsSessionCredential(r.Header)
-		}
+		// The cookie NEVER travels to a declared upstream, whatever the bearer
+		// does. Two independent decisions, because they were one and the broader
+		// one silently carried the narrower: a request on the tool path skipped
+		// the whole removal and forwarded `Cookie` with it.
+		//
+		// Nothing upstream can have a use for it. This perimeter refuses a cookie
+		// AS a credential by name (see ExtAuthz.Check), so a cookie reaching an
+		// upstream is a host session credential arriving somewhere that cannot
+		// present it back here — carrying the refresh credential's value to a
+		// third party for no purpose it could serve.
+		removeCallerCookie(r.Header)
+		// The bearer is a separate question, and SA-F-BEARER is recorded OPEN
+		// rather than closed here: see removePersonsSessionCredential and the PR
+		// body. What this route does enforce is confinement — ExtAuthz admits a
+		// resource-bound token only at the solution its resource names — so a
+		// credential an upstream receives cannot be replayed across this host.
 	}
 	if entry != nil && entry.UpstreamPath != "" {
 		r.URL.Path = entry.UpstreamPath
@@ -498,6 +510,32 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 // removePersonsSessionCredential strips the person's own session from a request
 // before it reaches a runtime-registered upstream — a composed module's federated
 // prefix, or a solution.
+//
+// NOTHING CALLS THIS ON THE PROXY PATH, and that is the recorded state of
+// SA-F-BEARER rather than an oversight. It is kept, with its tests, because the
+// finding is open and this is the shape of its fix.
+//
+// Why it is not enabled here: a declared upstream authenticates the request BY
+// the forwarded bearer today, so withholding it makes every composed solution
+// answer 401 — the runtime's HTTP wrapper and its passthrough handler both
+// require `Authorization`. The replacement is a host-minted capability bound to
+// that upstream's own audience, and it does not exist on either side: this host
+// does not mint one for a session, and no consumer verifies one. Landing the
+// withholding first would break a working wire contract to close a finding, and
+// the thing that would make it safe lives in another repository.
+//
+// What this PR does instead, and what it does not:
+//   - The cookie is withheld unconditionally (removeCallerCookie). No upstream
+//     can authenticate with it — this perimeter refuses a cookie as a credential
+//     by name — so there is no contract to break.
+//   - A resource-bound token is CONFINED to the solution its resource names, on
+//     every path (ExtAuthz.Check). That removes the replay the forwarding makes
+//     possible: an upstream holding a credential the host delivered to it cannot
+//     act with it at this host's API, at another module's routes, or at the Work
+//     Context surface.
+//   - The person's host-wide session still reaches a declared upstream. That
+//     exposure is unchanged and is recorded OPEN in the PR body, with the
+//     cross-repo work it waits on.
 //
 // The invariant (SP-GW-07): a module or solution upstream never receives the
 // person's session credential or cookie. The host access token carries a host-wide
@@ -535,6 +573,19 @@ func removePersonsSessionCredential(h http.Header) {
 	h.Del("Authorization")
 	h.Del("Cookie")
 	h.Del("Proxy-Authorization")
+}
+
+// removeCallerCookie strips the caller's cookies alone, which is the part of the
+// removal above that has no consumer contract to break.
+//
+// A declared upstream is reached through this gateway, and this gateway does not
+// accept a cookie as a credential — it answers 401 and says so. So a cookie
+// forwarded there can authenticate nothing; what it can do is hand a third-party
+// pod the refresh credential's value, which is the longest-lived thing a browser
+// holds. The gateway has also already resolved identity from it by this point, so
+// an upstream reading it learns nothing it is not told in a header.
+func removeCallerCookie(h http.Header) {
+	h.Del("Cookie")
 }
 
 // removeCallerConnectionOptions applies the caller's Connection header to the

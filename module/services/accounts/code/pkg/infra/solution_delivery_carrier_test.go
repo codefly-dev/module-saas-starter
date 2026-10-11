@@ -71,9 +71,9 @@ type tokenReviewProbe struct {
 	authorization string
 }
 
-// The AUDIENCE is sent on every review. A TokenReview without one validates the
-// token for any audience, which would let a token its holder was legitimately
-// given for another service authenticate here.
+// The AUDIENCE is sent on every review. A TokenReview without one is checked
+// against the API server's own audiences, which would let the token every pod
+// is given for talking to the API server authenticate here.
 func TestCarrierReviewSendsTheAudience(t *testing.T) {
 	client, probe := tokenReviewing(t,
 		"system:serviceaccount:platform-authority:delivery", []string{"accounts"}, true)
@@ -82,7 +82,7 @@ func TestCarrierReviewSendsTheAudience(t *testing.T) {
 	require.NoError(t, check.AuthorizeCarrier(
 		context.Background(), "Bearer caller-token", business.SolutionDeliveryAuthority, nil))
 	require.Equal(t, []string{"accounts"}, probe.audiences,
-		"an audience-less review accepts a token minted for any service")
+		"an audience-less review accepts a token minted for the api server itself")
 	require.Equal(t, "caller-token", probe.token)
 	require.NotEmpty(t, probe.authorization,
 		"the host presents its OWN credential to the api server")

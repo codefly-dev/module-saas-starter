@@ -178,6 +178,17 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 			return true
 		}
 		stripAllIdentityHeaders(r)
+		// The person's whole session credential is withheld HERE even though the
+		// authenticated path below still forwards it (SA-F-BEARER, open).
+		//
+		// This path is the exception that has no contract to break. It runs no
+		// ext_authz at all — it is the anonymous module-federation surface, which
+		// the browser's loader fetches with no credential — so a bearer that
+		// arrives on it is one the upstream was never authenticated to receive
+		// and has no use for. A page that happened to attach one would otherwise
+		// hand it to a third-party pod on an unauthenticated fetch, which is a
+		// strictly worse exposure than the authenticated path's.
+		removePersonsSessionCredential(r.Header)
 		entry := &RouteEntry{
 			Service:        "solution:" + id,
 			UpstreamPath:   publicPath,
@@ -265,10 +276,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusForbidden, "no organization in this session")
 		return true
 	}
-	// Proxy to the solution. The caller's session credential does NOT travel with
-	// it: proxyTo removes the Authorization and Cookie headers for every
-	// runtime-registered upstream, and the solution receives the stamped identity
-	// headers instead (removePersonsSessionCredential).
+	// Proxy to the solution. The caller's COOKIE does not travel with it — proxyTo
+	// removes it for every declared upstream (removeCallerCookie) — and the
+	// solution receives the stamped identity headers beside the bearer. The
+	// bearer itself still travels: SA-F-BEARER is recorded open, for the reason
+	// given at removePersonsSessionCredential in gateway.go.
 	//
 	// Route through rateLimitThenProxy, not proxyTo directly: an authenticated
 	// solution data endpoint must consume the same per-org budget as an equivalent

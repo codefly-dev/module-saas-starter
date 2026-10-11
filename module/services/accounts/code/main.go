@@ -56,12 +56,12 @@ func main() {
 	defer codefly.CatchPanic(ctx)
 
 	config := &adapters.Configuration{
-		EndpointGrpcPort: codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port,
+		EndpointGrpcPort: codefly.For(ctx).API(standards.GRPC).NetworkInstance().Port,
 	}
-	if net := codefly.For(ctx).WithDefaultNetwork().API(standards.REST).NetworkInstance(); net != nil {
+	if net := codefly.For(ctx).API(standards.REST).NetworkInstance(); net != nil {
 		config.EndpointHttpPort = shared.Pointer(net.Port)
 	}
-	if net := codefly.For(ctx).WithDefaultNetwork().API(standards.CONNECT).NetworkInstance(); net != nil {
+	if net := codefly.For(ctx).API(standards.CONNECT).NetworkInstance(); net != nil {
 		config.EndpointConnectPort = shared.Pointer(net.Port)
 	}
 	// The module authority endpoint is declared in service.codefly.yaml, and a
@@ -76,9 +76,8 @@ func main() {
 	// accounts would crashloop and take the tenant surfaces, the internal tier
 	// and every service that authenticates through them down with it.
 	//
-	// This query deliberately does not use WithDefaultNetwork(), so resolution
-	// never invents a port; the only outcomes are the injected address or this
-	// error path.
+	// ResolveNetworkInstance never invents a port: the only outcomes are the
+	// injected address or this error path.
 	if authority, resolveErr := codefly.For(ctx).Endpoint(business.ModuleAuthorityEndpoint).API(standards.GRPC).ResolveNetworkInstance(); resolveErr != nil {
 		wool.Get(ctx).In("main").Error(
 			"the module authority endpoint did not resolve; no module authority listener is served",

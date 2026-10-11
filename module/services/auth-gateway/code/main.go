@@ -40,7 +40,7 @@ func main() {
 		panic(err.Error())
 	}
 
-	grpcPort := codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port
+	grpcPort := codefly.For(ctx).API(standards.GRPC).NetworkInstance().Port
 	var httpPort uint16
 	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
 	if httpNetErr != nil || httpNet == nil {

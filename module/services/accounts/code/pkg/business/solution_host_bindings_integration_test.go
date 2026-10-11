@@ -96,7 +96,7 @@ const testOwnershipDomain = "acme"
 func declaredBinding(t *testing.T, solutionID string, generation uint64) *solutionhost.SolutionHostBinding {
 	t.Helper()
 	document := &solutionhost.SolutionHostBinding{
-		Schema:           solutionhost.SchemaPresenceV2,
+		Schema:           solutionhost.SchemaPresenceV1,
 		Kind:             solutionhost.KindSolution,
 		Binding:          "acme.test." + solutionID,
 		Generation:       generation,
