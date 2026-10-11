@@ -17,6 +17,7 @@ package adapters
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/google/uuid"
@@ -222,4 +223,161 @@ func TestConfinedMintRefusesWithNoConfiguredOrigin(t *testing.T) {
 	require.Nil(t, issued)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	require.Contains(t, err.Error(), "no configured public address")
+}
+
+// THE DELIVERY SHAPE, not a constructed context: the headers the gateway
+// forwards, through the REAL Connect interceptor, into the REAL StartTask.
+//
+// Every test above installs the confinement with the context carriers directly,
+// which proves the rule and not the route to it. This proves the route: that the
+// perimeter's two headers survive the interceptor's strip, reach the mint as
+// facts, and are refused when a caller supplies them without the gateway's own
+// credential or supplies either one twice.
+func forwardedByTheGateway(confined bool) http.Header {
+	headers := http.Header{}
+	headers.Set("X-Codefly-Gateway-Token", "test-gateway-token")
+	headers.Set("X-User-Id", renewActorID)
+	headers.Set("X-Org-Id", renewOrgID)
+	headers.Set("X-Org-Role", "admin")
+	headers.Set("X-Session-Id", renewSession)
+	headers.Set("X-Credential-Kind", credentialKindSession)
+	headers.Set("X-Scopes", "")
+	if confined {
+		headers.Set(resourceConfinementHeader, confinedResource)
+		headers.Set(installationHeader, confinedInstallation)
+	}
+	return headers
+}
+
+func authorizeAsTheGateway(t *testing.T, headers http.Header) (context.Context, error) {
+	t.Helper()
+	previous := gatewayToken
+	SetGatewayToken("test-gateway-token")
+	t.Cleanup(func() { SetGatewayToken(previous) })
+	// The procedure name is the policy lookup key, so it is the real one: an
+	// unclassified procedure is refused before any header is read.
+	return (&connectPolicyInterceptor{}).authorize(
+		context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", headers)
+}
+
+func TestConfinedMintThroughTheRealInterceptor(t *testing.T) {
+	for name, probe := range map[string]struct {
+		request func() *gen.StartTaskWorkContextRequest
+		want    codes.Code
+	}{
+		"control: inside the ceiling": {
+			request: func() *gen.StartTaskWorkContextRequest { return confinedMintRequest("documents") },
+			want:    codes.OK,
+		},
+		"another organization": {
+			request: func() *gen.StartTaskWorkContextRequest {
+				request := confinedMintRequest("documents")
+				request.OrgId = uuid.Must(uuid.NewV7()).String()
+				return request
+			},
+			want: codes.PermissionDenied,
+		},
+		"an audience the consumer does not declare": {
+			request: func() *gen.StartTaskWorkContextRequest { return confinedMintRequest("example") },
+			want:    codes.PermissionDenied,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			solutionBoundaryService(t)
+			withConfiguredOrigin(t)
+			server := newConfinedMintServer(t)
+			ctx, err := authorizeAsTheGateway(t, forwardedByTheGateway(true))
+			require.NoError(t, err)
+
+			issued, err := server.StartTask(ctx, probe.request())
+
+			require.Equal(t, probe.want, status.Code(err), "err=%v", err)
+			if probe.want == codes.OK {
+				require.NotEmpty(t, issued.GetToken())
+			}
+		})
+	}
+}
+
+// AN EMPTY CEILING IS NOTHING FOR A CONFINED MINT, where it is unrestricted
+// everywhere else.
+//
+// This is the ordinary state, not an edge case: both fields are optional, the
+// proto documents empty as unrestricted, and the install dialog leaves them
+// empty. Read that way here, a credential delivered to one third-party client
+// mints for any audience this host serves and then pairs at every module the
+// organization installed — which is the escape the ceiling exists to close.
+func TestConfinedMintUnderAnUndeclaredCeilingIsRefused(t *testing.T) {
+	for name, strip := range map[string]func(*business.Principal){
+		"no declared audiences": func(p *business.Principal) { p.AllowedAudiences = nil },
+		"no declared scopes":    func(p *business.Principal) { p.AllowedScopes = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			solutionBoundaryService(t)
+			withConfiguredOrigin(t)
+			server, authority := newSolutionBoundaryServer(t)
+			consumer := confinedConsumer()
+			strip(consumer.Actor)
+			authority.installationFcts = consumer
+			ctx, err := authorizeAsTheGateway(t, forwardedByTheGateway(true))
+			require.NoError(t, err)
+
+			// `documents` is what this consumer's full ceiling DOES declare, so
+			// the only thing that can refuse it here is the empty list itself.
+			issued, err := server.StartTask(ctx, confinedMintRequest("documents"))
+
+			require.Error(t, err, "an installation with %s put no bound on a credential delivered to a third party", name)
+			require.Nil(t, issued)
+			require.Equal(t, codes.FailedPrecondition, status.Code(err))
+			require.Contains(t, err.Error(), "declares no allowed")
+		})
+	}
+}
+
+// THE CONTROL for the two above: the same empty ceiling puts no bound on an
+// UNCONFINED mint, which is what the field means everywhere else and what an
+// installation's own headless work relies on.
+func TestAnUndeclaredCeilingStillLeavesAnUnconfinedMintUnbounded(t *testing.T) {
+	solutionBoundaryService(t)
+	withConfiguredOrigin(t)
+	server, authority := newSolutionBoundaryServer(t)
+	consumer := confinedConsumer()
+	consumer.Actor.AllowedAudiences = nil
+	consumer.Actor.AllowedScopes = nil
+	authority.installationFcts = consumer
+
+	issued, err := server.StartTask(boundaryCaller(), confinedMintRequest("example"))
+
+	require.NoError(t, err)
+	require.NotEmpty(t, issued.GetToken())
+}
+
+// The two ceiling headers are read ONLY behind the gateway's own credential, and
+// only once each. Without the credential they are deleted — which also leaves the
+// request unauthenticated, so there is nothing to mint for either.
+func TestCeilingHeadersCannotBeForged(t *testing.T) {
+	solutionBoundaryService(t)
+	withConfiguredOrigin(t)
+
+	t.Run("no gateway credential", func(t *testing.T) {
+		headers := forwardedByTheGateway(true)
+		headers.Del("X-Codefly-Gateway-Token")
+		ctx, err := authorizeAsTheGateway(t, headers)
+		if err == nil {
+			_, err = newConfinedMintServer(t).StartTask(ctx, confinedMintRequest("documents"))
+		}
+		require.Error(t, err)
+	})
+
+	for name, header := range map[string]string{
+		"a second installation": installationHeader,
+		"a second resource":     resourceConfinementHeader,
+	} {
+		t.Run(name+" is refused", func(t *testing.T) {
+			headers := forwardedByTheGateway(true)
+			headers.Add(header, "a-value-the-perimeter-did-not-stamp")
+			_, err := authorizeAsTheGateway(t, headers)
+			require.Error(t, err, "a second %s would let the path that added it choose the ceiling", header)
+		})
+	}
 }

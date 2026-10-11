@@ -633,6 +633,47 @@ func (s *WorkContextAuthorityServer) holdConfinedMintToItsConsumer(
 		return status.Error(codes.Internal,
 			"the consumer's installation resolved without an agent principal, so its ceiling could not be read")
 	}
+	// AN EMPTY CEILING IS NOTHING HERE, where everywhere else it is everything.
+	//
+	// `allowed_audiences` and `allowed_scopes` are optional, and an empty list
+	// means UNRESTRICTED on every other mint — an installation that names no
+	// audience puts no audience limit on its agent's own headless work, which is
+	// the documented and intended reading for a consumer an administrator
+	// installed and trusts. The install form leaves both empty by default, so
+	// that is the ordinary state, not an edge case.
+	//
+	// For a CONFINED mint it inverts. The credential is held by a third party
+	// this organization never installed — an MCP client the person authorized for
+	// ONE solution — and the installation is the only statement of what that
+	// solution may act for. Read as unrestricted, it says the person's whole
+	// authority is available to that client at every module the organization
+	// installed, which is the escape the ceiling exists to close and is what the
+	// round-4 review found shipped.
+	//
+	// So it refuses, by name and actionably. A silent narrowing to "nothing" would
+	// have been the same decision with the operator left to discover it from a
+	// failing tool call.
+	//
+	// WHAT THIS IS NOT: the ceiling a consumer's own DECLARATION would give. The
+	// delivered presence document carries module PINS (module, package, version);
+	// the audience a capability names is the consumed module's ROUTE ALIAS; and no
+	// record on this host joins the two. Deriving one would be a guess at exactly
+	// the question this check answers, so the authority stays the installation an
+	// administrator consented to, and the gap is recorded rather than papered
+	// over (see the PR body and module/SOLUTION_REGISTRATION.md).
+	if len(consumer.Actor.AllowedAudiences) == 0 {
+		return status.Errorf(codes.FailedPrecondition,
+			"the installation of the consumer this credential was delivered to declares no allowed audiences, so there is nothing to hold its mint to. "+
+				"An empty ceiling is unrestricted for an installation's own work and is NOT accepted for a credential delivered to a third party: "+
+				"name the audiences agent %s may be minted for on that installation.",
+			consumer.Actor.AgentIdentifier)
+	}
+	if len(consumer.Actor.AllowedScopes) == 0 {
+		return status.Errorf(codes.FailedPrecondition,
+			"the installation of the consumer this credential was delivered to declares no allowed scopes, so there is nothing to bound its mint to. "+
+				"Name the resource kinds agent %s may be minted for on that installation.",
+			consumer.Actor.AgentIdentifier)
+	}
 	return enforceActorCeiling(ctx, consumer.Actor, req.GetAudience(), scopes)
 }
 

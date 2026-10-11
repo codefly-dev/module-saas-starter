@@ -176,6 +176,18 @@ for an audience that installation does not declare, or for scopes outside its
 agent's standing grants. An authority that cannot be asked answers 503; a capability
 is not issued on an unanswered question.
 
+**An installation that declares NO audiences is refused here, and is unrestricted
+everywhere else.** `allowed_audiences` and `allowed_scopes` are optional and empty
+means unrestricted — the right reading for the installation's own headless work,
+which an administrator consented to — and the install form leaves both empty, so
+that is the ordinary state. For a confined mint the same emptiness would say the
+person's whole authority is available, at every module the organization installed,
+to a third party nobody installed. So accounts refuses and names the field. This is
+the installation's ceiling and NOT the consumer's own declaration: the delivered
+presence document carries module pins (module, package, version), a capability's
+audience is the consumed module's route alias, and no record on this host joins the
+two — deriving one would be a guess at the question the check exists to answer.
+
 Both stamps are on `untrustedAuthHeaders`, so a caller can assert neither and cannot
 pick its own ceiling. The consumer check and the installation stamp run on the HTTP
 gateway path, where the registry and the entitlement authority live; a deployment
