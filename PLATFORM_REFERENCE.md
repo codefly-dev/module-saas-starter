@@ -203,9 +203,12 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   analog of the audit's `delegation_jti` + `caused_by` chain + ceiling-snapshot
   hash.
 - **Retention/redaction, 🟡:** `RunRetention` deletes per
-  `data_retention_policies`, and retires audit events by dropping each monthly
-  partition whose recorded range ends before the window
+  `data_retention_policies`, counted from the database's clock, and retires
+  audit events by dropping each monthly partition whose recorded range ends
+  before the window
   ([DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md#audit-retention-drops-a-partition-by-its-recorded-range-under-lock));
+  a run that fails in any part is an error the alert pack watches
+  ([MEASUREMENT_RUNBOOKS.md](./module/MEASUREMENT_RUNBOOKS.md#retention));
   export payloads are PII-redacted. The audit's named two-tier (7-year
   content-free / 90-day full) split is not a distinct construct yet — it is the
   compliance tier planned under

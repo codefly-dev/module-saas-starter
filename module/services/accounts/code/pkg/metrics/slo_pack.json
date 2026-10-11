@@ -123,6 +123,14 @@
       "runbook": "usage-reconciliation",
       "expression_language": "promql",
       "expression": "max_over_time(saas_usage_reconciliation_discrepancy[1h]) != 0"
+    },
+    {
+      "id": "retention_failures",
+      "signal": "saas.retention.failures",
+      "condition": "a scheduled retention run failed in any part within the last hour",
+      "runbook": "retention",
+      "expression_language": "promql",
+      "expression": "increase(saas_retention_failures_total[1h]) > 0"
     }
   ]
 }
