@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -34,11 +35,19 @@ import (
 // deployed host configured with a local coordinate admitted any file any mount
 // writer dropped, and the coordinate being self-asserted on both sides meant the
 // misconfiguration was not self-defeating. It survived only because keyless was
-// unavailable; keyless is built now, so a laptop runs the same verifier against a
-// local trust root and a local allowlist. The boundary is data, not code, and a
-// deployed host refuses a locally signed document through the ORDINARY check that
-// refuses any unlisted identity — not a mode flag, not a coordinate comparison,
-// and not a code path that exists only to be disabled.
+// unavailable; keyless is built now, so a local cluster runs the same verifier,
+// at the same strength, against the same public-good root and a local allowlist.
+// A deployed host refuses a locally signed document through the ORDINARY check
+// that refuses any unlisted identity — not a mode flag, not a coordinate
+// comparison, and not a code path that exists only to be disabled.
+//
+// The one thing the local allowlist may say that a deployed one may not is a
+// PERSON signer (issue #1063), and it may say it only in a policy that declares
+// itself local and is bound to one cluster by that cluster's certificate
+// authority and its acceptance of this pod's own token — proven against the API
+// server at boot and held for every later cluster call, never read from
+// anything the composition writes. solution_host_local_profile.go is that binding and the
+// argument for it.
 
 // SolutionHostTrustPolicy is how a delivered carrier's bundle is checked.
 type SolutionHostTrustPolicy string
@@ -65,6 +74,15 @@ type solutionHostBundleVerifierWithPolicy interface {
 	// SignerDomains maps each attested signer identity to the ownership domains
 	// it may deliver under, in the shape core's Host takes.
 	SignerDomains() map[string][]string
+
+	// ProveLocalCluster binds a LOCAL policy to the cluster it was written for:
+	// the cluster client must hold exactly the pinned certificate authority,
+	// reach an API server under it that authenticates this pod's own token,
+	// and keep that pinned transport for every later call. It refuses — and the
+	// boot must stop — when it cannot, which is how a host in any other cluster
+	// refuses a local profile. A deployed policy is bound to no cluster and this
+	// does nothing. Until it succeeds a local policy admits no carrier.
+	ProveLocalCluster(ctx context.Context, cluster SolutionHostClusterAuthority) error
 }
 
 // NewSolutionHostBundleVerifier builds the verifier for a named trust policy.

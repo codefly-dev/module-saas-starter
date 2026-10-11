@@ -58,6 +58,43 @@ type KubernetesClient struct {
 	// working some hours later — which presents as the API server refusing the
 	// host's own identity, the single most confusing failure available here.
 	tokenPath string
+	// authority is the cluster CA bundle the kubelet projected, as read at
+	// construction: the roots this client trusts, and what a local verification
+	// policy's cluster binding is checked against (BindToAuthority).
+	authority []byte
+	// namespacePath is the kubelet-projected namespace file, read when this
+	// host reviews its OWN token to prove which cluster it runs in. Fixed in
+	// production (inClusterNamespacePath); a field only so a test can supply
+	// one.
+	namespacePath string
+}
+
+// errKubernetesRedirect refuses every redirect the API server answers with.
+var errKubernetesRedirect = errors.New("the kubernetes api answered with a redirect, and this host follows none")
+
+// newKubernetesHTTPClient is the one transport every call to the API server
+// uses: TLS 1.3 against exactly the given roots, a bounded timeout, and NO
+// redirects.
+//
+// Redirects are refused because a followed redirect is a request to a server
+// nobody configured: a TokenReview POSTed to wherever a response pointed is a
+// credential decision made by that server. The API server answers the calls
+// this host makes directly; a redirect is a misconfiguration or an attack, and
+// either way it is refused rather than followed.
+func newKubernetesHTTPClient(roots *x509.CertPool) *http.Client {
+	return &http.Client{
+		// A bounded timeout, because every caller of this is on a request
+		// path that must fail rather than hang. The delivered namespaces are
+		// default-deny egress, so a misconfigured NetworkPolicy makes this
+		// call hang rather than refuse — and without a deadline that becomes
+		// a request the client gave up on while the host still holds its
+		// resources.
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS13},
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return errKubernetesRedirect },
+	}
 }
 
 // NewKubernetesClient builds the client from the in-cluster environment.
@@ -78,29 +115,28 @@ func NewKubernetesClient() (*KubernetesClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot read the cluster CA at %s: %w", ErrKubernetesUnavailable, inClusterCAPath, err)
 	}
+	return kubernetesClientFrom("https://"+host+":"+port, authority, inClusterTokenPath, inClusterNamespacePath)
+}
+
+// kubernetesClientFrom is the construction NewKubernetesClient performs, over
+// pieces it has already located — separated so a test builds its client through
+// the same code (the same roots, the same redirect refusal) rather than a
+// lookalike.
+func kubernetesClientFrom(endpoint string, authority []byte, tokenPath, namespacePath string) (*KubernetesClient, error) {
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(authority) {
-		return nil, fmt.Errorf("%w: the cluster CA at %s contains no usable certificate", ErrKubernetesUnavailable, inClusterCAPath)
+		return nil, fmt.Errorf("%w: the cluster CA bundle contains no usable certificate", ErrKubernetesUnavailable)
 	}
-	if _, err := os.ReadFile(inClusterTokenPath); err != nil {
+	if _, err := os.ReadFile(tokenPath); err != nil {
 		return nil, fmt.Errorf("%w: cannot read this service's own token at %s: %w",
-			ErrKubernetesUnavailable, inClusterTokenPath, err)
+			ErrKubernetesUnavailable, tokenPath, err)
 	}
 	return &KubernetesClient{
-		endpoint:  "https://" + host + ":" + port,
-		tokenPath: inClusterTokenPath,
-		http: &http.Client{
-			// A bounded timeout, because every caller of this is on a request
-			// path that must fail rather than hang. The delivered namespaces are
-			// default-deny egress, so a misconfigured NetworkPolicy makes this
-			// call hang rather than refuse — and without a deadline that becomes
-			// a request the client gave up on while the host still holds its
-			// resources.
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS13},
-			},
-		},
+		endpoint:      endpoint,
+		tokenPath:     tokenPath,
+		authority:     authority,
+		namespacePath: namespacePath,
+		http:          newKubernetesHTTPClient(pool),
 	}, nil
 }
 
