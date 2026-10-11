@@ -211,7 +211,7 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 		// narrowing, so it must not authorize capabilities at all rather than
 		// authorize them on the declared ceiling alone — which is the state this
 		// file exists to end.
-		return nil, nil, status.Error(codes.FailedPrecondition,
+		return nil, nil, moduleRefusal(codes.FailedPrecondition, ModuleLiveAuthorityUnavailableReason,
 			"this host cannot re-read live module authority, so no capability may be exercised")
 	}
 

@@ -80,7 +80,7 @@ the source named.
 | Person follows a resource | **Does not exist** anywhere in the repository | the follow relation and its RPCs |
 | Idempotent notification write | **Exists.** `pkg/business/notifications.go:95` derives the row id as `uuid.NewSHA1(uuid.NameSpaceURL, "saas-starter/notification/"+idempotency_key)`; `pkg/infra/postgres_notifications.go:11` upserts `ON CONFLICT (id)` with a full payload-equality guard, so an identical retry is a no-op and a same-key/different-payload call errors | a key derived from the right tuple |
 | Opt-out suppression | **Exists.** `CreateNotification` returns `nil, nil` when policy suppresses, surfacing as `ModuleNotifyUserResponse.delivered = false` while the call succeeds | nothing |
-| Recipient eligibility | **Partial.** `NotifyUser` checks only that the target is an org member (`requireTenantMember`, `module_capabilities.go:233`) | a resource-level check |
+| Recipient eligibility | **Partial.** `NotifyUser` checks only that the target is an org member (`requireTenantMember` in `pkg/business/module_capabilities.go`) | a resource-level check |
 | Visibility at read | **Missing.** `GetUnreadCount` is `COUNT(*) WHERE user_id = $1 AND read_at IS NULL` and `ListNotifications` returns the stored `title`/`body`; RLS on `notifications` keys on `user_id` alone (migration 34) and `org_id` is descriptive, not authoritative | the recheck in §Access rechecks |
 
 `saas.document.subscribed` and `saas.document.unsubscribed` exist in the audit

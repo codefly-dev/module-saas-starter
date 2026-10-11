@@ -30,6 +30,48 @@ import "saas/policy/v1/options.proto";
 // a principal explicitly granted cross-tenant authority may operate on other
 // tenants and enqueue global inbox work.
 //
+// REFUSALS. Every refusal of the CALLER'S AUTHORITY is Unauthenticated or
+// PermissionDenied — an identity it cannot prove, a principal this host does
+// not admit, a tenant it is not bound to, a queue or namespace its grant does
+// not cover — and so is the endpoint refusing a procedure it does not serve. A
+// malformed request is InvalidArgument instead, whatever the caller's authority
+// (an unknown notification category or type, a destination that is not a
+// same-origin path). A person this surface is asked to act on who is not a
+// member of the named tenant is FAILED_PRECONDITION, so a module driving this
+// surface from a journal with retries can drop the work for a departed person
+// without also dropping it for a composition this host does not admit as a
+// module principal, or whose workload it cannot bind to an approved build.
+//
+// FAILED_PRECONDITION ALONE IS NOT A DISCRIMINATOR. This surface answers it to
+// several unrelated facts, and only one of them is final — so a consumer keys
+// on the google.rpc.ErrorInfo reason, under domain saas.accounts.v1, and never
+// on the code alone or on the message text. On the notify and
+// subject-visibility methods the reasons are:
+//
+//   - TENANT_MEMBERSHIP_MISSING — the person named is not a member of the
+//     tenant. FINAL for that person: a retry cannot change it, and no operator
+//     is owed a repair.
+//   - NOTIFICATION_IDEMPOTENCY_CONFLICT — the idempotency key was used for
+//     different content. The caller's own defect; a retry of the same call
+//     never clears it.
+//   - SUBJECT_VISIBILITY_SET_TOO_LARGE — the viewer's set cannot be served
+//     whole. An administrator changes the hierarchy.
+//   - LIVE_AUTHORITY_UNAVAILABLE — this host cannot re-read live module
+//     authority, so it exercises no capability at all. An OPERATOR condition,
+//     refused before any membership read: RETAIN the work and retry once the
+//     host is repaired. Dropping it is how a misconfiguration consumes a
+//     journal silently.
+//
+// TREAT AN ABSENT OR UNRECOGNISED REASON AS RETAINABLE, never as final. This
+// list is what the surface answers today, not a promise about every future
+// refusal, and a consumer that reads "no reason I know" as "done" turns the
+// next refusal added here into silently discarded work. Only the reasons above
+// that say FINAL may end a unit of work.
+//
+// Note that the Mint* exchanges' own refusals carry reasons under a different
+// domain (accounts.saas.codefly.dev), so a reason is read together with the
+// domain the same call answered with.
+//
 // Jobs reuse the saas.jobs.v1 envelope, lease, and lifecycle verbatim. Because
 // the caller cannot join the saas transaction, the module producer contract is
 // at-least-once with idempotency keys (unlike the in-process producer, which
@@ -1128,7 +1170,10 @@ service ModuleCapabilitiesService {
     };
   }
 
-  // EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+  // EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+  // subject-scoped job whose subject is not a member of the tenant is
+  // FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+  // and key on the reason rather than the code.
   rpc EnqueueJob(ModuleEnqueueJobRequest) returns (ModuleEnqueueJobResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1198,7 +1243,12 @@ service ModuleCapabilitiesService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
-  // NotifyUser delivers a notification subject to category policy.
+  // NotifyUser delivers a notification subject to category policy. A recipient
+  // who is not a member of the tenant is FAILED_PRECONDITION with reason
+  // TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+  // already used for different content, and a host that cannot re-read live
+  // authority, are FAILED_PRECONDITION too under their own reasons, so the
+  // reason — not the code — says which happened; see REFUSALS.
   rpc NotifyUser(ModuleNotifyUserRequest) returns (ModuleNotifyUserResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1213,7 +1263,9 @@ service ModuleCapabilitiesService {
     };
   }
   // NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-  // see the request.
+  // see the request. It names no recipient, so it has no non-member refusal; an
+  // idempotency_key already used for different content is FAILED_PRECONDITION
+  // with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
   rpc NotifyOrgAdmins(ModuleNotifyOrgAdminsRequest) returns (ModuleNotifyOrgAdminsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1305,7 +1357,11 @@ service ModuleCapabilitiesService {
     };
   }
   // ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-  // whole set of other subjects whose rows that viewer may read.
+  // whole set of other subjects whose rows that viewer may read. A viewer who
+  // is not a member of the tenant is FAILED_PRECONDITION with reason
+  // TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+  // FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+  // the reason tells a consumer which it got.
   rpc ListSubjectVisibility(ModuleListSubjectVisibilityRequest) returns (ModuleListSubjectVisibilityResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
