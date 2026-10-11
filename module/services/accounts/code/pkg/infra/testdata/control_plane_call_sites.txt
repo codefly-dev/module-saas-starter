@@ -191,6 +191,7 @@ pkg/infra/postgres_webhook_secrets.go: (*PostgresStore).MigrateLegacyWebhookSecr
 pkg/infra/scoped.go: (*Scoped).Within: WithControlPlane
 pkg/infra/scoped.go: (*Scoped).Within: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithControlPlane: withControlPlaneTx
+pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgReadSnapshot: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgTx: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgTx: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithUserTx: txbind.BindRequest

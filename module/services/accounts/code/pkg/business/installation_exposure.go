@@ -54,9 +54,10 @@ var ErrTeamOutsideOrganization = errors.New("team is not in this organization")
 // ListOrganizationInstallations lists orgID's ACTIVE installations, one page, with
 // live health, exposure and the catalogue row of each installed target.
 //
-// The installations and their exposure are read in ONE organization
-// transaction, so a page never shows a grant beside an installation state from a
-// different moment. The catalogue rows are read after it, under the control
+// The installations and their exposure are read on ONE read-only REPEATABLE
+// READ snapshot of the organization (WithOrgReadSnapshot), so a page never shows
+// an installation beside exposure from a different moment — an uninstall that
+// commits between the two reads is seen by both or by neither. The catalogue rows are read after it, under the control
 // plane, through the same accepted-applied-state query ListAvailableSolutions
 // serves — presence is control-plane state the tenant role holds no grant on,
 // which is why ListAvailableSolutions reads it there too. They are display facts
@@ -77,7 +78,7 @@ func (s *Service) ListOrganizationInstallations(
 		summaries []*gen.InstallationSummary
 		exposure  map[string]*InstallationExposure
 	)
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+	if err := s.installationStore().WithOrgReadSnapshot(ctx, orgID, func(ctx context.Context) error {
 		var e error
 		summaries, e = s.installationStore().ListInstallations(ctx, orgID,
 			gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, pageToken, pageSize+1)
@@ -130,9 +131,11 @@ func (s *Service) ListOrganizationInstallations(
 			Target:   targets[installation.GetTargetId()],
 		}
 		if row.Exposure == nil {
-			// An active installation always has a root node, so a missing entry is
-			// a defect; an empty exposure is still the truthful answer to show.
-			row.Exposure = &InstallationExposure{}
+			// Both reads share one snapshot and an active installation always has
+			// a root node, so a missing entry is a defect rather than a race. It
+			// fails the listing instead of showing an active row with no root.
+			return nil, "", w.Wrapf(fmt.Errorf("installation %s has no authority root in the same snapshot", installation.GetId()),
+				"cannot list organization installations")
 		}
 		out = append(out, row)
 	}
@@ -146,8 +149,19 @@ func (s *Service) ListOrganizationInstallations(
 // Resolving the node, checking the team and the role, and writing the grant run
 // in ONE organization transaction through grantScopeTx — the body GrantScope
 // runs — so the grant, its scope.granted event and its audit record are those of
-// any other scope grant, and the installation cannot be uninstalled between the
-// resolution and the write.
+// any other scope grant.
+//
+// The resolution takes a SHARE lock on the installation row and holds it to
+// commit (InstallationRootScopePath). An uninstall revokes that row with an
+// UPDATE, so the two serialize: if the uninstall commits first, the resolution
+// finds no active installation and nothing is written; if the resolution locks
+// first, the uninstall waits for this grant to commit. A grant therefore never
+// lands on an installation that was already uninstalled.
+//
+// The role must permit using a solution — that is the minimum for the grant to
+// expose anything — but it is not a ceiling. A broader role grants its full
+// authority beneath the installation's authority root, exactly as GrantScope
+// with the same role at the same node would.
 func (s *Service) GrantInstallationToTeam(
 	ctx context.Context, actorID, orgID, installationID, teamID, roleID string,
 ) (*gen.ScopeGrant, error) {

@@ -4,7 +4,9 @@ package business_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"accounts/pkg/adapters"
 	"accounts/pkg/business"
@@ -228,4 +230,109 @@ func TestRevokeInstallationFromTeamIsAWitnessedNarrowing(t *testing.T) {
 	_, err = server.RevokeInstallationFromTeam(admin, revoke)
 	require.NoError(t, err)
 	require.Empty(t, entitledInstallations(t, w.org, w.inTeam), "revoking hides it again")
+}
+
+// requireARowLockWaiter proves two transactions genuinely contend on a row
+// rather than passing each other.
+func requireARowLockWaiter(t *testing.T, msg string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var waiting bool
+		if err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+			return testStore.Pool().QueryRow(ctx,
+				`SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted)`).Scan(&waiting)
+		}); err != nil {
+			return false
+		}
+		return waiting
+	}, 10*time.Second, 20*time.Millisecond, msg)
+}
+
+// A grant and an uninstall of the same installation serialize on its row, in
+// both orders, so a grant never lands on an installation already uninstalled.
+func TestGrantInstallationToTeamSerializesWithUninstall(t *testing.T) {
+	t.Run("uninstall commits first: the waiting grant finds nothing", func(t *testing.T) {
+		w := newExposureWorld(t)
+		granted := make(chan error, 1)
+		require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+			_, transitioned, err := testStore.UninstallSolution(ctx, w.org, w.installation)
+			if err != nil {
+				return err
+			}
+			require.True(t, transitioned)
+			go func() {
+				_, err := testService.GrantInstallationToTeam(testCtx, w.admin, w.org, w.installation, w.team, w.useRole)
+				granted <- err
+			}()
+			requireARowLockWaiter(t, "the grant should wait on the row the uninstall holds")
+			select {
+			case err := <-granted:
+				t.Fatalf("the grant finished while the uninstall held the row: %v", err)
+			default:
+			}
+			return nil
+		}))
+		err := <-granted
+		var se *business.StoreError
+		require.True(t, errors.As(err, &se), "got %v", err)
+		require.Equal(t, business.ErrTypeNotFound, se.StoreErrorType)
+
+		// Nothing landed on the retained node: a reinstall of the same target
+		// reuses it, and the team does not reach the reinstalled solution.
+		agentRole := createRole(t, w.org, "agent again", "doc", "write")
+		reinstalled, err := testService.InstallSolution(testCtx, w.admin, &business.InstallSolutionParams{
+			OrgID: w.org, AgentIdentifier: "acme.example/exposed:1.0.1", TargetID: w.target,
+			RootScopeLabel: "Exposed", RoleID: agentRole,
+		})
+		require.NoError(t, err)
+		require.NotEqual(t, w.installation, reinstalled.GetId())
+		require.Empty(t, entitledInstallations(t, w.org, w.inTeam))
+	})
+
+	t.Run("the grant locks first: the uninstall waits for it", func(t *testing.T) {
+		w := newExposureWorld(t)
+		uninstalled := make(chan error, 1)
+		require.NoError(t, testStore.WithOrgTx(testCtx, w.org, func(ctx context.Context) error {
+			if _, err := testStore.InstallationRootScopePath(ctx, w.org, w.installation); err != nil {
+				return err
+			}
+			go func() { uninstalled <- testService.UninstallSolution(testCtx, w.admin, w.org, w.installation) }()
+			requireARowLockWaiter(t, "the uninstall should wait on the row the grant holds")
+			select {
+			case err := <-uninstalled:
+				t.Fatalf("the uninstall finished while the grant held the row: %v", err)
+			default:
+			}
+			return nil
+		}))
+		require.NoError(t, <-uninstalled)
+	})
+}
+
+// A platform super administrator passes the organization-admin check for every
+// organization (requireOrgAdmin, shared by every organization-admin method), so
+// these doors admit one for an organization it is not a member of. Pinned so the
+// inherited reach is a decision someone has to change on purpose. A lesser
+// platform role is not admitted.
+func TestInstallationExposureAdmitsPlatformSuperAdmin(t *testing.T) {
+	w := newExposureWorld(t)
+	server := &adapters.InstallationServer{}
+	superAdmin, ownOrg := mustUserAndOrg(t, testCtx, "super@platform.test", "platform-super", "Platform Home")
+	grantPlatformRole(t, superAdmin, "super_admin", superAdmin)
+	support, supportOrg := mustUserAndOrg(t, testCtx, "support@platform.test", "platform-support", "Support Home")
+	grantPlatformRole(t, support, "support", support)
+
+	listed, err := server.ListOrganizationInstallations(storyCallerContext(testCtx, superAdmin, ownOrg),
+		&gen.ListOrganizationInstallationsRequest{OrgId: w.org})
+	require.NoError(t, err)
+	require.Len(t, listed.GetInstallations(), 1)
+	require.Equal(t, w.installation, listed.GetInstallations()[0].GetInstallation().GetId())
+	_, err = server.GrantInstallationToTeam(storyCallerContext(testCtx, superAdmin, ownOrg), &gen.GrantInstallationToTeamRequest{
+		OrgId: w.org, InstallationId: w.installation, TeamId: w.team, RoleId: w.useRole,
+	})
+	require.NoError(t, err)
+
+	_, err = server.ListOrganizationInstallations(storyCallerContext(testCtx, support, supportOrg),
+		&gen.ListOrganizationInstallationsRequest{OrgId: w.org})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }

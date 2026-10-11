@@ -401,7 +401,11 @@ service InstallationService {
   // is read by the gateway for an organisation it projected from a verified
   // identity, and a bare tenant credential must never reach it. This one binds
   // the organisation to the caller's own admin membership, exactly as
-  // ListAvailableSolutions does, so no organisation can read another's.
+  // ListAvailableSolutions does, so no organisation's administrator can read
+  // another's. The one exception is inherited, not added here: a platform
+  // super administrator (not impersonating) passes the organisation-admin check
+  // for every organisation, as on every other organisation-admin method, and so
+  // may list any organisation's installations.
   rpc ListOrganizationInstallations(ListOrganizationInstallationsRequest) returns (ListOrganizationInstallationsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -426,8 +430,13 @@ service InstallationService {
   // the given role to the team at the installation's authority-root node. The
   // host resolves that node from the installation, so a caller never names a
   // scope path. The role must permit using a solution, or the grant would expose
-  // nothing; the team must belong to the organisation. Emits scope.granted, the
+  // nothing; the team must belong to the organisation. Using a solution is the
+  // minimum the role must permit, not a ceiling: the team holds everything the
+  // role permits beneath the installation's authority root, exactly as a
+  // GrantScope of that role at that node would give it. Emits scope.granted, the
   // same event and audit record as any other scope grant, because it is one.
+  // Organisation-admin, with the same platform super administrator exception
+  // ListOrganizationInstallations describes.
   rpc GrantInstallationToTeam(GrantInstallationToTeamRequest) returns (GrantInstallationToTeamResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -458,7 +467,10 @@ service InstallationService {
   // RevokeInstallationFromTeam removes one team grant at an installation's
   // authority-root node. It is a narrowing, so it runs under the policy log
   // exactly as RevokeScope does: a host that cannot witness the narrowing refuses
-  // it, and says so, rather than revoking unwitnessed.
+  // it, and says so, rather than revoking unwitnessed. It removes the one grant
+  // at the authority root that granted_teams reports; a team that also reaches
+  // the installation from a grant above keeps that reach. Organisation-admin,
+  // with the same platform super administrator exception.
   rpc RevokeInstallationFromTeam(RevokeInstallationFromTeamRequest) returns (google.protobuf.Empty) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -533,7 +545,8 @@ message GrantInstallationToTeamRequest {
   string team_id = 3 [(buf.validate.field).string.uuid = true];
   // The role the team holds at the installation's authority root. It must permit
   // using a solution (or carry the wildcard); a role that does not would expose
-  // nothing, and is refused rather than written.
+  // nothing, and is refused rather than written. Everything else the role
+  // permits is granted too, beneath that root.
   string role_id = 4 [(buf.validate.field).string.uuid = true];
 }
 

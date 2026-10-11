@@ -937,13 +937,21 @@ func installationTeamGrants(
 // so another organization's installation id resolves to not found, never to a
 // path. A revoked installation is not found either: exposing an uninstalled
 // solution would grant reach into a node nothing is installed at.
+//
+// It takes a SHARE lock on the installation row, held until the caller's
+// transaction ends. UninstallSolution flips the row to revoked with an UPDATE,
+// which that lock blocks, so the two serialize on the row: an uninstall that
+// commits first leaves the row revoked, and this read — waiting on it, then
+// re-checking `status = 'active'` against the committed row — finds nothing; a
+// read that locks first holds the uninstall off until the caller commits.
 func (s *PostgresStore) InstallationRootScopePath(ctx context.Context, orgID, installationID string) (string, error) {
 	var path string
 	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
 		SELECT n.scope_path::text
 		  FROM installations i
 		  JOIN scope_nodes n ON n.id = i.root_scope_node_id
-		 WHERE i.org_id = $1 AND i.id::text = $2 AND i.status = 'active'`,
+		 WHERE i.org_id = $1 AND i.id::text = $2 AND i.status = 'active'
+		   FOR SHARE OF i`,
 		orgID, installationID).Scan(&path)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", business.NewStoreError(

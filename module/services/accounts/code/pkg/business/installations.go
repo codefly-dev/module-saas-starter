@@ -82,6 +82,9 @@ type InstallationStore interface {
 	// RolePermits reports whether a role visible to the tenant permits
 	// (resource, action), directly or by wildcard.
 	RolePermits(ctx context.Context, roleID, resource, action string) (bool, error)
+	// WithOrgReadSnapshot runs fn on one read-only REPEATABLE READ snapshot
+	// bound to orgID, so several reads describe one moment.
+	WithOrgReadSnapshot(ctx context.Context, orgID string, fn func(ctx context.Context) error) error
 }
 
 func (s *Service) installationStore() InstallationStore {

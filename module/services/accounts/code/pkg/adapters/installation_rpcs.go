@@ -171,7 +171,10 @@ func availableSolutionProto(entry *business.AvailableSolutionTarget) *gen.Availa
 // its own organization's installations. Authenticated and org-admin, exactly as
 // ListAvailableSolutions is: the organization is a request field, and it is
 // bound to the caller's own admin membership before anything is read, so no
-// organization can list another's.
+// organization's administrator can list another's. requireOrgAdmin admits a
+// platform super administrator for every organization, here as on every other
+// organization-admin method; that inherited reach is pinned by
+// TestInstallationExposureAdmitsPlatformSuperAdmin.
 func (s *InstallationServer) ListOrganizationInstallations(
 	ctx context.Context, req *gen.ListOrganizationInstallationsRequest,
 ) (*gen.ListOrganizationInstallationsResponse, error) {

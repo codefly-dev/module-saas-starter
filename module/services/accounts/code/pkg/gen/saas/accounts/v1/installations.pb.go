@@ -1060,7 +1060,8 @@ type GrantInstallationToTeamRequest struct {
 	TeamId         string                 `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
 	// The role the team holds at the installation's authority root. It must permit
 	// using a solution (or carry the wildcard); a role that does not would expose
-	// nothing, and is refused rather than written.
+	// nothing, and is refused rather than written. Everything else the role
+	// permits is granted too, beneath that root.
 	RoleId        string `protobuf:"bytes,4,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

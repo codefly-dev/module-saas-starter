@@ -93,19 +93,31 @@ type InstallationServiceClient interface {
 	// is read by the gateway for an organisation it projected from a verified
 	// identity, and a bare tenant credential must never reach it. This one binds
 	// the organisation to the caller's own admin membership, exactly as
-	// ListAvailableSolutions does, so no organisation can read another's.
+	// ListAvailableSolutions does, so no organisation's administrator can read
+	// another's. The one exception is inherited, not added here: a platform
+	// super administrator (not impersonating) passes the organisation-admin check
+	// for every organisation, as on every other organisation-admin method, and so
+	// may list any organisation's installations.
 	ListOrganizationInstallations(ctx context.Context, in *ListOrganizationInstallationsRequest, opts ...grpc.CallOption) (*ListOrganizationInstallationsResponse, error)
 	// GrantInstallationToTeam exposes an installation to a team: a scope grant of
 	// the given role to the team at the installation's authority-root node. The
 	// host resolves that node from the installation, so a caller never names a
 	// scope path. The role must permit using a solution, or the grant would expose
-	// nothing; the team must belong to the organisation. Emits scope.granted, the
+	// nothing; the team must belong to the organisation. Using a solution is the
+	// minimum the role must permit, not a ceiling: the team holds everything the
+	// role permits beneath the installation's authority root, exactly as a
+	// GrantScope of that role at that node would give it. Emits scope.granted, the
 	// same event and audit record as any other scope grant, because it is one.
+	// Organisation-admin, with the same platform super administrator exception
+	// ListOrganizationInstallations describes.
 	GrantInstallationToTeam(ctx context.Context, in *GrantInstallationToTeamRequest, opts ...grpc.CallOption) (*GrantInstallationToTeamResponse, error)
 	// RevokeInstallationFromTeam removes one team grant at an installation's
 	// authority-root node. It is a narrowing, so it runs under the policy log
 	// exactly as RevokeScope does: a host that cannot witness the narrowing refuses
-	// it, and says so, rather than revoking unwitnessed.
+	// it, and says so, rather than revoking unwitnessed. It removes the one grant
+	// at the authority root that granted_teams reports; a team that also reaches
+	// the installation from a grant above keeps that reach. Organisation-admin,
+	// with the same platform super administrator exception.
 	RevokeInstallationFromTeam(ctx context.Context, in *RevokeInstallationFromTeamRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
@@ -268,19 +280,31 @@ type InstallationServiceServer interface {
 	// is read by the gateway for an organisation it projected from a verified
 	// identity, and a bare tenant credential must never reach it. This one binds
 	// the organisation to the caller's own admin membership, exactly as
-	// ListAvailableSolutions does, so no organisation can read another's.
+	// ListAvailableSolutions does, so no organisation's administrator can read
+	// another's. The one exception is inherited, not added here: a platform
+	// super administrator (not impersonating) passes the organisation-admin check
+	// for every organisation, as on every other organisation-admin method, and so
+	// may list any organisation's installations.
 	ListOrganizationInstallations(context.Context, *ListOrganizationInstallationsRequest) (*ListOrganizationInstallationsResponse, error)
 	// GrantInstallationToTeam exposes an installation to a team: a scope grant of
 	// the given role to the team at the installation's authority-root node. The
 	// host resolves that node from the installation, so a caller never names a
 	// scope path. The role must permit using a solution, or the grant would expose
-	// nothing; the team must belong to the organisation. Emits scope.granted, the
+	// nothing; the team must belong to the organisation. Using a solution is the
+	// minimum the role must permit, not a ceiling: the team holds everything the
+	// role permits beneath the installation's authority root, exactly as a
+	// GrantScope of that role at that node would give it. Emits scope.granted, the
 	// same event and audit record as any other scope grant, because it is one.
+	// Organisation-admin, with the same platform super administrator exception
+	// ListOrganizationInstallations describes.
 	GrantInstallationToTeam(context.Context, *GrantInstallationToTeamRequest) (*GrantInstallationToTeamResponse, error)
 	// RevokeInstallationFromTeam removes one team grant at an installation's
 	// authority-root node. It is a narrowing, so it runs under the policy log
 	// exactly as RevokeScope does: a host that cannot witness the narrowing refuses
-	// it, and says so, rather than revoking unwitnessed.
+	// it, and says so, rather than revoking unwitnessed. It removes the one grant
+	// at the authority root that granted_teams reports; a team that also reaches
+	// the installation from a grant above keeps that reach. Organisation-admin,
+	// with the same platform super administrator exception.
 	RevokeInstallationFromTeam(context.Context, *RevokeInstallationFromTeamRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedInstallationServiceServer()
 }
