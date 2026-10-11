@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/fulcio/certificate"
@@ -74,10 +76,22 @@ const (
 // with no issuer, no repository and no ref accepts any workflow in any
 // repository that can obtain a certificate for that identity.
 type SolutionHostVerificationPolicy struct {
+	// Local, when present, declares this policy a LOCAL profile and binds it to
+	// the one cluster it was written for. It is the only thing that admits a
+	// person signer, and a host refuses it at boot unless the API server it
+	// reviews tokens with proves it is that cluster — see
+	// SolutionHostLocalProfile for why the binding is a cluster's certificate
+	// authority and not anything the composition or the operator states.
+	Local *SolutionHostLocalProfile `json:"local,omitempty"`
+
 	// Signers is the allowlist. A carrier is accepted when it matches at least
 	// one entry WHOLE — every field an entry names must match.
 	Signers []SolutionHostSigner `json:"signers"`
 }
+
+// SolutionHostSignerPerson is the one non-default signer kind: a developer
+// signing with their own OIDC identity, admitted only by a local profile.
+const SolutionHostSignerPerson = "person"
 
 // SolutionHostSigner is one accepted signer identity, and the domains it speaks
 // for.
@@ -87,6 +101,18 @@ type SolutionHostSigner struct {
 	// the host's own label, deliberately not read out of the certificate — a
 	// certificate field would change shape with the provider.
 	Name string `json:"name"`
+
+	// Kind is empty for a workload — a CI workflow, narrowed by its repository
+	// or build config — and "person" for a developer signing with their own
+	// OIDC identity (codefly-dev/cli#918). It is DECLARED rather than inferred
+	// from the absent repository fields, because inferring it would turn a
+	// workflow entry that forgot its repository into a person entry: the
+	// mistake Validate exists to refuse would become the shape it admits.
+	//
+	// A person is an exact issuer and an exact e-mail address and nothing else
+	// — no repository, build config, ref or prefix, which its certificate does
+	// not carry — and is valid only in a policy that declares itself local.
+	Kind string `json:"kind,omitempty"`
 
 	// Issuer is the OIDC issuer that must have authenticated the workload.
 	// Required: without it the allowlist accepts a matching SAN from any issuer,
@@ -167,44 +193,159 @@ func (policy *SolutionHostVerificationPolicy) Validate() error {
 		return errors.New("verification policy declares no signers, so no carrier could ever be accepted; " +
 			"an empty allowlist is refused rather than treated as 'accept none', because it reads as a policy that works")
 	}
+	if policy.Local != nil {
+		if err := policy.Local.validate(); err != nil {
+			return err
+		}
+	}
 	names := map[string]bool{}
+	people := map[[2]string]string{}
 	for index, signer := range policy.Signers {
 		switch {
 		case strings.TrimSpace(signer.Name) == "":
 			return fmt.Errorf("verification policy signer %d declares no name, and the name is the identity this host attributes a delivery to", index)
 		case names[signer.Name]:
 			return fmt.Errorf("verification policy declares signer %q twice; which entry's domains apply would depend on ordering", signer.Name)
-		case strings.TrimSpace(signer.Issuer) == "":
-			return fmt.Errorf("verification policy signer %q declares no issuer: a subject alternative name with no issuer is accepted from ANY issuer, "+
-				"so anyone who can stand up an issuer can mint that identity", signer.Name)
-		case strings.TrimSpace(signer.SubjectAlternativeName) == "":
-			return fmt.Errorf("verification policy signer %q declares no subject alternative name", signer.Name)
-		case strings.TrimSpace(signer.SourceRepositoryURI) == "" && strings.TrimSpace(signer.BuildConfigURI) == "":
-			// One of the two is required. A workflow identity alone is not a
-			// narrow claim: the same workflow path exists in every fork of a
-			// repository, so an allowlist naming only the SAN accepts a fork's
-			// run of the same file.
-			return fmt.Errorf("verification policy signer %q names neither a source repository nor a build config: "+
-				"a workflow identity alone matches that same workflow path in any fork, so the repository is what makes the claim narrow", signer.Name)
-		case signer.SourceRepositoryRef != "" && signer.SourceRepositoryRefPrefix != "":
-			// Two ways to state one constraint is two places for them to
-			// disagree — the same argument that keeps the issuer out of the
-			// extensions. And the disagreement here is silent: sigstore would
-			// enforce the exact ref and the prefix check would pass trivially,
-			// so the policy would read as permissive and behave as exact.
-			return fmt.Errorf("verification policy signer %q declares both an exact source ref and a ref prefix; "+
-				"the exact ref would win and the prefix would read as though it had widened anything", signer.Name)
-		case signer.SourceRepositoryRefPrefix != "" && !strings.HasPrefix(signer.SourceRepositoryRefPrefix, "refs/"):
-			// An unanchored prefix is the widening nobody notices: "" admits
-			// every ref, and "r" admits half the ref space while looking like a
-			// constraint.
-			return fmt.Errorf("verification policy signer %q declares ref prefix %q, which is not under refs/: "+
-				"a prefix that does not name the ref namespace admits refs nobody intended", signer.Name, signer.SourceRepositoryRefPrefix)
-		case len(signer.Domains) == 0:
-			return fmt.Errorf("verification policy signer %q may deliver under no ownership domain, so accepting it could not admit anything; "+
-				"remove the entry or give it a domain", signer.Name)
+		}
+		switch signer.Kind {
+		case "":
+			if err := signer.validateWorkload(); err != nil {
+				return err
+			}
+		case SolutionHostSignerPerson:
+			if err := signer.validatePerson(policy.Local != nil); err != nil {
+				return err
+			}
+			// Two entries for one person are refused for the reason two
+			// entries under one name are: each is tried whole and the first
+			// match wins, so which domains the person speaks for would depend
+			// on the order of the document.
+			identity := [2]string{signer.Issuer, signer.SubjectAlternativeName}
+			if other, seen := people[identity]; seen {
+				return fmt.Errorf("verification policy lists person %q at %q twice, as %q and %q; which entry's domains apply would depend on ordering",
+					signer.SubjectAlternativeName, signer.Issuer, other, signer.Name)
+			}
+			people[identity] = signer.Name
+		default:
+			return fmt.Errorf("verification policy signer %q declares kind %q; a signer is a workload (no kind) or %q, and an unknown kind is refused rather than read as either",
+				signer.Name, signer.Kind, SolutionHostSignerPerson)
 		}
 		names[signer.Name] = true
+	}
+	return nil
+}
+
+// validateWorkload is the rule every CI-workflow signer has always been held
+// to, unchanged by the person kind.
+func (signer SolutionHostSigner) validateWorkload() error {
+	switch {
+	case strings.TrimSpace(signer.Issuer) == "":
+		return fmt.Errorf("verification policy signer %q declares no issuer: a subject alternative name with no issuer is accepted from ANY issuer, "+
+			"so anyone who can stand up an issuer can mint that identity", signer.Name)
+	case strings.TrimSpace(signer.SubjectAlternativeName) == "":
+		return fmt.Errorf("verification policy signer %q declares no subject alternative name", signer.Name)
+	case strings.TrimSpace(signer.SourceRepositoryURI) == "" && strings.TrimSpace(signer.BuildConfigURI) == "":
+		// One of the two is required. A workflow identity alone is not a
+		// narrow claim: the same workflow path exists in every fork of a
+		// repository, so an allowlist naming only the SAN accepts a fork's
+		// run of the same file.
+		return fmt.Errorf("verification policy signer %q names neither a source repository nor a build config: "+
+			"a workflow identity alone matches that same workflow path in any fork, so the repository is what makes the claim narrow", signer.Name)
+	case signer.SourceRepositoryRef != "" && signer.SourceRepositoryRefPrefix != "":
+		// Two ways to state one constraint is two places for them to
+		// disagree — the same argument that keeps the issuer out of the
+		// extensions. And the disagreement here is silent: sigstore would
+		// enforce the exact ref and the prefix check would pass trivially,
+		// so the policy would read as permissive and behave as exact.
+		return fmt.Errorf("verification policy signer %q declares both an exact source ref and a ref prefix; "+
+			"the exact ref would win and the prefix would read as though it had widened anything", signer.Name)
+	case signer.SourceRepositoryRefPrefix != "" && !strings.HasPrefix(signer.SourceRepositoryRefPrefix, "refs/"):
+		// An unanchored prefix is the widening nobody notices: "" admits
+		// every ref, and "r" admits half the ref space while looking like a
+		// constraint.
+		return fmt.Errorf("verification policy signer %q declares ref prefix %q, which is not under refs/: "+
+			"a prefix that does not name the ref namespace admits refs nobody intended", signer.Name, signer.SourceRepositoryRefPrefix)
+	case len(signer.Domains) == 0:
+		return fmt.Errorf("verification policy signer %q may deliver under no ownership domain, so accepting it could not admit anything; "+
+			"remove the entry or give it a domain", signer.Name)
+	}
+	return nil
+}
+
+// validatePerson holds a person signer to the narrowest claim a person's
+// certificate can support: one exact issuer and one exact e-mail address.
+//
+// Each refusal is a person entry that would read as narrow and admit more:
+//
+//   - outside a local profile, a person is refused outright. A deployed host
+//     admits reviewed workflows and nothing else, and this is checked against
+//     the policy document itself, so no setting, coordinate or environment can
+//     make a deployed policy admit a person;
+//   - repository, build config, ref or ref prefix fields are refused, because a
+//     person's certificate carries none of them: a person entry naming one is a
+//     workflow mislabelled as a person, or a constraint that silently never
+//     matches;
+//   - the subject must be an e-mail address. A workflow's subject is a URI, and
+//     a URI accepted as a "person" would admit that workflow with none of the
+//     repository narrowing the workload rule requires — from a reusable
+//     workflow, in every repository that calls it;
+//   - no wildcard and no surrounding space, in either field. Matching is exact,
+//     so a `*` never matches anything — and an entry that reads as a pattern
+//     while behaving as a literal is the misunderstanding that later becomes a
+//     request to "make the wildcard work".
+func (signer SolutionHostSigner) validatePerson(local bool) error {
+	switch {
+	case !local:
+		return fmt.Errorf("verification policy signer %q is a person, and a person is admitted only by a policy that declares itself local "+
+			"(its `local` block, bound to one cluster); a deployed host admits reviewed workflows and nothing else", signer.Name)
+	case signer.SourceRepositoryURI != "" || signer.BuildConfigURI != "" ||
+		signer.SourceRepositoryRef != "" || signer.SourceRepositoryRefPrefix != "":
+		return fmt.Errorf("verification policy signer %q is a person and names a repository, build config or ref; "+
+			"a person's certificate carries none of them, so the entry is either a workflow mislabelled as a person or a constraint that can never match",
+			signer.Name)
+	case len(signer.Domains) == 0:
+		return fmt.Errorf("verification policy signer %q may deliver under no ownership domain, so accepting it could not admit anything; "+
+			"remove the entry or give it a domain", signer.Name)
+	}
+	if err := exactIssuer(signer.Issuer); err != nil {
+		return fmt.Errorf("verification policy signer %q is a person whose issuer %q is refused: %w", signer.Name, signer.Issuer, err)
+	}
+	if err := exactEmailAddress(signer.SubjectAlternativeName); err != nil {
+		return fmt.Errorf("verification policy signer %q is a person whose subject %q is refused: %w",
+			signer.Name, signer.SubjectAlternativeName, err)
+	}
+	return nil
+}
+
+// exactIssuer accepts one absolute https issuer, written exactly.
+func exactIssuer(issuer string) error {
+	if issuer == "" {
+		return errors.New("no issuer: a subject with no issuer is accepted from ANY issuer, so anyone who can stand up an issuer can mint that identity")
+	}
+	if issuer != strings.TrimSpace(issuer) || strings.ContainsAny(issuer, "* \t") {
+		return errors.New("it contains a wildcard or whitespace, and matching is exact")
+	}
+	parsed, err := url.Parse(issuer)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("an OIDC issuer is an absolute https URL with a host and no credentials, query or fragment")
+	}
+	return nil
+}
+
+// exactEmailAddress accepts one bare address, `local@domain`, written exactly
+// as the identity provider verified it and Fulcio certified it.
+func exactEmailAddress(address string) error {
+	if address == "" {
+		return errors.New("no subject alternative name")
+	}
+	if address != strings.TrimSpace(address) || strings.ContainsAny(address, "* \t\r\n<>,;:/\\\"()[]") {
+		return errors.New("it contains a wildcard, whitespace or a character no bare address carries; matching is exact, and a URI is a workflow's subject, not a person's")
+	}
+	local, domain, found := strings.Cut(address, "@")
+	if !found || local == "" || domain == "" || strings.Contains(domain, "@") ||
+		!strings.Contains(domain, ".") || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") {
+		return errors.New("a person's subject is one e-mail address, local@domain")
 	}
 	return nil
 }
@@ -214,6 +355,42 @@ func (policy *SolutionHostVerificationPolicy) Validate() error {
 type keylessBundleVerifier struct {
 	verifier *verify.Verifier
 	policy   *SolutionHostVerificationPolicy
+
+	// localClusterProven is set once ProveLocalCluster has shown that the API
+	// server this host reviews tokens with is the cluster a LOCAL policy is
+	// bound to. Until then a local policy admits nothing at all, so the proof
+	// cannot be skipped by a boot path that forgets to ask for it: a forgotten
+	// call refuses every carrier rather than admitting a person anywhere.
+	// Unused for a deployed policy, which is bound to no cluster.
+	localClusterProven atomic.Bool
+}
+
+// keylessVerifierOptions is the ONE verification strength, for every signer
+// kind and every constructor.
+//
+// WithTransparencyLog(1) — the bundle's Rekor entry, its signed entry
+// timestamp checked against the root's log key; WithObserverTimestamps(1) —
+// the certificate valid when the log or a timestamp authority saw the
+// signature; WithSignedCertificateTimestamps(1) — the certificate itself
+// logged in a Certificate Transparency log the root names, which is what makes
+// a mis-issued certificate for a listed identity visible to its owner. The
+// last was not required before the person kind; it is required now for every
+// signer, because a person's identity is the one an issuer is likeliest to be
+// tricked into certifying, and one verifier holding two strengths is the drift
+// this file keeps refusing. The public-good Fulcio embeds an SCT in every
+// certificate it issues, and the public-good root carries the CT log keys.
+//
+// And deliberately NO online verification: the delivered namespaces are
+// default-deny egress, so an online Rekor or Fulcio lookup would HANG rather
+// than fail fast — a staging timeout instead of a permission error in a test.
+// The bundle carries its own evidence, so the lookup is unnecessary as well as
+// unreachable.
+func keylessVerifierOptions() []verify.VerifierOption {
+	return []verify.VerifierOption{
+		verify.WithTransparencyLog(1),
+		verify.WithObserverTimestamps(1),
+		verify.WithSignedCertificateTimestamps(1),
+	}
 }
 
 // NewSolutionHostKeylessVerifier builds the keyless verifier from a trust mount.
@@ -278,16 +455,7 @@ func NewSolutionHostKeylessVerifierFrom(
 	if err := policy.Validate(); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSolutionHostTrustRootUnavailable, err)
 	}
-	// WithTransparencyLog(1) and WithObserverTimestamps(1), and deliberately NO
-	// online verification: the delivered namespaces are default-deny egress, so
-	// an online Rekor or Fulcio lookup would HANG rather than fail fast — a
-	// staging timeout instead of a permission error in a test. The bundle
-	// carries its own evidence, so the lookup is unnecessary as well as
-	// unreachable.
-	verifier, err := verify.NewVerifier(trustedMaterial,
-		verify.WithTransparencyLog(1),
-		verify.WithObserverTimestamps(1),
-	)
+	verifier, err := verify.NewVerifier(trustedMaterial, keylessVerifierOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot build the bundle verifier: %w", ErrSolutionHostTrustRootUnavailable, err)
 	}
@@ -315,6 +483,13 @@ func (v *keylessBundleVerifier) VerifyBundle(
 func (v *keylessBundleVerifier) verifySignedEntity(
 	signed verify.SignedEntity, payload []byte,
 ) (string, error) {
+	// A local policy admits nothing until its cluster is proven. First, so the
+	// refusal names the boot step that did not run rather than whatever a
+	// carrier happened to fail next.
+	if v.policy.Local != nil && !v.localClusterProven.Load() {
+		return "", fmt.Errorf("%w: this verification policy is a local profile and this host has not proven it runs in the cluster the profile is bound to, "+
+			"so it admits no carrier", ErrSolutionHostLocalPolicyOutsideItsCluster)
+	}
 	// BEFORE the verifier runs, and on the decoded bundle rather than by
 	// classifying the verifier's error.
 	//

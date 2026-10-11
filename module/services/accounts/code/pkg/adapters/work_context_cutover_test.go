@@ -78,7 +78,15 @@ func TestTheWorkContextCutoverIsAtomic(t *testing.T) {
 	// verifies no signature and holds no trust root — so a refusal here means
 	// Verify and Authenticate refuse it too, and no partial switch can route
 	// one call site through core while the mint stays where it is.
-	_, err = coreworkcontext.Inspect(token.Encoded())
+	// Inspect is a method of an Inspector since core#722: a trust root and a
+	// route. The conformance trust root, so the same Inspector reads core's own
+	// fixtures below — the only thing left to refuse here is the token's format.
+	inspector := &coreworkcontext.Inspector{
+		Issuer:                        coreworkcontext.FixtureIssuer,
+		Keys:                          coreworkcontext.FixtureKeys(),
+		TrustTheConformanceFixtureKey: true,
+	}
+	_, err = inspector.Inspect(token.Encoded(), coreworkcontext.FixtureAudience)
 	if err == nil {
 		t.Fatal("core READ an sdk-go capability: the formats have converged and the switch may no longer be atomic — re-read this test's premise before trusting it")
 	}
@@ -106,7 +114,7 @@ func TestTheWorkContextCutoverIsAtomic(t *testing.T) {
 	}
 	var read int
 	for _, fixture := range fixtures {
-		if _, err := coreworkcontext.Inspect(fixture.Token); err == nil {
+		if _, err := inspector.Inspect(fixture.Token, coreworkcontext.FixtureAudience); err == nil {
 			read++
 		}
 	}

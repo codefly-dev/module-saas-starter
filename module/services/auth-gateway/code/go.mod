@@ -4,8 +4,8 @@ go 1.27.0
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
-	github.com/codefly-dev/core v0.9.0
-	github.com/codefly-dev/sdk-go v0.2.1-0.20260926212413-b91ce91eb23e
+	github.com/codefly-dev/core v0.17.2
+	github.com/codefly-dev/sdk-go v0.3.1
 	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260926212413-b91ce91eb23e
 	github.com/envoyproxy/go-control-plane/envoy v1.39.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -103,7 +103,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

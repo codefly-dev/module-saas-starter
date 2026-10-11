@@ -652,7 +652,13 @@ migration principal, and direct SQL alike.
 The insert's `FOR KEY SHARE` lock on the `organization_members` row serializes a
 team write against a concurrent organization removal, so neither commit order
 leaves an orphan; `Store.LockOrgMembership` takes the matching advisory lock for
-transactions that read a membership before acting on it. Memberships that
+transactions that read a membership before acting on it. A scope grant is one
+of those: `scope_grants.subject_id` has no foreign key to a membership, so the
+grant body (`Service.grantScopeTx`, behind `GrantScope` and
+`GrantInstallationToTeam`) takes that lock and reads the membership — or, for an
+agent or service principal, the principal's own organization, or a team's — in
+the grant's own transaction before it writes. A removal and a grant for the same
+(organization, user) therefore serialize in both orders. Memberships that
 predate the invariant were never repaired by manufacturing the missing parent —
 they were moved to `team_membership_quarantine`. That record carries no
 request-relation grant and is read through the control plane; it still forces
