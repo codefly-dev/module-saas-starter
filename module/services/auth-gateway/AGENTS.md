@@ -116,6 +116,10 @@ projected file paths; absent or unreadable files fail boot naming their key.
 The pinned SDK's `CertificateReloader` supplies both certificate callbacks.
 Every handshake checks a single SPIFFE URI against the live caller file; every
 request checks it again so keep-alive connections cannot outlive revocation.
+The caller file must be published atomically, as the kubelet publishes a
+ConfigMap volume (written whole, swapped behind one symlink); a mid-write mix
+of two lists is indistinguishable from a complete list, so an in-place rewrite
+is outside the contract. A truncated write is refused whole.
 
 On this endpoint every module mint (`/modules/_work-context`,
 `/modules/_operation-context`, `/modules/_source-operation-context`) conveys

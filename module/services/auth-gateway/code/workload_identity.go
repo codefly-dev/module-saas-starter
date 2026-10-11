@@ -121,13 +121,27 @@ func (w *workloadIdentity) roots() (*x509.CertPool, error) {
 
 // Read on every admission, including requests on an existing connection. A
 // removed identity, missing file or malformed replacement revokes immediately.
+//
+// The file must be published atomically — written whole and swapped in, as the
+// kubelet publishes a ConfigMap volume (a new ..data directory behind one
+// symlink rename). No reader can tell a mid-write mix of an old and a new list
+// from a complete one when both end in a newline, so an in-place rewrite is
+// outside the contract, not a case this reader repairs. Only a regular file
+// (reached directly or through that symlink) is read.
 func (w *workloadIdentity) allowedCallers() (map[string]bool, error) {
+	info, err := os.Stat(w.callersFile)
+	if err != nil {
+		return nil, fmt.Errorf("workload-identity ALLOWED_CALLERS_FILE: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("workload-identity ALLOWED_CALLERS_FILE: not a regular file")
+	}
 	body, err := os.ReadFile(w.callersFile)
 	if err != nil {
 		return nil, fmt.Errorf("workload-identity ALLOWED_CALLERS_FILE: %w", err)
 	}
-	// A valid-looking prefix of an in-place write is still incomplete. Refuse
-	// the entire snapshot, including any complete entries before that prefix.
+	// A truncated write that has not reached its final newline is refused whole,
+	// including any complete entries before it.
 	if len(body) > 0 && body[len(body)-1] != '\n' {
 		return nil, fmt.Errorf("workload-identity ALLOWED_CALLERS_FILE: missing final newline")
 	}
