@@ -15,10 +15,9 @@ import (
 )
 
 const (
-	extAuthzSource   = "services/auth-gateway/code/ext_authz.go"
-	minterSource     = "services/accounts/code/pkg/auth/ed25519/minter.go"
-	hostRuntime      = "services/frontend/code/src/solutions/host-runtime.ts"
-	federationConfig = "configurations/local/federation.env"
+	extAuthzSource = "services/auth-gateway/code/ext_authz.go"
+	minterSource   = "services/accounts/code/pkg/auth/ed25519/minter.go"
+	hostRuntime    = "services/frontend/code/src/solutions/host-runtime.ts"
 )
 
 func contractByID(t *testing.T, contracts *updatev0.BehavioralContracts, id string) *structpb.Struct {
@@ -147,7 +146,7 @@ func TestGatewayIdentityHeadersMatchTheDeclaredContract(t *testing.T) {
 }
 
 // TestSolutionRuntimeCompatibilityMatchesTheHost holds the federation contract
-// to the single place the register route and the Module-Federation host both
+// to the single place the read projection and the Module-Federation host both
 // read, so the declared majors and shared scope cannot drift from the host.
 func TestSolutionRuntimeCompatibilityMatchesTheHost(t *testing.T) {
 	moduleRoot := findModuleRoot(t)
@@ -199,7 +198,7 @@ func TestRegistrationCredentialsMatchTheMinter(t *testing.T) {
 		principal string
 	}{
 		{"registration.solution.credential", "SolutionRegistrationAudience", "solution:<id>", `"solution:" + solutionID`},
-		{"registration.module.rest-federation", "ModuleRegistrationAudience", "module:<prefix>", `"module:" + prefix`},
+		{"registration.module.credential", "ModuleRegistrationAudience", "module:<prefix>", `"module:" + prefix`},
 	} {
 		content := contractByID(t, contracts, credential.contract)
 		fields := declaredToken(t, content)
@@ -238,97 +237,21 @@ func mintedTTLSeconds(t *testing.T, minter string) float64 {
 	return float64(minutes * 60)
 }
 
-// TestDeclaredBodyLimitsMatchTheHandlers holds each declared bound to the
-// constant that enforces it. These are the numbers most likely to be copied
-// from prose and left behind: the token exchange and the registration write
-// bound different bodies at different sizes.
-func TestDeclaredBodyLimitsMatchTheHandlers(t *testing.T) {
+// TestDeclaredPresenceReadSurfacesExist holds the surviving read contract to
+// the actual routes and ensures the former frontend write route is absent.
+func TestDeclaredPresenceReadSurfacesExist(t *testing.T) {
 	moduleRoot := findModuleRoot(t)
-	contracts := loadBehavioralContracts(t, moduleRoot)
-	credential := readSource(t, moduleRoot, "services/auth-gateway/code/gateway_solution_credential.go")
-	registration := readSource(t, moduleRoot, "services/auth-gateway/code/gateway_solutions.go")
-
-	exchange := at(t, contractByID(t, contracts, "registration.solution.credential"), "exchange", "requestBodyLimitBytes").GetNumberValue()
-	if enforced := goConstant(t, credential, "solutionRegisterMaxBytes"); exchange != enforced {
-		t.Errorf("credential exchange declares a %v-byte bound, the handler enforces %v", exchange, enforced)
+	contract := contractByID(t, loadBehavioralContracts(t, moduleRoot), "presence.solution.declared-projection")
+	gateway := readSource(t, moduleRoot, "services/auth-gateway/code/gateway_solutions.go")
+	if path := at(t, contract, "gatewaySnapshot", "path").GetStringValue(); path != "/solutions/_registry" || !strings.Contains(gateway, `case solutionRegistrySegment:`) {
+		t.Fatalf("declared registry snapshot %q is not served", path)
 	}
-
-	write := at(t, contractByID(t, contracts, "registration.solution.gateway-upstream"), "requestBodyLimitBytes").GetNumberValue()
-	if enforced := goConstant(t, registration, "maxSolutionRegistrationBytes"); write != enforced {
-		t.Errorf("registration write declares a %v-byte bound, the handler enforces %v", write, enforced)
+	if path := at(t, contract, "frontendNavigation", "path").GetStringValue(); path != "/api/solutions" {
+		t.Fatalf("declared navigation path %q does not match the route", path)
 	}
-	// The frontend half states the same gateway bound rather than a bound of
-	// its own, so it must move with the constant too.
-	manifest := at(t, contractByID(t, contracts, "registration.solution.frontend-remote"), "manifestBound").GetStringValue()
-	if !strings.Contains(manifest, fmt.Sprintf("%d", int(goConstant(t, registration, "maxSolutionRegistrationBytes")))) {
-		t.Errorf("frontend manifest bound %q no longer names the gateway's enforced limit", manifest)
-	}
-}
-
-// goConstant evaluates a byte-size constant written either as a plain integer
-// or as a shifted one (256 << 10).
-func goConstant(t *testing.T, source, name string) float64 {
-	t.Helper()
-	match := regexp.MustCompile(name + `\s*=\s*(\d+)(?:\s*<<\s*(\d+))?`).FindStringSubmatch(source)
-	if match == nil {
-		t.Fatalf("source does not declare %s", name)
-	}
-	value, err := strconv.Atoi(match[1])
-	if err != nil {
-		t.Fatalf("parse %s: %v", name, err)
-	}
-	if match[2] != "" {
-		shift, err := strconv.Atoi(match[2])
-		if err != nil {
-			t.Fatalf("parse %s shift: %v", name, err)
-		}
-		value <<= shift
-	}
-	return float64(value)
-}
-
-// TestDeclaredRegistrationSurfacesExist holds every declared route, header and
-// configuration key to the source that serves it. A renamed surface is the
-// silent break this declaration exists to publish.
-func TestDeclaredRegistrationSurfacesExist(t *testing.T) {
-	moduleRoot := findModuleRoot(t)
-	gateway := readSource(t, moduleRoot, "services/auth-gateway/code/gateway_solutions.go") +
-		readSource(t, moduleRoot, "services/auth-gateway/code/gateway_modules.go") +
-		readSource(t, moduleRoot, "services/auth-gateway/code/gateway_solution_credential.go")
-	federation := readSource(t, moduleRoot, federationConfig)
-
-	for _, surface := range []struct{ source, literal string }{
-		{gateway, `solutionPrefix = "/solutions/"`},
-		{gateway, `"_registration-token"`},
-		{gateway, `"_register"`},
-		{gateway, `"_registry"`},
-		{gateway, "/modules/_registration-token"},
-		{gateway, "/modules/_register"},
-		{gateway, "/modules/_work-context"},
-		{gateway, "X-Codefly-Internal-Token"},
-		{gateway, "X-Codefly-Solution-Secret"},
-		{gateway, "X-Codefly-Solution-Registration"},
-		{gateway, "X-Codefly-Module-Secret"},
-		{gateway, "X-Codefly-Module-Registration"},
-		{federation, "SOLUTION_REGISTRATION_SECRETS"},
-		{federation, "MODULE_REGISTRATION_SECRETS"},
-		{federation, "MODULE_IDENTITY_SECRETS"},
-	} {
-		if !strings.Contains(surface.source, surface.literal) {
-			t.Errorf("declared surface %q is no longer served", surface.literal)
-		}
-	}
-
-	if _, err := os.Stat(filepath.Join(moduleRoot, "services/frontend/code/src/app/api/solutions/register/route.ts")); err != nil {
-		t.Errorf("declared frontend registration route is absent: %v", err)
-	}
-	// The numbered publisher-binding migration was folded into the baseline, so
-	// the durable evidence is the invariant it established, not its file name.
-	baseline := readSource(t, moduleRoot, "services/store/migrations/1_baseline.up.sql")
-	for _, invariant := range []string{"publisher text NOT NULL", "solution_registrations_publisher_check"} {
-		if !strings.Contains(baseline, invariant) {
-			t.Errorf("declared publisher binding is no longer carried by the store baseline: %q absent", invariant)
-		}
+	readSource(t, moduleRoot, "services/frontend/code/src/app/api/solutions/route.ts")
+	if _, err := os.Stat(filepath.Join(moduleRoot, "services/frontend/code/src/app/api/solutions/register/route.ts")); !os.IsNotExist(err) {
+		t.Fatalf("retired frontend registration route exists or cannot be checked: %v", err)
 	}
 }
 

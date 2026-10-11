@@ -652,7 +652,7 @@ func (s *Service) admitDeclaredAuditEventTypesWritten(ctx context.Context, solut
 	// id, it is the same entry — and the same `namespaces` — a declared type's
 	// emission is authorized against, so admission can never hand a solution a
 	// namespace it could not emit into.
-	grant, bound := s.modulePrincipals[ModulePrincipalID(solutionID)]
+	grant, bound := s.declaredModules()[ModulePrincipalID(solutionID)]
 	if !bound {
 		return nil, nil, fmt.Errorf("%w: %w: solution %q has no module principal entry, so no namespace is bound to it",
 			ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceUnbound, solutionID)
@@ -761,7 +761,7 @@ func (s *Service) releasedAuditNamespace(holder, namespace string) bool {
 	if !ok {
 		return false
 	}
-	grant, bound := s.modulePrincipals[ModulePrincipalID(solutionID)]
+	grant, bound := s.declaredModules()[ModulePrincipalID(solutionID)]
 	return !bound || !grant.allowsNamespace(namespace)
 }
 

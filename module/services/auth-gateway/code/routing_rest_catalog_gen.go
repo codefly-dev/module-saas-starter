@@ -39,6 +39,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/gdpr/delete/{id}", Procedure: "/saas.accounts.v1.GDPRService/GetDeletionStatus"},
 		{Service: "accounts", Method: "GET", Path: "/v1/gdpr/export/{id}", Procedure: "/saas.accounts.v1.GDPRService/GetExportStatus"},
 		{Service: "accounts", Method: "GET", Path: "/v1/installations/{installation_id}", Procedure: "/saas.accounts.v1.InstallationService/GetInstallation"},
+		{Service: "accounts", Method: "GET", Path: "/v1/installations:listAvailable", Procedure: "/saas.accounts.v1.InstallationService/ListAvailableSolutions"},
 		{Service: "accounts", Method: "GET", Path: "/v1/invitations", Procedure: "/saas.accounts.v1.InvitationService/ListInvitations"},
 		{Service: "accounts", Method: "GET", Path: "/v1/mfa/devices", Procedure: "/saas.accounts.v1.MFAService/ListDevices"},
 		{Service: "accounts", Method: "GET", Path: "/v1/notifications", Procedure: "/saas.accounts.v1.NotificationService/ListNotifications"},

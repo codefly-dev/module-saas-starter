@@ -124,6 +124,7 @@ func moduleJobSurface(
 	principal := uuid.NewString()
 	// Claiming reads across tenants, so the surface requires a cross-tenant
 	// grant for it — a claim without one is refused before the store is reached.
+	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	service.SetModuleCapabilities(store, store, business.ModulePrincipalRegistry{
 		principal: {Queues: []string{queue}, CrossTenant: true},
 	})

@@ -264,7 +264,7 @@ func TestParseDeclaredAuditEventTypes_ReadsVisibility(t *testing.T) {
 // be corrected — at boot, naming both the namespace and what it is not among —
 // rather than at the registration that trips over it.
 func TestParseModulePrincipalRegistry_ExternalNamespaceMustBeBound(t *testing.T) {
-	const tenant = `"tenant":"11111111-1111-1111-1111-111111111111"`
+	const tenant = `"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"11111111-1111-1111-1111-111111111111"`
 	if _, err := ParseModulePrincipalRegistry(
 		`{"example":{"namespaces":["example"],"external_namespaces":["example"],` + tenant + `}}`,
 	); err != nil {
@@ -291,6 +291,8 @@ func externallyBound(t *testing.T, store *declaredAuditStore, solution string, n
 	if err != nil {
 		t.Fatal(err)
 	}
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(ModulePrincipalRegistry{
 		ModulePrincipalID(solution): {Prefix: solution, Namespaces: namespaces, ExternalNamespaces: external},
 	})
@@ -308,7 +310,7 @@ const tenantDeclaredEvent = `{"name":"created","type":"acme.item.created","visib
 func TestAdmission_ExternalVisibilityNeedsTheOperatorsGrant(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc := externallyBound(t, store, "acme", []string{"acme"}, nil)
-	_, err := registerDeclaring(t, svc, "acme", nil, externalDeclaredEvent)
+	_, err := admitDeclaring(t, svc, "acme", externalDeclaredEvent)
 	if !errors.Is(err, ErrSolutionAuditNamespaceNotExternal) || !errors.Is(err, ErrSolutionAuditDeclarationRejected) {
 		t.Fatalf("err = %v, want the ungranted external namespace refused", err)
 	}
@@ -324,7 +326,7 @@ func TestAdmission_ExternalVisibilityNeedsTheOperatorsGrant(t *testing.T) {
 	// The same namespace, without the external declaration, needs no grant.
 	store = newDeclaredAuditStore()
 	svc = externallyBound(t, store, "acme", []string{"acme"}, nil)
-	if _, err := registerDeclaring(t, svc, "acme", nil, tenantDeclaredEvent); err != nil {
+	if _, err := admitDeclaring(t, svc, "acme", tenantDeclaredEvent); err != nil {
 		t.Fatalf("a tenant-visible declaration needs no external grant: %v", err)
 	}
 	if got := store.rows["acme.item.created"].declared.Visibility; got != AuditVisibilityTenant {
@@ -335,7 +337,7 @@ func TestAdmission_ExternalVisibilityNeedsTheOperatorsGrant(t *testing.T) {
 	// the visibility the delivery gates read.
 	store = newDeclaredAuditStore()
 	svc = externallyBound(t, store, "acme", []string{"acme"}, []string{"acme"})
-	if _, err := registerDeclaring(t, svc, "acme", nil, externalDeclaredEvent); err != nil {
+	if _, err := admitDeclaring(t, svc, "acme", externalDeclaredEvent); err != nil {
 		t.Fatalf("granted external declaration: %v", err)
 	}
 	admitted := store.rows["acme.item.created"].declared
@@ -355,12 +357,11 @@ func TestAdmission_VisibilityIsImmutable(t *testing.T) {
 	} {
 		store := newDeclaredAuditStore()
 		svc := externallyBound(t, store, "acme", []string{"acme"}, []string{"acme"})
-		record, err := registerDeclaring(t, svc, "acme", nil, tc.first)
+		_, err := admitDeclaring(t, svc, "acme", tc.first)
 		if err != nil {
 			t.Fatalf("%s: first declaration: %v", name, err)
 		}
-		revision := record.Revision
-		_, err = registerDeclaring(t, svc, "acme", &revision, tc.second)
+		_, err = admitDeclaring(t, svc, "acme", tc.second)
 		if !errors.Is(err, ErrSolutionAuditDeclarationRejected) {
 			t.Fatalf("%s: err = %v, want the visibility change refused", name, err)
 		}
@@ -377,13 +378,12 @@ func TestAdmission_VisibilityIsImmutable(t *testing.T) {
 	// Re-declaring the same visibility is still idempotent.
 	store := newDeclaredAuditStore()
 	svc := externallyBound(t, store, "acme", []string{"acme"}, []string{"acme"})
-	record, err := registerDeclaring(t, svc, "acme", nil, externalDeclaredEvent)
+	_, err := admitDeclaring(t, svc, "acme", externalDeclaredEvent)
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
 	puts := store.puts
-	revision := record.Revision
-	if _, err := registerDeclaring(t, svc, "acme", &revision, externalDeclaredEvent); err != nil {
+	if _, err := admitDeclaring(t, svc, "acme", externalDeclaredEvent); err != nil {
 		t.Fatalf("re-declaration: %v", err)
 	}
 	if store.puts != puts {

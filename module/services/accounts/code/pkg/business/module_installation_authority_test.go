@@ -35,6 +35,13 @@ func (s *authorityInstallationStore) WithOrgTx(ctx context.Context, _ string, fn
 func (s *authorityInstallationStore) GetOrganizationBySlug(context.Context, string) (*gen.Organization, error) {
 	return &gen.Organization{Id: s.result.OrganizationID}, nil
 }
+
+// The audience vocabulary's one read. This store declares NO solution bindings:
+// the ceiling these tests install names declared MODULE prefixes, which the
+// fixture declares through the principal registry below.
+func (s *authorityInstallationStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+	return nil, nil
+}
 func (s *authorityInstallationStore) ReconcileModuleInstallation(context.Context, *business.InstallSolutionParams, []string, bool) (*business.ModuleInstallationResult, error) {
 	s.calls++
 	result := s.result
@@ -44,10 +51,10 @@ func authorityInstallationFixture(t *testing.T, module string) (*business.Servic
 	t.Helper()
 	d := business.InstallerDelegation{
 		Prefix: "example-installer", ModuleID: "acme.example/" + module,
-		OrganizationID:     "11111111-1111-4111-8111-111111111111",
-		OwnerPrincipalID:   "22222222-2222-4222-8222-222222222222",
-		RoleID:             "33333333-3333-4333-8333-333333333333",
-		SolutionIdentifier: "example-solution", AgentIdentifiers: []string{"acme.example/" + module + ":1.0.0"},
+		OrganizationID:   "11111111-1111-4111-8111-111111111111",
+		OwnerPrincipalID: "22222222-2222-4222-8222-222222222222",
+		RoleID:           "33333333-3333-4333-8333-333333333333",
+		TargetID:         "44444444-4444-4444-8444-444444444444", AgentIdentifiers: []string{"acme.example/" + module + ":1.0.0"},
 		RolePermissions:  []string{"example:read", "example:write"},
 		AllowedAudiences: []string{"example.api", "example.worker"}, AllowedScopes: []string{"example", "example-subset"},
 		ExpiresAt: time.Now().Add(time.Hour),
@@ -55,7 +62,7 @@ func authorityInstallationFixture(t *testing.T, module string) (*business.Servic
 	caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(d.Prefix), BoundOrg: d.OrganizationID}
 	req := business.ModuleInstallationRequest{
 		AuthorityReferenceVersion: business.ModuleInstallationAuthorityVersion,
-		ModuleID:                  d.ModuleID, OrganizationSlug: "example-org", AgentIdentifier: d.AgentIdentifiers[0], SolutionIdentifier: d.SolutionIdentifier,
+		ModuleID:                  d.ModuleID, OrganizationSlug: "example-org", AgentIdentifier: d.AgentIdentifiers[0], TargetID: d.TargetID,
 		RoleID: d.RoleID, ExpectedRolePermissions: slices.Clone(d.RolePermissions), AllowedAudiences: slices.Clone(d.AllowedAudiences), AllowedScopes: slices.Clone(d.AllowedScopes),
 		DisplayName: "Example", RootScopeLabel: "Example",
 	}
@@ -65,7 +72,52 @@ func authorityInstallationFixture(t *testing.T, module string) (*business.Servic
 	}}
 	service, err := business.NewService(store)
 	require.NoError(t, err)
+	// The ceiling may only name audiences this host SERVES (issue #952), and the
+	// installer's path validates it like every other write path. These two are
+	// declared module prefixes, declared the way a composition declares them.
+	service.SetModulePrincipals(business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("example.api"):    {Prefix: "example.api"},
+		business.ModulePrincipalID("example.worker"): {Prefix: "example.worker"},
+	})
 	return service, store, caller, &business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{d}}, req
+}
+
+// THE MODULE INSTALLER'S PATH validates the ceiling too, and that was the gap.
+//
+// The write-time rule reached InstallSolution and CreateAgentPrincipal and missed
+// ReconcileModuleInstallation — the one path a caller the host does not control
+// reaches. The consequence was not a silent grant but a MISLEADING one: the write
+// succeeded, the installation read as configured, and every later mint was refused
+// with "outside allowed audiences this host still serves", which asserts the
+// audience WAS served and has been withdrawn. An operator then hunts a withdrawal
+// that never happened.
+//
+// Asserted on the REFUSAL NAMING THE VALUE, and on the store never being reached:
+// a refusal after the write would leave the dead ceiling behind.
+func TestTheModuleInstallerPathRefusesAnAudienceThisHostDoesNotServe(t *testing.T) {
+	svc, store, caller, policy, req := authorityInstallationFixture(t, "installer-audience")
+	req.AllowedAudiences = []string{"example.api", "nothing-serves-this"}
+	// The delegation must agree with the request, or the refusal could come from
+	// the ceiling comparison instead of from the vocabulary.
+	policy.Delegations[0].AllowedAudiences = slices.Clone(req.AllowedAudiences)
+
+	_, err := svc.ReconcileModuleInstallation(context.Background(), caller, policy, req, true)
+	require.Error(t, err)
+	require.ErrorIs(t, err, business.ErrAudienceNotInHostVocabulary)
+	require.Contains(t, err.Error(), "nothing-serves-this",
+		"the refusal must name the entry an operator has to fix")
+	require.NotContains(t, err.Error(), "withdrawn",
+		"an audience that was never served must not be reported as withdrawn")
+	require.Zero(t, store.calls,
+		"the refusal must precede the write, or the dead ceiling is stored anyway")
+
+	// And the same request with every entry served is accepted, so the case above
+	// is not the fixture refusing everything.
+	req.AllowedAudiences = []string{"example.api", "example.worker"}
+	policy.Delegations[0].AllowedAudiences = slices.Clone(req.AllowedAudiences)
+	_, err = svc.ReconcileModuleInstallation(context.Background(), caller, policy, req, true)
+	require.NoError(t, err)
+	require.Equal(t, 1, store.calls)
 }
 func verifiedAuthority(t *testing.T, svc *business.Service, caller business.ModuleCaller, policy *business.InstallerPolicy, req business.ModuleInstallationRequest) *business.ModuleInstallationAuthorityReference {
 	t.Helper()
@@ -123,8 +175,8 @@ func TestInstallationAuthorityChangesForEveryAuthorityDimension(t *testing.T) {
 				req.AgentIdentifier = req.ModuleID + ":2.0.0"
 				d.AgentIdentifiers = []string{req.AgentIdentifier}
 			case "solution":
-				req.SolutionIdentifier = "another-solution"
-				d.SolutionIdentifier = req.SolutionIdentifier
+				req.TargetID = "55555555-5555-4555-8555-555555555555"
+				d.TargetID = req.TargetID
 			case "role":
 				req.RoleID = id
 				d.RoleID = id
@@ -211,7 +263,15 @@ func TestInstallationAuthorityCanonicalGolden(t *testing.T) {
 	got := verifiedAuthority(t, svc, caller, policy, req)
 	// Pinned independently from the documented canonical JSON, not from the
 	// production encoder. Changing the contract requires a version decision.
-	require.Equal(t, "sha256:55816f0b3346273e460d1745e4c46f6c74a63a0baf4ed755fe3dcc394f74e570", got.Digest)
+	//
+	// v2: `solution_identifier` became `target_id`. That is a field change, so
+	// the document says it needs a schema decision rather than a new digest, and
+	// this is that decision made — the version string moved with the field. The
+	// digest below was recomputed from MODULE_INSTALLATION.md's stated rules
+	// (one object, sorted keys, compact UTF-8, no trailing newline) and NOT by
+	// copying what the encoder produced, which is the only thing that makes this
+	// a pin rather than a mirror.
+	require.Equal(t, "sha256:d80a031de7ff432228adf51c84a5de39a9743b408a6cc42d6b26e974c4cc6b15", got.Digest)
 	require.False(t, strings.Contains(got.Digest, req.AgentIdentifier))
 }
 

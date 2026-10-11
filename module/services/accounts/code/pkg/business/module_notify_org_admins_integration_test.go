@@ -30,6 +30,7 @@ func TestModuleNotifyOrgAdmins_ReachesOnlyTheTenantsAdministrators(t *testing.T)
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{modulePrincSvc: {}})
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
 
@@ -96,4 +97,52 @@ func TestModuleNotifyOrgAdmins_ReachesOnlyTheTenantsAdministrators(t *testing.T)
 	})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	require.Len(t, inbox(owner), 1, "a refused call writes nothing")
+}
+
+// Against Postgres: a same-origin path a module supplies is stored and handed
+// back verbatim when the recipient follows it, and an off-origin destination is
+// refused with nothing written.
+func TestModuleNotifyUser_StoresAndResolvesASameOriginDestination(t *testing.T) {
+	clearData(t)
+	owner, org := mustUserAndOrg(t, testCtx, "owner@notify-action.test", "owner-notify-action", "Acme Notify Action")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	backend := &fakeJobBackend{}
+	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{modulePrincSvc: {}})
+	// Every capability path re-reads LIVE module authority before it acts, so a
+	// service with no live read authorizes nothing at all rather than deciding on
+	// the declared ceiling alone. This test arrived against the older contract,
+	// where each path read only the declared grant; wiring the live read is the
+	// same one line every other capability test here carries.
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
+
+	const destination = "/documents/doc-7/comments/3?page=2#reply"
+	result, err := svc.ModuleNotifyUser(testCtx, caller, business.ModuleNotifyUserInput{
+		Tenant: org, UserID: owner, Title: "A document needs you", Body: "Reply to the comment.",
+		Type: "info", Category: "security", ActionURL: destination,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Delivered)
+
+	followed, err := testService.ResolveNotificationAction(testCtx, owner, result.NotificationID)
+	require.NoError(t, err)
+	require.Equal(t, destination, followed)
+
+	_, err = svc.ModuleNotifyUser(testCtx, caller, business.ModuleNotifyUserInput{
+		Tenant: org, UserID: owner, Title: "A document needs you", Body: "Reply to the comment.",
+		Type: "info", Category: "security", ActionURL: "//evil.example/steal",
+	})
+	require.Equal(t, codes.InvalidArgument, status.Code(err), "err = %v", err)
+
+	rows, _, err := testService.ListNotifications(testCtx, owner, 50, "")
+	require.NoError(t, err)
+	var destinations []string
+	for _, row := range rows {
+		if row.ActionURL != "" {
+			destinations = append(destinations, row.ActionURL)
+		}
+	}
+	require.Equal(t, []string{destination}, destinations, "a refused destination reached the inbox")
 }

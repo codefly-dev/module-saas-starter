@@ -224,6 +224,7 @@ func installBlobStreamService(t *testing.T, store business.Store, cipher busines
 	// fetch never leaves the process. Must come after the connector, which only
 	// seeds the factory when it is still nil.
 	svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return gh })
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	service = svc
 	t.Cleanup(func() { service = previous })

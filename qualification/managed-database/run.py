@@ -309,21 +309,56 @@ WHERE member.rolname IN ('example_reader','example_writer','example_ro','example
             if args.package:
                 run(['docker','cp',str(staged),fresh+':/tmp/stage'])
                 run(['docker','cp',str(args.migrate),fresh+':/tmp/migrate'])
-            above=sum(1 for f in ledger.glob('*.up.sql') if int(f.name.split('_')[0])>1)
+            # The rollback stops at the newest DECLARED-irreversible migration
+            # rather than pretending the whole ledger reverses. A cold cutover
+            # destroys runtime-owned state by design, so its down file raises —
+            # and the gate must neither fail on that nor be loosened to tolerate
+            # any raise. It reads the `codefly:irreversible` marker, so an
+            # irreversible migration is one somebody DECLARED; a down file that
+            # raises without the marker breaks the rollback below and fails,
+            # which is the property worth keeping.
+            irreversible=[int(f.name.split('_')[0]) for f in ledger.glob('*.down.sql')
+                          if 'codefly:irreversible' in f.read_text()]
+            frontier=max(irreversible) if irreversible else 1
+            versions=sorted(int(f.name.split('_')[0]) for f in ledger.glob('*.up.sql'))
+            above=sum(1 for v in versions if v>frontier)
             if above:
+                # Every migration above the frontier reverses cleanly, one
+                # command, and the ledger must come to rest exactly on it.
                 run(migration_command(fresh,'example_migrator','down',str(above)))
-                assert sql(fresh,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='1:false'
-            policy_before=sql(fresh,'SELECT count(*) FROM pg_policy').stdout
-            r=run(migration_command(fresh,'example_migrator','down','1'),check=False)
-            assert r.returncode and 'forward-only' in r.stderr,r.stderr
-            assert sql(fresh,'SELECT count(*) FROM pg_policy').stdout==policy_before
-            # A down of the first version targets "no version": golang-migrate marks
-            # that target dirty before running the file, so the refusal leaves the
-            # ledger at -1:true with the schema intact. `migrate force 1` recovers it;
-            # nothing is dropped.
-            ledger_state=sql(fresh,"SELECT coalesce(string_agg(version::text||':'||dirty::text,','),'') FROM schema_migrations").stdout.strip()
-            assert ledger_state=='-1:true',ledger_state
-            tests.append({'case':'baseline_down_is_refused_before_any_removal_and_leaves_dirty_ledger','passed':True})
+                resting=sql(fresh,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()
+                assert resting==f'{frontier}:false',(resting,frontier)
+            tests.append({'case':'rollback_reverses_every_migration_above_the_declared_irreversible_frontier',
+                          'passed':True,'irreversible_frontier':frontier,'reversed':above})
+            if frontier>1:
+                # It stops THERE: stepping once more must be refused by the
+                # frontier's own raise, and must leave the schema alone.
+                policy_at_frontier=sql(fresh,'SELECT count(*) FROM pg_policy').stdout
+                r=run(migration_command(fresh,'example_migrator','down','1'),check=False)
+                assert r.returncode and 'irreversible' in r.stderr,r.stderr
+                assert sql(fresh,'SELECT count(*) FROM pg_policy').stdout==policy_at_frontier
+                tests.append({'case':'the_declared_irreversible_frontier_refuses_its_own_down_and_drops_nothing',
+                              'passed':True,'frontier':frontier})
+                print(json.dumps({'irreversible_frontier':frontier,
+                                  'reversed_above_frontier':above,
+                                  'baseline_down_not_reached':True}))
+            # The baseline's own forward-only refusal is only REACHABLE when no
+            # declared-irreversible migration sits above it. With a frontier the
+            # rollback stops higher up by design, so asserting 'forward-only'
+            # here would assert the wrong refusal — the frontier's raise is what
+            # the ledger meets, and the block above already holds that.
+            if frontier==1:
+                policy_before=sql(fresh,'SELECT count(*) FROM pg_policy').stdout
+                r=run(migration_command(fresh,'example_migrator','down','1'),check=False)
+                assert r.returncode and 'forward-only' in r.stderr,r.stderr
+                assert sql(fresh,'SELECT count(*) FROM pg_policy').stdout==policy_before
+                # A down of the first version targets "no version": golang-migrate marks
+                # that target dirty before running the file, so the refusal leaves the
+                # ledger at -1:true with the schema intact. `migrate force 1` recovers it;
+                # nothing is dropped.
+                ledger_state=sql(fresh,"SELECT coalesce(string_agg(version::text||':'||dirty::text,','),'') FROM schema_migrations").stdout.strip()
+                assert ledger_state=='-1:true',ledger_state
+                tests.append({'case':'baseline_down_is_refused_before_any_removal_and_leaves_dirty_ledger','passed':True})
         migration_safety(args.migrate,tests,containers)
         receipt={'passed':True,'source':run(['git','rev-parse','HEAD'],cwd=ROOT).stdout.strip(),'dirty':bool(run(['git','status','--porcelain'],cwd=ROOT).stdout),'postgres_image':IMAGE,'server_version':sql(canonical,'SHOW server_version').stdout.strip(),'ledger_head':head,'tests':tests,'bootstrap':bootstrap_receipts}
         args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(receipt,indent=2)+'\n')

@@ -1,0 +1,103 @@
+# Functions that resolve the DECLARED module registry — via moduleGrant or
+# declaredModules — without re-reading live authority.
+#
+# THIS FILE ONLY EVER SHRINKS. A new entry fails
+# TestEveryModuleCapabilityPathReReadsLiveAuthority; routing one means deleting
+# its line.
+#
+# An earlier version of that gate watched only `moduleGrant`, so a function
+# reading `declaredModules()` directly bypassed it and the gate was, in a
+# reviewer's words, green about a NAME. Widening it to the registry read itself
+# surfaced these paths. They are NOT all the same problem, and the file says
+# which is which rather than implying one disposition:
+#
+# A. CAPABILITY DECISIONS that must be routed through
+#    Service.AuthorizeModuleCapability. These are the real outstanding work.
+module_operation_context.go:ModuleAuthorizeOperationContext
+module_operation_context.go:CheckModuleOperationContextRevision
+module_registration.go:ModuleAuthorizeWorkContext
+source_delegation.go:AuthorizeSourceOperationContext
+source_delegation.go:AuthorizeDelegationReferenceExchange
+# Arrived with main's executable-artifact consent (#1025), which landed while
+# this gate lived on a branch, so neither side could see the other. Both decide
+# authority off the declared ceiling: the revocation decides who may withdraw
+# consent to run an artifact, and the current-installation read decides what a
+# declared module may learn about its own installation. Routing them is this
+# file's group-A work and is owed, not waived — and the revocation is owed a
+# policy-log receipt in the same pass (see unwitnessedNarrowings), so the two
+# belong in one change rather than two.
+executable_artifacts.go:RevokeApprovedExecutableArtifact
+current_installation.go:ModuleCurrentInstallation
+#
+# B. WRITES made under a capability already authorised upstream. They re-read the
+#    registry to resolve a declared value rather than to decide authority, so
+#    routing them would re-run a decision their caller already made — but they
+#    are listed because "my caller checked" is exactly the assumption that rots
+#    when a new caller appears.
+solution_audit_events.go:admitDeclaredAuditEventTypesWritten
+solution_audit_events.go:releasedAuditNamespace
+source_delegation.go:recordSourceDelegationsTx
+# A classification helper: it asks only WHETHER a principal is a declared module,
+# to pick the delegation's shape. Its answer is used by callers in group A, which
+# is where the authority decision belongs.
+source_delegation.go:sourceDelegationShape
+# ExecutableArtifactPolicyFor resolves WHICH declared policy a module installed,
+# so a caller can compare an artifact against it. It decides nothing: every
+# caller of it is a group-A path that makes the authority decision itself. Same
+# shape as sourceDelegationShape above, and it arrived with #1025.
+executable_artifacts.go:ExecutableArtifactPolicyFor
+#
+# C. NOT capability decisions at all: accessors and listings over the registry,
+#    reached by paths with their own authorisation. They need a disposition other
+#    than routing — most likely an explicit marker — and until that exists they
+#    are here rather than silently excluded by name inside the gate, because
+#    excluding them there would be the gate's author deciding what counts.
+service.go:ModulePrincipals
+layered_access.go:ListCollectionAccess
+module_capabilities.go:ModuleContentResources
+# HostAudiences resolves the host's AUDIENCE VOCABULARY — the closed set of
+# strings this deployment serves a capability to (issue #952). A declared module
+# prefix is one of its three members, which is why it reads the registry.
+#
+# It is group C's shape and not group A's, and the reason is sharper than
+# "accessor": there is no authority decision here to route, because there is no
+# CALLER in it. It answers "is this string one this host serves", a question with
+# no tenant, no installation and no principal — asked BEFORE any authority is
+# resolved, by requireVocabularyAudience, whose own caller then makes the
+# authority decision with the live re-reads that belong to it
+# (enforceActorCeiling, resolveAuthority). Routing it would need a caller it does
+# not have.
+#
+# "Re-read it live" has no meaning for the registry half either: which modules a
+# composition declares is a deployment fact, like group D's workload binding. The
+# half that DOES move at runtime — the declared, non-tombstoned solution bindings
+# — is read live from the database on every call, deliberately uncached, so a
+# withdrawn solution leaves the vocabulary at once.
+work_context_audience.go:HostAudiences
+# ListPlatformCatalogue reads the registry to LIST the modules it knows, for a
+# platform administrator's catalogue. It is group C's shape — an accessor, not a
+# decision — and it is authorised upstream as a platform-admin RPC.
+#
+# It is on this list because of a change, not a regression: main read
+# `s.modulePrincipals` as a bare field, which this gate does not watch, and the
+# merge moved it to the `declaredModules()` accessor so the atomic pointer is
+# loaded safely. The gate saw it for the first time as a result. That is the gate
+# working — a direct field read was a way past it — and the honest disposition is
+# to list the path rather than go back to the spelling that hid it.
+platform_catalogue.go:ListPlatformCatalogue
+#
+# D. AUTHENTICATION, which runs BEFORE any capability decision and reads an
+#    IDENTITY fact rather than an authority one. Routing it through
+#    AuthorizeModuleCapability would invert the order: that call decides what an
+#    already-authenticated caller may do, and this is what establishes who the
+#    caller is.
+#
+#    The value read is the principal's declared workload — the Kubernetes service
+#    account, namespace and container its pods run as. There is NO live source
+#    for it and there should not be: it is a deployment fact, fixed by the
+#    composition, and the whole point of comparing it against a TokenReview is
+#    that the declaration is the thing the caller cannot influence. "Re-read it
+#    live" has no meaning here, so group A's disposition does not apply, and
+#    group C's "needs an explicit marker" is the closest but still wrong — these
+#    are accessors, this is a check.
+module_execution_binding.go:BindExecution

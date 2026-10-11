@@ -125,6 +125,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/collection-access":                {},
 	"GET /v1/consent/status":                   {},
 	"GET /v1/delegations:pending":              {},
+	"GET /v1/installations:listAvailable":      {},
 	"GET /v1/invitations":                      {},
 	"GET /v1/mfa/devices":                      {},
 	"GET /v1/notifications":                    {},

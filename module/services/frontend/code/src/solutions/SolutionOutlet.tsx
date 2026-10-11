@@ -31,6 +31,8 @@ import {
 	lazy,
 	type ReactNode,
 	Suspense,
+	useEffect,
+	useState,
 	useSyncExternalStore,
 } from "react";
 import * as ReactJSXRuntime from "react/jsx-runtime";
@@ -441,6 +443,34 @@ function useInBrowser(): boolean {
 
 const LOADING = <div className="p-6 text-sm opacity-70">Loading solution…</div>;
 
+/**
+ * The viewer organization's installation of this solution, read from the host's
+ * own projection route, which resolves it from the gateway-verified viewer's
+ * entitlements for the routed target. Undefined until it answers, and on any
+ * refusal: the remote then has no installation to act in, which is the honest
+ * state, rather than one this outlet guessed.
+ */
+function useSolutionInstallation(solutionId: string | null): string | undefined {
+	const [resolved, setResolved] = useState<{ solutionId: string; installationId: string } | null>(null);
+	useEffect(() => {
+		if (!solutionId) return;
+		let live = true;
+		authedFetch(`/api/solutions/${encodeURIComponent(solutionId)}/installation`, { cache: "no-store" })
+			.then(async (response) => {
+				if (!response.ok) return;
+				const body = (await response.json()) as { installationId?: unknown };
+				if (live && typeof body.installationId === "string" && body.installationId !== "") {
+					setResolved({ solutionId, installationId: body.installationId });
+				}
+			})
+			.catch(() => {});
+		return () => {
+			live = false;
+		};
+	}, [solutionId]);
+	return resolved && resolved.solutionId === solutionId ? resolved.installationId : undefined;
+}
+
 export function SolutionOutlet({
 	remote,
 	pageProps,
@@ -461,6 +491,7 @@ export function SolutionOutlet({
 }) {
 	const inBrowser = useInBrowser();
 	const Remote = inBrowser ? remoteComponent(remote) : null;
+	const installationId = useSolutionInstallation(inBrowser ? pageProps.solutionId : null);
 
 	return (
 		<SolutionErrorBoundary key={remote.id}>
@@ -473,6 +504,7 @@ export function SolutionOutlet({
 						subscribeToken={subscribeToken}
 						refreshAccessToken={refreshToken}
 						authedFetch={authedFetch}
+						installationId={installationId}
 						dashboardAuthoring={authoring}
 					/>
 				) : (

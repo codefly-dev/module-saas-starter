@@ -273,6 +273,22 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 // manifestCatalogVisibility projects Codefly's independent visibility/location
 // axes into this catalog's categories. MODULE represents every module, so
 // narrower allow-lists refuse rather than silently widening the generated policy.
+//
+// `internal` WITH NO allow-list is the v0.14.0 spelling of what `internal` plus
+// `allow-modules: ["*"]` said, and maps to the same category. That is not a
+// loosening: core v0.14.0 refuses the key outright — "an allow-list is derived
+// from the consumers' declared service dependencies, never written by the module
+// it would grant" — so the wildcard was a module answering a question that was
+// never its to answer, and deleting it removes a redundant spelling rather than a
+// constraint. Which modules actually reach the endpoint is decided by their own
+// declared dependencies either way, which is exactly what MODULE means here.
+//
+// The wildcard is still ACCEPTED, because this generator walks every composed
+// module's manifests and the fleet has not finished moving; and a narrower
+// allow-list is still REFUSED, because it would need an allow-list-aware catalog
+// and core will not let one be authored anyway. So the only two reachable inputs
+// both mean "every module that declares the dependency", and nothing silently
+// widens.
 func manifestCatalogVisibility(visibility, location string, allowed []string) (string, error) {
 	if visibility == "" {
 		visibility = "private"
@@ -290,8 +306,8 @@ func manifestCatalogVisibility(visibility, location string, allowed []string) (s
 		}
 		return visibility, nil
 	case "internal":
-		if len(allowed) != 1 || allowed[0] != "*" {
-			return "", fmt.Errorf("deployment catalog requires internal visibility with allow-modules [*]; narrower exports need an allow-list-aware catalog")
+		if len(allowed) != 0 && (len(allowed) != 1 || allowed[0] != "*") {
+			return "", fmt.Errorf("deployment catalog accepts internal visibility with no allow-modules, or the legacy [*]; a narrower export needs an allow-list-aware catalog")
 		}
 		return "module", nil
 	default:

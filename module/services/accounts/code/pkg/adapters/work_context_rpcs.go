@@ -375,14 +375,18 @@ func (s *WorkContextAuthorityServer) taskBoundary(
 	if seed.Publisher != identity.Publisher {
 		return "", status.Error(codes.PermissionDenied, "solution registration is owned by another publisher")
 	}
-	// The backend half is the half that mints. One whose lease has lapsed is a
-	// deployment that stopped renewing, and the gateway has already stopped
-	// routing to it, so minting its boundary would hand out authority for a
-	// solution nothing can reach.
+	// The backend half is the half that mints, and "serving" is DELIVERED
+	// presence: the applied declared generation carries a backend half on a
+	// non-tombstoned declared row. It was a lease expiry, which nothing renews
+	// any more — the renewal path is deleted and a tombstone is the only
+	// withdrawal — so the refusal names the columns it read rather than leaving
+	// an operator to guess which half never arrived.
 	if !seed.BackendServing {
-		return "", status.Error(codes.FailedPrecondition, "solution backend registration is not serving")
+		return "", status.Errorf(codes.FailedPrecondition,
+			"solution backend registration is not serving: the declared row for %q carries no backend half (%s is absent)",
+			identity.SolutionID, seed.MissingBackendHalf)
 	}
-	boundary, err := business.SolutionRuntimeBoundary(seed.Seed, orgID)
+	boundary, err := business.SolutionRuntimeBoundary(seed.BindingID, orgID)
 	if err != nil {
 		return "", status.Error(codes.Internal, "cannot derive the solution runtime boundary")
 	}
@@ -440,6 +444,9 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
+		return nil, err
+	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
 	if err != nil {
 		return nil, err
@@ -459,7 +466,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
-	if err := enforceActorCeiling(facts.Actor, req.GetAudience(), scopes); err != nil {
+	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
 
@@ -515,6 +522,9 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
+	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
+		return nil, err
+	}
 	if s == nil || s.configureErr != nil || s.signer == nil || s.authority == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
 	}
@@ -543,7 +553,7 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if facts.Actor == nil {
 		return nil, status.Error(codes.Internal, "installation authority resolved without an agent actor")
 	}
-	if err := enforceActorCeiling(facts.Actor, req.GetAudience(), scopes); err != nil {
+	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
 	actors := []*basev0.WorkActorV1{{
@@ -580,6 +590,78 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 // is good for. It keeps a module token and a delegated user context minted for
 // another service non-interchangeable even though one key signs both.
 const ModuleWorkContextAudience = "module-capabilities"
+
+// requireMintableAudience is the audience rule EVERY mint runs, and the reason it
+// is one function rather than a line repeated at each site.
+//
+// Two refusals, each naming what it refused:
+//
+//  1. EMPTY. An audience is what makes two capabilities signed by one key
+//     non-interchangeable, so a token stamped with none is good at whichever
+//     consumer will take it. It was legal on every caller-supplied mint, and the
+//     verifier could not make up the difference: the expectation check treats an
+//     empty EXPECTED audience as "do not check" (sdk-go
+//     workcontext/work_context.go:570, `check.want != ""`), so a site with no
+//     value to pass and a token with no value to compare agreed, vacuously. The
+//     host's answer is to stamp a value always, which is what makes the sentinel
+//     unreachable from here — see the PR body for the upstream half, which is
+//     sdk-go's to delete and not this repo's to patch.
+//
+//  2. The capability surface's OWN audience. A token addressed to
+//     "module-capabilities" is what that surface accepts as a MODULE'S IDENTITY
+//     (VerifyModuleWorkContext expects exactly this audience and then reads the
+//     principal out of the actor chain). A caller-supplied mint that could name
+//     it would hand any owner a second spelling of a module identity — sealed
+//     with scopes that surface never reads. StartModuleTask stamps it itself;
+//     nothing a caller asks for may.
+//
+// These two are STRUCTURAL and need no state, which is why they are separate from
+// the vocabulary check below: they hold even when the registry cannot be read, so a
+// registry outage never turns into a mint that stamps an empty audience.
+func requireMintableAudience(audience string) error {
+	if strings.TrimSpace(audience) == "" {
+		return status.Error(codes.InvalidArgument,
+			"a Work Context audience is required: a capability with no audience is good at whichever consumer accepts it")
+	}
+	if audience == ModuleWorkContextAudience {
+		return status.Errorf(codes.PermissionDenied,
+			"audience %q is this host's module capability surface and is never caller-supplied: a context addressed to it is read as a module identity",
+			ModuleWorkContextAudience)
+	}
+	return nil
+}
+
+// requireVocabularyAudience is the second half: the audience must be in the host's
+// CLOSED, DERIVED set — the module capability audience, or
+// `solution:<binding-id>` for a declared, non-tombstoned binding, and nothing
+// else (business.RequireHostAudience).
+//
+// Both halves run, in this order, and neither subsumes the other. The structural
+// half needs no state and therefore holds during a registry outage. The
+// vocabulary half needs the declared registry and FAILS CLOSED when it cannot be
+// read: a set that cannot be resolved must not read as "no audiences are valid"
+// *or* as "any is", so the mint refuses and says which capability the deployment
+// is missing.
+//
+// The set is derived from delivered presence, so it changes only by delivery. A
+// caller never adds to it by asking, and a withdrawal removes an audience with its
+// binding's tombstone — which is what makes "the consumer this capability names
+// still exists" a property of the mint rather than of a reviewer's attention.
+func requireVocabularyAudience(ctx context.Context, audience string) error {
+	if err := requireMintableAudience(audience); err != nil {
+		return err
+	}
+	if err := service.RequireHostAudience(ctx, audience); err != nil {
+		if errors.Is(err, business.ErrAudienceNotInHostVocabulary) {
+			return status.Error(codes.PermissionDenied, err.Error())
+		}
+		// The set could not be resolved. Unavailable, not PermissionDenied: the
+		// caller may be entitled and nothing here says otherwise, and an operator
+		// reading a 503 looks at the registry rather than at a grant.
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	return nil
+}
 
 // ErrWorkContextAuthorityUnconfigured distinguishes a deployment that never
 // wired the signing key from a capability this issuer refused to sign. Both
@@ -640,10 +722,13 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	if s == nil || s.configureErr != nil || s.signer == nil {
 		return workcontext.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
 	}
-	// A binding addressed to the capability surface itself would yield a token
-	// that surface accepts as the module's own identity, sealed with scopes it
-	// never reads; refuse rather than mint two spellings of one capability.
-	if authority.Audience == "" || authority.Audience == ModuleWorkContextAudience {
+	// The same rule every mint runs, stated once: an empty audience, and the
+	// capability surface's own, are both refused. These two sites were already
+	// fail-closed and are the precedent requireMintableAudience generalises —
+	// consolidated rather than reimplemented, so the rule cannot hold at five
+	// sites and lapse at the sixth. The error KIND stays this path's own
+	// (ErrWorkContextInvalid), because its callers map it.
+	if requireMintableAudience(authority.Audience) != nil {
 		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: operation context audience", workcontext.ErrWorkContextInvalid)
 	}
 	if authority.Revision == 0 {
@@ -746,6 +831,9 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
+		return nil, err
+	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
 	if err != nil {
 		return nil, err
@@ -756,7 +844,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err != nil {
 		return nil, err
 	}
-	if err := enforceActorAudience(actor, req.GetAudience()); err != nil {
+	if err := enforceActorAudience(ctx, actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
 	token, signed, err := s.signer.StartSession(parentToken, workcontext.StartRootSessionInput{
@@ -778,6 +866,9 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
+		return nil, err
+	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
 	if err != nil {
 		return nil, err
@@ -788,12 +879,13 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if err != nil {
 		return nil, err
 	}
-	return s.exchangeVerifiedParent(parentToken, parent, actor, req)
+	return s.exchangeVerifiedParent(ctx, parentToken, parent, actor, req)
 }
 
 // exchangeVerifiedParent runs AFTER the caller's authentication and
 // current-parent checks.
 func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
+	ctx context.Context,
 	parentToken workcontext.WorkContextToken, parent *basev0.WorkContextV1,
 	actor *business.Principal, req *gen.ExchangeWorkContextAudienceRequest,
 ) (*gen.IssuedWorkContext, error) {
@@ -808,7 +900,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	// audience AND re-declare scopes, so the scope cap must apply here too, not
 	// only the audience. Relying on the signer's attenuation guarantee alone
 	// would leave the ceiling's scope dimension unenforced on this path.
-	if err := enforceActorCeiling(actor, req.GetAudience(), scopes); err != nil {
+	if err := enforceActorCeiling(ctx, actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
 	token, signed, err := s.signer.ExchangeWorkContextAudience(
@@ -831,6 +923,9 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	req *gen.StartChildSessionWorkContextRequest,
 ) (*gen.IssuedWorkContext, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
@@ -862,7 +957,7 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 			"parent Work Context authorization revision is stale",
 		)
 	}
-	if err := enforceActorCeiling(facts.Actor, req.GetAudience(), scopes); err != nil {
+	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
 	token, signed, err := s.signer.StartChildSession(parentToken, workcontext.StartChildSessionInput{
@@ -925,13 +1020,21 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
+	// The tri-state made explicit: a renewal that names no audience INHERITS the
+	// parent's by copying it here, and the resolved value — never the request
+	// field — is what is checked and what is stamped. A parent that somehow
+	// carries no audience therefore refuses the renewal instead of propagating
+	// the emptiness one generation further.
 	audience := req.GetAudience()
 	if audience == "" {
 		audience = parent.GetAudience()
 	}
+	if err := requireVocabularyAudience(ctx, audience); err != nil {
+		return nil, err
+	}
 	// A renewal may re-declare attenuated scopes, so enforce both dimensions of
 	// the actor ceiling — audience and resource kinds — not the audience alone.
-	if err := enforceActorCeiling(actor, audience, scopes); err != nil {
+	if err := enforceActorCeiling(ctx, actor, audience, scopes); err != nil {
 		return nil, err
 	}
 	// A renewal must not silently loosen replay protection: an unspecified
@@ -1250,8 +1353,10 @@ func (s *WorkContextAuthorityServer) resolveAuthority(
 // (the RBAC check resolveAuthority runs), so a finer ceiling would duplicate
 // that. allowed_scopes is the coarser, non-redundant "which resource kinds may
 // this agent ever touch via a Work Context" cap that RBAC does not express.
-func enforceActorCeiling(actor *business.Principal, audience string, scopes []*basev0.WorkScopeV1) error {
-	if err := enforceActorAudience(actor, audience); err != nil {
+func enforceActorCeiling(
+	ctx context.Context, actor *business.Principal, audience string, scopes []*basev0.WorkScopeV1,
+) error {
+	if err := enforceActorAudience(ctx, actor, audience); err != nil {
 		return err
 	}
 	if actor == nil || len(actor.AllowedScopes) == 0 {
@@ -1271,17 +1376,43 @@ func enforceActorCeiling(actor *business.Principal, audience string, scopes []*b
 	return nil
 }
 
-func enforceActorAudience(actor *business.Principal, audience string) error {
+// enforceActorAudience holds a mint to the actor's registered ceiling, and the
+// ceiling is read through the host's CURRENT vocabulary (issue #952).
+//
+// A stored entry that has left the closed set is DEAD, NOT GRANTED. A solution
+// withdrawn after an installation named its audience leaves a ceiling entry that
+// no longer describes any consumer this host serves; granting it would mint a
+// capability for an audience delivery has taken away. Write-time validation
+// cannot cover this on its own, because the set shrinks by DELIVERY, long after
+// any write — so the narrowing happens here, on the read.
+//
+// A ceiling narrowed to NOTHING refuses, and that is the one case where this is
+// not merely a filter: an empty stored list means "unrestricted", but a list that
+// was non-empty and is now entirely dead means "every consumer this agent was
+// allowed to address is gone". Collapsing the second into the first would turn a
+// fully-withdrawn ceiling into no ceiling at all, which is the most permissive
+// reading of the most restrictive state.
+func enforceActorAudience(ctx context.Context, actor *business.Principal, audience string) error {
 	if actor == nil || len(actor.AllowedAudiences) == 0 {
 		return nil
 	}
-	for _, allowed := range actor.AllowedAudiences {
+	live, err := service.LiveHostAudiences(ctx, actor.AllowedAudiences)
+	if err != nil {
+		// Fail closed: a ceiling that cannot be read is not an unrestricted one.
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	if len(live) == 0 {
+		return status.Errorf(codes.PermissionDenied,
+			"agent %s has %d allowed audience(s) and this host serves none of them any more: the solutions they named have been withdrawn",
+			actor.AgentIdentifier, len(actor.AllowedAudiences))
+	}
+	for _, allowed := range live {
 		if allowed == audience {
 			return nil
 		}
 	}
 	return status.Errorf(codes.PermissionDenied,
-		"audience %q is outside agent %s allowed audiences", audience, actor.AgentIdentifier)
+		"audience %q is outside agent %s allowed audiences this host still serves", audience, actor.AgentIdentifier)
 }
 
 func workContextScopes(

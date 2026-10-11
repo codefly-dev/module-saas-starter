@@ -525,8 +525,8 @@ executable inventory and this table in the same change.
 
 | Scope | Relations | Required database boundary |
 |---|---|---|
-| `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `solution_registrations` | No RLS; exact grants |
-| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
+| `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `policy_log_commits`, `policy_log_cursor`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
+| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
@@ -889,6 +889,125 @@ resolves current tenant/platform/MFA authorization, and updates only `org_id`,
 creation/activity timestamps, idle expiry, and absolute expiry are unchanged.
 This lock order serializes switch-versus-refresh races without treating a stale
 access-token session id as refresh replay.
+
+## The policy log, and why it is not in this database
+
+Every narrowing of authority — a revocation, a tenancy change, a tightened
+envelope — and every **authorised regrant** is appended to an **external**
+append-only log before it takes effect here, and the host keeps only the
+receipt.
+
+The reason it cannot live in this database is the whole point. A transactional
+audit event plus an append-only table beside the state they describe are
+**backed up with that state**, so restoring the database restores revoked
+authority together with the history that was supposed to witness against it. A
+history that is restored alongside what it witnesses cannot witness.
+
+**The protocol is append → receipt → commit-with-receipt**, and the ordering is
+load-bearing in one direction:
+
+| failure | state afterwards | why it is safe |
+| --- | --- | --- |
+| the append fails | nothing narrowed, caller refused | authority was not reduced and nobody was told it was |
+| the append lands, the commit fails | **the host stops serving** | the log says the narrowing happened; serving the wider authority still held locally would be serving authority that was revoked |
+| the commit lands without an append | **impossible** | the append comes first and its receipt is required by the commit |
+
+Two relations hold the local half. `policy_log_commits` is one row per
+operation — the operation id is the **caller's** idempotency key, because only
+the caller knows two attempts are the same revocation — carrying the receipt and
+a `committed_at` that is NULL exactly while the gap is open. `policy_log_cursor`
+is a single row recording how far this host has reconciled the log and when it
+last reached it. Neither is deletable: a receipt is the evidence that an append
+happened, so deleting one would make an unreconciled gap **disappear** rather
+than be closed, which is the one way the fail-closed asymmetry could be defeated
+locally.
+
+**Serving is gated on two conditions, checked on the serving path and not only at
+startup.** A gap opens at runtime — a commit that failed after its append landed
+— so a startup-only check would serve through exactly the window the protocol
+exists for. The host refuses when it holds an unapplied logged operation, and
+when it has not reached the log within a bounded staleness window: a host that
+cannot read the log does not know whether its authority is current, and serving
+what it last believed is serving authority that may have been revoked since.
+
+The staleness window is deliberately not zero. A log round trip per request
+would make the log's availability the host's own, and a momentary blip would
+become an outage. It is deliberately not unbounded either, because then "I
+cannot reach the log" would never become "I must stop serving".
+
+**The append is bounded, and the bound is about locks rather than latency.** It
+happens before the narrowing's transaction opens, so a slow log cannot hold
+database locks — but a caller blocked indefinitely still holds its request and
+everything above it. The bound converts that into a refusal the caller can act
+on, and a narrowing that cannot be logged must not proceed.
+
+**Reconciliation reports gaps; it does not decide authority from the log.**
+Applying an entry means re-running the narrowing it describes, which is domain
+logic — a reconciler that re-derived authority from log payloads would be a
+second implementation of every narrowing, and the copy is what drifts.
+
+### What goes through it, and what the host does without it
+
+**Four narrowings route through the protocol**, each appending before it applies
+and committing its receipt in the transaction that applies it: revoking an
+installation (`UninstallSolution`), closing a withdrawn solution target — which
+revokes every installation naming it — revoking a hierarchical scope grant, and
+removing a team membership. Installing, granting and adding are not narrowings
+and do not appear in the log; an authorised **regrant** does, because a log that
+recorded only reductions could not tell "this authority was restored" from "it
+was never taken away".
+
+That transaction is a **control-plane** one even for an organisation-scoped
+narrowing, because `policy_log_commits` is control-plane only and the receipt and
+the narrowing must be the same transaction or "applied but unwitnessed" becomes
+reachable. The tenant policy that would otherwise have confined each statement is
+replaced by an explicit predicate at the call site: three of the four already
+name their organisation in the statement, and the fourth — a team membership,
+whose delete is keyed on (team, user) and carries no organisation column —
+re-reads the team's owning organisation on the same transaction and refuses a
+mismatch.
+
+The **serving gate runs on the request path**, in both transports' authorization
+interceptors, after authorization so the refusal reaches only callers the host
+would have served. Its answer is reused for a bounded window rather than
+recomputed per request — the gate is a control-plane read — and the window hides
+nothing: a gap this host opens itself drops the cached answer at the instant the
+append is recorded, and a gap another replica opened arrives through
+reconciliation, whose interval is longer than the window. A host that cannot
+evaluate the gate refuses, because "I could not check" must not be served as
+"there is nothing to find". The refusal is **Unavailable and never
+PermissionDenied**: the caller is not unauthorized, the host is unable, and a
+host answering "forbidden" would tell every caller their authority had been
+revoked when nothing of theirs had.
+
+### The independent policy-log service
+
+The transport owner is the **[policy-log service](services/policy-log/README.md);
+the host wires its client**. Its witness assigns a global sequence and returns
+a signed receipt only after an immutable entry and a generation-guarded object-store
+head have committed in the warehouse's trust domain. Accounts holds neither
+that store's write authority nor the signing key. Composition delivers
+`policy_log_public_key.json` under the host's trust-anchor directory.
+
+The warehouse remains a best-effort mirror, never the source of the receipt.
+A BigQuery writer gets no global ordinal from streaming inserts or per-stream
+offsets, cannot wait for ingestion visibility within the five-second bound,
+and deliberately holds no read or job-creation permission to recover its row.
+Those limitations are why the receipt issuer is a separate service rather than
+an accounts adapter that manufactures its own evidence.
+
+**This checkout does not yet have a runnable log transport.** The new service's
+witness, storage, signing-key loader, mirror, and private service declaration are
+implemented; protobuf and OpenAPI generation and the RPC listener remain blocked
+by the required generator prerequisite. Its README records that boundary and
+the remaining real-GCS qualification. The host's Go code and client wiring are
+unchanged, so this source addition must not be read as a running deployment or
+as completion of the policy-log condition.
+
+Until the transport and host client are wired, the existing host still serves
+normally and refuses the four narrowings above. Once wired, inability to reach
+the log expires the serving gate's freshness window and refuses service; an
+appended operation without a local commit remains a gap until reconciled.
 
 ## Control-plane boundary
 

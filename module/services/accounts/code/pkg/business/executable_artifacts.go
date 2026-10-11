@@ -21,8 +21,13 @@ import (
 )
 
 // ExecutableArtifactPolicy is an operator-installed ceiling, not supplied by
-// an author. Source identifiers are mapped explicitly to installation identities;
-// event namespaces are never treated as executable-source ownership.
+// an author. Event namespaces are never treated as executable-source ownership.
+//
+// Sources maps an artifact source identifier to the delivered presence BINDING
+// ID that may carry it — not to a route alias and not to an installation id. An
+// alias is reusable by a later binding, so keying on one would let a
+// replacement binding inherit the approval its predecessor was granted; a
+// binding id names the thing the operator actually consented to.
 type ExecutableArtifactPolicy struct {
 	Schema        string             `json:"schema"`
 	Sources       map[string]string  `json:"sources"`
@@ -242,8 +247,26 @@ func (s *Service) DecideExecutableArtifact(ctx context.Context, caller ModuleCal
 		if e != nil {
 			return e
 		}
-		if installation == nil || installation.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE || health != gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY || installation.SolutionIdentifier != policy.Sources[req.Identity.Source] {
+		if installation == nil || installation.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE || health != gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY {
 			return status.Error(codes.PermissionDenied, "artifact installation unavailable")
+		}
+		// The authority to approve or run an artifact is keyed on the delivered
+		// presence BINDING, never on the route alias.
+		//
+		// This guard read `installation.SolutionIdentifier != policy.Sources[...]`,
+		// against the free-text alias. An alias is deliberately reusable: withdraw
+		// a binding and a later one may take the same route. So an approval granted
+		// to the first binding matched the second binding's artifacts, with nobody
+		// acting — the §9 inheritance hole this branch closes for exposure, arriving
+		// on the artifact path instead.
+		//
+		// The installation names a target (one continuous period of one binding's
+		// presence, never reused), the target names the binding, and a target closed
+		// by its tombstone refuses here rather than reading as live. So a
+		// replacement binding under the same alias is a different binding id and
+		// inherits nothing.
+		if bindingErr := s.requireConsentedBinding(ctx, installation.TargetId, policy.Sources[req.Identity.Source]); bindingErr != nil {
+			return bindingErr
 		}
 		permission := policy.Run
 		if action == "approve" {
@@ -280,6 +303,39 @@ func (s *Service) DecideExecutableArtifact(ctx context.Context, caller ModuleCal
 		return nil
 	})
 	return out, err
+}
+
+// requireConsentedBinding refuses unless the installation's consented target is
+// still live AND records exactly the binding the policy installed.
+//
+// The read runs on the CONTROL PLANE, not in the caller's organisation
+// transaction, and that is the whole subtlety. `solution_targets` is a global
+// relation with exact grants: the host's presence state spans every
+// organisation, so the request-path role holds no SELECT on it and the first
+// version of this guard failed with "permission denied for table
+// solution_targets". Granting request traffic that read is the thing
+// installations.proto explicitly rules out — answering about one organisation
+// would mean letting request traffic read every organisation's presence.
+//
+// A denied read would also have been the dangerous shape rather than a loud
+// one if the query had been a count: permission denied reads as empty. It is a
+// single row fetched by primary key, so it errors.
+func (s *Service) requireConsentedBinding(ctx context.Context, targetID, installedBinding string) error {
+	if targetID == "" || installedBinding == "" {
+		return status.Error(codes.PermissionDenied, "artifact installation unavailable")
+	}
+	var target *SolutionTarget
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		target, e = s.store.GetSolutionTarget(ctx, targetID)
+		return e
+	}); err != nil {
+		return err
+	}
+	if !target.Live() || target.BindingID != installedBinding {
+		return status.Error(codes.PermissionDenied, "artifact installation unavailable")
+	}
+	return nil
 }
 
 // RevokeApprovedExecutableArtifact addresses the retained row, so disabling or

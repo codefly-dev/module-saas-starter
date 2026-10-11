@@ -498,6 +498,9 @@ func TestPrincipals_CreateAgent_AuditActorTypeFromCreatorKind(t *testing.T) {
 
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
 	rec := &recordingEmitter{}
 	svc.SetAuditEmitter(rec)
 
@@ -526,6 +529,9 @@ func TestPrincipals_RevokePrincipal_EmitsAuditEvent(t *testing.T) {
 
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
 	rec := &recordingEmitter{}
 	svc.SetAuditEmitter(rec)
 
@@ -552,6 +558,17 @@ func TestPrincipals_CreateAgent_PersistsCeiling(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
+	// An agent ceiling may only name audiences this host SERVES (issue #952), so
+	// these are declared module prefixes rather than the free text the field used
+	// to admit — declared the way a composition declares them. `github` and `jira`
+	// named no consumer on this host and would now be refused at write.
+	svc.SetModulePrincipals(business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("github"): {Prefix: "github"},
+		business.ModulePrincipalID("jira"):   {Prefix: "jira"},
+	})
 
 	created, err := svc.CreateAgentPrincipal(testCtx, business.CreateAgentRequest{
 		OrgID:            orgID,
@@ -563,6 +580,19 @@ func TestPrincipals_CreateAgent_PersistsCeiling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"github", "jira"}, created.AllowedAudiences)
 	require.Equal(t, []string{"repo"}, created.AllowedScopes)
+
+	// And an audience this host does not serve is REFUSED at write, naming it.
+	// Without this the case above only proves the validation can be satisfied, not
+	// that it discriminates.
+	_, err = svc.CreateAgentPrincipal(testCtx, business.CreateAgentRequest{
+		OrgID:            orgID,
+		AgentIdentifier:  "publisher/unserved:1.0.0",
+		CreatedBy:        owner,
+		AllowedAudiences: []string{"github", "nothing-serves-this"},
+		AllowedScopes:    []string{"repo"},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nothing-serves-this")
 
 	got, err := testStore.As(business.Identity{OrgID: orgID}).GetAgentPrincipal(testCtx, orgID, "publisher/ceiling:1.0.0")
 	require.NoError(t, err)
@@ -588,6 +618,9 @@ func TestPrincipals_DisableEnable_LifecycleAndAudit(t *testing.T) {
 
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
 	rec := &recordingEmitter{}
 	svc.SetAuditEmitter(rec)
 
@@ -618,6 +651,9 @@ func TestPrincipals_Disable_IdempotentNoDuplicateAudit(t *testing.T) {
 
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
 	rec := &recordingEmitter{}
 	svc.SetAuditEmitter(rec)
 
@@ -666,6 +702,9 @@ func TestPrincipals_Enable_RejectedForRevoked(t *testing.T) {
 
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
 	require.NoError(t, testStore.As(business.System()).RevokePrincipal(testCtx, agent.ID, "terminal"))
 
 	err = svc.EnableAgentPrincipal(testCtx, agent.ID)

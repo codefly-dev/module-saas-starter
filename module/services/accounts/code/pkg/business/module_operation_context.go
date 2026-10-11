@@ -59,7 +59,7 @@ func (s *Service) ModuleAuthorizeOperationContext(prefix, secret, bindingID stri
 	if err != nil {
 		return ModuleOperationContextAuthority{}, err
 	}
-	grant, registered := s.modulePrincipals[identity.PrincipalID]
+	grant, registered := s.declaredModules()[identity.PrincipalID]
 	if !registered {
 		return ModuleOperationContextAuthority{}, ErrModuleRegistrationDenied
 	}
@@ -179,7 +179,7 @@ var ErrModuleOperationContextStale = errors.New("module operation context is not
 func (s *Service) CheckModuleOperationContextRevision(
 	orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
 ) (handled bool, err error) {
-	grant, isModule := s.modulePrincipals[ownerPrincipalID]
+	grant, isModule := s.declaredModules()[ownerPrincipalID]
 	if !isModule {
 		return false, nil
 	}

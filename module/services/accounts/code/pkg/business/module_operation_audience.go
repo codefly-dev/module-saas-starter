@@ -2,6 +2,7 @@ package business
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -151,8 +152,11 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 	return nil
 }
 
-func (s *Service) ModuleOperationAudience(caller ModuleCaller, tenant, parentAudience, bindingID string) (ModuleOperationAudience, error) {
-	grant, err := s.moduleGrant(caller)
+// ctx is a parameter because this path RE-READS live authority, and a function
+// that took none could not. It had none, which is why it was one of the paths
+// deciding on the declared ceiling alone.
+func (s *Service) ModuleOperationAudience(ctx context.Context, caller ModuleCaller, tenant, parentAudience, bindingID string) (ModuleOperationAudience, error) {
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleOperationAudience{}, err
 	}
@@ -177,11 +181,11 @@ func (s *Service) ModuleOperationAudience(caller ModuleCaller, tenant, parentAud
 // caller's declared tenant or cross_tenant grant, is what admits the tenant.
 // The parent must still be addressed to the caller, and the binding must still
 // be one the caller declares.
-func (s *Service) ModuleOperationAudienceForDelegation(caller ModuleCaller, delegation *SourceDelegation, parentAudience, bindingID string) (ModuleOperationAudience, error) {
+func (s *Service) ModuleOperationAudienceForDelegation(ctx context.Context, caller ModuleCaller, delegation *SourceDelegation, parentAudience, bindingID string) (ModuleOperationAudience, error) {
 	if !delegation.Active() {
 		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "source delegation is not active")
 	}
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleOperationAudience{}, err
 	}

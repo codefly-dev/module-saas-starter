@@ -14,6 +14,15 @@ vi.mock("@module-federation/runtime", () => ({
 	createInstance: () => ({ registerRemotes, loadRemote }),
 }));
 
+// The outlet also asks the host for the solution's installation; these tests
+// are about loading, so the host answers that it has none.
+vi.mock("@/lib/connect/token-store", () => ({
+	authedFetch: async () => Response.json({ error: "not_installed" }, { status: 404 }),
+	getToken: () => null,
+	refreshToken: async () => null,
+	subscribeToken: () => () => {},
+}));
+
 import { SolutionOutlet, type SolutionRemote } from "../SolutionOutlet";
 
 const authoring = {} as DashboardAuthoring;

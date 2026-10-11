@@ -9,7 +9,7 @@ import (
 
 func TestInstalledReadAudiencePolicy(t *testing.T) {
 	valid := ModuleReadAudience{Audience: "example-producer", Scopes: []ModuleReadScope{{ResourceKind: "results", ResourceIDs: []string{"result-1"}}}}
-	raw, _ := json.Marshal(map[string]any{"example": map[string]any{"tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661", "read_audiences": map[string]ModuleReadAudience{"proof": valid}}})
+	raw, _ := json.Marshal(map[string]any{"example": map[string]any{"workload": map[string]any{"service_account": "module", "namespace": "acme-prod", "container": "app"}, "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661", "read_audiences": map[string]ModuleReadAudience{"proof": valid}}})
 	registry, err := ParseModulePrincipalRegistry(string(raw))
 	require.NoError(t, err)
 	got := registry[ModulePrincipalID("example")].ReadAudiences["proof"]
@@ -21,6 +21,6 @@ func TestInstalledReadAudiencePolicy(t *testing.T) {
 }
 
 func TestInstalledReadAudienceRejectsRequestedActions(t *testing.T) {
-	_, err := ParseModulePrincipalRegistry(`{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","read_audiences":{"proof":{"audience":"other","scopes":[{"resource_kind":"results","actions":["write"]}]}}}}`)
+	_, err := ParseModulePrincipalRegistry(`{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","read_audiences":{"proof":{"audience":"other","scopes":[{"resource_kind":"results","actions":["write"]}]}}}}`)
 	require.Error(t, err)
 }

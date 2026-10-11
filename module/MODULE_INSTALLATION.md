@@ -244,8 +244,10 @@ current policy checks still happen through the existing runtime mechanisms.
 The versioned hash input is one JSON object with these exact keys:
 
 - `schema_version`, set to the requested supported version;
-- `module_id`, `agent_identifier`, `solution_identifier`,
-  from the authorized request;
+- `module_id`, `agent_identifier`, `target_id`,
+  from the authorized request. `target_id` is the immutable solution target the
+  installation is for; at `/v1` this was `solution_identifier`, a free-text route
+  alias, and replacing it is the field change the version step below records.
 - `organization_id`, `principal_id`, `installation_id`, `scope_node_id`, `grant_id`,
   from the verified persisted installation;
 - `owner_principal_id`, `role_id`, `role_permissions`, `allowed_audiences`,
@@ -260,6 +262,13 @@ escapes, and escaped U+2028/U+2029. The output is `sha256:` followed by the lowe
 hex digest. The golden test pins the encoded contract independently of the Go
 encoder. Consumers use the opaque server result; they do not each reimplement
 this calculation. A change to these fields or encoding requires a schema decision.
+
+The current version is **`accounts.module-installation-authority/v2`**. `v1`
+named `solution_identifier`; a route alias is reusable by a later binding, so an
+authority reference built on it did not identify one installation over time. `v2`
+names `target_id` instead. The version string and the field moved together, which
+is what the schema decision means here: a consumer that pinned `v1` is refused by
+name rather than handed a digest over different fields.
 
 Software versions, image references, full deployment approval digests, display
 labels, organization lookup spelling, installer credential material and delegation

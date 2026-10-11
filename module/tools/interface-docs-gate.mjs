@@ -76,6 +76,7 @@ const SERVICE_CONTEXTS = {
   PrincipalService: "authorization",
   ResourceFollowService: "notifications",
   SSOAdminService: "identity",
+  SolutionEntitlementService: "authorization",
   SolutionRegistryService: "platform administration",
   TeamService: "tenancy",
   UsageService: "entitlements",

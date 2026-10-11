@@ -17,12 +17,21 @@ import (
 )
 
 type currentInstallationStore struct {
+	target *business.SolutionTarget
 	artifactTransportStore
 	installation     *gen.Installation
 	reads            int
 	tenant, selector string
 }
 
+// GetSolutionTarget is the host presence state the read resolves through: the
+// installation names a target, the target names the binding. Keyed by target id.
+func (s *currentInstallationStore) GetSolutionTarget(_ context.Context, targetID string) (*business.SolutionTarget, error) {
+	if s.target == nil || s.target.ID != targetID {
+		return nil, nil
+	}
+	return s.target, nil
+}
 func (s *currentInstallationStore) GetInstallation(_ context.Context, tenant, id string) (*gen.Installation, gen.InstallationHealth, error) {
 	s.reads++
 	s.tenant, s.selector = tenant, id
@@ -35,8 +44,13 @@ func (s *currentInstallationStore) GetInstallation(_ context.Context, tenant, id
 func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 	_, facts, client, mint := sourceReadFixture(t)
 	id := uuid.NewString()
-	original := &gen.Installation{Id: id, OrgId: readOrg, SolutionIdentifier: "acme/example", Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE}
-	store := &currentInstallationStore{artifactTransportStore: artifactTransportStore{member: true}, installation: proto.Clone(original).(*gen.Installation)}
+	target := uuid.NewString()
+	original := &gen.Installation{Id: id, OrgId: readOrg, TargetId: target, Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE}
+	store := &currentInstallationStore{
+		artifactTransportStore: artifactTransportStore{member: true},
+		installation:           proto.Clone(original).(*gen.Installation),
+		target:                 &business.SolutionTarget{ID: target, BindingID: "binding-acme-example-0001", SolutionID: "acme/example"},
+	}
 	var err error
 	service, err = business.NewService(store)
 	require.NoError(t, err)
@@ -55,10 +69,19 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, id, out.Msg.InstallationId)
 	require.Equal(t, readOrg, out.Msg.TenantId)
-	require.Equal(t, "acme/example", out.Msg.SolutionIdentifier)
+	// The identities, and deliberately NOT the route alias: the response
+	// carries the consented target and the binding an authority decision keys
+	// on, so a caller cannot compare one binding's presence to its
+	// replacement's by comparing a reusable string.
+	require.Equal(t, target, out.Msg.TargetId)
+	require.Equal(t, "binding-acme-example-0001", out.Msg.BindingId)
 	require.Equal(t, readOrg, store.tenant)
 	require.Equal(t, id, store.selector)
-	require.Equal(t, 3, out.Msg.ProtoReflect().Descriptor().Fields().Len(), "identity-only response")
+	// Four fields, not three: `solution_identifier` is reserved and
+	// `target_id` + `binding_id` replace it. The tripwire's point is unchanged —
+	// this response carries IDENTITIES and nothing else, so a field added here
+	// has to be justified at this line rather than slipped in.
+	require.Equal(t, 4, out.Msg.ProtoReflect().Descriptor().Fields().Len(), "identity-only response")
 	require.Equal(t, 2, request(parent).Msg.ProtoReflect().Descriptor().Fields().Len(), "selector and proof only; no tenant or source input")
 	for _, tc := range []struct {
 		name   string
@@ -109,7 +132,7 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 		{"wrong installation", func(i *gen.Installation) { i.Id = uuid.NewString() }},
 		{"revoked", func(i *gen.Installation) { i.RevokedAt = timestamppb.Now() }},
 		{"inactive", func(i *gen.Installation) { i.Status = gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED }},
-		{"empty source", func(i *gen.Installation) { i.SolutionIdentifier = "" }},
+		{"no consented target", func(i *gen.Installation) { i.TargetId = "" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store.installation = proto.Clone(original).(*gen.Installation)
@@ -130,7 +153,12 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 func TestCurrentInstallationDelegationCurrentChecks(t *testing.T) {
 	_, facts, client, _ := sourceReadFixture(t)
 	id := uuid.NewString()
-	store := &currentInstallationStore{artifactTransportStore: artifactTransportStore{member: true}, installation: &gen.Installation{Id: id, OrgId: readOrg, SolutionIdentifier: "acme/example", Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE}}
+	refusalTarget := uuid.NewString()
+	store := &currentInstallationStore{
+		artifactTransportStore: artifactTransportStore{member: true},
+		installation:           &gen.Installation{Id: id, OrgId: readOrg, TargetId: refusalTarget, Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE},
+		target:                 &business.SolutionTarget{ID: refusalTarget, BindingID: "binding-acme-example-0001", SolutionID: "acme/example"},
+	}
 	var err error
 	service, err = business.NewService(store)
 	require.NoError(t, err)

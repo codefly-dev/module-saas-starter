@@ -16,6 +16,8 @@ var (
 	installationSingleton    = &InstallationServer{}
 	accessibleScopeSingleton = &AccessibleScopeServer{}
 	directorySingleton       = &DirectoryServer{}
+	// The per-viewer solution projection's authority read (issue #949).
+	solutionEntitlementSingleton = &SolutionEntitlementServer{}
 )
 
 func PrincipalSingleton() *PrincipalServer { return principalSingleton }
@@ -31,6 +33,8 @@ func InstallationSingleton() *InstallationServer { return installationSingleton 
 func AccessibleScopeSingleton() *AccessibleScopeServer { return accessibleScopeSingleton }
 
 func DirectorySingleton() *DirectoryServer { return directorySingleton }
+
+func SolutionEntitlementSingleton() *SolutionEntitlementServer { return solutionEntitlementSingleton }
 
 func configurePermissionServerKeys() {
 	plugin := permissionsplugin.Default()

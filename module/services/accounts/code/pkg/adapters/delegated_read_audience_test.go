@@ -16,6 +16,7 @@ import (
 )
 
 func installReadBinding() {
+	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, ReadAudiences: map[string]business.ModuleReadAudience{
 			"proof": {Audience: "example-producer", Scopes: []business.ModuleReadScope{{ResourceKind: "results"}}},
@@ -110,6 +111,7 @@ func TestDelegatedReadExchangeOwnerAndDenials(t *testing.T) {
 
 func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *testing.T) {
 	_, facts, client, _ := sourceReadFixture(t)
+	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
 	parentToken, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{
 		Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
@@ -151,6 +153,7 @@ func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *t
 	require.Error(t, workcontext.RequireWorkContextScope(lookup, workcontext.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
 	require.NoError(t, workcontext.RequireWorkContextScope(lookup, workcontext.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "read", RequireExplicitResource: true}))
 
+	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(false))
 	_, err = exchange("generate", false)
 	require.Error(t, err)
@@ -162,6 +165,7 @@ func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *t
 
 func TestDelegatedOperationExchangeAuditsVerifiedAttributionAndOutcome(t *testing.T) {
 	_, facts, client, mint := sourceReadFixture(t)
+	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
 	audit := &recordingAuditEmitter{}
 	service.SetAuditEmitter(audit)

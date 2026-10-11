@@ -59,6 +59,8 @@ must not be inferred from a row here. See
 | Revocation-store failure denies (503) unless explicitly configured fail-open | PRODUCTION_READY.md § Hot path | `revocationFailsOpen()` reads `SIDECAR_REVOCATION_FAIL_OPEN` from the `security` group; default false | configured | auth-gateway |
 | Impersonation actor/subject semantics | PRODUCTION_READY.md, PLATFORM_REFERENCE.md §1.6 | `x-acting-as-user-id` is stamped from the `acting` claim; the actor/effective-subject model is under correction | planned | #533 |
 | The historical `sidecar.go` file names and `LocalValidator` | SECURITY_REVIEW.md, PRODUCTION_READY.md before this change | renamed to `ext_authz.go` by #552; SECURITY_REVIEW.md keeps the old paths because it records findings as they were filed | historical | #541 (labelled, not rewritten) |
+| The historical `pkg/infra/vault.go` location | SECURITY_REVIEW.md finding 5 (`HashKey` SHA-256 downgrade) | the transit code moved into `pkg/keyservice` when the key service gained a second backend; the fail-closed behaviour the finding asked for is kept, now in `Cipher.HashKey`. SECURITY_REVIEW.md keeps the old path because it records findings as they were filed | historical | #1013 (labelled, not rewritten) |
+| Which service holds accounts' two keys | KEY_ROTATION.md § The key service | `pkg/keyservice`: selected per key family in the `key-service` group; the envelope key runs on `vault` or `kms`, the signing key on `vault` only until the Work Context signer, the delegation minter and the OAuth state signer accept a `crypto.Signer` | implemented (envelope) / blocked upstream (signing) | #1013 |
 
 ## Release gates
 

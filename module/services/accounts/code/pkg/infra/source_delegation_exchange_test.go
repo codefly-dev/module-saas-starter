@@ -541,12 +541,12 @@ func TestSourceDelegation_ReferenceExchangeRefusesALookupThePersonNeverDelegated
 	// runtime's read-only lookup subset. Installed before the connect, so the
 	// delegation records this binding's digest and stays current.
 	writeOnly, err := business.ParseModulePrincipalRegistry(`{` +
-		`"` + delegationModule + `":{"tenant":"` + w.otherOrg + `","operation_audiences":{` +
+		`"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + w.otherOrg + `","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}},` +
-		`"` + runtimeModule + `":{"tenant":"` + w.otherOrg + `","operation_audiences":{` +
+		`"` + runtimeModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + w.otherOrg + `","operation_audiences":{` +
 		`"ingest":{"audience":"docstore-ingest",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`)

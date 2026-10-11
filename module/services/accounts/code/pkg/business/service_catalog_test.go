@@ -2,6 +2,8 @@ package business_test
 
 import (
 	"os"
+	"regexp"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,8 +24,18 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "accounts", catalog.GetOwner().GetService())
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
-	require.Len(t, catalog.GetServices(), 35)
-	require.Len(t, catalog.GetMethods(), 250)
+	// THE INVENTORY IS NEVER TYPED. These were `require.Len(..., 35)` and
+	// `require.Len(..., 246)`, and a merge proved why that is the wrong
+	// mechanism: the base said 245/35, one branch said 247/36 and the other
+	// 246/35, each correct against its own tree, and ANY side picked during a
+	// conflict resolution is silently wrong because the real total is the base
+	// plus both sets of additions. A hand-maintained number cannot survive two
+	// people adding an RPC.
+	//
+	// So the catalog is the source and the DOC is held to it. Nothing here
+	// states a count; a drift in either direction fails the build and names
+	// both numbers.
+	requireAuthzMatrixMatchesTheCatalog(t, len(catalog.GetServices()), len(catalog.GetMethods()))
 	require.Len(t, catalog.GetPermissions(), 24)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -38,6 +50,10 @@ func TestServiceCatalogCompilation(t *testing.T) {
 		require.NotEmpty(t, method.GetOutputType())
 		require.NotEmpty(t, method.GetSourceProto())
 		require.NotNil(t, method.GetPolicy())
+	}
+
+	for _, method := range []string{"PutSolutionRegistration", "DeleteSolutionRegistration"} {
+		require.NotContains(t, methods, "/saas.accounts.v1.SolutionRegistryService/"+method)
 	}
 
 	readableSources := methods["/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"]
@@ -192,4 +208,37 @@ func TestServiceCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {
 	invalidEntitlement := proto.Clone(catalog).(*catalogv1.ServiceCatalog)
 	invalidEntitlement.Entitlements[0].Kind = catalogv1.EntitlementKind_ENTITLEMENT_KIND_UNSPECIFIED
 	require.ErrorContains(t, business.ValidateServiceCatalog(invalidEntitlement), "incomplete entitlement")
+}
+
+// requireAuthzMatrixMatchesTheCatalog holds AUTHZ_MATRIX.md's stated inventory
+// to the catalog the code compiles.
+//
+// The doc is not rendered from the catalog today, so this is the weaker of the
+// two mechanisms the rule allows — but it is the one that makes a drift a build
+// failure rather than a stale sentence, and it removes the typed number from
+// both places at once. If the doc ever becomes generated, delete this and
+// compare bytes instead.
+func requireAuthzMatrixMatchesTheCatalog(t *testing.T, services, methods int) {
+	t.Helper()
+	const doc = "../../../AUTHZ_MATRIX.md"
+	body, err := os.ReadFile(doc)
+	require.NoError(t, err, "AUTHZ_MATRIX.md is the stated inventory; without it this check is vacuous")
+
+	stated := regexp.MustCompile(`Inventory: \*\*(\d+) RPCs\*\* across \*\*(\d+) services\*\*`).
+		FindSubmatch(body)
+	require.NotNil(t, stated,
+		"%s no longer states its inventory in the form this check reads; "+
+			"update both together rather than dropping the check", doc)
+
+	statedMethods, err := strconv.Atoi(string(stated[1]))
+	require.NoError(t, err)
+	statedServices, err := strconv.Atoi(string(stated[2]))
+	require.NoError(t, err)
+
+	require.Equal(t, methods, statedMethods,
+		"%s says %d RPCs; the compiled catalog has %d. The catalog is the source — "+
+			"update the doc, and never resolve a merge conflict on this number by picking a side",
+		doc, statedMethods, methods)
+	require.Equal(t, services, statedServices,
+		"%s says %d services; the compiled catalog has %d", doc, statedServices, services)
 }

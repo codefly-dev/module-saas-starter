@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 /**
  * Internal detail lookup for the registered solutions: the fields a caller
  * needs to resolve a solution's remote and its backend, which the public
- * navigation projection (app/api/solutions/register) does not carry.
+ * navigation projection (app/api/solutions) does not carry.
  *
  * Its one caller today is the proxy's CSP derivation (src/proxy.ts), which runs
  * in a context whose module singletons are not shared with route handlers and

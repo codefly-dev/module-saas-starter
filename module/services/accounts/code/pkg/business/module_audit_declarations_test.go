@@ -48,6 +48,8 @@ func newModuleDeclaringService(t *testing.T, store *declaredAuditStore, grants M
 	if err != nil {
 		t.Fatal(err)
 	}
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(grants)
 	audit := &recordingAudit{}
 	svc.SetAuditEmitter(audit)

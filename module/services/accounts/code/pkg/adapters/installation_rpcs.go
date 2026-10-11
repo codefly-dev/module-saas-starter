@@ -34,7 +34,7 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 	installation, err := service.InstallSolution(ctx, actorID, &business.InstallSolutionParams{
 		OrgID:               req.GetOrgId(),
 		AgentIdentifier:     req.GetAgentIdentifier(),
-		SolutionIdentifier:  req.GetSolutionIdentifier(),
+		TargetID:            req.GetTargetId(),
 		DisplayName:         req.GetDisplayName(),
 		RootScopeLabel:      req.GetRootScopeLabel(),
 		RoleID:              req.GetRoleId(),
@@ -103,6 +103,64 @@ func (s *InstallationServer) GetInstallation(ctx context.Context, req *gen.GetIn
 		return nil, mapInstallationError(err)
 	}
 	return &gen.GetInstallationResponse{Installation: installation, Health: health}, nil
+}
+
+// ListInstallations enumerates one organization's installations. Internal-tier,
+// like the scope listing it is read beside: the organization is a request field,
+// so a bare tenant JWT must never be able to ask this — the caller that may is
+// the auth-gateway, naming the tenant it projected from a verified identity.
+func (s *InstallationServer) ListInstallations(ctx context.Context, req *gen.ListInstallationsRequest) (*gen.ListInstallationsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	resp, err := service.ListInstallations(ctx, req)
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	return resp, nil
+}
+
+// ListAvailableSolutions serves the catalogue. Authenticated and org-admin: it
+// reports which presences this host has applied, which is operational state an
+// organisation's administrator may see and a member may not — and it reports
+// whether THIS organisation already installed each one, which is that
+// organisation's own fact.
+func (s *InstallationServer) ListAvailableSolutions(
+	ctx context.Context, req *gen.ListAvailableSolutionsRequest,
+) (*gen.ListAvailableSolutionsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
+		return nil, err
+	}
+	available, next, err := service.ListAvailableSolutions(
+		ctx, req.GetOrgId(), req.GetPageToken(), int(req.GetPageSize()))
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	out := make([]*gen.AvailableSolution, 0, len(available))
+	for _, entry := range available {
+		out = append(out, &gen.AvailableSolution{
+			TargetId:          entry.TargetID,
+			BindingId:         entry.BindingID,
+			RouteAlias:        entry.RouteAlias,
+			ReleasePublisher:  entry.ReleasePublisher,
+			ReleaseName:       entry.ReleaseName,
+			ReleaseVersion:    entry.ReleaseVersion,
+			OpenedGeneration:  entry.OpenedGeneration,
+			AppliedGeneration: entry.AppliedGeneration,
+			Installed:         entry.Installed,
+		})
+	}
+	return &gen.ListAvailableSolutionsResponse{Solutions: out, NextPageToken: next}, nil
 }
 
 func mapInstallationError(err error) error {

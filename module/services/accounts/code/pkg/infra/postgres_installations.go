@@ -12,37 +12,47 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // installationColumns is the canonical SELECT list, uuid columns cast to text so
 // they scan into strings (matching the gen.Installation wire shape).
+// target_id and revoked_reason are nullable — a revoked historical row whose
+// target could not be established at the cutover carries neither — so both are
+// coalesced here rather than scanned into pointers. An empty target_id reaching
+// a reader is therefore the one documented case and not a scan surprise; the
+// `installations_active_requires_target` CHECK is what makes it impossible on an
+// active row.
 const installationColumns = `id::text, org_id::text, agent_principal_id::text,
-	solution_identifier, owner_principal_id::text, co_owner_principal_ids::text[],
-	root_scope_node_id::text, status, created_at, revoked_at`
+	owner_principal_id::text, co_owner_principal_ids::text[],
+	root_scope_node_id::text, status, created_at, revoked_at,
+	COALESCE(target_id::text, ''), COALESCE(revoked_reason, '')`
 
 func scanInstallation(row rowScanner) (*gen.Installation, error) {
 	var (
-		id, orgID, agentID, solution, ownerID, rootNodeID, status string
-		coOwners                                                  []string
-		createdAt                                                 time.Time
-		revokedAt                                                 *time.Time
+		id, orgID, agentID, ownerID, rootNodeID, status string
+		targetID, revokedReason                         string
+		coOwners                                        []string
+		createdAt                                       time.Time
+		revokedAt                                       *time.Time
 	)
-	if err := row.Scan(&id, &orgID, &agentID, &solution, &ownerID, &coOwners,
-		&rootNodeID, &status, &createdAt, &revokedAt); err != nil {
+	if err := row.Scan(&id, &orgID, &agentID, &ownerID, &coOwners,
+		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason); err != nil {
 		return nil, err
 	}
 	out := &gen.Installation{
 		Id:                  id,
 		OrgId:               orgID,
 		AgentPrincipalId:    agentID,
-		SolutionIdentifier:  solution,
 		OwnerPrincipalId:    ownerID,
 		CoOwnerPrincipalIds: coOwners,
 		RootScopeNodeId:     rootNodeID,
 		Status:              installationStatusFromColumn(status),
 		CreatedAt:           timestamppb.New(createdAt),
+		TargetId:            targetID,
+		RevokedReason:       revokedReason,
 	}
 	if revokedAt != nil {
 		out.RevokedAt = timestamppb.New(*revokedAt)
@@ -96,9 +106,9 @@ func firstEligibleOwner(ctx context.Context, executor QueryExecutor, orgID strin
 func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.InstallSolutionParams) (*gen.Installation, error) {
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
-		wool.Field("solution", params.SolutionIdentifier))
+		wool.Field("target_id", params.TargetID))
 	executor := s.getQueryExecutor(ctx)
-	if err := lockSolutionInstallation(ctx, executor, params.OrgID, params.SolutionIdentifier); err != nil {
+	if err := lockSolutionInstallation(ctx, executor, params.OrgID, params.TargetID); err != nil {
 		return nil, err
 	}
 
@@ -122,8 +132,8 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 	// than silently ignored — a changed ceiling is applied by uninstall + reinstall.
 	existing, err := scanInstallation(executor.QueryRow(ctx,
 		`SELECT `+installationColumns+` FROM installations
-		 WHERE org_id = $1 AND solution_identifier = $2 AND status = 'active'`,
-		params.OrgID, params.SolutionIdentifier))
+		 WHERE org_id = $1 AND target_id = $2::uuid AND status = 'active'`,
+		params.OrgID, params.TargetID))
 	if err == nil {
 		if e := reconcileExistingInstallation(ctx, executor, existing, params); e != nil {
 			return nil, e
@@ -166,11 +176,11 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 	// 4. The installation row with its owner of record.
 	installation, err := scanInstallation(executor.QueryRow(ctx, `
 		INSERT INTO installations
-			(id, org_id, agent_principal_id, solution_identifier, owner_principal_id,
+			(id, org_id, agent_principal_id, target_id, owner_principal_id,
 			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active', NULLIF($7, '')::uuid)
+		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, 'active', NULLIF($7, '')::uuid)
 		RETURNING `+installationColumns,
-		params.OrgID, agentID, params.SolutionIdentifier, params.OwnerPrincipalID,
+		params.OrgID, agentID, params.TargetID, params.OwnerPrincipalID,
 		stringArray(params.CoOwnerPrincipalIDs), nodeID, params.InstallerPrincipalID,
 	))
 	if err != nil {
@@ -180,7 +190,7 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		// (the caller's retry hits the idempotent path) rather than an opaque 500.
 		if isUniqueViolation(err) {
 			return nil, business.NewStoreError(
-				fmt.Errorf("solution %s is already being installed in org %s", params.SolutionIdentifier, params.OrgID),
+				fmt.Errorf("solution target %s is already being installed in org %s", params.TargetID, params.OrgID),
 				business.ErrTypeConflict,
 			)
 		}
@@ -239,11 +249,11 @@ func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *b
 		SELECT n.id::text, n.scope_path::text
 		FROM installations i
 		JOIN scope_nodes n ON n.id = i.root_scope_node_id
-		WHERE i.org_id = $1 AND i.solution_identifier = $2 AND i.status = 'revoked'
+		WHERE i.org_id = $1 AND i.target_id = $2::uuid AND i.status = 'revoked'
 		  AND n.kind = 'solution'
 		ORDER BY i.revoked_at DESC
 		LIMIT 1`,
-		params.OrgID, params.SolutionIdentifier).Scan(&nodeID, &nodePath)
+		params.OrgID, params.TargetID).Scan(&nodeID, &nodePath)
 	if err == nil {
 		return nodeID, nodePath, nil
 	}
@@ -252,7 +262,7 @@ func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *b
 	}
 	label := params.RootScopeLabel
 	if label == "" {
-		label = params.SolutionIdentifier
+		label = params.RouteAlias
 	}
 	node := &gen.ScopeNode{
 		Id:    business.NewIDString(),
@@ -304,8 +314,8 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 		return nil
 	}
 	return business.NewStoreError(
-		fmt.Errorf("solution %s is already installed with different immutable attributes, owner, ceiling, role, or lifecycle; explicit lifecycle action is required",
-			params.SolutionIdentifier),
+		fmt.Errorf("solution target %s is already installed with different immutable attributes, owner, ceiling, role, or lifecycle; explicit lifecycle action is required",
+			params.TargetID),
 		business.ErrTypeConflict)
 }
 
@@ -321,6 +331,175 @@ func sameStringSet(a, b []string) bool {
 	slices.Sort(sortedA)
 	slices.Sort(sortedB)
 	return slices.Equal(sortedA, sortedB)
+}
+
+// installationStatusColumn is the inverse of installationStatusFromColumn: the
+// column value an enum selects, or "" for UNSPECIFIED, which selects every row.
+func installationStatusColumn(status gen.InstallationStatus) string {
+	switch status {
+	case gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE:
+		return "active"
+	case gen.InstallationStatus_INSTALLATION_STATUS_REVOKED:
+		return "revoked"
+	default:
+		return ""
+	}
+}
+
+// ListInstallations returns one page of an org's installations with health
+// resolved live for each, keyset-paginated on id.
+//
+// id is the keyset rather than target_id or created_at because it is the
+// only column that is unique across the whole table: (org_id, target_id)
+// is unique only among ACTIVE rows, so a revoked install of the same solution
+// would make that cursor skip or repeat a row, and created_at is not unique at
+// all. The cursor is therefore stable and total whatever the status filter is.
+//
+// RLS confines every read to the caller's tenant; the explicit org_id predicate is
+// a second gate on top of that floor, in the same spirit as the scope listing.
+func (s *PostgresStore) ListInstallations(
+	ctx context.Context, orgID string, status gen.InstallationStatus, pageToken string, limit int,
+) ([]*gen.InstallationSummary, error) {
+	w := wool.Get(ctx).In("ListInstallations", wool.Field("org_id", orgID))
+	executor := s.getQueryExecutor(ctx)
+
+	// A page token is a uuid this store itself emitted. Canonicalize it rather
+	// than binding it raw: comparing on id::text means an unparseable cursor
+	// simply matches nothing instead of aborting the transaction on a uuid cast
+	// (the same trap the scope point check hit), and a uuid has several accepted
+	// spellings but one text form.
+	cursor := ""
+	if pageToken != "" {
+		parsed, err := uuid.Parse(pageToken)
+		if err != nil {
+			return nil, business.NewStoreError(
+				fmt.Errorf("page_token %q is not a cursor this listing issued", pageToken),
+				business.ErrTypeValidation,
+			)
+		}
+		cursor = parsed.String()
+	}
+
+	summaries, err := s.listInstallationSummaries(ctx, executor, orgID,
+		installationStatusColumn(status), cursor, limit, "TRUE")
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list installations")
+	}
+	return summaries, nil
+}
+
+// installationHealthLabel is resolveInstallationHealth as ONE SQL expression over
+// an `installations i` row joined to its agent principal as `hp`, so a listing
+// resolves health for every row in the same statement instead of three or four
+// round trips per row. The per-row form multiplied every menu read by the number
+// of entitled installations (#949 review f4).
+//
+// It must answer exactly what resolveInstallationHealth answers, in the same
+// precedence: a missing or revoked agent, then a disabled one, then no current
+// admin among the owner and co-owners, then a missing or expired standing grant.
+// TestInstallationListingHealthMatchesGetInstallation holds the two together for
+// every state, the way the scope point check and listing are held together.
+const installationHealthLabel = `CASE
+		WHEN hp.id IS NULL OR hp.revoked_at IS NOT NULL THEN 'agent_revoked'
+		WHEN hp.disabled_at IS NOT NULL THEN 'agent_disabled'
+		WHEN NOT EXISTS (
+			SELECT 1 FROM organization_members hm
+			WHERE hm.org_id = i.org_id
+			  AND hm.user_id = ANY (ARRAY[i.owner_principal_id] || i.co_owner_principal_ids)
+			  AND hm.role IN ('owner', 'admin')
+		) THEN 'no_eligible_owner'
+		WHEN NOT EXISTS (
+			SELECT 1 FROM scope_grants hg
+			JOIN scope_nodes hn ON hn.id = i.root_scope_node_id
+			WHERE hg.org_id = i.org_id
+			  AND hg.subject_kind = 'principal'
+			  AND hg.subject_id = i.agent_principal_id
+			  AND hg.scope_path @> hn.scope_path
+			  AND (hg.expires_at IS NULL OR hg.expires_at > now())
+		) THEN 'standing_grant_missing'
+		ELSE 'healthy'
+	END`
+
+func installationHealthFromLabel(label string) gen.InstallationHealth {
+	switch label {
+	case "agent_revoked":
+		return gen.InstallationHealth_INSTALLATION_HEALTH_AGENT_REVOKED
+	case "agent_disabled":
+		return gen.InstallationHealth_INSTALLATION_HEALTH_AGENT_DISABLED
+	case "no_eligible_owner":
+		return gen.InstallationHealth_INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER
+	case "standing_grant_missing":
+		return gen.InstallationHealth_INSTALLATION_HEALTH_STANDING_GRANT_MISSING
+	case "healthy":
+		return gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY
+	default:
+		return gen.InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED
+	}
+}
+
+// installationListingColumns is installationColumns qualified by the listing's
+// `i` alias, followed by the health label — scanned by scanInstallation plus one.
+const installationListingColumns = `i.id::text, i.org_id::text, i.agent_principal_id::text,
+	i.owner_principal_id::text, i.co_owner_principal_ids::text[],
+	i.root_scope_node_id::text, i.status, i.created_at, i.revoked_at,
+	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), ` + installationHealthLabel
+
+// withHealthLabel scans one listing row: the installation's own columns through
+// scanInstallation, so the wire mapping has one definition, then the label.
+type withHealthLabel struct {
+	row   rowScanner
+	label *string
+}
+
+func (r withHealthLabel) Scan(dest ...any) error {
+	return r.row.Scan(append(dest, r.label)...)
+}
+
+// listInstallationSummaries is the one installation listing both reads go through:
+// ListInstallations with no narrowing, and ListSolutionEntitlements narrowed to the
+// installations a subject may use. predicate is an extra SQL condition over the
+// `i` alias whose placeholders are $1..$len(args); the listing's own parameters are
+// numbered after them, so a caller's predicate keeps its own fixed numbering.
+//
+// id is the keyset: it is the only column unique across statuses —
+// (org_id, target_id) is unique only among ACTIVE rows, so a revoked
+// install of the same solution would make that cursor skip or repeat a row.
+func (s *PostgresStore) listInstallationSummaries(
+	ctx context.Context, executor QueryExecutor, orgID, statusColumn, cursor string, limit int,
+	predicate string, args ...any,
+) ([]*gen.InstallationSummary, error) {
+	n := len(args)
+	org, status, after, limitParam := n+1, n+2, n+3, n+4
+	query := fmt.Sprintf(`SELECT %s
+		 FROM installations i
+		 LEFT JOIN principals hp
+		   ON hp.id = i.agent_principal_id AND hp.org_id = i.org_id AND hp.kind = 'agent'
+		 WHERE i.org_id = $%d
+		   AND ($%d = '' OR i.status = $%d)
+		   AND ($%d = '' OR i.id::text > $%d)
+		   AND (%s)
+		 ORDER BY i.id
+		 LIMIT $%d`,
+		installationListingColumns, org, status, status, after, after, predicate, limitParam)
+	rows, err := executor.Query(ctx, query, append(args, orgID, statusColumn, cursor, limit)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []*gen.InstallationSummary
+	for rows.Next() {
+		var label string
+		installation, e := scanInstallation(withHealthLabel{row: rows, label: &label})
+		if e != nil {
+			return nil, e
+		}
+		summaries = append(summaries, &gen.InstallationSummary{
+			Installation: installation,
+			Health:       installationHealthFromLabel(label),
+		})
+	}
+	return summaries, rows.Err()
 }
 
 // GetInstallation loads one installation and resolves its health live from the
@@ -669,7 +848,12 @@ func (s *PostgresStore) ListCatalogueInstallations(ctx context.Context) ([]*busi
 		        JOIN organizations o ON o.id = i.org_id
 		        LEFT JOIN principals p ON p.id = i.agent_principal_id
 		       WHERE i.status = 'active') installations
-		ORDER BY solution_identifier, org_name, id`)
+		-- target_id, because migration 23 DROPPED solution_identifier. An
+		-- installation names the immutable target now, and ordering by a
+		-- column that no longer exists is a hard query error on every fresh
+		-- database — which is what CI installs, and what a worktree whose
+		-- pgdata predates the migration does not.
+		ORDER BY target_id, org_name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list catalogue installations: %w", err)
 	}

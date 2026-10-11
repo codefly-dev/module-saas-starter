@@ -36,12 +36,12 @@ const (
 // cross_tenant, whose "source-sync" binding accepts source delegations — the
 // delegation alone admits the delegation's organization — and a second module
 // without one.
-const delegationPrincipals = `{"docstore":{"tenant":"` + moduleWorkContextTenant + `","operation_audiences":{` +
+const delegationPrincipals = `{"docstore":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleWorkContextTenant + `","operation_audiences":{` +
 	`"source-sync":{"audience":"ingestservice",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 	`"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}},` +
-	`"reports":{"tenant":"` + delegationOrg + `"}}`
+	`"reports":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + delegationOrg + `"}}`
 
 type sourceDelegationMemoryStore struct {
 	business.Store
@@ -144,6 +144,7 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 		",reports:" + registrationDigest("reports-secret"))
 	require.NoError(t, err)
 	svc.SetModuleIdentitySecrets(secrets)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	audit := &validatingAudit{}
 	svc.SetAuditEmitter(audit)
@@ -389,6 +390,7 @@ func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *t
 		grant := registry[business.ModulePrincipalID("example")]
 		grant.Tenant, grant.CrossTenant = moduleWorkContextTenant, crossTenant
 		registry[business.ModulePrincipalID("example")] = grant
+		service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 		service.SetModuleCapabilities(nil, nil, registry)
 		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: moduleWorkContextTenant})
 		require.NoError(t, err)

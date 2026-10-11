@@ -31,3 +31,11 @@ func (h *installationConnectHandler) TransferInstallationOwnership(ctx context.C
 func (h *installationConnectHandler) GetInstallation(ctx context.Context, req *connect.Request[gen.GetInstallationRequest]) (*connect.Response[gen.GetInstallationResponse], error) {
 	return unary(ctx, req, h.inner.GetInstallation)
 }
+
+func (h *installationConnectHandler) ListInstallations(ctx context.Context, req *connect.Request[gen.ListInstallationsRequest]) (*connect.Response[gen.ListInstallationsResponse], error) {
+	return unary(ctx, req, h.inner.ListInstallations)
+}
+
+func (h *installationConnectHandler) ListAvailableSolutions(ctx context.Context, req *connect.Request[gen.ListAvailableSolutionsRequest]) (*connect.Response[gen.ListAvailableSolutionsResponse], error) {
+	return unary(ctx, req, h.inner.ListAvailableSolutions)
+}

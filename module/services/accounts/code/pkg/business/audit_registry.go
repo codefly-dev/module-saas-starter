@@ -320,35 +320,38 @@ const (
 	// A composed module notified a tenant's administrators (NotifyOrgAdmins).
 	EventModuleOrgAdminsNotified     EventType = "saas.module.org_admins_notified"
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
-	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
-	EventAPIKeyRevoked               EventType = "saas.api_key.revoked"
-	EventRoleCreated                 EventType = "saas.role.created"
-	EventRoleUpdated                 EventType = "saas.role.updated"
-	EventRoleDeleted                 EventType = "saas.role.deleted"
-	EventRoleAssigned                EventType = "saas.role.assigned"
-	EventRoleRevoked                 EventType = "saas.role.revoked"
-	EventSessionRevoked              EventType = "saas.session.revoked"
-	EventInvitationCreated           EventType = "saas.invitation.created"
-	EventInvitationAccepted          EventType = "saas.invitation.accepted"
-	EventInvitationRevoked           EventType = "saas.invitation.revoked"
-	EventInvitationResent            EventType = "saas.invitation.resent"
-	EventInvitationLinkIssued        EventType = "saas.invitation.link_issued"
-	EventDelegationRequested         EventType = "saas.delegation.requested"
-	EventDelegationApproved          EventType = "saas.delegation.approved"
-	EventDelegationDenied            EventType = "saas.delegation.denied"
-	EventDelegationAutoApproved      EventType = "saas.delegation.auto_approved"
-	EventApprovalAsked               EventType = "saas.approval.asked"
-	EventApprovalApproved            EventType = "saas.approval.approved"
-	EventApprovalDenied              EventType = "saas.approval.denied"
-	EventApprovalTimeout             EventType = "saas.approval.timeout"
-	EventApprovalEscalated           EventType = "saas.approval.escalated"
-	EventApprovalCancelled           EventType = "saas.approval.cancelled"
-	EventApprovalDecisionRecorded    EventType = "saas.approval.decision_recorded"
-	EventPrincipalCreated            EventType = "saas.principal.created"
-	EventPrincipalRevoked            EventType = "saas.principal.revoked"
-	EventPrincipalDisabled           EventType = "saas.principal.disabled"
-	EventPrincipalEnabled            EventType = "saas.principal.enabled"
+	// EventSolutionHostBindingApplied records that this host reconciled a
+	// declared generation (issue #952). It is emitted by the reconcile pass, not
+	// by a request, so it is declared outside the RPC surface.
+	EventSolutionHostBindingApplied EventType = "saas.solution.host_binding_applied"
+	EventAPIKeyRevoked              EventType = "saas.api_key.revoked"
+	EventRoleCreated                EventType = "saas.role.created"
+	EventRoleUpdated                EventType = "saas.role.updated"
+	EventRoleDeleted                EventType = "saas.role.deleted"
+	EventRoleAssigned               EventType = "saas.role.assigned"
+	EventRoleRevoked                EventType = "saas.role.revoked"
+	EventSessionRevoked             EventType = "saas.session.revoked"
+	EventInvitationCreated          EventType = "saas.invitation.created"
+	EventInvitationAccepted         EventType = "saas.invitation.accepted"
+	EventInvitationRevoked          EventType = "saas.invitation.revoked"
+	EventInvitationResent           EventType = "saas.invitation.resent"
+	EventInvitationLinkIssued       EventType = "saas.invitation.link_issued"
+	EventDelegationRequested        EventType = "saas.delegation.requested"
+	EventDelegationApproved         EventType = "saas.delegation.approved"
+	EventDelegationDenied           EventType = "saas.delegation.denied"
+	EventDelegationAutoApproved     EventType = "saas.delegation.auto_approved"
+	EventApprovalAsked              EventType = "saas.approval.asked"
+	EventApprovalApproved           EventType = "saas.approval.approved"
+	EventApprovalDenied             EventType = "saas.approval.denied"
+	EventApprovalTimeout            EventType = "saas.approval.timeout"
+	EventApprovalEscalated          EventType = "saas.approval.escalated"
+	EventApprovalCancelled          EventType = "saas.approval.cancelled"
+	EventApprovalDecisionRecorded   EventType = "saas.approval.decision_recorded"
+	EventPrincipalCreated           EventType = "saas.principal.created"
+	EventPrincipalRevoked           EventType = "saas.principal.revoked"
+	EventPrincipalDisabled          EventType = "saas.principal.disabled"
+	EventPrincipalEnabled           EventType = "saas.principal.enabled"
 
 	EventScopeNodeRegistered EventType = "saas.scope.node_registered"
 	EventScopeGranted        EventType = "saas.scope.granted"
@@ -576,8 +579,11 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}), 2),
 	mutation(EventExecutableArtifactDecision, CategoryAccess, "An administrator approved or revoked an exact executable artifact identity.", str("action"), uid("installation_id"), str("policy_id"), str("subject_digest"), str("module_principal_id")),
 	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
-	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over")),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
+	mutation(EventSolutionHostBindingApplied, CategoryAccess,
+		"The host reconciled a declared SolutionHostBinding generation.",
+		str("binding_id"), str("solution_id"), PayloadField{Name: "generation", Kind: FieldInt},
+		str("digest"), str("release"), boolean("removed"), strs("routes")),
 	mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
 	mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
 	mutation(EventRoleUpdated, CategoryAccess, "A role's description and permission set were replaced.", str("name"), strs("permissions")),
@@ -609,9 +615,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
 	mutation(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
 	mutation(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
-		uid("agent_principal_id"), str("solution_identifier"), uid("role_id"), uid("owner_principal_id")),
-	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled: its agent principal and standing grant were revoked and its scope node soft-deleted.",
-		str("solution_identifier")),
+		uid("agent_principal_id"), uid("target_id"), uid("role_id"), uid("owner_principal_id"), str("allowed_audiences"), str("allowed_scopes")),
+	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled, or the presence it was installed from was withdrawn: its agent principal and standing grant were revoked and its scope node soft-deleted.",
+		uid("target_id"), str("binding_id"), str("generation"), str("revoked_reason")),
 	mutation(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
 		uid("owner_principal_id")),
 	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),

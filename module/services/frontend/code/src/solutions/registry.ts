@@ -1,39 +1,33 @@
 import "server-only";
 
+import { checkRuntimeCompatibility } from "@/solutions/compatibility";
+
 import { assertDataGraph, type DataGraph } from "@codefly/saas-plugin-manifest";
 import type { DeclaredSource } from "@codefly-dev/saas-ui/solution";
 import { getEndpoints, getWorkspaceSecret } from "codefly";
 
-import { isStandingConditionMilestone } from "@/solutions/registration-log";
-
 /**
- * Runtime solution registry (generic host seam).
- *
- * A "solution" is an independently deployed module the host has NO build-time
- * knowledge of. Solutions self-register at startup by POSTing their manifest to
- * the host (see app/api/solutions/register). Nothing in this file — or anywhere
- * in the saas module — names a specific solution.
- *
- * Registrations are NOT stored in this process. They live in one durable,
- * versioned record per solution (issue #534), which the auth-gateway brokers:
- * this frontend has no route to the accounts internal listener, and the gateway
- * already brokers that listener for module registration. What lives here is a
- * short-lived cache of the snapshot, rebuilt on demand, so a restart recovers
- * every registration and two replicas serve the same set.
- *
- * The host only ever renders a solution whose record is ACTIVE — both halves
- * registered, leases live, contract versions agreeing. A solution that
- * registered its page but not its backend is durable and visible to an
- * operator, and deliberately absent from the navigation: it is exactly the
- * disagreement this registry exists to prevent.
+ * Read-only projection of the host's declared solution registry. The gateway
+ * brokers the durable accounts record; this process caches only its snapshot.
+ * Only active records with compatible frontend and backend halves are rendered.
  */
 
 export interface SolutionManifest {
 	id: string;
 	/**
-	 * Major of the registration manifest wire shape this solution was built
-	 * against. Defaulted rather than required, so an existing registrant keeps
-	 * working; see `checkRuntimeCompatibility`.
+	 * The immutable solution target the host declared this record under — the
+	 * key a per-viewer projection joins entitlements against.
+	 *
+	 * Stamped from the registry snapshot, NOT parsed from the solution's own
+	 * manifest: the manifest is a document the solution wrote, and a solution
+	 * naming its own target could claim the identity an organisation consented
+	 * to for something else. Empty for a record nothing declared, which joins to
+	 * no entitlement.
+	 */
+	targetId: string;
+	/**
+	 * Major of the manifest wire shape this solution was built against.
+	 * Validated by `checkRuntimeCompatibility` before the read projection renders it.
 	 */
 	schemaVersion: number;
 	nav: { title: string; path: string; order?: number };
@@ -120,8 +114,21 @@ export interface SolutionSurface {
 	events?: string[];
 }
 
-/** The public navigation projection (see navProjection). */
-export type SolutionNav = Pick<SolutionManifest, "id" | "nav">;
+/** The per-viewer navigation projection (see navProjection in projections.ts). */
+export type SolutionNav = Pick<SolutionManifest, "id" | "nav"> & {
+	/**
+	 * False when the solution is installed and granted but its installation is
+	 * not healthy right now — an offboarded owner of record, a revoked or disabled
+	 * agent, a standing grant that lapsed.
+	 *
+	 * Such a solution stays IN the projection. The organization did install it and
+	 * the viewer was granted it, so dropping it would send someone looking for a
+	 * grant that already exists; what must not happen is routing it as though it
+	 * were serving. A consumer renders it disabled and says why it cannot be
+	 * opened.
+	 */
+	available: boolean;
+};
 
 /** The internal detail projection (see detailProjection). */
 export type SolutionDetail = Omit<
@@ -129,12 +136,14 @@ export type SolutionDetail = Omit<
 	"dashboard" | "surfaces" | "sources"
 >;
 
-/** The per-client surface projection (see surfacesProjection). */
+/** The per-client surface projection (see surfacesProjection in projections.ts). */
 export interface SolutionClientSurfaces {
 	id: string;
 	title: string;
 	/** Origin a surface's `module` path is resolved against. */
 	origin: string;
+	/** See SolutionNav.available — the same distinction, for a non-host client. */
+	available: boolean;
 	surfaces: SolutionSurface[];
 }
 
@@ -155,12 +164,20 @@ export function isClientKind(value: string): boolean {
 }
 
 /**
+ * Whether a value is shaped like a registered solution id — the rule parseManifest
+ * admits an id by, and the gateway's own. A value that fails it can never name a
+ * registration, however it was spelled elsewhere.
+ */
+export function isSolutionId(value: string): boolean {
+	return SAFE_SLUG.test(value);
+}
+
+/**
  * A nav path is rendered directly as an <a href> in the sidebar and home
  * cards, and a surface module is fetched by a client against the solution's own
  * origin. Both must be absolute, path-only values so a manifest can never turn
  * one into an open redirect, a cross-origin fetch, or a `javascript:`/`data:`
- * URI. Registration is authenticated (see the register route), but the host
- * still refuses to store an unsafe value.
+ * URI. The host refuses unsafe values when reading the declared manifest.
  */
 function isSafeAbsolutePath(path: string): boolean {
 	if (!path.startsWith("/") || path.startsWith("//")) {
@@ -256,56 +273,17 @@ export function browserManifestUrl(
 const SNAPSHOT_TTL_MS = 5_000;
 
 /**
- * The oldest a snapshot may be and still be served while a refetch is failing.
- *
- * A blip must not empty the navigation, so a failed refetch keeps the previous
- * snapshot — but only up to the point where the gateway would already have
- * dropped every record in it. The gateway re-derives liveness from each
- * registration's lease, so once a snapshot is older than that lease nothing in
- * it is provably still registered: serving it renders pages whose backend the
- * gateway has already stopped routing, which is the page/backend disagreement
- * this registry exists to prevent. Past the lease this replica reports
- * "unavailable" rather than guessing.
- *
- * The window belongs to the gateway — it is the lease it grants registrants —
- * and now travels with every snapshot as `leaseSeconds`. This literal is only
- * the fallback for a rolling upgrade in which a newer frontend reads an older
- * gateway; it is deliberately not a second source of truth, because a mirrored
- * copy goes silently wrong the moment the gateway's lease changes.
- */
-const FALLBACK_SNAPSHOT_MAX_AGE_MS = 120_000;
-
-/**
- * A reported lease longer than this is a misreport, not a policy. The ceiling
- * is a safety bound, so it must not be settable to "effectively never" by the
- * far side: `{"leaseSeconds": 1e999}` parses to Infinity, and an unchecked
- * `> 0` test would accept it and silently restore unbounded staleness.
- */
-const MAX_REPORTED_LEASE_MS = 3_600_000;
-
-/**
  * How long the gateway gets to answer a snapshot read. It serves this from its
  * own in-memory cache, so it is fast or it is wedged. Matches the bound
  * src/proxy.ts puts on the same class of loopback lookup.
  */
 const REGISTRY_READ_TIMEOUT_MS = 2_000;
 
-/**
- * How long a registration write gets. Longer than the read because the gateway
- * brokers it on to accounts under its own 10s budget and may retry once; the
- * point is that it is finite, not that it is tight.
- */
-const REGISTRY_WRITE_TIMEOUT_MS = 30_000;
-
 interface RegistrySnapshot {
 	revision: number;
 	solutions: SolutionManifest[];
 	byId: Map<string, SolutionManifest>;
 	expiresAt: number;
-	/** When the gateway last answered; the staleness ceiling is measured from here. */
-	fetchedAt: number;
-	/** The gateway's lease window: how long this may outlive a failed refetch. */
-	maxAgeMs: number;
 }
 
 /**
@@ -318,7 +296,7 @@ export type SolutionRegistryFailure = "unavailable";
 
 // Next's dev server evaluates route handlers and pages in separate module
 // graphs, so a plain module-level variable is NOT shared between the
-// registration endpoint and the solution page. Anchor the cache on globalThis
+// navigation endpoint and the solution page. Anchor the cache on globalThis
 // so every module graph in this process shares one snapshot and one in-flight
 // fetch.
 const globalForRegistry = globalThis as typeof globalThis & {
@@ -328,8 +306,6 @@ const globalForRegistry = globalThis as typeof globalThis & {
 };
 
 const GATEWAY_REGISTRY_PATH = "/solutions/_registry";
-const GATEWAY_FRONTEND_REGISTER_PATH = "/solutions/_frontend";
-const GATEWAY_REGISTER_PATH = "/solutions/_register";
 const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
 
 /**
@@ -363,6 +339,14 @@ interface GatewayRegistryEntry {
 	id?: unknown;
 	status?: unknown;
 	manifest?: unknown;
+	/**
+	 * The immutable solution target this record is declared under, from the
+	 * gateway's projection. It is the HOST's fact, never the solution's: it is
+	 * read from the record's declaration here and deliberately not from the
+	 * manifest the solution itself registered, because a solution must not be
+	 * able to name the identity an organisation consented to.
+	 */
+	targetId?: unknown;
 }
 
 /**
@@ -371,44 +355,14 @@ interface GatewayRegistryEntry {
  * boundary since it was validated, and re-validating is cheaper than trusting
  * that a stored blob is still well-formed.
  */
-// Whether the fallback has already been reported. A dropped field would
-// otherwise degrade in complete silence, which is how the mirrored constant
-// this replaced went wrong in the first place.
-let reportedMissingLease = false;
-
-/**
- * The staleness ceiling this snapshot carries, from the lease the gateway says
- * it grants. Clamped and finite-checked: the far side supplies it, so it is
- * input, not configuration.
- */
-function reportedMaxAgeMs(leaseSeconds: unknown): number {
-	if (
-		typeof leaseSeconds === "number" &&
-		Number.isFinite(leaseSeconds) &&
-		leaseSeconds > 0
-	) {
-		return Math.min(leaseSeconds * 1_000, MAX_REPORTED_LEASE_MS);
-	}
-	if (!reportedMissingLease) {
-		reportedMissingLease = true;
-		console.error(
-			"solution registry: snapshot carried no usable leaseSeconds; " +
-				"bounding staleness by the local fallback instead",
-		);
-	}
-	return FALLBACK_SNAPSHOT_MAX_AGE_MS;
-}
-
 function manifestsFromSnapshot(payload: unknown): {
 	revision: number;
-	maxAgeMs: number;
 	solutions: SolutionManifest[];
 } | null {
 	if (typeof payload !== "object" || payload === null) return null;
-	const { revision, solutions, leaseSeconds } = payload as {
+	const { revision, solutions } = payload as {
 		revision?: unknown;
 		solutions?: unknown;
-		leaseSeconds?: unknown;
 	};
 	if (!Array.isArray(solutions)) return null;
 	const manifests: SolutionManifest[] = [];
@@ -428,12 +382,23 @@ function manifestsFromSnapshot(payload: unknown): {
 			);
 			continue;
 		}
-		manifests.push(parsed);
+		if (!checkRuntimeCompatibility(parsed).compatible) {
+			console.error(`solution registry: incompatible runtime for ${String(entry.id)}`);
+			continue;
+		}
+		// The target is stamped from the record, overwriting anything the
+		// solution's own manifest carried in that field. parseManifest already
+		// rejects unknown keys it does not model, but stamping unconditionally
+		// means a future parser that let the field through could not be used to
+		// claim a target either.
+		manifests.push({
+			...parsed,
+			targetId: typeof entry.targetId === "string" ? entry.targetId : "",
+		});
 	}
 	manifests.sort((a, b) => (a.nav.order ?? 0) - (b.nav.order ?? 0));
 	return {
 		revision: typeof revision === "number" ? revision : 0,
-		maxAgeMs: reportedMaxAgeMs(leaseSeconds),
 		solutions: manifests,
 	};
 }
@@ -442,10 +407,7 @@ function manifestsFromSnapshot(payload: unknown): {
  * The snapshot read's standing failure, if it is failing.
  *
  * Every browser polling the navigation drives this read, so a registry outage
- * printed a line per read for as long as it lasted — and the registration
- * endpoint's own per-request line is switched off for that path in
- * next.config.mjs, which makes this the only thing left saying the registry is
- * unreachable. It has to be readable, so it is reported as a condition: the
+ * printed a line per read for as long as it lasted. It has to be readable, so it is reported as a condition: the
  * first failed read, the same failure again only at milestone counts, and the
  * recovery. A one-shot latch would be the other failure — quiet while the
  * thing is still broken.
@@ -516,192 +478,24 @@ async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
 		solutions: parsed.solutions,
 		byId: new Map(parsed.solutions.map((solution) => [solution.id, solution])),
 		expiresAt: Date.now() + SNAPSHOT_TTL_MS,
-		fetchedAt: Date.now(),
-		maxAgeMs: parsed.maxAgeMs,
 	};
 }
 
-/**
- * The current snapshot, refetched when it has aged out. Concurrent readers
- * coalesce onto one fetch, and a failed refetch keeps serving the previous
- * snapshot rather than emptying the navigation on a single blip — a registry
- * outage must degrade, not delete. Degrading is bounded, though: past
- * SNAPSHOT_MAX_AGE_MS the snapshot is dropped rather than served, because
- * beyond the gateway's lease nothing in it is provably still registered.
- */
+/** Coalesce concurrent reads; fail closed when an expired snapshot cannot refresh. */
 async function snapshot(): Promise<RegistrySnapshot | null> {
 	const cached = globalForRegistry.__solutionSnapshot ?? null;
-	if (
-		cached !== null &&
-		Date.now() < cached.expiresAt &&
-		Date.now() - cached.fetchedAt < cached.maxAgeMs
-	) {
-		return cached;
-	}
+	if (cached !== null && Date.now() < cached.expiresAt) return cached;
 	if (!globalForRegistry.__solutionSnapshotInFlight) {
 		globalForRegistry.__solutionSnapshotInFlight = fetchSnapshot()
 			.then((fresh) => {
-				if (fresh !== null) {
-					globalForRegistry.__solutionSnapshot = fresh;
-					return fresh;
-				}
-				const stale = globalForRegistry.__solutionSnapshot ?? null;
-				if (stale !== null && Date.now() - stale.fetchedAt >= stale.maxAgeMs) {
-					globalForRegistry.__solutionSnapshot = null;
-					return null;
-				}
-				return stale;
+				globalForRegistry.__solutionSnapshot = fresh;
+				return fresh;
 			})
 			.finally(() => {
 				globalForRegistry.__solutionSnapshotInFlight = null;
 			});
 	}
 	return globalForRegistry.__solutionSnapshotInFlight;
-}
-
-/** Drop the cached snapshot so the next read reflects a write immediately. */
-function invalidateSnapshot(): void {
-	globalForRegistry.__solutionSnapshot = null;
-}
-
-/**
- * The outcome of a registration write. `conflict` is the registry refusing a
- * stale or resurrecting write — the caller must re-read and retry, not retry
- * blindly. `rejected` is the registry refusing the registration itself as
- * inadmissible — today, audit event types its dashboard declares that the
- * audit registry will not admit, such as a namespace another solution owns or a
- * field an earlier declaration admitted and this one drops. No retry of the
- * same manifest can succeed, so it must not read as an outage.
- */
-export type SolutionWriteResult =
-	| { ok: true; revision: number; status: string }
-	| { ok: false; reason: "unavailable" | "conflict" | "forbidden" }
-	| { ok: false; reason: "rejected"; detail?: string };
-
-async function writeToGateway(
-	path: string,
-	init: RequestInit,
-	// The registrant's own signed, solution-bound credential. The gateway
-	// verifies it again and takes the record's publisher from it, so the write
-	// carries the proof rather than this host vouching for a caller it cannot
-	// name.
-	credential?: string,
-): Promise<SolutionWriteResult> {
-	const origin = gatewayOrigin();
-	const token = internalToken();
-	if (!origin || !token) {
-		console.error(
-			"solution registry: gateway endpoint or internal token unresolved",
-		);
-		return { ok: false, reason: "unavailable" };
-	}
-	let response: Response;
-	try {
-		response = await fetch(`${origin}${path}`, {
-			...init,
-			headers: {
-				...(init.headers ?? {}),
-				[INTERNAL_TOKEN_HEADER]: token,
-				...(credential
-					? { "X-Codefly-Solution-Registration": credential }
-					: {}),
-				"content-type": "application/json",
-			},
-			cache: "no-store",
-			signal: AbortSignal.timeout(REGISTRY_WRITE_TIMEOUT_MS),
-		});
-	} catch (err) {
-		console.error("solution registry: gateway unreachable", err);
-		return { ok: false, reason: "unavailable" };
-	}
-	if (response.status === 409) return { ok: false, reason: "conflict" };
-	if (response.status === 403) return { ok: false, reason: "forbidden" };
-	// The gateway answers 422 `registration_rejected` only when accounts
-	// attached the structured declaration-rejection reason; the error code is
-	// the signal, never the prose. Any other refusal — a 400 among them — keeps
-	// the outage mapping below.
-	if (response.status === 422) {
-		const refusal = (await response.json().catch(() => ({}))) as {
-			error?: unknown;
-			detail?: unknown;
-		};
-		if (refusal.error === "registration_rejected") {
-			console.error(
-				"solution registry: the registry will not admit the declared audit event types",
-			);
-			return {
-				ok: false,
-				reason: "rejected",
-				...(typeof refusal.detail === "string"
-					? { detail: refusal.detail }
-					: {}),
-			};
-		}
-	}
-	if (!response.ok) {
-		console.error(`solution registry: write answered ${response.status}`);
-		return { ok: false, reason: "unavailable" };
-	}
-	invalidateSnapshot();
-	const body = (await response.json().catch(() => ({}))) as {
-		revision?: unknown;
-		status?: unknown;
-	};
-	return {
-		ok: true,
-		revision: typeof body.revision === "number" ? body.revision : 0,
-		status: typeof body.status === "string" ? body.status : "unknown",
-	};
-}
-
-/**
- * Register the frontend half of a solution.
- *
- * The manifest travels as the JSON text this host validated. The registry
- * stores it in a jsonb column, so it does NOT survive as those bytes: Postgres
- * re-serializes it on read with its keys reordered, a space after every colon
- * and its numbers rendered as numerics. Byte stability is therefore exactly
- * what a re-registration cannot be recognised by — assuming it was is what made
- * every heartbeat advance the revision and churn every replica's cache. What
- * recognises a renewal is JSON-value equality, in the registry's own
- * sameManifest (accounts, pkg/business/solution_registry.go). When the manifest
- * changes, the registry reads the one part of it that is also a registration of
- * its own: the audit event types the dashboard graph declares (events carrying
- * `fields`), which it admits into the audit catalog in the same write, refusing
- * the whole write when it will not.
- */
-export function registerSolution(
-	manifest: SolutionManifest,
-	options: { reactivate?: boolean; credential?: string } = {},
-): Promise<SolutionWriteResult> {
-	return writeToGateway(
-		GATEWAY_FRONTEND_REGISTER_PATH,
-		{
-			method: "POST",
-			body: JSON.stringify({
-				id: manifest.id,
-				manifest: JSON.stringify(manifest),
-				reactivate: options.reactivate === true,
-			}),
-		},
-		options.credential,
-	);
-}
-
-/**
- * Deregister a solution outright. Both halves go away together and a tombstone
- * remains, so a retiring deployment's delayed heartbeat cannot recreate what an
- * operator removed.
- */
-export function unregisterSolution(
-	id: string,
-	credential?: string,
-): Promise<SolutionWriteResult> {
-	return writeToGateway(
-		`${GATEWAY_REGISTER_PATH}?id=${encodeURIComponent(id)}`,
-		{ method: "DELETE" },
-		credential,
-	);
 }
 
 /**
@@ -716,6 +510,25 @@ export async function loadSolutions(): Promise<
 	return current === null ? "unavailable" : current.solutions;
 }
 
+/**
+ * The registered set together with the revision it carries — what a caller that
+ * caches a projection needs, since the registered set is one of the inputs that
+ * projection is a function of.
+ *
+ * It is a separate reader rather than a widened `loadSolutions` so the callers
+ * that only need the list keep the narrower return, and so the revision is
+ * obtained from the SAME snapshot the manifests came from. Reading the list and
+ * then asking for a revision separately could pair manifests with a revision from
+ * a later refetch, and the cache key would then claim a set it did not describe.
+ */
+export async function loadSolutionsWithRevision(): Promise<
+	{ revision: number; solutions: SolutionManifest[] } | SolutionRegistryFailure
+> {
+	const current = await snapshot();
+	if (current === null) return "unavailable";
+	return { revision: current.revision, solutions: current.solutions };
+}
+
 /** One solution by id, or why it could not be resolved. */
 export async function findSolution(
 	id: string,
@@ -723,79 +536,6 @@ export async function findSolution(
 	const current = await snapshot();
 	if (current === null) return "unavailable";
 	return current.byId.get(id) ?? null;
-}
-
-/**
- * What every signed-in browser may read: the id and the nav entry the Solutions
- * menu renders. A manifest also carries deployment topology — the origin the
- * solution's code is served from, the backend service that fronts it, and its
- * dashboard declaration — which no browser needs to render a link, so the
- * public listing projects it away rather than shipping it to every poll.
- */
-export function navProjection(manifest: SolutionManifest): SolutionNav {
-	return { id: manifest.id, nav: { ...manifest.nav } };
-}
-
-/**
- * What one kind of client may read: the surfaces declared for that kind, named
- * by the solution offering them. A client asks for its own kind and gets
- * exactly what applies to it, so learning what is on offer no longer means
- * shipping a table of who offers what inside every client.
- *
- * Solutions are registered deployment-wide, not per tenant, so every caller
- * sees the same set today. When per-tenant enablement exists it narrows this
- * projection, and every client inherits the narrowing without changing.
- *
- * Returns null when this solution declares nothing for that client, which is
- * how the listing leaves it out rather than listing it empty.
- */
-export function surfacesProjection(
-	manifest: SolutionManifest,
-	client: string,
-	hostOrigin?: string,
-): SolutionClientSurfaces | null {
-	const surfaces = (manifest.surfaces ?? []).filter(
-		(surface) => surface.client === client,
-	);
-	if (surfaces.length === 0) {
-		return null;
-	}
-	// A solution served through this host has no origin of its own a client can
-	// reach: its modules are paths on its backend, which this host serves under
-	// the solution's proxy base. Without the host's own origin there is nothing
-	// to resolve them against, so the solution is left out rather than answered
-	// with an address that cannot work.
-	const servedByHost = manifest.frontend.manifestUrl.startsWith("/");
-	if (servedByHost && !hostOrigin) {
-		return null;
-	}
-	const modulePath = (module: string) =>
-		servedByHost ? `${solutionProxyBase(manifest.id)}${module}` : module;
-	return {
-		id: manifest.id,
-		title: manifest.nav.title,
-		// A declared module is a path on the solution's origin, so without the
-		// origin no caller can fetch one. The origin is not withheld topology
-		// here the way the manifest path is: the client fetches the module from
-		// it directly, and every signed-in document already carries it in the
-		// CSP that admits the same origin's code.
-		origin: servedByHost
-			? (hostOrigin as string)
-			: new URL(manifest.frontend.manifestUrl).origin,
-		// A shallow copy would share `applies.tagged` and `events` with the
-		// cached snapshot, which outlives this response and is read by every
-		// later caller — including other client kinds, which read the same
-		// manifest objects.
-		surfaces: surfaces.map((surface) => ({
-			...surface,
-			module: modulePath(surface.module),
-			applies:
-				typeof surface.applies === "object"
-					? { tagged: [...surface.applies.tagged] }
-					: surface.applies,
-			events: surface.events === undefined ? undefined : [...surface.events],
-		})),
-	};
 }
 
 /**
@@ -807,6 +547,7 @@ export function surfacesProjection(
 export function detailProjection(manifest: SolutionManifest): SolutionDetail {
 	return {
 		id: manifest.id,
+		targetId: manifest.targetId,
 		schemaVersion: manifest.schemaVersion,
 		nav: { ...manifest.nav },
 		frontend: { ...manifest.frontend },
@@ -1056,7 +797,7 @@ function parseDeclaredSources(
 	return sources;
 }
 
-/** Minimal structural validation of a self-registration payload. */
+/** Structural validation of a declared solution manifest. */
 export function parseManifest(value: unknown): SolutionManifest | null {
 	if (typeof value !== "object" || value === null) {
 		return null;
@@ -1140,6 +881,12 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 	}
 	return {
 		id: candidate.id,
+		// parseManifest reads a document the SOLUTION wrote, so it never carries
+		// a target: the host stamps it from the registry record in
+		// manifestsFromSnapshot. Empty here is therefore correct and not a
+		// missing field — a manifest that reached a projection without being
+		// stamped joins to no entitlement, which is the fail-closed answer.
+		targetId: "",
 		schemaVersion: schemaVersion as number,
 		nav: {
 			title: nav.title,
@@ -1165,4 +912,11 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 		surfaces,
 		sources,
 	};
+}
+
+function isStandingConditionMilestone(occurrences: number): boolean {
+	if (occurrences < 10) return false;
+	let threshold = 10;
+	while (threshold < occurrences) threshold *= 10;
+	return threshold === occurrences;
 }

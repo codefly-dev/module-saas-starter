@@ -1,48 +1,6 @@
 package main
 
-// Composed-module REST federation.
-//
-// A composition can add modules and solutions that expose their own REST
-// endpoints under /v1/<module>/*. Rather than redeploying this gateway with a
-// new generated catalog every time, a composition-local module self-registers
-// its upstream at startup (POST /modules/_register) and the gateway then proxies
-// /v1/<module>/* to it — but ONLY after the generated catalog has no match, so a
-// registered prefix can never shadow or override a catalog route.
-//
-// Registration only adds a proxy target; it never relaxes authentication. Every
-// proxied /v1/<module>/* request runs the same ext_authz Check and identity
-// projection as a protected catalog route, so a bearer-less call is denied at
-// the gateway (401) regardless of what is registered.
-//
-// Trust model: registration is gated on a per-module cryptographic identity, not
-// the shared cluster-internal token. The caller presents a signed registration
-// token (X-Codefly-Module-Registration) that binds a module identity (its `sub`)
-// to exactly one prefix; the gateway verifies it with the same alg-locked Ed25519
-// discipline as an access token (audience-locked to module registration, so an
-// access token can never be replayed as a registration credential and vice
-// versa). A module holding a token for "documents" therefore cannot register
-// "billing" — the shared secret gave no such per-caller binding. The enforceable
-// guardrails below are: authenticated AND prefix-bound (signed token), well-formed
-// single-segment prefix, first-claim-wins (a prefix already held by a different
-// upstream cannot be taken over), never shadowing the catalog, and a
-// composition-local (mesh) upstream only.
-//
-// That token comes from accounts, the authority whose key the gateway already
-// trusts through JWKS, and a module obtains one by exchanging the registration
-// secret its composition provisioned (POST /modules/_registration-token below).
-// The gateway cannot mint — it holds only the public half. What that buys is
-// narrower than "separation of authority": a gateway compromise routes traffic
-// anywhere regardless of who signs. It buys that the prefix→module binding is
-// declared once, in configuration accounts reads, so no code path on the request
-// side — here or in a module — can widen who may claim a prefix.
-//
-// The token binds the prefix (a module's stable identity), not the upstream URL,
-// which is chosen at runtime (loopback in dev, cluster DNS in prod) and would be
-// brittle to pin. The upstream is instead constrained by the mesh-host guard at
-// register time and — because a registrant is no longer trusted to name mesh
-// hosts that later resolve off-mesh — by a resolve-time address check at proxy
-// dial time (isAllowedResolvedModuleIP), which closes the DNS-rebinding window a
-// name-only check leaves open.
+// Module credential exchanges and the solution upstream transport.
 
 import (
 	"context"
@@ -51,233 +9,30 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
-	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// upstreamRegistry is a process-local map of a routing key → upstream URL,
-// populated at runtime by self-registration rather than at build time. It
-// backs composed-module REST federation: a composed module the saas has no
-// build-time knowledge of POSTs its upstream on startup, and the gateway then
-// proxies matching /v1/<prefix>/* requests to it.
+// isRuntimeRegisteredRoute selects the guarded transport — the one that
+// re-validates the resolved IPs at dial time — for every upstream a DECLARATION
+// named, rather than the static catalog.
 //
-// The store is process-local, so with more than one auth-gateway replica a
-// registration lands on one replica only and requests load-balanced to the
-// others 404 until the module re-registers there. Solution registration used
-// to share this limitation and no longer does (see
-// gateway_solution_registry.go); module federation has not been given the same
-// durable treatment.
-type upstreamRegistry struct {
-	mu        sync.RWMutex
-	upstreams map[string]*url.URL
-}
-
-func newUpstreamRegistry() *upstreamRegistry {
-	return &upstreamRegistry{upstreams: make(map[string]*url.URL)}
-}
-
-func (s *upstreamRegistry) get(id string) (*url.URL, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	upstream, ok := s.upstreams[id]
-	return upstream, ok
-}
-
-// claim registers key→upstream when the key is free, or when it already points
-// at the same upstream (idempotent re-registration on restart). It returns
-// (existing, false) without mutating when the key is already held by a DIFFERENT
-// upstream: first-claim-wins, so a later caller sharing the cluster-internal
-// token cannot silently take over a key another component already registered.
-func (s *upstreamRegistry) claim(id string, upstream *url.URL) (*url.URL, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if existing, ok := s.upstreams[id]; ok {
-		if existing.String() != upstream.String() {
-			return existing, false
-		}
-		return existing, true
-	}
-	s.upstreams[id] = upstream
-	return upstream, true
-}
-
-const moduleRegisterPath = "/modules/_register"
-
-// handleModuleRegister serves POST /modules/_register. It returns true when it
-// has handled the request (the caller must then return). Any other path is left
-// for the normal routing path.
-func (g *Gateway) handleModuleRegister(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != moduleRegisterPath {
-		return false
-	}
-	if r.Method != http.MethodPost {
-		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return true
-	}
-
-	// Guardrail 1 — per-module cryptographic identity. Registration decides where
-	// authenticated module traffic (bearer + injected identity) is forwarded, so
-	// the caller must prove — with a signed, per-module registration token rather
-	// than the shared cluster-internal secret — that it owns the prefix it claims.
-	// verifyModuleRegistration fails closed on a missing/unset key, bad signature,
-	// wrong audience, or expiry, so an unauthenticated edge caller can never point
-	// a prefix at an attacker-controlled upstream and harvest forwarded bearers.
-	// The prefix→identity binding itself is enforced below, once the payload prefix
-	// is known.
-	claims, ok := g.authz.verifyModuleRegistration(r.Context(), r.Header.Get(moduleRegistrationHeader))
-	if !ok {
-		httpError(w, http.StatusUnauthorized, "unauthorized")
-		return true
-	}
-
-	var payload struct {
-		Prefix   string `json:"prefix"`
-		Upstream string `json:"upstream"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		httpError(w, http.StatusBadRequest, "invalid json")
-		return true
-	}
-
-	// Guardrail 2 (part) — identity-bound. Under a shared token the strongest
-	// well-formedness we can require is a single valid identity segment: no
-	// slashes, no wildcards, no traversal. A caller therefore claims exactly one
-	// module prefix (e.g. "documents"), never a path or a foreign nested route.
-	if !validCatalogIdentity(payload.Prefix) {
-		httpError(w, http.StatusBadRequest, "invalid prefix")
-		return true
-	}
-
-	// Guardrail 1 (binding) — the registration token authorizes exactly one
-	// prefix. Reject a caller trying to register any other prefix, even with an
-	// otherwise-valid token: this is the per-module binding the shared secret
-	// lacked. (Both sides are already validated identity segments, so the prefix
-	// is not secret and a plain compare is fine.)
-	if claims.Prefix != payload.Prefix {
-		httpError(w, http.StatusForbidden, "prefix not authorized for this identity")
-		return true
-	}
-
-	// Guardrail 3 — catalog-protected. The generated + explicit catalog owns its
-	// own /v1/<prefix> surface. Registering a colliding prefix is rejected rather
-	// than stored-but-unreachable (the catalog always wins in ServeHTTP), so the
-	// failure is loud instead of a silently dead route.
-	if _, reserved := g.matcher.ReservedV1Prefixes()[payload.Prefix]; reserved {
-		httpError(w, http.StatusConflict, "prefix reserved by catalog")
-		return true
-	}
-
-	// Guardrail 4 — upstream constrained. Must parse as an http(s) URL with a
-	// host, and that host must be composition-local (mesh). An external URL or a
-	// public IP is rejected: a registered upstream receives forwarded bearers, so
-	// it must never be able to point off-mesh.
-	upstream, err := url.Parse(payload.Upstream)
-	if err != nil || (upstream.Scheme != "http" && upstream.Scheme != "https") || upstream.Host == "" {
-		httpError(w, http.StatusBadRequest, "invalid upstream")
-		return true
-	}
-	if isDisallowedRegisteredUpstreamHost(upstream.Hostname()) {
-		httpError(w, http.StatusBadRequest, "forbidden upstream host")
-		return true
-	}
-
-	// Guardrail 2 (part) — first-claim-wins. A prefix already registered to a
-	// different upstream cannot be taken over by a later caller sharing the
-	// token; re-registering the same upstream (restart) is idempotent.
-	normalized := &url.URL{Scheme: upstream.Scheme, Host: upstream.Host}
-	if _, ok := g.modules.claim(payload.Prefix, normalized); !ok {
-		httpError(w, http.StatusConflict, "prefix already registered")
-		return true
-	}
-
-	w.Header().Set("content-type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"ok":true}`))
-	return true
-}
-
-// handleFederatedModule proxies a /v1/<module>/* request to a runtime-registered
-// module upstream. It returns true when it has answered the request. It returns
-// false — leaving the caller to answer 404 — for any path that is not under a
-// registered module prefix, so an unregistered prefix is indistinguishable from
-// any other unexposed path.
-//
-// This runs only after the catalog matcher returned no match, which guarantees a
-// generated or explicit route always wins over a registered prefix.
-func (g *Gateway) handleFederatedModule(w http.ResponseWriter, r *http.Request) bool {
-	prefix, ok := v1Prefix(r.URL.Path)
-	if !ok {
-		return false
-	}
-	upstream, ok := g.modules.get(prefix)
-	if !ok {
-		return false
-	}
-
-	// Same discipline as every protected catalog route: drop caller-supplied
-	// identity, run ext_authz, require a valid credential, and subject the
-	// forwarded request to the same rate-limit budget (below). A bearer-less
-	// call is denied here, so federation only adds a proxy target — it never
-	// widens the authenticated surface, and it does not open an unmetered one.
-	stripAllIdentityHeaders(r)
-	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, "auth check failed")
-		return true
-	}
-	if denied := checkResp.GetDeniedResponse(); denied != nil {
-		code := int(denied.GetStatus().GetCode())
-		if code == 0 {
-			code = http.StatusForbidden
-		}
-		httpError(w, code, denied.GetBody())
-		return true
-	}
-	if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
-		httpError(w, http.StatusForbidden, "forbidden")
-		return true
-	}
-	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
-
-	// Forward the full /v1/<module>/... path unchanged: the module owns and
-	// serves its own /v1/<module> surface. The caller's bearer is preserved so
-	// the module can call back through the gateway on the user's behalf, exactly
-	// as solution passthrough does. Service is a "module:" pseudo-name so
-	// isAccountsRoute stays false and no gateway/public-origin credential is
-	// stamped for a federated upstream.
-	//
-	// Route through rateLimitThenProxy, not proxyTo directly: a federated data
-	// endpoint must consume the same per-org/per-IP budget as an equivalent
-	// catalog route (e.g. /v1/users), otherwise /v1/<module>/* would be an
-	// unmetered proxy an authenticated caller could flood past the org budget.
-	entry := &RouteEntry{Service: moduleServicePrefix + prefix, Protected: true}
-	g.rateLimitThenProxy(w, r, upstream, entry)
-	return true
-}
-
-// moduleServicePrefix marks the RouteEntry.Service of a federated module route.
-const moduleServicePrefix = "module:"
-
-// isRuntimeRegisteredRoute reports whether entry describes an upstream a
-// registrant named at runtime — a federated module prefix or a solution — as
-// opposed to a static catalog route. Only these get the resolve-time-validating
-// transport in proxyTo.
+// Both kinds qualify, for one reason: the address is read out of a delivered
+// document and user bearers are forwarded to it, so the host must still refuse a
+// name that resolves somewhere it will not send credentials. A module route added
+// without this line would have been the one declared upstream dialled on the
+// plain transport, and nothing about the route's shape would have said so.
 func isRuntimeRegisteredRoute(entry *RouteEntry) bool {
-	if entry == nil {
-		return false
-	}
-	return strings.HasPrefix(entry.Service, moduleServicePrefix) ||
-		strings.HasPrefix(entry.Service, solutionServicePrefix)
+	return entry != nil &&
+		(strings.HasPrefix(entry.Service, solutionServicePrefix) ||
+			strings.HasPrefix(entry.Service, moduleServicePrefix))
 }
 
 // meshHostSuffixes are the DNS suffixes that denote a composition-local
@@ -293,11 +48,10 @@ var meshHostSuffixes = []string{
 	".local", ".internal", ".svc", ".cluster.local",
 }
 
-// isDisallowedRegisteredUpstreamHost reports whether the upstream host a
-// registrant named must be rejected. It governs BOTH runtime-registered kinds —
-// federated module prefixes and solutions — because both forward user bearers to
-// a host the registrant chose. It is STRICTER than isForbiddenUpstreamHost,
-// which it composes: beyond those SSRF sinks, a registered upstream must be
+// isDisallowedRegisteredUpstreamHost validates a declared upstream read from
+// the registry before the gateway forwards user credentials to it. It extends
+// isForbiddenUpstreamHost,
+// which it composes: beyond those SSRF sinks, a declared upstream must be
 // composition-local, so a public IP or an external dotted FQDN is also rejected.
 // Allowed: loopback, RFC1918/ULA private IPs, bare single-label service names
 // (including "localhost"), and cluster-suffixed names.
@@ -330,159 +84,28 @@ func isDisallowedRegisteredUpstreamHost(host string) bool {
 	return true
 }
 
-// --- Per-module cryptographic identity ---
+// modulePrefix is the path prefix of the module credential exchanges. They run
+// before routing because the internal-token header they authenticate on has not
+// been stripped yet, so a capability presented to one of them is verified against
+// this prefix rather than against a resolved route.
+const modulePrefix = "/modules/"
 
-// moduleRegistrationHeader carries the signed per-module registration token.
-const moduleRegistrationHeader = "X-Codefly-Module-Registration"
-
-// moduleRegistrationAudience scopes a registration token to this single purpose.
-// Access tokens carry aud "saas-starter"; registration tokens carry this. Even
-// though both may be minted under the same Ed25519 key, the audience check makes
-// the two non-interchangeable — a stolen access token cannot register a prefix,
-// and a registration token cannot authenticate a user.
-const moduleRegistrationAudience = "module-registration"
-
-// moduleRegistrationClaims is the signed assertion a module presents to register
-// its prefix. `sub` is the module identity; Prefix is the single catalog-identity
-// segment that identity is authorized to claim. The token binds the two
-// cryptographically, so a module holding a token for "documents" cannot register
-// "billing".
-type moduleRegistrationClaims struct {
-	jwt.RegisteredClaims
-	Prefix string `json:"prefix"`
-}
-
-// verifyModuleRegistration parses and validates a module registration token with
-// the same alg-locked Ed25519 discipline as an access token — same published key
-// set selected by the token's kid, plus issuer, expiry, and this
-// module-registration audience. It returns the verified claims. It fails closed:
-// a nil ext_authz check, an unreachable or unrecognised key, an empty/bad token, a wrong
-// or absent audience, or an expired token all yield ok=false.
-func (s *ExtAuthz) verifyModuleRegistration(ctx context.Context, tokenString string) (*moduleRegistrationClaims, bool) {
-	if s == nil || s.keys == nil || tokenString == "" {
-		return nil, false
-	}
-	claims := &moduleRegistrationClaims{}
-	parser := jwt.NewParser(
-		jwt.WithValidMethods([]string{"EdDSA"}),
-		jwt.WithIssuer(s.issuer),
-		jwt.WithAudience(moduleRegistrationAudience),
-		jwt.WithExpirationRequired(),
-		jwt.WithLeeway(tokenClockSkewLeeway),
-	)
-	token, err := parser.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
-		if t.Method.Alg() != "EdDSA" {
-			return nil, fmt.Errorf("alg forbidden: %s", t.Method.Alg())
-		}
-		keyID, _ := t.Header["kid"].(string)
-		return s.keys.keyFor(ctx, keyID)
-	})
-	if err != nil || !token.Valid {
-		return nil, false
-	}
-	return claims, true
-}
-
-// --- Registration-credential exchange ---
-
-// moduleRegistrationTokenPath serves the exchange a module runs immediately
-// before /modules/_register: it presents the registration secret its
-// composition gave it and receives the signed, prefix-bound token that endpoint
-// requires.
-const moduleRegistrationTokenPath = "/modules/_registration-token"
-
-// moduleSecretHeader carries the module's own registration secret. The gateway
-// consumes it here and forwards it only on the internal leg, to accounts, which
-// holds the digest to compare it against.
+// moduleSecretHeader carries the module identity secret to accounts.
 const moduleSecretHeader = "X-Codefly-Module-Secret"
 
-// mintModuleRegistrationMethod is accounts' credential-exchange RPC. It is
-// EXPOSURE_INTERNAL, so the generated mesh policy admits this gateway's service
-// account to exactly this path and denies every other principal; calling it by
-// full method name over the internal listener keeps that guarantee, which a
-// plain HTTP route on accounts would not have (the policy allowlist is built
-// from internal proto methods).
-const mintModuleRegistrationMethod = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
+// ErrorInfo domain shared with accounts source-delegation refusals.
+const solutionRegistryErrorDomain = "accounts.saas.codefly.dev"
 
-// moduleRegistrationExchangeTimeout bounds the internal leg. A module blocks on
-// this during startup, so a stalled accounts must surface as a failed
-// registration rather than a hung boot.
-const moduleRegistrationExchangeTimeout = 10 * time.Second
+// moduleExchangeTimeout bounds the accounts leg of a credential exchange.
+const moduleExchangeTimeout = 10 * time.Second
 
-// handleModuleRegistrationToken serves POST /modules/_registration-token. It
-// returns true when it has handled the request.
-//
-// The gateway brokers rather than mints: it holds only the public half of the
-// signing key, and a composed module cannot reach accounts' internal listener
-// itself — the mesh policy admits only this gateway's service account. So this
-// handler authenticates the perimeter and forwards; accounts decides whether the
-// caller owns the prefix, and this handler never learns which prefixes exist.
-func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != moduleRegistrationTokenPath {
-		return false
-	}
-	if r.Method != http.MethodPost {
-		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return true
-	}
-
-	// Perimeter check. The module secret alone identifies the module, but this
-	// listener has no rate limit on unrouted paths, so the cluster-internal token
-	// is required too: guessing a module secret then costs an attacker the shared
-	// credential first, rather than being free from anywhere that can reach the
-	// gateway.
-	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
-		httpError(w, http.StatusUnauthorized, "unauthorized")
-		return true
-	}
-	secret := r.Header.Get(moduleSecretHeader)
-	if secret == "" {
-		httpError(w, http.StatusUnauthorized, "unauthorized")
-		return true
-	}
-
-	var payload struct {
-		Prefix string `json:"prefix"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
-		httpError(w, http.StatusBadRequest, "invalid json")
-		return true
-	}
-	if !validCatalogIdentity(payload.Prefix) {
-		httpError(w, http.StatusBadRequest, "invalid prefix")
-		return true
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
-	defer cancel()
-	issued, err := g.authz.mintModuleRegistration(ctx, payload.Prefix, secret)
-	if err != nil {
-		writeRegistrationExchangeFailure(w, err)
-		return true
-	}
-
-	body, err := json.Marshal(map[string]string{
-		"token":     issued.GetToken(),
-		"expiresAt": issued.GetExpiresAt().AsTime().UTC().Format(time.RFC3339),
-	})
-	if err != nil {
-		httpError(w, http.StatusBadGateway, "registration token unavailable")
-		return true
-	}
-	w.Header().Set("content-type", "application/json")
-	w.Header().Set("cache-control", "no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
-	return true
-}
-
-// moduleWorkContextPath serves the second exchange a module runs at startup: it
+// moduleWorkContextPath serves the identity exchange a module runs at startup: it
 // presents its identity secret and receives the Work Context its
 // service principal calls the module-facing capability surface with.
 const moduleWorkContextPath = "/modules/_work-context"
 
 // mintModuleWorkContextMethod is accounts' Work Context mint for a composed
-// module. EXPOSURE_INTERNAL like the credential exchange above, so the generated
+// module. Its EXPOSURE_INTERNAL policy means the generated
 // mesh policy admits this gateway's service account and denies every other.
 const mintModuleWorkContextMethod = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
 
@@ -542,7 +165,7 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		return true
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
 	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, secret)
 	if err != nil {
@@ -630,7 +253,7 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 		return true
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
 	issued, err := g.authz.mintModuleOperationContext(ctx, payload.Prefix, secret, payload.Binding)
 	if err != nil {
@@ -668,25 +291,6 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 	return true
-}
-
-// mintModuleRegistration runs the internal leg over the existing accounts
-// connection, presenting the gateway's own cluster-internal credential. There is
-// no vendored client stub for ModuleCapabilitiesService, so the method is
-// invoked by name against generated message types shared with accounts.
-func (s *ExtAuthz) mintModuleRegistration(
-	ctx context.Context, prefix, secret string,
-) (*accountsv1.ModuleMintRegistrationResponse, error) {
-	if s.backendConn == nil {
-		return nil, fmt.Errorf("accounts connection not configured")
-	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
-	response := &accountsv1.ModuleMintRegistrationResponse{}
-	request := &accountsv1.ModuleMintRegistrationRequest{Prefix: prefix, Secret: secret}
-	if err := s.backendConn.Invoke(ctx, mintModuleRegistrationMethod, request, response); err != nil {
-		return nil, err
-	}
-	return response, nil
 }
 
 func (s *ExtAuthz) mintModuleWorkContext(
@@ -807,7 +411,7 @@ func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *h
 		return true
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
 	issued, err := g.authz.mintSourceOperationContext(ctx, request)
 	if err != nil {
@@ -897,8 +501,8 @@ type moduleResolver interface {
 }
 
 // newModuleUpstreamTransport returns a reverse-proxy transport that re-validates
-// a module upstream's RESOLVED address at dial time. A registrant names only a
-// mesh host string, checked at register time (isDisallowedRegisteredUpstreamHost);
+// a solution upstream's RESOLVED address at dial time. The registry read checks
+// the mesh host string (isDisallowedRegisteredUpstreamHost);
 // but a name it controls can resolve off-mesh at proxy time (DNS rebinding). This
 // transport resolves the host, rejects the dial unless every resolved address is
 // mesh-local, then connects to a validated IP directly — never re-resolving — so
@@ -961,8 +565,8 @@ func validateResolvedModuleAddrs(addrs []net.IPAddr) error {
 	return nil
 }
 
-// isAllowedResolvedModuleIP is the resolve-time counterpart to the register-time
-// host-string guard (isDisallowedRegisteredUpstreamHost): it re-checks the ACTUAL
+// isAllowedResolvedModuleIP is the resolve-time counterpart to the registry-read
+// host-string guard (isDisallowedRegisteredUpstreamHost): it re-checks the actual
 // address a module hostname resolved to. Only loopback and private (RFC1918 /
 // ULA) ranges are composition-local; the unspecified, link-local (covering the
 // 169.254.169.254 cloud-metadata IP), and every globally routable address are

@@ -30,15 +30,17 @@ import "saas/policy/v1/options.proto";
 // a principal explicitly granted cross-tenant authority may operate on other
 // tenants and enqueue global inbox work.
 //
-// REFUSALS. Every refusal of the CALLER is Unauthenticated or PermissionDenied
-// — an identity it cannot prove, a principal no composition registered, a
-// tenant it is not bound to, a queue or namespace its grant does not cover —
-// and so is the endpoint refusing a procedure it does not serve. A person this
-// surface is asked to act on who is not a member of the named tenant is
-// instead FAILED_PRECONDITION, so a module driving this surface from a journal
-// with retries can drop the work for a departed person without also dropping
-// it for a composition whose MODULE_PRINCIPALS entry or identity secret is
-// wrong.
+// REFUSALS. Every refusal of the CALLER'S AUTHORITY is Unauthenticated or
+// PermissionDenied — an identity it cannot prove, a principal no composition
+// registered, a tenant it is not bound to, a queue or namespace its grant does
+// not cover — and so is the endpoint refusing a procedure it does not serve. A
+// malformed request is InvalidArgument instead, whatever the caller's authority
+// (an unknown notification category or type, a destination that is not a
+// same-origin path). A person this surface is asked to act on who is not a
+// member of the named tenant is FAILED_PRECONDITION, so a module driving this
+// surface from a journal with retries can drop the work for a departed person
+// without also dropping it for a composition whose MODULE_PRINCIPALS entry or
+// identity secret is wrong.
 //
 // FAILED_PRECONDITION ALONE IS NOT A DISCRIMINATOR. This surface answers it to
 // several unrelated facts — a non-member person, an idempotency key reused for
@@ -982,7 +984,20 @@ message ModuleCurrentInstallationRequest {
 message ModuleCurrentInstallationResponse {
  string installation_id = 1;
  string tenant_id = 2;
- string solution_identifier = 3;
+ // Was `solution_identifier`: the route alias. The host cannot answer it on a
+ // request path — the alias lives on the host's presence state, and resolving
+ // it here would mean joining every organisation's presence to answer about
+ // one — and it is not an identity in any case, because a later binding may
+ // take the same route. Reserved rather than reused so no caller reads an
+ // identity out of a field that carried an alias.
+ reserved 3;
+ reserved "solution_identifier";
+ // The immutable target this installation was consented to: one continuous
+ // period of one binding's presence, never reused.
+ string target_id = 4 [(buf.validate.field).string.uuid = true];
+ // The delivered presence binding whose period that target records. This is
+ // what an authority decision keys on; the alias is display only.
+ string binding_id = 5;
 }
 
 service ModuleCapabilitiesService {

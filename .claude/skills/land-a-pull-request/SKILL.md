@@ -86,6 +86,29 @@ already in `.git/hooks` stops running until you unset it. The hook is the only
 half that runs before publication — CI blocks the *merge*, by which point the
 commit is already public and GitHub keeps prior revisions of an edited body.
 
+### Fix the body BEFORE you push, or the same failure survives the fix
+
+**Two** workflows run the record check, over the same terms, from different
+triggers, and both read `github.event.pull_request.body` — the event payload,
+frozen when the event fired, never the live body:
+
+- `naming-records.yml` listens for `edited`, so editing the body fires a fresh
+  event and that job turns green immediately.
+- `ci.yml` takes `pull_request`'s default types (opened, synchronize, reopened),
+  so its copy — a step of the **Base manifest integrity** job — keeps evaluating
+  the body as it stood at the last push. It is deliberately not re-run on every
+  description edit.
+
+So fixing the body after pushing leaves you with `naming-records` green and
+`Base manifest integrity` red **on a body that no longer exists**, which reads
+like a flake and is not one. Edit the title and body first, push afterwards, and
+one run clears both. If you have already pushed, the only way forward is another
+push — re-running `ci.yml` replays the original payload and fails identically.
+
+Reading the live body instead would be the wrong fix: the gate scans what was
+actually published, and an edit does not retract it, because GitHub serves prior
+revisions of an edited body through its API.
+
 ## A rejected commit identity
 
 Every commit a pull request adds is checked for an author and committer email

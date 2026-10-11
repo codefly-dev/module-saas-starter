@@ -45,6 +45,13 @@ components:
   Feed an entry to `<DeclaredSourceCard>`. Optional, and absent from an older
   host: treat absence as "the host does not tell me", never as "this solution
   declares nothing".
+- `installationId?: string` — the viewer organization's active installation of
+  this solution, resolved by the host from the verified viewer's entitlements for
+  the routed solution target (`GET /api/solutions/<id>/installation`). A remote
+  acting in an installation (an agent turn is bound to one) reads it here and
+  never asks a person for one. Undefined while resolving, on an older host and
+  when the viewer is not entitled: treat absence as "no installation to act in",
+  never substitute a value.
 - `solutionFetch(binding, path, init)` / `solutionJson<T>(binding, path, init)` —
   a request to the solution's own backend at `apiBase + path`, same-origin,
   through the host's `authedFetch` (refresh-then-retry on a 401) with the bearer

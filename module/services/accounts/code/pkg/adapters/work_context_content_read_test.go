@@ -23,6 +23,7 @@ func withComposition(t *testing.T, modules map[string][]string) {
 			Prefix: prefix, Resources: resources,
 		}
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModulePrincipals(registry)
 	service = svc
 	t.Cleanup(func() { service = previous })

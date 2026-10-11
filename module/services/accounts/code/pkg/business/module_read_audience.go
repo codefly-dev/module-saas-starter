@@ -2,6 +2,7 @@ package business
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -62,8 +63,10 @@ func validateReadAudiences(prefix string, bindings map[string]ModuleReadAudience
 	return nil
 }
 
-func (s *Service) ModuleReadAudience(caller ModuleCaller, tenant, parentAudience, bindingID string) (ModuleReadAudience, error) {
-	grant, err := s.moduleGrant(caller)
+// ctx is a parameter for the same reason ModuleOperationAudience's is: this
+// path re-reads live authority, and it previously could not.
+func (s *Service) ModuleReadAudience(ctx context.Context, caller ModuleCaller, tenant, parentAudience, bindingID string) (ModuleReadAudience, error) {
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleReadAudience{}, err
 	}

@@ -115,25 +115,34 @@ func (s *Service) ListRoleAssignments(ctx context.Context, req *gen.ListRoleAssi
 	return &gen.ListRoleAssignmentsResponse{Assignments: assignments}, nil
 }
 
-// RevokeRole removes a role assignment. Org-scoped revocations go
-// through WithOrgTx; platform-level revocations (req.OrgId == "")
-// require platform_admin (handler-enforced) and run under bypass.
+// RevokeRole removes a role assignment.
+//
+// A NARROWING, so it runs under the policy log: the entry is appended to the
+// external record and receipted here BEFORE the assignment goes, and the delete
+// commits in the same transaction as the receipt's commit. A host that cannot
+// witness the append refuses rather than revoking unwitnessed — a revocation a
+// restore could silently undo is worse than a refusal the caller can see.
+//
+// The transaction is the policy log's control-plane one for BOTH the
+// organization-scoped and the platform-level revocation, where before this the
+// first ran in its tenant transaction and the second under the control plane.
+// The receipt relation is control-plane only and the two writes have to be
+// atomic, so there is no choice of transaction left to make; what the tenant one
+// used to check is checked by the statement instead, which names req.OrgId and
+// matches it with IS NOT DISTINCT FROM — so a caller naming another
+// organization's assignment deletes nothing, exactly as the tenant policy would
+// have produced.
 func (s *Service) RevokeRole(ctx context.Context, actorID string, req *gen.RevokeRoleRequest) error {
 	w := wool.Get(ctx).In("RevokeRole")
 
-	wrap := func(ctx context.Context) error {
-		if err := s.store.RevokeRole(ctx, req.SubjectId, req.RoleId, req.OrgId, req.Scope); err != nil {
-			return err
-		}
-		return s.emitTx(ctx, actorID, "user", EventRoleRevoked, "role", req.RoleId, req.OrgId)
-	}
-	var err error
-	if req.OrgId == "" {
-		err = s.store.WithControlPlane(ctx, wrap)
-	} else {
-		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
-	}
-	if err != nil {
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		revokeRolePolicyLogEntry(actorID, req.OrgId, req.SubjectId, req.RoleId, req.Scope),
+		func(ctx context.Context) error {
+			if err := s.store.RevokeRole(ctx, req.SubjectId, req.RoleId, req.OrgId, req.Scope); err != nil {
+				return err
+			}
+			return s.emitTx(ctx, actorID, "user", EventRoleRevoked, "role", req.RoleId, req.OrgId)
+		}); err != nil {
 		return w.Wrapf(err, "cannot revoke role")
 	}
 	return nil
