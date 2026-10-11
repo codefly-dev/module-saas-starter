@@ -763,6 +763,12 @@ func (s *PermServer) GrantScope(ctx context.Context, req *gen.GrantScopeRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// A scope grant is written in one organization and names its subject by id
+	// alone; nothing below this point relates the two. The subject must belong
+	// to the organization the grant is written in.
+	if err := requireSubjectInOrg(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+		return nil, err
+	}
 	return service.GrantScope(ctx, actorID, req)
 }
 
