@@ -364,9 +364,14 @@ func (s *PostgresStore) LockOrgAdministration(ctx context.Context, orgID string)
 	if storetx.Tx(ctx) == nil {
 		return errors.New("org administration lock requires a tenant transaction")
 	}
-	_, err := s.getQueryExecutor(ctx).Exec(ctx,
+	org, err := business.ParseID(orgID)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.getQueryExecutor(ctx).Exec(ctx,
 		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
-		business.OrgAdministrationLockKey(orgID),
+		business.OrgAdministrationLockKey(org.String()),
 	)
 	if err != nil {
 		return wool.Get(ctx).In("LockOrgAdministration").Wrapf(err, "failed to lock org administration")
@@ -384,9 +389,18 @@ func (s *PostgresStore) LockOrgMembership(ctx context.Context, orgID string, use
 	if storetx.Tx(ctx) == nil {
 		return errors.New("org membership lock requires a tenant transaction")
 	}
-	_, err := s.getQueryExecutor(ctx).Exec(ctx,
+	org, err := business.ParseID(orgID)
+	if err != nil {
+		return err
+	}
+	user, err := business.ParseID(userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.getQueryExecutor(ctx).Exec(ctx,
 		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
-		"membership:"+orgID+":"+userID,
+		"membership:"+org.String()+":"+user.String(),
 	)
 	if err != nil {
 		return wool.Get(ctx).In("LockOrgMembership").Wrapf(err, "failed to lock org membership")

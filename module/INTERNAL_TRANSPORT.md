@@ -231,7 +231,7 @@ listeners must sequence the consumers first. Before the upgrade:
    *What a client library must do* above. A pinned image that still serves the
    removed listeners is what is hiding an unconverted consumer.
 2. Every consumer that held a private custody client has moved to an installed
-   binding: a `MODULE_PRINCIPALS` `operation_audiences` entry, redeemed with
+   binding: a module registry `operation_audiences` entry, redeemed with
    `ModuleCapabilitiesService.ExchangeDelegatedOperationAudience`. The library
    that used to carry that authority is gone from this repository, and the
    store migration that drops its table refuses to run while grants are live.

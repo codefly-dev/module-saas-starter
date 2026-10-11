@@ -174,6 +174,29 @@ Four distinctions the projections keep:
   ancestor node (the organization root) does reach a solution node, because that is
   the scope tree's own hierarchical rule and the same union `CheckAccess` resolves
   — narrowing tighter here would hide what an authority check permits.
+- **An organization administrator writes that grant by installation and team**
+  (`InstallationService.GrantInstallationToTeam`, issue #1061), never by scope
+  path: the host resolves the installation's authority-root node in the same
+  transaction that writes the grant, refuses a team of another organization, and
+  refuses a role that does not permit `(solution, use)` — a grant of one would be
+  written and reveal nothing. That permission is the minimum, not a ceiling: the
+  team holds everything the role permits beneath the installation's root, as a
+  `GrantScope` of that role at that node would give it. The resolution holds a
+  share lock on the installation row to commit, and uninstall locks the same row
+  before it touches any grant, so both take the installation lock before any
+  trigger-acquired lock: a grant and an uninstall serialize, without a lock cycle,
+  and a grant never lands on an installation already uninstalled. The
+  write is `GrantScope`'s own body, so it emits the same `scope.granted` event
+  and audit record. `RevokeInstallationFromTeam`
+  is `RevokeScope` after the same resolution: a narrowing under the policy log,
+  refused in the host's words when the log cannot witness it.
+  `ListOrganizationInstallations` is the administrator's read of the same state —
+  each active installation with its health, installed target, authority-root path
+  and the teams granted there or inherited from above. It is org-admin and bound to
+  the caller's own organization (a platform super administrator, who passes
+  every organization-admin check, is the inherited exception), unlike the
+  internal `ListInstallations` the gateway reads for a projected tenant. It reads
+  the installations and their exposure on one repeatable-read snapshot.
 - An unreadable registry is still `503`, and a missing or malformed `client` still
   `400`. Neither ever renders as an empty list.
 
@@ -421,17 +444,27 @@ no authority behind it activates nothing. The build is asked **about** rather
 than read out of either document — reading it out of the document that approves
 it would make the question answer itself.
 
-The **ceiling** is Core's `Envelope`: who may hold which binding, and which
-builds are approved, at one revision. It is read from the same platform-owned
-trust anchor as the trust root (`authority_envelope.json`), and never out of a
-delivered document — "an envelope a document carried would be a document
-declaring its own ceiling", and containment is tested against the envelope's own
-grants, so an envelope assembled from the delivery tree answers itself. Absence
-and damage are different answers: no envelope delivered is a complete deployment
-that answers no authority question, while an envelope that is delivered and
-cannot be read refuses the boot, because reading a damaged ceiling as "no
-ceiling" turns a corrupted file into a silently narrower system and reading it
-permissively turns it into a wider one.
+The **ceiling** is the module envelope: a durable, append-only, revisioned
+record (`module_envelopes`) a platform super_admin writes at runtime through
+`PlatformAdminService/PutModuleEnvelope`, audited and never through an
+impersonated session. Per module principal it admits whole authority units,
+the workload identities the principal may run as, scope ceilings and the grant
+ceiling, and lists the approved builds. Every reconcile
+pass and every activation reads the CURRENT revision and hands Core's
+`ValidateAgainst` its projection for the document being judged, so containment
+is Core's exact rule and a narrowing takes effect at the next check with no
+restart. It is never read out of a delivered document — "an envelope a document
+carried would be a document declaring its own ceiling". Absence and damage are
+different answers: no revision written is a complete deployment that grants no
+module anything, while a revision that cannot be read leaves what the last pass
+installed serving, because reading a damaged ceiling as "no ceiling" withdraws
+every module on a transient error and reading it permissively widens them.
+
+The **module principal registry** every capability decision reads is derived
+from this ceiling each pass: for every live authority document inside it, each
+principal's entry is the envelope's grant bounded by what the document grants,
+with the workload read from the applied presence the document names
+([services/accounts/AGENTS.md](services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
 **This host applies authority to nothing**, and that is stated rather than
 defaulted. Core requires either the applied authority record or an explicit
@@ -494,7 +527,7 @@ The host side of that:
 
 | Policy | What it checks | Where it is usable |
 | --- | --- | --- |
-| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer. **Never a key.** | everywhere, including a laptop. **The trust root is not yet pushed to the config plane, so it refuses at boot**, see below. |
+| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer for a workflow; exact issuer and address for a person, in a local profile only (§8). The Fulcio chain, the Rekor entry and its signed entry timestamp, an observer timestamp, and an embedded SCT from a CT log the root names are all required, for every signer. **Never a key.** | everywhere, including a laptop. **The trust root is not yet pushed to the config plane, so it refuses at boot**, see below. |
 
 There is no second row. `local` was deleted — §8 argues why at length — and this
 table listed it until the code had already stopped accepting it. A configuration
@@ -837,12 +870,169 @@ allowlist names the reviewed-change workflow identity and nothing else, so a
 locally signed document is refused there by the **ordinary** check that refuses any
 unlisted identity — not by a mode flag, not by a coordinate comparison, and not by
 a code path that exists only to be disabled. There is no `local` trust policy
-because there is no local trust *mechanism*: one verifier, one policy shape, two
-sets of listed identities.
+because there is no local trust *mechanism*: one verifier, one verification
+strength, two sets of listed identities.
 
-A deployed host that somehow listed a developer identity would be misconfigured in
-exactly the way an allowlist is designed to make visible — it is a reviewable line
-in the policy, which is the property the signing decision was taken for.
+A person is not a workflow, though, and the workload rule cannot list one: a
+signer must name a source repository or a build config, because a workflow
+identity alone matches that workflow in every repository that runs it — and a
+person's certificate carries neither. So a person is its own signer **kind**, and
+it is admitted only by a verification policy that **declares itself local** and is
+**bound to one cluster** (issue #1063). A deployed host refuses it twice over: a
+policy with no `local` block that lists a person fails validation at boot, and a
+`local` policy on any host but the cluster it is bound to fails the cluster proof
+at boot. The next section is the profile, and why the binding is the one it is.
+
+### The local profile's trust anchor
+
+A local host reads the same two documents from the same fixed anchor,
+`infra.SolutionHostTrustAnchorPath`, mounted into its pod the way a deployed host's
+is. The composition writes neither: they are the host's local profile, provided
+with the cluster (codefly-dev/cli#954, "Local runs", lists what it must contain).
+
+**`trusted_root.json` — the Sigstore public-good trusted root**, unchanged. A
+developer signs through the public-good Fulcio and Rekor exactly as the release
+workflow does, and the CLI checks every carrier against this root before it is
+written, so the local root and the deployed root are the same file. It must carry
+the CT log keys: an SCT is required from every signer.
+
+**`verification_policy.json` — the local profile.** One `person` signer per
+developer the environment's `host.developers` lists, and a `local` block naming
+the cluster:
+
+```json
+{
+  "local": {
+    "clusterCertificateAuthoritySha256": "<lowercase hex SHA-256 of the cluster CA certificate's DER>"
+  },
+  "signers": [
+    {
+      "name": "developer",
+      "kind": "person",
+      "issuer": "https://github.com/login/oauth",
+      "subjectAlternativeName": "developer@example.com",
+      "domains": ["<host.domain>"]
+    }
+  ]
+}
+```
+
+- **A person is exactly an issuer and an address.** The issuer is the provider
+  the certificate names (an absolute https URL); the subject alternative name is
+  the verified e-mail address. Both are matched exactly. A `*`, surrounding
+  space, a URI subject, or any repository, build-config or ref field is refused
+  at boot — each would read as narrow and admit more, and a URI subject would
+  admit a workflow with none of the repository narrowing a workload requires.
+  The same person listed twice is refused, because which entry's domains apply
+  would depend on the order of the document.
+- **`domains` is the signer → ownership-domain map**, unchanged for a person: the
+  developer speaks for the domains its entry lists, each of which
+  `SOLUTION_HOST_OWNERSHIP_DOMAINS` must accept or the boot is refused by name.
+- **Verification is the full Sigstore check against the trusted root** — the
+  Fulcio chain, the Rekor entry and its signed entry timestamp, an observer
+  timestamp, the embedded SCT — through the same verifier at the same strength a
+  release is checked at. Admitting a person changes who is listed, never how much
+  is checked.
+
+**The `local` block binds the profile to one cluster**, by the SHA-256 of the
+certificate authority the cluster's API server serves under — the certificate
+Kubernetes projects into every pod as the service account's `ca.crt`. For a k3d
+cluster:
+
+```bash
+kubectl --context <cluster.context> -n default get configmap kube-root-ca.crt \
+  -o jsonpath='{.data.ca\.crt}' | openssl x509 -outform der | shasum -a 256
+```
+
+At boot, before a carrier is read, the host proves it runs in that cluster, using
+only what the kubelet puts in its pod — the CA bundle and its own token:
+
+1. **The projected CA bundle is exactly the pinned certificate**: one
+   certificate, that fingerprint, nothing else. A bundle carrying any other root
+   is refused outright — the developer's authority beside a deployed cluster's
+   own is the shape every confusion between two clusters needs, so the case is
+   removed rather than argued with.
+2. **The API server authenticates this pod's own token.** Over a transport whose
+   only root is the pinned certificate and which follows no redirect, the host
+   submits a TokenReview of its own projected token and requires the answer to
+   name exactly this pod — the namespace, service account, pod name and pod UID
+   the token's own claims name (the namespace also matching the
+   kubelet-projected namespace file); an answer about any other identity, or a
+   token naming no pod, is refused. A genuine API server accepts
+   only tokens its own cluster minted, so a server that merely holds a
+   certificate under the pinned authority — the developer's real cluster, relayed
+   to a deployed pod — refuses the deployed pod's token.
+3. **The binding lasts for the life of the process.** That pinned,
+   redirect-refusing transport becomes the one the host's cluster client uses for
+   every later call — each TokenReview that authorises a delivery, each pod read.
+   A backend or DNS switch after boot to a server under any other authority breaks
+   authentication instead of continuing under a proof made against someone else.
+
+Until the proof succeeds a local profile admits nothing, so a boot path that
+skipped it would refuse developers rather than admit them elsewhere. A host that
+cannot prove it — a deployed host handed a local profile, or a local host whose
+cluster was recreated — refuses to start, naming the fingerprints its cluster does
+project. Every client this host has for the cluster follows no redirect, local or
+not.
+
+**Why the cluster's authority and the pod's own token, and not anything
+simpler.** The decisive question is how a host that is not the developer's refuses
+a local profile **without trusting anything the composition controls** — and the
+composition delivers this process's workspace environment, which is why the
+anchor's path is a constant.
+
+- *A setting, a coordinate prefix, any environment value* — refused. The
+  composition could declare itself local; the deleted `local` trust policy died of
+  exactly this, its gate a string an operator declared.
+- *The trusted root* — cannot tell them apart: it is the same public-good root.
+- *A cluster's self-description* — a `+k3s` server version, a node's provider
+  ID — is a convention, not a property. A deployed cell may run k3s.
+- *The `kube-system` namespace UID* — unforgeable through an authenticated API
+  server, but it needs a cluster-scoped read this host does not otherwise hold,
+  and the own-token review already binds the pod to the cluster with the
+  TokenReview permission the host has.
+- ***The projected CA, held exactly and for the process lifetime, and the
+  cluster's acceptance of this pod's own token*** — chosen. Both are put in the
+  pod by the kubelet, not by the composition.
+
+**What is guaranteed.** A host whose pod carries the CA bundle and the
+service-account token of any cluster other than the pinned one refuses the
+profile at boot — whatever its workspace environment, its coordinate or its
+`KUBERNETES_SERVICE_HOST`/`PORT` say. A steered API address does not change that:
+the server it reaches must present a chain to the pinned authority (which a
+deployed pod's own bundle does not even contain) and must accept a token only the
+pod's real cluster minted.
+
+**What is not guaranteed, precisely:**
+
+- *The binding is to one cluster, not to the word "local".* Nothing a host can
+  observe distinguishes a developer's cluster from a production one by kind, so
+  whoever writes a deployed host's trust anchor could deliberately pin *that*
+  cluster's authority and admit a person there. That grants nothing new — the
+  anchor's writer can already list any workflow identity — and it cannot happen
+  by accident: a profile copied to another cluster names the wrong authority.
+- *An attacker holding three things at once defeats it:* the power to replace
+  this pod's projected CA bundle with exactly the pinned certificate (pod-spec
+  control, or a write to the namespace's `kube-root-ca.crt` ConfigMap the kubelet
+  projects, which the control plane reconciles back), the power to steer
+  `KUBERNETES_SERVICE_HOST`/`PORT`, **and** the pinned cluster's CA private key, to
+  run a fake API server that accepts any token. Such an attacker already decides
+  every Kubernetes answer this host relies on — every TokenReview, every pod
+  read — so the local profile gives it nothing it lacked. The composition holds
+  none of the three by itself: it delivers workspace environment, and neither the
+  pod spec, the projected CA nor the developer's cluster key.
+- *A CA is not a cluster boundary when it is shared or cloned.* Clusters sharing
+  one authority are one cluster to this check, and anyone holding that
+  authority's key can run a server the check accepts and answer its TokenReview
+  as it likes — whether or not the genuine servers accept each other's tokens.
+  The own-identity comparison checks that an honest API server answered about
+  this pod; it cannot stop a control plane that is itself hostile and copies the
+  expected claims back.
+
+**The cost:** a local profile is valid in exactly one cluster. Recreating the
+cluster mints a new authority and the profile must be rewritten — one copy of the
+fingerprint the boot refusal prints. And the host needs nothing new: it already
+creates TokenReviews.
 
 ### What a local run must therefore supply
 
@@ -854,9 +1044,11 @@ build and is fine because the generation moves with it; workloads running as Pod
 with projected service-account tokens for audience `accounts`; and the documents
 signed with the developer's keyless identity and POSTed to the same
 `/platform/_delivery/*` endpoints. The local host is configured with its local
-coordinate and an allowlist containing that developer identity.
+coordinate and the local profile above: the public-good root, and a policy bound
+to its cluster that lists that developer as a person.
 
-Nothing on the host is conditional on any of it. That is the point.
+Nothing on the host is conditional on any of it but the policy document on its
+trust anchor, which the composition does not write. That is the point.
 
 ### The three fields a local run looks unable to fill, and why it can
 
@@ -904,17 +1096,19 @@ unreadable-mount sibling exist for that reason.
 envelope, and the tempting shortcut is to let the delivered authority *be* the
 ceiling. That collapses two of the three terms in `binding ∩ envelope ∩
 installation`, so a developer would exercise a different authorisation shape than
-production computes. A local envelope file in the host's `local` configuration
-profile — same schema as the reviewed one, authored by the developer — keeps the
-structure identical at the cost of one more file.
+production computes. A local run writes its own envelope revision through the same
+`PutModuleEnvelope` a deployed host uses — same schema as the reviewed one,
+authored by the developer — which keeps the structure identical at the cost of
+one more write.
 
 ### If the local-cluster requirement is judged too expensive
 
 The honest alternative is **not** a second trust model. It is **no capability
 surface locally**: a local run gets presence and routing so a developer sees their
 UI, and module credentials are simply not minted. This host already has that shape
-— an absent `MODULE_IDENTITY_SECRETS` denies every module identity exchange, and
-the fake-auth fixture is the established local-authority mechanism.
+— a host with no delivered authority wires no execution binding, so every module
+mint answers that the execution could not be established (#1056), and the
+fake-auth fixture is the established local-authority mechanism.
 
 That is a *reduction* in local capability, which is honest and leaves one trust
 path, rather than an *addition* of a parallel one. "Lighter laptop" against "two

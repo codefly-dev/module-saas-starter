@@ -107,7 +107,12 @@ func TestWithdrawnAuthorityMakesThePrincipalUnknownAgain(t *testing.T) {
 // first thing it ever saw, and generation 3 followed by generation 2 is accepted
 // twice. The ordering rule is a property of the sequence of PASSES.
 func TestARewindAcrossPassesIsRefused(t *testing.T) {
-	scenario := newApprovedBuildScenario(t, "abr")
+	// A withdrawal is terminal for the binding, so the rewind is staged
+	// without one: authority "a" moves on to another principal, and "b" — a
+	// different id over the same binding — names this one at a lower
+	// generation.
+	other := "oth-" + uniqueAlias("abr")
+	scenario := newApprovedBuildScenario(t, "abr", other)
 
 	scenario.deliverAuthority(t, scenario.authority(t, "a", 3, false, scenario.principal))
 	scenario.runPass(t)
@@ -118,9 +123,9 @@ func TestARewindAcrossPassesIsRefused(t *testing.T) {
 	// The inbox keeps the NEWEST generation per document, so a lower generation
 	// has to arrive under a different authority id to be in the inbox at all —
 	// which is also the shape that matters, since generations are monotonic per
-	// authority id and two ids are not comparable. Withdraw the first so the
-	// pass is not merely ambiguous, then deliver the lower one.
-	scenario.deliverAuthority(t, scenario.authority(t, "a", 4, true, scenario.principal))
+	// authority id and two ids are not comparable. Move the first on to another
+	// principal so the pass is not merely ambiguous, then deliver the lower one.
+	scenario.deliverAuthority(t, scenario.authority(t, "a", 4, false, other))
 	scenario.deliverAuthority(t, scenario.authority(t, "b", 2, false, scenario.principal))
 
 	reasons := scenario.reconciler.RunOnce(testCtx)
@@ -172,7 +177,7 @@ func TestAPrincipalGrantedByTwoLiveAuthoritiesIsRefused(t *testing.T) {
 func TestOneRefusedPrincipalDoesNotWithholdTheOthers(t *testing.T) {
 	// The second principal is named to the constructor so its grant is in the
 	// ceiling the reconciler holds; see newApprovedBuildScenario.
-	innocent := "principal:operator:" + uniqueAlias("abp") + ".innocent"
+	innocent := "inn-" + uniqueAlias("abp")
 	scenario := newApprovedBuildScenario(t, "abp", innocent)
 
 	// The scenario's own principal granted twice — ambiguous — and a second
@@ -227,15 +232,15 @@ func TestAnAuthorityOutsideTheCeilingApprovesNothing(t *testing.T) {
 		"a document the ceiling does not cover must approve nothing, however well signed")
 }
 
-// TestAnUnreadableInboxLeavesThePreviousViewServing is the one failure that IS
-// whole-pass, and the distinction is the point.
+// TestAnUnverifiableDocumentApprovesNothing: a row this host can no longer
+// verify approves nothing, and says so by name.
 //
-// A row this host can no longer verify leaves the approved state for EVERY
-// principal unestablished, because which principals a row grants to is only
-// knowable by reading it — and the one row whose disappearance grants something
-// is a tombstone. So nothing is installed and the last good view keeps serving,
-// which is a different answer from "no principal is approved".
-func TestAnUnreadableInboxLeavesThePreviousViewServing(t *testing.T) {
+// It used to make the whole pass unreadable and keep the previous view, on the
+// argument that an unverifiable row might be a tombstone whose disappearance
+// grants something. Withdrawals are now read from the whole history first and
+// independently of verification, so that argument no longer holds — and
+// keeping the previous view would keep serving an approval nothing can verify.
+func TestAnUnverifiableDocumentApprovesNothing(t *testing.T) {
 	scenario := newApprovedBuildScenario(t, "abu")
 
 	scenario.deliverAuthority(t, scenario.authority(t, "a", 2, false, scenario.principal))
@@ -251,18 +256,10 @@ func TestAnUnreadableInboxLeavesThePreviousViewServing(t *testing.T) {
 		activationForVerifier(t, scenario.delivery.service, productionPathCoordinate,
 			scenario.envelope, refusingBundleVerifier{}))
 	require.NoError(t, err)
-
-	// It has its own empty view, so prove it refuses the read FIRST — then the
-	// assertion below is about the pass rather than about a fresh instance.
-	require.ErrorIs(t, refusing.RunOnce(testCtx), business.ErrApprovedBuildInboxUnreadable)
-
-	// The ORIGINAL reconciler is untouched: a pass that could not read the
-	// inbox installs nothing, so its view still serves what it last
-	// established.
-	_, incarnation, err = scenario.reconciler.ApprovedBuild(testCtx, scenario.principal)
-	require.NoError(t, err)
-	require.Equal(t, uint64(2), incarnation,
-		"an unreadable inbox must not retract what a readable one established")
+	require.ErrorIs(t, refusing.RunOnce(testCtx), business.ErrSolutionAuthorityUnverifiable)
+	_, _, err = refusing.ApprovedBuild(testCtx, scenario.principal)
+	require.ErrorIs(t, err, business.ErrUnknownExecutionPrincipal,
+		"a document that no longer verifies approves nothing")
 }
 
 // approvedBuildScenario is one solution's delivery, its envelope, and the
@@ -270,7 +267,8 @@ func TestAnUnreadableInboxLeavesThePreviousViewServing(t *testing.T) {
 type approvedBuildScenario struct {
 	delivery   *productionPathDelivery
 	reconciler *business.ApprovedBuildReconciler
-	envelope   solutionhost.Envelope
+	envelope   *business.ModuleEnvelope
+	grants     []solutionhost.EnvelopeGrant
 	binding    string
 	build      solutionhost.ImageDigest
 	solutionID string
@@ -300,21 +298,19 @@ func newApprovedBuildScenario(t *testing.T, prefix string, extra ...string) *app
 		// ambiguous. The shared harness grants to one fixed principal for every
 		// solution, which is precisely the collision the ambiguity check
 		// refuses — so these tests cannot reuse it.
-		principal: "principal:operator:" + solutionID,
-		envelope: solutionhost.Envelope{
-			Revision:       solutionhost.FixtureEnvelopeRevision,
-			ApprovedBuilds: []solutionhost.ImageDigest{build},
-		},
+		principal: "op-" + solutionID,
 	}
-	// EVERY GRANT BEFORE THE ACTIVATION. The reconciler holds the envelope by
-	// VALUE, so a grant appended afterwards is invisible to it and the document
-	// naming that principal reads as outside the ceiling. The extra principals
+	// EVERY GRANT BEFORE THE ACTIVATION. The test's ceiling is built once from
+	// the grants, so a grant appended afterwards is invisible to it and the
+	// document naming that principal reads as outside the ceiling. The extra principals
 	// are therefore constructor arguments rather than something a test adds
 	// later — the first version of this test added one later and spent a run
 	// proving that the ceiling check works.
 	for _, principal := range append([]string{scenario.principal}, extra...) {
 		scenario.grant(principal)
 	}
+	scenario.envelope = moduleCeiling(solutionhost.FixtureEnvelopeRevision,
+		[]solutionhost.ImageDigest{build}, scenario.grants...)
 
 	activation := activationFor(t, delivery.service, productionPathCoordinate, scenario.envelope)
 	require.NotNil(t, activation)
@@ -337,17 +333,18 @@ func newApprovedBuildScenario(t *testing.T, prefix string, extra ...string) *app
 // as outside the ceiling — a confusing way to fail, and one this test hit
 // before the extra principals became constructor arguments.
 func (s *approvedBuildScenario) grant(principal string) {
-	s.envelope.Grants = append(s.envelope.Grants, solutionhost.EnvelopeGrant{
+	s.grants = append(s.grants, solutionhost.EnvelopeGrant{
 		Principal: principal,
 		Binding:   s.bindingFor(principal),
 	})
 }
 
 func (s *approvedBuildScenario) bindingFor(principal string) solutionhost.AuthorityBinding {
-	binding := authorityBindingFor(s.solutionID, s.namespace)
+	binding := authorityBindingFor(s.binding, s.namespace)
 	// One unit of authority per principal, named after it so the two halves
-	// cannot drift apart.
-	binding.ID = "binding:" + principal + ":reconcile"
+	// cannot drift apart — in delivery's convention, so the module envelope
+	// can admit it.
+	binding.ID = s.binding + ":reconcile-" + principal + ":invoke"
 	return binding
 }
 
@@ -395,6 +392,11 @@ func (s *approvedBuildScenario) authority(
 		Host:             solutionhost.HostTarget{Coordinate: productionPathCoordinate, Component: "saas-host"},
 		OwnershipDomain:  productionPathDomain,
 		EnvelopeRevision: solutionhost.FixtureEnvelopeRevision,
+		// The subject module's own declarations are written out, [] when it
+		// declares none (core#735): an omitted list is refused as a dropped one.
+		Queues:        []string{},
+		Namespaces:    []string{},
+		ScopeCeilings: []solutionhost.ScopeCeiling{},
 	}
 	if removed {
 		// A withdrawn generation names no principal, approves no build and is
@@ -434,7 +436,7 @@ func (refusingBundleVerifier) VerifyBundle(
 // no longer verify it.
 func activationForVerifier(
 	t *testing.T, service *business.Service, coordinate string,
-	envelope solutionhost.Envelope, verifier solutionhost.BundleVerifier,
+	envelope *business.ModuleEnvelope, verifier solutionhost.BundleVerifier,
 ) *business.SolutionAuthorityActivation {
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(service,
@@ -445,7 +447,7 @@ func activationForVerifier(
 			Domains:         []string{solutionhost.FixtureDomain, productionPathDomain},
 			DomainsBySigner: map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}},
 			Interval:        time.Minute,
-			Envelope:        envelope,
+			Envelopes:       staticCeiling{envelope: envelope},
 		})
 	require.NoError(t, err)
 	return reconciler.AuthorityActivation()

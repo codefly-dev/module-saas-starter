@@ -763,6 +763,9 @@ func (s *PermServer) GrantScope(ctx context.Context, req *gen.GrantScopeRequest)
 	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
+	// The subject's tenancy is settled inside the grant's own transaction, under
+	// the membership lock a removal takes (Service.grantScopeTx), not here: a
+	// check committed before that transaction could be stale by the write.
 	return service.GrantScope(ctx, actorID, req)
 }
 

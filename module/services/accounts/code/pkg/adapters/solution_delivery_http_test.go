@@ -71,6 +71,12 @@ func (f *fakeDeliveryStore) ListNewestDeliveredDocuments(
 	return nil, nil
 }
 
+func (f *fakeDeliveryStore) ListDeliveredDocuments(
+	context.Context, business.SolutionDeliveryKind,
+) ([]*business.SolutionDeliveryRecord, error) {
+	return nil, nil
+}
+
 type fakeCarrierAuthorizer struct {
 	err error
 	// seenNamespaces records what the document declared, because a presence
@@ -338,7 +344,7 @@ func TestVerificationCoversThePayloadAndNamespacesComeFromTheDocument(t *testing
 func signedPresenceCarrier(t *testing.T, domain, namespace string) []byte {
 	t.Helper()
 	document := &solutionhost.SolutionHostBinding{
-		Schema:           solutionhost.SchemaPresenceV2,
+		Schema:           solutionhost.SchemaPresenceV1,
 		Kind:             solutionhost.KindSolution,
 		Binding:          "acme.test.delivery-http",
 		Generation:       3,

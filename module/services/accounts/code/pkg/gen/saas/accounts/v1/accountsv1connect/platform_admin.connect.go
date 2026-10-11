@@ -106,6 +106,12 @@ const (
 	// PlatformAdminServiceListPlatformCatalogueProcedure is the fully-qualified name of the
 	// PlatformAdminService's ListPlatformCatalogue RPC.
 	PlatformAdminServiceListPlatformCatalogueProcedure = "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue"
+	// PlatformAdminServiceGetModuleEnvelopeProcedure is the fully-qualified name of the
+	// PlatformAdminService's GetModuleEnvelope RPC.
+	PlatformAdminServiceGetModuleEnvelopeProcedure = "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope"
+	// PlatformAdminServicePutModuleEnvelopeProcedure is the fully-qualified name of the
+	// PlatformAdminService's PutModuleEnvelope RPC.
+	PlatformAdminServicePutModuleEnvelopeProcedure = "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope"
 )
 
 // PlatformAdminServiceClient is a client for the saas.accounts.v1.PlatformAdminService service.
@@ -161,6 +167,13 @@ type PlatformAdminServiceClient interface {
 	// ListPlatformCatalogue lists every composed module and solution with what
 	// it declares, what runs, and which organizations have it installed.
 	ListPlatformCatalogue(context.Context, *connect.Request[v1.ListPlatformCatalogueRequest]) (*connect.Response[v1.ListPlatformCatalogueResponse], error)
+	// GetModuleEnvelope reads the current module envelope: the authority ceiling
+	// every module principal on this host is derived inside.
+	GetModuleEnvelope(context.Context, *connect.Request[v1.GetModuleEnvelopeRequest]) (*connect.Response[v1.GetModuleEnvelopeResponse], error)
+	// PutModuleEnvelope writes the next revision of the module envelope. It takes
+	// effect at the next check with no restart: the module registry is derived
+	// again from it, so a narrowing removes what the new ceiling no longer allows.
+	PutModuleEnvelope(context.Context, *connect.Request[v1.PutModuleEnvelopeRequest]) (*connect.Response[v1.PutModuleEnvelopeResponse], error)
 }
 
 // NewPlatformAdminServiceClient constructs a client for the saas.accounts.v1.PlatformAdminService
@@ -312,6 +325,18 @@ func NewPlatformAdminServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(platformAdminServiceMethods.ByName("ListPlatformCatalogue")),
 			connect.WithClientOptions(opts...),
 		),
+		getModuleEnvelope: connect.NewClient[v1.GetModuleEnvelopeRequest, v1.GetModuleEnvelopeResponse](
+			httpClient,
+			baseURL+PlatformAdminServiceGetModuleEnvelopeProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("GetModuleEnvelope")),
+			connect.WithClientOptions(opts...),
+		),
+		putModuleEnvelope: connect.NewClient[v1.PutModuleEnvelopeRequest, v1.PutModuleEnvelopeResponse](
+			httpClient,
+			baseURL+PlatformAdminServicePutModuleEnvelopeProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("PutModuleEnvelope")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -340,6 +365,8 @@ type platformAdminServiceClient struct {
 	getEventOperations     *connect.Client[v12.GetEventOperationsRequest, v12.GetEventOperationsResponse]
 	listEventSubscriptions *connect.Client[v12.ListEventSubscriptionsRequest, v12.ListEventSubscriptionsResponse]
 	listPlatformCatalogue  *connect.Client[v1.ListPlatformCatalogueRequest, v1.ListPlatformCatalogueResponse]
+	getModuleEnvelope      *connect.Client[v1.GetModuleEnvelopeRequest, v1.GetModuleEnvelopeResponse]
+	putModuleEnvelope      *connect.Client[v1.PutModuleEnvelopeRequest, v1.PutModuleEnvelopeResponse]
 }
 
 // SearchUsers calls saas.accounts.v1.PlatformAdminService.SearchUsers.
@@ -459,6 +486,16 @@ func (c *platformAdminServiceClient) ListPlatformCatalogue(ctx context.Context, 
 	return c.listPlatformCatalogue.CallUnary(ctx, req)
 }
 
+// GetModuleEnvelope calls saas.accounts.v1.PlatformAdminService.GetModuleEnvelope.
+func (c *platformAdminServiceClient) GetModuleEnvelope(ctx context.Context, req *connect.Request[v1.GetModuleEnvelopeRequest]) (*connect.Response[v1.GetModuleEnvelopeResponse], error) {
+	return c.getModuleEnvelope.CallUnary(ctx, req)
+}
+
+// PutModuleEnvelope calls saas.accounts.v1.PlatformAdminService.PutModuleEnvelope.
+func (c *platformAdminServiceClient) PutModuleEnvelope(ctx context.Context, req *connect.Request[v1.PutModuleEnvelopeRequest]) (*connect.Response[v1.PutModuleEnvelopeResponse], error) {
+	return c.putModuleEnvelope.CallUnary(ctx, req)
+}
+
 // PlatformAdminServiceHandler is an implementation of the saas.accounts.v1.PlatformAdminService
 // service.
 type PlatformAdminServiceHandler interface {
@@ -513,6 +550,13 @@ type PlatformAdminServiceHandler interface {
 	// ListPlatformCatalogue lists every composed module and solution with what
 	// it declares, what runs, and which organizations have it installed.
 	ListPlatformCatalogue(context.Context, *connect.Request[v1.ListPlatformCatalogueRequest]) (*connect.Response[v1.ListPlatformCatalogueResponse], error)
+	// GetModuleEnvelope reads the current module envelope: the authority ceiling
+	// every module principal on this host is derived inside.
+	GetModuleEnvelope(context.Context, *connect.Request[v1.GetModuleEnvelopeRequest]) (*connect.Response[v1.GetModuleEnvelopeResponse], error)
+	// PutModuleEnvelope writes the next revision of the module envelope. It takes
+	// effect at the next check with no restart: the module registry is derived
+	// again from it, so a narrowing removes what the new ceiling no longer allows.
+	PutModuleEnvelope(context.Context, *connect.Request[v1.PutModuleEnvelopeRequest]) (*connect.Response[v1.PutModuleEnvelopeResponse], error)
 }
 
 // NewPlatformAdminServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -660,6 +704,18 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 		connect.WithSchema(platformAdminServiceMethods.ByName("ListPlatformCatalogue")),
 		connect.WithHandlerOptions(opts...),
 	)
+	platformAdminServiceGetModuleEnvelopeHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceGetModuleEnvelopeProcedure,
+		svc.GetModuleEnvelope,
+		connect.WithSchema(platformAdminServiceMethods.ByName("GetModuleEnvelope")),
+		connect.WithHandlerOptions(opts...),
+	)
+	platformAdminServicePutModuleEnvelopeHandler := connect.NewUnaryHandler(
+		PlatformAdminServicePutModuleEnvelopeProcedure,
+		svc.PutModuleEnvelope,
+		connect.WithSchema(platformAdminServiceMethods.ByName("PutModuleEnvelope")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.PlatformAdminService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PlatformAdminServiceSearchUsersProcedure:
@@ -708,6 +764,10 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 			platformAdminServiceListEventSubscriptionsHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceListPlatformCatalogueProcedure:
 			platformAdminServiceListPlatformCatalogueHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceGetModuleEnvelopeProcedure:
+			platformAdminServiceGetModuleEnvelopeHandler.ServeHTTP(w, r)
+		case PlatformAdminServicePutModuleEnvelopeProcedure:
+			platformAdminServicePutModuleEnvelopeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -807,4 +867,12 @@ func (UnimplementedPlatformAdminServiceHandler) ListEventSubscriptions(context.C
 
 func (UnimplementedPlatformAdminServiceHandler) ListPlatformCatalogue(context.Context, *connect.Request[v1.ListPlatformCatalogueRequest]) (*connect.Response[v1.ListPlatformCatalogueResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) GetModuleEnvelope(context.Context, *connect.Request[v1.GetModuleEnvelopeRequest]) (*connect.Response[v1.GetModuleEnvelopeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.GetModuleEnvelope is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) PutModuleEnvelope(context.Context, *connect.Request[v1.PutModuleEnvelopeRequest]) (*connect.Response[v1.PutModuleEnvelopeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.PutModuleEnvelope is not implemented"))
 }

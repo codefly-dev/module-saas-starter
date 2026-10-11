@@ -22,7 +22,7 @@ func moduleBlobService(t *testing.T, store business.Store, gh business.GitHubCon
 	_ = audit
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(&fakeJobBackend{}, &fakeJobBackend{}, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: queues, CrossTenant: crossTenant},
+		modulePrincSvc: {Tenant: moduleTenantA, Queues: queues, CrossTenant: crossTenant},
 	})
 	return svc
 }

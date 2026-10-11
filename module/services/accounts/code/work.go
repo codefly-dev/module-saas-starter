@@ -188,15 +188,20 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetWebhookJobProducer(store)
 
 	// Module-facing capability surface (issue #463): a request-scoped
-	// transactional producer for tenant/subject enqueue, the privileged worker
-	// store for claim/lease/finalize and global inbox enqueue, and the registry
-	// declaring which queues each module service principal may use. The registry
-	// is deployment-provided; an unset value denies every caller (fail-closed).
-	modulePrincipals, err := business.ParseModulePrincipalRegistry(workspaceEnv("module-capabilities", "MODULE_PRINCIPALS"))
-	if err != nil {
-		return nil, fmt.Errorf("parse module principal registry: %w", err)
-	}
-	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
+	// transactional producer for tenant/subject enqueue and the privileged
+	// worker store for claim/lease/finalize and global inbox enqueue.
+	//
+	// NO REGISTRY IS READ HERE. The module principal registry is derived, each
+	// reconcile pass, from the delivered authority documents inside the module
+	// envelope a platform super_admin writes, and swapped in live — so the host
+	// starts with an empty registry, which denies every module caller until the
+	// first pass installs what delivery and the envelope agree on. Nothing in
+	// this process's environment can name a module principal.
+	service.SetModuleCapabilities(store, jobStore, nil)
+	// The envelope's persistence, wired whether or not this host receives
+	// deliveries: a platform super_admin can write the ceiling before the first
+	// document arrives.
+	service.SetModuleEnvelopeStore(store)
 	// Explicit organization delegation is separate from module identity. A
 	// projected policy is refreshed by the delivery system and read per call.
 	installerHandler, err := configuredModuleInstaller(service)
@@ -469,30 +474,14 @@ func doWork(ctx context.Context) (Clean, error) {
 		"/v1/auth/.well-known/jwks.json",
 		adapters.NewJWKSHTTPHandler(service),
 	)
-	// TODO(#952, Unit D): remove the registration-secret configuration together
-	// with the mint handlers in pkg/adapters/module_capabilities_server.go, which
-	// is protected from edits in this unit. Gateway token exchanges are deleted.
-	// The remaining mint RPC still consumes this declaration. Its credential has
-	// no gateway registration endpoint to admit it after the cold cutover.
-	moduleRegistrationSecrets, err := business.ParseRegistrationSecrets(
-		workspaceEnv("federation", "MODULE_REGISTRATION_SECRETS"))
-	if err != nil {
-		return nil, fmt.Errorf("read module registration secrets: %w", err)
-	}
-	service.SetModuleRegistrar(minter, moduleRegistrationSecrets)
-	if err := configureModuleIdentity(service); err != nil {
-		return nil, err
-	}
-
-	// Keep the remaining solution mint's reader until its protected handler is
-	// removed in the same change. Validate configuration before serving it.
-	solutionRegistrationSecrets := func() string {
-		return workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS")
-	}
-	if _, err := business.ParseRegistrationSecrets(solutionRegistrationSecrets()); err != nil {
-		return nil, fmt.Errorf("read solution registration secrets: %w", err)
-	}
-	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
+	// NO MODULE OR SOLUTION SECRET IS READ HERE (#1056). A module proves which
+	// module it is with its pod's projected ServiceAccount token, which
+	// BindExecution reviews and holds against the build the authority document
+	// approves; MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and
+	// SOLUTION_REGISTRATION_SECRETS are deleted with both registration mints.
+	// Execution binding is wired with delivery below, because its approved
+	// builds come from delivered authority: a host with no delivery mints for no
+	// module.
 
 	// Declared solution presence (issue #952). Delivery POSTs one signed
 	// SolutionHostBinding carrier per solution instance to the delivery
@@ -1903,7 +1892,28 @@ func configuredSolutionHostBindingReconciler(
 	if err != nil {
 		return nil, fmt.Errorf("the declared-presence surface has no input: a delivered carrier is authorised by TokenReview, and this host cannot reach its api server: %w", err)
 	}
+	// A LOCAL PROFILE IS PROVEN AGAINST THIS CLUSTER BEFORE ANYTHING IS
+	// ADMITTED, and a host that cannot prove it does not start (issue #1063).
+	//
+	// A verification policy that declares itself local admits a developer's
+	// own identity, and it is bound to ONE cluster by that cluster's
+	// certificate authority. The proof uses only what the kubelet puts in this
+	// pod: the projected CA bundle must be exactly the pinned certificate, and
+	// the API server reached under that certificate alone must authenticate
+	// this pod's own token. On success the pinned, redirect-refusing transport
+	// becomes THIS client's for the life of the process, so the TokenReviews
+	// and pod reads wired below run under the same binding. A host in any other
+	// cluster fails here, by name. A deployed policy is bound to no cluster and
+	// this does nothing.
+	//
+	// Not left to this call alone: until it succeeds the verifier itself
+	// refuses every carrier under a local policy, so a boot path that forgot to
+	// ask would refuse developers, never admit them somewhere else.
+	if err := verifier.ProveLocalCluster(context.Background(), kubernetes); err != nil {
+		return nil, err
+	}
 	service.SetSolutionDelivery(verifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	service.SetSolutionDeliveryCoordinate(coordinate)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
 	// the gateway because a solution runtime is an independently deployed
@@ -1915,21 +1925,10 @@ func configuredSolutionHostBindingReconciler(
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
-	// The AUTHORITY CEILING, from the same platform-owned anchor as the trust
-	// root and for the same two reasons: a document must never carry its own
-	// ceiling, and a ceiling the composition could point at is a ceiling the
-	// composition chose.
-	//
-	// Absence and damage are different answers. No envelope delivered is a
-	// complete deployment that answers no authority question — presence
-	// reconciles and every activation refuses by name — while an envelope that
-	// IS delivered and cannot be read refuses the boot, because reading a
-	// damaged ceiling as "no ceiling" turns a corrupted file into a silently
-	// narrower system and reading it permissively turns it into a wider one.
-	envelope, _, err := infra.ReadSolutionAuthorityEnvelope()
-	if err != nil {
-		return nil, err
-	}
+	// The AUTHORITY CEILING is the module envelope a platform super_admin
+	// writes at runtime, read by every pass and every activation from the
+	// store — never a file read once here, and never out of a delivered
+	// document, because a document must never carry its own ceiling.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:          business.NewDeliveredSolutionHostBindings(service),
 		Verifier:        verifier,
@@ -1937,11 +1936,14 @@ func configuredSolutionHostBindingReconciler(
 		Domains:         domains,
 		DomainsBySigner: domainsBySigner,
 		Interval:        interval,
-		Envelope:        envelope,
+		Envelopes:       service,
 	})
 	if err != nil {
 		return nil, err
 	}
+	// A delivery or an envelope write asks for a pass now, so what it changes
+	// is in force within one pass instead of one interval.
+	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
 
 	// EXECUTION-BOUND MINTING, wired here because this is where both of its
 	// independent sources exist.
@@ -2648,15 +2650,6 @@ func (n *billingNotifier) CreateBillingNotification(
 		IdempotencyKey: message.DeliveryKey,
 	})
 	return err
-}
-
-func configureModuleIdentity(service *business.Service) error {
-	secrets, err := business.ParseRegistrationSecrets(workspaceEnv("federation", "MODULE_IDENTITY_SECRETS"))
-	if err != nil {
-		return fmt.Errorf("read module identity secrets: %w", err)
-	}
-	service.SetModuleIdentitySecrets(secrets)
-	return nil
 }
 
 // registerMembershipCacheHealth makes a store-only membership cache visible

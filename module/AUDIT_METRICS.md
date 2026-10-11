@@ -64,7 +64,7 @@ handler in a consuming solution. Both the SDK graph and host dashboard DSL accep
 Accounts dispatch/validation events use row `resource="datasource"` and
 `resource_id=source.ID`. Ingestion workers emit through
 `ModuleCapabilitiesService.EmitAuditEvent`, authenticated by a module Work
-Context and the current tenant-bound `MODULE_PRINCIPALS` declaration. That RPC
+Context and the current tenant-bound module registry entry. That RPC
 writes row `resource=scope.solution`, `resource_id=scope.entry_id`, and payload
 `solution=scope.solution`; the actor is the attributed actor supplied by the
 emitter. `entry_id` is stored verbatim: it is a text column, so an entry id of
@@ -103,8 +103,9 @@ from that page's own budget so the page still honours its `page_size` — so a
 module's rows read as that module rather than as an unknown actor. Such an entry
 has no stored row: it carries no `created_at`, and `GetPrincipal` and
 `RevokePrincipal` answer `NotFound` for it, which is the fail-closed answer.
-Its authority comes from the `MODULE_PRINCIPALS` declaration, so that
-declaration is what removes it.
+Its authority comes from the module registry, derived from delivered authority
+inside the module envelope, so withdrawing the authority or narrowing the
+envelope is what removes it.
 Therefore source completion/failure producers must send
 `scope.solution="datasource"`, `scope.entry_id=<source-id>`. A different identity
 does not silently match this source filter. Document producers must send the

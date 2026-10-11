@@ -13,115 +13,14 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/module_registration.proto.
  */
 export const file_saas_accounts_v1_module_registration: GenFile = /*@__PURE__*/
-  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9yZWdpc3RyYXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEieQodTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiXwoeTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoABCh9Tb2x1dGlvbk1pbnRSZWdpc3RyYXRpb25SZXF1ZXN0EkEKC3NvbHV0aW9uX2lkGAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiYQogU29sdXRpb25NaW50UmVnaXN0cmF0aW9uUmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAieAocTW9kdWxlTWludFdvcmtDb250ZXh0UmVxdWVzdBI8CgZwcmVmaXgYASABKAlCLLpIKXInEAEYPzIhXlthLXowLTldKD86W2EtejAtOS1dKlthLXowLTldKT8kEhoKBnNlY3JldBgCIAEoCUIKukgHcgUQARiABCKEAQodTW9kdWxlTWludFdvcmtDb250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCSKaAQohTW9kdWxlTWludE9wZXJhdGlvbkNvbnRleHRSZXF1ZXN0EjwKBnByZWZpeBgBIAEoCUIsukgpcicQARg/MiFeW2EtejAtOV0oPzpbYS16MC05LV0qW2EtejAtOV0pPyQSGgoGc2VjcmV0GAIgASgJQgq6SAdyBRABGIAEEhsKB2JpbmRpbmcYAyABKAlCCrpIB3IFEAEYgAEirAEKIk1vZHVsZU1pbnRPcGVyYXRpb25Db250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCRIQCghhdWRpZW5jZRgFIAEoCRIPCgdiaW5kaW5nGAYgASgJItoBCidNb2R1bGVNaW50U291cmNlT3BlcmF0aW9uQ29udGV4dFJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQSIQoNZGVsZWdhdGlvbl9pZBgDIAEoCUIIukgFcgOwAQFIABIdCglzb3VyY2VfaWQYBCABKAlCCLpIBXIDsAEBSABCEwoKZGVsZWdhdGlvbhIFukgCCAEi+AEKKE1vZHVsZU1pbnRTb3VyY2VPcGVyYXRpb25Db250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCRIQCghhdWRpZW5jZRgFIAEoCRIPCgdiaW5kaW5nGAYgASgJEhUKDWRlbGVnYXRpb25faWQYByABKAkSEQoJc291cmNlX2lkGAggASgJEhoKEm93bmVyX3ByaW5jaXBhbF9pZBgJIAEoCWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_timestamp]);
-
-/**
- * ModuleMintRegistrationRequest asks for the credential a module presents to
- * federate its REST prefix with the gateway. secret is the module's own
- * registration secret, provisioned by the composition; accounts compares it
- * against the digest declared for `prefix`, so the credential for one module
- * never yields a token for another.
- *
- * @generated from message saas.accounts.v1.ModuleMintRegistrationRequest
- */
-export type ModuleMintRegistrationRequest = Message<"saas.accounts.v1.ModuleMintRegistrationRequest"> & {
-  /**
-   * @generated from field: string prefix = 1;
-   */
-  prefix: string;
-
-  /**
-   * @generated from field: string secret = 2;
-   */
-  secret: string;
-};
-
-/**
- * Describes the message saas.accounts.v1.ModuleMintRegistrationRequest.
- * Use `create(ModuleMintRegistrationRequestSchema)` to create a new message.
- */
-export const ModuleMintRegistrationRequestSchema: GenMessage<ModuleMintRegistrationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 0);
-
-/**
- * @generated from message saas.accounts.v1.ModuleMintRegistrationResponse
- */
-export type ModuleMintRegistrationResponse = Message<"saas.accounts.v1.ModuleMintRegistrationResponse"> & {
-  /**
-   * @generated from field: string token = 1;
-   */
-  token: string;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 2;
-   */
-  expiresAt?: Timestamp;
-};
-
-/**
- * Describes the message saas.accounts.v1.ModuleMintRegistrationResponse.
- * Use `create(ModuleMintRegistrationResponseSchema)` to create a new message.
- */
-export const ModuleMintRegistrationResponseSchema: GenMessage<ModuleMintRegistrationResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 1);
-
-/**
- * SolutionMintRegistrationRequest asks for the credential a solution presents to
- * register — and later update or delete — its gateway upstream and its frontend
- * Module-Federation remote. secret is the solution's own registration secret,
- * provisioned by the composition; accounts compares it against the digest
- * declared for `solution_id`, so the credential for one solution never yields a
- * token for another.
- *
- * @generated from message saas.accounts.v1.SolutionMintRegistrationRequest
- */
-export type SolutionMintRegistrationRequest = Message<"saas.accounts.v1.SolutionMintRegistrationRequest"> & {
-  /**
-   * @generated from field: string solution_id = 1;
-   */
-  solutionId: string;
-
-  /**
-   * @generated from field: string secret = 2;
-   */
-  secret: string;
-};
-
-/**
- * Describes the message saas.accounts.v1.SolutionMintRegistrationRequest.
- * Use `create(SolutionMintRegistrationRequestSchema)` to create a new message.
- */
-export const SolutionMintRegistrationRequestSchema: GenMessage<SolutionMintRegistrationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 2);
-
-/**
- * @generated from message saas.accounts.v1.SolutionMintRegistrationResponse
- */
-export type SolutionMintRegistrationResponse = Message<"saas.accounts.v1.SolutionMintRegistrationResponse"> & {
-  /**
-   * @generated from field: string token = 1;
-   */
-  token: string;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 2;
-   */
-  expiresAt?: Timestamp;
-};
-
-/**
- * Describes the message saas.accounts.v1.SolutionMintRegistrationResponse.
- * Use `create(SolutionMintRegistrationResponseSchema)` to create a new message.
- */
-export const SolutionMintRegistrationResponseSchema: GenMessage<SolutionMintRegistrationResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 3);
+  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9yZWdpc3RyYXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEilgEKHE1vZHVsZU1pbnRXb3JrQ29udGV4dFJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIqChVzZXJ2aWNlX2FjY291bnRfdG9rZW4YAyABKAlCC7pICHIGEAEYgIAESgQIAhADUgZzZWNyZXQihAEKHU1vZHVsZU1pbnRXb3JrQ29udGV4dFJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHByaW5jaXBhbF9pZBgDIAEoCRIOCgZ0ZW5hbnQYBCABKAkiuAEKIU1vZHVsZU1pbnRPcGVyYXRpb25Db250ZXh0UmVxdWVzdBI8CgZwcmVmaXgYASABKAlCLLpIKXInEAEYPzIhXlthLXowLTldKD86W2EtejAtOS1dKlthLXowLTldKT8kEhsKB2JpbmRpbmcYAyABKAlCCrpIB3IFEAEYgAESKgoVc2VydmljZV9hY2NvdW50X3Rva2VuGAQgASgJQgu6SAhyBhABGICABEoECAIQA1IGc2VjcmV0IqwBCiJNb2R1bGVNaW50T3BlcmF0aW9uQ29udGV4dFJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHByaW5jaXBhbF9pZBgDIAEoCRIOCgZ0ZW5hbnQYBCABKAkSEAoIYXVkaWVuY2UYBSABKAkSDwoHYmluZGluZxgGIAEoCSL4AQonTW9kdWxlTWludFNvdXJjZU9wZXJhdGlvbkNvbnRleHRSZXF1ZXN0EjwKBnByZWZpeBgBIAEoCUIsukgpcicQARg/MiFeW2EtejAtOV0oPzpbYS16MC05LV0qW2EtejAtOV0pPyQSKgoVc2VydmljZV9hY2NvdW50X3Rva2VuGAUgASgJQgu6SAhyBhABGICABBIhCg1kZWxlZ2F0aW9uX2lkGAMgASgJQgi6SAVyA7ABAUgAEh0KCXNvdXJjZV9pZBgEIAEoCUIIukgFcgOwAQFIAEITCgpkZWxlZ2F0aW9uEgW6SAIIAUoECAIQA1IGc2VjcmV0IvgBCihNb2R1bGVNaW50U291cmNlT3BlcmF0aW9uQ29udGV4dFJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHByaW5jaXBhbF9pZBgDIAEoCRIOCgZ0ZW5hbnQYBCABKAkSEAoIYXVkaWVuY2UYBSABKAkSDwoHYmluZGluZxgGIAEoCRIVCg1kZWxlZ2F0aW9uX2lkGAcgASgJEhEKCXNvdXJjZV9pZBgIIAEoCRIaChJvd25lcl9wcmluY2lwYWxfaWQYCSABKAliBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * ModuleMintWorkContextRequest asks for the Work Context a composed module
- * presents to the module-facing capability surface. It carries the same
- * registration secret the credential exchange above uses: a module proves which
- * module it is once, with one credential, and the principal it acts as is
- * derived from that prefix rather than configured separately.
+ * presents to the module-facing capability surface. The principal it acts as is
+ * derived from `prefix`, and `service_account_token` must prove the caller is
+ * the workload that principal declares, running the build its authority
+ * document approves.
  *
  * The tenant the capability is bound to is not requested. It is the one declared
  * for that principal by the deployment, so a module cannot name a tenant by
@@ -136,9 +35,13 @@ export type ModuleMintWorkContextRequest = Message<"saas.accounts.v1.ModuleMintW
   prefix: string;
 
   /**
-   * @generated from field: string secret = 2;
+   * service_account_token is the pod's projected ServiceAccount token, minted
+   * for the `accounts` audience and read from its projection on every mint
+   * (the kubelet rotates it under the running process).
+   *
+   * @generated from field: string service_account_token = 3;
    */
-  secret: string;
+  serviceAccountToken: string;
 };
 
 /**
@@ -146,7 +49,7 @@ export type ModuleMintWorkContextRequest = Message<"saas.accounts.v1.ModuleMintW
  * Use `create(ModuleMintWorkContextRequestSchema)` to create a new message.
  */
 export const ModuleMintWorkContextRequestSchema: GenMessage<ModuleMintWorkContextRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 4);
+  messageDesc(file_saas_accounts_v1_module_registration, 0);
 
 /**
  * ModuleMintWorkContextResponse carries the signed capability plus the identity
@@ -181,14 +84,14 @@ export type ModuleMintWorkContextResponse = Message<"saas.accounts.v1.ModuleMint
  * Use `create(ModuleMintWorkContextResponseSchema)` to create a new message.
  */
 export const ModuleMintWorkContextResponseSchema: GenMessage<ModuleMintWorkContextResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 5);
+  messageDesc(file_saas_accounts_v1_module_registration, 1);
 
 /**
  * ModuleMintOperationContextRequest asks for a Work Context addressed to one of
  * the calling module's installed operation audiences, with no person present —
  * the capability background work (a journal replay, a scheduled refresh) uses to
  * call another module's service. It authenticates exactly like
- * ModuleMintWorkContextRequest, with the module's identity secret for `prefix`.
+ * ModuleMintWorkContextRequest, with the pod's projected token for `prefix`.
  *
  * The caller names only the binding. Audience, scopes, tenant, actor and
  * lifetime are deployment policy: the binding's `headless_scopes`, the tenant
@@ -204,14 +107,17 @@ export type ModuleMintOperationContextRequest = Message<"saas.accounts.v1.Module
   prefix: string;
 
   /**
-   * @generated from field: string secret = 2;
-   */
-  secret: string;
-
-  /**
    * @generated from field: string binding = 3;
    */
   binding: string;
+
+  /**
+   * service_account_token is the pod's projected ServiceAccount token, as on
+   * ModuleMintWorkContextRequest.
+   *
+   * @generated from field: string service_account_token = 4;
+   */
+  serviceAccountToken: string;
 };
 
 /**
@@ -219,7 +125,7 @@ export type ModuleMintOperationContextRequest = Message<"saas.accounts.v1.Module
  * Use `create(ModuleMintOperationContextRequestSchema)` to create a new message.
  */
 export const ModuleMintOperationContextRequestSchema: GenMessage<ModuleMintOperationContextRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 6);
+  messageDesc(file_saas_accounts_v1_module_registration, 2);
 
 /**
  * ModuleMintOperationContextResponse carries the signed capability and what it
@@ -264,13 +170,13 @@ export type ModuleMintOperationContextResponse = Message<"saas.accounts.v1.Modul
  * Use `create(ModuleMintOperationContextResponseSchema)` to create a new message.
  */
 export const ModuleMintOperationContextResponseSchema: GenMessage<ModuleMintOperationContextResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 7);
+  messageDesc(file_saas_accounts_v1_module_registration, 3);
 
 /**
  * ModuleMintSourceOperationContextRequest asks for a Work Context that runs one
  * datasource source's sync with the authority a person delegated when they
  * connected (or reconnected) the source. It authenticates exactly like
- * ModuleMintWorkContextRequest, with the module's identity secret for `prefix`.
+ * ModuleMintWorkContextRequest, with the pod's projected token for `prefix`.
  *
  * The caller names the delegation — by its id, or by the source whose active
  * delegation to this module is meant — and nothing else. Tenant, owner,
@@ -287,9 +193,12 @@ export type ModuleMintSourceOperationContextRequest = Message<"saas.accounts.v1.
   prefix: string;
 
   /**
-   * @generated from field: string secret = 2;
+   * service_account_token is the pod's projected ServiceAccount token, as on
+   * ModuleMintWorkContextRequest.
+   *
+   * @generated from field: string service_account_token = 5;
    */
-  secret: string;
+  serviceAccountToken: string;
 
   /**
    * @generated from oneof saas.accounts.v1.ModuleMintSourceOperationContextRequest.delegation
@@ -323,7 +232,7 @@ export type ModuleMintSourceOperationContextRequest = Message<"saas.accounts.v1.
  * Use `create(ModuleMintSourceOperationContextRequestSchema)` to create a new message.
  */
 export const ModuleMintSourceOperationContextRequestSchema: GenMessage<ModuleMintSourceOperationContextRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 8);
+  messageDesc(file_saas_accounts_v1_module_registration, 4);
 
 /**
  * ModuleMintSourceOperationContextResponse carries the signed capability and
@@ -390,4 +299,4 @@ export type ModuleMintSourceOperationContextResponse = Message<"saas.accounts.v1
  * Use `create(ModuleMintSourceOperationContextResponseSchema)` to create a new message.
  */
 export const ModuleMintSourceOperationContextResponseSchema: GenMessage<ModuleMintSourceOperationContextResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_module_registration, 9);
+  messageDesc(file_saas_accounts_v1_module_registration, 5);

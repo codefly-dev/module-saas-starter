@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -26,6 +25,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -151,16 +151,25 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
 	require.NoError(t, err)
 	svc := auditedService(t, emitter)
-	svc.SetModuleIdentitySecrets(map[string][sha256.Size]byte{"example-installer": sha256.Sum256([]byte("local-fixture-secret"))})
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	// The installer's own principal, plus the audiences its ceiling names: a
 	// ceiling may only name values this host's vocabulary holds, and the installer
 	// path validates it like every other write path (issue #952). Declaring
 	// `example.api` here is how a composition declares it.
+	installerWorkload := executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "installer", Container: "app"}
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
-		p.InstallerPrincipalID:                    {Prefix: "example-installer", Tenant: p.OrgID},
+		p.InstallerPrincipalID: {Prefix: "example-installer", Tenant: p.OrgID, Workload: business.ModuleWorkload{
+			Namespace: installerWorkload.Namespace, ServiceAccount: installerWorkload.ServiceAccount, Container: installerWorkload.Container,
+		}},
 		business.ModulePrincipalID("example.api"): {Prefix: "example.api"},
 	})
+	// The installer proves which module it is with its pod's projected token,
+	// bound to the build its authority approves (#1056).
+	cluster := executiontest.New()
+	svc.SetExecutionBinding(cluster, cluster)
+	cluster.Approve("example-installer", executiontest.Digest("installer-v1"), 1)
+	installerToken := cluster.Run(installerWorkload, executiontest.Image("installer-v1"))
+	unapprovedToken := cluster.Run(installerWorkload, executiontest.Image("installer-unreviewed"))
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	previousAuthority := *adapters.WorkContextSingleton()
@@ -187,14 +196,37 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 		}
 		response, err := server.Client().Do(req)
 		require.NoError(t, err)
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		raw, err = io.ReadAll(response.Body)
 		require.NoError(t, err)
 		require.Equal(t, want, response.StatusCode, string(raw))
 		return raw
 	}
-	post("token", map[string]string{"prefix": "example-installer", "secret": "wrong"}, "", 403)
-	raw = post("token", map[string]string{"prefix": "example-installer", "secret": "local-fixture-secret"}, "", 200)
+	mintInstaller := func(bearer string, body any, want int) []byte {
+		t.Helper()
+		raw, err := json.Marshal(body)
+		require.NoError(t, err)
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/module-installations/token", bytes.NewReader(raw))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		response, err := server.Client().Do(req)
+		require.NoError(t, err)
+		defer func() { _ = response.Body.Close() }()
+		raw, err = io.ReadAll(response.Body)
+		require.NoError(t, err)
+		require.Equal(t, want, response.StatusCode, string(raw))
+		return raw
+	}
+	installer := map[string]string{"prefix": "example-installer"}
+	mintInstaller("", installer, 401)
+	mintInstaller("local-fixture-secret", installer, 403)
+	mintInstaller(unapprovedToken, installer, 403)
+	// A body still naming a secret is refused as malformed: the field is gone.
+	mintInstaller(installerToken, map[string]string{"prefix": "example-installer", "secret": "local-fixture-secret"}, 400)
+	raw = mintInstaller(installerToken, installer, 200)
 	var issued struct {
 		Token     string
 		ExpiresAt time.Time
@@ -246,7 +278,7 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	unservedReq.Header.Set("X-Codefly-Work-Context", issued.Token)
 	unservedResponse, err := unservedServer.Client().Do(unservedReq)
 	require.NoError(t, err)
-	defer unservedResponse.Body.Close()
+	defer func() { _ = unservedResponse.Body.Close() }()
 	refusal, err := io.ReadAll(unservedResponse.Body)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusForbidden, unservedResponse.StatusCode, string(refusal))
@@ -336,7 +368,9 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, raw, 0600))
 	post("apply", request, issued.Token, 403)
-	post("token", map[string]string{"prefix": "example-installer", "secret": "local-fixture-secret"}, "", 403)
+	// A proven installer on its approved build is still refused a replacement
+	// once no delegation names it: identity is not authority.
+	mintInstaller(installerToken, installer, 403)
 	require.NoError(t, os.Remove(path))
 	post("inspect", request, issued.Token, 503)
 }
