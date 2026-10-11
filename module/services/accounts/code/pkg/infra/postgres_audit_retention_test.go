@@ -445,8 +445,10 @@ func TestRetentionRefusesACutoffThatIsNotInThePast(t *testing.T) {
 			asRetention(t, func(ctx context.Context, tx pgx.Tx) {
 				_, err := tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
 				require.NoError(t, err)
+				// Other tests may have written to the present partition too, so
+				// the check is that it keeps every row it had.
 				present := retentionInsertEvent(t, ctx, tx, time.Now())
-				before := retentionPartitions(t, ctx, tx)
+				before, rows := retentionPartitions(t, ctx, tx), retentionRowsIn(t, ctx, tx, present)
 
 				attempt, err := tx.Begin(ctx)
 				require.NoError(t, err)
@@ -458,7 +460,7 @@ func TestRetentionRefusesACutoffThatIsNotInThePast(t *testing.T) {
 				require.NoError(t, attempt.Rollback(ctx))
 
 				require.Equal(t, before, retentionPartitions(t, ctx, tx), "a refused run drops nothing")
-				require.Equal(t, int64(1), retentionRowsIn(t, ctx, tx, present), "the present's events survive")
+				require.Equal(t, rows, retentionRowsIn(t, ctx, tx, present), "the present's events survive")
 			})
 		})
 	}
