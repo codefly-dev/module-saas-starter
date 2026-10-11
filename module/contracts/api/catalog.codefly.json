@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:217ff7065ddb0a05581439c9c6652563f39de906291e6691afa07b9023cd9901",
+      "digest": "sha256:e4fbe4fd6bbd4d025ec8b3978fca2afbe0a5597c9f01eacd2ee095305a1b61f4",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -64,7 +64,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:217ff7065ddb0a05581439c9c6652563f39de906291e6691afa07b9023cd9901",
+      "digest": "sha256:e4fbe4fd6bbd4d025ec8b3978fca2afbe0a5597c9f01eacd2ee095305a1b61f4",
       "services": [
         {
           "name": "APIKeyService",
@@ -232,9 +232,13 @@
           "fullName": "saas.accounts.v1.InstallationService",
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
+            "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
             "/saas.accounts.v1.InstallationService/InstallSolution",
             "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
             "/saas.accounts.v1.InstallationService/ListInstallations",
+            "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+            "/saas.accounts.v1.InstallationService/NarrowInstallation",
+            "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"
           ]
@@ -297,9 +301,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
@@ -385,6 +387,7 @@
             "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
             "/saas.accounts.v1.PlatformAdminService/GetJob",
             "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+            "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
             "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
             "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
@@ -397,6 +400,7 @@
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+            "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
             "/saas.accounts.v1.PlatformAdminService/RevokeSession",
@@ -549,7 +553,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:0c2b91ff00eb67f00dc415914d68b3f699119c71e010a13662057056fa10314d",
+      "digest": "sha256:0b293e6c50e9d7ef4921b178ab8575002a4b8bf75689322671ac7ee2421f74d7",
       "services": [
         {
           "name": "AuthGatewayService",

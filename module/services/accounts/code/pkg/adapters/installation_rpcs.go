@@ -31,7 +31,16 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
+	var scope *business.InstallationScope
+	if req.Scope != nil {
+		parsed, err := business.ParseInstallationScope(req.GetScope())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		scope = &parsed
+	}
 	installation, err := service.InstallSolution(ctx, actorID, &business.InstallSolutionParams{
+		Scope:               scope,
 		OrgID:               req.GetOrgId(),
 		AgentIdentifier:     req.GetAgentIdentifier(),
 		TargetID:            req.GetTargetId(),
@@ -148,19 +157,145 @@ func (s *InstallationServer) ListAvailableSolutions(
 	}
 	out := make([]*gen.AvailableSolution, 0, len(available))
 	for _, entry := range available {
-		out = append(out, &gen.AvailableSolution{
-			TargetId:          entry.TargetID,
-			BindingId:         entry.BindingID,
-			RouteAlias:        entry.RouteAlias,
-			ReleasePublisher:  entry.ReleasePublisher,
-			ReleaseName:       entry.ReleaseName,
-			ReleaseVersion:    entry.ReleaseVersion,
-			OpenedGeneration:  entry.OpenedGeneration,
-			AppliedGeneration: entry.AppliedGeneration,
-			Installed:         entry.Installed,
-		})
+		out = append(out, availableSolutionProto(entry))
 	}
 	return &gen.ListAvailableSolutionsResponse{Solutions: out, NextPageToken: next}, nil
+}
+
+func availableSolutionProto(entry *business.AvailableSolutionTarget) *gen.AvailableSolution {
+	return &gen.AvailableSolution{
+		TargetId:          entry.TargetID,
+		BindingId:         entry.BindingID,
+		RouteAlias:        entry.RouteAlias,
+		ReleasePublisher:  entry.ReleasePublisher,
+		ReleaseName:       entry.ReleaseName,
+		ReleaseVersion:    entry.ReleaseVersion,
+		OpenedGeneration:  entry.OpenedGeneration,
+		AppliedGeneration: entry.AppliedGeneration,
+		Installed:         entry.Installed,
+	}
+}
+
+// ListOrganizationInstallations serves an organization administrator's view of
+// its own organization's installations. Authenticated and org-admin, exactly as
+// ListAvailableSolutions is: the organization is a request field, and it is
+// bound to the caller's own admin membership before anything is read, so no
+// organization's administrator can list another's. requireOrgAdmin admits a
+// platform super administrator for every organization, here as on every other
+// organization-admin method; that inherited reach is pinned by
+// TestInstallationExposureAdmitsPlatformSuperAdmin.
+func (s *InstallationServer) ListOrganizationInstallations(
+	ctx context.Context, req *gen.ListOrganizationInstallationsRequest,
+) (*gen.ListOrganizationInstallationsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
+		return nil, err
+	}
+	rows, next, err := service.ListOrganizationInstallations(
+		ctx, req.GetOrgId(), req.GetPageToken(), int(req.GetPageSize()))
+	if err != nil {
+		return nil, mapInstallationExposureError(err)
+	}
+	out := make([]*gen.OrganizationInstallation, 0, len(rows))
+	for _, row := range rows {
+		item := &gen.OrganizationInstallation{
+			Installation:   row.Summary.GetInstallation(),
+			Health:         row.Summary.GetHealth(),
+			RootScopePath:  row.Exposure.RootScopePath,
+			GrantedTeams:   row.Exposure.GrantedTeams,
+			InheritedTeams: row.Exposure.InheritedTeams,
+		}
+		if row.Target != nil {
+			item.Target = availableSolutionProto(row.Target)
+		}
+		out = append(out, item)
+	}
+	return &gen.ListOrganizationInstallationsResponse{Installations: out, NextPageToken: next}, nil
+}
+
+// GrantInstallationToTeam exposes an installation to a team. The host resolves
+// the installation's authority-root node; the caller names an installation and a
+// team, never a scope path.
+func (s *InstallationServer) GrantInstallationToTeam(
+	ctx context.Context, req *gen.GrantInstallationToTeamRequest,
+) (*gen.GrantInstallationToTeamResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
+		return nil, err
+	}
+	grant, err := service.GrantInstallationToTeam(ctx, actorID,
+		req.GetOrgId(), req.GetInstallationId(), req.GetTeamId(), req.GetRoleId())
+	if err != nil {
+		return nil, mapInstallationExposureError(err)
+	}
+	return &gen.GrantInstallationToTeamResponse{Grant: grant}, nil
+}
+
+// RevokeInstallationFromTeam removes a team's grant at an installation. It is a
+// narrowing under the policy log; a host that cannot witness it refuses, and the
+// refusal carries the host's reason.
+func (s *InstallationServer) RevokeInstallationFromTeam(
+	ctx context.Context, req *gen.RevokeInstallationFromTeamRequest,
+) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
+		return nil, err
+	}
+	if err := service.RevokeInstallationFromTeam(ctx, actorID,
+		req.GetOrgId(), req.GetInstallationId(), req.GetTeamId(), req.GetRoleId()); err != nil {
+		return nil, mapInstallationExposureError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// mapInstallationExposureError maps the exposure RPCs' failures. Unlike
+// mapInstallationError it answers NotFound for an installation the caller's
+// organization does not have — another organization's installation id included,
+// which RLS makes indistinguishable from one that never existed — and it names a
+// narrowing the policy log could not witness as the refusal it is, in the host's
+// words, rather than as an internal fault.
+func mapInstallationExposureError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *business.StoreError
+	if errors.As(err, &se) {
+		switch se.StoreErrorType {
+		case business.ErrTypeNotFound:
+			return status.Error(codes.NotFound, err.Error())
+		case business.ErrTypeConflict:
+			return status.Error(codes.FailedPrecondition, err.Error())
+		case business.ErrTypePermission:
+			return status.Error(codes.PermissionDenied, err.Error())
+		case business.ErrTypeValidation:
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	if errors.Is(err, business.ErrPolicyLogUnreachable) {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
+		return status.Error(st.Code(), err.Error())
+	}
+	return status.Error(codes.Internal, err.Error())
 }
 
 func mapInstallationError(err error) error {
@@ -179,6 +314,12 @@ func mapInstallationError(err error) error {
 		case business.ErrTypeValidation:
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
+	}
+	if errors.Is(err, business.ErrPolicyLogUnreachable) {
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	if st, ok := status.FromError(err); ok {
+		return st.Err()
 	}
 	return status.Error(codes.Internal, err.Error())
 }

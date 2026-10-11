@@ -26,13 +26,19 @@ type gatewaySeam struct{ url string }
 func (g gatewaySeam) BaseURL() string          { return g.url }
 func (g gatewaySeam) HTTPClient() *http.Client { return &http.Client{Timeout: 20 * time.Second} }
 
-func newClient(t *testing.T, h *host, prefix, secret string) *moduleauthority.Client {
+// projectedToken is a module pod's projected ServiceAccount token, as the
+// accounts half's fake cluster issued it.
+type projectedToken string
+
+func (p projectedToken) ProjectedToken() (string, error) { return string(p), nil }
+
+func newClient(t *testing.T, h *host, prefix, token string) *moduleauthority.Client {
 	t.Helper()
 	client, err := moduleauthority.New(moduleauthority.Seams{
 		Gateway:       gatewaySeam{url: h.GatewayURL},
 		Authority:     moduleauthority.Authority{Address: h.Authority},
 		InternalToken: h.InternalToken,
-	}, moduleauthority.Credentials{Prefix: prefix, Secret: secret})
+	}, moduleauthority.Credentials{Prefix: prefix, Token: projectedToken(token)})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -42,12 +48,12 @@ func newClient(t *testing.T, h *host, prefix, secret string) *moduleauthority.Cl
 
 func sourceClient(t *testing.T, h *host) *moduleauthority.Client {
 	prefix := h.Fixture.Modules["source"]
-	return newClient(t, h, prefix, h.Secrets[prefix])
+	return newClient(t, h, prefix, h.Fixture.Tokens[prefix])
 }
 
 func runtimeClient(t *testing.T, h *host) *moduleauthority.Client {
 	prefix := h.Fixture.Modules["runtime"]
-	return newClient(t, h, prefix, h.Secrets[prefix])
+	return newClient(t, h, prefix, h.Fixture.Tokens[prefix])
 }
 
 func TestModuleWorkContextMintsAtTheGatewayBroker(t *testing.T) {
@@ -60,9 +66,22 @@ func TestModuleWorkContextMintsAtTheGatewayBroker(t *testing.T) {
 		t.Fatal("the broker answered an empty module Work Context")
 	}
 
-	wrong := newClient(t, h, h.Fixture.Modules["source"], "not-the-identity-secret")
+	wrong := newClient(t, h, h.Fixture.Modules["source"], "not-a-projected-token")
 	if _, err := wrong.ModuleWorkContext(callContext(t)); !errors.Is(err, moduleauthority.ErrInvalidCredentials) {
-		t.Fatalf("a wrong identity secret: got %v, want ErrInvalidCredentials", err)
+		t.Fatalf("a token the host refuses: got %v, want ErrInvalidCredentials", err)
+	}
+
+	// A real pod of the module's own workload, on a build nothing approved,
+	// mints nothing through the real broker and the real accounts.
+	unapproved := newClient(t, h, h.Fixture.Modules["source"], h.Fixture.Tokens["unapproved"])
+	if _, err := unapproved.ModuleWorkContext(callContext(t)); !errors.Is(err, moduleauthority.ErrInvalidCredentials) {
+		t.Fatalf("a pod on an unapproved build: got %v, want ErrInvalidCredentials", err)
+	}
+
+	// One module's pod cannot mint as the other's prefix.
+	other := newClient(t, h, h.Fixture.Modules["runtime"], h.Fixture.Tokens[h.Fixture.Modules["source"]])
+	if _, err := other.ModuleWorkContext(callContext(t)); !errors.Is(err, moduleauthority.ErrInvalidCredentials) {
+		t.Fatalf("another module's pod: got %v, want ErrInvalidCredentials", err)
 	}
 }
 
@@ -197,7 +216,7 @@ func TestTheGatewayDoesNotServeTheCapabilitySurface(t *testing.T) {
 	// And the generated Connect client, pointed at the gateway, gets nothing.
 	direct := accountsv1connect.NewModuleCapabilitiesServiceClient(http.DefaultClient, h.GatewayURL)
 	_, err := direct.MintModuleWorkContext(callContext(t), connect.NewRequest(&v1.ModuleMintWorkContextRequest{
-		Prefix: h.Fixture.Modules["source"], Secret: h.Secrets[h.Fixture.Modules["source"]],
+		Prefix: h.Fixture.Modules["source"],
 	}))
 	if err == nil {
 		t.Fatal("the gateway minted a module Work Context over Connect")

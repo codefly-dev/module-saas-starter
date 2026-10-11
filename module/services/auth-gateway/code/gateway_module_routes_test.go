@@ -149,8 +149,8 @@ func TestGateway_TombstonedModuleStopsRouting(t *testing.T) {
 // record declared as a MODULE is refused on the solution surface.
 //
 // Both halves, because the asymmetry is the point: the module surface carries no
-// per-viewer installation admission, so serving a solution there would drop its
-// installation check entirely. A 403 verdict rather than a 404 — the record is
+// a different path contract, so the surfaces must continue refusing the other
+// declared kind even though both now require installation admission. A 403 verdict rather than a 404 — the record is
 // here, and it is not what this surface serves.
 func TestGateway_ASurfaceRefusesTheOtherKindByName(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
@@ -179,7 +179,7 @@ func TestGateway_ASurfaceRefusesTheOtherKindByName(t *testing.T) {
 //
 // UNSPECIFIED is what a reader decodes from a writer that did not set the field,
 // and it is not a third kind. The permissive reading would be "module", because
-// that surface has no installation admission — so this asserts the refusal in
+// the declaration is required on both surfaces, so this asserts the refusal in
 // both directions rather than only the one the implementation happens to check
 // first.
 func TestGateway_ADeclarationWithNoKindIsServedByNeitherSurface(t *testing.T) {

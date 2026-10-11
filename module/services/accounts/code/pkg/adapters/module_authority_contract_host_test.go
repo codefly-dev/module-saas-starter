@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -72,14 +74,13 @@ const contractPrincipals = `{` +
 	`"invoke_scopes":[{"resource_kind":"indexes","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"indexes","actions":["read"]}],` +
 	`"headless_scopes":[{"resource_kind":"indexes","actions":["write"]}]}}},` +
-	`"` + contractRuntimeModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + contractModuleOrg + `","operation_audiences":{` +
+	`"` + contractRuntimeModule + `":{"workload":{"service_account":"runtime","namespace":"acme-prod","container":"app"},"tenant":"` + contractModuleOrg + `","operation_audiences":{` +
 	`"ingest":{"audience":"docstore-ingest",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`
 
 type moduleAuthorityContractInput struct {
-	InternalToken string            `json:"internal_token"`
-	Secrets       map[string]string `json:"secrets"`
+	InternalToken string `json:"internal_token"`
 }
 
 type moduleAuthorityContractReadyLine struct {
@@ -93,6 +94,11 @@ type moduleAuthorityContractReadyLine struct {
 	Bindings  map[string]string `json:"bindings"`
 	Tenant    string            `json:"tenant"`
 	Owner     string            `json:"owner"`
+	// Tokens are the projected ServiceAccount tokens of one pod per module,
+	// each running its approved build, keyed by module prefix — plus
+	// "unapproved", a pod of the source module's workload running a build
+	// nothing approved. A module proves which module it is with one (#1056).
+	Tokens map[string]string `json:"tokens"`
 }
 
 // contractStore is the in-memory store the helper's business.Service runs
@@ -131,7 +137,7 @@ func TestModuleAuthorityContractHost(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(servers.internalGRPC.Stop)
 	t.Cleanup(servers.authorityGRPC.Stop)
-	installModuleAuthorityContract(t, input)
+	tokens := installModuleAuthorityContract(t, input)
 
 	internalListener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -157,6 +163,7 @@ func TestModuleAuthorityContractHost(t *testing.T) {
 		Bindings: map[string]string{"headless": "reindex", "delegation": "source-sync", "exchange": "ingest"},
 		Tenant:   contractOrg,
 		Owner:    contractPerson,
+		Tokens:   tokens,
 	})
 	require.NoError(t, err)
 	_, err = fmt.Fprintln(os.Stdout, moduleAuthorityContractReady+string(ready))
@@ -172,15 +179,14 @@ func TestModuleAuthorityContractHost(t *testing.T) {
 }
 
 // installModuleAuthorityContract points the adapters at a business.Service over
-// the in-memory fixture, a fresh Work Context key and the qualification's
-// internal token, restoring what they held when t ends.
-func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractInput) {
+// the in-memory fixture, a fake cluster whose pods the modules run in, a fresh
+// Work Context key and the qualification's internal token, restoring what they
+// held when t ends. It returns each module pod's projected token.
+func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractInput) map[string]string {
 	t.Helper()
 	require.NotEmpty(t, input.InternalToken)
-	require.NotEmpty(t, input.Secrets[contractSourceModule])
-	require.NotEmpty(t, input.Secrets[contractRuntimeModule])
 
-	registry, err := business.ParseModulePrincipalRegistry(contractPrincipals)
+	registry, err := moduleregistrytest.Parse(contractPrincipals)
 	require.NoError(t, err)
 	binding := registry[business.ModulePrincipalID(contractSourceModule)].OperationAudiences["source-sync"]
 	digest := business.SourceDelegationBindingDigest(binding)
@@ -215,13 +221,16 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 	})
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	secrets, err := business.ParseRegistrationSecrets(
-		contractSourceModule + ":" + registrationDigest(input.Secrets[contractSourceModule]) + "," +
-			contractRuntimeModule + ":" + registrationDigest(input.Secrets[contractRuntimeModule]))
-	require.NoError(t, err)
-	svc.SetModuleIdentitySecrets(secrets)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
+	cluster := bindModuleExecution(t, svc, registry)
+	tokens := map[string]string{}
+	for _, prefix := range []string{contractSourceModule, contractRuntimeModule} {
+		tokens[prefix] = moduleToken(t, prefix)
+	}
+	tokens["unapproved"] = cluster.Run(
+		moduleWorkload(registry[business.ModulePrincipalID(contractSourceModule)]),
+		executiontest.Image(contractSourceModule+"-unreviewed"))
 	svc.SetAuditEmitter(&validatingAudit{})
 	WithService(svc)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
@@ -231,4 +240,5 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 	})
 	require.NoError(t, workContextSingleton.configureErr)
 	SetInternalToken(input.InternalToken)
+	return tokens
 }

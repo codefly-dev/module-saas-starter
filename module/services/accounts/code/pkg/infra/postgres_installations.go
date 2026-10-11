@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -108,6 +109,11 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
 	executor := s.getQueryExecutor(ctx)
+	if params.RegistryPrincipalID != "" {
+		if err := checkInstallationEnvelope(ctx, executor, params.EnvelopeRevision); err != nil {
+			return nil, err
+		}
+	}
 	if err := lockSolutionInstallation(ctx, executor, params.OrgID, params.TargetID); err != nil {
 		return nil, err
 	}
@@ -173,15 +179,24 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		return nil, w.Wrapf(err, "failed to grant standing scope to agent")
 	}
 
-	// 4. The installation row with its owner of record.
+	// 4. Persist explicit consent. A direct store call with no scope grants none.
+	consent := params.Scope
+	if consent == nil {
+		consent = &business.InstallationScope{}
+	}
+	scopeJSON, err := json.Marshal(consent)
+	if err != nil {
+		return nil, err
+	}
 	installation, err := scanInstallation(executor.QueryRow(ctx, `
 		INSERT INTO installations
 			(id, org_id, agent_principal_id, target_id, owner_principal_id,
-			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id)
-		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, 'active', NULLIF($7, '')::uuid)
+			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope)
+		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, 'active', NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb)
 		RETURNING `+installationColumns,
 		params.OrgID, agentID, params.TargetID, params.OwnerPrincipalID,
 		stringArray(params.CoOwnerPrincipalIDs), nodeID, params.InstallerPrincipalID,
+		params.Kind, params.RegistryBindingID, params.RegistryPrincipalID, scopeJSON,
 	))
 	if err != nil {
 		// A concurrent install of the same solution won the race between the
@@ -283,6 +298,23 @@ func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *b
 // on record, so a narrowed ceiling is never silently discarded. Identical params
 // reconcile to a no-op and the caller returns the existing row.
 func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, existing *gen.Installation, params *business.InstallSolutionParams) error {
+	var installedScope []byte
+	var principal, binding, kind string
+	if err := executor.QueryRow(ctx, `SELECT scope, COALESCE(registry_principal_id::text,''), registry_binding_id, kind FROM installations WHERE id=$1::uuid AND org_id=$2::uuid`, existing.Id, existing.OrgId).Scan(&installedScope, &principal, &binding, &kind); err != nil {
+		return err
+	}
+	var current business.InstallationScope
+	if err := json.Unmarshal(installedScope, &current); err != nil {
+		return err
+	}
+	requested := business.InstallationScope{}
+	if params.Scope != nil {
+		requested = *params.Scope
+	}
+	sameAuthority := principal == params.RegistryPrincipalID &&
+		(params.RegistryBindingID == "" || binding == params.RegistryBindingID) &&
+		(params.Kind == "" || kind == params.Kind) &&
+		business.InstallationScopeWithin(current, requested) && business.InstallationScopeWithin(requested, current)
 	var allowedAudiences, allowedScopes []string
 	var agentIdentifier, displayName string
 	var live bool
@@ -305,7 +337,7 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 		existing.OrgId, existing.RootScopeNodeId, existing.AgentPrincipalId).Scan(&roleID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("load existing standing grant role: %w", err)
 	}
-	if roleID == params.RoleID && live && agentIdentifier == params.AgentIdentifier &&
+	if sameAuthority && roleID == params.RoleID && live && agentIdentifier == params.AgentIdentifier &&
 		existing.OwnerPrincipalId == params.OwnerPrincipalID &&
 		(params.DisplayName == "" || params.DisplayName == displayName) &&
 		sameStringSet(allowedAudiences, params.AllowedAudiences) &&
@@ -617,8 +649,15 @@ func (s *PostgresStore) UninstallSolution(ctx context.Context, orgID, installati
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
 	executor := s.getQueryExecutor(ctx)
 
+	// The installation row is locked FIRST, before any grant is touched. An
+	// exposure grant locks the same row (FOR SHARE, InstallationRootScopePath)
+	// before it writes, and both writes fire triggers that lock the
+	// organization's revision row. Taking the installation lock first on both
+	// paths is what keeps that a single lock order rather than a cycle: whichever
+	// transaction holds the installation row finishes before the other touches a
+	// grant.
 	current, err := scanInstallation(executor.QueryRow(ctx,
-		`SELECT `+installationColumns+` FROM installations WHERE id = $1 AND org_id = $2`,
+		`SELECT `+installationColumns+` FROM installations WHERE id = $1 AND org_id = $2 FOR UPDATE`,
 		installationID, orgID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -876,6 +915,35 @@ func (s *PostgresStore) ListCatalogueInstallations(ctx context.Context) ([]*busi
 		return nil, fmt.Errorf("list catalogue installations: %w", err)
 	}
 
+	if err := installationTeamGrants(ctx, executor, "TRUE",
+		func(installationID, orgID string, atRoot bool, view *gen.CollectionReadGrant) {
+			view.Grant.OrgId = orgID
+			record, ok := byID[installationID]
+			switch {
+			case !ok:
+			case atRoot:
+				record.GrantedTeams = append(record.GrantedTeams, view)
+			default:
+				record.InheritedTeams = append(record.InheritedTeams, view)
+			}
+		}); err != nil {
+		return nil, fmt.Errorf("list catalogue installation teams: %w", err)
+	}
+	return records, nil
+}
+
+// installationTeamGrants reads every active team grant that reaches an active
+// installation's authority root — granted at that node (atRoot) or inherited
+// from a grant above it — narrowed by predicate over `i`. It is the one reading
+// of "which teams reach this installation", shared by the platform Catalogue
+// (every organization, under the control plane) and an organization's own
+// listing (one organization, under its tenant transaction), so the two can
+// never disagree about what a team reaches.
+func installationTeamGrants(
+	ctx context.Context, executor QueryExecutor, predicate string,
+	each func(installationID, orgID string, atRoot bool, view *gen.CollectionReadGrant),
+	args ...any,
+) error {
 	grants, err := executor.Query(ctx, `SELECT i.id::text, i.org_id::text, g.scope_path = root.scope_path, `+labelledGrantColumns+`
 		FROM installations i
 		JOIN scope_nodes root ON root.id = i.root_scope_node_id
@@ -883,10 +951,10 @@ func (s *PostgresStore) ListCatalogueInstallations(ctx context.Context) ([]*busi
 		 AND g.scope_path @> root.scope_path
 		 AND (g.expires_at IS NULL OR g.expires_at > NOW())
 		`+labelledGrantJoins+`
-		WHERE i.status = 'active'
-		ORDER BY i.id, g.created_at, g.id`)
+		WHERE i.status = 'active' AND (`+predicate+`)
+		ORDER BY i.id, g.created_at, g.id`, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list catalogue installation teams: %w", err)
+		return err
 	}
 	defer grants.Close()
 	for grants.Next() {
@@ -894,22 +962,114 @@ func (s *PostgresStore) ListCatalogueInstallations(ctx context.Context) ([]*busi
 		var atRoot bool
 		view, err := scanLabelledGrant(grants, "", &installationID, &orgID, &atRoot)
 		if err != nil {
-			return nil, fmt.Errorf("scan catalogue installation team: %w", err)
+			return fmt.Errorf("scan installation team: %w", err)
 		}
-		view.Grant.OrgId = orgID
-		record, ok := byID[installationID]
-		switch {
-		case !ok:
-		case atRoot:
-			record.GrantedTeams = append(record.GrantedTeams, view)
-		default:
-			record.InheritedTeams = append(record.InheritedTeams, view)
+		each(installationID, orgID, atRoot, view)
+	}
+	return grants.Err()
+}
+
+// InstallationRootScopePath resolves an ACTIVE installation of orgID to the
+// scope path of its authority-root node — where a grant that exposes it is
+// written. Run under the organization's transaction: RLS confines the read to
+// that tenant, and the explicit org_id predicate is a second gate on top of it,
+// so another organization's installation id resolves to not found, never to a
+// path. A revoked installation is not found either: exposing an uninstalled
+// solution would grant reach into a node nothing is installed at.
+//
+// It takes a SHARE lock on the installation row, held until the caller's
+// transaction ends. UninstallSolution flips the row to revoked with an UPDATE,
+// which that lock blocks, so the two serialize on the row: an uninstall that
+// commits first leaves the row revoked, and this read — waiting on it, then
+// re-checking `status = 'active'` against the committed row — finds nothing; a
+// read that locks first holds the uninstall off until the caller commits.
+func (s *PostgresStore) InstallationRootScopePath(ctx context.Context, orgID, installationID string) (string, error) {
+	var path string
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT n.scope_path::text
+		  FROM installations i
+		  JOIN scope_nodes n ON n.id = i.root_scope_node_id
+		 WHERE i.org_id = $1 AND i.id::text = $2 AND i.status = 'active'
+		   FOR SHARE OF i`,
+		orgID, installationID).Scan(&path)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", business.NewStoreError(
+			fmt.Errorf("installation %s is not an active installation in this organization", installationID),
+			business.ErrTypeNotFound)
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve installation root scope: %w", err)
+	}
+	return path, nil
+}
+
+// ListInstallationExposure returns, for each of orgID's active installations in
+// installationIDs, its authority-root scope path and the team grants that reach
+// it there. Run under the organization's transaction.
+func (s *PostgresStore) ListInstallationExposure(
+	ctx context.Context, orgID string, installationIDs []string,
+) (map[string]*business.InstallationExposure, error) {
+	out := make(map[string]*business.InstallationExposure, len(installationIDs))
+	if len(installationIDs) == 0 {
+		return out, nil
+	}
+	executor := s.getQueryExecutor(ctx)
+	rows, err := executor.Query(ctx, `
+		SELECT i.id::text, n.scope_path::text
+		  FROM installations i
+		  JOIN scope_nodes n ON n.id = i.root_scope_node_id
+		 WHERE i.org_id = $1 AND i.status = 'active' AND i.id::text = ANY($2::text[])`,
+		orgID, installationIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list installation roots: %w", err)
+	}
+	for rows.Next() {
+		var id, path string
+		if err := rows.Scan(&id, &path); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan installation root: %w", err)
 		}
+		out[id] = &business.InstallationExposure{RootScopePath: path}
 	}
-	if err := grants.Err(); err != nil {
-		return nil, fmt.Errorf("list catalogue installation teams: %w", err)
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("list installation roots: %w", err)
 	}
-	return records, nil
+	if err := installationTeamGrants(ctx, executor, "i.org_id = $1 AND i.id::text = ANY($2::text[])",
+		func(installationID, _ string, atRoot bool, view *gen.CollectionReadGrant) {
+			view.Grant.OrgId = orgID
+			exposure, ok := out[installationID]
+			switch {
+			case !ok:
+			case atRoot:
+				exposure.GrantedTeams = append(exposure.GrantedTeams, view)
+			default:
+				exposure.InheritedTeams = append(exposure.InheritedTeams, view)
+			}
+		}, orgID, installationIDs); err != nil {
+		return nil, fmt.Errorf("list installation teams: %w", err)
+	}
+	return out, nil
+}
+
+// RolePermits reports whether roleID — a role visible to the caller's tenant —
+// permits (resource, action), directly or through a wildcard, read through the
+// same role_permissions match every authority check uses.
+func (s *PostgresStore) RolePermits(ctx context.Context, roleID, resource, action string) (bool, error) {
+	var permits bool
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM roles r
+			  JOIN role_permissions rp ON rp.role_id = r.id
+			 WHERE r.id::text = $1
+			   AND (rp.resource = '*' OR rp.resource = $2)
+			   AND (rp.action = '*' OR rp.action = $3))`,
+		roleID, resource, action).Scan(&permits)
+	if err != nil {
+		return false, fmt.Errorf("read role permissions: %w", err)
+	}
+	return permits, nil
 }
 
 // trailingColumns scans columns a query selects after a canonical column list

@@ -30,7 +30,7 @@ resource_id)`. Two callers may place one, under different bounds:
 | Org administrator | `PermissionService.RegisterScopeNode` | the caller's tenant; any resource type |
 | Composed module | `ModuleCapabilitiesService.PlaceRecord` | its bound tenant, and only the resource types its own principal grant declares |
 
-The module bound is the `resources` list of `MODULE_PRINCIPALS` — the same
+The module bound is the `resources` list of its module registry entry — the same
 declaration that says which content this host will authorize reads of, so a
 module's placement authority and its read authority cannot drift apart. A module
 that declares no resources places nothing: the surface fails closed on an absent
@@ -173,10 +173,11 @@ the adapters' `markContentReads`):
   It is the superset of every mint on purpose: a recheck issues nothing, so it
   can admit nothing a mint did not already seal, while a recheck *narrower*
   than the mint that issued a capability reports a live capability as revoked.
-  That is not hypothetical — the declaration is `MODULE_PRINCIPALS`, read once
-  at process start, so two hosts in one fleet disagree about it for the length
-  of any rollout that changes it. Keeping process-start configuration out of
-  the staleness verdict is what makes a rollout not read as a revocation storm.
+  That is not hypothetical — the declaration is the module registry, which
+  each replica derives on its own reconcile pass, so two hosts in one fleet
+  disagree about it for up to one pass after any change. Keeping the
+  registry out of the staleness verdict is what makes a change not read as a
+  revocation storm.
 - **`read` only, unscoped only.** Any other action, and any resource-scoped
   ask, still needs a role assignment exactly as before.
 - **The owner only.** A delegated actor's authority is never widened through

@@ -8,19 +8,28 @@ method policy is `EXPOSURE_PUBLIC` or `EXPOSURE_AUTHENTICATED`. Internal RPCs
 must not have HTTP annotations and remain available through generated gRPC and
 Connect clients.
 
+The installation contract also declares `POST
+/v1/installations/{installation_id}:narrow` for organisation administrators. It
+accepts `org_id`, `installation_id` and JSON `scope`, logs the narrowing before
+commit, increments revision and cancels only that installation's organisation's
+work. `POST /v1/installations` accepts optional JSON `scope` bounded by the
+module ceiling. The complete regeneration includes these additions and the callable-source routes below.
+
 ## Current surface
 
-The accounts projection contains 166 descriptor routes across 30 services:
+The accounts projection contains 172 descriptor routes across 30 services,
+counted from `generated/rest-surface.json`:
 
-- 18 public routes and 148 authenticated routes;
-- 141 OpenAPI paths and 166 operations;
+- 18 public routes and 154 authenticated routes;
+- 145 OpenAPI paths and 172 operations;
 - zero internal RPCs;
 - fifteen explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing and Resend email webhooks, the two GitHub
   delivery receivers, the public status surface, the subscriptions stream,
-  checkout, free-plan, portal, and the four inbound OAuth authorization-server routes.
+  checkout, free-plan, portal, and the four OAuth 2 authorization-server routes
+  (metadata, authorize validation, authorize grant, token).
 
-The generated runtime therefore authorizes 181 REST routes in total. Descriptor
+The generated runtime therefore authorizes 187 REST routes in total. Descriptor
 routes and extensions remain separate so an extension can never be mistaken
 for a protobuf procedure or inherit policy by path similarity.
 
@@ -62,9 +71,10 @@ it trust. See [CALLABLE_SOURCES.md](./CALLABLE_SOURCES.md) for the wire contract
 | `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Fifteen explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
-The strict binding file covers every surface service exactly once. Twenty-three
-services use generated grpc-gateway registration; `PrincipalService` and
-`DelegationService` retain the modular `permissions` plugin registration. An
+The strict binding file covers every surface service exactly once. Twenty-six
+services use generated grpc-gateway registration; `PrincipalService`,
+`DelegationService`, `InstallationService` and `WorkContextService` use the
+modular `permissions` plugin registration. An
 unknown field, missing/extra service, unsupported binding kind, duplicate
 plugin, unsafe template, route collision, internal exposure, or ownership drift
 fails generation.
@@ -78,7 +88,7 @@ transcoder dials the generated Connect port, whose Connect-Go handler serves
 Connect, gRPC, and gRPC-Web for all 36 services; it no longer depends on the
 incomplete legacy raw-gRPC registration set.
 
-Auth-gateway loads the 166 descriptor routes from generated Go and joins each
+Auth-gateway loads the 172 descriptor routes from generated Go and joins each
 one to generated authorization metadata by canonical procedure. One
 extension-only YAML file owns the fifteen routes without protobuf procedures.
 Startup rejects disabled extension entries and any method/path collision with a
@@ -98,8 +108,8 @@ verifies every operation against `rest-surface.json`, rejects missing or
 unexpected routes, normalizes path-parameter spelling, adds
 `x-codefly-rest-schema` and `x-codefly-owner`, prunes unreachable definitions,
 and writes the public document to `openapi/api.swagger.json`. The current raw
-and public documents both have 166 operations; pruning reduces definitions
-from 317 to 314.
+and public documents both have 172 operations; pruning reduces definitions
+from 327 to 324.
 
 ## Regeneration
 

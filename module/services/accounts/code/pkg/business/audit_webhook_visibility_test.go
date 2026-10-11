@@ -263,14 +263,14 @@ func TestParseDeclaredAuditEventTypes_ReadsVisibility(t *testing.T) {
 // The operator's half of the decision is refused where a composition can still
 // be corrected — at boot, naming both the namespace and what it is not among —
 // rather than at the registration that trips over it.
-func TestParseModulePrincipalRegistry_ExternalNamespaceMustBeBound(t *testing.T) {
+func TestModulePrincipalGrant_ExternalNamespaceMustBeBound(t *testing.T) {
 	const tenant = `"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"11111111-1111-1111-1111-111111111111"`
-	if _, err := ParseModulePrincipalRegistry(
+	if _, err := parseRegistryFixture(
 		`{"example":{"namespaces":["example"],"external_namespaces":["example"],` + tenant + `}}`,
 	); err != nil {
 		t.Fatalf("a granted namespace that is bound must parse: %v", err)
 	}
-	_, err := ParseModulePrincipalRegistry(
+	_, err := parseRegistryFixture(
 		`{"example":{"namespaces":["example"],"external_namespaces":["other"],` + tenant + `}}`,
 	)
 	if err == nil {

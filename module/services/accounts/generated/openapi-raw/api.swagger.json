@@ -1731,6 +1731,51 @@
       }
     },
     "/v1/installations": {
+      "get": {
+        "summary": "ListOrganizationInstallations is an organisation administrator's view of\nwhat that organisation has installed: each active installation with its live\nhealth, the catalogue row of the target it installed, the scope path of its\nauthority root, and the teams a grant reaches there.",
+        "description": "It is the org-admin companion to the internal ListInstallations, and it is a\nseparate method rather than a relaxed policy on that one: ListInstallations\nis read by the gateway for an organisation it projected from a verified\nidentity, and a bare tenant credential must never reach it. This one binds\nthe organisation to the caller's own admin membership, exactly as\nListAvailableSolutions does, so no organisation's administrator can read\nanother's. The one exception is inherited, not added here: a platform\nsuper administrator (not impersonating) passes the organisation-admin check\nfor every organisation, as on every other organisation-admin method, and so\nmay list any organisation's installations.",
+        "operationId": "InstallationService_ListOrganizationInstallations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListOrganizationInstallationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "description": "Page bound. 0 -\u003e server default; capped as ListInstallations is.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "description": "Opaque cursor from a previous response's next_page_token; empty for page one.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      },
       "post": {
         "summary": "InstallSolution composes an installation in one transaction: an idempotent\nagent Principal with its ceiling, a solution scope node, the agent's standing\nleast-privilege grant at that node, and the installation row with its owner of\nrecord. Emits installation.created with the grantor and ceiling.",
         "operationId": "InstallationService_InstallSolution",
@@ -1793,6 +1838,131 @@
             "in": "query",
             "required": false,
             "type": "string"
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}/teams": {
+      "post": {
+        "summary": "GrantInstallationToTeam exposes an installation to a team: a scope grant of\nthe given role to the team at the installation's authority-root node. The\nhost resolves that node from the installation, so a caller never names a\nscope path. The role must permit using a solution, or the grant would expose\nnothing; the team must belong to the organisation. Using a solution is the\nminimum the role must permit, not a ceiling: the team holds everything the\nrole permits beneath the installation's authority root, exactly as a\nGrantScope of that role at that node would give it. Emits scope.granted, the\nsame event and audit record as any other scope grant, because it is one.\nOrganisation-admin, with the same platform super administrator exception\nListOrganizationInstallations describes.",
+        "operationId": "InstallationService_GrantInstallationToTeam",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GrantInstallationToTeamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceGrantInstallationToTeamBody"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}/teams/{teamId}:revoke": {
+      "post": {
+        "summary": "RevokeInstallationFromTeam removes one team grant at an installation's\nauthority-root node. It is a narrowing, so it runs under the policy log\nexactly as RevokeScope does: a host that cannot witness the narrowing refuses\nit, and says so, rather than revoking unwitnessed. It removes the one grant\nat the authority root that granted_teams reports; a team that also reaches\nthe installation from a grant above keeps that reach. Organisation-admin,\nwith the same platform super administrator exception.",
+        "operationId": "InstallationService_RevokeInstallationFromTeam",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceRevokeInstallationFromTeamBody"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:narrow": {
+      "post": {
+        "summary": "Narrowing is witnessed in the policy log before commit, then atomically\nbumps the installation revision, cancels its org's work and records audit.",
+        "operationId": "InstallationService_NarrowInstallation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceNarrowInstallationBody"
+            }
           }
         ],
         "tags": [
@@ -3761,6 +3931,60 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/PlatformAdminServiceReplayJobBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/module-envelope": {
+      "get": {
+        "summary": "GetModuleEnvelope reads the current module envelope: the authority ceiling\nevery module principal on this host is derived inside.",
+        "operationId": "PlatformAdminService_GetModuleEnvelope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      },
+      "put": {
+        "summary": "PutModuleEnvelope writes the next revision of the module envelope. It takes\neffect at the next check with no restart: the module registry is derived\nagain from it, so a narrowing removes what the new ceiling no longer allows.",
+        "operationId": "PlatformAdminService_PutModuleEnvelope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeRequest"
             }
           }
         ],
@@ -6238,6 +6462,46 @@
         }
       }
     },
+    "InstallationServiceGrantInstallationToTeamBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "teamId": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string",
+          "description": "The role the team holds at the installation's authority root. It must permit\nusing a solution (or carry the wildcard); a role that does not would expose\nnothing, and is refused rather than written. Everything else the role\npermits is granted too, beneath that root."
+        }
+      }
+    },
+    "InstallationServiceNarrowInstallationBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Same JSON shape as InstallSolution.scope; {} removes all capability access."
+        }
+      },
+      "description": "An org administrator may only remove installed authority. The host reads\nthe current revision and serializes the narrowing with other lifecycle acts."
+    },
+    "InstallationServiceRevokeInstallationFromTeamBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string",
+          "description": "The role of the grant being removed, as granted_teams reports it. A team may\nhold more than one role at the same node, and each is its own grant."
+        }
+      }
+    },
     "InstallationServiceTransferInstallationOwnershipBody": {
       "type": "object",
       "properties": {
@@ -8300,6 +8564,15 @@
         }
       }
     },
+    "v1GetModuleEnvelopeResponse": {
+      "type": "object",
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope",
+          "description": "The current revision. Absent when no envelope has been written, which\ngrants no module anything."
+        }
+      }
+    },
     "v1GetOrgEntitlementsResponse": {
       "type": "object",
       "properties": {
@@ -8424,6 +8697,14 @@
           "type": "string",
           "format": "date-time",
           "description": "period_end is exclusive."
+        }
+      }
+    },
+    "v1GrantInstallationToTeamResponse": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
         }
       }
     },
@@ -8557,6 +8838,10 @@
         "targetId": {
           "type": "string",
           "description": "The solution target being installed, from ListAvailableSolutions. Required.\n\nAn installer chooses an identity, never an address. The target must be LIVE\nand ACCEPTED when the install lands: installing a withdrawn target would\nrecord consent to a presence that already ended, and installing a target\nwhose newest generation was refused would record consent to a release this\nhost never admitted."
+        },
+        "scope": {
+          "type": "string",
+          "description": "Installed consent as JSON: capabilities, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences and\nartifact_policies, with the same shapes as the module envelope grant.\nMust be a subset of the current ceiling. Omitted selects that ceiling;\nan explicit {} grants nothing. Tenant and identity are never scope fields."
         }
       }
     },
@@ -9420,6 +9705,22 @@
         }
       }
     },
+    "v1ListOrganizationInstallationsResponse": {
+      "type": "object",
+      "properties": {
+        "installations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1OrganizationInstallation"
+          }
+        },
+        "nextPageToken": {
+          "type": "string",
+          "description": "Set when more installations remain; pass it back as page_token."
+        }
+      }
+    },
     "v1ListOrganizationsResponse": {
       "type": "object",
       "properties": {
@@ -9727,6 +10028,29 @@
     },
     "v1MarkAllNotificationsReadRequest": {
       "type": "object"
+    },
+    "v1ModuleEnvelope": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string",
+          "format": "int64",
+          "description": "The revision, from 1. A delivered authority document names the revision\nit was rendered against and is inside this one only."
+        },
+        "document": {
+          "type": "string",
+          "description": "The whole ceiling at this revision, as JSON: `revision`,\n`approved_builds`, and `principals` keyed by module prefix, each with the\nwhole authority units this host admits (`bindings`: id, revision, scope,\nqueue, namespace, binding_key, lookup_method), the workloads it may run as\n(`workload_identities`: spiffe_id, container), its `scope_ceilings` and its\n`grant` ceiling (tenant, cross_tenant, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences,\nartifact_policies)."
+        },
+        "writtenBy": {
+          "type": "string",
+          "description": "The platform administrator who wrote this revision."
+        },
+        "writtenAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "ModuleEnvelope is one revision of the module envelope: the authority ceiling a\nplatform super_admin writes, which every module principal on this host is\nderived inside. Revisions are append-only; the current ceiling is the\nhighest."
     },
     "v1Notification": {
       "type": "object",
@@ -10044,6 +10368,42 @@
         }
       }
     },
+    "v1OrganizationInstallation": {
+      "type": "object",
+      "properties": {
+        "installation": {
+          "$ref": "#/definitions/v1Installation"
+        },
+        "health": {
+          "$ref": "#/definitions/v1InstallationHealth",
+          "description": "Resolved live, exactly as ListInstallations resolves it."
+        },
+        "target": {
+          "$ref": "#/definitions/v1AvailableSolution",
+          "description": "The catalogue row of the installed target, from the same accepted applied\nstate ListAvailableSolutions serves: its route alias, applied release and\ngenerations. Absent when this host no longer offers the target — the\ninstallation outlives the presence it was consented to, and an absent row\nsays so rather than naming a release the host does not apply."
+        },
+        "rootScopePath": {
+          "type": "string",
+          "description": "The scope path of the installation's authority-root node: where a grant\nthat exposes it is written. Read from the node, never derived from its id."
+        },
+        "grantedTeams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CollectionReadGrant"
+          },
+          "description": "Teams an active grant reaches at this installation, in the two kinds the\nplatform Catalogue keeps apart: granted at its authority root, and inherited\nfrom a grant above it. Only the first is exposure granted to this\ninstallation; RevokeInstallationFromTeam removes those."
+        },
+        "inheritedTeams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CollectionReadGrant"
+          }
+        }
+      },
+      "description": "OrganizationInstallation is one active installation as its organisation's\nadministrator manages it."
+    },
     "v1OrganizationServiceAddMemberBody": {
       "type": "object",
       "properties": {
@@ -10269,6 +10629,28 @@
         "withdrawnAt": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "v1PutModuleEnvelopeRequest": {
+      "type": "object",
+      "properties": {
+        "expectedRevision": {
+          "type": "string",
+          "format": "int64",
+          "description": "The revision this write replaces: the one the caller read, 0 when none has\nbeen written. A write whose expected revision is not the current one is\nrefused with ABORTED, and nothing is written."
+        },
+        "document": {
+          "type": "string",
+          "description": "The whole ceiling, as JSON, carrying revision expected_revision + 1."
+        }
+      }
+    },
+    "v1PutModuleEnvelopeResponse": {
+      "type": "object",
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope"
         }
       }
     },

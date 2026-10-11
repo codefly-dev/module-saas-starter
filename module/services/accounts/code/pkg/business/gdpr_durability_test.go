@@ -115,7 +115,8 @@ func (h *privacyWorkerHarness) runOnce(t *testing.T) {
 	t.Helper()
 	// Handler failures are the point of several tests; the durable request and
 	// job state carry the assertions, not the iteration's error.
-	_, _ = h.worker.RunOnce(testCtx)
+	processed, err := h.worker.RunOnce(testCtx)
+	require.Positive(t, processed, "host privacy work must be claimable without module consumer authority: %v", err)
 }
 
 func (h *privacyWorkerHarness) jobState(t *testing.T, jobID string) string {
@@ -189,6 +190,10 @@ func TestPrivacyRequestAndItsJobCommitTogether(t *testing.T) {
 	require.Equal(t, accepted.ID, idempotencyKey,
 		"the request UUID is the job's idempotency key, so the pair is one logical operation")
 	require.Equal(t, "pending", state)
+	var hostAuthority bool
+	require.NoError(t, harness.pool.QueryRow(testCtx, `SELECT consumer_authority IS NULL
+		AND NOT (attributes ? 'codefly.installation_id') FROM job_messages WHERE id=$1`, accepted.JobID).Scan(&hostAuthority))
+	require.True(t, hostAuthority, "a privacy request belongs to its subject, not a module installation")
 }
 
 // The commit boundary holds in the other direction too: a request whose job

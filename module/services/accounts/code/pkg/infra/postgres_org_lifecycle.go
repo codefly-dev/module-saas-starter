@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
@@ -70,17 +72,69 @@ func (s *PostgresStore) ArchiveOrganization(ctx context.Context, orgID, actorID 
 	return nil
 }
 
-// RemoveAllOrgMembers deletes every membership of an organization. Team
-// memberships go with them (team_members cascades from organization_members),
-// and the organization_members session trigger revokes each former member's
-// sessions bound to the organization.
-func (s *PostgresStore) RemoveAllOrgMembers(ctx context.Context, orgID string) (int64, error) {
-	tag, err := s.getQueryExecutor(ctx).Exec(ctx,
-		`DELETE FROM organization_members WHERE org_id = $1`, orgID)
+// LockAllOrgMembers stabilizes the roster under the administration lock and
+// takes every member's canonical advisory lock in sorted order, without a
+// trigger-producing write. Keep the transaction open through removal; deletion
+// must also lock all installations before any authorization or session trigger.
+func (s *PostgresStore) LockAllOrgMembers(ctx context.Context, orgID string) ([]string, error) {
+	org, err := business.ParseID(orgID)
 	if err != nil {
-		return 0, wool.Get(ctx).In("RemoveAllOrgMembers").Wrapf(err, "failed to remove organization members")
+		return nil, err
+	}
+	orgID = org.String()
+	// The administration lock keeps the roster stable while all membership
+	// locks are acquired. Take no trigger-producing write before these locks.
+	if err := s.LockOrgAdministration(ctx, orgID); err != nil {
+		return nil, err
+	}
+	rows, err := s.getQueryExecutor(ctx).Query(ctx,
+		`SELECT user_id FROM organization_members WHERE org_id = $1`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	members, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(members)
+	for _, userID := range members {
+		if err := s.LockOrgMembership(ctx, orgID, userID); err != nil {
+			return nil, err
+		}
+	}
+	return members, nil
+}
+
+// RemoveLockedOrgMembers deletes only the roster returned by LockAllOrgMembers
+// in this transaction, even if an uncoordinated insert occurs. Team memberships
+// cascade, and the membership triggers revoke sessions and advance authority.
+// During organization deletion the installation batch must be locked and
+// uninstalled before this trigger-producing write.
+func (s *PostgresStore) RemoveLockedOrgMembers(ctx context.Context, orgID string, members []string) (int64, error) {
+	if storetx.Tx(ctx) == nil {
+		return 0, errors.New("locked membership removal requires a tenant transaction")
+	}
+	org, err := business.ParseID(orgID)
+	if err != nil {
+		return 0, err
+	}
+	tag, err := s.getQueryExecutor(ctx).Exec(ctx,
+		`DELETE FROM organization_members WHERE org_id = $1 AND user_id = ANY($2::uuid[])`, org.String(), members)
+	if err != nil {
+		return 0, wool.Get(ctx).In("RemoveLockedOrgMembers").Wrapf(err, "failed to remove organization members")
 	}
 	return tag.RowsAffected(), nil
+}
+
+// RemoveAllOrgMembers locks and deletes an organization's roster in the caller's
+// transaction. Call before other authorization/session writes. A deletion that
+// also uninstalls must use the separate lock and removal phases above.
+func (s *PostgresStore) RemoveAllOrgMembers(ctx context.Context, orgID string) (int64, error) {
+	members, err := s.LockAllOrgMembers(ctx, orgID)
+	if err != nil {
+		return 0, err
+	}
+	return s.RemoveLockedOrgMembers(ctx, orgID, members)
 }
 
 // RevokeOrgAPIKeys revokes every live API key of an organization.
@@ -106,12 +160,13 @@ func (s *PostgresStore) RevokeOrgPendingInvitations(ctx context.Context, orgID s
 	return tag.RowsAffected(), nil
 }
 
-// ActiveInstallationIDs lists an organization's installations that are not yet
-// revoked, so archiving can uninstall each through the same path an operator's
-// uninstall takes.
+// ActiveInstallationIDs locks and lists an organization's unrevoked
+// installations in ID order. The caller must keep this transaction open through
+// the entire uninstall batch: every installation lock must precede the first
+// grant deletion, whose trigger locks the organization's source-read revision.
 func (s *PostgresStore) ActiveInstallationIDs(ctx context.Context, orgID string) ([]string, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
-		`SELECT id FROM installations WHERE org_id = $1 AND status = 'active' ORDER BY id`, orgID)
+		`SELECT id FROM installations WHERE org_id = $1 AND status = 'active' ORDER BY id FOR UPDATE`, orgID)
 	if err != nil {
 		return nil, wool.Get(ctx).In("ActiveInstallationIDs").Wrapf(err, "failed to list installations")
 	}

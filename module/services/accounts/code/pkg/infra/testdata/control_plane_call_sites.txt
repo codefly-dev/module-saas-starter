@@ -54,6 +54,8 @@ pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: W
 pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).undeliveredFollowers: WithControlPlane
 pkg/business/gdpr.go: (*Service).PurgeExpiredPrivacyArtifacts: WithControlPlane
+pkg/business/installation_exposure.go: (*Service).ListOrganizationInstallations: WithControlPlane
+pkg/business/installation_registry.go: (*Service).prepareInstallation: WithControlPlane
 pkg/business/installations.go: (*Service).ListAvailableSolutions: WithControlPlane
 pkg/business/installations.go: (*Service).resolveInstallableTarget: WithControlPlane
 pkg/business/invitations.go: (*Service).AcceptInvitation: As(System())
@@ -74,12 +76,13 @@ pkg/business/module_capabilities.go: (*Service).ModuleSubscribe: WithControlPlan
 pkg/business/module_capabilities.go: (*Service).ModuleUnsubscribe: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).moduleAuditSubjectIsMemberOf: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControlPlane
+pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPlane
+pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
+pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
+pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
+pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
-pkg/business/module_registration.go: (*Service).ModuleMintRegistration: WithControlPlane
-pkg/business/module_registration.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
-pkg/business/module_registration.go: (*Service).SolutionMintRegistration: WithControlPlane
-pkg/business/module_registration.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/notifications.go: (*Service).resolveNotificationUser: WithControlPlane
 pkg/business/onboarding.go: (*Service).organizationConfigured: WithControlPlane
 pkg/business/organization_lifecycle.go: (*Service).GetOrganizationRoster: WithControlPlane
@@ -131,6 +134,7 @@ pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: 
 pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: WithControlPlane
 pkg/business/solution_delivery.go: (*Service).ReceiveSolutionDelivery: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).newestDelivered: WithControlPlane
+pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).readRegistryInputs: WithControlPlaneReadSnapshot
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionHostBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionTargets: WithControlPlane
@@ -175,7 +179,7 @@ pkg/infra/postgres_membership_diagnostic.go: (*PostgresStore).RecordMembershipIn
 pkg/infra/postgres_mfa.go: (*PostgresStore).MigrateLegacyMFASecrets: WithControlPlane
 pkg/infra/postgres_mfa_login.go: (*PostgresStore).ConsumeMFALoginTransaction: WithControlPlane
 pkg/infra/postgres_mfa_login.go: (*PostgresStore).GetActiveMFALoginTransaction: WithControlPlane
-pkg/infra/postgres_module_authority.go: (*PostgresStore).LiveModuleAuthority: WithControlPlane
+pkg/infra/postgres_module_authority.go: (*PostgresStore).BeginModuleAuthorityUse: authorityUse.Begin
 pkg/infra/postgres_org.go: (*PostgresStore).CreateOrganization: txbind.BindRequest
 pkg/infra/postgres_org_identity_providers.go: (*PostgresStore).resolvePreAuthProvider: WithControlPlane
 pkg/infra/postgres_permissions.go: (*PostgresStore).CreateRole: txbind.BindRequest
@@ -190,6 +194,8 @@ pkg/infra/postgres_webhook_secrets.go: (*PostgresStore).MigrateLegacyWebhookSecr
 pkg/infra/scoped.go: (*Scoped).Within: WithControlPlane
 pkg/infra/scoped.go: (*Scoped).Within: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithControlPlane: withControlPlaneTx
+pkg/infra/tenant_tx.go: (*PostgresStore).WithControlPlaneReadSnapshot: withControlPlaneTx
+pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgReadSnapshot: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgTx: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgTx: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithUserTx: txbind.BindRequest

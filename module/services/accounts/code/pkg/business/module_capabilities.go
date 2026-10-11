@@ -37,6 +37,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -146,6 +147,8 @@ func (w ModuleWorkload) validateForm(prefix string) error {
 }
 
 type ModulePrincipalGrant struct {
+	// PresenceBinding is the durable registry key proven by delivered authority.
+	PresenceBinding    string                              `json:"presence_binding,omitempty"`
 	ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
 	ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
 	OperationAudiences map[string]ModuleOperationAudience  `json:"operation_audiences"`
@@ -232,9 +235,9 @@ func (g ModulePrincipalGrant) allowsExternalNamespace(namespace string) bool {
 // collection the holder can see, which an organization-wide role assignment was
 // the only way to reach before.
 //
-// The registry is operator-supplied text this host cannot otherwise check, so
-// the refusal belongs at parse time, where a bad composition fails to boot
-// instead of quietly changing who may mint what.
+// The grant is administrator-written text this host cannot otherwise check, so
+// the refusal belongs where the envelope is written — the write is rejected
+// naming the principal — instead of quietly changing who may mint what.
 const (
 	HostScopeRoles = "roles"
 	HostScopeAudit = "audit"
@@ -288,118 +291,123 @@ func ModulePrincipalID(prefix string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
 }
 
-// ParseModulePrincipalRegistry decodes the deployment-provided registry of
-// module service principals. The document its JSON describes is a map of module
-// prefix to {"queues": [...], "namespaces": [...], "external_namespaces": [...],
-// "resources": [...],
-// "cross_tenant": bool, "tenant": "<org uuid>"}, indexed here by the principal id
-// derived from that prefix. An empty string yields an empty registry, which
-// denies every caller (fail-closed).
-func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
+// canonicalModuleTenant parses a principal's tenant and returns its canonical
+// spelling.
+//
+// The tenant is sealed into a signed capability and compared against
+// organization ids, so a malformed one cannot be caught downstream: it signs,
+// then silently matches no tenant and drops the org from its own audit record. A
+// well-formed one is canonicalized for the same reason: every comparison
+// downstream is a string compare against the lowercase hyphenated id Postgres
+// returns, so an uppercase, braced, urn:uuid: or unhyphenated spelling would
+// pass a parse and then match its own organization nowhere.
+func canonicalModuleTenant(prefix, raw string) (string, error) {
+	// Empty is the envelope's shared tenancy. It does not select an organization:
+	// every capability still requires its own bound org and live installation.
 	if raw == "" {
-		return ModulePrincipalRegistry{}, nil
+		return "", nil
 	}
-	var wire map[string]struct {
-		ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
-		ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
-		OperationAudiences map[string]ModuleOperationAudience  `json:"operation_audiences"`
-		Queues             []string                            `json:"queues"`
-		Namespaces         []string                            `json:"namespaces"`
-		ExternalNamespaces []string                            `json:"external_namespaces"`
-		Resources          []string                            `json:"resources"`
-		CrossTenant        bool                                `json:"cross_tenant"`
-		Tenant             string                              `json:"tenant"`
-		Workload           ModuleWorkload                      `json:"workload"`
+	tenant, err := uuid.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
 	}
-	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
-		return nil, err
+	return tenant.String(), nil
+}
+
+// validateModulePrincipalPrefix refuses a key that cannot be a module prefix.
+//
+// A principal id is a valid module prefix by pattern, so an entry keyed by the
+// opaque principal id would otherwise parse into a principal no module can ever
+// be, and every call would be denied for a reason that names the caller rather
+// than the stale record.
+func validateModulePrincipalPrefix(prefix string) error {
+	if err := uuid.Validate(prefix); err == nil {
+		return fmt.Errorf("module principals are keyed by module prefix, not principal id: %q", prefix)
 	}
-	registry := make(ModulePrincipalRegistry, len(wire))
-	for prefix, grant := range wire {
-		// A principal id is a valid module prefix by pattern, so an entry still
-		// keyed the way the registry used to be — by the opaque principal id —
-		// would otherwise parse into a principal no module can ever be, and every
-		// call would be denied for a reason that names the caller rather than the
-		// stale configuration.
-		if err := uuid.Validate(prefix); err == nil {
-			return nil, fmt.Errorf("module principal registry is keyed by module prefix, not principal id: %q", prefix)
-		}
-		if !registrationIdentityPattern.MatchString(prefix) || len(prefix) > 63 {
-			return nil, fmt.Errorf("module principal registry has invalid module prefix %q", prefix)
-		}
-		// The tenant is sealed into a signed capability and compared against
-		// organization ids, so a malformed one cannot be caught downstream: it
-		// signs, then silently matches no tenant and drops the org from its own
-		// audit record. A well-formed one is canonicalized for the same reason:
-		// every comparison downstream is a string compare against the lowercase
-		// hyphenated id Postgres returns, so an uppercase, braced, urn:uuid: or
-		// unhyphenated spelling would pass here and then match its own
-		// organization nowhere.
-		tenant, err := uuid.Parse(grant.Tenant)
-		if err != nil {
-			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
-		}
-		if err := validateArtifactPolicies(grant.ArtifactPolicies); err != nil {
-			return nil, fmt.Errorf("module %q: %w", prefix, err)
-		}
-		// The workload, refused at boot rather than at the mint it would deny.
-		// A principal with no declared workload can never be authenticated —
-		// execution binding is unconditional and has nothing to compare the
-		// reviewed service account against — so an entry missing it is a
-		// composition that cannot work, and saying so here names the entry
-		// instead of leaving every one of its calls refused as "denied".
-		if !grant.Workload.declared() {
-			return nil, fmt.Errorf(
-				"module principal %q must declare its workload identity (service_account, namespace, container): "+
-					"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
-					"from any other caller holding a valid token",
-				prefix)
-		}
-		if err := grant.Workload.validateForm(prefix); err != nil {
-			return nil, err
-		}
-		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
-			return nil, err
-		}
-		if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
-			return nil, err
-		}
-		for _, resource := range grant.Resources {
-			if IsHostSealedScopeResource(resource) {
-				return nil, fmt.Errorf(
-					"module principal %q may not declare %q as its content: the host reads that permission out of a sealed capability for its own decisions, so a node grant must never stand in for a role assignment on it",
-					prefix, resource,
-				)
-			}
-		}
-		// An external namespace the entry does not also bind is a composition that
-		// cannot mean what it says: the solution can declare nothing there, so the
-		// grant would sit in the registry looking like permission to send a type
-		// that can never be admitted. Refused at parse time, where the service
-		// fails to boot naming both, rather than at the registration that trips
-		// over it months later.
-		for _, namespace := range grant.ExternalNamespaces {
-			if !slices.Contains(grant.Namespaces, namespace) {
-				return nil, fmt.Errorf(
-					"module principal %q grants external delivery for namespace %q, which is not among its bound namespaces %v",
-					prefix, namespace, grant.Namespaces)
-			}
-		}
-		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
-			ArtifactPolicies:   grant.ArtifactPolicies,
-			ReadAudiences:      grant.ReadAudiences,
-			OperationAudiences: grant.OperationAudiences,
-			Prefix:             prefix,
-			Queues:             grant.Queues,
-			Namespaces:         grant.Namespaces,
-			ExternalNamespaces: grant.ExternalNamespaces,
-			Resources:          grant.Resources,
-			CrossTenant:        grant.CrossTenant,
-			Tenant:             tenant.String(),
-			Workload:           grant.Workload,
+	if !registrationIdentityPattern.MatchString(prefix) || len(prefix) > 63 {
+		return fmt.Errorf("invalid module prefix %q", prefix)
+	}
+	return nil
+}
+
+// validateModulePrincipalCeiling holds one principal's grant to every rule a
+// grant must satisfy EXCEPT its workload — the part a platform administrator
+// writes into the envelope. The workload is not theirs to write: it is read
+// from the applied presence document the principal's authority names, so the
+// envelope carries none and the derived registry entry is checked whole by
+// ValidateModulePrincipalGrant.
+//
+// These are the rules the boot-time registry parser applied, unchanged, so the
+// ceiling a super_admin writes at runtime is held to exactly what a composition
+// was held to at boot.
+func validateModulePrincipalCeiling(prefix string, grant ModulePrincipalGrant) error {
+	if err := validateModulePrincipalPrefix(prefix); err != nil {
+		return err
+	}
+	canonical, err := canonicalModuleTenant(prefix, grant.Tenant)
+	if err != nil {
+		return err
+	}
+	if canonical != grant.Tenant {
+		return fmt.Errorf("module principal %q declares tenant %q, which is not the canonical spelling %q", prefix, grant.Tenant, canonical)
+	}
+	if err := validateArtifactPolicies(grant.ArtifactPolicies); err != nil {
+		return fmt.Errorf("module %q: %w", prefix, err)
+	}
+	if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
+		return err
+	}
+	if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
+		return err
+	}
+	for _, resource := range grant.Resources {
+		if IsHostSealedScopeResource(resource) {
+			return fmt.Errorf(
+				"module principal %q may not declare %q as its content: the host reads that permission out of a sealed capability for its own decisions, so a node grant must never stand in for a role assignment on it",
+				prefix, resource,
+			)
 		}
 	}
-	return registry, nil
+	// An external namespace the entry does not also bind is a grant that
+	// cannot mean what it says: the solution can declare nothing there, so the
+	// grant would sit in the registry looking like permission to send a type
+	// that can never be admitted.
+	for _, namespace := range grant.ExternalNamespaces {
+		if !slices.Contains(grant.Namespaces, namespace) {
+			return fmt.Errorf(
+				"module principal %q grants external delivery for namespace %q, which is not among its bound namespaces %v",
+				prefix, namespace, grant.Namespaces)
+		}
+	}
+	return nil
+}
+
+// ValidateModulePrincipalGrant holds one complete registry entry — ceiling and
+// workload — to every rule. The registry reconciler runs it over every entry it
+// derives before the entry can serve, so a derivation defect omits that one
+// principal by name instead of installing an entry the boot parser would have
+// refused.
+//
+// The workload is required: a principal with no declared workload can never be
+// authenticated — execution binding is unconditional and has nothing to compare
+// the reviewed service account against — so an entry missing it cannot work,
+// and saying so here names the entry instead of leaving every one of its calls
+// refused as "denied".
+func ValidateModulePrincipalGrant(prefix string, grant ModulePrincipalGrant) error {
+	if grant.Prefix != prefix {
+		return fmt.Errorf("module principal %q carries prefix %q", prefix, grant.Prefix)
+	}
+	if err := validateModulePrincipalCeiling(prefix, grant); err != nil {
+		return err
+	}
+	if !grant.Workload.declared() {
+		return fmt.Errorf(
+			"module principal %q must declare its workload identity (service_account, namespace, container): "+
+				"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
+				"from any other caller holding a valid token",
+			prefix)
+	}
+	return grant.Workload.validateForm(prefix)
 }
 
 // ModuleCaller is the authenticated module service principal, as the RPC adapter
@@ -427,6 +435,14 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 	}
 	grant, ok := s.declaredModules()[caller.PrincipalID]
 	if !ok {
+		// A registry fenced by a newer committed ceiling holds nothing, and the
+		// refusal says so: the caller's retry succeeds once a pass derives the
+		// current registry, which a plain "not registered" would not tell it.
+		if s.moduleRegistryFenced() {
+			s.requestRegistryPass()
+			return ModulePrincipalGrant{}, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+				"principal %s: a newer module envelope is committed than the registry was derived from", caller.PrincipalID)
+		}
 		return ModulePrincipalGrant{}, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	return grant, nil
@@ -480,10 +496,53 @@ func authorizeTenant(caller ModuleCaller, grant ModulePrincipalGrant, requested 
 	if requested == caller.BoundOrg {
 		return nil
 	}
-	if grant.CrossTenant {
-		return nil
-	}
+	// cross_tenant permits installations in other organizations; a capability
+	// decision is still bound to the installation read for its own organization.
 	return status.Errorf(codes.PermissionDenied, "principal %s may not act on tenant %s", caller.PrincipalID, requested)
+}
+
+// The google.rpc.ErrorInfo reasons this surface's FailedPrecondition refusals
+// carry, under accountsErrorDomain. They are a wire contract with consuming
+// modules: the message is prose, and a refusal's code is NOT on its own a
+// discriminator — FailedPrecondition is the answer to several unrelated facts
+// here — so a consumer deciding what to do keys on the reason.
+//
+// Every FailedPrecondition the notify and subject-visibility surfaces answer
+// names one of these. That is what lets a consumer treat "carries
+// TENANT_MEMBERSHIP_MISSING" as final for one person and everything else as
+// its own problem, rather than reading one code as two different facts.
+const (
+	// ModuleTenantMembershipMissingReason: the person the call names is not a
+	// member of the tenant. Final for that person; nobody else's to fix.
+	ModuleTenantMembershipMissingReason = "TENANT_MEMBERSHIP_MISSING"
+	// ModuleNotificationIdempotencyConflictReason: the idempotency key was
+	// already used for a notification with different content. The caller's bug,
+	// not a fact about the recipient, and a retry of the same call never clears
+	// it.
+	ModuleNotificationIdempotencyConflictReason = "NOTIFICATION_IDEMPOTENCY_CONFLICT"
+	// ModuleSubjectVisibilitySetTooLargeReason: the viewer's set is larger than
+	// the surface can serve whole. A fact about the tenant's hierarchy, which an
+	// administrator can change — never a statement about the viewer.
+	ModuleSubjectVisibilitySetTooLargeReason = "SUBJECT_VISIBILITY_SET_TOO_LARGE"
+	// ModuleLiveAuthorityUnavailableReason: this host cannot re-read live module
+	// authority, so it may exercise no capability at all. An operator's
+	// condition, and never a fact about the caller or about the person a call
+	// names — so the work is the module's to RETAIN and retry once the host is
+	// repaired, exactly unlike a departed person. It is reached before any
+	// membership read, so without a reason of its own it is indistinguishable
+	// on the wire from the one refusal this surface documents as final.
+	ModuleLiveAuthorityUnavailableReason = "LIVE_AUTHORITY_UNAVAILABLE"
+)
+
+// moduleRefusal types a refusal of this surface with the reason a consumer keys
+// on, since the message text is not a contract it may match.
+func moduleRefusal(code codes.Code, reason, message string) error {
+	refused := status.New(code, message)
+	detailed, err := refused.WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: accountsErrorDomain})
+	if err != nil {
+		return refused.Err()
+	}
+	return detailed.Err()
 }
 
 // requireTenantMember verifies a user/subject actually belongs to the named
@@ -492,6 +551,21 @@ func authorizeTenant(caller ModuleCaller, grant ModulePrincipalGrant, requested 
 // prevent — org membership is a separate fact). The membership read runs under
 // the control-plane role because organization_members is RLS-scoped and the
 // caller carries no tenant GUC of its own.
+//
+// A non-member is FailedPrecondition, never PermissionDenied: the caller's
+// credential, principal and grant are all in order, and what refuses the call
+// is a fact about the tenant's membership that a person can change. A failure
+// of the caller's own AUTHORITY stays Unauthenticated or PermissionDenied — an
+// identity it cannot prove, a principal no composition registered, a tenant it
+// is not bound to — held apart from a malformed request (InvalidArgument) and
+// from an operational condition of this host, which answers FailedPrecondition
+// under a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
+// consumer driving this surface from a journal can tell a departed person —
+// final for that person, and nothing the module may retry its way out of —
+// from a composition this host does not admit as a module principal, which is
+// an operator's to fix and whose work is worth holding. The audit
+// surface's own member check already answers this way
+// (resolveModuleAuditActor).
 func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string) error {
 	var member bool
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -502,7 +576,8 @@ func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string
 		return status.Error(codes.Internal, err.Error())
 	}
 	if !member {
-		return status.Errorf(codes.PermissionDenied, "user %s is not a member of tenant %s", userID, tenant)
+		return moduleRefusal(codes.FailedPrecondition, ModuleTenantMembershipMissingReason,
+			fmt.Sprintf("user %s is not a member of tenant %s", userID, tenant))
 	}
 	return nil
 }
@@ -520,9 +595,19 @@ func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string
 // global inbox work requires the cross-tenant grant and uses the privileged
 // worker producer.
 func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, tenant string, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleEnqueueJob")
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
 	if err != nil {
+		return nil, err
+	}
+	grant := authority.Grant
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
 		return nil, err
 	}
 	job := req.GetJob()
@@ -533,6 +618,7 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, ten
 		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not use queue %q", caller.PrincipalID, job.GetQueue())
 	}
 
+	req = jobs.StampModuleJob(req, authority.JobAuthority())
 	scope := job.GetScope()
 	var resp *jobsv1.EnqueueJobResponse
 	switch {
@@ -586,27 +672,26 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, ten
 	return resp, nil
 }
 
-// ModuleClaimJobs leases a bounded batch from one queue the principal owns.
-// Claiming a queue reads every scope on it — global work and every tenant's
-// org- and subject-scoped jobs (the claim selects by queue with no tenant
-// filter) — so a claimed payload can belong to any tenant. That makes claiming
-// an inherently cross-tenant, inbox-worker operation: it requires the cross-
-// tenant grant, not merely the queue grant. Without this a tenant-bound
-// principal could read other tenants' confidential job payloads off a shared
-// queue (e.g. datasource, which carries every tenant's ingest jobs).
+// ModuleClaimJobs leases only work attributable to the caller's organization.
+// The store also re-checks the producer installation stamp before leasing; a
+// cross_tenant ceiling never turns this into an unscoped queue read.
 func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleClaimJobs")
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
+	grant := authority.Grant
 	if !grant.allowsQueue(req.GetQueue()) {
 		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not claim queue %q", caller.PrincipalID, req.GetQueue())
 	}
-	if !grant.CrossTenant {
-		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not claim queue %q: claiming reads across tenants and requires a cross-tenant grant", caller.PrincipalID, req.GetQueue())
-	}
-	resp, err := s.moduleJobStore.Claim(ctx, req)
+	resp, err := s.moduleJobStore.Claim(jobs.WithModuleClaim(ctx, authority.JobAuthority()), req)
 	if err != nil {
 		return nil, moduleJobError(w, err)
 	}
@@ -616,11 +701,18 @@ func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req 
 // ModuleHeartbeatJob renews a live lease. The fencing token is the authority: a
 // caller without the current, unexpired token cannot renew.
 func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, req *jobsv1.HeartbeatJobRequest) (*jobsv1.HeartbeatJobResponse, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleHeartbeatJob")
-	if _, err := s.moduleCapability(ctx, caller); err != nil {
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
+	if err != nil {
 		return nil, err
 	}
-	resp, err := s.moduleJobStore.Heartbeat(ctx, req)
+	resp, err := s.moduleJobStore.Heartbeat(jobs.WithModuleClaim(ctx, authority.JobAuthority()), req)
 	if err != nil {
 		return nil, moduleJobError(w, err)
 	}
@@ -629,8 +721,14 @@ func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, r
 
 // ModuleAckJob completes a leased job successfully.
 func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, executionKind, executionID string) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleAckJob")
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -639,10 +737,10 @@ func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *
 		return status.Error(codes.InvalidArgument, "execution kind and id must be supplied together")
 	}
 	if executionKind != "" {
-		execution = &jobsv1.JobExecutionReference{Owner: grant.Prefix, Kind: executionKind, Id: executionID}
+		execution = &jobsv1.JobExecutionReference{Owner: authority.Grant.Prefix, Kind: executionKind, Id: executionID}
 	}
 	req := &jobsv1.CompleteJobRequest{Lease: lease, Execution: execution}
-	if err := s.moduleJobStore.Complete(ctx, req); err != nil {
+	if err := s.moduleJobStore.Complete(jobs.WithModuleClaim(ctx, authority.JobAuthority()), req); err != nil {
 		return moduleJobError(w, err)
 	}
 	return nil
@@ -651,20 +749,27 @@ func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *
 // ModuleNackJob fails a leased job: retryable reschedules (or dead-letters when
 // the attempt budget is exhausted); otherwise it dead-letters immediately.
 func (s *Service) ModuleNackJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, failure *jobsv1.JobFailure, retryable bool, retryAt *timestamppb.Timestamp) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleNackJob")
-	if _, err := s.moduleCapability(ctx, caller); err != nil {
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
+	if err != nil {
 		return err
 	}
 	if retryable {
 		if retryAt == nil {
 			return status.Error(codes.InvalidArgument, "retry_at is required for a retryable nack")
 		}
-		if _, err := s.moduleJobStore.Retry(ctx, &jobsv1.RetryJobRequest{Lease: lease, Failure: failure, RetryAt: retryAt}); err != nil {
+		if _, err := s.moduleJobStore.Retry(jobs.WithModuleClaim(ctx, authority.JobAuthority()), &jobsv1.RetryJobRequest{Lease: lease, Failure: failure, RetryAt: retryAt}); err != nil {
 			return moduleJobError(w, err)
 		}
 		return nil
 	}
-	if err := s.moduleJobStore.DeadLetter(ctx, &jobsv1.DeadLetterJobRequest{Lease: lease, Failure: failure}); err != nil {
+	if err := s.moduleJobStore.DeadLetter(jobs.WithModuleClaim(ctx, authority.JobAuthority()), &jobsv1.DeadLetterJobRequest{Lease: lease, Failure: failure}); err != nil {
 		return moduleJobError(w, err)
 	}
 	return nil
@@ -717,6 +822,12 @@ type ModuleNotifyUserResult struct {
 // notifications are user-scoped, so the tenant guard alone does not stop a
 // module bound to tenant A from notifying a user in tenant B.
 func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in ModuleNotifyUserInput) (ModuleNotifyUserResult, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleNotifyUserResult{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleNotifyUserResult{}, err
@@ -751,7 +862,8 @@ func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in 
 	})
 	if err != nil {
 		if errors.Is(err, ErrNotificationIdempotencyConflict) {
-			return ModuleNotifyUserResult{}, status.Error(codes.FailedPrecondition, "idempotency key already used for a different notification")
+			return ModuleNotifyUserResult{}, moduleRefusal(codes.FailedPrecondition,
+				ModuleNotificationIdempotencyConflictReason, "idempotency key already used for a different notification")
 		}
 		return ModuleNotifyUserResult{}, err
 	}
@@ -783,6 +895,12 @@ type ModuleNotifyOrgAdminsInput struct {
 // key and the recipient, so a redelivered call converges on the rows it already
 // wrote. The send is audited with the recipient and delivery counts.
 func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller, in ModuleNotifyOrgAdminsInput) (bool, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return false, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return false, err
@@ -826,7 +944,8 @@ func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller
 		})
 		if err != nil {
 			if errors.Is(err, ErrNotificationIdempotencyConflict) {
-				return false, status.Error(codes.FailedPrecondition, "idempotency key already used for a different notification")
+				return false, moduleRefusal(codes.FailedPrecondition,
+					ModuleNotificationIdempotencyConflictReason, "idempotency key already used for a different notification")
 			}
 			return false, status.Error(codes.Internal, "cannot notify the tenant's administrators")
 		}
@@ -891,6 +1010,12 @@ type ModuleRequestApprovalInput struct {
 // resume queue must be one the principal may claim, so a decision cannot direct
 // work onto a queue the module does not own.
 func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller, in ModuleRequestApprovalInput) (string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return "", fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
@@ -921,6 +1046,12 @@ func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller
 
 // ModuleGetApproval returns one approval request on the caller's tenant.
 func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, tenant, id string) (*ApprovalRequest, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -937,6 +1068,12 @@ func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, te
 
 // ModuleCancelApproval withdraws a still-open approval request.
 func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller, tenant, id, reason string) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
@@ -1050,6 +1187,12 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // entryID must be an opaque identifier; one that is a locator is dropped rather
 // than stored, for the reasons opaqueAuditEntryID gives.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
@@ -1253,7 +1396,7 @@ func opaqueAuditEntryID(ctx context.Context, entryID string) string {
 //     the payload and written as the row's resource — names the type's owner,
 //     so a solution can never emit, or be credited with, another's type;
 //   - the calling principal may publish into the type's namespace
-//     (MODULE_PRINCIPALS `namespaces`), the same composition-declared authority
+//     (the module registry's `namespaces`), the same composition-declared authority
 //     domain-event publishing already requires, so the `solution` label alone —
 //     which the caller supplies — authorizes nothing;
 //   - the payload matches the declared fields.
@@ -1337,6 +1480,12 @@ type ModuleSubjectVisibilityGrant struct {
 // bound to one tenant could name a subject in another and learn whether that
 // subject has colleagues.
 func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller ModuleCaller, tenant, viewer string) ([]ModuleSubjectVisibilityGrant, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -1358,9 +1507,9 @@ func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller Module
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if len(subjects) > ModuleSubjectVisibilityMaxSet {
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"viewer %s sees more than %d subjects in tenant %s; the per-viewer visibility set cannot be served whole",
-			viewer, ModuleSubjectVisibilityMaxSet, tenant)
+		return nil, moduleRefusal(codes.FailedPrecondition, ModuleSubjectVisibilitySetTooLargeReason,
+			fmt.Sprintf("viewer %s sees more than %d subjects in tenant %s; the per-viewer visibility set cannot be served whole",
+				viewer, ModuleSubjectVisibilityMaxSet, tenant))
 	}
 
 	grants := make([]ModuleSubjectVisibilityGrant, 0, len(subjects))
@@ -1385,6 +1534,12 @@ func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller Module
 // grant names, so it can neither introduce a type it holds no grant for nor
 // re-point a record another module owns.
 func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, tenant, scopePath, kind, label, resourceType, resourceID string) (string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return "", fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
@@ -1451,6 +1606,12 @@ func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, te
 // decrypted token when the mirror lacks it; the token never leaves accounts, and
 // anything over maxContentTicketBytes is refused rather than buffered.
 func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCaller, sourceID, blobSHA string) ([]byte, string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, "", fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleFetchDatasourceBlob")
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
@@ -1546,6 +1707,12 @@ func mapPublishError(err error) error {
 // of record is itself the trail — so only subscription changes and replays emit
 // audit events.
 func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, tenant string, envelope *events.EventEnvelope) (string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return "", fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
@@ -1645,6 +1812,12 @@ func missingFollowableSubject(envelope *events.EventEnvelope) (string, bool) {
 // ones taken against the module itself. A re-subscribe of the same (principal,
 // pattern, queue) returns the existing live row and emits no second audit event.
 func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, typePattern, queue, delivery string) (*EventSubscription, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -1710,6 +1883,12 @@ func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, type
 // revoking an unknown or already-revoked subscription is NotFound and emits no
 // audit event.
 func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, subscriptionID string) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return err
 	}
@@ -1737,6 +1916,12 @@ func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, su
 
 // ModuleListSubscriptions returns the calling principal's live subscriptions.
 func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCaller) ([]*EventSubscription, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return nil, err
 	}
@@ -1757,6 +1942,12 @@ func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCall
 // acknowledged the event still receives the replay. The replay itself is
 // audited (a control-plane action) but the individual redeliveries are not.
 func (s *Service) ModuleReplayEvents(ctx context.Context, caller ModuleCaller, tenant, eventType string, since time.Time) (int, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return 0, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return 0, err

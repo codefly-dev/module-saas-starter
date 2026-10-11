@@ -1204,6 +1204,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.InstallationService/GrantInstallationToTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.InstallationService/InstallSolution",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InstallationService/InstallSolution",
@@ -1231,6 +1247,54 @@
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
       "rewrite_path": "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.InstallationService/ListOrganizationInstallations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.InstallationService/NarrowInstallation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/NarrowInstallation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InstallationService/NarrowInstallation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.InstallationService/RevokeInstallationFromTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
       "remove_after": "2026-10-11"
     },
     {
@@ -2164,6 +2228,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.PlatformAdminService/GetModuleEnvelope",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.PlatformAdminService/GetOrgEntitlements",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
@@ -2351,6 +2431,22 @@
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
       "rewrite_path": "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/PutModuleEnvelope",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
       "remove_after": "2026-10-11"
     },
     {
@@ -4468,6 +4564,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.InstallationService/InstallSolution",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InstallationService/InstallSolution",
@@ -4487,6 +4599,54 @@
       "path": "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InstallationService/NarrowInstallation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/NarrowInstallation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5428,6 +5588,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
@@ -5607,6 +5783,22 @@
       "path": "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7092,6 +7284,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "GET",
+      "path": "/v1/installations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
       "path": "/v1/installations/{installation_id}",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.InstallationService/GetInstallation",
@@ -7479,6 +7687,22 @@
       "path": "/v1/platform/jobs/{job_id}",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.PlatformAdminService/GetJob",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/module-envelope",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8215,6 +8439,54 @@
       "path": "/v1/installations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InstallationService/InstallSolution",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/installations/{installation_id}/teams",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/installations/{installation_id}/teams/{team_id}:revoke",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/installations/{installation_id}:narrow",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.InstallationService/NarrowInstallation",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9175,6 +9447,22 @@
       "path": "/v1/platform/feature-flags/{name}",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "PUT",
+      "path": "/v1/platform/module-envelope",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

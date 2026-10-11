@@ -2,16 +2,19 @@ package infra
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"time"
 
 	"accounts/pkg/infra/internal/txbind"
 
 	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 )
 
@@ -193,38 +196,6 @@ func VerifySignedEntity(
 	return verifier.(*keylessBundleVerifier).verifySignedEntity(entity, payload)
 }
 
-// NewKeylessVerifierWithoutPolicyValidation builds the keyless verifier over
-// trust material and a policy WITHOUT running the policy's boot validation.
-//
-// It exists for one reason, and the reason is a limitation worth stating rather
-// than hiding. Production policy hygiene requires every signer to name a source
-// repository or a build config, because a workflow identity alone matches that
-// same workflow path in every fork of a repository. The in-process Sigstore used
-// in tests mints leaf certificates carrying ONLY the OIDC issuer extension — it
-// has no way to emit `SourceRepositoryURI` — so no certificate it can produce
-// satisfies a policy that production would accept.
-//
-// So the accept path is exercised with a policy shape production REFUSES, and
-// the refusal of that shape is asserted separately by the Validate tests. What
-// is genuinely not covered end to end is the extension matching itself: that
-// `SourceRepositoryURI` and `SourceRepositoryRef` are compared at all is
-// delegated to sigstore-go and exercised only by its own suite.
-func NewKeylessVerifierWithoutPolicyValidation(
-	trustedMaterial trustedMaterialForTest, policy *SolutionHostVerificationPolicy,
-) (any, error) {
-	verifier, err := verify.NewVerifier(trustedMaterial,
-		verify.WithTransparencyLog(1),
-		verify.WithObserverTimestamps(1),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &keylessBundleVerifier{verifier: verifier, policy: policy}, nil
-}
-
-// trustedMaterialForTest is root.TrustedMaterial under a local name.
-type trustedMaterialForTest = root.TrustedMaterial
-
 // KeylessSignerDomains reads the signer-to-domain mapping off a verifier built
 // by either constructor, so a test can assert the mapping travels with the
 // policy it came from.
@@ -260,6 +231,46 @@ func NewKubernetesClientForTestWithToken(t testingT, server *httptest.Server, to
 	}
 }
 
+// NewKubernetesClientInCluster builds a client the way NewKubernetesClient
+// does — the same construction, roots and redirect refusal — for a pod whose
+// kubelet projected this CA bundle, this token and this namespace, with
+// KUBERNETES_SERVICE_HOST/PORT pointing at endpoint.
+func NewKubernetesClientInCluster(t testingT, endpoint string, authority []byte, token, namespace string) *KubernetesClient {
+	t.Helper()
+	directory := t.TempDir()
+	tokenPath := filepath.Join(directory, "token")
+	namespacePath := filepath.Join(directory, "namespace")
+	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	if err := os.WriteFile(namespacePath, []byte(namespace), 0o600); err != nil {
+		t.Fatalf("write namespace: %v", err)
+	}
+	client, err := kubernetesClientFrom(endpoint, authority, tokenPath, namespacePath)
+	if err != nil {
+		t.Fatalf("build client: %v", err)
+	}
+	return client
+}
+
+// WithProjectedAuthorityForTest replaces the CA bundle a client believes the
+// kubelet projected, so a test can hand it a bundle naming more than one
+// cluster, or none.
+func WithProjectedAuthorityForTest(client *KubernetesClient, bundle []byte) *KubernetesClient {
+	client.authority = bundle
+	return client
+}
+
+// WithInitialRootsForTest widens the roots a client was CONSTRUCTED with, so a
+// test can prove a local binding replaces them rather than relying on how the
+// client happened to be built.
+func WithInitialRootsForTest(client *KubernetesClient, roots []byte) *KubernetesClient {
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(roots)
+	client.http = newKubernetesHTTPClient(pool)
+	return client
+}
+
 // testingT is the sliver of *testing.T these helpers need, so export_test.go
 // does not import testing into the production package's namespace.
 type testingT interface {
@@ -286,4 +297,14 @@ func EnvelopedColumns() []EnvelopedColumn {
 		})
 	}
 	return out
+}
+
+// ProjectedTokenForTest is a JWT-shaped projected ServiceAccount token valid
+// for lifetime. Its signature is whatever API server the test stands up to
+// judge; a module mint reads its iat and exp once that server authenticates it.
+func ProjectedTokenForTest(lifetime time.Duration) string {
+	now := time.Now().Unix()
+	claims, _ := json.Marshal(map[string]any{"iat": now, "exp": now + int64(lifetime/time.Second)})
+	encode := base64.RawURLEncoding.EncodeToString
+	return encode([]byte(`{"alg":"RS256"}`)) + "." + encode(claims) + "." + encode([]byte("signature"))
 }

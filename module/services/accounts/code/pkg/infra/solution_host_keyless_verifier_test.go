@@ -1,6 +1,10 @@
 package infra_test
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,7 +12,6 @@ import (
 
 	"accounts/pkg/infra"
 
-	"github.com/sigstore/sigstore-go/pkg/testing/ca"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,31 +42,29 @@ func acceptedPolicy() *infra.SolutionHostVerificationPolicy {
 	}
 }
 
-// reachablePolicy is acceptedPolicy with the repository dropped, and it is only
-// reachable through the unvalidated test constructor.
+// keylessVerifierFor builds the PRODUCTION verifier — the validated
+// constructor, the production options — over an in-process Sigstore and the
+// whole production allowlist.
 //
-// The in-process Sigstore mints leaf certificates carrying ONLY the OIDC issuer
-// extension, so no certificate it can produce satisfies a policy naming a source
-// repository. Rather than weaken the production requirement to make a test pass,
-// the accept path is driven with this shape and the production refusal of it is
-// asserted separately in TestVerificationPolicyRefusesWhatWouldAdmitTooMuch.
-//
-// What that leaves genuinely uncovered here: that the repository and ref
-// extensions are compared at all. That comparison is sigstore-go's and is
-// exercised by its own suite, not by this one.
-func reachablePolicy() *infra.SolutionHostVerificationPolicy {
-	policy := acceptedPolicy()
-	policy.Signers[0].SourceRepositoryURI = ""
-	return policy
-}
-
-// keylessVerifierFor builds a verifier over the in-process Sigstore, bypassing
-// the policy's production validation for the reason reachablePolicy documents.
-func keylessVerifierFor(t *testing.T, sigstore *ca.VirtualSigstore) any {
+// It used to bypass policy validation, because sigstore-go's VirtualSigstore
+// mints certificates with no source-repository extension and so no certificate
+// it produced could satisfy a policy production accepts. The fixture this file
+// now signs with (sigstoreWithCT) issues the repository extension and an
+// embedded SCT, so the accept path runs under the policy and the strength a
+// host actually boots with, and the repository comparison is exercised here
+// rather than delegated to sigstore-go's suite.
+func keylessVerifierFor(t *testing.T, sigstore *sigstoreWithCT) any {
 	t.Helper()
-	verifier, err := infra.NewKeylessVerifierWithoutPolicyValidation(sigstore, reachablePolicy())
+	verifier, err := infra.NewSolutionHostKeylessVerifierFrom(sigstore, acceptedPolicy())
 	require.NoError(t, err)
 	return verifier
+}
+
+// signAsWorkflow signs as a workflow of the accepted repository: the
+// certificate a release workflow is issued.
+func signAsWorkflow(t *testing.T, sigstore *sigstoreWithCT, identity, issuer string, payload []byte) infra.VerifySignedEntityInput {
+	t.Helper()
+	return sigstore.SignWith(t, identity, issuer, payload, signing{repository: testRepository})
 }
 
 // A sound bundle from an allowlisted identity is accepted, and the SIGNER'S NAME
@@ -71,17 +72,43 @@ func keylessVerifierFor(t *testing.T, sigstore *ca.VirtualSigstore) any {
 // the signer may speak for, so a verifier answering yes/no would be unusable:
 // "this is signed" does not say "by someone entitled to this name".
 func TestKeylessVerifierAcceptsAnAllowlistedSigner(t *testing.T) {
-	sigstore, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
+	sigstore := newSigstoreWithCT(t)
 	payload := []byte(`{"schema":"codefly/solution-host-binding/v1"}`)
-	entity, err := sigstore.Sign(testIdentity, testIssuer, payload)
-	require.NoError(t, err)
+	entity := signAsWorkflow(t, sigstore, testIdentity, testIssuer, payload)
 
 	verifier := keylessVerifierFor(t, sigstore)
 	signer, err := infra.VerifySignedEntity(verifier, entity, payload)
 	require.NoError(t, err)
 	require.Equal(t, "delivery", signer)
 	require.Equal(t, map[string][]string{"delivery": {"acme"}}, infra.KeylessSignerDomains(verifier))
+}
+
+// The WIRE path: a carrier's bundle as delivery writes it — Sigstore bundle
+// v0.3 JSON with an inclusion proof — through the public VerifyBundle a host
+// calls, not the decision underneath. A workflow of the accepted repository is
+// admitted; the same workflow's certificate with no SCT, or with an SCT from a
+// log the root does not name, is refused.
+func TestVerifyBundleAdmitsAWorkflowAndRefusesAnUnloggedCertificate(t *testing.T) {
+	sigstore := newSigstoreWithCT(t)
+	payload := []byte(`{"schema":"codefly/solution-host-binding/v2","generation":1}`)
+	verifier, err := infra.NewSolutionHostKeylessVerifierFrom(sigstore, acceptedPolicy())
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	signer, err := verifier.VerifyBundle(ctx, payload,
+		sigstore.SignBundleWith(t, testIdentity, testIssuer, payload, signing{repository: testRepository}))
+	require.NoError(t, err)
+	require.Equal(t, "delivery", signer)
+
+	_, err = verifier.VerifyBundle(ctx, payload,
+		sigstore.SignBundleWith(t, testIdentity, testIssuer, payload, signing{repository: testRepository, noSCT: true}))
+	require.ErrorContains(t, err, "SCT")
+
+	unlisted, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	_, err = verifier.VerifyBundle(ctx, payload,
+		sigstore.SignBundleWith(t, testIdentity, testIssuer, payload, signing{repository: testRepository, sctKey: unlisted}))
+	require.ErrorContains(t, err, "SCT")
 }
 
 // The signature covers THESE bytes. A bundle that verifies over one payload must
@@ -96,11 +123,9 @@ func TestKeylessVerifierAcceptsAnAllowlistedSigner(t *testing.T) {
 // that the same bundle DOES verify over its own bytes is what makes the failure
 // attributable to the bytes rather than to anything that happens to break.
 func TestKeylessVerifierRefusesABundleForDifferentBytes(t *testing.T) {
-	sigstore, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
+	sigstore := newSigstoreWithCT(t)
 	signed := []byte(`{"generation":1}`)
-	entity, err := sigstore.Sign(testIdentity, testIssuer, signed)
-	require.NoError(t, err)
+	entity := signAsWorkflow(t, sigstore, testIdentity, testIssuer, signed)
 	verifier := keylessVerifierFor(t, sigstore)
 
 	signer, err := infra.VerifySignedEntity(verifier, entity, signed)
@@ -118,16 +143,14 @@ func TestKeylessVerifierRefusesABundleForDifferentBytes(t *testing.T) {
 // never who may deliver. Without the allowlist, every identity that CA ever
 // certified could speak for this host's bindings.
 func TestKeylessVerifierRefusesAnUnlistedIdentity(t *testing.T) {
-	sigstore, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
+	sigstore := newSigstoreWithCT(t)
 	payload := []byte(`{"generation":1}`)
-	entity, err := sigstore.Sign(
+	entity := signAsWorkflow(t, sigstore,
 		"https://github.test/attacker/delivery/.github/workflows/publish.yaml@refs/heads/main",
 		testIssuer, payload)
-	require.NoError(t, err)
 
 	verifier := keylessVerifierFor(t, sigstore)
-	_, err = infra.VerifySignedEntity(verifier, entity, payload)
+	_, err := infra.VerifySignedEntity(verifier, entity, payload)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "matched no accepted signer")
 }
@@ -139,32 +162,59 @@ func TestKeylessVerifierRefusesAnUnlistedIdentity(t *testing.T) {
 // requires the issuer for exactly this reason, and this is the test that would
 // fail if the requirement were relaxed to "the SAN is enough".
 func TestKeylessVerifierRefusesTheRightIdentityFromTheWrongIssuer(t *testing.T) {
-	sigstore, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
+	sigstore := newSigstoreWithCT(t)
 	payload := []byte(`{"generation":1}`)
-	entity, err := sigstore.Sign(testIdentity, "https://attacker-issuer.example.test", payload)
-	require.NoError(t, err)
+	entity := signAsWorkflow(t, sigstore, testIdentity, "https://attacker-issuer.example.test", payload)
 
 	verifier := keylessVerifierFor(t, sigstore)
-	_, err = infra.VerifySignedEntity(verifier, entity, payload)
+	_, err := infra.VerifySignedEntity(verifier, entity, payload)
 	require.Error(t, err, "the allowlisted SAN from an unlisted issuer must be refused")
+}
+
+// The allowlisted workflow identity, from the allowlisted issuer, run in
+// ANOTHER repository is refused. The repository is what makes a workflow
+// identity a narrow claim — a reusable workflow's identity is the same in
+// every repository that calls it — and this is the comparison that was only
+// delegated to sigstore-go's suite while the fixture could not emit it.
+func TestKeylessVerifierRefusesTheRightWorkflowFromAnotherRepository(t *testing.T) {
+	sigstore := newSigstoreWithCT(t)
+	payload := []byte(`{"generation":1}`)
+	verifier := keylessVerifierFor(t, sigstore)
+
+	_, err := infra.VerifySignedEntity(verifier, signAsWorkflow(t, sigstore, testIdentity, testIssuer, payload), payload)
+	require.NoError(t, err, "the control: the same workflow in the accepted repository verifies")
+
+	fork := sigstore.SignWith(t, testIdentity, testIssuer, payload, signing{repository: "https://github.test/fork/delivery"})
+	_, err = infra.VerifySignedEntity(verifier, fork, payload)
+	require.ErrorContains(t, err, "matched no accepted signer")
+}
+
+// A certificate no Certificate Transparency log saw is refused, from a
+// workflow as from a person: one verifier, one strength. Everything else about
+// the carrier — signature, Rekor entry, timestamp, identity — is sound, so the
+// refusal is the SCT's.
+func TestKeylessVerifierRefusesACertificateNoCTLogSaw(t *testing.T) {
+	sigstore := newSigstoreWithCT(t)
+	payload := []byte(`{"generation":1}`)
+	verifier := keylessVerifierFor(t, sigstore)
+
+	unlogged := sigstore.SignWith(t, testIdentity, testIssuer, payload, signing{repository: testRepository, noSCT: true})
+	_, err := infra.VerifySignedEntity(verifier, unlogged, payload)
+	require.ErrorContains(t, err, "SCT")
 }
 
 // A bundle verified under a root that did NOT issue it is refused. The trust
 // root is the anchor, so a verifier that accepted this would be checking
 // arithmetic rather than provenance.
 func TestKeylessVerifierRefusesABundleFromAnotherRoot(t *testing.T) {
-	signing, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
-	other, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
+	signer := newSigstoreWithCT(t)
+	other := newSigstoreWithCT(t)
 
 	payload := []byte(`{"generation":1}`)
-	entity, err := signing.Sign(testIdentity, testIssuer, payload)
-	require.NoError(t, err)
+	entity := signAsWorkflow(t, signer, testIdentity, testIssuer, payload)
 
 	verifier := keylessVerifierFor(t, other)
-	_, err = infra.VerifySignedEntity(verifier, entity, payload)
+	_, err := infra.VerifySignedEntity(verifier, entity, payload)
 	require.Error(t, err, "a bundle from a different trust root must be refused")
 }
 
@@ -174,11 +224,9 @@ func TestKeylessVerifierRefusesABundleFromAnotherRoot(t *testing.T) {
 // A single combined identity policy with per-field alternation would admit the
 // cross product, which is strictly more than any entry's author approved.
 func TestKeylessVerifierDoesNotCombineFieldsAcrossAllowlistEntries(t *testing.T) {
-	sigstore, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
+	sigstore := newSigstoreWithCT(t)
 	payload := []byte(`{"generation":1}`)
-	entity, err := sigstore.Sign(testIdentity, testIssuer, payload)
-	require.NoError(t, err)
+	entity := signAsWorkflow(t, sigstore, testIdentity, testIssuer, payload)
 
 	// Two entries, neither of which the carrier satisfies whole: the first has
 	// the right issuer with the wrong identity, the second the right identity
@@ -195,7 +243,7 @@ func TestKeylessVerifierDoesNotCombineFieldsAcrossAllowlistEntries(t *testing.T)
 			SourceRepositoryURI:    testRepository, Domains: []string{"acme"},
 		},
 	}}
-	verifier, err := infra.NewKeylessVerifierWithoutPolicyValidation(sigstore, policy)
+	verifier, err := infra.NewSolutionHostKeylessVerifierFrom(sigstore, policy)
 	require.NoError(t, err)
 
 	_, err = infra.VerifySignedEntity(verifier, entity, payload)
@@ -216,14 +264,12 @@ func TestKeylessVerifierDoesNotCombineFieldsAcrossAllowlistEntries(t *testing.T)
 // cannot check the log is a deployment problem, and a bad signature is an attack.
 // A classifier reading that string would tell an operator to fix the wrong one.
 func TestKeylessVerifierRefusesNoTransparencyEvidenceByName(t *testing.T) {
-	sigstore, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
+	sigstore := newSigstoreWithCT(t)
 	payload := []byte(`{"generation":1}`)
-	entity, err := sigstore.Sign(testIdentity, testIssuer, payload)
-	require.NoError(t, err)
+	entity := signAsWorkflow(t, sigstore, testIdentity, testIssuer, payload)
 
 	verifier := keylessVerifierFor(t, sigstore)
-	_, err = infra.VerifySignedEntity(verifier, withoutTransparency{entity}, payload)
+	_, err := infra.VerifySignedEntity(verifier, withoutTransparency{entity}, payload)
 	require.ErrorIs(t, err, infra.ErrNoTransparencyEvidence)
 	require.Contains(t, err.Error(), "NOT a signature failure",
 		"the refusal must say what it is not, because the two are confused by default")
@@ -234,11 +280,9 @@ func TestKeylessVerifierRefusesNoTransparencyEvidenceByName(t *testing.T) {
 // looser "has it got any evidence at all?" check admits silently — the field is
 // populated, just not the field that answers the question.
 func TestKeylessVerifierRefusesATimestampStandingInForTransparency(t *testing.T) {
-	sigstore, err := ca.NewVirtualSigstore()
-	require.NoError(t, err)
+	sigstore := newSigstoreWithCT(t)
 	payload := []byte(`{"generation":1}`)
-	entity, err := sigstore.Sign(testIdentity, testIssuer, payload)
-	require.NoError(t, err)
+	entity := signAsWorkflow(t, sigstore, testIdentity, testIssuer, payload)
 
 	verifier, err := infra.NewSolutionHostKeylessVerifierFrom(sigstore, acceptedPolicy())
 	require.NoError(t, err)

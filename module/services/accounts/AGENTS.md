@@ -19,7 +19,8 @@ longer works. The full procedure and why are in
 [../../REST_SURFACE.md](../../REST_SURFACE.md#regeneration).
 
 A composed module's REST routes belong to the gateway's generated and explicit
-catalogs. Its identity secret authenticates the Work Context exchanges below.
+catalogs. Its pod's projected ServiceAccount token authenticates the Work
+Context exchanges below; no secret does.
 
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
@@ -56,7 +57,7 @@ remain enforced. `ModuleEmitAuditEvent` can emit only a type owned by the caller
 solution scope and an authorized namespace. `business.AuditEventResolver` resolves
 stored schemas for payload validation and PII redaction.
 
-The principal directory lists stored identities. The `MODULE_PRINCIPALS` map
+The principal directory lists stored identities. The module principal registry
 below supplies declared authority to capability checks only.
 
 See [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence)
@@ -146,7 +147,7 @@ require.
 `PlatformAdminService.ListPlatformCatalogue` (super administrators, page
 `/admin/platform/catalogue`) lists every composed module and every solution
 with what it declares, what runs and where it is installed. It **adds no store**:
-modules come from the `MODULE_PRINCIPALS` registry (`Service.modulePrincipals`),
+modules come from the module principal registry (`Service.modulePrincipals`),
 solutions from `solution_registrations` (read with tombstones, so an
 installation of a deregistered solution sits beside its tombstone rather than
 reading as a solution nobody registered), and installations from
@@ -267,8 +268,79 @@ is derived from the
 declared module prefix (`business.ModulePrincipalID`) — nothing is
 hand-authored as an opaque id.
 
-Its authority is declared in the `module-capabilities` group's
-`MODULE_PRINCIPALS`, a JSON map keyed by that prefix:
+Its authority is its entry in the **module principal registry**, which no
+configuration declares. The module principal reconciler derives the whole
+registry on every reconcile pass (and on a delivery or an envelope write,
+without waiting for the tick) and installs it tagged with the envelope revision
+it was derived from — the only production writer — so installing, narrowing or
+withdrawing a module takes effect with no restart. An entry exists only while
+three inputs agree:
+
+- **the module envelope** — the authority ceiling a platform super_admin writes
+  through `PlatformAdminService/PutModuleEnvelope` (`requirePlatformRole`, so
+  never through an impersonated session; audited as
+  `saas.platform.module_envelope_written`; append-only and revisioned in
+  `module_envelopes`; fresh MFA required, an unenrolled administrator refused).
+  Per module prefix it lists the WHOLE authority units the host admits (id
+  `<presence binding>:<binding>:<operation>`, revision, scope, queue, namespace,
+  binding key, lookup method — the audience is the grant's), the workload
+  identities the principal may run as (SPIFFE ID and container), the scope
+  ceilings, and the grant ceiling below.
+- **a live authority document inside that envelope** — signed, delivered,
+  re-verified on every pass against the host's CURRENT signer-to-domain policy
+  (a document that no longer verifies is refused by name), over a presence
+  binding no ADMITTED tombstone in the whole inbox history ever withdrew — one
+  addressed to this host and speaking for the binding's OWNER, the domain of
+  the presence generation this host admitted and applied (never a delivered
+  row core's admission refused); a withdrawal is terminal for the
+  binding, whatever later generation or authority id follows, and a foreign
+  tombstone is refused at receipt and ignored in history — and held by core's
+  `ValidateAgainst` to the envelope's
+  own units (exact containment: a unit that differs from the admitted one in any
+  field puts the whole document outside, and it grants nothing).
+- **the applied presence document** the authority is granted over — the workload
+  running the approved build gives the entry's `workload` (namespace and service
+  account from its SPIFFE ID, read by the one strict parser
+  `ParseKubernetesSPIFFEID`, container from the presence), and only when the
+  envelope allows that exact identity, so a later presence generation cannot
+  move the principal to another workload. One workload (namespace and service
+  account) maps to exactly one principal: the envelope refuses an overlap when
+  written and the derivation omits it.
+
+The entry is the envelope's grant bounded by the document: queues and namespaces
+the document also declares, resources its scope ceilings name, and each
+operation audience only for a binding whose `invoke` unit the document grants,
+every operation's scopes intersected with the unit's scope. A principal granted
+by two live documents, whose workload is not allowed or has no single answer,
+or whose entry fails validation is **omitted by name, never widened**. Within an
+authority id the newest generation is the answer (the inbox is append-only);
+across ids a principal moves only to a document inside the envelope.
+
+**The registry is fenced by the committed envelope revision.** Every module
+authority decision — `AuthorizeModuleCapability`, the work-context and
+headless operation-context mints, the source-delegation mint, and the
+revision confirmations behind `CheckAuthorizationRevision` — takes its grant
+from ONE registry snapshot, reads the committed revision from the store (once
+per request under `WithModuleEnvelopeRevisionMemo`), and refuses with
+`ErrModuleRegistryStale` (Unavailable, a pass requested) unless that snapshot
+was derived from exactly it; a replica that has seen a newer revision serves
+nothing from the older registry. Every mint, including the installer token route,
+passes that one capture into `BindExecution` and the grant resolvers: principal,
+workload owners, declared container, tenant and operation/source grants cannot
+come from different generations. Source mints still take their tenant from the
+person's delegation, checked against the captured module grant. After binding,
+and again after signing and audit recording, `FenceModuleMint` reads the committed
+revision afresh, bypassing the request's earlier memo. A registry replacement or
+a different committed revision withholds the capability with `Unavailable` (HTTP
+503 on the installer route); the final fence is the mint's release decision.
+
+A pass reads the withdrawal history and the envelope first; when another input cannot be read it never combines fresh and
+stale inputs, and publishes a DEGRADED registry — the last published entries,
+kept only where still derived from the current revision, not withdrawn, their
+presence not withdrawn by delivery, and their signer still admitted — or an
+empty one when the history itself cannot be read. The credential's tenant must be the current
+grant's (unless `cross_tenant`), so moving a principal's tenant revokes
+credentials sealed for the old one at the next check. The grant ceiling's keys:
 
 | Key | Grants |
 | --- | --- |
@@ -280,179 +352,215 @@ Its authority is declared in the `module-capabilities` group's
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
-**Unset means no module may call the surface.**
+**No envelope written, or no delivered authority inside it, means no module may
+call the surface** — accounts starts with an empty registry and serves no module
+until its first pass.
+
+### A non-member person is not a refusal of the module
+
+Every refusal of the **caller's authority** on this surface is
+`Unauthenticated` or `PERMISSION_DENIED` and names no reason: an identity it
+cannot prove, a prefix this host does not admit, a tenant it is not bound to, a
+queue or namespace outside its grant, and a procedure the authority endpoint
+does not serve — the last enforced twice, by the mesh `AuthorizationPolicy` and
+again in-process by the interceptor (`grpc_auth_interceptor.go`, "RPC is not
+exposed on the module authority endpoint"), which is also where a missing or
+wrong internal credential is refused. A malformed request is `INVALID_ARGUMENT`
+whatever the caller's authority (an unknown notification category or type, a
+destination that is not a same-origin path). A **person** the surface is asked
+to act on who is not a member of the named tenant is `FAILED_PRECONDITION`. That holds on each surface that takes a person:
+`NotifyUser`, subject-scoped `EnqueueJob` and `ListSubjectVisibility`.
+
+The split is what lets a module drive the surface from a journal with retries. A
+departed person is final for that person and nothing a retry resolves, while a
+composition this host does not admit as a module principal, or whose workload
+it cannot bind to an approved build, is an operator's to fix and its work is
+worth holding; conflated under
+one code a consumer has to choose which of the two it silently gets wrong.
+
+**The code alone is not the discriminator — the reason is.** This surface
+answers `FAILED_PRECONDITION` to several unrelated facts, so a consumer reads
+the `google.rpc.ErrorInfo` reason and never the code or the message text. On
+the notify and subject-visibility methods every `FAILED_PRECONDITION` names
+one, under domain `saas.accounts.v1`:
+
+| Reason | Fact | Whose to fix |
+| --- | --- | --- |
+| `TENANT_MEMBERSHIP_MISSING` (`business.ModuleTenantMembershipMissingReason`) | the person named is not a member of the tenant | nobody's — final for that person |
+| `NOTIFICATION_IDEMPOTENCY_CONFLICT` (`business.ModuleNotificationIdempotencyConflictReason`) | the idempotency key was used for different content | the calling module's; a retry never clears it |
+| `SUBJECT_VISIBILITY_SET_TOO_LARGE` (`business.ModuleSubjectVisibilitySetTooLargeReason`) | the viewer's set exceeds `ModuleSubjectVisibilityMaxSet` | an administrator's, by changing the hierarchy |
+| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+
+Only `TENANT_MEMBERSHIP_MISSING` is final. **An absent or unrecognised reason is
+retainable, never final:** the table is what the surface answers today, not a
+promise about every future refusal, so a consumer that reads "no reason I know"
+as "done" turns the next refusal added here into silently discarded work. That
+is not hypothetical — `LIVE_AUTHORITY_UNAVAILABLE` carried no reason until
+#1032, and an unconfigured host was therefore indistinguishable on the wire from
+a departed person.
+
+A reason is only meaningful together with the domain the same call answered
+with: the `Mint*` exchanges' refusals carry theirs under
+`accounts.saas.codefly.dev` (`adapters.SolutionRegistryErrorDomain`, see
+[Source delegations](#source-delegations-a-sync-runs-with-the-connecting-persons-authority)),
+so matching on a bare reason across the whole service is wrong.
 
 ## Minting a module Work Context
 
 The identity itself is a **Work Context**. The auth-gateway brokers the exchange
-to `ModuleCapabilitiesService/MintModuleWorkContext` (`EXPOSURE_INTERNAL`), which
-authorizes the presented secret against the independent
-`MODULE_IDENTITY_SECRETS` digest, refuses a prefix that is not a declared module
-principal, and mints a capability owned and actored by the module principal
-(`aud=module-capabilities`), emitting a `module.work_context_minted` audit event
-once the capability exists. The response carries
+to `ModuleCapabilitiesService/MintModuleWorkContext` (`EXPOSURE_INTERNAL`). The
+module presents its pod's **projected ServiceAccount token** (audience
+`accounts`) as the request's bearer, and `ModuleAuthorizeWorkContext` refuses a
+prefix that is not a declared module principal, then runs `BindExecution` (see
+"Establishing what a caller is running" below): the token is reviewed, the pod it
+names is read, and the image that pod is RUNNING must equal the build the
+principal's authority document approves. Only then is a capability minted, owned
+and actored by the module principal (`aud=module-capabilities`), and a
+`saas.module.work_context_minted` audit event (v2) records it with the execution
+it was bound to — namespace, ServiceAccount, pod, pod UID, container, running
+image, approved incarnation. The response carries
 `{token, expiresAt, principalId, tenant}`.
 
-- An **empty or absent** `MODULE_IDENTITY_SECRETS` denies every module identity
-  exchange. Compositions must provision identity digests and distribute their
-  matching secrets before modules can obtain Work Contexts; registration
-  credentials never substitute for missing identity digests.
-- The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
-  for that principal, so a module cannot name a tenant by asking.
-- The capability's effective authority **is, in a running deployment today, the
-  LIVE half alone.** `min(sealed, live)` is the target — blocker decision **B1**,
-  which *reverses* what this file said before it — and it is **not yet reached**.
+- **No secret proves a module's identity (#1056).** `MODULE_IDENTITY_SECRETS`,
+  `MODULE_REGISTRATION_SECRETS` and `SOLUTION_REGISTRATION_SECRETS` are deleted,
+  with their parsing, their configuration reads and both registration mints.
+- A refusal is a **verdict** (`PermissionDenied`/`Unauthenticated`, the same
+  fixed message whichever check failed): a token the API server refused —
+  another audience, another cluster, expired — a token for another ServiceAccount
+  or namespace than the principal declares, a replaced pod, or a pod running an
+  unapproved build. The cause is logged here, never returned.
+- A host that could not establish the execution answers **`Unavailable`**: the
+  API server is unreachable, no execution binding is wired, or the container
+  reports no image yet. Execution binding is wired only with delivered authority
+  (`configuredSolutionHostBindingReconciler`), so **a host with no delivery mints
+  for no module**, and a module run outside Kubernetes has no token to present.
+- A tenant-pinned module keeps the envelope's `tenant`; requesting a different
+  organization is refused. A shared module must name `organization_id` and have
+  `cross_tenant` in the envelope. Execution proves the principal first; the
+  organization's live installation then authorizes the mint. A selector grants
+  nothing by itself.
+- **Unsealed-credential disclosure remains in force pending the database proof.**
+  `checkAgainstSealed` enforces NOTHING on a module capability with no seal.
+  Uninstalling a solution does not revoke a module capability in flight.
+  These are the conservative disclosures required by
+  `TestUnsealedCredentialDisclosureMatchesTheCode`; this branch must not
+  replace them with an all-path revocation guarantee until database-backed
+  tests demonstrate the next-use refusal for enqueue, claim, fetch, delegated
+  exchange, module proxy and executable artifacts with an already minted
+  credential. Compiling those tests is not that evidence.
+- The implementation under test resolves the caller organization's installation
+  status, scope, revision, binding and envelope revision in
+  `AuthorizeModuleCapability`, before `checkAgainstSealed`. Its use span,
+  `BeginModuleAuthorityUse`, is intended to retain shared installation, target
+  and envelope locks through the effect, including signing and exchange.
+  The separate lock pool does not lend control-plane privileges to effects.
+  This describes the implementation, not a verified every-path guarantee.
+- **The sealed target, `min(sealed, live)`, remains a separate cutover.**
+  `StartModuleTask` and `VerifyModuleWorkContext` carry identity and tenant,
+  not installation id/revision, epoch, binding or build identity. Even if all
+  next-use checks pass, reinstalling restores an old credential's authority
+  under the new consent, and later widening can expand that credential's
+  authority. Revocation across reinstall and a mint-time ceiling are absent.
+- Every mint calls `BindExecution`: the projected token is reviewed and its
+  running pod/build checked against delivered approval. Installation facts are
+  resolved into mint authority and checked again by `FenceModuleMint` after
+  signing/audit. The SDK signing-format cutover is still needed to seal them.
+- **The exact binding lookup exists; `moduleOperationContextStale` still
+  searches** the current operation bindings for a compatible scope superset.
+  Replacing this with `ExactOperationBinding` requires the sealed binding id.
+  The required model is an **exact binding lookup**, never a scope search.
+- Deferred work keeps producer provenance, and module claims separately stamp
+  `job_messages.consumer_authority`, including installation id/revision and org.
+  Narrowing/uninstall cancels pending, retrying and processing work carrying
+  either authority for that installation and organization, closes attempts and
+  clears leases. Consumer stamps survive retries and lease expiry. Ordinary
+  replay cannot resurrect canceled work. Heartbeat/ack/nack also require the
+  current caller's exact consumer stamp.
+- Global datasource jobs retain their existing `datasource.org_id` attribution.
+  Claims require every nonempty organization hint to equal the caller's bound
+  org. Truly global jobs without an organization hint require the envelope's
+  `cross_tenant` grant as well as the queue grant. Neither route admits another
+  organization's jobs.
 
-  **In a running deployment this mechanism enforces NOTHING on a module
-  capability, and that has to be said in those words.** The comparison against a
-  sealed ceiling is written and tested, but nothing populates the seal — the
-  module Work Context mint (`StartModuleTask`) passes only audience, tenant,
-  owner principal, task, session, actor chain and TTL, and `sdk-go`'s token
-  carries no installation id, producer epoch, binding revision, build
-  incarnation or image digest to put there.
-
-  `checkAgainstSealed` returns on its first line when the seal is nil. So for
-  every real module credential the live read runs, fetches the epoch, and the
-  result is **discarded**: `AuthorizeModuleCapability` is `moduleGrant` plus a
-  database round trip whose answer nothing compares. The declared grant alone
-  binds, which is the behaviour that preceded this work.
-
-  The consequences, stated rather than left to be derived:
-
-  - **Uninstalling a solution does not revoke a module capability in flight.**
-  - **Advancing an organisation's or a principal's authority epoch does not
-    revoke one.**
-  - An earlier version of this paragraph said "the intersection has one operand".
-    That was still too generous: an intersection of one operand would at least be
-    bounded by the live read. Nothing is.
-
-  Code that exists and a behaviour that holds are different facts, and a rules
-  file other agents read as a statement of what is in place must lead with the
-  second. This bullet has now been corrected three times, each time in the
-  direction of claiming less, which is itself the thing to notice about it.
-
-  **What moved, and what the move does NOT yet reach.** Two of the pieces this
-  bullet described as absent now exist and run:
-
-  - `ApprovedBuildReconciler` populates the approved-build view from the
-    delivered authority inbox, in the same reconcile pass as presence. Before
-    it, `MonotonicApprovedBuilds` was never written to, so every principal was
-    UNKNOWN and `ApprovedBuild` refused every one.
-  - `SetExecutionBinding` is called from `work.go`, with the Kubernetes client
-    that reviews a delivery carrier and that approved-build view. Before it, the
-    execution reviewer was nil on every running host and `BindExecution`
-    answered ErrExecutionUnbound for every caller — the mechanism was built,
-    guarded, unit-tested and unreachable.
-
-  **The mint still does not call it, so the sentence above this one still
-  holds.** `StartModuleTask` passes audience, tenant, owner principal, task,
-  session, actor chain and TTL, and nothing else; the capability still carries
-  no seal, and `checkAgainstSealed` still returns on its first line for every
-  real module credential. `BindExecution` is now REACHABLE and is not REACHED.
-
-  The reason is a contract, not an oversight: the mint authenticates with
-  `req.GetSecret()`, a shared secret, and a secret cannot be execution-bound in
-  principle — it says "I know the secret", never "I am this pod running this
-  image". Reaching the check means replacing that credential with a projected
-  service-account token on the request message, which is a proto change and a
-  consumer-visible break. Until that lands, every consequence listed above is
-  still a consequence.
-
-  This bullet has now been wrong twice in opposite directions. It first asserted
-  the whole model in the present tense while none of it existed. It was then
-  corrected to "the live half is built, the sealed half is partly built" — true
-  of the code and still misleading about the deployment, because "partly built"
-  invites a reader to assume some sealing happens. None does.
-
-  What follows separates what the code does from what it is still to do, and the
-  separation is load-bearing rather than cautious.
-
-  **Both halves bind, and neither alone is enough.** Re-reading alone means a
-  widened grant, or a database restored to a broader state, retroactively widens
-  a credential already in flight. Sealing alone means a narrowing does not take
-  effect until the outstanding credential expires. So the effective authority is
-  the intersection, which is strictly stronger than either.
-
-  **What is built.** Every module capability path resolves its authority through
-  `Service.AuthorizeModuleCapability`, which re-reads the live installation, its
-  revision and the principal's producer epoch in **one** statement — three
-  separate reads would let a revoke land between two of them and produce a
-  decision describing a state that never existed. The revocation predicate is a
-  conjunction and each term closes a different hole:
-
-  - **installation freshness**, without which an uninstall-and-reinstall produces
-    a new installation an old credential would satisfy;
-  - **producer epoch**, without which a narrowing revokes only the credential
-    being held and the replacement is reminted with the old authority — so the
-    narrowing undoes itself after one credential lifetime;
-  - **binding revision**, for an operation context, resolved by
-    `Service.ExactOperationBinding`.
-
-  A host that *cannot* re-read refuses every capability (`FailedPrecondition`)
-  rather than falling back to the declared ceiling. A read that *fails* is
-  `Unavailable` — neither a denial nor an allow, because a database blip is not
-  mass revocation and an allow would be the check not running.
-
-  **The exact binding lookup exists; one call site still searches, and it is
-  named here rather than glossed.** `Service.ExactOperationBinding` resolves the
-  one binding a credential named, by id, and refuses a capability that names none
-  rather than falling back — an optional exact lookup is a search with extra
-  steps, so the fallback is the whole defect.
-
-  But `moduleOperationContextStale` (`module_operation_context.go`) **still
-  searches**: it iterates `grant.OperationAudiences` and accepts if **any**
-  binding's `headless_scopes` contain the presented set. So a context minted
-  against a narrow binding is satisfied by any **wider** binding the principal
-  also holds, and narrowing one binding achieves nothing while a broader one
-  survives. That is the defect both reviews named.
-
-  It cannot be routed through the exact lookup yet, and the reason is structural
-  rather than effort: the staleness check has no binding id to look up, because
-  the credential does not carry one. Sealing the binding id is the Work Context
-  cutover, so this site is **gated on condition 2**, not pending on condition 1.
-  Until then, `operationScopesSubset` there is bounding-by-search and the
-  narrowing it misses is real.
-
-  **Deferred work is re-checked when it runs**, not when it is enqueued, because
-  "at use" has to mean at the moment of use. A producer stamps
-  `DeferredWorkAuthority`; a worker re-checks it and revoked work fails
-  **terminally** (`ErrDeferredWorkRevoked`) rather than retrying — the authority
-  will not come back by waiting. An unreadable authority stays retryable, because
-  nothing was decided.
-
-  **Absence is not zero, and this is the trap.** `SealedModuleAuthority`'s fields
-  are pointers, so a credential carrying no claim about a term is skipped rather
-  than compared against zero. "Treat missing as zero" is the shorter
-  implementation, it looks exactly like a check, and it admits every unsealed
-  credential — which is all of them until the Work Context cutover. Core's own
-  seal made the same change for the same reason: `build_incarnation` and
-  `image_digest` became optional so "bears no execution" and "bears execution
-  zero" stopped being the same bytes.
-
-  `TestEveryModuleCapabilityPathReReadsLiveAuthority` in `module/tools` is what
-  makes "every path" true rather than aspirational: it walks the AST for any
-  function calling `moduleGrant` directly and holds the set against a
-  **shrink-only** baseline, now empty. Its non-vacuity check is anchored on the
-  enforcement rather than on the violations — zero direct callers is the goal, so
-  deleting the wrapper must not satisfy it.
-
-  **What is NOT built, and so must not be relied on.** The credential seals
-  identity and tenant only: the mint does not yet populate the installation id,
-  revision, epoch or binding fields, so in a running deployment every
-  `Sealed` is nil and the intersection is the live half alone. That is sound for
-  narrowing and silent about widening, which is strictly better than before and
-  strictly weaker than the target. The intersection also does not yet cover
-  queues, resources, namespaces, external publication and audiences; only the
-  three authority terms above. Those are gated on the Work Context cutover to
-  core's `workcontext`, tracked on #952 / PR #953 as Lane 3 condition 1.
+`TestEveryModuleCapabilityPathReReadsLiveAuthority` in `module/tools` holds the
+remaining direct registry readers to a shrink-only baseline. Artifact policy
+resolution and revocation are no longer exceptions. Database concurrency and
+job lifecycle regressions live in `pkg/infra/installation_review_test.go`; the
+actual signer/verifier regression is
+`pkg/adapters/installation_credential_test.go`.
 
 ## Establishing what a caller is running
 
 `Service.BindExecution` answers what a caller IS RUNNING, from sources the
-caller does not control. The mint authenticated with a **shared secret**, which
-is a bearer token — whoever holds it is the module — so it could not answer this
-at all. A secret cannot be execution-bound in principle: it says "I know the
-secret", never "I am this pod running this image".
+caller does not control. The mint used to authenticate with a **shared secret**,
+which is a bearer token — whoever holds it is the module — so it could not answer
+this at all; that secret is deleted (#1056) and every module mint calls this.
+
+The approval is looked up by the name the authority document gives the
+principal — its **prefix** — never by the registry key
+`ModulePrincipalID(prefix)`, a UUID no document carries. A token the API server
+reviewed and refused is `ErrExecutionTokenRejected`, a verdict; a review that
+could not run is `ErrExecutionUnbound`, not one.
+
+**What a mint requires, in full** (review round 1 on #1056 found each missing):
+
+- **The workload identifies exactly one principal, and it is the one asked
+  for.** A token authenticates a ServiceAccount in a namespace, never a prefix.
+  The reviewed `(namespace, ServiceAccount)` is resolved over the WHOLE captured
+  registry, the same snapshot that supplied the container and tenant;
+  zero or several owners is `ErrExecutionWorkloadAmbiguous` /
+  `ErrExecutionIdentityMismatch`. Two principals sharing a ServiceAccount mint as
+  neither — before, either one's pod minted as both.
+- **The pod is one security boundary.** Every container in it can read the
+  projected token, so the pod may hold only the authenticating container plus
+  init containers that ran to completion. Any other regular container, an init
+  container still running or restartable (a native sidecar), and an ephemeral
+  (debug) container in ANY state is `ErrExecutionUnapprovedContainer`.
+  **The stronger rule this falls short of, and why:** admit every container the
+  applied, signed presence document declares for the workload, each RUNNING its
+  declared digest. Presence cannot express it today: core's
+  `solutionhost.Workload` (v0.17.2 through main) carries the authenticating
+  container with its digest and every other container as a NAME only
+  (`non_authenticating`), and the CLI renders exactly that. Admitting a sidecar
+  by name would let it run any image, so every other container is refused.
+  **The cost:** a module pod with a sidecar — a Cloud SQL Auth Proxy, or a
+  namespace still on istio sidecar injection — mints nothing until presence
+  carries a digest per container (a core field, the CLI render, this check).
+  In the cell today the Cloud SQL proxy sidecars are on accounts (the host, which
+  mints for no one) and on database Jobs, and delivered namespaces are ambient,
+  so no module serving pod is known to carry one.
+- **Only a live regular container supplies the digest.** The pod must be
+  `Running` with no `deletionTimestamp`, and the declared container must be a
+  regular container in state `running`; a stopped container keeps its approved
+  `imageID` in status and a completed init container still reports one, and
+  neither counts (`ErrExecutionNotRunning`). Not started yet — pod `Pending`,
+  container `waiting` — is `ErrExecutionUnbound`: retryable, not a verdict.
+- **The token lives at most 600 seconds** (`MaxExecutionTokenLifetime`,
+  Kubernetes' minimum `expirationSeconds`), read from the iat/exp of a token the
+  API server has just authenticated. A longer one, or one whose lifetime cannot
+  be read, is refused.
+
+**Replay, stated precisely.** A projected ServiceAccount token is a BEARER
+credential. TokenReview proves the cluster issued it to a named pod and that the
+pod still exists; it does not prove the pod is the party presenting it. So:
+
+- **Closed here:** a token from another workload, another audience or another
+  cluster; a replaced pod at the same name; a pod running an unapproved build or
+  any unapproved container; a stopped container or a pod being deleted; a token
+  older than 10 minutes.
+- **Not closed — the residual:** a peer that has COPIED a still-valid token
+  from an approved, running pod (and holds the broker's perimeter credential)
+  can mint as that pod's principal for the rest of that token's lifetime, and
+  the mint record attributes it to the victim pod. TokenReview cannot close
+  this, and nothing on this host can tell the copy from the original.
+- **The strongest closing option — an owner decision, not built:** bind each
+  mint to request-origin identity. The mesh's pod-specific mTLS identity of the
+  connection that carried the request is conveyed by the broker in a header only
+  the broker can set, and accounts requires it to name the same pod UID the
+  TokenReview did. A copied token is then useless from any other pod. It needs
+  the mesh to issue per-pod (not per-ServiceAccount) identities, and the gateway
+  to forward the verified peer, so it is a platform decision rather than a change
+  to this mint.
 
 **Three digest types, and conflating any two defeats the check.** They are
 separate Go types rather than three strings for exactly that reason:
@@ -533,11 +641,12 @@ A principal bearing no approved build binds with **neither** field set, because
 core's seal makes `build_incarnation` and `image_digest` optional *and paired* —
 a digest without an incarnation is refused by its schema.
 
-**Not wired yet:** no mint calls `BindExecution`, and the approved digests are
-not populated from the delivered authority documents, so this is exercised by
-tests rather than by a running deployment. `module_operation_context.go`'s
-binding search is unblocked by the sealed binding id, which the Work Context
-cutover carries and which is still outstanding.
+**Wired (#1056):** every module mint calls `BindExecution`, and the approved
+digests come from the delivered authority documents through
+`ApprovedBuildReconciler`. `TestEveryModuleMintIsExecutionBound` (module/tools)
+holds the call chain. `module_operation_context.go`'s binding search is
+unblocked by the sealed binding id, which the Work Context cutover carries and
+which is still outstanding.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,
@@ -553,14 +662,16 @@ exchanges that produce one.
 brokered by the gateway's `/modules/_operation-context`) is the headless
 counterpart of the delegated operation exchange: background work calling another
 module's service when nobody is signed in. It authenticates exactly like
-`MintModuleWorkContext` — the same identity secret, the same refusal of an
-undeclared prefix, the same tenant existence check — and the request adds only a
-`binding`, a key of that module's `operation_audiences`.
+`MintModuleWorkContext` — the same projected token bound by `BindExecution`, the
+same refusal of an undeclared prefix, the same tenant existence check — and the
+request adds a
+`binding`, a key of that module's `operation_audiences`, and uses the same
+`organization_id` selector as the module Work Context mint.
 
 - The child is addressed to the binding's `audience` and carries **exactly** its
   `headless_scopes`, as both the authority scopes and the module actor's granted
   scopes. Owner and sole actor are the module's service principal; the tenant is
-  the declared one. It lives 60 seconds (`business.ModuleOperationContextTTL`,
+  the selected installation's organization. It lives 60 seconds (`business.ModuleOperationContextTTL`,
   the exchanged-operation ceiling) with the idempotent replay policy.
 - A binding without `headless_scopes` is refused (`PermissionDenied`); the invoke
   scopes are never reused implicitly. An unproven module is `Unauthenticated`.
@@ -570,7 +681,7 @@ undeclared prefix, the same tenant existence check — and the request adds only
   `headless_scopes` stops the next mint; an issued child outlives it by at most
   a minute.
 - It is sealed with a non-zero authorization revision — a digest of the module's
-  whole `MODULE_PRINCIPALS` entry — and `CheckAuthorizationRevision` confirms it
+  whole module registry entry — and `CheckAuthorizationRevision` confirms it
   from that declaration rather than the database: owner a declared module
   principal, its declared tenant, the current entry's digest, only the module
   principal as subject, scopes within one binding's `headless_scopes`. Anything
@@ -615,17 +726,16 @@ that authority (`pkg/business/source_delegation.go`):
   — which recognises a person-owned context with a module actor and confirms it
   from the delegation rather than the row-backed agent path — stops confirming it
   once any of them moves.
-- **The delegation authorizes the organization; `cross_tenant` is never
-  consulted.** Recording, the mint, the revision check and the exchange ignore a
-  module's `tenant` and `cross_tenant`: a module bound to one tenant mints for a
-  delegation in another, a `cross_tenant` module gains nothing, and a principal
-  gains no cross-organization reach from a delegation beyond the one binding it
-  names.
+- **Delegation and installation are both required at use.** Minting, revision
+  confirmation and exchange hold the actor's installation in the delegation's
+  organization to the current envelope. `cross_tenant` permits consent in other
+  organizations; it never lets one organization's installation grant another's
+  data. An exchange's caller is bound to the same organization as its parent.
 - **Exchange, by parent token.** `ExchangeDelegatedOperationAudience` of a parent
   whose actor hop is a declared module principal carrying a delegation id admits
   the parent's tenant by re-checking that delegation
-  (`ConfirmSourceDelegationParent`), not by the caller's `authorizeTenant`; the
-  parent must still be addressed to the caller and the child is attenuated to the
+  (`ConfirmSourceDelegationParent`) and the actor's installation; the parent
+  must be in the caller's organization, addressed to the caller, and attenuated to the
   caller's binding. A parent without such a hop, and every read exchange, keep
   `authorizeTenant` unchanged. Exactly one actor hop is accepted: a delegation
   grants to one actor, and an audience exchange appends none, so a deeper chain
@@ -717,7 +827,7 @@ viewer may read out.
   authority that held then — so the host writes an instant rather than expiring
   entries on a timer.
 - **Authority is the caller's principal, its bound tenant, and the viewer's
-  membership of that tenant.** There is no `MODULE_PRINCIPALS` key for it: like
+  membership of that tenant.** There is no registry key for it: like
   notify, approvals and audit, it is a capability any declared module holds on
   the tenant it is bound to. The membership check is what stops a module bound to
   one tenant from using another tenant's subject as a probe.

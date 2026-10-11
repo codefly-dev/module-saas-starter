@@ -41,6 +41,9 @@ const (
 	// InstallationServiceUninstallSolutionProcedure is the fully-qualified name of the
 	// InstallationService's UninstallSolution RPC.
 	InstallationServiceUninstallSolutionProcedure = "/saas.accounts.v1.InstallationService/UninstallSolution"
+	// InstallationServiceNarrowInstallationProcedure is the fully-qualified name of the
+	// InstallationService's NarrowInstallation RPC.
+	InstallationServiceNarrowInstallationProcedure = "/saas.accounts.v1.InstallationService/NarrowInstallation"
 	// InstallationServiceTransferInstallationOwnershipProcedure is the fully-qualified name of the
 	// InstallationService's TransferInstallationOwnership RPC.
 	InstallationServiceTransferInstallationOwnershipProcedure = "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"
@@ -53,6 +56,15 @@ const (
 	// InstallationServiceListAvailableSolutionsProcedure is the fully-qualified name of the
 	// InstallationService's ListAvailableSolutions RPC.
 	InstallationServiceListAvailableSolutionsProcedure = "/saas.accounts.v1.InstallationService/ListAvailableSolutions"
+	// InstallationServiceListOrganizationInstallationsProcedure is the fully-qualified name of the
+	// InstallationService's ListOrganizationInstallations RPC.
+	InstallationServiceListOrganizationInstallationsProcedure = "/saas.accounts.v1.InstallationService/ListOrganizationInstallations"
+	// InstallationServiceGrantInstallationToTeamProcedure is the fully-qualified name of the
+	// InstallationService's GrantInstallationToTeam RPC.
+	InstallationServiceGrantInstallationToTeamProcedure = "/saas.accounts.v1.InstallationService/GrantInstallationToTeam"
+	// InstallationServiceRevokeInstallationFromTeamProcedure is the fully-qualified name of the
+	// InstallationService's RevokeInstallationFromTeam RPC.
+	InstallationServiceRevokeInstallationFromTeamProcedure = "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam"
 )
 
 // InstallationServiceClient is a client for the saas.accounts.v1.InstallationService service.
@@ -67,6 +79,9 @@ type InstallationServiceClient interface {
 	// is left in place (inert without a grant or a live agent) so a reinstall reuses
 	// it. Idempotent on an already-revoked installation.
 	UninstallSolution(context.Context, *connect.Request[v1.UninstallSolutionRequest]) (*connect.Response[emptypb.Empty], error)
+	// Narrowing is witnessed in the policy log before commit, then atomically
+	// bumps the installation revision, cancels its org's work and records audit.
+	NarrowInstallation(context.Context, *connect.Request[v1.NarrowInstallationRequest]) (*connect.Response[emptypb.Empty], error)
 	// TransferInstallationOwnership reassigns the owner of record and replaces the
 	// co-owner succession set. This is how a "connection owner left the org"
 	// failure is repaired: an admin transfers the installation to a current admin,
@@ -100,6 +115,42 @@ type InstallationServiceClient interface {
 	// not: here the alias is a display and routing fact read from the target in
 	// the same statement, not an identity anything joins on.
 	ListAvailableSolutions(context.Context, *connect.Request[v1.ListAvailableSolutionsRequest]) (*connect.Response[v1.ListAvailableSolutionsResponse], error)
+	// ListOrganizationInstallations is an organisation administrator's view of
+	// what that organisation has installed: each active installation with its live
+	// health, the catalogue row of the target it installed, the scope path of its
+	// authority root, and the teams a grant reaches there.
+	//
+	// It is the org-admin companion to the internal ListInstallations, and it is a
+	// separate method rather than a relaxed policy on that one: ListInstallations
+	// is read by the gateway for an organisation it projected from a verified
+	// identity, and a bare tenant credential must never reach it. This one binds
+	// the organisation to the caller's own admin membership, exactly as
+	// ListAvailableSolutions does, so no organisation's administrator can read
+	// another's. The one exception is inherited, not added here: a platform
+	// super administrator (not impersonating) passes the organisation-admin check
+	// for every organisation, as on every other organisation-admin method, and so
+	// may list any organisation's installations.
+	ListOrganizationInstallations(context.Context, *connect.Request[v1.ListOrganizationInstallationsRequest]) (*connect.Response[v1.ListOrganizationInstallationsResponse], error)
+	// GrantInstallationToTeam exposes an installation to a team: a scope grant of
+	// the given role to the team at the installation's authority-root node. The
+	// host resolves that node from the installation, so a caller never names a
+	// scope path. The role must permit using a solution, or the grant would expose
+	// nothing; the team must belong to the organisation. Using a solution is the
+	// minimum the role must permit, not a ceiling: the team holds everything the
+	// role permits beneath the installation's authority root, exactly as a
+	// GrantScope of that role at that node would give it. Emits scope.granted, the
+	// same event and audit record as any other scope grant, because it is one.
+	// Organisation-admin, with the same platform super administrator exception
+	// ListOrganizationInstallations describes.
+	GrantInstallationToTeam(context.Context, *connect.Request[v1.GrantInstallationToTeamRequest]) (*connect.Response[v1.GrantInstallationToTeamResponse], error)
+	// RevokeInstallationFromTeam removes one team grant at an installation's
+	// authority-root node. It is a narrowing, so it runs under the policy log
+	// exactly as RevokeScope does: a host that cannot witness the narrowing refuses
+	// it, and says so, rather than revoking unwitnessed. It removes the one grant
+	// at the authority root that granted_teams reports; a team that also reaches
+	// the installation from a grant above keeps that reach. Organisation-admin,
+	// with the same platform super administrator exception.
+	RevokeInstallationFromTeam(context.Context, *connect.Request[v1.RevokeInstallationFromTeamRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
 // NewInstallationServiceClient constructs a client for the saas.accounts.v1.InstallationService
@@ -123,6 +174,12 @@ func NewInstallationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			httpClient,
 			baseURL+InstallationServiceUninstallSolutionProcedure,
 			connect.WithSchema(installationServiceMethods.ByName("UninstallSolution")),
+			connect.WithClientOptions(opts...),
+		),
+		narrowInstallation: connect.NewClient[v1.NarrowInstallationRequest, emptypb.Empty](
+			httpClient,
+			baseURL+InstallationServiceNarrowInstallationProcedure,
+			connect.WithSchema(installationServiceMethods.ByName("NarrowInstallation")),
 			connect.WithClientOptions(opts...),
 		),
 		transferInstallationOwnership: connect.NewClient[v1.TransferInstallationOwnershipRequest, v1.Installation](
@@ -149,6 +206,24 @@ func NewInstallationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(installationServiceMethods.ByName("ListAvailableSolutions")),
 			connect.WithClientOptions(opts...),
 		),
+		listOrganizationInstallations: connect.NewClient[v1.ListOrganizationInstallationsRequest, v1.ListOrganizationInstallationsResponse](
+			httpClient,
+			baseURL+InstallationServiceListOrganizationInstallationsProcedure,
+			connect.WithSchema(installationServiceMethods.ByName("ListOrganizationInstallations")),
+			connect.WithClientOptions(opts...),
+		),
+		grantInstallationToTeam: connect.NewClient[v1.GrantInstallationToTeamRequest, v1.GrantInstallationToTeamResponse](
+			httpClient,
+			baseURL+InstallationServiceGrantInstallationToTeamProcedure,
+			connect.WithSchema(installationServiceMethods.ByName("GrantInstallationToTeam")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeInstallationFromTeam: connect.NewClient[v1.RevokeInstallationFromTeamRequest, emptypb.Empty](
+			httpClient,
+			baseURL+InstallationServiceRevokeInstallationFromTeamProcedure,
+			connect.WithSchema(installationServiceMethods.ByName("RevokeInstallationFromTeam")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -156,10 +231,14 @@ func NewInstallationServiceClient(httpClient connect.HTTPClient, baseURL string,
 type installationServiceClient struct {
 	installSolution               *connect.Client[v1.InstallSolutionRequest, v1.Installation]
 	uninstallSolution             *connect.Client[v1.UninstallSolutionRequest, emptypb.Empty]
+	narrowInstallation            *connect.Client[v1.NarrowInstallationRequest, emptypb.Empty]
 	transferInstallationOwnership *connect.Client[v1.TransferInstallationOwnershipRequest, v1.Installation]
 	getInstallation               *connect.Client[v1.GetInstallationRequest, v1.GetInstallationResponse]
 	listInstallations             *connect.Client[v1.ListInstallationsRequest, v1.ListInstallationsResponse]
 	listAvailableSolutions        *connect.Client[v1.ListAvailableSolutionsRequest, v1.ListAvailableSolutionsResponse]
+	listOrganizationInstallations *connect.Client[v1.ListOrganizationInstallationsRequest, v1.ListOrganizationInstallationsResponse]
+	grantInstallationToTeam       *connect.Client[v1.GrantInstallationToTeamRequest, v1.GrantInstallationToTeamResponse]
+	revokeInstallationFromTeam    *connect.Client[v1.RevokeInstallationFromTeamRequest, emptypb.Empty]
 }
 
 // InstallSolution calls saas.accounts.v1.InstallationService.InstallSolution.
@@ -170,6 +249,11 @@ func (c *installationServiceClient) InstallSolution(ctx context.Context, req *co
 // UninstallSolution calls saas.accounts.v1.InstallationService.UninstallSolution.
 func (c *installationServiceClient) UninstallSolution(ctx context.Context, req *connect.Request[v1.UninstallSolutionRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.uninstallSolution.CallUnary(ctx, req)
+}
+
+// NarrowInstallation calls saas.accounts.v1.InstallationService.NarrowInstallation.
+func (c *installationServiceClient) NarrowInstallation(ctx context.Context, req *connect.Request[v1.NarrowInstallationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.narrowInstallation.CallUnary(ctx, req)
 }
 
 // TransferInstallationOwnership calls
@@ -193,6 +277,22 @@ func (c *installationServiceClient) ListAvailableSolutions(ctx context.Context, 
 	return c.listAvailableSolutions.CallUnary(ctx, req)
 }
 
+// ListOrganizationInstallations calls
+// saas.accounts.v1.InstallationService.ListOrganizationInstallations.
+func (c *installationServiceClient) ListOrganizationInstallations(ctx context.Context, req *connect.Request[v1.ListOrganizationInstallationsRequest]) (*connect.Response[v1.ListOrganizationInstallationsResponse], error) {
+	return c.listOrganizationInstallations.CallUnary(ctx, req)
+}
+
+// GrantInstallationToTeam calls saas.accounts.v1.InstallationService.GrantInstallationToTeam.
+func (c *installationServiceClient) GrantInstallationToTeam(ctx context.Context, req *connect.Request[v1.GrantInstallationToTeamRequest]) (*connect.Response[v1.GrantInstallationToTeamResponse], error) {
+	return c.grantInstallationToTeam.CallUnary(ctx, req)
+}
+
+// RevokeInstallationFromTeam calls saas.accounts.v1.InstallationService.RevokeInstallationFromTeam.
+func (c *installationServiceClient) RevokeInstallationFromTeam(ctx context.Context, req *connect.Request[v1.RevokeInstallationFromTeamRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.revokeInstallationFromTeam.CallUnary(ctx, req)
+}
+
 // InstallationServiceHandler is an implementation of the saas.accounts.v1.InstallationService
 // service.
 type InstallationServiceHandler interface {
@@ -206,6 +306,9 @@ type InstallationServiceHandler interface {
 	// is left in place (inert without a grant or a live agent) so a reinstall reuses
 	// it. Idempotent on an already-revoked installation.
 	UninstallSolution(context.Context, *connect.Request[v1.UninstallSolutionRequest]) (*connect.Response[emptypb.Empty], error)
+	// Narrowing is witnessed in the policy log before commit, then atomically
+	// bumps the installation revision, cancels its org's work and records audit.
+	NarrowInstallation(context.Context, *connect.Request[v1.NarrowInstallationRequest]) (*connect.Response[emptypb.Empty], error)
 	// TransferInstallationOwnership reassigns the owner of record and replaces the
 	// co-owner succession set. This is how a "connection owner left the org"
 	// failure is repaired: an admin transfers the installation to a current admin,
@@ -239,6 +342,42 @@ type InstallationServiceHandler interface {
 	// not: here the alias is a display and routing fact read from the target in
 	// the same statement, not an identity anything joins on.
 	ListAvailableSolutions(context.Context, *connect.Request[v1.ListAvailableSolutionsRequest]) (*connect.Response[v1.ListAvailableSolutionsResponse], error)
+	// ListOrganizationInstallations is an organisation administrator's view of
+	// what that organisation has installed: each active installation with its live
+	// health, the catalogue row of the target it installed, the scope path of its
+	// authority root, and the teams a grant reaches there.
+	//
+	// It is the org-admin companion to the internal ListInstallations, and it is a
+	// separate method rather than a relaxed policy on that one: ListInstallations
+	// is read by the gateway for an organisation it projected from a verified
+	// identity, and a bare tenant credential must never reach it. This one binds
+	// the organisation to the caller's own admin membership, exactly as
+	// ListAvailableSolutions does, so no organisation's administrator can read
+	// another's. The one exception is inherited, not added here: a platform
+	// super administrator (not impersonating) passes the organisation-admin check
+	// for every organisation, as on every other organisation-admin method, and so
+	// may list any organisation's installations.
+	ListOrganizationInstallations(context.Context, *connect.Request[v1.ListOrganizationInstallationsRequest]) (*connect.Response[v1.ListOrganizationInstallationsResponse], error)
+	// GrantInstallationToTeam exposes an installation to a team: a scope grant of
+	// the given role to the team at the installation's authority-root node. The
+	// host resolves that node from the installation, so a caller never names a
+	// scope path. The role must permit using a solution, or the grant would expose
+	// nothing; the team must belong to the organisation. Using a solution is the
+	// minimum the role must permit, not a ceiling: the team holds everything the
+	// role permits beneath the installation's authority root, exactly as a
+	// GrantScope of that role at that node would give it. Emits scope.granted, the
+	// same event and audit record as any other scope grant, because it is one.
+	// Organisation-admin, with the same platform super administrator exception
+	// ListOrganizationInstallations describes.
+	GrantInstallationToTeam(context.Context, *connect.Request[v1.GrantInstallationToTeamRequest]) (*connect.Response[v1.GrantInstallationToTeamResponse], error)
+	// RevokeInstallationFromTeam removes one team grant at an installation's
+	// authority-root node. It is a narrowing, so it runs under the policy log
+	// exactly as RevokeScope does: a host that cannot witness the narrowing refuses
+	// it, and says so, rather than revoking unwitnessed. It removes the one grant
+	// at the authority root that granted_teams reports; a team that also reaches
+	// the installation from a grant above keeps that reach. Organisation-admin,
+	// with the same platform super administrator exception.
+	RevokeInstallationFromTeam(context.Context, *connect.Request[v1.RevokeInstallationFromTeamRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
 // NewInstallationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -258,6 +397,12 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 		InstallationServiceUninstallSolutionProcedure,
 		svc.UninstallSolution,
 		connect.WithSchema(installationServiceMethods.ByName("UninstallSolution")),
+		connect.WithHandlerOptions(opts...),
+	)
+	installationServiceNarrowInstallationHandler := connect.NewUnaryHandler(
+		InstallationServiceNarrowInstallationProcedure,
+		svc.NarrowInstallation,
+		connect.WithSchema(installationServiceMethods.ByName("NarrowInstallation")),
 		connect.WithHandlerOptions(opts...),
 	)
 	installationServiceTransferInstallationOwnershipHandler := connect.NewUnaryHandler(
@@ -284,12 +429,32 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 		connect.WithSchema(installationServiceMethods.ByName("ListAvailableSolutions")),
 		connect.WithHandlerOptions(opts...),
 	)
+	installationServiceListOrganizationInstallationsHandler := connect.NewUnaryHandler(
+		InstallationServiceListOrganizationInstallationsProcedure,
+		svc.ListOrganizationInstallations,
+		connect.WithSchema(installationServiceMethods.ByName("ListOrganizationInstallations")),
+		connect.WithHandlerOptions(opts...),
+	)
+	installationServiceGrantInstallationToTeamHandler := connect.NewUnaryHandler(
+		InstallationServiceGrantInstallationToTeamProcedure,
+		svc.GrantInstallationToTeam,
+		connect.WithSchema(installationServiceMethods.ByName("GrantInstallationToTeam")),
+		connect.WithHandlerOptions(opts...),
+	)
+	installationServiceRevokeInstallationFromTeamHandler := connect.NewUnaryHandler(
+		InstallationServiceRevokeInstallationFromTeamProcedure,
+		svc.RevokeInstallationFromTeam,
+		connect.WithSchema(installationServiceMethods.ByName("RevokeInstallationFromTeam")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.InstallationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case InstallationServiceInstallSolutionProcedure:
 			installationServiceInstallSolutionHandler.ServeHTTP(w, r)
 		case InstallationServiceUninstallSolutionProcedure:
 			installationServiceUninstallSolutionHandler.ServeHTTP(w, r)
+		case InstallationServiceNarrowInstallationProcedure:
+			installationServiceNarrowInstallationHandler.ServeHTTP(w, r)
 		case InstallationServiceTransferInstallationOwnershipProcedure:
 			installationServiceTransferInstallationOwnershipHandler.ServeHTTP(w, r)
 		case InstallationServiceGetInstallationProcedure:
@@ -298,6 +463,12 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 			installationServiceListInstallationsHandler.ServeHTTP(w, r)
 		case InstallationServiceListAvailableSolutionsProcedure:
 			installationServiceListAvailableSolutionsHandler.ServeHTTP(w, r)
+		case InstallationServiceListOrganizationInstallationsProcedure:
+			installationServiceListOrganizationInstallationsHandler.ServeHTTP(w, r)
+		case InstallationServiceGrantInstallationToTeamProcedure:
+			installationServiceGrantInstallationToTeamHandler.ServeHTTP(w, r)
+		case InstallationServiceRevokeInstallationFromTeamProcedure:
+			installationServiceRevokeInstallationFromTeamHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -315,6 +486,10 @@ func (UnimplementedInstallationServiceHandler) UninstallSolution(context.Context
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.UninstallSolution is not implemented"))
 }
 
+func (UnimplementedInstallationServiceHandler) NarrowInstallation(context.Context, *connect.Request[v1.NarrowInstallationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.NarrowInstallation is not implemented"))
+}
+
 func (UnimplementedInstallationServiceHandler) TransferInstallationOwnership(context.Context, *connect.Request[v1.TransferInstallationOwnershipRequest]) (*connect.Response[v1.Installation], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.TransferInstallationOwnership is not implemented"))
 }
@@ -329,4 +504,16 @@ func (UnimplementedInstallationServiceHandler) ListInstallations(context.Context
 
 func (UnimplementedInstallationServiceHandler) ListAvailableSolutions(context.Context, *connect.Request[v1.ListAvailableSolutionsRequest]) (*connect.Response[v1.ListAvailableSolutionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.ListAvailableSolutions is not implemented"))
+}
+
+func (UnimplementedInstallationServiceHandler) ListOrganizationInstallations(context.Context, *connect.Request[v1.ListOrganizationInstallationsRequest]) (*connect.Response[v1.ListOrganizationInstallationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.ListOrganizationInstallations is not implemented"))
+}
+
+func (UnimplementedInstallationServiceHandler) GrantInstallationToTeam(context.Context, *connect.Request[v1.GrantInstallationToTeamRequest]) (*connect.Response[v1.GrantInstallationToTeamResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.GrantInstallationToTeam is not implemented"))
+}
+
+func (UnimplementedInstallationServiceHandler) RevokeInstallationFromTeam(context.Context, *connect.Request[v1.RevokeInstallationFromTeamRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.RevokeInstallationFromTeam is not implemented"))
 }

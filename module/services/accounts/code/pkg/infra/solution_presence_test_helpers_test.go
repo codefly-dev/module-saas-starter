@@ -64,6 +64,16 @@ func declarePresence(t *testing.T, bindingID, alias string) string {
 		targetID = target.ID
 		return testStore.SaveSolutionHostBinding(ctx, appliedPresenceRecord(bindingID, alias, 1, now, false))
 	}))
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		revision, err := testStore.NextSolutionRegistryRevision(ctx)
+		if err != nil {
+			return err
+		}
+		return testStore.SaveSolutionRegistration(ctx, &business.SolutionRegistration{
+			SolutionID: alias, Publisher: "solution:" + alias, Revision: revision, UpdatedAt: now,
+			Declared: &business.SolutionDeclaredBinding{BindingID: bindingID, TargetID: targetID, Generation: 1, Release: "acme/" + alias + "@1.0.0", Kind: business.SolutionDeclaredKindSolution},
+		})
+	}))
 	return targetID
 }
 

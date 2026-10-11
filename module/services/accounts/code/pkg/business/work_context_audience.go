@@ -25,7 +25,7 @@ import (
 //     content-read surface resolves it AS a module prefix
 //     (ModuleContentResources, read by delegated_record_access.go and
 //     readable_sources.go). This member is derived from the composition's
-//     MODULE_PRINCIPALS registry, so it is no more free text than the other two —
+//     module principal registry, so it is no more free text than the other two —
 //     a deployment declares it, no caller asks for it. **It is a member the
 //     three-clause ruling did not name**, and it is here because leaving it out
 //     would make every such ceiling entry dead and take the module content-read

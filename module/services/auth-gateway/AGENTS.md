@@ -37,22 +37,16 @@ alias the catalog *owns* is refused outright rather than half-served — the mat
 takes only the paths it matches, so serving the rest would split one prefix
 between two authorities.
 
-Beyond that it is the **solution shape, with one deliberate difference**: the same
-cache, the same single carried resolution, the same upstream URL policy, the same
-guarded (resolve-revalidating) transport, the same tombstone rule, the same 120 s
-revocation bound — and **no per-viewer installation admission**, because a module
-is part of the composition rather than something an organisation installs. The
-path is forwarded **unchanged** (a module owns its own `/v1/<alias>` surface),
-where a solution's prefix is stripped.
+It uses the **solution shape**: the same cache, single carried resolution,
+upstream URL policy, guarded transport, tombstone rule and 120 s presence
+revocation bound. Before forwarding a bearer it asks accounts for the viewer's
+live entitlement to the resolved target, without caching that decision. Accounts
+intersects the delivered authority, envelope and organization's installation
+scope. The path is forwarded unchanged; a module owns its `/v1/<alias>` surface.
 
-That asymmetry is why the registry carries `SolutionDeclaredBinding.kind` and why
-neither surface guesses: routing a solution here would put its upstream behind no
-installation check. Each surface requires its own kind positively and answers a
-403 verdict for the other — `module is not declared on this host`, or `solution is
-not declared on this host`. `SOLUTION_DECLARED_KIND_UNSPECIFIED` is refused by
-**both**: it is what a reader decodes from a writer that did not set the field, not
-a third kind, so such a record is served by neither surface rather than by the one
-needing less authority.
+The registry's `SolutionDeclaredBinding.kind` positively identifies each surface.
+An unspecified kind is refused by both. Neither presence nor a reusable alias
+constitutes organization consent.
 
 Module identity exchanges are described below; accounts owns their authority.
 
@@ -117,24 +111,34 @@ other drops.
 ## Brokering a module's Work Context
 
 `POST /modules/_work-context` takes the
-cluster-internal token plus the module's **identity** secret, body `{prefix}`.
-The gateway brokers it to accounts
-(`ModuleCapabilitiesService/MintModuleWorkContext`, `EXPOSURE_INTERNAL`), which
-authorizes it against an independent digest and owns every rule about what the
-resulting capability may do — see
+cluster-internal token plus the module pod's **projected ServiceAccount token**
+as `Authorization: Bearer <token>` (exactly one header, that scheme), body
+`{prefix, organization_id?}`. A shared module selects an organization; accounts
+requires its live installation and the envelope's `cross_tenant` grant. A
+tenant-pinned module may omit the selector or name only its pinned tenant.
+No secret header is read: `X-Codefly-Module-Secret` is deleted with
+the secret (#1056) and only stays on the strip list. The gateway forwards the
+token unread to accounts (`ModuleCapabilitiesService/MintModuleWorkContext`,
+`EXPOSURE_INTERNAL`), which reviews it, binds it to the pod's running build
+(`BindExecution`) and owns every rule about what the resulting capability may
+do — see
 [../accounts/AGENTS.md](../accounts/AGENTS.md). The gateway mints nothing itself
 and adds no authority of its own.
 
 `POST /modules/_operation-context` is its headless sibling, on the same
-perimeter: the cluster-internal token in `X-Codefly-Internal-Token`, the module's
-**identity** secret in `X-Codefly-Module-Secret`, and body
-`{"prefix": "<module>", "binding": "<operation_audiences key>"}`. The gateway
+perimeter: the cluster-internal token in `X-Codefly-Internal-Token`, the module
+pod's projected token as `Authorization: Bearer`, and body
+`{"prefix": "<module>", "binding": "<operation_audiences key>", "organization_id": "<org UUID>"}`
+(the organization selector may be omitted for a tenant-pinned module). The gateway
 brokers it to `ModuleCapabilitiesService/MintModuleOperationContext` and answers
 `{work_context, expires_at, principal_id, tenant, audience, binding}` (RFC 3339
 `expires_at`) with `cache-control: no-store` — snake_case, unlike the camelCase
 `/modules/_work-context`, because consumers were built against this shape. It relays two distinct refusals: `401` when the module is not proven
-(bad internal token, missing or wrong secret, undeclared module) and `403` when a
-proven module names a binding it may not mint with no person present. What the
+(bad internal token, a missing or refused projected token, another workload, an
+unapproved build, an undeclared module) and `403` when a proven module names a
+binding it may not mint with no person present. Every module exchange answers
+`503` when accounts could not establish what the pod is running (`Unavailable`):
+nothing was decided, and the module retries. What the
 binding yields — audience, scopes, lifetime — is accounts' decision alone.
 
 `POST /modules/_source-operation-context` is the source-delegation sibling, on
