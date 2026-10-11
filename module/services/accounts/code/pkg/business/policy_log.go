@@ -191,9 +191,11 @@ type PolicyLog interface {
 
 	// Entries returns every entry after a sequence, in order.
 	//
-	// Used by reconciliation, never on a request path. The reader deliberately
-	// holds no job-creation permission on the log's warehouse, so this is a
-	// bounded row read with a restriction rather than a query.
+	// Used by reconciliation, never on a request path. A bounded page read
+	// from a sequence, never a query: the witness serves at most 500 records
+	// per read. Success is also what proves the log was REACHED, so an
+	// implementation must fail rather than return a page it could not verify
+	// is current.
 	Entries(ctx context.Context, afterSequence uint64, limit int) ([]*PolicyLogRecord, error)
 }
 
@@ -247,10 +249,10 @@ type PolicyLogGap struct {
 // log still holds its request, its connection and whatever the caller above it
 // holds. A bounded wait converts that into a refusal the caller can act on.
 //
-// Five seconds: long enough that an ordinary warehouse append succeeds, short
-// enough that an authority change fails visibly rather than hanging. A narrowing
-// that cannot be logged must not proceed, so the refusal is the correct outcome
-// and not a degraded one.
+// Five seconds: the witness's own append budget, long enough that an ordinary
+// append succeeds, short enough that an authority change fails visibly rather
+// than hanging. A narrowing that cannot be logged must not proceed, so the
+// refusal is the correct outcome and not a degraded one.
 const PolicyLogDeadline = 5 * time.Second
 
 // PolicyLogStaleAfter is how long a host may serve without having reached the
@@ -464,9 +466,9 @@ func (s *Service) ReconcilePolicyLog(ctx context.Context) (*PolicyLogServingStat
 	return state, err
 }
 
-// policyLogReadBatch bounds one reconciliation read. Bounded because the reader
-// holds no job-creation permission on the log's warehouse — this is a row read
-// with a restriction, and an unbounded one would be a scan.
+// policyLogReadBatch bounds one reconciliation read: the witness's own page
+// limit, so a pass reads at most one page and the next pass continues from the
+// cursor it advanced.
 const policyLogReadBatch = 500
 
 // policyNow is the host's clock, overridable in tests. Separate from the log's
