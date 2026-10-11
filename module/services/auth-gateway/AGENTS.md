@@ -71,28 +71,49 @@ constitutes organization consent.
 
 Module identity exchanges are described below; accounts owns their authority.
 
-## A runtime-registered upstream never receives the person's session
+## What a runtime-registered upstream receives, and what it does not
 
-The gateway removes `Authorization`, `Cookie` and `Proxy-Authorization` from every
-request it forwards to a runtime-registered upstream — a federated module prefix or
-a solution. A catalog route is untouched: accounts is the host's own API, where the
-session IS the credential.
+A runtime-registered upstream — a federated module prefix or a solution — receives
+the person's `Authorization` bearer and does NOT receive their `Cookie` or
+`Proxy-Authorization`. A catalog route is untouched: accounts is the host's own API,
+where the session IS the credential.
 
-The host access token carries one host-wide audience and the person's full
-authority, so it is not a credential any single upstream should hold. The cookie
-goes the same way, and the gateway has already resolved identity from it by the time
-it forwards, so an upstream reading it learns nothing it is not told.
+That split is a decision, not a halfway implementation, and it replaces an earlier
+rule here that said all three were removed from every such request. Each half has
+its own reason:
 
-An upstream receives the identity `ext_authz` stamped: the subject, the tenant, the
-session, the credential kind and the scope ceiling. That names the person without
-carrying their authority.
+**The cookie never travels, whatever the bearer does.** Nothing upstream can
+authenticate with it — this perimeter refuses a cookie AS a credential by name (see
+`ExtAuthz.Check`) — and it carries the longest-lived value a browser holds, the
+refresh credential. Forwarding it delivers that value to a third party for no
+purpose it could serve. The two removals used to be one decision, and the broader
+one silently carried the narrower: a request on the MCP tool path skipped the whole
+removal and forwarded `Cookie` with it.
 
-**SP-GW-07 has a second half this gateway does not yet satisfy.** The invariant is
-that an upstream receives a host-minted context bound to THAT upstream's own
-audience — not merely that it stops receiving the person's session. Today it
-receives the stamped identity headers and no audience-bound context, so the
-credential is no longer over-broad but the positive half is absent. Minting it at
-the edge is open work here; it cannot be supplied by a consumer.
+**The bearer does travel, to a DECLARED upstream, when the request is
+authenticated.** A declared upstream authenticates the request by that header; the
+runtime's HTTP wrapper and its passthrough handler both answer 401 without it. The
+capability that should replace it — a host-minted context bound to that upstream's
+own audience — is minted by nothing here and verified by nothing on the consumer
+side, and the consumer half lives in another repository. Removing the header first
+would break every composed solution while shipping a credential no consumer reads.
+
+**It does not travel on the anonymous module-federation surface**, which runs no
+ext_authz at all: a bearer arriving there was never authenticated for that upstream,
+and the loader fetches those bytes without a person.
+
+An upstream also receives the identity `ext_authz` stamped: the subject, the tenant,
+the session, the credential kind and the scope ceiling. That names the person
+independently of the bearer beside it.
+
+**SP-GW-07's second half is open, recorded as `SA-F-BEARER`.** The invariant is that
+an upstream receives a host-minted context bound to THAT upstream's own audience —
+not merely that it stops receiving the person's session. The host access token
+carries one host-wide audience and the person's full authority, so a declared
+upstream holding it holds more than it needs, and that exposure is real while this
+stays open. What closes it: a host-minted context bound to the upstream's own
+audience, plus consumer verification of it, plus one composed browser-to-consumer
+request exercised end to end.
 
 What is missing is specific, so that the next person does not have to rediscover it.
 `WorkContextService` already exposes `ExchangeAudience`, which re-binds an existing
@@ -101,8 +122,7 @@ caller here holds a browser SESSION, which is not a Work Context, so the edge wo
 need a mint that takes a verified session and returns a context bound to one
 upstream's audience, with that person's authority narrowed to what the upstream may
 do on their behalf. No RPC does that today, and adding one is a descriptor change
-(contract digests, published clients, a verified regeneration), which is why the
-stripping half shipped alone.
+(contract digests, published clients, a verified regeneration).
 
 Two things to settle with it, because they are the reason it is not a small change:
 the mint is per request on the proxy path, so its latency and its failure mode become
@@ -110,9 +130,40 @@ the failure mode of all federated traffic; and the authority to narrow TO is the
 installation's ceiling, which the host cannot currently look up from a solution id
 either (see `module/SOLUTION_REGISTRATION.md`).
 
-**A consumer written against the old behaviour has to change**: anything that read
-the forwarded bearer needs a host-minted capability bound to its own audience
-instead.
+**A consumer written against the old behaviour does NOT have to change for the
+bearer.** Two things do change at the edge: a declared upstream no longer receives
+the caller's cookie, and a resource-bound token is confined — it reaches the solution
+its resource names, plus exactly one host route, the Work Context mint, and only for
+a consumer the organization installed and the viewer was granted. Anything replaying
+such a token elsewhere stops working, deliberately.
+
+## One host route for a resource-confined credential
+
+A token issued for a solution's MCP endpoint (RFC 8707 resource indicator) is held
+by a third-party client and, once forwarded, by the runtime it dialled. It reaches:
+
+- that solution's own routes, where the resource and the path agree; and
+- `/saas.accounts.v1.WorkContextService/StartTask` on this host, and nothing else
+  here.
+
+The mint is admitted because the runtime's MCP viewer path needs it: it derives a
+module gateway by minting a viewer-owned Work Context, carrying the person's bearer
+beside its own workload attestation, and its module credential does not stand in for
+the person's. Refusing every host route refused the viewer's own tool call.
+
+It is admitted CONFINED. `ext_authz` stamps `x-codefly-resource` with the resource
+the credential names, and the gateway then requires the solution that resource names
+to be one the organization installed and the viewer holds a grant reaching — the
+same question, through the same authority, as every proxied request to that solution.
+An authority that cannot be asked answers 503; a capability is not issued on an
+unanswered question.
+
+The stamp is on both `untrustedAuthHeaders` and `canonicalUpstreamAuthHeaders`, so a
+caller cannot assert a resource and cannot lift its own confinement. The consumer
+check runs on the HTTP gateway path, where the registry and the entitlement authority
+live; a deployment driving `ext_authz` from Envoy gets the route confinement and the
+carried resource but not that check, the same asymmetry the gateway credential
+already has.
 
 ## A registered client calls without a proxy
 
