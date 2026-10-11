@@ -2,18 +2,30 @@ import { describe, expect, it } from "vitest";
 import { Axis, Gridline } from "../atoms.js";
 import { linearScale, sparkPlot } from "../geometry.js";
 
-type ElementLike = { type?: unknown; props?: { children?: unknown } & Record<string, unknown> };
+type ElementLike = {
+	type?: unknown;
+	props?: { children?: unknown } & Record<string, unknown>;
+};
 
 // Collect every element of a given SVG tag (a rendered component is a plain
 // object tree, so no DOM is needed) with its props and text child. Recurses into
 // child arrays — an axis <g> holds one array of y labels and one of x labels.
-function byTag(node: unknown, tag: string): { props: Record<string, unknown>; text: string }[] {
+function byTag(
+	node: unknown,
+	tag: string,
+): { props: Record<string, unknown>; text: string }[] {
 	if (Array.isArray(node)) return node.flatMap((child) => byTag(child, tag));
 	if (!node || typeof node !== "object") return [];
 	const el = node as ElementLike;
 	const self =
 		el.type === tag && el.props
-			? [{ props: el.props, text: typeof el.props.children === "string" ? el.props.children : "" }]
+			? [
+					{
+						props: el.props,
+						text:
+							typeof el.props.children === "string" ? el.props.children : "",
+					},
+				]
 			: [];
 	return self.concat(byTag(el.props?.children, tag));
 }
@@ -34,13 +46,18 @@ describe("Gridline", () => {
 describe("Axis", () => {
 	it("labels each y tick with the formatted value", () => {
 		const scale = linearScale(0, 10, plot.bottom, plot.top);
-		const labels = byTag(Axis({ plot, y: { ticks: [0, 5, 10], scale } }), "text").map((t) => t.text);
+		const labels = byTag(
+			Axis({ plot, y: { ticks: [0, 5, 10], scale } }),
+			"text",
+		).map((t) => t.text);
 		expect(labels).toEqual(["0", "5", "10"]);
 	});
 
 	it("time-formats ISO bucket keys on the x axis", () => {
 		const keys = ["2026-09-01T00:00:00+00", "2026-09-02T00:00:00+00"];
-		const labels = byTag(Axis({ plot, x: { keys } }), "text").map((t) => t.text);
+		const labels = byTag(Axis({ plot, x: { keys } }), "text").map(
+			(t) => t.text,
+		);
 		expect(labels).toEqual(["Sep 1", "Sep 2"]);
 	});
 

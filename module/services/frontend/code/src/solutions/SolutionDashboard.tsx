@@ -1,27 +1,30 @@
 "use client";
 
 import type {
-	Dashboard,
+	Dashboard as DashboardDeclaration,
 	DataGraph,
 	MetricWidget,
 } from "@codefly/saas-plugin-manifest";
+import { createSaasClient, runDashboard } from "@codefly-dev/saas-sdk";
+// The dashboard is DRAWN by the shared kit's `<Dashboard>` — the same renderer,
+// from the same package instance, that a solution's own remote mounts and that
+// the host's operations pages are built from. Nothing here re-implements it:
+// this file owns only what is genuinely the host's (the per-widget audit
+// queries, the viewer's saved arrangement of the tiles, and the ⓘ that says
+// where a number comes from) and composes it AROUND the renderer through the
+// renderer's own slots.
 import {
-	createSaasClient,
-	type ResolvedWidget,
-	runDashboard,
-} from "@codefly-dev/saas-sdk";
-// Charts come from the shared kit, not host-internal components: the same
-// primitives a solution's own remote would render with, so host-rendered and
-// solution-rendered dashboards look identical and there is one charting
-// implementation to maintain.
-import {
-	AreaChart,
-	BarList,
-	LineChart,
+	Dashboard,
+	DashboardWidget,
+	type DashboardWidgetView,
 	SortableGrid,
-	StatChart,
+	type WidgetReadFailure,
 } from "@codefly-dev/ui/dashboard";
-import { useQuery } from "@tanstack/react-query";
+import {
+	type QueryClient,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 import { GripVertical, Info, Plus, X } from "lucide-react";
 import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
@@ -34,11 +37,12 @@ import { scopedDashboardDraftKey } from "@/features/dashboard/service/use-dashbo
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import {
+	mayKeepRetainedRows,
+	type ReadOutcome,
+	readOutcome,
+} from "@/shared/lib/read-outcome";
+import {
 	Button,
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -47,7 +51,6 @@ import {
 	PopoverContent,
 	PopoverTitle,
 	PopoverTrigger,
-	Skeleton,
 } from "@/shared/ui";
 import {
 	addableTiles,
@@ -99,142 +102,158 @@ function singleWidgetGraph(graph: DataGraph, widget: MetricWidget): DataGraph {
 	};
 }
 
-// Render a resolved widget's series in the shape its visualization asks for. A
-// series with no points is "no data yet" for every kind — the audit RPC omits a
-// bucket rather than emitting a zero, so an empty series means nothing matched,
-// not a real zero worth plotting.
-function WidgetBody({ widget }: { widget: ResolvedWidget }) {
-	return (
-		<>
-			{widget.series.coverage === "partial" && (
-				<p className="text-sm text-muted-foreground" role="status">
-					Partial telemetry
-				</p>
-			)}
-			<WidgetValues widget={widget} />
-		</>
-	);
-}
-
-function WidgetValues({ widget }: { widget: ResolvedWidget }) {
-	const { series, visualization } = widget;
-	if (series.points.length === 0) {
-		return (
-			<p className="text-sm text-muted-foreground">
-				{series.coverage === "partial"
-					? "Telemetry unavailable or incomplete."
-					: "No data yet."}
-			</p>
-		);
-	}
-	switch (visualization) {
-		case "line":
-			return (
-				<LineChart points={series.points} className="text-primary/70" axes />
-			);
-		case "area":
-			return (
-				<AreaChart points={series.points} className="text-primary/70" axes />
-			);
-		case "bar":
-			return <BarList points={series.points} />;
-		case "number":
-			return series.total === null ? (
-				<p className="text-sm text-muted-foreground">
-					{series.coverage === "partial"
-						? "Incomplete telemetry; total unavailable."
-						: "Total unavailable across groups."}
-				</p>
-			) : (
-				<StatChart total={series.total} points={series.points} />
-			);
-		case "table":
-			return (
-				<table className="w-full text-sm">
-					<tbody>
-						{series.points.map((point) => (
-							<tr key={point.key} className="border-b last:border-0">
-								<td className="py-1 text-muted-foreground">{point.key}</td>
-								<td className="py-1 text-right font-mono">
-									{point.value.toLocaleString()}
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			);
-		default: {
-			// Compile-time exhaustiveness: a new WidgetVisualization must be
-			// handled here or this assignment fails to type-check.
-			const _exhaustive: never = visualization;
-			return _exhaustive;
-		}
-	}
-}
-
-function WidgetCard({
+// One declared widget, resolved and drawn.
+//
+// The query lives here, in a component of its own, because each widget is
+// resolved in isolation: a widget whose metric's audit query errors fails
+// alone instead of blanking every sibling that would share one batched
+// resolution. React fixes the number of hooks a component may call, so these
+// queries cannot be hoisted into the renderer that takes the whole view —
+// which is why the kit exports `DashboardWidget` beside `<Dashboard>` and this
+// mounts that, rather than drawing a card of its own.
+function SolutionWidget({
 	graph,
 	widget,
 	solutionId,
 	dashboardId,
 	orgId,
-	grip,
-	info,
-	remove,
+	actions,
 }: {
 	graph: DataGraph;
 	widget: MetricWidget;
 	solutionId: string;
 	dashboardId: string;
 	orgId: string;
-	grip: ReactNode;
-	info: ReactNode;
-	remove: ReactNode;
+	actions: ReactNode;
 }) {
 	// The graph is part of the key so a solution that redeploys with a changed
 	// declaration refetches instead of serving another graph's cached series that
 	// happens to share the same solution/dashboard/widget/org ids. Disabled until
 	// the org resolves so the pre-org window reads as loading, never as empty.
-	const { data, isPending, isError } = useQuery({
-		queryKey: [
-			"solution-widget",
-			solutionId,
-			dashboardId,
-			widget.id,
-			orgId,
-			graph,
-		],
+	const client = useQueryClient();
+	const source = widgetSource({ solutionId, dashboardId, widget, orgId });
+	const { data, isError, error } = useQuery({
+		queryKey: [...source, graph],
 		queryFn: () =>
 			runDashboard(
 				sdk.audit,
 				singleWidgetGraph(graph, widget),
 				SINGLE_WIDGET_DASHBOARD,
 				{ orgId },
-			).then((resolved) => resolved.widgets[0]),
+			)
+				.then((resolved) => resolved.widgets[0])
+				.catch((cause: unknown) => {
+					// The read itself answers for what it leaves behind. A refused
+					// read deletes every snapshot of this widget's source before the
+					// rejection reaches anyone, so there is nothing retained for a
+					// later error to hand back and nothing to keep in step with it.
+					if (!mayKeepRetainedRows(readOutcome(true, cause))) {
+						discardSnapshots(client, source);
+					}
+					throw cause;
+				}),
 		enabled: orgId !== "",
 	});
 
+	const outcome = readOutcome(isError, error);
+	// Whatever the cache still holds. A refusal has already emptied it, which is
+	// why this reads the snapshot without asking whether the viewer may keep it:
+	// the question was put at the read boundary, where the answer could be acted
+	// on once for every revision instead of per mounted component.
+	const retained = data?.series ?? null;
+
 	return (
-		<Card>
-			<CardHeader className="flex flex-row items-center gap-1 pb-2">
-				{grip}
-				<CardTitle className="min-w-0 flex-1 text-base">
-					{widget.title ?? widget.metric}
-				</CardTitle>
-				{info}
-				{remove}
-			</CardHeader>
-			<CardContent>
-				{isError ? (
-					<p className="text-sm text-destructive">Unable to load.</p>
-				) : isPending || !data ? (
-					<Skeleton className="h-24 w-full" />
-				) : (
-					<WidgetBody widget={data} />
-				)}
-			</CardContent>
-		</Card>
+		<DashboardWidget
+			widget={{
+				...declaredWidget(widget),
+				series: retained,
+				failure: WIDGET_FAILURE[outcome],
+			}}
+			actions={actions}
+		/>
 	);
+}
+
+/**
+ * Every cached revision of one widget's source — the query key without the
+ * declaration that produced it.
+ *
+ * A dashboard whose declaration has changed since keeps its own cache entry: a
+ * different title is enough for another key, holding the same numbers. So a
+ * rule about this widget's values is a rule about the whole prefix, never about
+ * the one entry a render happens to have resolved.
+ */
+function widgetSource({
+	solutionId,
+	dashboardId,
+	widget,
+	orgId,
+}: {
+	solutionId: string;
+	dashboardId: string;
+	widget: MetricWidget;
+	orgId: string;
+}): readonly unknown[] {
+	return ["solution-widget", solutionId, dashboardId, widget.id, orgId];
+}
+
+/**
+ * Delete the retained snapshots under a widget's source: the values go, the
+ * queries and their states stay.
+ *
+ * This is what `mayKeepRetainedRows` says must happen to rows a refused read
+ * leaves behind, done where the refusal is classified rather than in a
+ * component. The difference is not tidiness. A component effect runs only for
+ * the revision that is mounted and only while it is: a refusal that arrives
+ * after the viewer switched dashboards, or after the page unmounted, left the
+ * numbers in the cache for the next render to serve. The read is the one thing
+ * that happens exactly once per refusal, whoever is watching.
+ *
+ * Writing the state is the whole of it, deliberately:
+ *
+ *   - `removeQueries` destroys the entry, which silently cancels the very read
+ *     that is reporting the refusal (`Query.destroy` → `cancel({silent:true})`)
+ *     and leaves a mounted observer holding a detached query that no longer
+ *     re-renders — the values stay on screen and recovery has nothing to
+ *     refetch into.
+ *   - `setQueryData(key, undefined)` cannot express this at all: the client
+ *     returns early when the new data is `undefined`, so the call does nothing.
+ *   - `resetQueries` clears the error with the data and refetches every active
+ *     entry, so a standing refusal re-asks and re-clears without end.
+ *
+ * Setting `data` notifies the observers, cancels nothing, keeps the refusal,
+ * and starts no fetch. An entry left with no data renders as a wait and is
+ * stale, so the next read of it is a real read — which is the only way values
+ * come back.
+ */
+function discardSnapshots(client: QueryClient, source: readonly unknown[]) {
+	for (const query of client
+		.getQueryCache()
+		.findAll({ queryKey: source, exact: false })) {
+		if (query.state.data === undefined) continue;
+		query.setState({ data: undefined, dataUpdatedAt: 0 });
+	}
+}
+
+// The host's read classification as the renderer's presentational one. A read
+// that succeeded is no failure at all, which is what `undefined` says.
+const WIDGET_FAILURE: Record<ReadOutcome, WidgetReadFailure | undefined> = {
+	empty: undefined,
+	forbidden: "refused",
+	failed: "failed",
+};
+
+// A declared widget as the renderer's view model, with no series yet. The
+// series is bound by `SolutionWidget`, the one place that has resolved it; a
+// `null` series is the honest value here and the renderer draws it as a wait
+// rather than as an empty result.
+function declaredWidget(widget: MetricWidget): DashboardWidgetView {
+	return {
+		id: widget.id,
+		visualization: widget.visualization,
+		title: widget.title ?? widget.metric,
+		series: null,
+	};
 }
 
 // Reading `window.localStorage` can itself throw: blocked site data or a
@@ -273,7 +292,7 @@ function noSubscription() {
  */
 function useDashboardLayout(
 	storageKey: string,
-	dashboard: Dashboard,
+	dashboard: DashboardDeclaration,
 ): [string[], (next: readonly string[]) => void] {
 	const stored = useSyncExternalStore(
 		noSubscription,
@@ -525,7 +544,7 @@ function SolutionDashboard({
 	solutionId,
 }: {
 	graph: DataGraph;
-	dashboard: Dashboard;
+	dashboard: DashboardDeclaration;
 	solutionId: string;
 }) {
 	const { user, organizationId } = useAuth();
@@ -544,52 +563,45 @@ function SolutionDashboard({
 		const widget = widgets.get(tileId);
 		return widget?.title ?? widget?.metric ?? tileId;
 	};
-	const renderTile = (tileId: string) => {
-		const widget = widgets.get(tileId);
-		if (!widget) return null;
+	// The grip, the ⓘ and the × — the three host-only controls — go into the
+	// renderer's own per-widget actions slot, so they sit in the card header the
+	// kit draws instead of a header this file draws.
+	const controls = (tileId: string) => {
 		const title = titleOf(tileId);
+		const widget = widgets.get(tileId);
 		return (
-			<WidgetCard
-				graph={graph}
-				widget={widget}
-				solutionId={solutionId}
-				dashboardId={dashboard.id}
-				orgId={orgId}
-				grip={
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						className="cursor-grab text-muted-foreground"
-						aria-label={`Move ${title}: drag the tile, or use the arrow keys`}
-						onKeyDown={(event) => {
-							const step = ARROW_STEP[event.key];
-							if (step === undefined) return;
-							event.preventDefault();
-							const grip = event.currentTarget;
-							// Moving a tile can move its DOM node, which drops focus;
-							// commit first so the grip can take focus back.
-							flushSync(() => save(moveBy(layout, tileId, step)));
-							grip.focus();
-						}}
-					>
-						<GripVertical />
-					</Button>
-				}
-				info={<MetricInfo graph={graph} widget={widget} orgId={orgId} />}
-				remove={
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						className="text-muted-foreground"
-						aria-label={`Remove ${title}`}
-						onClick={() => save(removeTile(layout, tileId))}
-					>
-						<X />
-					</Button>
-				}
-			/>
+			<>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-xs"
+					className="cursor-grab text-muted-foreground"
+					aria-label={`Move ${title}: drag the tile, or use the arrow keys`}
+					onKeyDown={(event) => {
+						const step = ARROW_STEP[event.key];
+						if (step === undefined) return;
+						event.preventDefault();
+						const grip = event.currentTarget;
+						// Moving a tile can move its DOM node, which drops focus;
+						// commit first so the grip can take focus back.
+						flushSync(() => save(moveBy(layout, tileId, step)));
+						grip.focus();
+					}}
+				>
+					<GripVertical />
+				</Button>
+				{widget && <MetricInfo graph={graph} widget={widget} orgId={orgId} />}
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-xs"
+					className="text-muted-foreground"
+					aria-label={`Remove ${title}`}
+					onClick={() => save(removeTile(layout, tileId))}
+				>
+					<X />
+				</Button>
+			</>
 		);
 	};
 	// The floating copy while a tile is dragged: the same card, but with no
@@ -612,56 +624,82 @@ function SolutionDashboard({
 		);
 		return (
 			<div inert aria-hidden="true">
-				<WidgetCard
+				<SolutionWidget
 					graph={graph}
 					widget={widget}
 					solutionId={solutionId}
 					dashboardId={dashboard.id}
 					orgId={orgId}
-					grip={glyph(<GripVertical />)}
-					info={glyph(<Info />)}
-					remove={glyph(<X />)}
+					actions={
+						<>
+							{glyph(<GripVertical />)}
+							{glyph(<Info />)}
+							{glyph(<X />)}
+						</>
+					}
 				/>
 			</div>
 		);
 	};
 
 	return (
-		<section className="space-y-4">
-			<div className="flex items-center gap-2">
-				{dashboard.title && (
-					<h2 className="text-lg font-semibold tracking-tight">
-						{dashboard.title}
-					</h2>
-				)}
-				<AddTileMenu
-					label={`Add a widget back to ${dashboard.title ?? "this dashboard"}`}
-					addable={addableTiles(graph, dashboard, layout)}
-					onAdd={(tileId) => save(addTile(layout, tileId))}
-				/>
-			</div>
-			{shown.length === 0 ? (
-				<p className="text-sm text-muted-foreground">
-					No widgets are shown. Add one back with the + button.
-				</p>
-			) : (
-				// The kit's SortableGrid rather than its Grid/Stack: the tiles are
-				// dragged onto each other to swap. The classes are those Grid
-				// cols={2} and Stack draw with.
-				<SortableGrid
-					ids={shown.map(({ tileId }) => tileId)}
-					onSwap={(dragged, target) => save(swapTiles(layout, dragged, target))}
-					itemLabel={titleOf}
-					renderItem={renderTile}
-					renderOverlay={renderDragged}
-					className={
-						dashboard.layout === "stack"
-							? "flex flex-col gap-4"
-							: "grid grid-cols-1 gap-4 sm:grid-cols-2"
-					}
-				/>
-			)}
-		</section>
+		<Dashboard
+			data={{
+				title: dashboard.title,
+				layout: dashboard.layout,
+				widgets: shown.map(({ widget }) => declaredWidget(widget)),
+			}}
+			slots={{
+				actions: (
+					<AddTileMenu
+						label={`Add a widget back to ${dashboard.title ?? "this dashboard"}`}
+						addable={addableTiles(graph, dashboard, layout)}
+						onAdd={(tileId) => save(addTile(layout, tileId))}
+					/>
+				),
+				renderWidget: (view) => {
+					const widget = widgets.get(view.id);
+					if (!widget) return null;
+					return (
+						<SolutionWidget
+							graph={graph}
+							widget={widget}
+							solutionId={solutionId}
+							dashboardId={dashboard.id}
+							orgId={orgId}
+							actions={controls(view.id)}
+						/>
+					);
+				},
+				// The kit's SortableGrid rather than its default grid: the tiles
+				// are dragged onto each other to swap. The classes are those the
+				// kit's grid and stack draw with.
+				layout: (tiles) => {
+					const nodes = new Map(tiles.map((tile) => [tile.id, tile.node]));
+					return (
+						<SortableGrid
+							ids={tiles.map((tile) => tile.id)}
+							onSwap={(dragged, target) =>
+								save(swapTiles(layout, dragged, target))
+							}
+							itemLabel={titleOf}
+							renderItem={(id) => nodes.get(id) ?? null}
+							renderOverlay={renderDragged}
+							className={
+								dashboard.layout === "stack"
+									? "flex flex-col gap-4"
+									: "grid grid-cols-1 gap-4 sm:grid-cols-2"
+							}
+						/>
+					);
+				},
+				empty: (
+					<p className="type-body text-muted-foreground">
+						No widgets are shown. Add one back with the + button.
+					</p>
+				),
+			}}
+		/>
 	);
 }
 
