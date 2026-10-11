@@ -91,21 +91,28 @@ func mintViewerCapability(
 // confinedModuleHarness wires a gateway with the edge verifier, one declared
 // solution whose resource the credential names, one declared module the consumer
 // reads, and an authority that has installed and granted both.
-func confinedModuleHarness(t *testing.T) (*Gateway, *fakeUpstream, confinedCaller, string, ed25519.PrivateKey) {
+//
+// `accounts` and `access` are returned because the mint hop needs them: the
+// first is the upstream that receives the ceiling headers, the second signs an
+// ordinary session to contrast with a confined one.
+func confinedModuleHarness(t *testing.T) (
+	gw *Gateway, module, accounts *fakeUpstream, caller confinedCaller,
+	kid string, wcPriv, access ed25519.PrivateKey,
+) {
 	t.Helper()
 	withPublicBase(t, testPublicBase)
-	gw, _, _, accessPriv := newGatewayHarness(t)
+	gw, accounts, _, access = newGatewayHarness(t)
 	pub, wcPriv := mustEd25519(t)
-	const kid = "key-1"
+	kid = "key-1"
 	jwks := jwksServer(t, jwksDocument(map[string]ed25519.PublicKey{kid: pub}), nil)
 	gw.workContext = newWorkContextVerifier(jwks.URL)
 	registerSolutionUpstream(t, gw, "example")
-	module := declareModule(t, gw, "documents")
+	module = declareModule(t, gw, "documents")
 	gw.solutionEntitlements = &entitledTo{ids: []string{
 		fakeSolutionTarget("example"), fakeSolutionTarget("documents"),
 	}}
-	caller := signConfinedCaller(t, accessPriv, solutionMCPResource(testPublicBase, "example"))
-	return gw, module, caller, kid, wcPriv
+	caller = signConfinedCaller(t, access, solutionMCPResource(testPublicBase, "example"))
+	return gw, module, accounts, caller, kid, wcPriv, access
 }
 
 func moduleRequest(caller confinedCaller, capability string) *http.Request {
@@ -120,7 +127,7 @@ func moduleRequest(caller confinedCaller, capability string) *http.Request {
 // The consumer's own work goes through, and the upstream is told what the
 // credential is confined to and which installation admitted it.
 func TestModuleRoute_AConfinedCredentialIsAdmittedWithThePersonsCapability(t *testing.T) {
-	gw, module, caller, kid, wcPriv := confinedModuleHarness(t)
+	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
 	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
 
 	w := httptest.NewRecorder()
@@ -159,7 +166,7 @@ func TestModuleRoute_AConfinedCredentialIsRefusedWithoutAMatchingCapability(t *t
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			gw, module, caller, kid, wcPriv := confinedModuleHarness(t)
+			gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
 			encoded := ""
 			if capabilityFor != nil {
 				audience, owner, tenant, session := capabilityFor(caller)
@@ -181,7 +188,7 @@ func TestModuleRoute_AConfinedCredentialIsRefusedWithoutAMatchingCapability(t *t
 // listing two permitted audiences at a module route is the change that could
 // have weakened it.
 func TestModuleRoute_ACapabilityForAnotherModuleIsRefused(t *testing.T) {
-	gw, module, caller, kid, wcPriv := confinedModuleHarness(t)
+	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
 	other := declareModule(t, gw, "ledgers")
 	capability := mintViewerCapability(t, kid, wcPriv, "ledgers", caller.subject, caller.org, caller.session)
 
@@ -215,7 +222,7 @@ func TestModuleRoute_AnUnconfinedSessionNeedsNoCapability(t *testing.T) {
 // pairing is the only thing that admits one, and it cannot be established
 // without a verifier, so the refusal is the same one round 2 shipped.
 func TestModuleRoute_WithoutAnEdgeVerifierAConfinedCredentialStaysRefused(t *testing.T) {
-	gw, module, caller, kid, wcPriv := confinedModuleHarness(t)
+	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
 	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
 	gw.workContext = nil
 
@@ -234,7 +241,7 @@ func TestModuleRoute_WithoutAnEdgeVerifierAConfinedCredentialStaysRefused(t *tes
 // honoured a caller's value are indistinguishable from the list test's point of
 // view, which only ever sees a route that stamps neither.
 func TestModuleRoute_ACallerCannotAssertItsOwnConfinementOrInstallation(t *testing.T) {
-	gw, module, caller, kid, wcPriv := confinedModuleHarness(t)
+	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
 	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
 
 	req := moduleRequest(caller, capability.Encoded())
