@@ -225,3 +225,29 @@ func TestModuleRoute_WithoutAnEdgeVerifierAConfinedCredentialStaysRefused(t *tes
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	require.Nil(t, module.lastHeaders)
 }
+
+// A CALLER CANNOT PICK ITS OWN CEILING. Both stamps are gateway-owned: whatever a
+// caller sends under either name is replaced by what this hop resolved.
+//
+// Asserted here as well as in the whole-list strip test, because this is the one
+// route that STAMPS them: a strip that ran before the stamp and a stamp that
+// honoured a caller's value are indistinguishable from the list test's point of
+// view, which only ever sees a route that stamps neither.
+func TestModuleRoute_ACallerCannotAssertItsOwnConfinementOrInstallation(t *testing.T) {
+	gw, module, caller, kid, wcPriv := confinedModuleHarness(t)
+	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
+
+	req := moduleRequest(caller, capability.Encoded())
+	req.Header.Set(resourceConfinementHeader, solutionMCPResource(testPublicBase, "something-else"))
+	req.Header.Set(installationConfinementHeader, "install-of-somebody-elses-organization")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, solutionMCPResource(testPublicBase, "example"),
+		module.lastHeaders.Get(resourceConfinementHeader),
+		"the resource is the one this credential names, not the one it asked for")
+	require.Equal(t, "install-"+fakeSolutionTarget("documents"),
+		module.lastHeaders.Get(installationConfinementHeader),
+		"the installation is the one the authority admitted, not the one it asked for")
+}
