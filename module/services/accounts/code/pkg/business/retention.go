@@ -16,15 +16,36 @@ type githubAppSetupRetentionStore interface {
 	DeleteExpiredGitHubAppSetups(ctx context.Context, before time.Time) (int64, error)
 }
 
+// earliestStoredInstant is the earliest instant a PostgreSQL timestamp with
+// time zone can hold, 24 November 4714 BC at 00:00 UTC. No record is older.
+var earliestStoredInstant = time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC)
+
+// retentionCutoff returns the instant before which a record has outlived a
+// window of days, counted back from now by the calendar, and whether any record
+// can be that old. A window that is not a positive number of days is an error:
+// read literally, zero days reaches every record written before now, and fewer
+// reach records written after it. Counting by the calendar keeps the cutoff
+// before now however long the window is; a window reaching back past
+// earliestStoredInstant has nothing older than its cutoff to remove.
+func retentionCutoff(now time.Time, days int) (before time.Time, anyOlder bool, err error) {
+	if days <= 0 {
+		return time.Time{}, false, fmt.Errorf("a retention window is a positive number of days, not %d", days)
+	}
+	before = now.AddDate(0, 0, -days)
+	return before, !before.Before(earliestStoredInstant), nil
+}
+
 // RunRetention loads all data retention policies and deletes records older
 // than the configured retention period for each resource type. Returns a
-// summary of deleted counts per resource type.
+// summary of deleted counts per resource type. A policy whose window is not a
+// positive number of days removes nothing and is reported as a warning.
 //
 // Cross-tenant by nature: retention is a platform-wide cleanup that
 // must touch every tenant's rows. audit_events + webhook_deliveries
 // are RLS-protected — wrap each delete in WithControlPlane so the policy
 // lets the cross-tenant scan through. sessions and notifications are
-// in the skip-list (user-scoped) but we still bypass for symmetry.
+// in the skip-list (user-scoped) but we still bypass for symmetry. The audit
+// partition drop runs in a control-plane transaction the store opens for it.
 func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 	w := wool.Get(ctx).In("RunRetention")
 
@@ -33,36 +54,56 @@ func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 		return nil, w.Wrapf(err, "cannot load retention policies")
 	}
 
+	now := time.Now()
 	deleted := make(map[string]int64)
 	for _, p := range policies {
-		before := time.Now().Add(-time.Duration(p.RetentionDays) * 24 * time.Hour)
+		if p.ResourceType == "audit_events" {
+			// audit_events is append-only and range-partitioned by created_at:
+			// retention drops whole partitions older than the window (DDL that
+			// sidesteps the immutability trigger) rather than issuing a row
+			// DELETE the trigger would reject. Provision upcoming partitions on
+			// every cycle, whatever the window, so writes never hit a missing
+			// range.
+			if ensureErr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+				return s.store.EnsureAuditPartitions(ctx, 3)
+			}); ensureErr != nil {
+				w.Warn(fmt.Sprintf("audit partition provisioning failed: %v", ensureErr))
+			}
+		}
+
+		before, anyOlder, windowErr := retentionCutoff(now, p.RetentionDays)
+		if windowErr != nil {
+			w.Warn(fmt.Sprintf("retention for %s removes nothing: %v", p.ResourceType, windowErr))
+			continue
+		}
 
 		var count int64
-		bypassErr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			var bErr error
-			switch p.ResourceType {
-			case "audit_events":
-				// audit_events is append-only and range-partitioned by
-				// created_at: retention drops whole partitions older than the
-				// window (DDL that sidesteps the immutability trigger) rather
-				// than issuing a row DELETE the trigger would reject. Provision
-				// upcoming partitions on the same cycle so writes never hit a
-				// missing range.
-				if ensureErr := s.store.EnsureAuditPartitions(ctx, 3); ensureErr != nil {
-					w.Warn(fmt.Sprintf("audit partition provisioning failed: %v", ensureErr))
+		var bypassErr error
+		switch {
+		case !anyOlder:
+			// Nothing is older than the cutoff.
+		case p.ResourceType == "audit_events":
+			// The drop decides which partitions are due once it holds its lock,
+			// from the catalog as it stands then, which takes a transaction of
+			// its own: the store opens one at READ COMMITTED, outside the one
+			// that provisioned partitions above.
+			count, bypassErr = s.store.DropAuditPartitionsBefore(ctx, before)
+		default:
+			bypassErr = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+				var bErr error
+				switch p.ResourceType {
+				case "sessions":
+					count, bErr = s.store.DeleteOldSessions(ctx, before)
+				case "webhook_deliveries":
+					count, bErr = s.store.DeleteOldWebhookDeliveries(ctx, before)
+				case "notifications":
+					count, bErr = s.store.DeleteOldNotifications(ctx, before)
+				default:
+					w.Debug("unknown retention resource type", wool.Field("type", p.ResourceType))
 				}
-				count, bErr = s.store.DropAuditPartitionsBefore(ctx, before)
-			case "sessions":
-				count, bErr = s.store.DeleteOldSessions(ctx, before)
-			case "webhook_deliveries":
-				count, bErr = s.store.DeleteOldWebhookDeliveries(ctx, before)
-			case "notifications":
-				count, bErr = s.store.DeleteOldNotifications(ctx, before)
-			default:
-				w.Debug("unknown retention resource type", wool.Field("type", p.ResourceType))
-			}
-			return bErr
-		})
+				return bErr
+			})
+		}
 
 		if bypassErr != nil {
 			w.Warn(fmt.Sprintf("retention cleanup for %s failed: %v", p.ResourceType, bypassErr))

@@ -4,15 +4,19 @@ package infra_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -209,13 +213,14 @@ func TestRetentionNeverDropsAPartitionWhoseBoundsItCannotRead(t *testing.T) {
 		},
 		{
 			// Open at the top, so it can only start after every partition there
-			// is: a cutoff in 2200 makes every real partition due, and the
-			// transaction rolls them back with the probe.
+			// is, and a cutoff is never later than the present: only its name
+			// can make it look older than the cutoff.
 			name:      "MAXVALUE",
-			ddl:       `CREATE TABLE public.audit_events_2200_03 PARTITION OF public.audit_events FOR VALUES FROM ('2200-03-01 00:00:00+00') TO (MAXVALUE)`,
-			partition: "audit_events_2200_03",
+			ddl:       `CREATE TABLE public.audit_events_1997_04 PARTITION OF public.audit_events FOR VALUES FROM ('2200-03-01 00:00:00+00') TO (MAXVALUE)`,
+			partition: "audit_events_1997_04",
 			eventAt:   time.Date(2200, 3, 10, 12, 0, 0, 0, time.UTC),
-			cutoff:    time.Date(2200, 5, 1, 0, 0, 0, 0, time.UTC),
+			cutoff:    time.Date(1997, 5, 1, 0, 0, 0, 0, time.UTC),
+			older:     "audit_events_1997_01",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -364,9 +369,9 @@ func TestRetentionRefusesInsteadOfHangingBehindAWriterThatDoesNotFinish(t *testi
 }
 
 // The migration replaced the function's body, and CREATE OR REPLACE keeps its
-// owner and grants; what it must have changed is the wait. Execute stays with the
-// control plane alone: retention is DDL on the audit table, and no tenant
-// transaction may run it.
+// owner and grants; what it must have changed is the wait and the settings it
+// reads bounds under. Execute stays with the control plane alone: retention is
+// DDL on the audit table, and no tenant transaction may run it.
 func TestRetentionFunctionBoundsItsLockWaitAndKeepsItsGrants(t *testing.T) {
 	var config []string
 	var publicMayExecute, controlPlaneMay, tenantMay bool
@@ -381,7 +386,391 @@ func TestRetentionFunctionBoundsItsLockWaitAndKeepsItsGrants(t *testing.T) {
 		).Scan(&config, &publicMayExecute, &controlPlaneMay, &tenantMay)
 	}))
 	require.Contains(t, config, "lock_timeout=10s", "a stuck writer is a refusal, not a hang")
+	require.Contains(t, config, "DateStyle=ISO, MDY", "a bound is rendered with its UTC offset, whatever the caller's DateStyle")
+	require.Contains(t, config, "TimeZone=UTC", "a bound is rendered in one zone, whatever the caller's")
 	require.False(t, publicMayExecute)
 	require.True(t, controlPlaneMay)
 	require.False(t, tenantMay)
+}
+
+// A partition's upper bound is read back as the instant PostgreSQL recorded,
+// whatever DateStyle the session running retention uses. Any DateStyle but ISO
+// renders a timestamp with time zone with its zone's abbreviation instead of
+// its UTC offset, and an abbreviation does not name one offset, so the function
+// renders and reads every bound under settings it pins itself.
+func TestRetentionReadsEveryBoundAsTheInstantPostgreSQLRecorded(t *testing.T) {
+	for _, style := range []string{"SQL, DMY", "Postgres", "German"} {
+		t.Run(style, func(t *testing.T) {
+			asRetention(t, func(ctx context.Context, tx pgx.Tx) {
+				retentionEnsureMonth(t, ctx, tx, "UTC", "1996-07-15")
+				retentionEnsureMonth(t, ctx, tx, "UTC", "1996-08-15")
+				_, err := tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
+				require.NoError(t, err)
+
+				// audit_events_1996_08 ends at 1996-09-01 00:00 UTC. An event a
+				// quarter of an hour before that is newer than a cutoff half an
+				// hour before it, so the partition holding it is not due.
+				end := time.Date(1996, 9, 1, 0, 0, 0, 0, time.UTC)
+				require.Equal(t, "audit_events_1996_08", retentionInsertEvent(t, ctx, tx, end.Add(-15*time.Minute)))
+
+				retentionSetZone(t, ctx, tx, "Europe/Dublin")
+				_, err = tx.Exec(ctx, `SELECT set_config('DateStyle', $1, true)`, style)
+				require.NoError(t, err)
+				dropped, err := testStore.DropAuditPartitionsBefore(infra.BindControlPlaneTx(ctx, tx), end.Add(-30*time.Minute))
+				require.NoError(t, err)
+
+				after := retentionPartitions(t, ctx, tx)
+				require.Contains(t, after, "audit_events_1996_08", "a partition that ends after the cutoff is not dropped")
+				require.Equal(t, int64(1), retentionRowsIn(t, ctx, tx, "audit_events_1996_08"), "the event newer than the cutoff survives")
+				require.NotContains(t, after, "audit_events_1996_07", "a partition that ends before the cutoff is dropped")
+				require.Equal(t, int64(1), dropped)
+			})
+		})
+	}
+}
+
+// A cutoff is in the past. One later than the start of the transaction reaches
+// the partition holding the present and the ones provisioned ahead of it, so
+// the function refuses it, and a missing one, and drops nothing.
+func TestRetentionRefusesACutoffThatIsNotInThePast(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cutoff any
+	}{
+		{"after the present partition ends", time.Now().AddDate(0, 2, 0)},
+		{"infinity", pgtype.Timestamptz{InfinityModifier: pgtype.Infinity, Valid: true}},
+		{"NULL", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asRetention(t, func(ctx context.Context, tx pgx.Tx) {
+				_, err := tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
+				require.NoError(t, err)
+				present := retentionInsertEvent(t, ctx, tx, time.Now())
+				before := retentionPartitions(t, ctx, tx)
+
+				attempt, err := tx.Begin(ctx)
+				require.NoError(t, err)
+				var dropped int64
+				err = attempt.QueryRow(ctx, `SELECT audit_events_drop_partitions_before($1)`, tc.cutoff).Scan(&dropped)
+				var pgErr *pgconn.PgError
+				require.ErrorAs(t, err, &pgErr, "a cutoff that is not in the past is refused")
+				require.Equal(t, "22023", pgErr.Code, "invalid_parameter_value")
+				require.NoError(t, attempt.Rollback(ctx))
+
+				require.Equal(t, before, retentionPartitions(t, ctx, tx), "a refused run drops nothing")
+				require.Equal(t, int64(1), retentionRowsIn(t, ctx, tx, present), "the present's events survive")
+			})
+		})
+	}
+}
+
+// The function decides under its lock from the catalog as it stands once the
+// lock is held, and a statement reads the catalog as it stands only at READ
+// COMMITTED: at REPEATABLE READ or SERIALIZABLE every statement reads the
+// snapshot the transaction took first, before the lock. It refuses to run at
+// either, and drops nothing.
+func TestRetentionRunsOnlyAtReadCommitted(t *testing.T) {
+	for _, level := range []pgx.TxIsoLevel{pgx.RepeatableRead, pgx.Serializable} {
+		t.Run(string(level), func(t *testing.T) {
+			asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+				tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: level})
+				require.NoError(t, err)
+				defer func() { _ = tx.Rollback(ctx) }()
+				retentionEnsureMonth(t, ctx, tx, "UTC", "1996-03-15")
+				_, err = tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
+				require.NoError(t, err)
+
+				attempt, err := tx.Begin(ctx)
+				require.NoError(t, err)
+				_, err = testStore.DropAuditPartitionsBefore(infra.BindControlPlaneTx(ctx, attempt), time.Date(1996, 5, 1, 0, 0, 0, 0, time.UTC))
+				var pgErr *pgconn.PgError
+				require.ErrorAs(t, err, &pgErr, "retention refuses a transaction that reads one snapshot throughout")
+				require.Equal(t, "25000", pgErr.Code, "invalid_transaction_state")
+				require.NoError(t, attempt.Rollback(ctx))
+				require.Contains(t, retentionPartitions(t, ctx, tx), "audit_events_1996_03", "a refused run drops nothing")
+			})
+		})
+	}
+}
+
+// retentionProvisionMonth commits the monthly partition holding day, created
+// from a UTC session, and one event at eventAt in the organization org.
+func retentionProvisionMonth(t *testing.T, day string, eventAt time.Time, org string) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := storetx.Tx(ctx)
+		if _, err := tx.Exec(ctx, `SELECT set_config('TimeZone', 'UTC', true)`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SELECT audit_events_ensure_partition($1::date)`, day); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx,
+			`INSERT INTO audit_events (id, event_type, resource, org_id, created_at) VALUES ($1, $2, 'example', $3, $4)`,
+			uuid.NewString(), string(business.EventAuthLogin), org, eventAt)
+		return err
+	}))
+}
+
+// retentionDropTableAfter drops table, as its owner, once the test is over,
+// whether retention dropped it, a test detached it, or it is still attached.
+func retentionDropTableAfter(t *testing.T, table string) {
+	t.Helper()
+	t.Cleanup(func() {
+		asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+			_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS public.`+pgx.Identifier{table}.Sanitize())
+			require.NoError(t, err)
+		})
+	})
+}
+
+// retentionHoldReader opens a control-plane transaction that has read
+// audit_events, so holds ACCESS SHARE on it and on every partition, and keeps
+// it open until the returned release is called.
+func retentionHoldReader(t *testing.T) (release func()) {
+	t.Helper()
+	reading, done, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var readerErr error
+	go func() {
+		defer close(finished)
+		readerErr = testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+			var rows int64
+			if err := storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM audit_events`).Scan(&rows); err != nil {
+				return err
+			}
+			close(reading)
+			<-done
+			return nil
+		})
+	}()
+	select {
+	case <-reading:
+	case <-finished:
+		t.Fatalf("the reader failed before it held audit_events: %v", readerErr)
+	}
+	var once sync.Once
+	release = func() { once.Do(func() { close(done); <-finished }) }
+	t.Cleanup(release)
+	return release
+}
+
+// retentionAwaitQueuedLocks waits until n sessions wait for an ACCESS EXCLUSIVE
+// lock on audit_events.
+func retentionAwaitQueuedLocks(t *testing.T, n int) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var queued int
+		err := testPool.QueryRow(testCtx, `
+			SELECT count(*) FROM pg_locks
+			 WHERE locktype = 'relation' AND relation = 'public.audit_events'::regclass
+			   AND mode = 'AccessExclusiveLock' AND NOT granted`).Scan(&queued)
+		return err == nil && queued >= n
+	}, 30*time.Second, 20*time.Millisecond, "%d sessions never queued for audit_events", n)
+}
+
+// detachPending reports whether table is a partition of audit_events whose
+// detach has begun and not finished.
+func detachPending(table string) (bool, error) {
+	var pending bool
+	err := testPool.QueryRow(testCtx, `
+		SELECT inhdetachpending FROM pg_inherits
+		 WHERE inhrelid = to_regclass('public.' || $1) AND inhparent = 'public.audit_events'::regclass`, table).Scan(&pending)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return pending, err
+}
+
+func retentionDetachPending(t *testing.T, table string) bool {
+	t.Helper()
+	pending, err := detachPending(table)
+	require.NoError(t, err)
+	return pending
+}
+
+// retentionOwnerRows counts table's rows in the organization org, read by name
+// as the table's owner: the partitions force row-level security, so the owner
+// sees an organization's rows only with that organization bound.
+func retentionOwnerRows(t *testing.T, ctx context.Context, conn *pgxpool.Conn, table, org string) int64 {
+	t.Helper()
+	tx, err := conn.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, `SELECT set_config('app.current_org_id', $1, true)`, org)
+	require.NoError(t, err)
+	var rows int64
+	require.NoError(t, tx.QueryRow(ctx, `SELECT count(*) FROM public.`+pgx.Identifier{table}.Sanitize()).Scan(&rows))
+	return rows
+}
+
+type retentionOutcome struct {
+	dropped int64
+	err     error
+}
+
+// The decision is taken again once the lock is held. A partition detached
+// while retention waited for its lock -- an operator keeping that month out of
+// retention -- is no longer audit_events', and the run leaves it, and its
+// events, alone.
+func TestRetentionLeavesAPartitionDetachedWhileItWaitedForItsLock(t *testing.T) {
+	const kept = "audit_events_1995_02"
+	org := uuid.NewString()
+	retentionRetire(t, "1996-01-01")
+	retentionDropTableAfter(t, kept)
+	retentionProvisionMonth(t, "1995-02-15", time.Date(1995, 2, 10, 12, 0, 0, 0, time.UTC), org)
+
+	release := retentionHoldReader(t)
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		detached := make(chan error, 1)
+		go func() {
+			_, err := conn.Exec(ctx, `ALTER TABLE public.audit_events DETACH PARTITION public.`+kept)
+			detached <- err
+		}()
+		retentionAwaitQueuedLocks(t, 1)
+
+		// Retention finds the partition due without a lock, and then waits for
+		// its lock behind the detach.
+		ran := make(chan retentionOutcome, 1)
+		go func() {
+			dropped, err := retentionCommitted(time.Date(1995, 4, 1, 0, 0, 0, 0, time.UTC))
+			ran <- retentionOutcome{dropped, err}
+		}()
+		retentionAwaitQueuedLocks(t, 2)
+		release()
+
+		require.NoError(t, <-detached, "the premise: the detach committed while retention waited")
+		got := <-ran
+		require.NoError(t, got.err)
+		require.Zero(t, got.dropped, "a partition that left audit_events is not retention's")
+		exists, _ := retentionPartitionRows(t, kept)
+		require.True(t, exists, "the detached table survives")
+		require.Equal(t, int64(1), retentionOwnerRows(t, ctx, conn, kept, org), "and its events")
+	})
+}
+
+// A partition whose DETACH ... CONCURRENTLY has begun and not finished is
+// leaving audit_events, and is never dropped. The detach commits the partition
+// as pending, then waits for every transaction that may still see it;
+// interrupted there, it leaves the partition pending until someone finalizes it.
+func TestRetentionNeverDropsAPartitionBeingDetached(t *testing.T) {
+	const pending = "audit_events_1995_05"
+	org := uuid.NewString()
+	retentionRetire(t, "1996-01-01")
+	retentionDropTableAfter(t, pending)
+	retentionProvisionMonth(t, "1995-05-15", time.Date(1995, 5, 10, 12, 0, 0, 0, time.UTC), org)
+
+	release := retentionHoldReader(t)
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		detached := make(chan error, 1)
+		go func() {
+			_, err := conn.Exec(ctx, `ALTER TABLE public.audit_events DETACH PARTITION public.`+pending+` CONCURRENTLY`)
+			detached <- err
+		}()
+		require.Eventually(t, func() bool {
+			isPending, err := detachPending(pending)
+			return err == nil && isPending
+		}, 30*time.Second, 20*time.Millisecond, "the detach never committed its first phase")
+		require.NoError(t, conn.Conn().PgConn().CancelRequest(ctx))
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, <-detached, &pgErr)
+		require.Equal(t, "57014", pgErr.Code, "the premise: the detach was interrupted")
+		release()
+		require.True(t, retentionDetachPending(t, pending), "the premise: the partition is pending detach")
+
+		dropped, err := retentionCommitted(time.Date(1995, 7, 1, 0, 0, 0, 0, time.UTC))
+		require.NoError(t, err)
+		require.Zero(t, dropped, "a partition being detached is not dropped")
+		require.True(t, retentionDetachPending(t, pending))
+		require.Equal(t, int64(1), retentionOwnerRows(t, ctx, conn, pending, org), "its events survive")
+	})
+}
+
+// Two runs at once drop each due partition once, and neither fails: the second
+// waits for the first's lock, then decides from the catalog as the first left
+// it.
+func TestTwoRetentionRunsAtOnceDropEachPartitionOnce(t *testing.T) {
+	retentionRetire(t, "1996-01-01")
+	org := uuid.NewString()
+	retentionProvisionMonth(t, "1995-08-15", time.Date(1995, 8, 10, 12, 0, 0, 0, time.UTC), org)
+	retentionProvisionMonth(t, "1995-09-15", time.Date(1995, 9, 10, 12, 0, 0, 0, time.UTC), org)
+
+	release := retentionHoldReader(t)
+	ran := make(chan retentionOutcome, 2)
+	for queued := 1; queued <= 2; queued++ {
+		go func() {
+			dropped, err := retentionCommitted(time.Date(1995, 11, 1, 0, 0, 0, 0, time.UTC))
+			ran <- retentionOutcome{dropped, err}
+		}()
+		retentionAwaitQueuedLocks(t, queued)
+	}
+	release()
+
+	var total int64
+	for range 2 {
+		got := <-ran
+		require.NoError(t, got.err)
+		total += got.dropped
+	}
+	require.Equal(t, int64(2), total, "each due partition is dropped once")
+	for _, name := range []string{"audit_events_1995_08", "audit_events_1995_09"} {
+		exists, _ := retentionPartitionRows(t, name)
+		require.False(t, exists)
+	}
+}
+
+// withSessionDefault returns connection with a server setting every session it
+// opens starts with.
+func withSessionDefault(t *testing.T, connection, setting, value string) string {
+	t.Helper()
+	if parsed, err := url.Parse(connection); err == nil && (parsed.Scheme == "postgres" || parsed.Scheme == "postgresql") {
+		query := parsed.Query()
+		query.Set(setting, value)
+		parsed.RawQuery = query.Encode()
+		return parsed.String()
+	}
+	return connection + " " + setting + "=" + value
+}
+
+// The store's own retention call runs at READ COMMITTED whatever isolation the
+// database gives a transaction by default, so the function's refusal never
+// stops scheduled retention. A caller's own transaction at another level is
+// refused and drops nothing.
+func TestRetentionRunsAtReadCommittedWhateverTheDatabaseDefault(t *testing.T) {
+	const due = "audit_events_1995_10"
+	retentionRetire(t, "1996-01-01")
+	retentionProvisionMonth(t, "1995-10-15", time.Date(1995, 10, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+
+	secret := func(key string) string {
+		value, err := codefly.For(testCtx).Service("store").Secret("postgres", key)
+		require.NoError(t, err)
+		return value
+	}
+	store, err := infra.NewPostgresStoreWithCapabilities(testCtx,
+		secret("read-only-connection"), secret("read-write-connection"),
+		withSessionDefault(t, secret("control-plane-connection"), "default_transaction_isolation", "serializable"))
+	require.NoError(t, err)
+	t.Cleanup(store.Close)
+
+	var level string
+	require.NoError(t, store.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return storetx.Tx(ctx).QueryRow(ctx, `SELECT current_setting('transaction_isolation')`).Scan(&level)
+	}))
+	require.Equal(t, "serializable", level, "the premise: this store's transactions default to SERIALIZABLE")
+
+	cutoff := time.Date(1995, 12, 1, 0, 0, 0, 0, time.UTC)
+	err = store.WithControlPlane(testCtx, func(ctx context.Context) error {
+		_, err := store.DropAuditPartitionsBefore(ctx, cutoff)
+		return err
+	})
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr, "a caller's SERIALIZABLE transaction is refused")
+	require.Equal(t, "25000", pgErr.Code, "invalid_transaction_state")
+	exists, _ := retentionPartitionRows(t, due)
+	require.True(t, exists, "a refused run drops nothing")
+
+	dropped, err := store.DropAuditPartitionsBefore(testCtx, cutoff)
+	require.NoError(t, err, "with no transaction of its caller's, retention opens its own at READ COMMITTED")
+	require.Equal(t, int64(1), dropped)
+	exists, _ = retentionPartitionRows(t, due)
+	require.False(t, exists)
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // SyncAuditEventTypes upserts the code catalog into the audit_event_types
@@ -133,15 +134,34 @@ func (s *PostgresStore) EnsureAuditPartitions(ctx context.Context, months int) e
 // retention runs — DDL that never trips the append-only trigger.
 //
 // The database decides which partitions are older, from the bounds it holds for
-// each, never from the month in a name or the zone this session runs in. It
-// locks audit_events before it drops, and gives up with SQLSTATE 55P03 after ten
-// seconds rather than wait for a writer that does not finish; nothing is dropped
-// then, and the next scheduled run tries again. A partition whose bounds are not
-// a bounded range is never dropped.
+// each, never from the month in a name or the settings this session runs with,
+// and it decides once it holds its lock on audit_events, from the catalog as it
+// stands then. A statement reads the catalog as it stands only at READ
+// COMMITTED, so the function refuses a transaction at any other level with
+// SQLSTATE 25000. On a transaction already on ctx it runs there; with none it
+// opens a control-plane transaction of its own at READ COMMITTED, whatever the
+// database's default isolation, which is how scheduled retention calls it.
+//
+// It refuses a `before` that is not in the past (22023), and gives up with
+// 55P03 after ten seconds rather than wait for a writer that does not finish;
+// nothing is dropped then, and the next scheduled run tries again. A partition
+// whose bounds are not a bounded range, or whose detach has begun, is never
+// dropped.
 func (s *PostgresStore) DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error) {
-	q := s.getQueryExecutor(ctx)
+	if storetx.Tx(ctx) == nil {
+		// A deliberate control-plane elevation, counted with the direct
+		// WithControlPlane call sites.
+		recordControlPlane(ctx)
+		var dropped int64
+		err := s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(ctx context.Context) error {
+			var err error
+			dropped, err = s.DropAuditPartitionsBefore(ctx, before)
+			return err
+		})
+		return dropped, err
+	}
 	var dropped int64
-	if err := q.QueryRow(ctx, `SELECT audit_events_drop_partitions_before($1)`, before).Scan(&dropped); err != nil {
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT audit_events_drop_partitions_before($1)`, before).Scan(&dropped); err != nil {
 		return 0, err
 	}
 	return dropped, nil

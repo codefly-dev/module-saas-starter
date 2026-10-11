@@ -203,12 +203,14 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   analog of the audit's `delegation_jti` + `caused_by` chain + ceiling-snapshot
   hash.
 - **Retention/redaction, 🟡:** `RunRetention` deletes per
-  `data_retention_policies`; export payloads are PII-redacted. The audit's named
-  two-tier (7-year content-free / 90-day full) split is not a distinct construct
-  yet — it is the compliance tier planned under
+  `data_retention_policies`, and retires audit events by dropping each monthly
+  partition whose recorded range ends before the window
+  ([DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md#audit-retention-drops-a-partition-by-its-recorded-range-under-lock));
+  export payloads are PII-redacted. The audit's named two-tier (7-year
+  content-free / 90-day full) split is not a distinct construct yet — it is the
+  compliance tier planned under
   [ADR 0006](./module/docs/adr/0006-audit-sink-and-retention-tiers.md) (tiered
-  retention + a swappable compliance sink; note today's `RunRetention` is a
-  no-op because it collides with the immutability trigger).
+  retention + a swappable compliance sink).
 - **Read auditing, ⬜:** bulk reads are RLS-scoped but not themselves logged as
   audit events. The audit's "audit the access set (IDs, capped, dedupe window)"
   pattern — and its 11k-rows-from-a-poller cautionary tale — is unbuilt.

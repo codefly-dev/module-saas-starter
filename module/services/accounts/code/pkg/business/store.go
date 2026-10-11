@@ -543,6 +543,10 @@ type Store interface {
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
 	ListAuditEventTypes(ctx context.Context) ([]AuditEventTypeRow, error)
 	EnsureAuditPartitions(ctx context.Context, months int) error
+	// DropAuditPartitionsBefore drops the audit partitions whose recorded range
+	// ends by `before`, which must be in the past. It runs on a transaction
+	// already on ctx, which must be READ COMMITTED, or else in a control-plane
+	// transaction of its own at READ COMMITTED.
 	DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// Invitations

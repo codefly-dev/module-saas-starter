@@ -1,12 +1,14 @@
 -- Reverts migration 31: audit_events_drop_partitions_before returns to choosing
 -- partitions by the month in their name, read in the calling session's time
--- zone, and to dropping them without a lock or a lock_timeout. That reopens both
--- defects migration 31 closed: a partition created in a zone behind UTC can be
--- dropped up to that many hours before its last event is older than the cutoff,
--- and a writer that does not finish hangs retention.
+-- zone, and to dropping them without a lock or a lock_timeout. Retention then
+-- holds none of migration 31's rules: what it drops depends on the zone of the
+-- session that runs it and of the one that created each partition, it accepts a
+-- cutoff that is not in the past, and a partition being detached, or detached
+-- while it ran, is dropped like any other.
 --
 -- The function is restored as it stood after migration 12, search_path included,
--- which lists pg_temp last; CREATE OR REPLACE takes the SET lock_timeout with it.
+-- which lists pg_temp last; CREATE OR REPLACE takes the SET lock_timeout,
+-- DateStyle and TimeZone with it.
 CREATE OR REPLACE FUNCTION public.audit_events_drop_partitions_before(cutoff timestamp with time zone) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'

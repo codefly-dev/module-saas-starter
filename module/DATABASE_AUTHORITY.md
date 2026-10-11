@@ -583,6 +583,33 @@ attached or detached, now needs a `BYPASSRLS` role to read every row, which the
 partition offload planned in
 [ADR 0006](./docs/adr/0006-audit-sink-and-retention-tiers.md) has to provision.
 
+## Audit retention drops a partition by its recorded range, under lock
+
+Audit retention is a partition drop, and a dropped partition cannot be
+recovered. `audit_events_drop_partitions_before(cutoff)`, as migration
+`31_audit_retention_partition_bounds` defines it, drops a monthly partition only
+when the upper bound PostgreSQL records for it ends by the cutoff. A partition's
+bounds are the midnights of the session zone that created it, so the function
+reads each bound from `pg_get_expr(relpartbound)`, never from the month in the
+name, and renders and reads it under a `DateStyle` and `TimeZone` it pins, never
+the caller's. It never drops a partition whose bounds are not a bounded range
+(`DEFAULT`, `MINVALUE`, `MAXVALUE`) or whose detach has begun, and it refuses a
+cutoff that is not in the past (SQLSTATE 22023).
+
+When something is due it locks `audit_events` `ACCESS EXCLUSIVE`, which also
+locks every partition, and decides again from the catalog as it stands once the
+lock is held, so a partition detached while it waited is left alone. Only a READ
+COMMITTED statement reads the catalog as it stands, so the function refuses any
+other isolation level (25000). `DropAuditPartitionsBefore` opens its own
+control-plane transaction at READ COMMITTED when its caller has none, whatever
+the database's default isolation, and that is how `RunRetention` calls it. The
+function waits ten seconds at most for its lock (`lock_timeout`, 55P03 when it
+expires, and nothing dropped), and takes no lock when nothing is due.
+`RunRetention` removes nothing for a window that is not a positive number of
+days, and counts a window back by the calendar, so the cutoff it passes is
+always in the past. `pkg/infra/postgres_audit_retention_test.go` holds each rule
+against PostgreSQL.
+
 ## SECURITY DEFINER functions list pg_temp last
 
 A `SECURITY DEFINER` function runs with its owner's authority. Unless its
