@@ -38,6 +38,33 @@
       },
       "type": "object"
     },
+    "InstallationServiceGrantInstallationToTeamBody": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "description": "The role the team holds at the installation's authority root. It must permit\nusing a solution (or carry the wildcard); a role that does not would expose\nnothing, and is refused rather than written.",
+          "type": "string"
+        },
+        "teamId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceRevokeInstallationFromTeamBody": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "description": "The role of the grant being removed, as granted_teams reports it. A team may\nhold more than one role at the same node, and each is its own grant.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "InstallationServiceTransferInstallationOwnershipBody": {
       "properties": {
         "coOwnerPrincipalIds": {
@@ -2160,6 +2187,14 @@
       },
       "type": "object"
     },
+    "v1GrantInstallationToTeamResponse": {
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
+        }
+      },
+      "type": "object"
+    },
     "v1GrantPlatformRoleRequest": {
       "properties": {
         "platformRole": {
@@ -3141,6 +3176,22 @@
       },
       "type": "object"
     },
+    "v1ListOrganizationInstallationsResponse": {
+      "properties": {
+        "installations": {
+          "items": {
+            "$ref": "#/definitions/v1OrganizationInstallation",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "nextPageToken": {
+          "description": "Set when more installations remain; pass it back as page_token.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1ListOrganizationsResponse": {
       "properties": {
         "canCreate": {
@@ -3749,6 +3800,42 @@
         },
         "slug": {
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1OrganizationInstallation": {
+      "description": "OrganizationInstallation is one active installation as its organisation's\nadministrator manages it.",
+      "properties": {
+        "grantedTeams": {
+          "description": "Teams an active grant reaches at this installation, in the two kinds the\nplatform Catalogue keeps apart: granted at its authority root, and inherited\nfrom a grant above it. Only the first is exposure granted to this\ninstallation; RevokeInstallationFromTeam removes those.",
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "health": {
+          "$ref": "#/definitions/v1InstallationHealth",
+          "description": "Resolved live, exactly as ListInstallations resolves it."
+        },
+        "inheritedTeams": {
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "installation": {
+          "$ref": "#/definitions/v1Installation"
+        },
+        "rootScopePath": {
+          "description": "The scope path of the installation's authority-root node: where a grant\nthat exposes it is written. Read from the node, never derived from its id.",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/definitions/v1AvailableSolution",
+          "description": "The catalogue row of the installed target, from the same accepted applied\nstate ListAvailableSolutions serves: its route alias, applied release and\ngenerations. Absent when this host no longer offers the target — the\ninstallation outlives the presence it was consented to, and an absent row\nsays so rather than naming a release the host does not apply."
         }
       },
       "type": "object"
@@ -7216,6 +7303,51 @@
       }
     },
     "/v1/installations": {
+      "get": {
+        "description": "It is the org-admin companion to the internal ListInstallations, and it is a\nseparate method rather than a relaxed policy on that one: ListInstallations\nis read by the gateway for an organisation it projected from a verified\nidentity, and a bare tenant credential must never reach it. This one binds\nthe organisation to the caller's own admin membership, exactly as\nListAvailableSolutions does, so no organisation can read another's.",
+        "operationId": "InstallationService_ListOrganizationInstallations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "Page bound. 0 -> server default; capped as ListInstallations is.",
+            "format": "int32",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "description": "Opaque cursor from a previous response's next_page_token; empty for page one.",
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListOrganizationInstallationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListOrganizationInstallations is an organisation administrator's view of\nwhat that organisation has installed: each active installation with its live\nhealth, the catalogue row of the target it installed, the scope path of its\nauthority root, and the teams a grant reaches there.",
+        "tags": [
+          "InstallationService"
+        ]
+      },
       "post": {
         "operationId": "InstallationService_InstallSolution",
         "parameters": [
@@ -7280,6 +7412,91 @@
           }
         },
         "summary": "GetInstallation returns one installation plus its live health, so an admin UI\ncan see when an installation has gone unhealthy (owner offboarded, agent\ndisabled, grant expired) before the next headless task fails closed.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}/teams": {
+      "post": {
+        "operationId": "InstallationService_GrantInstallationToTeam",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceGrantInstallationToTeamBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GrantInstallationToTeamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "GrantInstallationToTeam exposes an installation to a team: a scope grant of\nthe given role to the team at the installation's authority-root node. The\nhost resolves that node from the installation, so a caller never names a\nscope path. The role must permit using a solution, or the grant would expose\nnothing; the team must belong to the organisation. Emits scope.granted, the\nsame event and audit record as any other scope grant, because it is one.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}/teams/{teamId}:revoke": {
+      "post": {
+        "operationId": "InstallationService_RevokeInstallationFromTeam",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "teamId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceRevokeInstallationFromTeamBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RevokeInstallationFromTeam removes one team grant at an installation's\nauthority-root node. It is a narrowing, so it runs under the policy log\nexactly as RevokeScope does: a host that cannot witness the narrowing refuses\nit, and says so, rather than revoking unwitnessed.",
         "tags": [
           "InstallationService"
         ]

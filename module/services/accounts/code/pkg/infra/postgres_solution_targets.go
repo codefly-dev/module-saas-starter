@@ -212,6 +212,11 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 	if limit <= 0 {
 		limit = 1
 	}
+	// A nil slice binds as NULL, and cardinality(NULL) is NULL rather than 0.
+	targetIDs := query.TargetIDs
+	if targetIDs == nil {
+		targetIDs = []string{}
+	}
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
 		SELECT t.id::text, t.binding_id, t.solution_id,
 		       b.applied_release, t.opened_generation, b.applied_generation,
@@ -225,9 +230,10 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 		   AND b.applied_generation IS NOT NULL
 		   AND b.applied_removed = FALSE
 		   AND ($4 = '' OR t.id::text = $4)
+		   AND (cardinality($5::text[]) = 0 OR t.id::text = ANY($5::text[]))
 		   AND ($2 = '' OR t.id::text > $2)
 		 ORDER BY t.id
-		 LIMIT $3`, query.OrgID, query.Cursor, limit, query.TargetID)
+		 LIMIT $3`, query.OrgID, query.Cursor, limit, query.TargetID, targetIDs)
 	if err != nil {
 		return nil, err
 	}

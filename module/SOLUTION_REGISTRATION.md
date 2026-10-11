@@ -174,6 +174,20 @@ Four distinctions the projections keep:
   ancestor node (the organization root) does reach a solution node, because that is
   the scope tree's own hierarchical rule and the same union `CheckAccess` resolves
   — narrowing tighter here would hide what an authority check permits.
+- **An organization administrator writes that grant by installation and team**
+  (`InstallationService.GrantInstallationToTeam`, issue #1061), never by scope
+  path: the host resolves the installation's authority-root node in the same
+  transaction that writes the grant, refuses a team of another organization, and
+  refuses a role that does not permit `(solution, use)` — a grant of one would be
+  written and reveal nothing. The write is `GrantScope`'s own body, so it emits
+  the same `scope.granted` event and audit record. `RevokeInstallationFromTeam`
+  is `RevokeScope` after the same resolution: a narrowing under the policy log,
+  refused in the host's words when the log cannot witness it.
+  `ListOrganizationInstallations` is the administrator's read of the same state —
+  each active installation with its health, installed target, authority-root path
+  and the teams granted there or inherited from above. It is org-admin and bound to
+  the caller's own organization, unlike the internal `ListInstallations` the
+  gateway reads for a projected tenant.
 - An unreadable registry is still `503`, and a missing or malformed `client` still
   `400`. Neither ever renders as an empty list.
 

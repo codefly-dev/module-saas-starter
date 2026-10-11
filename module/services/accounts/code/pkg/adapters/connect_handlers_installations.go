@@ -39,3 +39,15 @@ func (h *installationConnectHandler) ListInstallations(ctx context.Context, req 
 func (h *installationConnectHandler) ListAvailableSolutions(ctx context.Context, req *connect.Request[gen.ListAvailableSolutionsRequest]) (*connect.Response[gen.ListAvailableSolutionsResponse], error) {
 	return unary(ctx, req, h.inner.ListAvailableSolutions)
 }
+
+func (h *installationConnectHandler) ListOrganizationInstallations(ctx context.Context, req *connect.Request[gen.ListOrganizationInstallationsRequest]) (*connect.Response[gen.ListOrganizationInstallationsResponse], error) {
+	return unary(ctx, req, h.inner.ListOrganizationInstallations)
+}
+
+func (h *installationConnectHandler) GrantInstallationToTeam(ctx context.Context, req *connect.Request[gen.GrantInstallationToTeamRequest]) (*connect.Response[gen.GrantInstallationToTeamResponse], error) {
+	return unary(ctx, req, h.inner.GrantInstallationToTeam)
+}
+
+func (h *installationConnectHandler) RevokeInstallationFromTeam(ctx context.Context, req *connect.Request[gen.RevokeInstallationFromTeamRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.RevokeInstallationFromTeam)
+}

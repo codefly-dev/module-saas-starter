@@ -73,6 +73,15 @@ type InstallationStore interface {
 	// installations for the platform Catalogue (platform_catalogue.go). Unlike
 	// the methods above it runs under the control plane, not an org transaction.
 	ListCatalogueInstallations(ctx context.Context) ([]*CatalogueInstallationRecord, error)
+	// InstallationRootScopePath resolves one of orgID's ACTIVE installations to
+	// the scope path of its authority-root node; not found otherwise.
+	InstallationRootScopePath(ctx context.Context, orgID, installationID string) (string, error)
+	// ListInstallationExposure returns, per active installation of orgID among
+	// installationIDs, its root scope path and the team grants reaching it.
+	ListInstallationExposure(ctx context.Context, orgID string, installationIDs []string) (map[string]*InstallationExposure, error)
+	// RolePermits reports whether a role visible to the tenant permits
+	// (resource, action), directly or by wildcard.
+	RolePermits(ctx context.Context, roleID, resource, action string) (bool, error)
 }
 
 func (s *Service) installationStore() InstallationStore {
