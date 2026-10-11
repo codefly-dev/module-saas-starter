@@ -17,6 +17,20 @@ import (
 // way to learn another organization's roster.
 var ErrSubjectOutsideOrganization = status.Error(codes.PermissionDenied, "subject does not belong to this organization")
 
+// canonicalSubjectTenancyIDs keeps the lock, tenant scope, lookups and writes
+// on the same UUID values, regardless of the spelling supplied by a caller.
+func canonicalSubjectTenancyIDs(orgID, subjectID string) (string, string, error) {
+	org, err := ParseID(orgID)
+	if err != nil {
+		return "", "", status.Error(codes.InvalidArgument, "invalid organization id")
+	}
+	subject, err := ParseID(subjectID)
+	if err != nil {
+		return "", "", status.Error(codes.InvalidArgument, "invalid subject id")
+	}
+	return org.String(), subject.String(), nil
+}
+
 // requireSubjectInOrgTx settles, inside the caller's organization transaction,
 // that the subject a write names belongs to orgID — so the check and the write
 // it guards describe one moment.
@@ -33,6 +47,10 @@ var ErrSubjectOutsideOrganization = status.Error(codes.PermissionDenied, "subjec
 // Run it before any write in the transaction, so the membership lock is taken
 // before any trigger-acquired lock and the lock order stays the one removal uses.
 func (s *Service) requireSubjectInOrgTx(ctx context.Context, orgID, subjectID string, kind gen.SubjectKind) error {
+	orgID, subjectID, err := canonicalSubjectTenancyIDs(orgID, subjectID)
+	if err != nil {
+		return err
+	}
 	switch kind {
 	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
 		if err := s.store.LockOrgMembership(ctx, orgID, subjectID); err != nil {

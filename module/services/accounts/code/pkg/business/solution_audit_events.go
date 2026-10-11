@@ -41,7 +41,7 @@ import (
 //     starting with a letter — the shape audit_events admits.
 //   - A reserved namespace is refused: `saas`, the platform's own.
 //   - A solution declares only into namespaces the operator bound to it: the
-//     `namespaces` of its own MODULE_PRINCIPALS entry, keyed by its solution id
+//     `namespaces` of its own module registry entry, keyed by its solution id
 //     — the same grant a declared type's emission is checked against. A
 //     solution with no entry admits nothing. The registration credential alone
 //     therefore claims nothing: a namespace is the operator's to hand out.
@@ -77,7 +77,7 @@ import (
 //     outbound webhook endpoint. Eligibility to leave the platform takes two
 //     keys and neither alone suffices: the producer declares which of its facts
 //     are customer-facing, and the operator marks the namespace externally
-//     deliverable (`external_namespaces` of the same MODULE_PRINCIPALS entry
+//     deliverable (`external_namespaces` of the same module registry entry
 //     that binds the namespace). An `external` declaration in a namespace the
 //     operator did not mark is refused, naming both.
 //   - Visibility is fixed at admission. A re-declaration that changes it is
@@ -410,7 +410,7 @@ type AuditEventTypeDeclaration struct {
 	Description string
 	// Visibility is "tenant", "external", or empty for the default (tenant).
 	// The operator's grant is checked at admission, which is the only place
-	// the declaring principal's MODULE_PRINCIPALS entry is in hand.
+	// the declaring principal's module registry entry is in hand.
 	Visibility string
 	Fields     []AuditFieldDeclaration
 }

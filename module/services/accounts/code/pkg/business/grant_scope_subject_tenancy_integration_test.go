@@ -51,11 +51,11 @@ func (w *grantScopeWorld) grantTo(subject string, kind gen.SubjectKind) *gen.Gra
 	return &gen.GrantScopeRequest{OrgId: w.org, SubjectId: subject, SubjectKind: kind, ScopePath: w.path, RoleId: w.role}
 }
 
-// grantScopeCallerWithFactor is storyCallerContext plus recent second-factor
+// callerWithRecentFactor is storyCallerContext plus recent second-factor
 // evidence, which every privilege-granting mutation on this host requires before
-// it runs. Without it these tests exercise the factor gate instead of the rule
-// they name.
-func grantScopeCallerWithFactor(ctx context.Context, userID, orgID string) context.Context {
+// it runs. Without it a test of such a mutation exercises the factor gate instead
+// of the rule it names.
+func callerWithRecentFactor(ctx context.Context, userID, orgID string) context.Context {
 	return auth.WithAssurance(
 		storyCallerContext(ctx, userID, orgID),
 		auth.Assurance{
@@ -78,7 +78,7 @@ func grantScopeCallerWithFactor(ctx context.Context, userID, orgID string) conte
 // tenancy. Satisfying it is what lets the subject check be the thing under test.
 func TestGrantScopeRefusesASubjectOfAnotherOrganization(t *testing.T) {
 	w := newGrantScopeWorld(t)
-	caller := grantScopeCallerWithFactor(testCtx, w.admin, w.org)
+	caller := callerWithRecentFactor(testCtx, w.admin, w.org)
 
 	_, err := (&adapters.PermServer{}).GrantScope(caller, w.grantTo(w.otherTeam, gen.SubjectKind_SUBJECT_KIND_TEAM))
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "a team of another organization is refused: %v", err)

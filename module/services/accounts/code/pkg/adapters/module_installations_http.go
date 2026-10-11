@@ -18,7 +18,7 @@ import (
 const moduleInstallationPrefix = "/v1/module-installations/"
 
 type moduleInstallationService interface {
-	ModuleAuthorizeWorkContext(string, string) (business.ModuleWorkContextAuthority, error)
+	ModuleAuthorizeWorkContext(context.Context, string, string) (business.ModuleWorkContextAuthority, error)
 	VerifyModuleTenant(context.Context, business.ModuleWorkContextAuthority) error
 	RecordModuleWorkContextMint(context.Context, string, business.ModuleWorkContextAuthority) error
 	ReconcileModuleInstallation(context.Context, business.ModuleCaller, *business.InstallerPolicy, business.ModuleInstallationRequest, bool) (*business.ModuleInstallationResult, error)
@@ -169,7 +169,7 @@ func (h *ModuleInstallationHTTPHandler) token(w http.ResponseWriter, r *http.Req
 	if !installerDecode(w, r, &req) {
 		return
 	}
-	authority, err := h.service.ModuleAuthorizeWorkContext(req.Prefix, req.Secret)
+	authority, err := h.service.ModuleAuthorizeWorkContext(r.Context(), req.Prefix, req.Secret)
 	if err != nil || !policy.AllowsIdentity(business.ModuleCaller{PrincipalID: authority.PrincipalID, BoundOrg: authority.Tenant}, time.Now()) {
 		installerError(w, http.StatusForbidden, "installer identity denied")
 		return

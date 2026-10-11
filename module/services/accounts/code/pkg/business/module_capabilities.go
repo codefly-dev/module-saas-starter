@@ -232,9 +232,9 @@ func (g ModulePrincipalGrant) allowsExternalNamespace(namespace string) bool {
 // collection the holder can see, which an organization-wide role assignment was
 // the only way to reach before.
 //
-// The registry is operator-supplied text this host cannot otherwise check, so
-// the refusal belongs at parse time, where a bad composition fails to boot
-// instead of quietly changing who may mint what.
+// The grant is administrator-written text this host cannot otherwise check, so
+// the refusal belongs where the envelope is written — the write is rejected
+// naming the principal — instead of quietly changing who may mint what.
 const (
 	HostScopeRoles = "roles"
 	HostScopeAudit = "audit"
@@ -288,118 +288,118 @@ func ModulePrincipalID(prefix string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
 }
 
-// ParseModulePrincipalRegistry decodes the deployment-provided registry of
-// module service principals. The document its JSON describes is a map of module
-// prefix to {"queues": [...], "namespaces": [...], "external_namespaces": [...],
-// "resources": [...],
-// "cross_tenant": bool, "tenant": "<org uuid>"}, indexed here by the principal id
-// derived from that prefix. An empty string yields an empty registry, which
-// denies every caller (fail-closed).
-func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
-	if raw == "" {
-		return ModulePrincipalRegistry{}, nil
+// canonicalModuleTenant parses a principal's tenant and returns its canonical
+// spelling.
+//
+// The tenant is sealed into a signed capability and compared against
+// organization ids, so a malformed one cannot be caught downstream: it signs,
+// then silently matches no tenant and drops the org from its own audit record. A
+// well-formed one is canonicalized for the same reason: every comparison
+// downstream is a string compare against the lowercase hyphenated id Postgres
+// returns, so an uppercase, braced, urn:uuid: or unhyphenated spelling would
+// pass a parse and then match its own organization nowhere.
+func canonicalModuleTenant(prefix, raw string) (string, error) {
+	tenant, err := uuid.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
 	}
-	var wire map[string]struct {
-		ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
-		ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
-		OperationAudiences map[string]ModuleOperationAudience  `json:"operation_audiences"`
-		Queues             []string                            `json:"queues"`
-		Namespaces         []string                            `json:"namespaces"`
-		ExternalNamespaces []string                            `json:"external_namespaces"`
-		Resources          []string                            `json:"resources"`
-		CrossTenant        bool                                `json:"cross_tenant"`
-		Tenant             string                              `json:"tenant"`
-		Workload           ModuleWorkload                      `json:"workload"`
+	return tenant.String(), nil
+}
+
+// validateModulePrincipalPrefix refuses a key that cannot be a module prefix.
+//
+// A principal id is a valid module prefix by pattern, so an entry keyed by the
+// opaque principal id would otherwise parse into a principal no module can ever
+// be, and every call would be denied for a reason that names the caller rather
+// than the stale record.
+func validateModulePrincipalPrefix(prefix string) error {
+	if err := uuid.Validate(prefix); err == nil {
+		return fmt.Errorf("module principals are keyed by module prefix, not principal id: %q", prefix)
 	}
-	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
-		return nil, err
+	if !registrationIdentityPattern.MatchString(prefix) || len(prefix) > 63 {
+		return fmt.Errorf("invalid module prefix %q", prefix)
 	}
-	registry := make(ModulePrincipalRegistry, len(wire))
-	for prefix, grant := range wire {
-		// A principal id is a valid module prefix by pattern, so an entry still
-		// keyed the way the registry used to be — by the opaque principal id —
-		// would otherwise parse into a principal no module can ever be, and every
-		// call would be denied for a reason that names the caller rather than the
-		// stale configuration.
-		if err := uuid.Validate(prefix); err == nil {
-			return nil, fmt.Errorf("module principal registry is keyed by module prefix, not principal id: %q", prefix)
-		}
-		if !registrationIdentityPattern.MatchString(prefix) || len(prefix) > 63 {
-			return nil, fmt.Errorf("module principal registry has invalid module prefix %q", prefix)
-		}
-		// The tenant is sealed into a signed capability and compared against
-		// organization ids, so a malformed one cannot be caught downstream: it
-		// signs, then silently matches no tenant and drops the org from its own
-		// audit record. A well-formed one is canonicalized for the same reason:
-		// every comparison downstream is a string compare against the lowercase
-		// hyphenated id Postgres returns, so an uppercase, braced, urn:uuid: or
-		// unhyphenated spelling would pass here and then match its own
-		// organization nowhere.
-		tenant, err := uuid.Parse(grant.Tenant)
-		if err != nil {
-			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
-		}
-		if err := validateArtifactPolicies(grant.ArtifactPolicies); err != nil {
-			return nil, fmt.Errorf("module %q: %w", prefix, err)
-		}
-		// The workload, refused at boot rather than at the mint it would deny.
-		// A principal with no declared workload can never be authenticated —
-		// execution binding is unconditional and has nothing to compare the
-		// reviewed service account against — so an entry missing it is a
-		// composition that cannot work, and saying so here names the entry
-		// instead of leaving every one of its calls refused as "denied".
-		if !grant.Workload.declared() {
-			return nil, fmt.Errorf(
-				"module principal %q must declare its workload identity (service_account, namespace, container): "+
-					"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
-					"from any other caller holding a valid token",
-				prefix)
-		}
-		if err := grant.Workload.validateForm(prefix); err != nil {
-			return nil, err
-		}
-		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
-			return nil, err
-		}
-		if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
-			return nil, err
-		}
-		for _, resource := range grant.Resources {
-			if IsHostSealedScopeResource(resource) {
-				return nil, fmt.Errorf(
-					"module principal %q may not declare %q as its content: the host reads that permission out of a sealed capability for its own decisions, so a node grant must never stand in for a role assignment on it",
-					prefix, resource,
-				)
-			}
-		}
-		// An external namespace the entry does not also bind is a composition that
-		// cannot mean what it says: the solution can declare nothing there, so the
-		// grant would sit in the registry looking like permission to send a type
-		// that can never be admitted. Refused at parse time, where the service
-		// fails to boot naming both, rather than at the registration that trips
-		// over it months later.
-		for _, namespace := range grant.ExternalNamespaces {
-			if !slices.Contains(grant.Namespaces, namespace) {
-				return nil, fmt.Errorf(
-					"module principal %q grants external delivery for namespace %q, which is not among its bound namespaces %v",
-					prefix, namespace, grant.Namespaces)
-			}
-		}
-		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
-			ArtifactPolicies:   grant.ArtifactPolicies,
-			ReadAudiences:      grant.ReadAudiences,
-			OperationAudiences: grant.OperationAudiences,
-			Prefix:             prefix,
-			Queues:             grant.Queues,
-			Namespaces:         grant.Namespaces,
-			ExternalNamespaces: grant.ExternalNamespaces,
-			Resources:          grant.Resources,
-			CrossTenant:        grant.CrossTenant,
-			Tenant:             tenant.String(),
-			Workload:           grant.Workload,
+	return nil
+}
+
+// validateModulePrincipalCeiling holds one principal's grant to every rule a
+// grant must satisfy EXCEPT its workload — the part a platform administrator
+// writes into the envelope. The workload is not theirs to write: it is read
+// from the applied presence document the principal's authority names, so the
+// envelope carries none and the derived registry entry is checked whole by
+// ValidateModulePrincipalGrant.
+//
+// These are the rules the boot-time registry parser applied, unchanged, so the
+// ceiling a super_admin writes at runtime is held to exactly what a composition
+// was held to at boot.
+func validateModulePrincipalCeiling(prefix string, grant ModulePrincipalGrant) error {
+	if err := validateModulePrincipalPrefix(prefix); err != nil {
+		return err
+	}
+	canonical, err := canonicalModuleTenant(prefix, grant.Tenant)
+	if err != nil {
+		return err
+	}
+	if canonical != grant.Tenant {
+		return fmt.Errorf("module principal %q declares tenant %q, which is not the canonical spelling %q", prefix, grant.Tenant, canonical)
+	}
+	if err := validateArtifactPolicies(grant.ArtifactPolicies); err != nil {
+		return fmt.Errorf("module %q: %w", prefix, err)
+	}
+	if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
+		return err
+	}
+	if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
+		return err
+	}
+	for _, resource := range grant.Resources {
+		if IsHostSealedScopeResource(resource) {
+			return fmt.Errorf(
+				"module principal %q may not declare %q as its content: the host reads that permission out of a sealed capability for its own decisions, so a node grant must never stand in for a role assignment on it",
+				prefix, resource,
+			)
 		}
 	}
-	return registry, nil
+	// An external namespace the entry does not also bind is a grant that
+	// cannot mean what it says: the solution can declare nothing there, so the
+	// grant would sit in the registry looking like permission to send a type
+	// that can never be admitted.
+	for _, namespace := range grant.ExternalNamespaces {
+		if !slices.Contains(grant.Namespaces, namespace) {
+			return fmt.Errorf(
+				"module principal %q grants external delivery for namespace %q, which is not among its bound namespaces %v",
+				prefix, namespace, grant.Namespaces)
+		}
+	}
+	return nil
+}
+
+// ValidateModulePrincipalGrant holds one complete registry entry — ceiling and
+// workload — to every rule. The registry reconciler runs it over every entry it
+// derives before the entry can serve, so a derivation defect omits that one
+// principal by name instead of installing an entry the boot parser would have
+// refused.
+//
+// The workload is required: a principal with no declared workload can never be
+// authenticated — execution binding is unconditional and has nothing to compare
+// the reviewed service account against — so an entry missing it cannot work,
+// and saying so here names the entry instead of leaving every one of its calls
+// refused as "denied".
+func ValidateModulePrincipalGrant(prefix string, grant ModulePrincipalGrant) error {
+	if grant.Prefix != prefix {
+		return fmt.Errorf("module principal %q carries prefix %q", prefix, grant.Prefix)
+	}
+	if err := validateModulePrincipalCeiling(prefix, grant); err != nil {
+		return err
+	}
+	if !grant.Workload.declared() {
+		return fmt.Errorf(
+			"module principal %q must declare its workload identity (service_account, namespace, container): "+
+				"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
+				"from any other caller holding a valid token",
+			prefix)
+	}
+	return grant.Workload.validateForm(prefix)
 }
 
 // ModuleCaller is the authenticated module service principal, as the RPC adapter
@@ -427,6 +427,14 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 	}
 	grant, ok := s.declaredModules()[caller.PrincipalID]
 	if !ok {
+		// A registry fenced by a newer committed ceiling holds nothing, and the
+		// refusal says so: the caller's retry succeeds once a pass derives the
+		// current registry, which a plain "not registered" would not tell it.
+		if s.moduleRegistryFenced() {
+			s.requestRegistryPass()
+			return ModulePrincipalGrant{}, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+				"principal %s: a newer module envelope is committed than the registry was derived from", caller.PrincipalID)
+		}
 		return ModulePrincipalGrant{}, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	return grant, nil
@@ -1253,7 +1261,7 @@ func opaqueAuditEntryID(ctx context.Context, entryID string) string {
 //     the payload and written as the row's resource — names the type's owner,
 //     so a solution can never emit, or be credited with, another's type;
 //   - the calling principal may publish into the type's namespace
-//     (MODULE_PRINCIPALS `namespaces`), the same composition-declared authority
+//     (the module registry's `namespaces`), the same composition-declared authority
 //     domain-event publishing already requires, so the `solution` label alone —
 //     which the caller supplies — authorizes nothing;
 //   - the payload matches the declared fields.

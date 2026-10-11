@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -536,7 +537,7 @@ func TestConfigureModuleIdentity(t *testing.T) {
 			service.SetModuleRegistrar(federationTestMinter{}, map[string][sha256.Size]byte{
 				"documents": sha256.Sum256([]byte("registration-secret")),
 			})
-			registry, err := business.ParseModulePrincipalRegistry(
+			registry, err := moduleregistrytest.Parse(
 				`{"documents":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + tenant + `"}}`)
 			require.NoError(t, err)
 			service.SetModuleCapabilities(nil, nil, registry)
@@ -547,9 +548,9 @@ func TestConfigureModuleIdentity(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-			_, err = service.ModuleAuthorizeWorkContext("documents", "registration-secret")
+			_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", "registration-secret")
 			require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
-			authority, err := service.ModuleAuthorizeWorkContext("documents", "identity-secret")
+			authority, err := service.ModuleAuthorizeWorkContext(context.Background(), "documents", "identity-secret")
 			if !test.authorized {
 				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
 				return
@@ -561,7 +562,7 @@ func TestConfigureModuleIdentity(t *testing.T) {
 			t.Setenv(test.key, "")
 			require.NoError(t, configureModuleIdentity(service))
 			for _, secret := range []string{"identity-secret", "registration-secret"} {
-				_, err = service.ModuleAuthorizeWorkContext("documents", secret)
+				_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", secret)
 				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
 			}
 		})

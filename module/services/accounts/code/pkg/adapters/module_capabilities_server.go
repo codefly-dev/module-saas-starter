@@ -59,7 +59,7 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.ModuleAuthorizeWorkContext(req.GetPrefix(), req.GetSecret())
+	authority, err := service.ModuleAuthorizeWorkContext(ctx, req.GetPrefix(), req.GetSecret())
 	if err != nil {
 		if errors.Is(err, business.ErrModuleRegistrationDenied) {
 			return nil, status.Error(codes.PermissionDenied, "module work context denied")
@@ -116,7 +116,7 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.ModuleAuthorizeOperationContext(req.GetPrefix(), req.GetSecret(), req.GetBinding())
+	authority, err := service.ModuleAuthorizeOperationContext(ctx, req.GetPrefix(), req.GetSecret(), req.GetBinding())
 	if err != nil {
 		switch {
 		case errors.Is(err, business.ErrModuleRegistrationDenied):

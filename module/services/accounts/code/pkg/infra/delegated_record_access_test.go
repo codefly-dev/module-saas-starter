@@ -63,7 +63,10 @@ func TestDelegatedRecordAccessIsolatesCollidingPlacementsAcrossTenants(t *testin
 	require.NoError(t, err)
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
-		business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{resource}},
+		// Cross-tenant: one principal places in both tenants, which a
+		// principal bound to one tenant may not — the capability check holds a
+		// credential to its grant's current tenant.
+		business.ModulePrincipalID("rows"): {Prefix: "rows", Tenant: business.NewIDString(), CrossTenant: true, Resources: []string{resource}},
 	})
 	place := func(org, path, id string) string {
 		t.Helper()

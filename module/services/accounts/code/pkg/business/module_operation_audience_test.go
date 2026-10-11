@@ -1,6 +1,7 @@
 package business
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -15,7 +16,7 @@ func TestInstalledOperationAudiencePolicy(t *testing.T) {
 	}
 	raw, err := json.Marshal(map[string]any{"example": map[string]any{"workload": map[string]any{"service_account": "module", "namespace": "acme-prod", "container": "app"}, "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661", "operation_audiences": map[string]ModuleOperationAudience{"generate": valid}}})
 	require.NoError(t, err)
-	registry, err := ParseModulePrincipalRegistry(string(raw))
+	registry, err := parseRegistryFixture(string(raw))
 	require.NoError(t, err)
 	got := registry[ModulePrincipalID("example")].OperationAudiences["generate"]
 	require.Equal(t, valid, got)
@@ -40,7 +41,7 @@ func TestInstalledOperationAudienceRejectsUnknownFieldsAndNonCanonicalSets(t *te
 		`{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"other","invoke_scopes":[{"resource_kind":"results","actions":["write","read"]}],"lookup_scopes":[{"resource_kind":"results","actions":["read"]}]}}}}`,
 		"{\"example\":{\"tenant\":\"019f6bf7-5b4b-74e5-8c17-092259bb1661\",\"operation_audiences\":{\"generate\":{\"audience\":\"other\",\"invoke_scopes\":[{\"resource_kind\":\"results\",\"actions\":[\"read\\n\"]}],\"lookup_scopes\":[{\"resource_kind\":\"results\",\"actions\":[\"read\"]}]}}}}",
 	} {
-		_, err := ParseModulePrincipalRegistry(raw)
+		_, err := parseRegistryFixture(raw)
 		require.Error(t, err)
 	}
 }
@@ -91,21 +92,21 @@ func TestInstalledOperationAudienceHeadlessScopes(t *testing.T) {
 		`"invoke_scopes":[{"resource_kind":"profiles","actions":["invoke"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
 		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]}}}}`
-	_, err := ParseModulePrincipalRegistry(raw)
+	_, err := parseRegistryFixture(raw)
 	require.Error(t, err, "lookup scopes must still be a subset of invoke scopes")
 
 	raw = `{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"other",` +
 		`"invoke_scopes":[{"resource_kind":"profiles","actions":["invoke","read"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
 		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]}}}}`
-	registry, err := ParseModulePrincipalRegistry(raw)
+	registry, err := parseRegistryFixture(raw)
 	require.NoError(t, err)
 	require.Equal(t, []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"invoke"}, ResourceIDs: []string{"p-1"}}},
 		registry[ModulePrincipalID("example")].OperationAudiences["model"].HeadlessScopes)
 }
 
 func TestModuleAuthorizeOperationContext(t *testing.T) {
-	registry, err := ParseModulePrincipalRegistry(`{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{` +
+	registry, err := parseRegistryFixture(`{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{` +
 		`"model":{"audience":"other","invoke_scopes":[{"resource_kind":"profiles","actions":["invoke","read"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
 		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]},` +
@@ -120,7 +121,7 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 	s.SetModulePrincipals(registry)
 	s.SetModuleIdentitySecrets(secrets)
 
-	authority, err := s.ModuleAuthorizeOperationContext("example", "example-secret", "model")
+	authority, err := s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "model")
 	require.NoError(t, err)
 	require.Equal(t, ModulePrincipalID("example"), authority.PrincipalID)
 	require.Equal(t, "019f6bf7-5b4b-74e5-8c17-092259bb1661", authority.Tenant)
@@ -131,17 +132,17 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 
 	// The returned grant is a copy: mutating it cannot widen the declared policy.
 	authority.Scopes[0].Actions[0] = "delete"
-	again, err := s.ModuleAuthorizeOperationContext("example", "example-secret", "model")
+	again, err := s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "model")
 	require.NoError(t, err)
 	require.Equal(t, []string{"invoke"}, again.Scopes[0].Actions)
 
-	_, err = s.ModuleAuthorizeOperationContext("example", "example-secret", "interactive")
+	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "interactive")
 	require.ErrorIs(t, err, ErrModuleOperationContextRefused)
-	_, err = s.ModuleAuthorizeOperationContext("example", "example-secret", "absent")
+	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "absent")
 	require.ErrorIs(t, err, ErrModuleOperationContextRefused)
-	_, err = s.ModuleAuthorizeOperationContext("example", "guessed", "model")
+	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "guessed", "model")
 	require.ErrorIs(t, err, ErrModuleRegistrationDenied)
-	_, err = s.ModuleAuthorizeOperationContext("unknown", "example-secret", "model")
+	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "unknown", "example-secret", "model")
 	require.ErrorIs(t, err, ErrModuleRegistrationDenied)
 }
 
@@ -150,9 +151,9 @@ func TestModuleOperationContextRevisionIsADeterministicDigestOfTheGrant(t *testi
 		`"model":{"audience":"other","invoke_scopes":[{"resource_kind":"profiles","actions":["invoke","read"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
 		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]}}}}`
-	first, err := ParseModulePrincipalRegistry(raw)
+	first, err := parseRegistryFixture(raw)
 	require.NoError(t, err)
-	second, err := ParseModulePrincipalRegistry(raw)
+	second, err := parseRegistryFixture(raw)
 	require.NoError(t, err)
 	id := ModulePrincipalID("example")
 	revision := ModuleOperationContextRevision(first[id])
@@ -171,10 +172,10 @@ func TestModuleOperationContextRevisionIsADeterministicDigestOfTheGrant(t *testi
 	withCurrentAuthority(s)
 	s.SetModulePrincipals(first)
 	owner := []ModuleOperationRevisionSubject{{PrincipalID: id, Scopes: []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"invoke"}, ResourceIDs: []string{"p-1"}}}}}
-	handled, err := s.CheckModuleOperationContextRevision("019f6bf7-5b4b-74e5-8c17-092259bb1661", id, revision, owner)
+	handled, err := s.CheckModuleOperationContextRevision(context.Background(), "019f6bf7-5b4b-74e5-8c17-092259bb1661", id, revision, owner)
 	require.True(t, handled)
 	require.NoError(t, err)
-	handled, err = s.CheckModuleOperationContextRevision("019f6bf7-5b4b-74e5-8c17-092259bb1661", "019fec91-1000-7000-8000-000000000002", revision, owner)
+	handled, err = s.CheckModuleOperationContextRevision(context.Background(), "019f6bf7-5b4b-74e5-8c17-092259bb1661", "019fec91-1000-7000-8000-000000000002", revision, owner)
 	require.False(t, handled)
 	require.NoError(t, err)
 }

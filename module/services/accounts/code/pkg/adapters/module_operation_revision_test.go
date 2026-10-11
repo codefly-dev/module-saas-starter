@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
@@ -162,7 +162,7 @@ func TestCheckAuthorizationRevisionRevokesModuleOperationContextsOnConfigChange(
 
 			// The deployment restarts with a changed declaration; the signing key
 			// is unchanged, so only the declaration can revoke the context.
-			registry, err := business.ParseModulePrincipalRegistry(changed)
+			registry, err := moduleregistrytest.Parse(changed)
 			require.NoError(t, err)
 			service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 			service.SetModuleCapabilities(nil, nil, registry)

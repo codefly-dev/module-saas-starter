@@ -166,5 +166,5 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 56)
+	require.Len(t, enforced, 57)
 }

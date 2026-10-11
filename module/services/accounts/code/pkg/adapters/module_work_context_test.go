@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/sdk-go/workcontext"
@@ -101,7 +102,7 @@ func installModuleWorkContextService(t *testing.T, declaredSecrets, declaredPrin
 	require.NoError(t, err)
 	svc.SetModuleRegistrar(&recordingRegistrationMinter{}, secrets)
 	svc.SetModuleIdentitySecrets(secrets)
-	registry, err := business.ParseModulePrincipalRegistry(declaredPrincipals)
+	registry, err := moduleregistrytest.Parse(declaredPrincipals)
 	require.NoError(t, err)
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
@@ -148,7 +149,7 @@ func TestMintModuleWorkContextRoundTripsToTheCallerIdentity(t *testing.T) {
 
 func TestMintModuleWorkContextDeniesUnconfiguredIdentity(t *testing.T) {
 	installModuleRegistrar(t, "documents:"+registrationDigest("registration-secret"))
-	registry, err := business.ParseModulePrincipalRegistry(documentsPrincipals)
+	registry, err := moduleregistrytest.Parse(documentsPrincipals)
 	require.NoError(t, err)
 	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	service.SetModuleCapabilities(nil, nil, registry)

@@ -30,6 +30,12 @@ type Store interface {
 	// deliberate.
 	WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error
 
+	// WithControlPlaneReadSnapshot is WithControlPlane as one REPEATABLE READ,
+	// read-only transaction: every read fn makes sees the same committed
+	// state. For a decision that derives several answers from several
+	// relations and must not see one of them change between reads.
+	WithControlPlaneReadSnapshot(ctx context.Context, fn func(ctx context.Context) error) error
+
 	// As returns a Store handle bound to an identity (see Scoped). It is the
 	// identity-first entry point the With* wrappers collapse into: As(id).Within
 	// sets the same RLS context, but the identity is explicit and carried by the
@@ -325,7 +331,15 @@ type Store interface {
 	// ArchiveOrganization marks a live organization archived and releases its
 	// slug. Migration 16's trigger then refuses any membership into it.
 	ArchiveOrganization(ctx context.Context, orgID, actorID string) error
-	// RemoveAllOrgMembers deletes every membership of an organization.
+	// LockAllOrgMembers takes the administration lock and every canonical
+	// membership lock in sorted order without deleting. Keep this transaction
+	// open through RemoveLockedOrgMembers and acquire these before any writes.
+	LockAllOrgMembers(ctx context.Context, orgID string) ([]string, error)
+	// RemoveLockedOrgMembers deletes only the roster locked above in the same
+	// transaction. Organization deletion must lock and uninstall its installation
+	// batch before this write's authorization/session triggers run.
+	RemoveLockedOrgMembers(ctx context.Context, orgID string, members []string) (int64, error)
+	// RemoveAllOrgMembers locks and deletes every membership in one call.
 	RemoveAllOrgMembers(ctx context.Context, orgID string) (int64, error)
 	// RevokeOrgAPIKeys revokes every live API key of an organization.
 	RevokeOrgAPIKeys(ctx context.Context, orgID string) (int64, error)

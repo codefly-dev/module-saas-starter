@@ -8,30 +8,31 @@ import (
 	"testing"
 )
 
-// WORK_CONTEXTS.md tells a composition how to write a MODULE_PRINCIPALS entry,
-// and the entry is authorization: a reader who follows a sentence that stopped
-// being true grants the wrong thing, or believes a change took effect that has
-// not. The document previously said the host re-reads that entry on every call
-// and that the producer's permissions contribution names the resource ids in
-// it. Neither is true — the registry is parsed once at start-up, and the
-// contribution schema cannot express an id — and both sentences were load
-// bearing for the advice built on them, which is how prose about a security
-// mechanism drifts without a single test failing. These checks tie the claims
-// that decide what a composition writes to the artifacts that decide them.
+// WORK_CONTEXTS.md tells a platform administrator how to write a module
+// principal's grant in the module envelope, and the grant is authorization: a
+// reader who follows a sentence that stopped being true grants the wrong thing,
+// or believes a change took effect that has not. The document once said the
+// producer's permissions contribution names the resource ids in a grant (the
+// contribution schema cannot express an id), and later that the registry was
+// parsed once at start-up (it is now derived on every reconcile pass). Both
+// sentences were load bearing for the advice built on them, which is how prose
+// about a security mechanism drifts without a single test failing. These checks
+// tie the claims that decide what an administrator writes to the artifacts that
+// decide them.
 
 const workContextsDoc = "WORK_CONTEXTS.md"
 
 const (
 	// moduleOperationAudienceSource validates an installed binding, resource ids
-	// included, when the registry is parsed.
+	// included, when the envelope is written and when an entry is derived.
 	moduleOperationAudienceSource = "services/accounts/code/pkg/business/module_operation_audience.go"
-	// modulePrincipalRegistrySource is the process wiring that parses
-	// MODULE_PRINCIPALS. It is the whole reason the entry is start-up
-	// configuration rather than per-request state.
-	modulePrincipalRegistrySource = "services/accounts/code/work.go"
-	// accountsRequestPath holds every package a request can reach. A parse of the
-	// registry appearing in here would make the entry per-call after all.
-	accountsRequestPath = "services/accounts/code/pkg"
+	// accountsProcessWiring is the process wiring. It is where a registry read
+	// from the environment used to live, and where one would come back.
+	accountsProcessWiring = "services/accounts/code/work.go"
+	// accountsCode holds every non-test source of the accounts service.
+	accountsCode = "services/accounts/code"
+	// modulePrincipalReconciler is the one production writer of the registry.
+	modulePrincipalReconciler = "services/accounts/code/pkg/business/module_principal_reconcile.go"
 )
 
 // resourceIDBound extracts the length limit installed resource ids are held to.
@@ -40,24 +41,34 @@ const (
 // choosing an id by hand can exceed.
 var resourceIDBound = regexp.MustCompile(`sortedUniqueOperationValues\(scope\.ResourceIDs,\s*(\d+)\)`)
 
-// registryParser is the one function that turns MODULE_PRINCIPALS into the
-// registry a request reads.
-const registryParser = "ParseModulePrincipalRegistry"
+// registryWriters are the setters that replace the registry every capability
+// decision reads: the derived install, tagged with the envelope revision the
+// fence compares, and the untagged one tests state a registry with.
+var registryWriters = []string{"installDerivedModulePrincipals", "SetModulePrincipals"}
 
-// parsesRegistry reports a *call* to the parser. Counting calls against
+// writesRegistry reports a *call* to a setter. Counting calls against
 // declarations rather than matching a call's shape is deliberate: a qualified
-// call (`business.Parse...`) and a bare one inside the declaring package read
-// differently, and a check that only recognised the qualified form would miss
-// the very change it exists to catch.
-func parsesRegistry(body string) bool {
-	return strings.Count(body, registryParser+"(") > strings.Count(body, "func "+registryParser+"(")
+// call (`service.Set...`) and a receiver call inside the declaring package read
+// differently, and a check that only recognised one form would miss the very
+// change it exists to catch.
+func writesRegistry(body string) bool {
+	for _, writer := range registryWriters {
+		if strings.Count(body, writer+"(") > strings.Count(body, ") "+writer+"(") {
+			return true
+		}
+	}
+	return false
 }
 
+// readsModulePrincipalsVariable reports source that names the retired
+// environment variable outside a comment: a string literal is the only way a
+// process reads it.
+var readsModulePrincipalsVariable = regexp.MustCompile("[\"`]MODULE_PRINCIPALS[\"`]")
+
 // TestWorkContextsContractNamesTheEnforcedResourceIDBound holds the quoted
-// bound to the enforced one. Exceeding it is refused while the registry is
-// parsed, which fails accounts' start-up rather than one call, so a composition
-// that trusted a stale number in the document does not learn the real one from
-// a denial — it learns it from a service that will not boot.
+// bound to the enforced one. Exceeding it is refused when the envelope is
+// written, so an administrator who trusted a stale number in the document
+// learns the real one from a rejected write rather than from a denial.
 func TestWorkContextsContractNamesTheEnforcedResourceIDBound(t *testing.T) {
 	match := resourceIDBound.FindStringSubmatch(readModuleFile(t, moduleOperationAudienceSource))
 	if match == nil {
@@ -71,23 +82,29 @@ func TestWorkContextsContractNamesTheEnforcedResourceIDBound(t *testing.T) {
 	}
 }
 
-// TestWorkContextsContractKeepsTheRegistryAtProcessStart pins the fact the
-// document's advice rests on: MODULE_PRINCIPALS is parsed once, by the process
-// wiring, so re-issuing an entry is a deployment and not an edit. Were a
-// request path to parse it instead, the entry would be editable in place and
-// the document's whole argument for naming a stable identity — that a re-issue
-// costs a rollout — would be wrong in the direction that reads as safe.
-func TestWorkContextsContractKeepsTheRegistryAtProcessStart(t *testing.T) {
-	if !parsesRegistry(readModuleFile(t, modulePrincipalRegistrySource)) {
-		t.Fatalf(
-			"%s no longer parses MODULE_PRINCIPALS; %s names it as the start-up read",
-			modulePrincipalRegistrySource, workContextsDoc,
-		)
-	}
-	root := filepath.Join(findModuleDir(t), filepath.FromSlash(accountsRequestPath))
+// TestWorkContextsContractDerivesTheRegistryFromDeliveredAuthority pins the
+// fact the document's advice now rests on: the module principal registry is
+// derived each reconcile pass from delivered authority inside the module
+// envelope, and nothing else writes it. Two ways that would silently stop being
+// true, each refused here:
+//
+//   - a process reading the registry from its environment again — the
+//     MODULE_PRINCIPALS read this replaced, under which an entry change was a
+//     restart and an entry nobody delivered could still grant;
+//   - a second production writer of the registry, which would be a second
+//     answer to "which modules may act here" beside the derivation.
+func TestWorkContextsContractDerivesTheRegistryFromDeliveredAuthority(t *testing.T) {
+	root := filepath.Join(findModuleDir(t), filepath.FromSlash(accountsCode))
+	writers := map[string]bool{}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil || entry.IsDir() {
+		if walkErr != nil {
 			return walkErr
+		}
+		if entry.IsDir() {
+			if entry.Name() == "gen" || entry.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -97,17 +114,26 @@ func TestWorkContextsContractKeepsTheRegistryAtProcessStart(t *testing.T) {
 		if readErr != nil {
 			return readErr
 		}
-		if parsesRegistry(string(body)) {
-			relative, _ := filepath.Rel(findModuleDir(t), path)
-			t.Errorf(
-				"%s parses MODULE_PRINCIPALS on a request path: %s says the entry is read once at start-up",
-				filepath.ToSlash(relative), workContextsDoc,
-			)
+		relative, _ := filepath.Rel(findModuleDir(t), path)
+		relative = filepath.ToSlash(relative)
+		if readsModulePrincipalsVariable.Match(body) {
+			t.Errorf("%s names MODULE_PRINCIPALS: %s says the registry is derived from delivered authority, and no process reads it from its environment",
+				relative, workContextsDoc)
+		}
+		if writesRegistry(string(body)) {
+			writers[relative] = true
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walk %s: %v", accountsRequestPath, err)
+		t.Fatalf("walk %s: %v", accountsCode, err)
+	}
+	if len(writers) != 1 || !writers[modulePrincipalReconciler] {
+		t.Errorf("the production writers of the module registry are %v; %s says the reconciler in %s is the only one",
+			writers, workContextsDoc, modulePrincipalReconciler)
+	}
+	if strings.Contains(readModuleFile(t, accountsProcessWiring), "ParseModulePrincipalRegistry") {
+		t.Errorf("%s parses a module principal registry at start-up", accountsProcessWiring)
 	}
 }
 
@@ -124,7 +150,7 @@ func TestWorkContextsContractStatesTheGrantNamingDecision(t *testing.T) {
 		"the producing module owns what its ids mean",
 		"The host neither derives nor checks them",
 		"Name the resource by its **stable identity**, not by a digest of its current definition.",
-		"`MODULE_PRINCIPALS` is parsed once, at accounts start-up",
+		"The module principal registry is derived, each reconcile pass, from the delivered authority documents inside the module envelope",
 		"an entry change does not revoke them",
 		"Pinning a definition is the producer's own check",
 		"The host makes no such check",

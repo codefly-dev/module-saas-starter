@@ -54,14 +54,11 @@ func (a ModuleOperationContextAuthority) WireScopes() []*gen.WorkContextScope {
 // binding's headless_scopes and nothing else: invoke_scopes describe what the
 // module may do on a person's behalf and are never reused for work that has no
 // person, so a binding that declares no headless_scopes is refused (fail closed).
-func (s *Service) ModuleAuthorizeOperationContext(prefix, secret, bindingID string) (ModuleOperationContextAuthority, error) {
-	identity, err := s.ModuleAuthorizeWorkContext(prefix, secret)
+func (s *Service) ModuleAuthorizeOperationContext(ctx context.Context, prefix, secret, bindingID string) (ModuleOperationContextAuthority, error) {
+	// Identity, tenant, binding, scopes and revision from ONE fenced snapshot.
+	identity, grant, err := s.authorizeModuleIdentity(ctx, prefix, secret)
 	if err != nil {
 		return ModuleOperationContextAuthority{}, err
-	}
-	grant, registered := s.declaredModules()[identity.PrincipalID]
-	if !registered {
-		return ModuleOperationContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	binding, declared := grant.OperationAudiences[bindingID]
 	if !declared || len(binding.HeadlessScopes) == 0 ||
@@ -127,7 +124,7 @@ func operationScopeGrants(scopes []ModuleOperationScope) []string {
 // ModuleOperationContextRevision is the authorization revision a module
 // operation context is sealed with. A module principal is declared by the
 // deployment, not registered per organization, so it has no row-backed revision
-// counter; its authority IS its MODULE_PRINCIPALS entry. The revision is
+// counter; its authority IS its module registry entry. The revision is
 // therefore a digest of that entry: deterministic across replicas and restarts,
 // and different the moment the entry changes, so a narrowed, widened or removed
 // grant stops confirming every context minted under the old one. It is never
@@ -177,9 +174,15 @@ var ErrModuleOperationContextStale = errors.New("module operation context is not
 //   - every subject's scopes must lie within the headless_scopes of ONE of the
 //     module's operation bindings — the same subset rule the mint applied.
 func (s *Service) CheckModuleOperationContextRevision(
-	orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
+	ctx context.Context, orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
 ) (handled bool, err error) {
-	grant, isModule := s.declaredModules()[ownerPrincipalID]
+	// The confirmation is a decision about current authority like the mint,
+	// so it is judged from one snapshot fenced against the committed envelope:
+	// a stale replica must not confirm what a committed narrowing revoked.
+	grant, isModule, err := s.currentModuleGrant(ctx, ownerPrincipalID)
+	if err != nil {
+		return true, err
+	}
 	if !isModule {
 		return false, nil
 	}

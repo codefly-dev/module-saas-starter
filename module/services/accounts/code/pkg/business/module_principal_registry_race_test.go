@@ -12,12 +12,11 @@ import (
 // against the eighteen authorization sites that read it, which is undefined
 // behaviour rather than a merely stale read.
 //
-// Nothing replaces it at runtime today — work.go wires it once at boot — so the
-// race is latent. It goes live the moment a platform administrator can narrow a
-// module's ceiling without a redeploy, which is exactly what the envelope record
-// introduces. This test is what keeps the field behind an atomic pointer until
-// then: under `-race` it fails against the bare field and passes against the
-// pointer.
+// The race is live: the module principal reconciler swaps a freshly derived
+// registry in on every pass while requests read it, and a platform
+// administrator's envelope write or a delivery triggers a pass at any moment.
+// This test is what keeps the field behind an atomic pointer: under `-race` it
+// fails against the bare field and passes against the pointer.
 func TestModulePrincipalRegistryIsReplacedWithoutRacingItsReaders(t *testing.T) {
 	service := &Service{}
 	narrow := ModulePrincipalRegistry{

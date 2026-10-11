@@ -21,8 +21,9 @@ approval; it does not implement an organization-admin policy publication API.
 
 The operator also provisions a dedicated, create-once module identity secret.
 Its digest goes into `federation.MODULE_IDENTITY_SECRETS`, and the protected
-plaintext goes only to the installation Job. Declare the identity in
-`module-capabilities.MODULE_PRINCIPALS`, bound to the approved organization.
+plaintext goes only to the installation Job. A platform super_admin allows the identity in the module envelope, its grant
+bound to the approved organization, and its delivered authority document
+grants it there.
 It needs no queues, event namespaces, cross-tenant grant or administrator role.
 The existing `ModulePrincipalID(prefix)` derives its system identity. This is
 separate from the module's application agent, and needs no agent registration
@@ -299,7 +300,8 @@ and revocation require a person-present current organization administrator and
 the installed activation permission. A delegated actor may check a prior
 approval, but cannot turn the owner's identity into consent.
 
-The composition declares `MODULE_PRINCIPALS[<module>].artifact_policies[<id>]`:
+A platform super_admin declares `artifact_policies[<id>]` in the module's
+grant in the module envelope:
 
 ```json
 {
