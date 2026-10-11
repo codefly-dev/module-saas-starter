@@ -469,30 +469,14 @@ func doWork(ctx context.Context) (Clean, error) {
 		"/v1/auth/.well-known/jwks.json",
 		adapters.NewJWKSHTTPHandler(service),
 	)
-	// TODO(#952, Unit D): remove the registration-secret configuration together
-	// with the mint handlers in pkg/adapters/module_capabilities_server.go, which
-	// is protected from edits in this unit. Gateway token exchanges are deleted.
-	// The remaining mint RPC still consumes this declaration. Its credential has
-	// no gateway registration endpoint to admit it after the cold cutover.
-	moduleRegistrationSecrets, err := business.ParseRegistrationSecrets(
-		workspaceEnv("federation", "MODULE_REGISTRATION_SECRETS"))
-	if err != nil {
-		return nil, fmt.Errorf("read module registration secrets: %w", err)
-	}
-	service.SetModuleRegistrar(minter, moduleRegistrationSecrets)
-	if err := configureModuleIdentity(service); err != nil {
-		return nil, err
-	}
-
-	// Keep the remaining solution mint's reader until its protected handler is
-	// removed in the same change. Validate configuration before serving it.
-	solutionRegistrationSecrets := func() string {
-		return workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS")
-	}
-	if _, err := business.ParseRegistrationSecrets(solutionRegistrationSecrets()); err != nil {
-		return nil, fmt.Errorf("read solution registration secrets: %w", err)
-	}
-	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
+	// NO MODULE OR SOLUTION SECRET IS READ HERE (#1056). A module proves which
+	// module it is with its pod's projected ServiceAccount token, which
+	// BindExecution reviews and holds against the build the authority document
+	// approves; MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and
+	// SOLUTION_REGISTRATION_SECRETS are deleted with both registration mints.
+	// Execution binding is wired with delivery below, because its approved
+	// builds come from delivered authority: a host with no delivery mints for no
+	// module.
 
 	// Declared solution presence (issue #952). Delivery POSTs one signed
 	// SolutionHostBinding carrier per solution instance to the delivery
@@ -2668,15 +2652,6 @@ func (n *billingNotifier) CreateBillingNotification(
 		IdempotencyKey: message.DeliveryKey,
 	})
 	return err
-}
-
-func configureModuleIdentity(service *business.Service) error {
-	secrets, err := business.ParseRegistrationSecrets(workspaceEnv("federation", "MODULE_IDENTITY_SECRETS"))
-	if err != nil {
-		return fmt.Errorf("read module identity secrets: %w", err)
-	}
-	service.SetModuleIdentitySecrets(secrets)
-	return nil
 }
 
 // registerMembershipCacheHealth makes a store-only membership cache visible

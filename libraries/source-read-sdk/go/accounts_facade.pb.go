@@ -41,6 +41,38 @@ type ModuleCapabilitiesClient struct {
 	inner accountsv1connect.ModuleCapabilitiesServiceClient
 }
 
+func (a *ModuleCapabilitiesClient) GetCurrentInstallation(ctx context.Context, req *v1.ModuleCurrentInstallationRequest) (*v1.ModuleCurrentInstallationResponse, error) {
+	resp, err := a.inner.GetCurrentInstallation(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+func (a *ModuleCapabilitiesClient) ApproveExecutableArtifact(ctx context.Context, req *v1.ModuleExecutableArtifactRequest) (*v1.ModuleExecutableArtifactResponse, error) {
+	resp, err := a.inner.ApproveExecutableArtifact(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+func (a *ModuleCapabilitiesClient) AuthorizeExecutableArtifact(ctx context.Context, req *v1.ModuleExecutableArtifactRequest) (*v1.ModuleExecutableArtifactResponse, error) {
+	resp, err := a.inner.AuthorizeExecutableArtifact(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+func (a *ModuleCapabilitiesClient) RevokeExecutableArtifact(ctx context.Context, req *v1.ModuleRevokeExecutableArtifactRequest) (*v1.ModuleExecutableArtifactResponse, error) {
+	resp, err := a.inner.RevokeExecutableArtifact(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
 func (a *ModuleCapabilitiesClient) ExchangeDelegatedReadAudience(ctx context.Context, req *v1.ModuleExchangeDelegatedReadAudienceRequest) (*v1.IssuedWorkContext, error) {
 	resp, err := a.inner.ExchangeDelegatedReadAudience(ctx, connect.NewRequest(req))
 	if err != nil {
@@ -188,22 +220,6 @@ func (a *ModuleCapabilitiesClient) ListSubjectVisibility(ctx context.Context, re
 // skipped: streaming RPC FetchDatasourceBlob
 
 // skipped: streaming RPC FetchDatasourceFiles
-
-func (a *ModuleCapabilitiesClient) MintModuleRegistration(ctx context.Context, req *v1.ModuleMintRegistrationRequest) (*v1.ModuleMintRegistrationResponse, error) {
-	resp, err := a.inner.MintModuleRegistration(ctx, connect.NewRequest(req))
-	if err != nil {
-		return nil, err
-	}
-	return resp.Msg, nil
-}
-
-func (a *ModuleCapabilitiesClient) MintSolutionRegistration(ctx context.Context, req *v1.SolutionMintRegistrationRequest) (*v1.SolutionMintRegistrationResponse, error) {
-	resp, err := a.inner.MintSolutionRegistration(ctx, connect.NewRequest(req))
-	if err != nil {
-		return nil, err
-	}
-	return resp.Msg, nil
-}
 
 func (a *ModuleCapabilitiesClient) MintModuleWorkContext(ctx context.Context, req *v1.ModuleMintWorkContextRequest) (*v1.ModuleMintWorkContextResponse, error) {
 	resp, err := a.inner.MintModuleWorkContext(ctx, connect.NewRequest(req))

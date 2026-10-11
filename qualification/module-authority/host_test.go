@@ -31,7 +31,6 @@ type host struct {
 	GatewayURL    string
 	Authority     string
 	InternalToken string
-	Secrets       map[string]string
 	Fixture       accountsReady
 }
 
@@ -45,6 +44,10 @@ type accountsReady struct {
 	Bindings  map[string]string `json:"bindings"`
 	Tenant    string            `json:"tenant"`
 	Owner     string            `json:"owner"`
+	// Tokens are the projected ServiceAccount tokens of the accounts half's
+	// fake pods, by module prefix, plus "unapproved": a pod of the source
+	// module's workload running a build nothing approved.
+	Tokens map[string]string `json:"tokens"`
 }
 
 const (
@@ -100,11 +103,8 @@ func bootHost() (*host, error) {
 		return nil, err
 	}
 
-	h := &host{
-		InternalToken: randomSecret(),
-		Secrets:       map[string]string{"docstore": randomSecret(), "runtime": randomSecret()},
-	}
-	accountsInput, _ := json.Marshal(map[string]any{"internal_token": h.InternalToken, "secrets": h.Secrets})
+	h := &host{InternalToken: randomSecret()}
+	accountsInput, _ := json.Marshal(map[string]any{"internal_token": h.InternalToken})
 	line, err := startHelper(filepath.Join(services, "accounts", "code", "pkg", "adapters"), accountsBin,
 		"TestModuleAuthorityContractHost", "MODULE_AUTHORITY_CONTRACT_HOST", string(accountsInput), accountsReadyPrefix)
 	if err != nil {

@@ -43,9 +43,6 @@ type Service struct {
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
 	oauthState                *auth.OAuthStateSigner
-	moduleRegistrar           *registrationAuthority
-	moduleIdentity            *registrationAuthority
-	solutionRegistrar         *registrationAuthority
 	oauthPolicy               *auth.OAuthRequestPolicy
 	clientRegistry            *auth.ClientRegistry
 	clientMetadata            *auth.ClientMetadataResolver

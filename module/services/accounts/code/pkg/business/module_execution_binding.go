@@ -60,6 +60,17 @@ var ErrExecutionNotApproved = errors.New("the caller is running an image the aut
 // the token named a pod whose live UID differs, or whose container is absent.
 var ErrExecutionIdentityMismatch = errors.New("the presented token's pod does not match the live pod")
 
+// ErrExecutionTokenRejected reports that the API server REVIEWED the presented
+// token and refused it: expired, signed by another cluster, or not minted for
+// this host's audience. A verdict, not an outage — the review ran and answered —
+// so it is kept apart from ErrExecutionUnbound, which is "the review could not
+// run". Presenting the same token again asks the same question; the kubelet's
+// next rotation is what changes the answer.
+//
+// The reviewer wraps it; the business layer cannot see the API server's own
+// error types and must not guess from a message.
+var ErrExecutionTokenRejected = errors.New("the presented token was reviewed and refused")
+
 // ErrExecutionNotBoundToken reports a token that names no pod at all.
 //
 // A legacy non-bound service account token authenticates the SERVICE ACCOUNT and
@@ -154,8 +165,11 @@ type RunningContainerStatus struct {
 // that pod presents. The issuer answers what IT approves; the caller's running
 // image is established separately; a mismatch is a refusal. Core's `SealSource`
 // documents the same rule for the same reason.
+//
+// The principal is named as the authority document names it — the module's
+// prefix — never by this host's registry key.
 type ExecutionAuthority interface {
-	ApprovedBuild(ctx context.Context, principalID string) (ApprovedDigest, uint64, error)
+	ApprovedBuild(ctx context.Context, principal string) (ApprovedDigest, uint64, error)
 }
 
 // ErrNoApprovedBuild reports that a principal bears no approved build.
@@ -252,10 +266,15 @@ func (s *Service) BindExecution(
 	//    for anything else is rejected before this host reasons about it.
 	reviewed, err := s.executionReviewer.ReviewToken(ctx, token, executionTokenAudience)
 	if err != nil {
-		// Could not reach the API server, or it refused. Both mean the host
-		// cannot establish the execution; neither means the caller is
-		// unapproved. The reviewer distinguishes them in its own errors and
-		// both land here as unbound.
+		// The review RAN and refused the token — another audience, another
+		// cluster, expired. A verdict about the caller's credential, so it is
+		// returned as one: reading it as "unbound" told a caller presenting a
+		// token minted for the wrong audience to retry, forever.
+		if errors.Is(err, ErrExecutionTokenRejected) {
+			return nil, err
+		}
+		// The review could not run. The host cannot establish the execution,
+		// and nothing about the caller has been decided.
 		return nil, fmt.Errorf("%w: %w", ErrExecutionUnbound, err)
 	}
 	if reviewed.PodUID == "" || reviewed.PodName == "" {
@@ -309,7 +328,15 @@ func (s *Service) BindExecution(
 	}
 
 	// 3. Compare against what the authority approves.
-	approved, incarnation, err := s.executionAuthority.ApprovedBuild(ctx, principalID)
+	//
+	// The approval is looked up by the name the AUTHORITY DOCUMENT gives the
+	// principal, which is the module's prefix (core's
+	// PrincipalAuthority.Principal), not by this host's registry key: the
+	// registry keys a principal by ModulePrincipalID(prefix), a UUID no
+	// document carries. Asking the approved-build view for the UUID answered
+	// "unknown principal" for every module the moment the mint first called
+	// this, which is how the two keys were found to differ (#1056).
+	approved, incarnation, err := s.executionAuthority.ApprovedBuild(ctx, grant.Prefix)
 	switch {
 	case errors.Is(err, ErrUnknownExecutionPrincipal):
 		return nil, fmt.Errorf("%w: %s", ErrUnknownExecutionPrincipal, principalID)

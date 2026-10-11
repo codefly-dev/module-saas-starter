@@ -710,9 +710,10 @@ message ModuleReplayEventsResponse {
 
 // ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
 // internal-tier and identifies its caller from the forwarded Work Context —
-// except MintModuleRegistration and MintSolutionRegistration, which a registrant
-// calls at startup, before any user request exists, and which authorize on the
-// registrant's own registration secret.
+// except the three mints, which are how a module obtains one: each presents the
+// module pod's projected ServiceAccount token, and accounts establishes what the
+// pod is running (TokenReview, the pod's running image, the approved build)
+// before it issues anything.
 // Non-secret, current-viewer source read projection.
 //
 // One row per feeding source, so a boundary fed by several sources is reported
@@ -1357,50 +1358,11 @@ service ModuleCapabilitiesService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
-  // MintModuleRegistration issues the signed, prefix-bound credential a composed
-  // module presents to the gateway to federate its REST surface. Authorized by
-  // the module's own registration secret, not the shared cluster token.
-  rpc MintModuleRegistration(ModuleMintRegistrationRequest) returns (ModuleMintRegistrationResponse) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_INTERNAL
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {
-        events: "saas.module.registration_minted"
-        emission: AUDIT_EMISSION_SUCCESS
-      }
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_INTERNAL
-      request_sensitivity: SENSITIVITY_SECRET
-      response_sensitivity: SENSITIVITY_SECRET
-      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
-    };
-  }
-  // MintSolutionRegistration issues the signed, solution-bound credential a
-  // solution presents to the gateway and to the frontend to register, update, or
-  // delete its upstream and its Module-Federation remote. Authorized by the
-  // solution's own registration secret, declared separately from the module
-  // secrets because a solution remote executes in the host origin.
-  rpc MintSolutionRegistration(SolutionMintRegistrationRequest) returns (SolutionMintRegistrationResponse) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_INTERNAL
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {
-        events: "saas.solution.registration_minted"
-        emission: AUDIT_EMISSION_SUCCESS
-      }
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_INTERNAL
-      request_sensitivity: SENSITIVITY_SECRET
-      response_sensitivity: SENSITIVITY_SECRET
-      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
-    };
-  }
   // MintModuleWorkContext issues the Work Context a composed module presents to
   // this surface: owner and sole actor are the module service principal derived
-  // from its registration prefix. Authorized by the module's own registration
-  // secret, like the credential exchange above.
+  // from its prefix. Authorized by the pod's projected ServiceAccount token, held
+  // against the workload the principal declares and the build the authority
+  // document approves; a pod running anything else is issued nothing.
   rpc MintModuleWorkContext(ModuleMintWorkContextRequest) returns (ModuleMintWorkContextResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1419,7 +1381,7 @@ service ModuleCapabilitiesService {
   }
   // MintModuleOperationContext issues, with no person present, a Work Context
   // addressed to one of the calling module's installed operation audiences.
-  // Authorized by the module's identity secret like MintModuleWorkContext; owner
+  // Authorized by the pod's projected token like MintModuleWorkContext; owner
   // and sole actor are the module service principal, the tenant is the one its
   // principal declares, and the scopes are exactly the binding's declared
   // headless scopes. A binding declaring none is refused.
@@ -1443,7 +1405,7 @@ service ModuleCapabilitiesService {
   // sync runs with: owned by the person who connected the source, actored by
   // the calling module's service principal, in the source's organization, with
   // exactly the source_delegation_scopes of the binding the person delegated
-  // to. Authorized by the module's identity secret like MintModuleWorkContext;
+  // to. Authorized by the pod's projected token like MintModuleWorkContext;
   // every mint re-checks that the delegation is active, the source exists, the
   // person is still an owner or admin of the organization, and the binding is
   // unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the

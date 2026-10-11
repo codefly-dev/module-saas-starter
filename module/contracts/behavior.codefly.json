@@ -3,42 +3,26 @@
   "complete": true,
   "contracts": [
     {
-      "id": "configuration.federation-secrets",
+      "id": "identity.module.execution-binding",
       "requiredByAll": true,
-      "documentation": "SOLUTION_REGISTRATION.md",
+      "documentation": "WORK_CONTEXTS.md",
       "contract": {
-        "group": "federation",
-        "purpose": "Declares module identity digests and the registration mint digests pending removal with the ModuleCapabilitiesService handlers.",
-        "keys": [
-          {
-            "name": "MODULE_REGISTRATION_SECRETS",
-            "form": "comma-separated prefix:sha256hex",
-            "digestOf": "the module's own registration secret",
-            "empty": "no module registration credential may be minted",
-            "reread": "startup"
-          },
-          {
-            "name": "MODULE_IDENTITY_SECRETS",
-            "form": "comma-separated prefix:sha256hex",
-            "digestOf": "the module's service-principal identity secret",
-            "empty": "no composed module may obtain a Work Context",
-            "reread": "startup"
-          },
-          {
-            "name": "SOLUTION_REGISTRATION_SECRETS",
-            "form": "comma-separated id:sha256hex",
-            "digestOf": "the solution's own registration secret",
-            "empty": "no solution registration credential may be minted",
-            "reread": "every exchange"
-          }
+        "credential": "the module pod's projected ServiceAccount token, minted for the audience accounts and re-read from its projection before every mint",
+        "checks": [
+          "TokenReview with the audience accounts: a token for any other audience, cluster or an expired one is refused",
+          "the token's ServiceAccount and namespace equal the workload the principal declares",
+          "the pod the TOKEN names is read, its live UID equals the token's, and the declared container's RUNNING image (status imageID, never the spec's image) equals the build the principal's authority document approves"
         ],
+        "refusals": {
+          "verdict": "the token is refused, belongs to another workload, or the pod runs an unapproved build: nothing is minted, and the caller is not told which check failed",
+          "unbound": "the host could not establish the execution (API server unreachable, no execution binding wired, no image id yet): nothing is minted, and the answer is retryable"
+        },
         "rules": [
-          "Only digests are declared on this side; each plaintext is provisioned to the registrant.",
-          "A declaration that stops parsing denies every registrant with the same refusal a wrong secret receives.",
-          "Registration credentials never substitute for an absent identity declaration, and holding one credential never confers the other.",
-          "An unset key fails closed. Absence is never read as permission."
+          "No secret proves a module's identity. MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and SOLUTION_REGISTRATION_SECRETS are deleted, with both registration mints.",
+          "Execution binding is wired only with delivered authority; a host with no delivery mints for no module.",
+          "Every mint record names the execution it was bound to: namespace, ServiceAccount, pod, pod UID, container, running image and approved incarnation."
         ],
-        "limitation": "No runtime component updates the process environment or the injected carrier under a running process (codefly-dev/cli#740), so where a deployment delivers these keys as container environment, withdrawing a publisher takes effect on restart rather than on edit."
+        "limitation": "The Work Context does not yet SEAL the installation id and revision: the host signs the sdk-go encoding, which carries no seal, and module principals hold no installation until #1057. The execution is bound at mint and recorded, not sealed."
       }
     },
     {
@@ -79,38 +63,6 @@
           "An upstream reads identity only from these headers; it never re-derives identity from a forwarded bearer.",
           "x-credential-kind names what the perimeter authenticated, a fact only the perimeter holds.",
           "An upstream that trusts an unstamped header trusts caller-supplied input."
-        ]
-      }
-    },
-    {
-      "id": "registration.solution.credential",
-      "requiredByAll": true,
-      "documentation": "SOLUTION_REGISTRATION.md",
-      "dependencies": [
-        "api/accounts/connect#/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
-        "behavior/configuration.federation-secrets"
-      ],
-      "contract": {
-        "broker": {
-          "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
-          "exposure": "EXPOSURE_INTERNAL",
-          "authorizedAgainst": "SOLUTION_REGISTRATION_SECRETS entry for that exact id",
-          "audit": "saas.solution.registration_minted"
-        },
-        "token": {
-          "algorithm": "EdDSA",
-          "key": "Ed25519, published through JWKS",
-          "audience": "solution-registration",
-          "subject": "solution:<id>",
-          "claims": [
-            "solution",
-            "jti"
-          ],
-          "ttlSeconds": 300
-        },
-        "rules": [
-          "The internal mint remains pending removal with the ModuleCapabilitiesService handlers. No HTTP registration endpoint consumes its credential.",
-          "The credential is bound to one solution id and publisher."
         ]
       }
     },
@@ -189,37 +141,11 @@
       }
     },
     {
-      "id": "registration.module.credential",
-      "documentation": "services/auth-gateway/AGENTS.md",
-      "dependencies": [
-        "api/accounts/connect#/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
-        "behavior/configuration.federation-secrets"
-      ],
-      "contract": {
-        "broker": {
-          "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
-          "exposure": "EXPOSURE_INTERNAL",
-          "authorizedAgainst": "MODULE_REGISTRATION_SECRETS entry for that exact prefix",
-          "audit": "module.registration_minted"
-        },
-        "token": {
-          "algorithm": "EdDSA",
-          "audience": "module-registration",
-          "subject": "module:<prefix>",
-          "ttlSeconds": 300
-        },
-        "rules": [
-          "The internal mint remains pending removal with the ModuleCapabilitiesService handlers. No HTTP registration endpoint consumes its credential.",
-          "The credential is bound to one module prefix."
-        ]
-      }
-    },
-    {
       "id": "registration.module.work-context",
       "documentation": "services/accounts/AGENTS.md",
       "dependencies": [
         "api/accounts/connect#/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-        "behavior/configuration.federation-secrets"
+        "behavior/identity.module.execution-binding"
       ],
       "contract": {
         "exchange": {
@@ -227,7 +153,7 @@
           "path": "/modules/_work-context",
           "headers": {
             "X-Codefly-Internal-Token": "cluster-internal perimeter check",
-            "X-Codefly-Module-Secret": "the module's identity secret"
+            "Authorization": "Bearer <the module pod's projected ServiceAccount token>"
           },
           "body": {
             "prefix": "<module-prefix>"
@@ -236,10 +162,10 @@
         "broker": {
           "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
           "exposure": "EXPOSURE_INTERNAL",
-          "authorizedAgainst": "MODULE_IDENTITY_SECRETS entry for that exact prefix"
+          "authorizedAgainst": "the projected token, bound by BindExecution to the principal's declared workload and approved build"
         },
         "rules": [
-          "The identity declaration is independent of the route-registration declaration, and a registration credential never substitutes for an absent identity declaration.",
+          "The pod's projected token is the only credential; no secret substitutes for it and the gateway forwards it unread.",
           "accounts owns every rule about what the resulting capability may do. The gateway mints nothing and adds no authority of its own."
         ]
       }
@@ -249,7 +175,7 @@
       "documentation": "WORK_CONTEXTS.md",
       "dependencies": [
         "api/accounts/connect#/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-        "behavior/configuration.federation-secrets"
+        "behavior/identity.module.execution-binding"
       ],
       "contract": {
         "exchange": {
@@ -257,7 +183,7 @@
           "path": "/modules/_operation-context",
           "headers": {
             "X-Codefly-Internal-Token": "cluster-internal perimeter check",
-            "X-Codefly-Module-Secret": "the module's identity secret"
+            "Authorization": "Bearer <the module pod's projected ServiceAccount token>"
           },
           "body": {
             "prefix": "<module-prefix>",
@@ -272,14 +198,15 @@
             "binding": "<operation_audiences key>"
           },
           "refusals": {
-            "401": "the module is not proven: internal token, identity secret, or module declaration",
-            "403": "the proven module's binding is undeclared or declares no headless_scopes"
+            "401": "the module is not proven: internal token, projected token, workload, running build, or module declaration",
+            "403": "the proven module's binding is undeclared or declares no headless_scopes",
+            "503": "the host could not establish the caller's execution; nothing was decided and the module retries"
           }
         },
         "broker": {
           "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
           "exposure": "EXPOSURE_INTERNAL",
-          "authorizedAgainst": "MODULE_IDENTITY_SECRETS entry for that exact prefix",
+          "authorizedAgainst": "the projected token, bound by BindExecution to the principal's declared workload and approved build",
           "audit": "saas.module.operation_context_minted"
         },
         "token": {

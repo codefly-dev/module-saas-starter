@@ -80,7 +80,7 @@ func internalContext() context.Context {
 func mintSource(sourceID string) (*gen.ModuleMintSourceOperationContextResponse, error) {
 	return adapters.ModuleCapabilitiesSingleton().MintSourceOperationContext(context.Background(),
 		&gen.ModuleMintSourceOperationContextRequest{
-			Prefix: delegationModule, Secret: delegationModuleSecret,
+			Prefix: delegationModule, ServiceAccountToken: delegationModuleToken,
 			Delegation: &gen.ModuleMintSourceOperationContextRequest_SourceId{SourceId: sourceID},
 		})
 }
@@ -241,9 +241,9 @@ func TestSourceDelegation_CrossTenantAloneMintsNothing(t *testing.T) {
 	for _, prefix := range []string{delegationModule, runtimeModule} {
 		require.True(t, wide.ModulePrincipals()[business.ModulePrincipalID(prefix)].CrossTenant)
 	}
-	_, err = wide.AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleSecret, business.SourceDelegationRef{SourceID: source.ID})
+	_, err = wide.AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{SourceID: source.ID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationMissing)
-	_, err = wide.AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleSecret, business.SourceDelegationRef{DelegationID: business.NewIDString()})
+	_, err = wide.AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{DelegationID: business.NewIDString()})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
 }
 

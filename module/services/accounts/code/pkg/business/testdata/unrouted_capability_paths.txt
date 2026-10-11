@@ -15,7 +15,10 @@
 #    Service.AuthorizeModuleCapability. These are the real outstanding work.
 module_operation_context.go:ModuleAuthorizeOperationContext
 module_operation_context.go:CheckModuleOperationContextRevision
-module_registration.go:ModuleAuthorizeWorkContext
+# The identity mint moved file when its secret was deleted (#1056); it is the
+# same entry, not a new one — it now binds the caller's execution, and the
+# installation check is #1057's.
+module_identity.go:ModuleAuthorizeWorkContext
 source_delegation.go:AuthorizeSourceOperationContext
 source_delegation.go:AuthorizeDelegationReferenceExchange
 # Arrived with main's executable-artifact consent (#1025), which landed while

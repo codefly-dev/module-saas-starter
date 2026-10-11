@@ -134,19 +134,47 @@ func mustHost(t *testing.T, rawURL string) string {
 	return u.Host
 }
 
-// The module secret is a credential the gateway consumes; like every other
-// codefly credential header it must never continue to an upstream.
+// The module secret header is gone with the secret (#1056) and nothing reads it,
+// but it stays on the strip list, like the other retired credential headers:
+// stripping it is what stops a caller supplying it to an upstream that might.
 func TestGateway_ModuleSecretHeaderStrippedFromProxiedRequests(t *testing.T) {
+	const retiredModuleSecretHeader = "X-Codefly-Module-Secret"
 	gw, apiFake, _, priv := newGatewayHarness(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
-	req.Header.Set(moduleSecretHeader, "documents-secret")
+	req.Header.Set(retiredModuleSecretHeader, "documents-secret")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Empty(t, apiFake.lastHeaders.Get(moduleSecretHeader))
+	require.Empty(t, apiFake.lastHeaders.Get(retiredModuleSecretHeader))
+}
+
+// A mint presents exactly one bearer, and the broker forwards nothing else: a
+// retired secret header, a second Authorization header or another scheme each
+// leave accounts unasked.
+func TestGateway_ModuleWorkContext_TakesOnlyTheProjectedTokenBearer(t *testing.T) {
+	for name, set := range map[string]func(h http.Header){
+		"the retired secret header": func(h http.Header) { h.Set("X-Codefly-Module-Secret", "documents-secret") },
+		"another scheme":            func(h http.Header) { h.Set("Authorization", "Basic ZG9jdW1lbnRzOnNlY3JldA==") },
+		"two bearers": func(h http.Header) {
+			h.Add("Authorization", "Bearer one")
+			h.Add("Authorization", "Bearer two")
+		},
+		"an empty bearer": func(h http.Header) { h.Set("Authorization", "Bearer   ") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			gw, mint := newWorkContextExchangeHarness(t)
+			req := workContextRequest("documents", "", "test-internal-token")
+			set(req.Header)
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusUnauthorized, w.Code)
+			require.Zero(t, mint.requestCount)
+		})
+	}
 }
 
 // ============================================================================
@@ -160,7 +188,7 @@ type fakeAccountsWorkContextMint struct {
 	code         codes.Code
 	lastInternal string
 	lastPrefix   string
-	lastSecret   string
+	lastToken    string
 	requestCount int
 }
 
@@ -171,7 +199,7 @@ func (f *fakeAccountsWorkContextMint) handle(ctx context.Context, dec func(any) 
 	}
 	f.requestCount++
 	f.lastPrefix = req.GetPrefix()
-	f.lastSecret = req.GetSecret()
+	f.lastToken = req.GetServiceAccountToken()
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if values := md.Get("x-codefly-internal-token"); len(values) > 0 {
 			f.lastInternal = values[0]
@@ -218,11 +246,11 @@ func newWorkContextExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsWorkCon
 	return gw, mint
 }
 
-func workContextRequest(prefix, secret, internal string) *http.Request {
+func workContextRequest(prefix, token, internal string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, moduleWorkContextPath,
 		strings.NewReader(fmt.Sprintf(`{"prefix":%q}`, prefix)))
-	if secret != "" {
-		req.Header.Set(moduleSecretHeader, secret)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if internal != "" {
 		req.Header.Set("X-Codefly-Internal-Token", internal)
@@ -234,15 +262,15 @@ func TestGateway_ModuleWorkContext_BrokersToAccounts(t *testing.T) {
 	gw, mint := newWorkContextExchangeHarness(t)
 
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, workContextRequest("documents", "documents-secret", "test-internal-token"))
+	gw.ServeHTTP(w, workContextRequest("documents", "documents-projected-token", "test-internal-token"))
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "no-store", w.Header().Get("cache-control"))
 	// The gateway presents its OWN cluster credential on the internal leg and
-	// forwards the module's secret for accounts to judge.
+	// forwards the module pod's projected token for accounts to judge.
 	require.Equal(t, "test-internal-token", mint.lastInternal)
 	require.Equal(t, "documents", mint.lastPrefix)
-	require.Equal(t, "documents-secret", mint.lastSecret)
+	require.Equal(t, "documents-projected-token", mint.lastToken)
 
 	var payload struct {
 		Token       string `json:"token"`
@@ -258,23 +286,23 @@ func TestGateway_ModuleWorkContext_BrokersToAccounts(t *testing.T) {
 func TestGateway_ModuleWorkContext_FailsClosed(t *testing.T) {
 	tests := map[string]struct {
 		prefix   string
-		secret   string
+		token    string
 		internal string
 		want     int
 	}{
-		"no internal token":  {"documents", "documents-secret", "", http.StatusUnauthorized},
-		"bad internal token": {"documents", "documents-secret", "wrong", http.StatusUnauthorized},
-		"no module secret":   {"documents", "", "test-internal-token", http.StatusUnauthorized},
-		"path prefix":        {"documents/nested", "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"wildcard prefix":    {"*", "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"empty prefix":       {"", "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"no internal token":  {"documents", "documents-projected-token", "", http.StatusUnauthorized},
+		"bad internal token": {"documents", "documents-projected-token", "wrong", http.StatusUnauthorized},
+		"no projected token": {"documents", "", "test-internal-token", http.StatusUnauthorized},
+		"path prefix":        {"documents/nested", "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"wildcard prefix":    {"*", "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"empty prefix":       {"", "documents-projected-token", "test-internal-token", http.StatusBadRequest},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			gw, mint := newWorkContextExchangeHarness(t)
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, workContextRequest(test.prefix, test.secret, test.internal))
+			gw.ServeHTTP(w, workContextRequest(test.prefix, test.token, test.internal))
 
 			require.Equal(t, test.want, w.Code)
 			// Nothing reached accounts: the perimeter rejected it first.
@@ -292,14 +320,16 @@ func TestGateway_ModuleWorkContext_RelaysAccountsOutcome(t *testing.T) {
 	}{
 		"refusal":          {codes.PermissionDenied, http.StatusUnauthorized},
 		"rejected request": {codes.InvalidArgument, http.StatusBadRequest},
-		"outage":           {codes.Internal, http.StatusBadGateway},
+		// accounts could not establish what the pod runs: retryable, not a verdict.
+		"execution unbound": {codes.Unavailable, http.StatusServiceUnavailable},
+		"outage":            {codes.Internal, http.StatusBadGateway},
 	} {
 		t.Run(name, func(t *testing.T) {
 			gw, mint := newWorkContextExchangeHarness(t)
 			mint.code = test.code
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, workContextRequest("documents", "documents-secret", "test-internal-token"))
+			gw.ServeHTTP(w, workContextRequest("documents", "documents-projected-token", "test-internal-token"))
 
 			require.Equal(t, test.want, w.Code)
 			require.Equal(t, 1, mint.requestCount)

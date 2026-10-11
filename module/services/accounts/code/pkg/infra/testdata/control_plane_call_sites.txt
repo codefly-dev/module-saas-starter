@@ -74,12 +74,10 @@ pkg/business/module_capabilities.go: (*Service).ModuleSubscribe: WithControlPlan
 pkg/business/module_capabilities.go: (*Service).ModuleUnsubscribe: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).moduleAuditSubjectIsMemberOf: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControlPlane
+pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
+pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
-pkg/business/module_registration.go: (*Service).ModuleMintRegistration: WithControlPlane
-pkg/business/module_registration.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
-pkg/business/module_registration.go: (*Service).SolutionMintRegistration: WithControlPlane
-pkg/business/module_registration.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/notifications.go: (*Service).resolveNotificationUser: WithControlPlane
 pkg/business/onboarding.go: (*Service).organizationConfigured: WithControlPlane
 pkg/business/organization_lifecycle.go: (*Service).GetOrganizationRoster: WithControlPlane

@@ -117,24 +117,30 @@ other drops.
 ## Brokering a module's Work Context
 
 `POST /modules/_work-context` takes the
-cluster-internal token plus the module's **identity** secret, body `{prefix}`.
-The gateway brokers it to accounts
-(`ModuleCapabilitiesService/MintModuleWorkContext`, `EXPOSURE_INTERNAL`), which
-authorizes it against an independent digest and owns every rule about what the
-resulting capability may do — see
+cluster-internal token plus the module pod's **projected ServiceAccount token**
+as `Authorization: Bearer <token>` (exactly one header, that scheme), body
+`{prefix}`. No secret header is read: `X-Codefly-Module-Secret` is deleted with
+the secret (#1056) and only stays on the strip list. The gateway forwards the
+token unread to accounts (`ModuleCapabilitiesService/MintModuleWorkContext`,
+`EXPOSURE_INTERNAL`), which reviews it, binds it to the pod's running build
+(`BindExecution`) and owns every rule about what the resulting capability may
+do — see
 [../accounts/AGENTS.md](../accounts/AGENTS.md). The gateway mints nothing itself
 and adds no authority of its own.
 
 `POST /modules/_operation-context` is its headless sibling, on the same
-perimeter: the cluster-internal token in `X-Codefly-Internal-Token`, the module's
-**identity** secret in `X-Codefly-Module-Secret`, and body
+perimeter: the cluster-internal token in `X-Codefly-Internal-Token`, the module
+pod's projected token as `Authorization: Bearer`, and body
 `{"prefix": "<module>", "binding": "<operation_audiences key>"}`. The gateway
 brokers it to `ModuleCapabilitiesService/MintModuleOperationContext` and answers
 `{work_context, expires_at, principal_id, tenant, audience, binding}` (RFC 3339
 `expires_at`) with `cache-control: no-store` — snake_case, unlike the camelCase
 `/modules/_work-context`, because consumers were built against this shape. It relays two distinct refusals: `401` when the module is not proven
-(bad internal token, missing or wrong secret, undeclared module) and `403` when a
-proven module names a binding it may not mint with no person present. What the
+(bad internal token, a missing or refused projected token, another workload, an
+unapproved build, an undeclared module) and `403` when a proven module names a
+binding it may not mint with no person present. Every module exchange answers
+`503` when accounts could not establish what the pod is running (`Unavailable`):
+nothing was decided, and the module retries. What the
 binding yields — audience, scopes, lifetime — is accounts' decision alone.
 
 `POST /modules/_source-operation-context` is the source-delegation sibling, on

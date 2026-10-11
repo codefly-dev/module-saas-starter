@@ -5,6 +5,7 @@ package business
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -69,11 +70,14 @@ type fakeExecutionAuthority struct {
 	digest      ApprovedDigest
 	incarnation uint64
 	err         error
+	// asked records which principal the approval was looked up by.
+	asked string
 }
 
 func (f *fakeExecutionAuthority) ApprovedBuild(
-	_ context.Context, _ string,
+	_ context.Context, principal string,
 ) (ApprovedDigest, uint64, error) {
+	f.asked = principal
 	if f.err != nil {
 		return "", 0, f.err
 	}
@@ -309,6 +313,42 @@ func TestNothingIsIssuedWhenTheApiIsUnavailable(t *testing.T) {
 	_, err = service.BindExecution(context.Background(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnbound)
 	require.NotErrorIs(t, err, ErrExecutionNotApproved)
+}
+
+// A token the API server REVIEWED and refused — minted for another audience,
+// by another cluster, expired — is a verdict about the caller's credential, not
+// an outage. Reading it as "unbound" told a caller presenting the wrong
+// audience to retry forever, and answered 503 where the review had answered no.
+func TestARejectedTokenIsAVerdictNotAnOutage(t *testing.T) {
+	reviewer := &fakeExecutionReviewer{
+		reviewErr: fmt.Errorf("%w: token audiences [vault] do not include accounts", ErrExecutionTokenRejected),
+	}
+	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare})
+
+	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+
+	require.ErrorIs(t, err, ErrExecutionTokenRejected)
+	require.NotErrorIs(t, err, ErrExecutionUnbound)
+	require.Equal(t, executionTokenAudience, reviewer.askedAudience,
+		"the review must ask for this host's audience, so the API server refuses any other")
+}
+
+// The approval is looked up by the name the AUTHORITY DOCUMENT gives the
+// principal — its prefix — and never by this host's registry key. The registry
+// keys a principal by ModulePrincipalID(prefix), a UUID no document carries, so
+// asking the approved-build view for it found nothing for any module (#1056).
+func TestTheApprovalIsLookedUpByTheDocumentsNameForThePrincipal(t *testing.T) {
+	reviewer := &fakeExecutionReviewer{
+		reviewed: reviewedPod(),
+		running:  &RunningContainerStatus{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+	}
+	authority := &fakeExecutionAuthority{digest: approvedBare, incarnation: 2}
+	service := boundService(reviewer, authority)
+
+	_, err := service.BindExecution(context.Background(), "principal-1", "token")
+
+	require.NoError(t, err)
+	require.Equal(t, "worker", authority.asked, "the declared grant's prefix, as the authority document names it")
 }
 
 // A host with no reviewer wired cannot establish anything and says so, rather

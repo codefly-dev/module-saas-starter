@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	connectrpc.com/connect v1.21.0
-	github.com/codefly-dev/saas-sdk-go v0.0.3-0.20260927130902-fed59a51306c
+	github.com/codefly-dev/saas-sdk-go v0.0.3-0.20261011021321-01a2a53fc3b5
 )
 
 require (

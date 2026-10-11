@@ -2,6 +2,8 @@ package infra
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"accounts/pkg/business"
 )
@@ -22,6 +24,12 @@ func (c *KubernetesClient) ReviewToken(
 ) (*business.ReviewedExecutionToken, error) {
 	reviewed, err := c.reviewToken(ctx, token, audience)
 	if err != nil {
+		// A review that RAN and refused is a verdict on the token; the business
+		// layer keeps it apart from a review that could not run, and it can only
+		// do that from a sentinel it owns.
+		if errors.Is(err, ErrTokenRejected) {
+			return nil, fmt.Errorf("%w: %w", business.ErrExecutionTokenRejected, err)
+		}
 		return nil, err
 	}
 	return &business.ReviewedExecutionToken{
