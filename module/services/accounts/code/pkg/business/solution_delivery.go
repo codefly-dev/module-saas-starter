@@ -242,6 +242,10 @@ func (s *Service) ReceiveSolutionDelivery(
 		return "", nil, err
 	}
 	if inserted {
+		// A new document changes what the host should apply and which module
+		// principals the registry holds, so a pass is requested now rather than
+		// at the next tick. An exact replay changes nothing and asks for none.
+		s.requestRegistryPass()
 		return SolutionDeliveryAccepted, record, nil
 	}
 	return SolutionDeliveryReplayed, record, nil

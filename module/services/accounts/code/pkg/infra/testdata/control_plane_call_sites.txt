@@ -74,6 +74,9 @@ pkg/business/module_capabilities.go: (*Service).ModuleSubscribe: WithControlPlan
 pkg/business/module_capabilities.go: (*Service).ModuleUnsubscribe: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).moduleAuditSubjectIsMemberOf: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControlPlane
+pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPlane
+pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
+pkg/business/module_envelope.go: (*Service).PutModuleEnvelope: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
 pkg/business/module_registration.go: (*Service).ModuleMintRegistration: WithControlPlane

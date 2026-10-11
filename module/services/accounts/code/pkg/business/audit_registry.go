@@ -388,6 +388,12 @@ const (
 	EventPlatformRoleRevoked        EventType = "saas.platform.role_revoked"
 	EventPlatformImpersonated       EventType = "saas.platform.user_impersonated"
 	EventPlatformImpersonationEnded EventType = "saas.platform.user_impersonation_ended"
+	// EventModuleEnvelopeWritten records that a platform super_admin wrote a
+	// new revision of the module envelope — the ceiling every module principal
+	// is derived inside. Widening and narrowing are both this one event: the
+	// revision names the whole ceiling at that point, and the row it points at
+	// is the record of what changed.
+	EventModuleEnvelopeWritten EventType = "saas.platform.module_envelope_written"
 
 	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
 	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
@@ -645,6 +651,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventMFADeviceRevoked, CategorySecurity, "An MFA device was revoked."),
 	mutation(EventPlatformRoleGranted, CategorySecurity, "A platform role was granted."),
 	mutation(EventPlatformRoleRevoked, CategorySecurity, "A platform role was revoked."),
+	mutation(EventModuleEnvelopeWritten, CategorySecurity, "A platform super_admin wrote a new revision of the module envelope.",
+		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "principals", Kind: FieldInt, Required: true}),
 	// The operator's justification is part of the record, not an optional
 	// enrichment: who and whom are already implied by the actor/resource pair,
 	// and why is the only thing this event can carry that the pair cannot.

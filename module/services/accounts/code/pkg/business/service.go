@@ -104,14 +104,11 @@ type Service struct {
 	// module-facing surface, behind an atomic pointer rather than as a bare
 	// field.
 	//
-	// It is replaced, not mutated: every writer swaps a whole registry. A bare
-	// field made that swap a data race against the eighteen authorization sites
-	// that read it — unsynchronized, and therefore undefined rather than merely
-	// stale. Nothing replaces it at runtime TODAY (work.go wires it once at
-	// boot), so the race is latent; it goes live the moment a platform
-	// administrator can narrow a module's ceiling without a redeploy, which is
-	// what the envelope record makes possible. Closing it before the writer
-	// exists is the cheap order.
+	// It is replaced, not mutated: the one production writer is the module
+	// principal reconciler (module_principal_reconcile.go), which derives the
+	// whole registry each pass from the live authority documents inside the
+	// current envelope and swaps it in. A bare field made that swap a data race
+	// against every authorization site that reads it.
 	//
 	// The pointed-to registry is the SERVICE'S OWN COPY, and that is the half
 	// that makes "replaced, not mutated" an enforced property rather than a
@@ -125,11 +122,10 @@ type Service struct {
 	//
 	// What this does NOT yet give is one immutable snapshot per REQUEST. Each
 	// read takes the registry as it is at that moment, so a request that
-	// consults it twice could still straddle a replacement. Threading a
-	// request-scoped snapshot is the other half, and it lands with the runtime
-	// writer that makes a mid-request replacement reachable at all — doing it
-	// now, against a registry nothing replaces, would be eighteen call sites no
-	// test could hold.
+	// consults it twice can straddle a replacement. Each read is of a whole,
+	// validated registry, so a straddling request sees two coherent ceilings,
+	// never a half-built one; threading a request-scoped snapshot through every
+	// call site is still owed.
 	modulePrincipals atomic.Pointer[ModulePrincipalRegistry]
 
 	// declaredAudienceBindings caches the DECLARED, NON-TOMBSTONED solution
@@ -184,6 +180,14 @@ type Service struct {
 	// check.
 	executionReviewer  ExecutionReviewer
 	executionAuthority ExecutionAuthority
+
+	// moduleEnvelopes persists the module envelope, the ceiling a platform
+	// super_admin writes (module_envelope.go). Nil answers no question about
+	// the ceiling: the RPCs refuse and the reconcilers derive nothing.
+	moduleEnvelopes ModuleEnvelopeStore
+	// registryPassTrigger asks the reconciler for a pass now. Set once at boot,
+	// before the service listens; nil leaves the tick as the only pass.
+	registryPassTrigger func()
 }
 
 // SetModuleAuthorityReads wires the live reads every capability decision makes.
@@ -250,27 +254,27 @@ func (s *Service) declaredModules() ModulePrincipalRegistry {
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
 // a request-scoped transactional producer for tenant/subject enqueue, the
 // privileged worker store for claim/lease/finalize and global inbox enqueue,
-// and the per-principal registry declaring which queues each module service
-// principal may use and whether it may act across tenants. Leaving the registry
-// nil denies every caller (fail-closed).
+// and an initial registry. Production passes none: the registry is derived from
+// delivered authority inside the envelope by the module principal reconciler,
+// so a host serves no module until its first pass — a nil registry denies every
+// caller (fail-closed). Tests pass one to exercise a capability path directly.
 //
-// This is BOOT wiring and the only caller is work.go, which runs it once before
-// the service listens. The producer and the job store are therefore plain fields
-// written before any request can read them; they are deliberately not behind
-// atomics, because nothing replaces them at runtime and an atomic that is only
-// ever written once reads as a claim that something might. The registry is the
-// one thing a later writer replaces, which is why it alone is a pointer.
+// This is BOOT wiring and the only production caller is work.go, which runs it
+// once before the service listens. The producer and the job store are therefore
+// plain fields written before any request can read them; they are deliberately
+// not behind atomics, because nothing replaces them at runtime. The registry is
+// the one thing the reconciler replaces, which is why it alone is a pointer.
 func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store, registry ModulePrincipalRegistry) {
 	s.moduleProducer = producer
 	s.moduleJobStore = store
 	s.storeModulePrincipals(registry)
 }
 
-// ModulePrincipals returns the declared registry, and SetModulePrincipals
+// ModulePrincipals returns the current registry, and SetModulePrincipals
 // replaces it without disturbing the job wiring SetModuleCapabilities also owns.
-// The composition declares a module's vocabulary — including the permission
-// resources its content is governed by — so a caller that needs to read or
-// stand in for that declaration goes through here rather than re-deriving it.
+// The registry carries each module's vocabulary — including the permission
+// resources its content is governed by — so a caller that needs to read it goes
+// through here rather than re-deriving it.
 //
 // It returns a COPY. A caller that received the live registry could mutate the
 // map every authorization site is indexing, which would bypass the atomic
@@ -282,9 +286,10 @@ func (s *Service) ModulePrincipals() ModulePrincipalRegistry {
 	return maps.Clone(s.declaredModules())
 }
 
-// SetModulePrincipals replaces the registry at runtime. It clones, for the same
-// reason the accessor does: storing the caller's own map would leave the backing
-// map addressable by whoever passed it.
+// SetModulePrincipals replaces the registry at runtime. Its production caller is
+// the module principal reconciler, which swaps in each pass's whole derived
+// registry. It clones, for the same reason the accessor does: storing the
+// caller's own map would leave the backing map addressable by whoever passed it.
 func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 	s.storeModulePrincipals(registry)
 }

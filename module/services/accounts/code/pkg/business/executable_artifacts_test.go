@@ -72,7 +72,7 @@ func TestExecutableArtifactIdentityAndPolicy(t *testing.T) {
 		"artifact_policies": map[string]ExecutableArtifactPolicy{"definitions": p},
 		"workload":          ModuleWorkload{ServiceAccount: "example", Namespace: "example-system", Container: "example"},
 	}})
-	registry, err := ParseModulePrincipalRegistry(string(raw))
+	registry, err := parseRegistryFixture(string(raw))
 	require.NoError(t, err)
 	require.Equal(t, p, registry[ModulePrincipalID("example")].ArtifactPolicies["definitions"])
 	p.Contracts[0].Digest = "*"

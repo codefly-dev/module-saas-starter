@@ -116,7 +116,7 @@ const (
 	ModuleAuditEventVisibility_MODULE_AUDIT_EVENT_VISIBILITY_TENANT ModuleAuditEventVisibility = 1
 	// May additionally be delivered to a tenant's outbound webhook endpoint.
 	// Admitted only in a namespace the operator marked externally deliverable
-	// (`external_namespaces` of the declaring principal's MODULE_PRINCIPALS
+	// (`external_namespaces` of the declaring principal's module registry
 	// entry): the producer decides which of its facts are customer-facing, and
 	// the operator decides whether that producer may send anything out at all.
 	ModuleAuditEventVisibility_MODULE_AUDIT_EVENT_VISIBILITY_EXTERNAL ModuleAuditEventVisibility = 2
@@ -1847,7 +1847,7 @@ type ModuleAuditEventTypeDeclaration struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// <namespace>.<aggregate>.<event>, lowercase snake_case segments. The
 	// namespace must be one the operator bound to this module (the `namespaces`
-	// of its MODULE_PRINCIPALS entry) and may not be the host's own.
+	// of its module registry entry) and may not be the host's own.
 	Type        string                         `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
 	Description string                         `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	Fields      []*ModuleAuditFieldDeclaration `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty"`

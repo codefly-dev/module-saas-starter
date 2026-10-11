@@ -11,6 +11,7 @@ import (
 
 	"accounts/pkg/adapters"
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
@@ -540,7 +541,7 @@ func TestSourceDelegation_ReferenceExchangeRefusesALookupThePersonNeverDelegated
 	// The delegating binding grants write alone, so it cannot cover the
 	// runtime's read-only lookup subset. Installed before the connect, so the
 	// delegation records this binding's digest and stays current.
-	writeOnly, err := business.ParseModulePrincipalRegistry(`{` +
+	writeOnly, err := moduleregistrytest.Parse(`{` +
 		`"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + w.otherOrg + `","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -536,7 +537,7 @@ func TestConfigureModuleIdentity(t *testing.T) {
 			service.SetModuleRegistrar(federationTestMinter{}, map[string][sha256.Size]byte{
 				"documents": sha256.Sum256([]byte("registration-secret")),
 			})
-			registry, err := business.ParseModulePrincipalRegistry(
+			registry, err := moduleregistrytest.Parse(
 				`{"documents":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + tenant + `"}}`)
 			require.NoError(t, err)
 			service.SetModuleCapabilities(nil, nil, registry)

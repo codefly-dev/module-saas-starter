@@ -54,7 +54,7 @@ remain enforced. `ModuleEmitAuditEvent` can emit only a type owned by the caller
 solution scope and an authorized namespace. `business.AuditEventResolver` resolves
 stored schemas for payload validation and PII redaction.
 
-The principal directory lists stored identities. The `MODULE_PRINCIPALS` map
+The principal directory lists stored identities. The module principal registry
 below supplies declared authority to capability checks only.
 
 See [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence)
@@ -144,7 +144,7 @@ require.
 `PlatformAdminService.ListPlatformCatalogue` (super administrators, page
 `/admin/platform/catalogue`) lists every composed module and every solution
 with what it declares, what runs and where it is installed. It **adds no store**:
-modules come from the `MODULE_PRINCIPALS` registry (`Service.modulePrincipals`),
+modules come from the module principal registry (`Service.modulePrincipals`),
 solutions from `solution_registrations` (read with tombstones, so an
 installation of a deregistered solution sits beside its tombstone rather than
 reading as a solution nobody registered), and installations from
@@ -265,8 +265,36 @@ is derived from the
 declared module prefix (`business.ModulePrincipalID`) — nothing is
 hand-authored as an opaque id.
 
-Its authority is declared in the `module-capabilities` group's
-`MODULE_PRINCIPALS`, a JSON map keyed by that prefix:
+Its authority is its entry in the **module principal registry**, which no
+configuration declares. The module principal reconciler derives the whole
+registry on every reconcile pass (and on a delivery or an envelope write,
+without waiting for the tick) and swaps it in with `SetModulePrincipals`, its
+only production writer — so installing, narrowing or withdrawing a module takes
+effect with no restart. An entry exists only while three inputs agree:
+
+- **the module envelope** — the authority ceiling a platform super_admin writes
+  through `PlatformAdminService/PutModuleEnvelope` (`requirePlatformRole`, so
+  never through an impersonated session; audited as
+  `saas.platform.module_envelope_written`; append-only and revisioned in
+  `module_envelopes`). Per module prefix it lists the authority unit IDs the host
+  admits (`<presence binding>:<binding>:<operation>`), the scope ceilings, and
+  the grant ceiling below. It names no workload.
+- **a live authority document inside that envelope** — signed, delivered,
+  re-verified on every pass, held to the projection of the envelope by core's
+  `ValidateAgainst` (exact containment: a unit the envelope does not admit puts
+  the whole document outside it, and it grants nothing).
+- **the applied presence document** the authority is granted over — the workload
+  running the approved build gives the entry's `workload` (namespace and service
+  account from its SPIFFE ID, container from the presence).
+
+The entry is the envelope's grant bounded by the document: queues and namespaces
+the document also declares, resources its scope ceilings name, and each
+operation audience only for a binding whose `invoke` unit the document grants,
+every operation's scopes intersected with the unit's scope. A principal granted
+by two live documents, rewound below the generation already served, whose
+workload has no single answer, or whose entry fails validation is **omitted by
+name, never widened**; an unreadable envelope, inbox or applied state keeps the
+previous registry serving. The grant ceiling's keys:
 
 | Key | Grants |
 | --- | --- |
@@ -278,7 +306,9 @@ Its authority is declared in the `module-capabilities` group's
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
-**Unset means no module may call the surface.**
+**No envelope written, or no delivered authority inside it, means no module may
+call the surface** — accounts starts with an empty registry and serves no module
+until its first pass.
 
 ## Minting a module Work Context
 
@@ -295,8 +325,8 @@ once the capability exists. The response carries
   exchange. Compositions must provision identity digests and distribute their
   matching secrets before modules can obtain Work Contexts; registration
   credentials never substitute for missing identity digests.
-- The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
-  for that principal, so a module cannot name a tenant by asking.
+- The tenant is **not requestable** — it is the one the module envelope's grant
+  declares for that principal, so a module cannot name a tenant by asking.
 - The capability's effective authority **is, in a running deployment today, the
   LIVE half alone.** `min(sealed, live)` is the target — blocker decision **B1**,
   which *reverses* what this file said before it — and it is **not yet reached**.
@@ -568,7 +598,7 @@ undeclared prefix, the same tenant existence check — and the request adds only
   `headless_scopes` stops the next mint; an issued child outlives it by at most
   a minute.
 - It is sealed with a non-zero authorization revision — a digest of the module's
-  whole `MODULE_PRINCIPALS` entry — and `CheckAuthorizationRevision` confirms it
+  whole module registry entry — and `CheckAuthorizationRevision` confirms it
   from that declaration rather than the database: owner a declared module
   principal, its declared tenant, the current entry's digest, only the module
   principal as subject, scopes within one binding's `headless_scopes`. Anything
@@ -715,7 +745,7 @@ viewer may read out.
   authority that held then — so the host writes an instant rather than expiring
   entries on a timer.
 - **Authority is the caller's principal, its bound tenant, and the viewer's
-  membership of that tenant.** There is no `MODULE_PRINCIPALS` key for it: like
+  membership of that tenant.** There is no registry key for it: like
   notify, approvals and audit, it is a capability any declared module holds on
   the tenant it is bound to. The membership check is what stops a module bound to
   one tenant from using another tenant's subject as a probe.

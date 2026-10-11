@@ -172,7 +172,7 @@ func TestAPrincipalGrantedByTwoLiveAuthoritiesIsRefused(t *testing.T) {
 func TestOneRefusedPrincipalDoesNotWithholdTheOthers(t *testing.T) {
 	// The second principal is named to the constructor so its grant is in the
 	// ceiling the reconciler holds; see newApprovedBuildScenario.
-	innocent := "principal:operator:" + uniqueAlias("abp") + ".innocent"
+	innocent := "inn-" + uniqueAlias("abp")
 	scenario := newApprovedBuildScenario(t, "abp", innocent)
 
 	// The scenario's own principal granted twice — ambiguous — and a second
@@ -270,7 +270,8 @@ func TestAnUnreadableInboxLeavesThePreviousViewServing(t *testing.T) {
 type approvedBuildScenario struct {
 	delivery   *productionPathDelivery
 	reconciler *business.ApprovedBuildReconciler
-	envelope   solutionhost.Envelope
+	envelope   *business.ModuleEnvelope
+	grants     []solutionhost.EnvelopeGrant
 	binding    string
 	build      solutionhost.ImageDigest
 	solutionID string
@@ -300,21 +301,19 @@ func newApprovedBuildScenario(t *testing.T, prefix string, extra ...string) *app
 		// ambiguous. The shared harness grants to one fixed principal for every
 		// solution, which is precisely the collision the ambiguity check
 		// refuses — so these tests cannot reuse it.
-		principal: "principal:operator:" + solutionID,
-		envelope: solutionhost.Envelope{
-			Revision:       solutionhost.FixtureEnvelopeRevision,
-			ApprovedBuilds: []solutionhost.ImageDigest{build},
-		},
+		principal: "op-" + solutionID,
 	}
-	// EVERY GRANT BEFORE THE ACTIVATION. The reconciler holds the envelope by
-	// VALUE, so a grant appended afterwards is invisible to it and the document
-	// naming that principal reads as outside the ceiling. The extra principals
+	// EVERY GRANT BEFORE THE ACTIVATION. The test's ceiling is built once from
+	// the grants, so a grant appended afterwards is invisible to it and the
+	// document naming that principal reads as outside the ceiling. The extra principals
 	// are therefore constructor arguments rather than something a test adds
 	// later — the first version of this test added one later and spent a run
 	// proving that the ceiling check works.
 	for _, principal := range append([]string{scenario.principal}, extra...) {
 		scenario.grant(principal)
 	}
+	scenario.envelope = moduleCeiling(solutionhost.FixtureEnvelopeRevision,
+		[]solutionhost.ImageDigest{build}, scenario.grants...)
 
 	activation := activationFor(t, delivery.service, productionPathCoordinate, scenario.envelope)
 	require.NotNil(t, activation)
@@ -337,17 +336,18 @@ func newApprovedBuildScenario(t *testing.T, prefix string, extra ...string) *app
 // as outside the ceiling — a confusing way to fail, and one this test hit
 // before the extra principals became constructor arguments.
 func (s *approvedBuildScenario) grant(principal string) {
-	s.envelope.Grants = append(s.envelope.Grants, solutionhost.EnvelopeGrant{
+	s.grants = append(s.grants, solutionhost.EnvelopeGrant{
 		Principal: principal,
 		Binding:   s.bindingFor(principal),
 	})
 }
 
 func (s *approvedBuildScenario) bindingFor(principal string) solutionhost.AuthorityBinding {
-	binding := authorityBindingFor(s.solutionID, s.namespace)
+	binding := authorityBindingFor(s.binding, s.namespace)
 	// One unit of authority per principal, named after it so the two halves
-	// cannot drift apart.
-	binding.ID = "binding:" + principal + ":reconcile"
+	// cannot drift apart — in delivery's convention, so the module envelope
+	// can admit it.
+	binding.ID = s.binding + ":reconcile-" + principal + ":invoke"
 	return binding
 }
 
@@ -439,7 +439,7 @@ func (refusingBundleVerifier) VerifyBundle(
 // no longer verify it.
 func activationForVerifier(
 	t *testing.T, service *business.Service, coordinate string,
-	envelope solutionhost.Envelope, verifier solutionhost.BundleVerifier,
+	envelope *business.ModuleEnvelope, verifier solutionhost.BundleVerifier,
 ) *business.SolutionAuthorityActivation {
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(service,
@@ -450,7 +450,7 @@ func activationForVerifier(
 			Domains:         []string{solutionhost.FixtureDomain, productionPathDomain},
 			DomainsBySigner: map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}},
 			Interval:        time.Minute,
-			Envelope:        envelope,
+			Envelopes:       staticCeiling{envelope: envelope},
 		})
 	require.NoError(t, err)
 	return reconciler.AuthorityActivation()

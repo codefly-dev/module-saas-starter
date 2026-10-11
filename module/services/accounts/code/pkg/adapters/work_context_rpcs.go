@@ -1513,13 +1513,12 @@ func mintContentReads(audience string) contentReadEligible {
 // issued — while the reverse, a recheck narrower than the mint that issued the
 // capability, reports a live capability as revoked.
 //
-// That reverse is not hypothetical. The declaration is MODULE_PRINCIPALS, read
-// once at process start, so two hosts in one fleet disagree about it for the
-// length of any rollout that changes it: a capability minted by a host that
+// That reverse is not hypothetical. The declaration is the module registry,
+// which each replica derives on its own reconcile pass, so two hosts in one
+// fleet disagree about it for up to one pass after any change: a capability minted by a host that
 // declares the type is refused by a host that does not, and the consumer reads
 // ErrWorkContextAuthorizationStale as a revocation. Resolving a recheck without
-// the declaration takes process-start configuration out of the staleness
-// verdict. Revocation is still caught, by the live grant, share and platform
+// the declaration takes the registry out of the staleness verdict. Revocation is still caught, by the live grant, share and platform
 // bases the branch requires and by the authorization revision compared after.
 func recheckContentReads() contentReadEligible {
 	return func(string) bool { return true }

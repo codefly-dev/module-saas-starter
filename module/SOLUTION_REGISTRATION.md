@@ -421,17 +421,26 @@ no authority behind it activates nothing. The build is asked **about** rather
 than read out of either document — reading it out of the document that approves
 it would make the question answer itself.
 
-The **ceiling** is Core's `Envelope`: who may hold which binding, and which
-builds are approved, at one revision. It is read from the same platform-owned
-trust anchor as the trust root (`authority_envelope.json`), and never out of a
-delivered document — "an envelope a document carried would be a document
-declaring its own ceiling", and containment is tested against the envelope's own
-grants, so an envelope assembled from the delivery tree answers itself. Absence
-and damage are different answers: no envelope delivered is a complete deployment
-that answers no authority question, while an envelope that is delivered and
-cannot be read refuses the boot, because reading a damaged ceiling as "no
-ceiling" turns a corrupted file into a silently narrower system and reading it
-permissively turns it into a wider one.
+The **ceiling** is the module envelope: a durable, append-only, revisioned
+record (`module_envelopes`) a platform super_admin writes at runtime through
+`PlatformAdminService/PutModuleEnvelope`, audited and never through an
+impersonated session. Per module principal it admits authority unit IDs, scope
+ceilings and the grant ceiling, and lists the approved builds. Every reconcile
+pass and every activation reads the CURRENT revision and hands Core's
+`ValidateAgainst` its projection for the document being judged, so containment
+is Core's exact rule and a narrowing takes effect at the next check with no
+restart. It is never read out of a delivered document — "an envelope a document
+carried would be a document declaring its own ceiling". Absence and damage are
+different answers: no revision written is a complete deployment that grants no
+module anything, while a revision that cannot be read leaves what the last pass
+installed serving, because reading a damaged ceiling as "no ceiling" withdraws
+every module on a transient error and reading it permissively widens them.
+
+The **module principal registry** every capability decision reads is derived
+from this ceiling each pass: for every live authority document inside it, each
+principal's entry is the envelope's grant bounded by what the document grants,
+with the workload read from the applied presence the document names
+([services/accounts/AGENTS.md](services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
 **This host applies authority to nothing**, and that is stated rather than
 defaulted. Core requires either the applied authority record or an explicit
@@ -1055,9 +1064,10 @@ unreadable-mount sibling exist for that reason.
 envelope, and the tempting shortcut is to let the delivered authority *be* the
 ceiling. That collapses two of the three terms in `binding ∩ envelope ∩
 installation`, so a developer would exercise a different authorisation shape than
-production computes. A local envelope file in the host's `local` configuration
-profile — same schema as the reviewed one, authored by the developer — keeps the
-structure identical at the cost of one more file.
+production computes. A local run writes its own envelope revision through the same
+`PutModuleEnvelope` a deployed host uses — same schema as the reviewed one,
+authored by the developer — which keeps the structure identical at the cost of
+one more write.
 
 ### If the local-cluster requirement is judged too expensive
 

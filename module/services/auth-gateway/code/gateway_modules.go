@@ -125,7 +125,7 @@ const mintModuleWorkContextMethod = "/saas.accounts.v1.ModuleCapabilitiesService
 // composition's declarations it fell foul of. But accounts names the fault
 // exactly ("owner is not allowed <resource>:<action> at requested scope", an
 // unknown binding, a prefix whose grant is missing), and dropping it left the
-// gateway with no record at all: a composition whose MODULE_PRINCIPALS entry is
+// gateway with no record at all: a composition whose module registry entry is
 // wrong produced a bare 403 here and silence in the log, which is how a
 // deployed module's refusal became undiagnosable. gRPC status messages carry no
 // credential — the secret never reaches accounts' error.

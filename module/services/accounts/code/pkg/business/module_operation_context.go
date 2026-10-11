@@ -127,7 +127,7 @@ func operationScopeGrants(scopes []ModuleOperationScope) []string {
 // ModuleOperationContextRevision is the authorization revision a module
 // operation context is sealed with. A module principal is declared by the
 // deployment, not registered per organization, so it has no row-backed revision
-// counter; its authority IS its MODULE_PRINCIPALS entry. The revision is
+// counter; its authority IS its module registry entry. The revision is
 // therefore a digest of that entry: deterministic across replicas and restarts,
 // and different the moment the entry changes, so a narrowed, widened or removed
 // grant stops confirming every context minted under the old one. It is never

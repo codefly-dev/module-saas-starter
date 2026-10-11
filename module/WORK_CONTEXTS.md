@@ -12,11 +12,12 @@ checks run before exchange and again before returning the child. Delegated
 parents require a configured durable journal. Actor ceilings and scope
 attenuation use the same signer and authority path as owner audience exchange.
 
-Installation declares an optional `read_audiences` map in the existing
-`module-capabilities/MODULE_PRINCIPALS` registry, for example:
+A platform super_admin declares an optional `read_audiences` map in the
+principal's `grant` in the module envelope (`PlatformAdminService/PutModuleEnvelope`),
+for example:
 
 ```json
-{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","read_audiences":{"proof":{"audience":"example-producer","scopes":[{"resource_kind":"results"}]}}}}
+{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","read_audiences":{"proof":{"audience":"example-producer","scopes":[{"resource_kind":"results"}]}}}
 ```
 
 Each installed scope may additionally restrict `resource_ids`. Actions are
@@ -145,39 +146,51 @@ person with no role assignment; a delegated agent actor never does. Owners and
 admins already hold every permission. See `AUTHZ.md` "Built-in role catalog
 import".
 
-The composition then declares the binding on the **calling** principal in
-`module-capabilities/MODULE_PRINCIPALS`:
+A platform super_admin then allows the binding for the **calling** principal in
+its `grant` in the module envelope, beside the authority unit IDs the host admits
+for it:
 
 ```json
 {
-  "example-consumer": {
-    "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661",
-    "operation_audiences": {
-      "run": {
-        "audience": "example-producer",
-        "invoke_scopes": [
-          {
-            "resource_kind": "example-producer.profiles",
-            "actions": ["invoke", "read"],
-            "resource_ids": ["standard"]
+  "revision": 4,
+  "approved_builds": ["sha256:<the consumer's approved build>"],
+  "principals": {
+    "example-consumer": {
+      "bindings": ["<presence binding>:run:invoke", "<presence binding>:run:lookup"],
+      "scope_ceilings": [],
+      "grant": {
+        "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661",
+        "operation_audiences": {
+          "run": {
+            "audience": "example-producer",
+            "invoke_scopes": [
+              {
+                "resource_kind": "example-producer.profiles",
+                "actions": ["invoke", "read"],
+                "resource_ids": ["standard"]
+              }
+            ],
+            "lookup_scopes": [
+              {
+                "resource_kind": "example-producer.profiles",
+                "actions": ["read"],
+                "resource_ids": ["standard"]
+              }
+            ]
           }
-        ],
-        "lookup_scopes": [
-          {
-            "resource_kind": "example-producer.profiles",
-            "actions": ["read"],
-            "resource_ids": ["standard"]
-          }
-        ]
+        }
       }
     }
-  },
-  "example-producer": {
-    "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661",
-    "resources": ["example-producer.profiles"]
   }
 }
 ```
+
+The producer's own principal lists `example-producer.profiles` under its
+grant's `resources`. The consumer's registry entry is this grant bounded by the
+authority document delivery signed for it: the `run` audience exists only while
+the document grants the `invoke` unit, and each operation keeps only the actions
+the document's unit for it also grants — `resource_ids` stay the envelope's,
+because a unit cannot name one.
 
 `example-consumer` redeems it with `ExchangeDelegatedOperationAudience`,
 supplying its retained parent, the binding id `run`, and whether this is an
@@ -192,9 +205,10 @@ the caller's own prefix, so a binding cannot be a self-grant. `resource_ids`
 pins the exact resource; omitting it widens the child to every resource of that
 kind, and `"*"` is refused rather than treated as a wildcard. And because the
 binding is read on every call rather than captured into a child at exchange,
-deleting the `run` entry stops the exchange as soon as the deployment carrying
-that deletion is serving — including in the policy recheck that runs after
-signing — rather than when the last issued child expires.
+removing the `run` entry from the envelope stops the exchange as soon as the
+next reconcile pass installs the registry without it — including in the policy
+recheck that runs after signing — rather than when the last issued child
+expires.
 
 A resource id is an opaque string, and the producing module owns what its ids
 mean. The host neither derives nor checks them: the producer's contribution
@@ -204,16 +218,20 @@ reaches nothing until the producer refuses it. Beyond the sorting and wildcard
 rules above, the host requires each id to be non-empty, free of surrounding
 whitespace, and at most 512 characters — a bound a digest is always inside and a
 hand-written identity is not — and then compares it byte for byte. An id that
-breaks one of those is refused while the registry is parsed, which fails
-accounts' start-up rather than one call.
+breaks one of those is refused when the envelope is written, so the write is
+rejected with the reason rather than one call failing later.
 
 Name the resource by its **stable identity**, not by a digest of its current
-definition. `MODULE_PRINCIPALS` is parsed once, at accounts start-up, so
-re-issuing this entry is a deployment rather than an edit: a grant that has to
-be re-issued whenever the producer's definition moves leaves the consumer
-without access from the moment that definition moves until every accounts
-process is serving the new entry, and while an old and a new process both serve,
-the same context is confirmed by one and refused by the other. For a module that
+definition. The module principal registry is derived, each reconcile pass, from
+the delivered authority documents inside the module envelope, so re-issuing this
+entry is an envelope revision — and, because a delivered authority document is
+inside only the envelope revision it was rendered against, a redelivery of every
+module's authority at that revision. A grant that has to be re-issued whenever
+the producer's definition moves leaves the consumer without access from the
+moment that definition moves until the new revision and its deliveries are
+applied, and each accounts replica derives its own registry on its own pass, so
+for up to one pass the same context is confirmed by one replica and refused by
+another. For a module that
 also declares `headless_scopes`, the same re-issue revokes every operation
 context it has minted, across all of its bindings — the whole-entry revision
 under [Operation contexts with no person
@@ -245,11 +263,10 @@ The host mints a child Work Context with:
 - authority scopes and the actor's granted scopes = **exactly** the binding's
   `headless_scopes`;
 - owner and sole actor = the module's own service principal (kind `service`);
-- tenant = the tenant `MODULE_PRINCIPALS` declares for that principal;
+- tenant = the tenant the module envelope's grant declares for that principal;
 - a 60-second lifetime and the idempotent replay policy;
-- an authorization revision that is a digest of the module's whole
-  `MODULE_PRINCIPALS` entry (`business.ModuleOperationContextRevision`, never
-  zero).
+- an authorization revision that is a digest of the module's whole derived
+  registry entry (`business.ModuleOperationContextRevision`, never zero).
 
 A consumer confirms such a context with `WorkContextService/CheckAuthorizationRevision`
 like any other. A module principal has no row-backed authority to resolve, so
@@ -259,7 +276,7 @@ module principal, the tenant its declared tenant, the revision the digest of its
 its sole actor hop), and every subject's scopes within one binding's
 `headless_scopes`. Any mismatch is `PermissionDenied` — a denial, never an
 outage a consumer should retry. Because the revision covers the whole entry, any
-change to it (once the deployment picks it up) revokes every outstanding
+change to it (once a reconcile pass installs it) revokes every outstanding
 operation context of that module. Contexts owned by a person or an installation
 take the row-backed check unchanged.
 

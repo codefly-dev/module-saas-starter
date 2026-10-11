@@ -261,6 +261,8 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/ListAllOrganizations":                    "List every organization on the platform, with member counts.",
 	"PlatformAdminService/GetOrganizationRoster":                   "List any organization's members for the platform view.",
 	"PlatformAdminService/ListPlatformCatalogue":                   "List every composed module and solution with its declared, running and installed state.",
+	"PlatformAdminService/GetModuleEnvelope":                       "Read the current module envelope, the authority ceiling every module principal is derived inside.",
+	"PlatformAdminService/PutModuleEnvelope":                       "Write the next revision of the module envelope; it takes effect at the next check.",
 	"PlatformAdminService/StopImpersonation":                       "End the caller's own impersonation session.",
 	"PlatformAdminService/SuspendUser":                             "Suspend a user account.",
 	"PlatformAdminService/UnsuspendUser":                           "Restore a suspended user.",

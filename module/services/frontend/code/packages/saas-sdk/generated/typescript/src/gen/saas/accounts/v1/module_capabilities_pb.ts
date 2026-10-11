@@ -768,7 +768,7 @@ export type ModuleAuditEventTypeDeclaration = Message<"saas.accounts.v1.ModuleAu
   /**
    * <namespace>.<aggregate>.<event>, lowercase snake_case segments. The
    * namespace must be one the operator bound to this module (the `namespaces`
-   * of its MODULE_PRINCIPALS entry) and may not be the host's own.
+   * of its module registry entry) and may not be the host's own.
    *
    * @generated from field: string type = 1;
    */
@@ -2283,7 +2283,7 @@ export enum ModuleAuditEventVisibility {
   /**
    * May additionally be delivered to a tenant's outbound webhook endpoint.
    * Admitted only in a namespace the operator marked externally deliverable
-   * (`external_namespaces` of the declaring principal's MODULE_PRINCIPALS
+   * (`external_namespaces` of the declaring principal's module registry
    * entry): the producer decides which of its facts are customer-facing, and
    * the operator decides whether that producer may send anything out at all.
    *

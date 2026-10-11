@@ -29,9 +29,9 @@ import (
 // read out of a document, because "an envelope a document carried would be a
 // document declaring its own ceiling" — and ValidateAgainst tests a document's
 // grants and approved build against the envelope's, so an envelope assembled
-// from the delivery tree answers itself. The host reads it from the trust anchor,
-// a platform-owned path neither delivery writer can write; see
-// infra.ReadSolutionAuthorityEnvelope.
+// from the delivery tree answers itself. The host reads the CURRENT module
+// envelope — the record a platform super_admin writes (module_envelope.go) —
+// on every call, and projects it for the document being judged.
 //
 // THIS HOST APPLIES AUTHORITY TO NOTHING, and that is stated rather than
 // defaulted. core's ActivationRequest requires either the applied authority
@@ -87,7 +87,9 @@ var (
 // of them is a second answer to "what does this host accept".
 type SolutionAuthorityActivation struct {
 	reconciler *SolutionHostBindingReconciler
-	envelope   solutionhost.Envelope
+	// envelopes is where the CURRENT ceiling is read from, on every call. Nil
+	// is a host with no ceiling: it activates nothing.
+	envelopes ModuleEnvelopeSource
 }
 
 // newSolutionAuthorityActivation builds the activation reader, which the
@@ -96,19 +98,35 @@ type SolutionAuthorityActivation struct {
 // reconciler's would be a second answer to what this host accepts. Reach it
 // through SolutionHostBindingReconciler.AuthorityActivation.
 //
-// A zero-revision envelope is accepted and makes every activation refuse with
-// ErrSolutionAuthorityCeilingUnavailable, rather than refusing at construction.
+// No envelope — no source, or none written yet — is accepted and makes every
+// activation refuse with ErrSolutionAuthorityCeilingUnavailable, rather than
+// refusing at construction.
 // The distinction matters: a host that reconciles presence and has no ceiling
 // delivered is a correct, complete deployment — authority is simply not a
 // question it can answer — while a host that refused to start would make the
 // presence half depend on the authority half being configured.
 func newSolutionAuthorityActivation(
-	reconciler *SolutionHostBindingReconciler, envelope solutionhost.Envelope,
+	reconciler *SolutionHostBindingReconciler, envelopes ModuleEnvelopeSource,
 ) (*SolutionAuthorityActivation, error) {
 	if reconciler == nil {
 		return nil, errors.New("solution authority activation requires the declared-presence reconciler, which holds this host's coordinate, domains, signer policy and verifier")
 	}
-	return &SolutionAuthorityActivation{reconciler: reconciler, envelope: envelope}, nil
+	return &SolutionAuthorityActivation{reconciler: reconciler, envelopes: envelopes}, nil
+}
+
+// currentEnvelope reads the ceiling as it stands now. Nil with no error is a
+// host with no ceiling — no source wired, or no revision written — which
+// activates and grants nothing; an error is a ceiling that could not be
+// established, which a caller must not read as "none".
+func (a *SolutionAuthorityActivation) currentEnvelope(ctx context.Context) (*ModuleEnvelope, error) {
+	if a == nil || a.envelopes == nil {
+		return nil, nil
+	}
+	envelope, err := a.envelopes.CurrentModuleEnvelope(ctx)
+	if errors.Is(err, ErrModuleEnvelopeUnavailable) {
+		return nil, nil
+	}
+	return envelope, err
 }
 
 // Activate reports whether the delivered authority over binding and the
@@ -125,13 +143,21 @@ func (a *SolutionAuthorityActivation) Activate(
 	if a == nil || a.reconciler == nil {
 		return solutionhost.Activation{}, ErrSolutionAuthorityCeilingUnavailable
 	}
-	if a.envelope.Revision == 0 {
+	envelope, err := a.currentEnvelope(ctx)
+	if err != nil {
+		return solutionhost.Activation{}, fmt.Errorf("read the authority ceiling for binding %q: %w", binding, err)
+	}
+	if envelope == nil {
 		return solutionhost.Activation{}, fmt.Errorf("%w: binding %q", ErrSolutionAuthorityCeilingUnavailable, binding)
 	}
 
 	authority, err := a.deliveredAuthority(ctx, binding)
 	if err != nil {
 		return solutionhost.Activation{}, err
+	}
+	authorityDocument, err := authority.Document()
+	if err != nil {
+		return solutionhost.Activation{}, fmt.Errorf("read delivered authority over binding %q: %w", binding, err)
 	}
 	presence, err := a.deliveredPresence(ctx, binding)
 	if err != nil {
@@ -147,7 +173,7 @@ func (a *SolutionAuthorityActivation) Activate(
 		Presence:        presence,
 		Coordinate:      host.Coordinate,
 		Build:           build,
-		Envelope:        a.envelope,
+		Envelope:        envelope.authorityEnvelopeFor(authorityDocument),
 		DomainsBySigner: host.DomainsBySigner,
 		// The ownership domains this host ACCEPTS, which is a different
 		// question from which signer may speak for one. Core requires it for
