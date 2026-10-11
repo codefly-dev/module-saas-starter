@@ -13,8 +13,7 @@ The method is marked `codefly.runnable.v0.operation`; `tool` is absent.
 Install the `accounts/connect/InvokeSourceOperation` derived package: the
 `authority` listener remains limited to the existing module authority methods.
 The host-generated surface inventory identifies each endpoint's served procedures;
-CLI #947 uses it to derive packages only on Connect. CI still needs the CLI
-release carrying that change, as described under qualification below. Discovery
+Released CLI v0.1.185 uses it to derive packages only on Connect. Discovery
 projects individual declaration schemas/effects/digests over this one binding.
 The caller never chooses a destination, HTTP header, credential or method.
 
@@ -146,7 +145,16 @@ owned `saas` tree, then run business/adapters/catalog generation, contract expor
 the frontend SDK script, and `codefly generate runnables saas-starter`. CI runs
 `codefly generate runnables saas-starter --check` alongside contract drift checks.
 The accounts registration generator emits `generated/api-contract-surfaces.json`
-and the service manifest selects it through `spec.api-contract-surfaces`.
+and module-level `contracts.codefly.yaml` selects it for the CLI:
+
+```yaml
+schema: codefly/module-contracts-config/v1
+surfaces:
+  accounts: generated/api-contract-surfaces.json
+```
+
+The inventory path is relative to the accounts service. The selector is owned
+by the CLI and does not belong in the service agent's `spec`.
 Authority's inventory comes only from `ModuleAuthorityProcedures`; Connect's
 comes from the full registration catalog, including internal procedures. Both
 exports retain the complete descriptor for schemas. Only the two Connect
@@ -154,6 +162,16 @@ packages (`InvokeSourceOperation`, `PruneSourceOperationReceipts`) are derived,
 with their paired Lookups; neither operation is served or exported by authority.
 The cataloggen suite checks inventory drift against the registration catalog and
 authority allowlist before contract/Runnable drift checks consume it.
+
+Classification: this explicit inventory is a **hack/stopgap** for the released
+agent/Core protocol's missing per-listener served-method report. Core v0.18.0
+exposes Connect as HTTP metadata, and the agent's gRPC dependency facade does
+not describe either listener's complete surface. Replacing the inventory needs
+an endpoint-local served set for both gRPC and Connect, including the difference
+between absent metadata and an explicitly empty set, populated from registration
+and listener restrictions. The host generator preserves those routing owners;
+the CLI consumes its output and does not invent or widen authority. Moving the
+selector into the CLI-owned configuration is a **fix** to the ownership boundary.
 
 The generated frontend catalog publishes `datasource:read` and
 `datasource:invoke` as permissions and API-key scopes. Its frontend test checks
@@ -173,9 +191,9 @@ tests require Postgres and Vault booted by Codefly. Test results and any boot or
 Core/CLI delivery blocker are recorded in the PR; a compiled test is not a passed
 integration test. The callable-sources handbook decision is accepted (proposal
 #269, merged in handbook PR #271). All host Go modules that depend on Core pin released v0.18.0, which carries
-#755; host suites run with `GOWORK=off`. The CLI release carrying #943/#947
-is still required. Development qualification uses CLI PR #947
-at `3a88b6305a919eb842491ffbc313434be05123b8`, built with an external
-workspace override to released Core v0.18.0. It preserves scope slots in operation documents and resolves composition selections
-during preparation; the released CLI pin must pass the same checks before readiness.
+#755; host suites run with `GOWORK=off`. Generation and CI pin released CLI
+v0.1.185 (`3558defb95c8316cd2ad078327b10c721cf187d5`), carrying #943/#947.
+No development CLI or local Core override is required. The CLI preserves scope
+slots in operation documents and resolves composition selections during
+preparation, checking that the called endpoint serves both Invoke and Lookup.
 A passing generation drift check alone does not qualify the delivery path.

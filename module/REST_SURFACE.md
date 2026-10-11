@@ -114,14 +114,18 @@ go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 
 The adapters step also emits `generated/api-contract-surfaces.json` from the
 complete Connect registration catalog and the authority listener's allowlist.
-`spec.api-contract-surfaces` selects it for endpoint-specific API contract
-export; `generated/gateway-routes.json` cannot substitute because it excludes
+Module `contracts.codefly.yaml` selects it with
+`schema: codefly/module-contracts-config/v1` and
+`surfaces: {accounts: generated/api-contract-surfaces.json}`. Paths are relative
+to the named service; the CLI owns this configuration, outside agent `spec`.
+`generated/gateway-routes.json` cannot substitute because it excludes
 internal methods. From the workspace root, run `codefly generate contracts
 saas-starter` and `codefly generate runnables saas-starter`, then repeat both
-with `--check`. This requires the CLI release carrying #947; development uses
-that PR's `3a88b6305a919eb842491ffbc313434be05123b8` head with a local CLI
-workspace override to released Core v0.18.0. Host Go modules pin v0.18.0
-and are tested with `GOWORK=off`.
+with `--check`. Generation and CI use released CLI v0.1.185, carrying #947,
+without a local override. Host Go modules pin v0.18.0 and are tested with
+`GOWORK=off`. The explicit inventory remains a labelled stopgap for missing
+agent/Core listener metadata; its replacement contract is described in
+[CALLABLE_SOURCES.md](./CALLABLE_SOURCES.md#generation-and-qualification).
 
 The first line is the whole proto step. It runs the versioned proto companion
 image with the service's own template, `proto/buf.gen.yaml`, which declares

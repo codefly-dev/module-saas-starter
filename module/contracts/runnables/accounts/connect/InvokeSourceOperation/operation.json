@@ -18,12 +18,12 @@
   "completion": "COMPLETION_CALL",
   "required_scope_slots": [
     {
+      "lookup": true,
       "name": "source",
       "required_actions": [
         "invoke",
         "read"
-      ],
-      "lookup": true
+      ]
     }
   ]
 }

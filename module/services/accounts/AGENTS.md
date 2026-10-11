@@ -741,8 +741,12 @@ credential alone and mutates state therefore cannot reach every composed module
 through a one-line edit to the list.
 
 `cmd/connect-registration` also generates
-`generated/api-contract-surfaces.json`, selected by the service manifest's
-`spec.api-contract-surfaces`. It uses Core's API contract service records:
+`generated/api-contract-surfaces.json`, selected by the module's CLI-owned
+`contracts.codefly.yaml` (`schema: codefly/module-contracts-config/v1`,
+`surfaces: {accounts: generated/api-contract-surfaces.json}`). The path is
+service-relative; no selector belongs in agent `spec`. Released CLI v0.1.185
+consumes this inventory, an explicit stopgap until agent/Core metadata reports
+the complete served set per listener. It uses Core's API contract service records:
 authority is exactly `ModuleAuthorityProcedures`; Connect is the complete
 registration catalog, including internal methods. The gateway route catalog
 omits those internal methods and cannot supply this inventory. Contract export
