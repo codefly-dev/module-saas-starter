@@ -71,6 +71,16 @@ suites need Codefly and Docker — or let `codefly ci run` do it.
 
 The recurring worker-heartbeat test uses Go's `testing/synctest` virtual clock;
 its assertions must not depend on wall-clock scheduling under parallel CI load.
+The module-authority qualification helper models both the declared cross-tenant
+ceiling and current installation consent; a person's source delegation alone
+must never substitute for either. Its runtime credential and delegated parent
+must also name the same installation organization.
+
+Dependency-backed tests use Core's default isolated control channel. With CLI
+v0.1.185, keep the SDK session suffix on each package's naming scope: it gives
+each invocation fresh database state. Do not opt into `WithSharedControlChannel`,
+which is only for older CLIs and reuses fixed local database directories across
+otherwise independent runs and migration revisions.
 
 Core dependencies are pinned to released v0.18.0 in every owning Go module,
 including the module-authority qualification module. Run qualification with

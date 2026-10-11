@@ -46,7 +46,6 @@ func runRedisIntegrationTests(m *testing.M) int {
 	setupDone := testdb.MeasureSetup("redis-db", []string{"cache", "store"}, 120*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithSharedControlChannel(),
 		sdk.WithExcludedDependencies("vault", "telemetry"),
 		sdk.WithNamingScope("redis-integration"),
 		sdk.WithTimeout(120*time.Second),
