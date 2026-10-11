@@ -10,6 +10,13 @@
 
 import type { MetricFormat } from "./metric-tiles.js";
 
+/**
+ * How a widget's read ended when it did not succeed. Presentational: a caller
+ * classifies its own transport (the host app maps its `ReadOutcome` onto this)
+ * and the renderer only decides what to draw.
+ */
+export type WidgetReadFailure = "failed" | "refused";
+
 /** How a widget draws its series. */
 export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 
@@ -42,11 +49,19 @@ export interface DashboardWidgetView {
 	 */
 	series: WidgetSeries | null;
 	/**
-	 * The series could not be resolved — an error, not an empty result. A
-	 * caller that resolves each widget separately sets it per widget, so one
-	 * failure says so in its own card instead of blanking its siblings.
+	 * How the read ended, when it did not succeed. A caller that resolves each
+	 * widget separately sets it per widget, so one failure says so in its own
+	 * card instead of blanking its siblings.
+	 *
+	 * The two are not a severity ordering, they are different questions.
+	 * `"failed"` says the read did not complete and says nothing about
+	 * authority, so a series already in hand is still the best answer and is
+	 * drawn as stale. `"refused"` says this viewer is not allowed to see the
+	 * number, which makes a previously fetched one a WRONG answer rather than
+	 * an old one — so the renderer discards it, whatever the caller passed.
+	 * A boolean cannot express that difference, which is why this is not one.
 	 */
-	failed?: boolean;
+	failure?: WidgetReadFailure;
 	/** Grid columns this widget spans (1–4); ignored in a stack. */
 	span?: 1 | 2 | 3 | 4;
 	/**

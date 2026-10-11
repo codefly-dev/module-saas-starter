@@ -72,6 +72,45 @@ describe("Dashboard", () => {
 		).toBeTruthy();
 	});
 
+	it("reaches the token the metric charts actually paint with its accent", () => {
+		// The tier change moved where a mark's colour comes from: a metric
+		// chart colours its first series `var(--chart-1)`, not `--primary`,
+		// so an accent that set only `--primary` stopped colouring the charts
+		// it exists for. Asserted on the rendered mark, not just the variable.
+		const { container } = render(
+			<Dashboard
+				data={{
+					accent: "hotpink",
+					widgets: [{ id: "line", visualization: "line", series: byCategory }],
+				}}
+			/>,
+		);
+		expect(
+			container.querySelector('path[stroke="var(--chart-1)"]'),
+		).not.toBeNull();
+		const section = container.querySelector("section") as HTMLElement;
+		expect(section.style.getPropertyValue("--chart-1")).toBe("hotpink");
+		expect(section.style.getPropertyValue("--primary")).toBe("hotpink");
+	});
+
+	it("keeps a titled scalar reachable by heading navigation", () => {
+		// It was a Card with an <h3>; a StatTile's label is a span, so the
+		// title left the document outline when the tier changed.
+		render(
+			<Dashboard
+				data={view({
+					id: "total",
+					title: "Total events",
+					visualization: "number",
+					series: { points: [{ key: "all", value: 5 }], total: 5 },
+				})}
+			/>,
+		);
+		expect(
+			screen.getByRole("heading", { name: "Total events", level: 3 }),
+		).toBeTruthy();
+	});
+
 	it("scopes the accent override onto the Section root", () => {
 		const { container } = render(
 			<Dashboard
@@ -383,14 +422,14 @@ describe("a widget still being resolved, or that failed", () => {
 				title: "Logins",
 				visualization: "line",
 				series: byCategory,
-				failed: true,
+				failure: "failed",
 			},
 			{
 				id: "tile",
 				title: "Total",
 				visualization: "number",
 				series: daily,
-				failed: true,
+				failure: "failed",
 			},
 		);
 		expect(screen.queryByText("Unable to load.")).toBeNull();
@@ -398,6 +437,70 @@ describe("a widget still being resolved, or that failed", () => {
 		expect(screen.getByRole("table", { name: "Logins" })).toBeTruthy();
 		expect(screen.getByText("8")).toBeTruthy();
 		expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
+	});
+
+	it("keeps an empty series valueless through a failed refresh", () => {
+		// The badge is one slot and freshness takes it, so deriving the value's
+		// presence from the state turned a known-empty scalar into a reported
+		// zero the moment its refresh failed.
+		const widget: DashboardWidgetView = {
+			id: "total",
+			visualization: "number",
+			series: empty,
+		};
+		const { rerender } = render(<Dashboard data={view(widget)} />);
+		expect(screen.getByText("—")).toBeTruthy();
+		expect(screen.getByText("No data")).toBeTruthy();
+
+		rerender(<Dashboard data={view({ ...widget, failure: "failed" })} />);
+		expect(screen.getByText("Stale")).toBeTruthy();
+		expect(screen.getByText("—")).toBeTruthy();
+		expect(screen.queryByText("0")).toBeNull();
+	});
+
+	it("keeps a partial series identifiable through a failed refresh", () => {
+		show({
+			id: "w",
+			title: "Logins",
+			visualization: "number",
+			series: { ...byCategory, total: null, coverage: "partial" },
+			failure: "failed",
+		});
+		// Freshness takes the badge, but the withheld total still reads as one.
+		expect(screen.getByText("Stale")).toBeTruthy();
+		expect(screen.getByText("—")).toBeTruthy();
+		expect(screen.queryByText("8")).toBeNull();
+	});
+
+	it("discards a series the caller retained on a refused read", () => {
+		// A number this viewer may not see is a WRONG answer, not an old one.
+		// The host is expected to withhold it; the renderer that owns what a
+		// refusal looks like fails closed too, so a caller that forwards
+		// retained values by mistake cannot show them through this.
+		const { container } = show(
+			{
+				id: "chart",
+				title: "Logins",
+				visualization: "line",
+				series: byCategory,
+				failure: "refused",
+			},
+			{
+				id: "tile",
+				title: "Total",
+				visualization: "number",
+				series: daily,
+				failure: "refused",
+			},
+		);
+		expect(screen.queryByText("8")).toBeNull();
+		expect(container.querySelector("svg")).toBeNull();
+		expect(screen.queryByRole("table", { name: "Logins" })).toBeNull();
+		expect(screen.getAllByText("No access")).toHaveLength(2);
+		expect(
+			screen.getByText("You don't have permission to see this."),
+		).toBeTruthy();
+		expect(screen.queryByText("Unable to load.")).toBeNull();
 	});
 
 	it("says a failed widget failed, and does not wait forever on its missing series", () => {
@@ -409,14 +512,14 @@ describe("a widget still being resolved, or that failed", () => {
 				title: "Logins",
 				visualization: "line",
 				series: null,
-				failed: true,
+				failure: "failed",
 			},
 			{
 				id: "tile",
 				title: "Total",
 				visualization: "number",
 				series: null,
-				failed: true,
+				failure: "failed",
 			},
 		);
 		expect(screen.getByText("Unable to load.")).toBeTruthy();

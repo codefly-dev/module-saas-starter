@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import packageJson from "../../../package.json" with { type: "json" };
 
@@ -176,126 +177,185 @@ const KIT_SURFACES = [
 const KIT_SPECIFIER = /^@codefly-dev\/(?:ui|saas-ui)(?:\/|$)/;
 
 /**
- * The named bindings an `import`/`export … from` clause carries, as
- * published-name → exporter's-own-name. The two differ under an alias, and
- * which one a check wants is the whole question: a wrapper is recognised by the
- * exporter's name, so renaming the alias cannot turn a re-implementation into
- * a wrapper.
+ * Whether a module specifier names one of the host's kit surfaces, by alias
+ * (`@/shared/ui`) or by a relative path that lands on the same file. Both
+ * spellings reach the same module, so judging only the alias rejected a real
+ * wrapper for how it spelled its import.
  */
-function namedBindings(
-	source: string,
-	isWanted: (specifier: string) => boolean,
+function isHostSurface(specifier: string, fromPath: string): boolean {
+	const resolved = specifier.startsWith("@/")
+		? `src/${specifier.slice(2)}`
+		: specifier.startsWith(".")
+			? join(dirname(fromPath), specifier).replaceAll("\\", "/")
+			: null;
+	if (resolved === null) return false;
+	return KIT_SURFACES.some(
+		(surface) => surface === resolved || surface.startsWith(`${resolved}/`),
+	);
+}
+
+/**
+ * The kit components a file has a binding for, as local-name → kit-name, with
+ * a namespace import recorded as `*`.
+ *
+ * Resolved from the AST rather than by regex, because a declaration's own body
+ * has to be checked against these bindings: file-wide import presence proved
+ * nothing. An unrelated `export { Card as KitCard } from "@codefly-dev/ui"`
+ * was enough to exempt a hand-rolled `Card` sitting beside it, which is the
+ * shape a duplicate actually arrives in — somebody re-exports the kit's thing
+ * for a neighbour and writes their own in the same file.
+ */
+function kitBindings(
+	file: ts.SourceFile,
+	path: string,
+	surface: Map<string, string>,
 ): Map<string, string> {
 	const bindings = new Map<string, string>();
-	const clause =
-		/(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
-	for (const block of source.matchAll(clause)) {
-		if (!isWanted(block[2])) continue;
-		for (const raw of block[1].split(",")) {
-			const parts = raw
-				.trim()
-				.replace(/^type\s+/, "")
-				.split(/\s+as\s+/)
-				.map((part) => part.trim());
-			const exported = parts[0];
-			if (exported) bindings.set(parts[1] ?? exported, exported);
+	for (const statement of file.statements) {
+		if (!ts.isImportDeclaration(statement)) continue;
+		if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+		const specifier = statement.moduleSpecifier.text;
+		const kit = KIT_SPECIFIER.test(specifier);
+		const host = isHostSurface(specifier, path);
+		if (!kit && !host) continue;
+		const clause = statement.importClause;
+		if (!clause) continue;
+		// `import * as UI from "@/shared/ui"` — every member access on it is a
+		// kit component, so the namespace itself is the binding.
+		if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+			bindings.set(clause.namedBindings.name.text, "*");
+			continue;
+		}
+		if (!clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) {
+			continue;
+		}
+		for (const element of clause.namedBindings.elements) {
+			const published = (element.propertyName ?? element.name).text;
+			// Through a host surface the published name is that file's, so it is
+			// resolved back to the kit's own: `src/shared/ui` re-exports
+			// `CardRoot` as `Card`, so importing `Card` from there composes
+			// `CardRoot`, and a declaration named `Card` beside it is still a
+			// second `Card`.
+			const kitName = kit ? published : surface.get(published);
+			if (kitName) bindings.set(element.name.text, kitName);
 		}
 	}
 	return bindings;
 }
 
 /**
- * The names a file imports FROM the kit, under the kit's own spelling: the `X`
- * of `import { X as KitX } from "@codefly-dev/ui/layout"`. A wrapper is
- * recognised by this, not by its alias, so renaming the alias cannot turn a
- * re-implementation into a wrapper.
+ * Every component this file declares, by the name it is PUBLISHED under, with
+ * the declaration's own node.
  *
- * An import through a host surface counts too, under the name THAT surface
- * publishes — which is not always the kit's: `src/shared/ui` re-exports
- * `CardRoot` as `Card`, so importing `Card` from there composes `CardRoot` and
- * a declaration named `Card` beside it is still a second `Card`, exactly as if
- * it had imported `CardRoot` directly.
+ * The published name is what matters, and it is not always the declared one:
+ * `const LocalPanel = …; export { LocalPanel as Card }` ships a `Card`, and
+ * reading only declaration names let that straight through.
  */
-function kitImports(source: string, surface: Map<string, string>): Set<string> {
-	const composed = new Set<string>();
-	for (const kitName of namedBindings(source, (specifier) =>
-		KIT_SPECIFIER.test(specifier),
-	).values()) {
-		composed.add(kitName);
-	}
-	// Through a host surface, the name imported is the one THAT file publishes,
-	// so it is resolved back to the kit's own. `src/shared/ui` re-exports
-	// `CardRoot` as `Card`, so importing `Card` from there composes `CardRoot`
-	// — and a declaration named `Card` beside it is still a second `Card`,
-	// exactly as if it had imported `CardRoot` directly. Resolving the alias is
-	// what keeps those two spellings of one import judged the same way.
-	for (const published of namedBindings(source, (specifier) =>
-		HOST_SURFACE_SPECIFIER.test(specifier),
-	).values()) {
-		const kitName = surface.get(published);
-		if (kitName) composed.add(kitName);
-	}
-	return composed;
-}
-
-const HOST_SURFACE_SPECIFIER =
-	/^@\/(?:shared\/ui|components\/charts|components\/sparkline|components\/metric-state)(?:\/|$)/;
-
-/**
- * A component declaration, exported or module-local, at any indentation — a
- * duplicate nested inside another component is still a duplicate, and the
- * commonest hiding place for one.
- */
-const DECLARATION =
-	/^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|const|let|class)\s+([A-Z][A-Za-z0-9]*)/gm;
-
-/**
- * Files whose default export's NAME is fixed by the framework, not chosen:
- * Next's route conventions make every route component a `Page`, every nested
- * shell a `Layout`, and so on, and the kit exports primitives called `Page` and
- * `Layout`. A route component is not a second copy of either — it is the thing
- * that mounts them — so its default export is not read as a declaration taking
- * the kit's name. A NAMED declaration in such a file still is.
- */
-const ROUTE_CONVENTION =
-	/^src\/app\/.*\/(page|layout|template|default|error|global-error|loading|not-found|forbidden|unauthorized)\.tsx?$/;
-const DEFAULT_EXPORT = /^[ \t]*export\s+default\s/;
-
-interface Offence {
-	name: string;
-	path: string;
-}
-
-/**
- * Declarations in these files that take a kit export's name without composing
- * the kit's component of that name. Pure, so the fixtures below can exercise it
- * on sources that are not in the tree.
- */
-function findOffences(
-	files: { path: string; source: string }[],
-	kit: Set<string>,
-	allowed: Record<string, string> = ALLOWED,
-	/** Published name → kit name for the host's own surfaces; see {@link KIT_SURFACES}. */
-	surface: Map<string, string> = new Map(),
-): Offence[] {
-	const offences: Offence[] = [];
-	for (const { path, source } of files) {
-		if (KIT_SURFACES.includes(path)) continue;
-		const composed = kitImports(source, surface);
-		const routeFile = ROUTE_CONVENTION.test(path);
-		const seen = new Set<string>();
-		for (const declaration of source.matchAll(DECLARATION)) {
-			const name = declaration[1];
-			if (!kit.has(name) || seen.has(name)) continue;
-			if (routeFile && DEFAULT_EXPORT.test(declaration[0])) continue;
-			seen.add(name);
-			if (composed.has(name)) continue;
-			if (`${name} in ${path}` in allowed) continue;
-			offences.push({ name, path });
+function declarations(file: ts.SourceFile): Map<string, ts.Node> {
+	const declared = new Map<string, ts.Node>();
+	const published = new Map<string, ts.Node>();
+	const visit = (node: ts.Node) => {
+		if (ts.isFunctionDeclaration(node) && node.name) {
+			declared.set(node.name.text, node);
+		} else if (ts.isClassDeclaration(node) && node.name) {
+			declared.set(node.name.text, node);
+		} else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+			declared.set(node.name.text, node);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	// `export { Local as Published }` with no `from`: a local declaration
+	// published under another name.
+	for (const statement of file.statements) {
+		if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier) {
+			continue;
+		}
+		const clause = statement.exportClause;
+		if (!clause || !ts.isNamedExports(clause)) continue;
+		for (const element of clause.elements) {
+			const local = (element.propertyName ?? element.name).text;
+			const node = declared.get(local);
+			if (node) published.set(element.name.text, node);
 		}
 	}
-	return offences;
+	const all = new Map<string, ts.Node>();
+	for (const [name, node] of declared) {
+		if (/^[A-Z][A-Za-z0-9]*$/.test(name)) all.set(name, node);
+	}
+	for (const [name, node] of published) {
+		if (/^[A-Z][A-Za-z0-9]*$/.test(name)) all.set(name, node);
+	}
+	return all;
 }
+
+/** Whether this declaration's own body renders the kit component `kitName`. */
+function composesWithin(
+	node: ts.Node,
+	kitName: string,
+	bindings: Map<string, string>,
+): boolean {
+	let found = false;
+	const visit = (child: ts.Node) => {
+		if (found) return;
+		if (ts.isIdentifier(child) && bindings.get(child.text) === kitName) {
+			found = true;
+			return;
+		}
+		// `UI.Badge` off a namespace import.
+		if (
+			ts.isPropertyAccessExpression(child) &&
+			ts.isIdentifier(child.expression) &&
+			bindings.get(child.expression.text) === "*" &&
+			child.name.text === kitName
+		) {
+			found = true;
+			return;
+		}
+		ts.forEachChild(child, visit);
+	};
+	ts.forEachChild(node, visit);
+	return found;
+}
+
+/**
+ * The kit's dashboard marks. A host surface may compose ONE of these — a page
+ * drawing a chart — but a file that reaches for several is dispatching over a
+ * widget's visualization, which is `<Dashboard>`'s whole job.
+ *
+ * This is the leg that catches a duplicate under a NEW name, which no
+ * name-based rule can: the renderer #1041 deleted declared `WidgetBody`,
+ * `WidgetValues` and `WidgetCard` — not one of them a name the kit exports —
+ * and so produced zero offences from the legs above while being the exact
+ * duplication this file exists to prevent.
+ */
+const DASHBOARD_MARKS = new Set([
+	"LineChart",
+	"AreaChart",
+	"BarList",
+	"StatChart",
+	"TrendLineChart",
+	"MetricLineChart",
+	"MetricAreaChart",
+	"MetricBarChart",
+	"StatTile",
+	"MetricCard",
+	"KPIRow",
+	"Sparkline",
+]);
+
+/**
+ * Files that draw with more than one of the kit's marks and may keep doing so,
+ * with what each is and what would retire it. They are the host's older
+ * dashboard renderers, the same ones {@link ALLOWED} names; this list exists so
+ * a NEW one cannot join them quietly.
+ */
+const DISPATCHERS: Record<string, string> = {
+	"src/components/dashboard.tsx":
+		"the widget-slot renderer: a union of host-supplied widgets, each with its own loading/error/empty state. Goes when the audit page's widgets become a DashboardView and it mounts the kit's renderer.",
+	"src/features/dashboard/ui/metric-card.tsx":
+		"the dashboard DSL's card: it resolves one declared metric through useMetric and then draws whichever chart the declaration asked for. Goes with the DSL resolving outside the card.",
+};
 
 function appSources(): { path: string; source: string }[] {
 	return walk(join(appRoot, "src"))
@@ -327,14 +387,129 @@ function kitNames(): Set<string> {
 function hostSurface(): Map<string, string> {
 	const surface = new Map<string, string>();
 	for (const path of KIT_SURFACES) {
-		const source = readFileSync(join(appRoot, path), "utf8");
-		for (const [published, kitName] of namedBindings(source, (specifier) =>
-			KIT_SPECIFIER.test(specifier),
-		)) {
-			surface.set(published, kitName);
+		const file = parse(path, readFileSync(join(appRoot, path), "utf8"));
+		for (const statement of file.statements) {
+			if (
+				!ts.isExportDeclaration(statement) &&
+				!ts.isImportDeclaration(statement)
+			) {
+				continue;
+			}
+			const specifier = statement.moduleSpecifier;
+			if (!specifier || !ts.isStringLiteral(specifier)) continue;
+			if (!KIT_SPECIFIER.test(specifier.text)) continue;
+			const clause = ts.isExportDeclaration(statement)
+				? statement.exportClause
+				: statement.importClause?.namedBindings;
+			if (!clause) continue;
+			if (ts.isNamedExports(clause) || ts.isNamedImports(clause)) {
+				for (const element of clause.elements) {
+					surface.set(
+						element.name.text,
+						(element.propertyName ?? element.name).text,
+					);
+				}
+			}
 		}
 	}
 	return surface;
+}
+
+function parse(path: string, source: string): ts.SourceFile {
+	return ts.createSourceFile(
+		path,
+		source,
+		ts.ScriptTarget.Latest,
+		true,
+		ts.ScriptKind.TSX,
+	);
+}
+
+interface Offence {
+	name: string;
+	path: string;
+	/** Why it is an offence: a name the kit owns, or a widget dispatch. */
+	kind: "name" | "dispatch";
+}
+
+/**
+ * Files whose default export's NAME is fixed by the framework, not chosen:
+ * Next's route conventions make every route component a `Page`, every nested
+ * shell a `Layout`, and so on, and the kit exports primitives called `Page` and
+ * `Layout`. A route component is not a second copy of either — it is the thing
+ * that mounts them — so its default export is not read as a declaration taking
+ * the kit's name. A NAMED declaration in such a file still is.
+ *
+ * The root route (`src/app/page.tsx`) counts: it is as conventional as a nested
+ * one, and requiring a directory between `app/` and `page.tsx` rejected it.
+ */
+const ROUTE_CONVENTION =
+	/^src\/app\/(?:.*\/)?(page|layout|template|default|error|global-error|loading|not-found|forbidden|unauthorized)\.tsx?$/;
+
+/** The names a file's default export declares, to exempt a route component. */
+function defaultExportNames(file: ts.SourceFile): Set<string> {
+	const names = new Set<string>();
+	for (const statement of file.statements) {
+		const isDefault = ts
+			.getModifiers(statement as ts.HasModifiers)
+			?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+		if (!isDefault) continue;
+		if (
+			(ts.isFunctionDeclaration(statement) ||
+				ts.isClassDeclaration(statement)) &&
+			statement.name
+		) {
+			names.add(statement.name.text);
+		}
+	}
+	return names;
+}
+
+/**
+ * Declarations that take a kit export's name without composing the kit's
+ * component of that name WITHIN their own body, plus files that dispatch over
+ * more than one of the kit's dashboard marks. Pure, so the fixtures below can
+ * exercise it on sources that are not in the tree.
+ */
+function findOffences(
+	files: { path: string; source: string }[],
+	kit: Set<string>,
+	allowed: Record<string, string> = ALLOWED,
+	/** Published name → kit name for the host's own surfaces. */
+	surface: Map<string, string> = new Map(),
+	dispatchers: Record<string, string> = DISPATCHERS,
+): Offence[] {
+	const offences: Offence[] = [];
+	for (const { path, source } of files) {
+		if (KIT_SURFACES.includes(path)) continue;
+		const file = parse(path, source);
+		const bindings = kitBindings(file, path, surface);
+		const routeDefaults = ROUTE_CONVENTION.test(path)
+			? defaultExportNames(file)
+			: new Set<string>();
+
+		for (const [name, node] of declarations(file)) {
+			if (!kit.has(name) || routeDefaults.has(name)) continue;
+			if (composesWithin(node, name, bindings)) continue;
+			if (`${name} in ${path}` in allowed) continue;
+			offences.push({ name, path, kind: "name" });
+		}
+
+		if (!(path in dispatchers)) {
+			const marks = new Set<string>();
+			for (const kitName of bindings.values()) {
+				if (DASHBOARD_MARKS.has(kitName)) marks.add(kitName);
+			}
+			if (marks.size > 1) {
+				offences.push({
+					name: [...marks].sort().join("+"),
+					path,
+					kind: "dispatch",
+				});
+			}
+		}
+	}
+	return offences;
 }
 
 describe("the host app composes the kit rather than re-implementing it", () => {
@@ -350,9 +525,10 @@ describe("the host app composes the kit rather than re-implementing it", () => {
 			kit,
 			ALLOWED,
 			hostSurface(),
-		).map(
-			({ name, path }) =>
-				`${name} in ${path} — @codefly-dev/ui already exports it. Compose the kit's component, or add "${name} in ${path}" to ALLOWED with what the two things are and why neither can stand in for the other.`,
+		).map(({ name, path, kind }) =>
+			kind === "name"
+				? `${name} in ${path} — @codefly-dev/ui already exports it. Compose the kit's component, or add "${name} in ${path}" to ALLOWED with what the two things are and why neither can stand in for the other.`
+				: `${path} draws with ${name} — more than one of the kit's dashboard marks, which is a widget dispatch and <Dashboard>'s job. Mount <Dashboard> or <DashboardWidget>, or add ${path} to DISPATCHERS with what it is and what would retire it.`,
 		);
 		expect(offences).toEqual([]);
 	});
@@ -425,7 +601,7 @@ describe("the detector", () => {
 		["Card", "CardRoot"],
 	]);
 	const detect = (path: string, source: string) =>
-		findOffences([{ path, source }], kit, {}, surface).map(
+		findOffences([{ path, source }], kit, {}, surface, {}).map(
 			(o) => `${o.name} in ${o.path}`,
 		);
 
@@ -571,6 +747,94 @@ describe("the detector", () => {
 			detect(
 				"src/shared/ui/index.ts",
 				`export { CardRoot as Card, Badge } from "@codefly-dev/ui/layout";`,
+			),
+		).toEqual([]);
+	});
+
+	it("catches a same-name copy sitting beside an unrelated kit re-export", () => {
+		// The shape a duplicate actually arrives in: somebody re-exports the
+		// kit's component for a neighbour and writes their own beside it. A
+		// file-wide import check read that re-export as proof of composition
+		// and exempted the copy.
+		expect(
+			detect(
+				"src/features/x/ui/card.tsx",
+				`export { Card as KitCard } from "@codefly-dev/ui/layout";
+export const Card = () => <div>copy</div>;`,
+			),
+		).toEqual(["Card in src/features/x/ui/card.tsx"]);
+	});
+
+	it("catches an implementation published under a kit name by an export alias", () => {
+		// The declared name is not the shipped name. Reading only declarations
+		// let this straight through.
+		expect(
+			detect(
+				"src/features/x/ui/panel.tsx",
+				`const LocalPanel = () => <div>copy</div>;
+export { LocalPanel as Card };`,
+			),
+		).toEqual(["Card in src/features/x/ui/panel.tsx"]);
+	});
+
+	it("allows a wrapper that reaches the kit through a namespace import", () => {
+		expect(
+			detect(
+				"src/features/x/ui/badge.tsx",
+				`import * as UI from "@/shared/ui";
+export const Badge = (props) => <UI.Badge {...props} />;`,
+			),
+		).toEqual([]);
+	});
+
+	it("allows a wrapper that reaches a host surface by relative path", () => {
+		// `@/shared/ui` and `../../../shared/ui` are the same module; judging
+		// only the alias rejected a real wrapper for how it spelled its import.
+		expect(
+			detect(
+				"src/features/x/ui/badge.tsx",
+				`import { Badge as KitBadge } from "../../../shared/ui";
+export const Badge = (props) => <KitBadge {...props} />;`,
+			),
+		).toEqual([]);
+	});
+
+	it("applies the Next route exception to the ROOT route, not only nested ones", () => {
+		expect(
+			detect(
+				"src/app/page.tsx",
+				"export default function Page() { return <main/>; }",
+			),
+		).toEqual([]);
+	});
+
+	it("rejects the exact renderer this gate was written to prevent", async () => {
+		// The case that shows the name legs are not enough on their own: the
+		// renderer #1041 deleted declared WidgetBody, WidgetValues and
+		// WidgetCard — not one of them a name the kit exports — so every
+		// name-based leg passed it while it was the duplication itself. The
+		// dispatch leg is what catches it, and this reads the real deleted
+		// source rather than a paraphrase of it.
+		const { execFileSync } = await import("node:child_process");
+		const deleted = execFileSync(
+			"git",
+			[
+				"show",
+				"8590d329:module/services/frontend/code/src/solutions/SolutionDashboard.tsx",
+			],
+			{ encoding: "utf8", cwd: appRoot },
+		);
+		expect(
+			detect("src/solutions/SolutionDashboard.tsx", deleted).length,
+		).toBeGreaterThan(0);
+	});
+
+	it("lets a page draw ONE kit mark, which is composition and not a dispatch", () => {
+		expect(
+			detect(
+				"src/features/x/ui/page.tsx",
+				`import { MetricLineChart } from "@codefly-dev/ui/dashboard";
+export const Trend = () => <MetricLineChart title="t" series={[]} />;`,
 			),
 		).toEqual([]);
 	});

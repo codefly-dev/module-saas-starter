@@ -77,6 +77,7 @@ const valuelessStates: MetricState[] = [
 	"not_configured",
 	"provider_unavailable",
 	"no_total",
+	"forbidden",
 ];
 
 export function formatMetricValue(
@@ -247,12 +248,21 @@ function selectableCard(metric: Metric): {
 export function StatTile({
 	metric,
 	actions,
+	labelAs = "span",
 	className,
 }: {
 	metric: Metric;
 	actions?: ReactNode;
+	/**
+	 * The element the label is drawn as. A tile standing in for a titled
+	 * region — a dashboard widget — passes `"h3"` so the title stays in the
+	 * document outline and reachable by heading navigation, which a card with
+	 * a heading gives for free and a tile otherwise takes away.
+	 */
+	labelAs?: "span" | "h3";
 	className?: string;
 }) {
+	const Label = labelAs;
 	const selectable = selectableCard(metric);
 	return (
 		<Card
@@ -263,13 +273,13 @@ export function StatTile({
 				{/* Truncated because the header also carries a badge and, for a
 				    caller that owns the tile, its controls — with the full text
 				    in `title`, as BarList does, so clipping it does not lose it. */}
-				<span
+				<Label
 					data-slot="metric-label"
 					title={metric.label}
 					className="min-w-0 flex-1 truncate type-metric-label text-muted-foreground"
 				>
 					{metric.label}
-				</span>
+				</Label>
 				{metric.state && <MetricStateBadge state={metric.state} />}
 				{actions != null && (
 					<div className="flex shrink-0 items-center">{actions}</div>

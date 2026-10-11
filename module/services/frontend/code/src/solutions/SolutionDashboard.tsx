@@ -18,6 +18,7 @@ import {
 	DashboardWidget,
 	type DashboardWidgetView,
 	SortableGrid,
+	type WidgetReadFailure,
 } from "@codefly-dev/ui/dashboard";
 import { useQuery } from "@tanstack/react-query";
 import { GripVertical, Info, Plus, X } from "lucide-react";
@@ -31,6 +32,11 @@ import {
 import { scopedDashboardDraftKey } from "@/features/dashboard/service/use-dashboard-authoring";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
+import {
+	mayKeepRetainedRows,
+	type ReadOutcome,
+	readOutcome,
+} from "@/shared/lib/read-outcome";
 import {
 	Button,
 	DropdownMenu,
@@ -120,7 +126,7 @@ function SolutionWidget({
 	// declaration refetches instead of serving another graph's cached series that
 	// happens to share the same solution/dashboard/widget/org ids. Disabled until
 	// the org resolves so the pre-org window reads as loading, never as empty.
-	const { data, isError } = useQuery({
+	const { data, isError, error } = useQuery({
 		queryKey: [
 			"solution-widget",
 			solutionId,
@@ -139,17 +145,35 @@ function SolutionWidget({
 		enabled: orgId !== "",
 	});
 
+	// A refused read does not get to keep the numbers it fetched before.
+	// TanStack Query hands back the last successful data when a refetch
+	// rejects, so forwarding it on every error would leave a viewer whose
+	// audit-read authority was revoked still looking at the counts — the same
+	// wrong answer `mayKeepRetainedRows` exists to make unwritable, arrived at
+	// from the dashboard instead of from a table. A transient failure says
+	// nothing about authority, so those values stay and read as stale.
+	const outcome = readOutcome(isError, error);
+	const retained = mayKeepRetainedRows(outcome) ? (data?.series ?? null) : null;
+
 	return (
 		<DashboardWidget
 			widget={{
 				...declaredWidget(widget),
-				series: data?.series ?? null,
-				failed: isError,
+				series: retained,
+				failure: WIDGET_FAILURE[outcome],
 			}}
 			actions={actions}
 		/>
 	);
 }
+
+// The host's read classification as the renderer's presentational one. A read
+// that succeeded is no failure at all, which is what `undefined` says.
+const WIDGET_FAILURE: Record<ReadOutcome, WidgetReadFailure | undefined> = {
+	empty: undefined,
+	forbidden: "refused",
+	failed: "failed",
+};
 
 // A declared widget as the renderer's view model, with no series yet. The
 // series is bound by `SolutionWidget`, the one place that has resolved it; a

@@ -130,6 +130,18 @@ function lastBucketDelta(trend: number[]): number | undefined {
 	return (latest - previous) / Math.abs(previous);
 }
 
+/**
+ * Whether this series has a single number to show. An empty result and a
+ * withheld total are both "no number"; an emitted zero is a number.
+ */
+function hasScalar(series: WidgetSeries): boolean {
+	return (
+		series.total !== null &&
+		series.points.length > 0 &&
+		series.coverage !== "empty"
+	);
+}
+
 /** A resolved scalar widget as the `Metric` a tile binds to. */
 function widgetMetric(
 	widget: DashboardWidgetView,
@@ -140,10 +152,12 @@ function widgetMetric(
 	return {
 		id: widget.id,
 		label: widgetTitle(widget),
-		// A withheld total is passed through as null, so the tile shows a dash
-		// and its badge says what withheld it. Coercing it to 0 here would
-		// report "nothing happened" where the pipeline said "cannot say".
-		value: series.total,
+		// Whether a number exists is read off the SERIES, never off the badge.
+		// The badge is one slot and freshness can take it (a failed refresh
+		// says "Stale"), so deriving the value's presence from the state made
+		// an empty series render its 0 the moment it also went stale. The two
+		// are different questions about the same tile and are answered apart.
+		value: hasScalar(series) ? series.total : null,
 		format: widget.format,
 		unit: widget.unit,
 		higherIsBetter: widget.higherIsBetter,
@@ -258,37 +272,62 @@ export function DashboardWidget({
 	actions,
 	className,
 }: DashboardWidgetProps) {
-	const { series } = widget;
 	const title = widgetTitle(widget);
 
-	// Three states, not two. A failure with nothing behind it is a failure; a
-	// failure with a series still in hand is a refresh that did not land, and
-	// blanking the tile would throw away values that are still the best
-	// available. `stale` is the kit's own word for that, and it outranks the
-	// coverage badge because it is the more actionable of the two.
-	const lost = widget.failed === true && series === null;
-	const stale = widget.failed === true && series !== null;
+	// A refusal is answered BEFORE the series is looked at, in every branch
+	// below. The host classifies its own transport and is expected to withhold
+	// the values too, but a number this viewer may not see is a wrong answer
+	// rather than an old one, so the renderer that owns what a refusal looks
+	// like fails closed as well: a caller that forwards retained values by
+	// mistake cannot get them drawn through this. Testing the series first
+	// here — the ordering that reads more naturally — is exactly what would
+	// put them back on screen.
+	const refused = widget.failure === "refused";
+	const { series } = widget;
+	// Otherwise three outcomes, not two. A failure with nothing behind it is a
+	// failure; a failure with a series still in hand is a refresh that did not
+	// land, and blanking the tile would throw away values that are still the
+	// best available. `stale` is the kit's own word for that.
+	const lost = widget.failure === "failed" && series === null;
+	const stale = widget.failure === "failed" && series !== null;
 
 	if (widget.visualization === "number") {
-		const metric: Metric = lost
-			? {
-					id: widget.id,
-					label: title,
-					value: null,
-					state: "provider_unavailable",
-				}
-			: series === null
-				? { id: widget.id, label: title, value: null, state: "loading" }
-				: { ...widgetMetric(widget, series), ...(stale && { state: "stale" }) };
-		return <StatTile metric={metric} actions={actions} className={className} />;
+		const metric: Metric = refused
+			? { id: widget.id, label: title, value: null, state: "forbidden" }
+			: lost
+				? {
+						id: widget.id,
+						label: title,
+						value: null,
+						state: "provider_unavailable",
+					}
+				: series === null
+					? { id: widget.id, label: title, value: null, state: "loading" }
+					: {
+							...widgetMetric(widget, series),
+							...(stale && { state: "stale" }),
+						};
+		return (
+			<StatTile
+				metric={metric}
+				actions={actions}
+				labelAs={widget.title != null ? "h3" : "span"}
+				className={className}
+			/>
+		);
 	}
 
 	// A chart or table card carries its coverage badge in the card's own
 	// description slot — the line under the title that says what this card is —
 	// so a reader meets "Partial data" where they meet the title, as they do on
 	// a tile, instead of as a sentence pushed above the geometry.
-	const state: MetricState | undefined =
-		series === null ? undefined : stale ? "stale" : seriesState(series);
+	const state: MetricState | undefined = refused
+		? "forbidden"
+		: series === null
+			? undefined
+			: stale
+				? "stale"
+				: seriesState(series);
 	return (
 		<Card
 			title={title}
@@ -296,7 +335,11 @@ export function DashboardWidget({
 			actions={actions}
 			className={className}
 		>
-			{lost ? (
+			{refused ? (
+				<p className="py-6 type-body text-muted-foreground">
+					You don&apos;t have permission to see this.
+				</p>
+			) : lost ? (
 				<p className="py-6 type-body text-destructive">Unable to load.</p>
 			) : series === null ? (
 				<Skeleton className="h-24 w-full" />
@@ -440,8 +483,19 @@ export function Dashboard({
 	slots?: DashboardSlots;
 }) {
 	const columns = data.columns ?? 2;
+	// The accent overrides BOTH tokens the marks paint from, because the tier
+	// change moved where the colour comes from: the metric charts colour a
+	// series from the categorical palette (`chartSeriesColor(0)` is
+	// `--chart-1`), while `BarList` and the sparkline still use `--primary`.
+	// Setting only `--primary`, as the basic tier needed, left a declared
+	// accent with no effect on the charts it exists to colour. A dashboard's
+	// accent is its FIRST series' colour; a chart with more keeps the rest of
+	// the palette so two series never collapse to one hue.
 	const style = data.accent
-		? ({ "--primary": data.accent } as React.CSSProperties)
+		? ({
+				"--primary": data.accent,
+				"--chart-1": data.accent,
+			} as React.CSSProperties)
 		: undefined;
 	const isGrid = (data.layout ?? "grid") === "grid";
 

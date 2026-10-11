@@ -14,17 +14,17 @@ import type * as React from "react";
 import { Axis, Gridline, Svg } from "./atoms.js";
 import { cn } from "./cn.js";
 import {
-	areaPath,
 	AXIS_MARGIN,
+	areaPath,
 	linearScale,
 	linePath,
 	niceTicks,
 	PAD,
 	plot,
 	sparkPlot,
-	valueDomain,
 	VIEW_H,
 	VIEW_W,
+	valueDomain,
 } from "./geometry.js";
 import type { SeriesPoint } from "./types.js";
 
@@ -66,8 +66,21 @@ function cartesian({
 		const p = sparkPlot(height);
 		return (
 			<Svg height={height} stretch className={className} ariaLabel={label}>
-				{fill && <path d={areaPath(points, p)} fill="currentColor" fillOpacity={0.15} stroke="none" />}
-				<path d={linePath(points, p)} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+				{fill && (
+					<path
+						d={areaPath(points, p)}
+						fill="currentColor"
+						fillOpacity={0.15}
+						stroke="none"
+					/>
+				)}
+				<path
+					d={linePath(points, p)}
+					fill="none"
+					stroke="currentColor"
+					strokeWidth={2}
+					vectorEffect="non-scaling-stroke"
+				/>
 			</Svg>
 		);
 	}
@@ -86,10 +99,28 @@ function cartesian({
 	const singleY = points.length === 1 ? y(points[0].value) : undefined;
 
 	return (
-		<Svg height={height} stretch={false} className={className} ariaLabel={label}>
+		<Svg
+			height={height}
+			stretch={false}
+			className={className}
+			ariaLabel={label}
+		>
 			{showY && <Gridline plot={p} ys={ticks.map(y)} />}
-			{fill && <path d={areaPath(points, p, y, singleY)} fill="currentColor" fillOpacity={0.15} stroke="none" />}
-			<path d={linePath(points, p, y, singleY)} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+			{fill && (
+				<path
+					d={areaPath(points, p, y, singleY)}
+					fill="currentColor"
+					fillOpacity={0.15}
+					stroke="none"
+				/>
+			)}
+			<path
+				d={linePath(points, p, y, singleY)}
+				fill="none"
+				stroke="currentColor"
+				strokeWidth={2}
+				vectorEffect="non-scaling-stroke"
+			/>
 			<Axis
 				plot={p}
 				y={showY ? { ticks, scale: y } : undefined}
@@ -99,12 +130,36 @@ function cartesian({
 	);
 }
 
-export function LineChart({ points, className, height = VIEW_H, axes }: ChartProps) {
-	return cartesian({ points, className, height, axes, fill: false, label: "line chart" });
+export function LineChart({
+	points,
+	className,
+	height = VIEW_H,
+	axes,
+}: ChartProps) {
+	return cartesian({
+		points,
+		className,
+		height,
+		axes,
+		fill: false,
+		label: "line chart",
+	});
 }
 
-export function AreaChart({ points, className, height = VIEW_H, axes }: ChartProps) {
-	return cartesian({ points, className, height, axes, fill: true, label: "area chart" });
+export function AreaChart({
+	points,
+	className,
+	height = VIEW_H,
+	axes,
+}: ChartProps) {
+	return cartesian({
+		points,
+		className,
+		height,
+		axes,
+		fill: true,
+		label: "area chart",
+	});
 }
 
 // A ranked horizontal bar list — the categorical counterpart to the line/area
@@ -123,16 +178,24 @@ export function BarList({
 		<div className={cn("flex flex-col gap-2", className)}>
 			{points.map((p) => (
 				<div key={p.key} className="flex items-center gap-2 type-body">
-					<span className="w-32 shrink-0 truncate text-muted-foreground" title={p.key}>
+					<span
+						className="w-32 shrink-0 truncate text-muted-foreground"
+						title={p.key}
+					>
 						{format ? format(p.key) : p.key}
 					</span>
 					<span className="relative h-4 flex-1 overflow-hidden rounded bg-muted">
 						<span
 							className="absolute inset-y-0 left-0 rounded"
-							style={{ width: `${(p.value / max) * 100}%`, backgroundColor: "var(--primary)" }}
+							style={{
+								width: `${(p.value / max) * 100}%`,
+								backgroundColor: "var(--primary)",
+							}}
 						/>
 					</span>
-					<span className="w-10 shrink-0 text-right tabular-nums">{p.value.toLocaleString()}</span>
+					<span className="w-10 shrink-0 text-right tabular-nums">
+						{p.value.toLocaleString()}
+					</span>
 				</div>
 			))}
 		</div>
@@ -154,7 +217,9 @@ export function StatChart({
 	const style: React.CSSProperties = { color: "var(--primary)" };
 	return (
 		<div className={cn("flex items-end justify-between gap-4", className)}>
-			<span className="type-metric-total tabular-nums">{total.toLocaleString()}</span>
+			<span className="type-metric-total tabular-nums">
+				{total.toLocaleString()}
+			</span>
 			{/* A trend needs two points. One point (a single all-time bucket, say)
 			    would draw as a flat line that reads as "no change". */}
 			{points.length >= 2 && (

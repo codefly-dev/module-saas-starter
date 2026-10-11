@@ -8,6 +8,12 @@ export type MetricState =
 	| "provider_unavailable"
 	| "not_configured"
 	| "sample"
+	// The read was refused: the viewer is not allowed to see this number.
+	// Distinct from every other state here, which are all about the data —
+	// this one is about authority, and it is the only one where showing a
+	// value that was fetched before would be a wrong answer rather than a
+	// stale one.
+	| "forbidden"
 	// The series resolved, but no single number summarises it: a distinct
 	// count, an average, a percentile or a ratio has no scalar total across
 	// several groups, and summing or averaging those summaries would
@@ -24,6 +30,7 @@ const stateLabels: Record<Exclude<MetricState, "ready">, string> = {
 	not_configured: "Not configured",
 	sample: "Sample data",
 	no_total: "No total",
+	forbidden: "No access",
 };
 
 export function assertSampleModeAllowed(

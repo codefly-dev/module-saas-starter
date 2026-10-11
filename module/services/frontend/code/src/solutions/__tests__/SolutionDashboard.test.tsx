@@ -1,5 +1,12 @@
 import type { DataGraph } from "@codefly/saas-plugin-manifest";
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { Code, ConnectError } from "@connectrpc/connect";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	screen,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -208,6 +215,54 @@ describe("SolutionDashboards", () => {
 		expect(await screen.findByText("8")).toBeTruthy();
 		// ...even though the bar widget's own query failed.
 		expect(await screen.findByText("Unable to load.")).toBeTruthy();
+	});
+
+	// The sequence that matters: a read that SUCCEEDED, then one that did not.
+	// TanStack Query hands back the last successful data when a refetch
+	// rejects, so a cold failure cannot show this — there is nothing retained
+	// to leak.
+	describe.each([
+		[403, "permission_denied", Code.PermissionDenied],
+		[503, "unavailable", Code.Unavailable],
+	] as const)("a %d on a refetch", (status, code, expected) => {
+		const refused = status === 403;
+
+		it(`${refused ? "discards" : "keeps"} the values already on screen`, async () => {
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ code, message: "read rejected" }, { status }),
+				),
+			);
+			await act(async () => {
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+			});
+
+			const query = client
+				.getQueryCache()
+				.find({ queryKey: ["solution-widget"], exact: false });
+			expect(ConnectError.from(query?.state.error).code).toBe(expected);
+
+			if (refused) {
+				// A number this viewer is no longer allowed to read is a wrong
+				// answer, not a stale one.
+				expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+				expect(screen.queryByText("Stale")).toBeNull();
+			} else {
+				// A transient failure says nothing about authority, so the
+				// values stay and read as out of date.
+				expect(await screen.findAllByText("Stale")).not.toHaveLength(0);
+				expect(screen.getAllByText("37").length).toBeGreaterThan(0);
+			}
+		});
 	});
 
 	it("reads as loading until the org context resolves, never as empty", () => {
