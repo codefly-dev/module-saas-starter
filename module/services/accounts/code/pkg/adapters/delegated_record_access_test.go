@@ -59,7 +59,7 @@ func TestExactRecordOracleRequiresSignedCurrentAttenuatedAuthority(t *testing.T)
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	declareTestAudiences(svc)
@@ -116,7 +116,7 @@ func TestExactRecordOracleRefusesModuleIdentityCapability(t *testing.T) {
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	declareTestAudiences(svc)
@@ -152,7 +152,7 @@ func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	declareTestAudiences(svc)
@@ -203,7 +203,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, Resources: []string{"rows"},
 			ReadAudiences: map[string]business.ModuleReadAudience{
@@ -296,7 +296,7 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	declareTestAudiences(svc)

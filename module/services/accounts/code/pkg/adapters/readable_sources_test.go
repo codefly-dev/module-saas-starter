@@ -190,7 +190,7 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	require.NoError(t, err)
 	// Two composed modules whose content is governed by unrelated resource types:
 	// nothing this host authorizes may depend on which of them is calling.
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"documents"}},
 		business.ModulePrincipalID("rows"):      {Prefix: "rows", Resources: []string{"rows"}},
@@ -389,7 +389,7 @@ func TestSourceReadRefusesAnEmptyDeclarationBeforeStorage(t *testing.T) {
 // rather than falling back to a resource type this host invented.
 func TestSourceReadDeniesModulesWithNoDeclaredResources(t *testing.T) {
 	store, _, client, mint := sourceReadFixture(t)
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {Prefix: "documents"},
 	})

@@ -30,6 +30,9 @@ const testModuleImage = "registry.example/module@sha256:" +
 // bindTestModule wires execution binding on s (once) and returns a projected
 // token for the declared workload of prefix, its pod running the approved build.
 func bindTestModule(s *Service, prefix string) string {
+	if s.moduleAuthority == nil {
+		withCurrentAuthority(s)
+	}
 	execution, ok := s.executionReviewer.(*testModuleExecution)
 	if !ok {
 		execution = &testModuleExecution{

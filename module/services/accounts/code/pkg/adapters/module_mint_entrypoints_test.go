@@ -213,3 +213,7 @@ func TestEveryModuleMintFencesAuthorityAfterSigning(t *testing.T) {
 		})
 	}
 }
+
+func (*mintEnvelopeStore) ModuleInstallations(context.Context) ([]business.ModuleInstallationConsent, error) {
+	return nil, nil
+}

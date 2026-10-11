@@ -30,7 +30,7 @@ func TestModuleNotifyOrgAdmins_ReachesOnlyTheTenantsAdministrators(t *testing.T)
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
 	backend := &fakeJobBackend{}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{modulePrincSvc: {Tenant: org}})
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
 
@@ -115,7 +115,7 @@ func TestModuleNotifyUser_StoresAndResolvesASameOriginDestination(t *testing.T) 
 	// the declared ceiling alone. This test arrived against the older contract,
 	// where each path read only the declared grant; wiring the live read is the
 	// same one line every other capability test here carries.
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
 
 	const destination = "/documents/doc-7/comments/3?page=2#reply"

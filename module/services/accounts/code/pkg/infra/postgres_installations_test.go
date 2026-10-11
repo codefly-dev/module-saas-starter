@@ -20,7 +20,7 @@ import (
 // admin, plus a least-privilege role permitting (resourceKind, action), then
 // installs a solution. It returns the org, the admin owner, the granted role, the
 // installation, and the solution's root scope path.
-func installFixture(t *testing.T, resourceKind, action string) (orgID, ownerID, roleID string, installation *gen.Installation, rootPath string) {
+func installFixture(t *testing.T, resourceKind, action string, configure ...func(*business.InstallSolutionParams)) (orgID, ownerID, roleID string, installation *gen.Installation, rootPath string) {
 	t.Helper()
 	ownerID = seedUser(t)
 	seedHumanPrincipal(t, ownerID, "Installer Admin")
@@ -43,21 +43,34 @@ func installFixture(t *testing.T, resourceKind, action string) (orgID, ownerID, 
 	// alias is unique per fixture because the open-target alias index is unique
 	// and this package shares one database.
 	alias := uniqueAlias("acme-solution")
-	targetID := declarePresence(t, "acme.test."+alias, alias)
+	binding := "acme.test." + alias
+	targetID := declarePresence(t, binding, alias)
+	var revision uint64
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		revision, err = testStore.LatestModuleEnvelopeRevision(ctx)
+		return err
+	}))
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		var err error
-		installation, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
-			OrgID:            orgID,
-			AgentIdentifier:  "acme.example/solution:1.0.0",
-			TargetID:         targetID,
-			RouteAlias:       alias,
-			RootScopeLabel:   "Acme Solution",
-			RoleID:           roleID,
-			OwnerPrincipalID: ownerID,
-			AllowedAudiences: []string{"acme.collection"},
-			AllowedScopes:    []string{resourceKind},
-			GrantedBy:        ownerID,
-		})
+		params := &business.InstallSolutionParams{
+			OrgID:             orgID,
+			AgentIdentifier:   "acme.example/solution:1.0.0",
+			TargetID:          targetID,
+			RouteAlias:        alias,
+			RootScopeLabel:    "Acme Solution",
+			RoleID:            roleID,
+			OwnerPrincipalID:  ownerID,
+			AllowedAudiences:  []string{"acme.collection"},
+			AllowedScopes:     []string{resourceKind},
+			GrantedBy:         ownerID,
+			RegistryBindingID: binding,
+			EnvelopeRevision:  revision,
+		}
+		for _, apply := range configure {
+			apply(params)
+		}
+		installation, err = testStore.InstallSolution(ctx, params)
 		return err
 	}))
 	// The root path is derived server-side from the created node; read it back so

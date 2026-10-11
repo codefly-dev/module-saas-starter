@@ -212,3 +212,7 @@ func TestAFailingLiveReadIsNotAnAnswer(t *testing.T) {
 	_, err = source.PrincipalEpoch(context.Background(), "p")
 	require.Error(t, err)
 }
+
+func (f *sealAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}

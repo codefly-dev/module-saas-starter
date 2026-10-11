@@ -43,8 +43,9 @@ var resourceIDBound = regexp.MustCompile(`sortedUniqueOperationValues\(scope\.Re
 
 // registryWriters are the setters that replace the registry every capability
 // decision reads: the derived install, tagged with the envelope revision the
-// fence compares, and the untagged one tests state a registry with.
-var registryWriters = []string{"installDerivedModulePrincipals", "SetModulePrincipals"}
+// fence compares (both its original and exported names), and the untagged one
+// tests state a registry with.
+var registryWriters = []string{"installDerivedModulePrincipals", "InstallDerivedModulePrincipals", "SetModulePrincipals"}
 
 // writesRegistry reports a *call* to a setter. Counting calls against
 // declarations rather than matching a call's shape is deliberate: a qualified

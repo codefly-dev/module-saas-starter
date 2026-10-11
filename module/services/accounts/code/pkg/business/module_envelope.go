@@ -143,6 +143,9 @@ type ModuleEnvelopeRecord struct {
 // ModuleEnvelopeStore persists the ceiling. Append-only: a revision is written
 // once and never changed.
 type ModuleEnvelopeStore interface {
+	// ModuleInstallations enumerates active registry-associated consent in the
+	// envelope writer's transaction, after it takes the installation fence.
+	ModuleInstallations(context.Context) ([]ModuleInstallationConsent, error)
 	// LatestModuleEnvelopeRecord returns the highest revision, or nil when no
 	// envelope has ever been written.
 	LatestModuleEnvelopeRecord(ctx context.Context) (*ModuleEnvelopeRecord, error)
@@ -673,9 +676,28 @@ func (s *Service) PutModuleEnvelope(
 			ErrModuleEnvelopeInvalid, envelope.Revision, expectedRevision, expectedRevision+1), ErrTypeValidation)
 	}
 	record := &ModuleEnvelopeRecord{Revision: envelope.Revision, Document: bytes.Clone(document), WrittenBy: actorID}
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+	var policy map[string]any
+	if err := json.Unmarshal(document, &policy); err != nil {
+		return nil, err
+	}
+	entry := &PolicyLogEntry{OperationID: newPolicyLogOperationID("module-envelope"),
+		Decision: PolicyLogNarrowed, SubjectKind: PolicyLogModuleEnvelope, SubjectID: "module-envelope",
+		Policy: policy, EnvelopeRevision: envelope.Revision, Actor: actorID}
+	if err := s.WithPolicyLoggedNarrowing(ctx, entry, func(ctx context.Context) error {
 		if err := s.moduleEnvelopes.AppendModuleEnvelopeRecord(ctx, record, expectedRevision); err != nil {
 			return err
+		}
+		installations, err := s.moduleEnvelopes.ModuleInstallations(ctx)
+		if err != nil {
+			return err
+		}
+		for _, installation := range installations {
+			if installationTenancyAllowed(envelope, installation.PrincipalID, installation.OrgID) {
+				continue
+			}
+			if err := s.uninstallSolutionTx(ctx, actorID, "user", installation.OrgID, installation.ID); err != nil {
+				return err
+			}
 		}
 		return s.emitTx(ctx, actorID, "user", EventModuleEnvelopeWritten, "module_envelope",
 			strconv.FormatUint(record.Revision, 10), "", map[string]any{
@@ -825,4 +847,17 @@ func (s *Service) currentModuleGrantFromSnapshot(
 		return ModulePrincipalGrant{}, true, err
 	}
 	return grant, true, nil
+}
+
+// ModuleInstallationConsent identifies the rows a tenancy change may revoke.
+// Agent-only legacy installs have no module principal and are not inferred here.
+type ModuleInstallationConsent struct{ ID, OrgID, PrincipalID string }
+
+func installationTenancyAllowed(envelope *ModuleEnvelope, principalID, orgID string) bool {
+	for prefix, principal := range envelope.Principals {
+		if ModulePrincipalID(prefix) == principalID {
+			return moduleAvailableToOrganization(principal.Grant, orgID)
+		}
+	}
+	return false
 }

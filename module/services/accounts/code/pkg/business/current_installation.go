@@ -15,14 +15,20 @@ import (
 // installation read it grants no permission to use the installed solution.
 // The adapter supplies tenant, owner and audience from a verified current parent.
 func (s *Service) ModuleCurrentInstallation(ctx context.Context, caller ModuleCaller, tenant, owner, audience, id string) (*gen.ModuleCurrentInstallationResponse, error) {
-	grant, err := s.moduleGrant(caller)
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
 	if err = authorizeTenant(caller, grant, tenant); err != nil {
 		return nil, err
 	}
-	if tenant == "" || owner == "" || grant.Prefix == "" || audience != grant.Prefix || (grant.Tenant != "" && grant.Tenant != caller.BoundOrg) {
+	if tenant == "" || owner == "" || grant.Prefix == "" || audience != grant.Prefix {
 		return nil, status.Error(codes.PermissionDenied, "installation caller denied")
 	}
 	parsed, err := uuid.Parse(id)

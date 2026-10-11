@@ -28,6 +28,12 @@ import (
 // a module may declare on every start. An admission that changed the registry
 // is audited with the write that made it.
 func (s *Service) ModuleDeclareAuditEventTypes(ctx context.Context, caller ModuleCaller, prefix string, declarations []AuditEventTypeDeclaration) ([]EventType, []string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return nil, nil, err
 	}

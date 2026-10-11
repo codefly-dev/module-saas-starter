@@ -14,6 +14,11 @@ import (
 // solution scope node, standing grant, and installation row are created together
 // in one transaction; see InstallationStore.InstallSolution.
 type InstallSolutionParams struct {
+	Kind                string
+	RegistryBindingID   string
+	RegistryPrincipalID string
+	Scope               *InstallationScope
+	EnvelopeRevision    uint64
 	// InstallerPrincipalID records ownership for bounded nonhuman reconciliation.
 	InstallerPrincipalID string
 	OrgID                string
@@ -126,11 +131,10 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	// `installations_target_live_on_insert`, where the insert and the target row
 	// are in one transaction. What this read is for is the route alias (a display
 	// label) and a refusal that names the problem instead of surfacing a trigger.
-	alias, err := s.resolveInstallableTarget(ctx, params.TargetID)
+	_, err := s.prepareInstallation(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	params.RouteAlias = alias
 	// The ceiling may only name audiences this host actually serves (issue #952).
 	// `allowed_audiences` used to be free text, so an installation could name a
 	// consumer that does not exist and then mint for it — the audience is what
@@ -390,14 +394,32 @@ func (s *Service) ListAvailableSolutions(
 	if pageSize > listInstallationsMaxPageSize {
 		pageSize = listInstallationsMaxPageSize
 	}
-	var available []*AvailableSolutionTarget
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var err error
-		available, err = s.store.ListAvailableSolutionTargets(ctx,
-			AvailableSolutionQuery{OrgID: orgID, Cursor: pageToken, Limit: pageSize + 1})
-		return err
-	}); err != nil {
+	snapshot := s.moduleRegistrySnapshot()
+	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
 		return nil, "", err
+	}
+	var available []*AvailableSolutionTarget
+	// Filter before paginating. A page consisting only of forbidden tenants
+	// must not hide an eligible entry on a later page.
+	cursor := pageToken
+	for len(available) <= pageSize {
+		var batch []*AvailableSolutionTarget
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			batch, err = s.store.ListAvailableSolutionTargets(ctx, AvailableSolutionQuery{OrgID: orgID, Cursor: cursor, Limit: pageSize + 1})
+			return err
+		}); err != nil {
+			return nil, "", err
+		}
+		for _, target := range batch {
+			if _, _, err := installationRegistryEntry(snapshot, target.BindingID, orgID); err == nil {
+				available = append(available, target)
+			}
+		}
+		if len(batch) < pageSize+1 {
+			break
+		}
+		cursor = batch[len(batch)-1].TargetID
 	}
 	next := ""
 	if len(available) > pageSize {

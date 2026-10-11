@@ -22,6 +22,7 @@ func TestStateMachineAllowsOnlyCanonicalTransitions(t *testing.T) {
 		jobsv1.JobState(99),
 	}
 	allowed := map[[2]jobsv1.JobState]bool{
+		{jobsv1.JobState_JOB_STATE_PROCESSING, jobsv1.JobState_JOB_STATE_CANCELED}:    true,
 		{jobsv1.JobState_JOB_STATE_PENDING, jobsv1.JobState_JOB_STATE_PROCESSING}:     true,
 		{jobsv1.JobState_JOB_STATE_PENDING, jobsv1.JobState_JOB_STATE_CANCELED}:       true,
 		{jobsv1.JobState_JOB_STATE_PROCESSING, jobsv1.JobState_JOB_STATE_RETRYING}:    true,

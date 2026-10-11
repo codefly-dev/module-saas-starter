@@ -294,6 +294,7 @@ func TestPostgresJobStoreDeadLettersExhaustedRetryBudget(t *testing.T) {
 }
 
 type executionJob struct {
+	attributes  map[string]string
 	queue       string
 	orderingKey string
 	availableAt time.Time
@@ -317,6 +318,10 @@ func insertExecutionJob(t *testing.T, pool *pgxpool.Pool, job executionJob) uuid
 		job.maxAttempts = 4
 	}
 	id := uuid.New()
+	attributes := job.attributes
+	if attributes == nil {
+		attributes = map[string]string{"trace_id": "test-trace"}
+	}
 	_, err := pool.Exec(testCtx, `
 		INSERT INTO job_messages (
 			id, direction, scope_kind, queue, topic, source,
@@ -328,7 +333,7 @@ func insertExecutionJob(t *testing.T, pool *pgxpool.Pool, job executionJob) uuid
 			'application/json', $6, $7, $8
 		)`,
 		id, job.queue, uuid.NewString(), job.orderingKey,
-		[]byte(`{"event":"execute"}`), `{"trace_id":"test-trace"}`,
+		[]byte(`{"event":"execute"}`), attributes,
 		job.maxAttempts, job.availableAt,
 	)
 	require.NoError(t, err)

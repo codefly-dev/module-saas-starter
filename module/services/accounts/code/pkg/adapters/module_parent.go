@@ -35,6 +35,9 @@ func authenticateModuleParent(ctx context.Context, encoded string) (moduleParent
 	if err != nil {
 		return moduleParentAuthentication{}, err
 	}
+	if _, err := service.AuthorizeModuleCapability(ctx, caller); err != nil {
+		return moduleParentAuthentication{}, err
+	}
 	token, err := workcontext.ParseWorkContextToken(encoded)
 	if err != nil {
 		return moduleParentAuthentication{}, status.Error(codes.PermissionDenied, "invalid module parent")
