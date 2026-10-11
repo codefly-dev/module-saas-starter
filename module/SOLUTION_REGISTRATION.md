@@ -921,8 +921,11 @@ only what the kubelet puts in its pod — the CA bundle and its own token:
    removed rather than argued with.
 2. **The API server authenticates this pod's own token.** Over a transport whose
    only root is the pinned certificate and which follows no redirect, the host
-   submits a TokenReview of its own projected token and requires it to come back
-   as a bound service account in its own namespace. A genuine API server accepts
+   submits a TokenReview of its own projected token and requires the answer to
+   name exactly this pod — the namespace, service account, pod name and pod UID
+   the token's own claims name (the namespace also matching the
+   kubelet-projected namespace file); an answer about any other identity, or a
+   token naming no pod, is refused. A genuine API server accepts
    only tokens its own cluster minted, so a server that merely holds a
    certificate under the pinned authority — the developer's real cluster, relayed
    to a deployed pod — refuses the deployed pod's token.
@@ -985,8 +988,13 @@ pod's real cluster minted.
   read — so the local profile gives it nothing it lacked. The composition holds
   none of the three by itself: it delivers workspace environment, and neither the
   pod spec, the projected CA nor the developer's cluster key.
-- *Two clusters sharing one CA and accepting each other's tokens* are one cluster
-  to this check.
+- *A CA is not a cluster boundary when it is shared or cloned.* Clusters sharing
+  one authority are one cluster to this check, and anyone holding that
+  authority's key can run a server the check accepts and answer its TokenReview
+  as it likes — whether or not the genuine servers accept each other's tokens.
+  The own-identity comparison checks that an honest API server answered about
+  this pod; it cannot stop a control plane that is itself hostile and copies the
+  expected claims back.
 
 **The cost:** a local profile is valid in exactly one cluster. Recreating the
 cluster mints a new authority and the profile must be rewritten — one copy of the

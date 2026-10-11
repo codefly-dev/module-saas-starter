@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -18,6 +19,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -61,6 +63,39 @@ type cluster struct {
 	// redirectReviews answers every TokenReview with a redirect to a path that
 	// authenticates anything.
 	redirectReviews atomic.Bool
+	// answerAs, when set, is the identity the API server answers an
+	// authenticated review with, instead of the identity the token names.
+	answerAs atomic.Pointer[podIdentity]
+}
+
+// podIdentity is what a bound service-account token names and what a
+// TokenReview answers with.
+type podIdentity struct {
+	namespace, serviceAccount, pod, uid string
+}
+
+// hostPod is the host's own pod in every test cluster.
+var hostPod = podIdentity{namespace: hostNamespace, serviceAccount: "accounts", pod: "accounts-0", uid: "0f0f0f0f-0000-4000-8000-000000000000"}
+
+// boundToken is a projected service-account token as the kubelet writes it: a
+// JWT whose `kubernetes.io` claims name the pod. Its signature is not the
+// test's concern — the API server is what verifies a token — so it is opaque,
+// and nonce makes each cluster's token its own.
+func boundToken(identity podIdentity, nonce string) string {
+	claims, err := json.Marshal(map[string]any{
+		"iss": "https://kubernetes.default.svc.cluster.local",
+		"sub": "system:serviceaccount:" + identity.namespace + ":" + identity.serviceAccount,
+		"jti": nonce,
+		"kubernetes.io": map[string]any{
+			"namespace":      identity.namespace,
+			"pod":            map[string]string{"name": identity.pod, "uid": identity.uid},
+			"serviceaccount": map[string]string{"name": identity.serviceAccount, "uid": "5a5a5a5a-0000-4000-8000-000000000000"},
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return "eyJhbGciOiJSUzI1NiJ9." + base64.RawURLEncoding.EncodeToString(claims) + "." + nonce
 }
 
 func newCluster(t *testing.T) *cluster {
@@ -72,7 +107,7 @@ func newCluster(t *testing.T) *cluster {
 	c := &cluster{
 		authority: authority, authorityKey: authorityKey,
 		fingerprint: hex.EncodeToString(sum[:]),
-		hostToken:   "token-minted-by-" + hex.EncodeToString(sum[:4]),
+		hostToken:   boundToken(hostPod, "minted-by-"+hex.EncodeToString(sum[:4])),
 	}
 	c.serving.Store(servingCertificateUnder(t, authority, authorityKey))
 
@@ -91,15 +126,23 @@ func newCluster(t *testing.T) *cluster {
 			}
 			response := map[string]any{"authenticated": false, "error": "token not minted by this cluster"}
 			if always || c.acceptAnyToken.Load() || request.Spec.Token == c.hostToken {
+				answer := hostPod
+				if override := c.answerAs.Load(); override != nil {
+					answer = *override
+				}
+				extra := map[string][]string{}
+				if answer.pod != "" {
+					extra["authentication.kubernetes.io/pod-name"] = []string{answer.pod}
+				}
+				if answer.uid != "" {
+					extra["authentication.kubernetes.io/pod-uid"] = []string{answer.uid}
+				}
 				response = map[string]any{
 					"authenticated": true,
 					"audiences":     request.Spec.Audiences,
 					"user": map[string]any{
-						"username": "system:serviceaccount:" + hostNamespace + ":accounts",
-						"extra": map[string][]string{
-							"authentication.kubernetes.io/pod-name": {"accounts-0"},
-							"authentication.kubernetes.io/pod-uid":  {"0f0f0f0f-0000-4000-8000-000000000000"},
-						},
+						"username": "system:serviceaccount:" + answer.namespace + ":" + answer.serviceAccount,
+						"extra":    extra,
 					},
 				}
 			}
@@ -181,6 +224,12 @@ func pemOf(certificates ...*x509.Certificate) []byte {
 func (c *cluster) host(t *testing.T) *infra.KubernetesClient {
 	t.Helper()
 	return infra.NewKubernetesClientInCluster(t, c.server.URL, pemOf(c.authority), c.hostToken, hostNamespace)
+}
+
+// hostForControl binds an unmodified host in this cluster.
+func (c *cluster) hostForControl(t *testing.T) error {
+	t.Helper()
+	return c.host(t).BindToAuthority(context.Background(), c.fingerprint)
 }
 
 // localPolicy is the local profile a developer's host is given: bound to its
@@ -403,9 +452,18 @@ func TestAMixedAuthorityBundleIsRefusedAtBoot(t *testing.T) {
 	require.ErrorContains(t, err, "exactly the one certificate")
 
 	for name, bundle := range map[string][]byte{
-		"the pin twice":               pemOf(local.authority, local.authority),
-		"the pin and a key":           append(pemOf(local.authority), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte{1}})...),
-		"the pin and stray bytes":     append(pemOf(local.authority), []byte("not a certificate")...),
+		"the pin twice":           pemOf(local.authority, local.authority),
+		"the pin and a key":       append(pemOf(local.authority), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte{1}})...),
+		"the pin and stray bytes": append(pemOf(local.authority), []byte("not a certificate")...), // FOLLOW-UP (review round 2, P3): material BEFORE the pin, which
+		// pem.Decode alone skips. Mutation: let the parser skip it, and these fail.
+		"junk before the pin": append([]byte("not a certificate\n"), pemOf(local.authority)...),
+		"an undecodable certificate block before the pin": append(
+			[]byte("-----BEGIN CERTIFICATE-----\n!!not base64!!\n-----END CERTIFICATE-----\n"), pemOf(local.authority)...),
+		"an unterminated block before the pin": append(
+			[]byte("-----BEGIN CERTIFICATE-----\nMIIB\n"), pemOf(local.authority)...),
+		"a certificate block with headers": []byte(strings.Replace(string(pemOf(local.authority)),
+			"-----BEGIN CERTIFICATE-----\n", "-----BEGIN CERTIFICATE-----\nProc-Type: 4,ENCRYPTED\n\n", 1)),
+
 		"no certificate":              nil,
 		"only the deployed authority": pemOf(deployed.authority),
 	} {
@@ -440,6 +498,45 @@ func TestAnEndpointUnderThePinThatDidNotMintThisPodsTokenIsRefused(t *testing.T)
 
 	require.NoError(t, local.host(t).BindToAuthority(context.Background(), local.fingerprint),
 		"the control: the same server accepts the token it minted for a pod in it")
+}
+
+// FOLLOW-UP (review round 2, P3): the API server's answer must be about THIS
+// pod. An authenticated review naming another service account, another pod,
+// another pod UID, or no pod at all — in the right namespace — is refused: it
+// is an answer about some other credential, not the one presented.
+//
+// Mutation: compare only the namespace (round 1's check), and this test fails.
+func TestTheOwnTokenReviewMustNameThisPod(t *testing.T) {
+	for name, answer := range map[string]podIdentity{
+		"another service account": {namespace: hostNamespace, serviceAccount: "delivery", pod: hostPod.pod, uid: hostPod.uid},
+		"another pod":             {namespace: hostNamespace, serviceAccount: hostPod.serviceAccount, pod: "accounts-1", uid: hostPod.uid},
+		"another pod UID":         {namespace: hostNamespace, serviceAccount: hostPod.serviceAccount, pod: hostPod.pod, uid: "1e1e1e1e-0000-4000-8000-000000000000"},
+		"no pod name":             {namespace: hostNamespace, serviceAccount: hostPod.serviceAccount, uid: hostPod.uid},
+		"no pod UID":              {namespace: hostNamespace, serviceAccount: hostPod.serviceAccount, pod: hostPod.pod},
+		"another namespace":       {namespace: "elsewhere", serviceAccount: hostPod.serviceAccount, pod: hostPod.pod, uid: hostPod.uid},
+	} {
+		t.Run(name, func(t *testing.T) {
+			local := newCluster(t)
+			local.answerAs.Store(&answer)
+			err := local.host(t).BindToAuthority(context.Background(), local.fingerprint)
+			require.ErrorIs(t, err, infra.ErrSolutionHostLocalPolicyOutsideItsCluster)
+			require.ErrorIs(t, err, infra.ErrTokenRejected)
+		})
+	}
+
+	// The expected identity is the token's own: a pod whose projected token
+	// names no pod is not running with the bound token the kubelet projects —
+	// refused even when the API server's answer agrees with it, pod-less too.
+	local := newCluster(t)
+	podless := podIdentity{namespace: hostNamespace, serviceAccount: "accounts"}
+	unbound := infra.NewKubernetesClientInCluster(t, local.server.URL, pemOf(local.authority),
+		boundToken(podless, "unbound"), hostNamespace)
+	local.acceptAnyToken.Store(true)
+	local.answerAs.Store(&podless)
+	require.ErrorIs(t, unbound.BindToAuthority(context.Background(), local.fingerprint), infra.ErrTokenRejected)
+
+	require.NoError(t, newCluster(t).hostForControl(t),
+		"the control: an answer naming exactly this pod binds")
 }
 
 // ATTACK (review finding 2): after a successful binding, the endpoint moves to

@@ -202,10 +202,11 @@ const (
 // and what it authenticates as.
 //
 // The audience is required and is checked by the API server, not here. A
-// TokenReview without one validates the token for any audience, which would let
-// a token minted for another service — a token its holder was legitimately
-// given, for a different purpose — authenticate here. Passing the audience is
-// what makes this an authentication of a caller rather than of a bearer.
+// TokenReview without one is checked against the API server's OWN audiences,
+// so the token every pod is given for talking to the API server — a token its
+// holder was legitimately given, for a different purpose — would authenticate
+// here. Passing the audience is what makes this an authentication of a caller
+// for THIS service rather than of a bearer of any cluster credential.
 func (c *KubernetesClient) reviewToken(ctx context.Context, token, audience string) (*ReviewedToken, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("%w: no token was presented", ErrTokenRejected)
@@ -213,7 +214,7 @@ func (c *KubernetesClient) reviewToken(ctx context.Context, token, audience stri
 	if strings.TrimSpace(audience) == "" {
 		// A programming error rather than a caller's: refuse loudly instead of
 		// issuing an audience-less review that would accept too much.
-		return nil, errors.New("a token review requires an audience; an audience-less review accepts a token minted for any service")
+		return nil, errors.New("a token review requires an audience; an audience-less review accepts a token minted for the api server itself")
 	}
 	body, err := json.Marshal(tokenReviewRequest{
 		APIVersion: "authentication.k8s.io/v1",
