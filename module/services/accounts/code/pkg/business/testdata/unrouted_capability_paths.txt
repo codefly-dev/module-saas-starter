@@ -59,9 +59,9 @@ module_capabilities.go:ModuleContentResources
 # (enforceActorCeiling, resolveAuthority). Routing it would need a caller it does
 # not have.
 #
-# "Re-read it live" has no meaning for the registry half either: which modules a
-# composition declares is a deployment fact, like group D's workload binding. The
-# half that DOES move at runtime — the declared, non-tombstoned solution bindings
+# The registry half lists delivered prefixes as vocabulary; naming a module
+# grants it no authority. Its capability paths check the fenced grant. The
+# other half — the declared, non-tombstoned solution bindings
 # — is read live from the database on every call, deliberately uncached, so a
 # withdrawn solution leaves the vocabulary at once.
 work_context_audience.go:HostAudiences
@@ -76,19 +76,3 @@ work_context_audience.go:HostAudiences
 # working — a direct field read was a way past it — and the honest disposition is
 # to list the path rather than go back to the spelling that hid it.
 platform_catalogue.go:ListPlatformCatalogue
-#
-# D. AUTHENTICATION, which runs BEFORE any capability decision and reads an
-#    IDENTITY fact rather than an authority one. Routing it through
-#    AuthorizeModuleCapability would invert the order: that call decides what an
-#    already-authenticated caller may do, and this is what establishes who the
-#    caller is.
-#
-#    The value read is the principal's declared workload — the Kubernetes service
-#    account, namespace and container its pods run as. There is NO live source
-#    for it and there should not be: it is a deployment fact, fixed by the
-#    composition, and the whole point of comparing it against a TokenReview is
-#    that the declaration is the thing the caller cannot influence. "Re-read it
-#    live" has no meaning here, so group A's disposition does not apply, and
-#    group C's "needs an explicit marker" is the closest but still wrong — these
-#    are accessors, this is a check.
-module_execution_binding.go:BindExecution

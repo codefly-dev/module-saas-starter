@@ -5,12 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
@@ -494,79 +494,41 @@ func TestRequireLocalForDevFixtureProvider(t *testing.T) {
 	}
 }
 
-type federationTestMinter struct{}
-
-func (federationTestMinter) MintModuleRegistration(string) (string, time.Time, error) {
-	return "registration-token", time.Time{}, nil
-}
-
-func TestConfigureModuleIdentity(t *testing.T) {
+// TestNoModuleSecretAuthenticatesAMint is the deletion, held behaviourally
+// (#1056). The three secret maps are set on every carrier a workspace value can
+// arrive by, to digests of a secret the test then presents — and the secret
+// mints nothing, because nothing reads them. Only the pod's projected token,
+// bound to its running build, does.
+func TestNoModuleSecretAuthenticatesAMint(t *testing.T) {
 	const tenant = "55555555-5555-4555-8555-555555555555"
-	const plainKey = "MODULE_IDENTITY_SECRETS"
-	const publicKey = "CODEFLY__WORKSPACE_CONFIGURATION__FEDERATION__MODULE_IDENTITY_SECRETS"
-	const secretKey = "CODEFLY__WORKSPACE_SECRET_CONFIGURATION__FEDERATION__MODULE_IDENTITY_SECRETS"
-	identityDigest := sha256.Sum256([]byte("identity-secret"))
-	declaration := fmt.Sprintf("documents:%x", identityDigest)
-	for name, test := range map[string]struct {
-		key        string
-		value      string
-		authorized bool
-		invalid    bool
-	}{
-		"public configuration": {publicKey, declaration, true, false},
-		"secret configuration": {secretKey, declaration, true, false},
-		"plain environment":    {plainKey, declaration, true, false},
-		"absent":               {},
-		"empty":                {publicKey, "", false, false},
-		"whitespace":           {publicKey, "  ", false, false},
-		"empty map":            {publicKey, ",", false, false},
-		"missing prefix":       {publicKey, fmt.Sprintf("billing:%x", identityDigest), false, false},
-		"malformed":            {publicKey, "documents:not-a-digest", false, true},
-		"duplicate":            {publicKey, declaration + "," + declaration, false, true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			for _, key := range []string{plainKey, publicKey, secretKey} {
-				t.Setenv(key, "")
-				require.NoError(t, os.Unsetenv(key))
-			}
-			if test.key != "" {
-				t.Setenv(test.key, test.value)
-			}
-			service, err := business.NewService(nil)
-			require.NoError(t, err)
-			service.SetModuleRegistrar(federationTestMinter{}, map[string][sha256.Size]byte{
-				"documents": sha256.Sum256([]byte("registration-secret")),
-			})
-			registry, err := moduleregistrytest.Parse(
-				`{"documents":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + tenant + `"}}`)
-			require.NoError(t, err)
-			service.SetModuleCapabilities(nil, nil, registry)
-
-			err = configureModuleIdentity(service)
-			if test.invalid {
-				require.ErrorContains(t, err, "read module identity secrets")
-			} else {
-				require.NoError(t, err)
-			}
-			_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", "registration-secret")
-			require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
-			authority, err := service.ModuleAuthorizeWorkContext(context.Background(), "documents", "identity-secret")
-			if !test.authorized {
-				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, business.ModulePrincipalID("documents"), authority.PrincipalID)
-			require.Equal(t, tenant, authority.Tenant)
-
-			t.Setenv(test.key, "")
-			require.NoError(t, configureModuleIdentity(service))
-			for _, secret := range []string{"identity-secret", "registration-secret"} {
-				_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", secret)
-				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
-			}
-		})
+	declaration := fmt.Sprintf("documents:%x", sha256.Sum256([]byte("identity-secret")))
+	for _, key := range []string{"MODULE_IDENTITY_SECRETS", "MODULE_REGISTRATION_SECRETS", "SOLUTION_REGISTRATION_SECRETS"} {
+		t.Setenv(key, declaration)
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__FEDERATION__"+key, declaration)
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__FEDERATION__"+key, declaration)
 	}
+	service, err := business.NewService(nil)
+	require.NoError(t, err)
+	registry, err := moduleregistrytest.Parse(
+		`{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},"tenant":"` + tenant + `"}}`)
+	require.NoError(t, err)
+	service.SetModuleCapabilities(nil, nil, registry)
+	cluster := executiontest.New()
+	service.SetExecutionBinding(cluster, cluster)
+	cluster.Approve("documents", executiontest.Digest("documents-v1"), 3)
+	token := cluster.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "documents", Container: "app"},
+		executiontest.Image("documents-v1"))
+
+	_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", "identity-secret")
+	require.ErrorIs(t, err, business.ErrModuleIdentityDenied, "a secret is not a token, and nothing reads the secret maps")
+	require.ErrorIs(t, err, business.ErrExecutionTokenRejected)
+
+	authority, err := service.ModuleAuthorizeWorkContext(context.Background(), "documents", token)
+	require.NoError(t, err)
+	require.Equal(t, business.ModulePrincipalID("documents"), authority.PrincipalID)
+	require.Equal(t, tenant, authority.Tenant)
+	require.Equal(t, uint64(3), authority.Execution.Incarnation)
+	require.Equal(t, executiontest.Image("documents-v1"), string(authority.Execution.Running))
 }
 
 // keyServiceBackend selects the key-service backend on both carriers, for the

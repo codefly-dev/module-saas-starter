@@ -1106,8 +1106,9 @@ one more write.
 The honest alternative is **not** a second trust model. It is **no capability
 surface locally**: a local run gets presence and routing so a developer sees their
 UI, and module credentials are simply not minted. This host already has that shape
-— an absent `MODULE_IDENTITY_SECRETS` denies every module identity exchange, and
-the fake-auth fixture is the established local-authority mechanism.
+— a host with no delivered authority wires no execution binding, so every module
+mint answers that the execution could not be established (#1056), and the
+fake-auth fixture is the established local-authority mechanism.
 
 That is a *reduction* in local capability, which is honest and leaves one trust
 path, rather than an *addition* of a parallel one. "Lighter laptop" against "two

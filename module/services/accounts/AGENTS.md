@@ -17,7 +17,8 @@ longer works. The full procedure and why are in
 [../../REST_SURFACE.md](../../REST_SURFACE.md#regeneration).
 
 A composed module's REST routes belong to the gateway's generated and explicit
-catalogs. Its identity secret authenticates the Work Context exchanges below.
+catalogs. Its pod's projected ServiceAccount token authenticates the Work
+Context exchanges below; no secret does.
 
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
@@ -321,8 +322,17 @@ from ONE registry snapshot, reads the committed revision from the store (once
 per request under `WithModuleEnvelopeRevisionMemo`), and refuses with
 `ErrModuleRegistryStale` (Unavailable, a pass requested) unless that snapshot
 was derived from exactly it; a replica that has seen a newer revision serves
-nothing from the older registry. A pass reads the withdrawal history and the
-envelope first; when another input cannot be read it never combines fresh and
+nothing from the older registry. Every mint, including the installer token route,
+passes that one capture into `BindExecution` and the grant resolvers: principal,
+workload owners, declared container, tenant and operation/source grants cannot
+come from different generations. Source mints still take their tenant from the
+person's delegation, checked against the captured module grant. After binding,
+and again after signing and audit recording, `FenceModuleMint` reads the committed
+revision afresh, bypassing the request's earlier memo. A registry replacement or
+a different committed revision withholds the capability with `Unavailable` (HTTP
+503 on the installer route); the final fence is the mint's release decision.
+
+A pass reads the withdrawal history and the envelope first; when another input cannot be read it never combines fresh and
 stale inputs, and publishes a DEGRADED registry — the last published entries,
 kept only where still derived from the current revision, not withdrawn, their
 presence not withdrawn by delivery, and their signer still admitted — or an
@@ -347,18 +357,32 @@ until its first pass.
 ## Minting a module Work Context
 
 The identity itself is a **Work Context**. The auth-gateway brokers the exchange
-to `ModuleCapabilitiesService/MintModuleWorkContext` (`EXPOSURE_INTERNAL`), which
-authorizes the presented secret against the independent
-`MODULE_IDENTITY_SECRETS` digest, refuses a prefix that is not a declared module
-principal, and mints a capability owned and actored by the module principal
-(`aud=module-capabilities`), emitting a `module.work_context_minted` audit event
-once the capability exists. The response carries
+to `ModuleCapabilitiesService/MintModuleWorkContext` (`EXPOSURE_INTERNAL`). The
+module presents its pod's **projected ServiceAccount token** (audience
+`accounts`) as the request's bearer, and `ModuleAuthorizeWorkContext` refuses a
+prefix that is not a declared module principal, then runs `BindExecution` (see
+"Establishing what a caller is running" below): the token is reviewed, the pod it
+names is read, and the image that pod is RUNNING must equal the build the
+principal's authority document approves. Only then is a capability minted, owned
+and actored by the module principal (`aud=module-capabilities`), and a
+`saas.module.work_context_minted` audit event (v2) records it with the execution
+it was bound to — namespace, ServiceAccount, pod, pod UID, container, running
+image, approved incarnation. The response carries
 `{token, expiresAt, principalId, tenant}`.
 
-- An **empty or absent** `MODULE_IDENTITY_SECRETS` denies every module identity
-  exchange. Compositions must provision identity digests and distribute their
-  matching secrets before modules can obtain Work Contexts; registration
-  credentials never substitute for missing identity digests.
+- **No secret proves a module's identity (#1056).** `MODULE_IDENTITY_SECRETS`,
+  `MODULE_REGISTRATION_SECRETS` and `SOLUTION_REGISTRATION_SECRETS` are deleted,
+  with their parsing, their configuration reads and both registration mints.
+- A refusal is a **verdict** (`PermissionDenied`/`Unauthenticated`, the same
+  fixed message whichever check failed): a token the API server refused —
+  another audience, another cluster, expired — a token for another ServiceAccount
+  or namespace than the principal declares, a replaced pod, or a pod running an
+  unapproved build. The cause is logged here, never returned.
+- A host that could not establish the execution answers **`Unavailable`**: the
+  API server is unreachable, no execution binding is wired, or the container
+  reports no image yet. Execution binding is wired only with delivered authority
+  (`configuredSolutionHostBindingReconciler`), so **a host with no delivery mints
+  for no module**, and a module run outside Kubernetes has no token to present.
 - The tenant is **not requestable** — it is the one the module envelope's grant
   declares for that principal, so a module cannot name a tenant by asking.
 - The capability's effective authority **is, in a running deployment today, the
@@ -406,19 +430,19 @@ once the capability exists. The response carries
     answered ErrExecutionUnbound for every caller — the mechanism was built,
     guarded, unit-tested and unreachable.
 
-  **The mint still does not call it, so the sentence above this one still
-  holds.** `StartModuleTask` passes audience, tenant, owner principal, task,
-  session, actor chain and TTL, and nothing else; the capability still carries
-  no seal, and `checkAgainstSealed` still returns on its first line for every
-  real module credential. `BindExecution` is now REACHABLE and is not REACHED.
-
-  The reason is a contract, not an oversight: the mint authenticates with
-  `req.GetSecret()`, a shared secret, and a secret cannot be execution-bound in
-  principle — it says "I know the secret", never "I am this pod running this
-  image". Reaching the check means replacing that credential with a projected
-  service-account token on the request message, which is a proto change and a
-  consumer-visible break. Until that lands, every consequence listed above is
-  still a consequence.
+  **Every module mint now calls it (#1056), and the seal is still empty.**
+  `BindExecution` gates `MintModuleWorkContext`, `MintModuleOperationContext`,
+  `MintSourceOperationContext` and the installer's token route, so a pod on an
+  unapproved build mints nothing. What the mint does NOT yet do is SEAL what it
+  established: `StartModuleTask` still passes audience, tenant, owner principal,
+  task, session, actor chain and TTL, because the host signs the `sdk-go`
+  encoding, which has no seal field, and core's `WorkSealV1` — which does carry
+  installation id and revision, build incarnation and image digest — requires an
+  installation id that module principals do not hold until #1057. The execution
+  is bound at mint and recorded in the mint's audit event; `checkAgainstSealed`
+  still returns on its first line for every real module credential, so every
+  consequence listed above is still a consequence until the Work Context cutover
+  seals it.
 
   This bullet has now been wrong twice in opposite directions. It first asserted
   the whole model in the present tense while none of it existed. It was then
@@ -511,10 +535,75 @@ once the capability exists. The response carries
 ## Establishing what a caller is running
 
 `Service.BindExecution` answers what a caller IS RUNNING, from sources the
-caller does not control. The mint authenticated with a **shared secret**, which
-is a bearer token — whoever holds it is the module — so it could not answer this
-at all. A secret cannot be execution-bound in principle: it says "I know the
-secret", never "I am this pod running this image".
+caller does not control. The mint used to authenticate with a **shared secret**,
+which is a bearer token — whoever holds it is the module — so it could not answer
+this at all; that secret is deleted (#1056) and every module mint calls this.
+
+The approval is looked up by the name the authority document gives the
+principal — its **prefix** — never by the registry key
+`ModulePrincipalID(prefix)`, a UUID no document carries. A token the API server
+reviewed and refused is `ErrExecutionTokenRejected`, a verdict; a review that
+could not run is `ErrExecutionUnbound`, not one.
+
+**What a mint requires, in full** (review round 1 on #1056 found each missing):
+
+- **The workload identifies exactly one principal, and it is the one asked
+  for.** A token authenticates a ServiceAccount in a namespace, never a prefix.
+  The reviewed `(namespace, ServiceAccount)` is resolved over the WHOLE captured
+  registry, the same snapshot that supplied the container and tenant;
+  zero or several owners is `ErrExecutionWorkloadAmbiguous` /
+  `ErrExecutionIdentityMismatch`. Two principals sharing a ServiceAccount mint as
+  neither — before, either one's pod minted as both.
+- **The pod is one security boundary.** Every container in it can read the
+  projected token, so the pod may hold only the authenticating container plus
+  init containers that ran to completion. Any other regular container, an init
+  container still running or restartable (a native sidecar), and an ephemeral
+  (debug) container in ANY state is `ErrExecutionUnapprovedContainer`.
+  **The stronger rule this falls short of, and why:** admit every container the
+  applied, signed presence document declares for the workload, each RUNNING its
+  declared digest. Presence cannot express it today: core's
+  `solutionhost.Workload` (v0.17.2 through main) carries the authenticating
+  container with its digest and every other container as a NAME only
+  (`non_authenticating`), and the CLI renders exactly that. Admitting a sidecar
+  by name would let it run any image, so every other container is refused.
+  **The cost:** a module pod with a sidecar — a Cloud SQL Auth Proxy, or a
+  namespace still on istio sidecar injection — mints nothing until presence
+  carries a digest per container (a core field, the CLI render, this check).
+  In the cell today the Cloud SQL proxy sidecars are on accounts (the host, which
+  mints for no one) and on database Jobs, and delivered namespaces are ambient,
+  so no module serving pod is known to carry one.
+- **Only a live regular container supplies the digest.** The pod must be
+  `Running` with no `deletionTimestamp`, and the declared container must be a
+  regular container in state `running`; a stopped container keeps its approved
+  `imageID` in status and a completed init container still reports one, and
+  neither counts (`ErrExecutionNotRunning`). Not started yet — pod `Pending`,
+  container `waiting` — is `ErrExecutionUnbound`: retryable, not a verdict.
+- **The token lives at most 600 seconds** (`MaxExecutionTokenLifetime`,
+  Kubernetes' minimum `expirationSeconds`), read from the iat/exp of a token the
+  API server has just authenticated. A longer one, or one whose lifetime cannot
+  be read, is refused.
+
+**Replay, stated precisely.** A projected ServiceAccount token is a BEARER
+credential. TokenReview proves the cluster issued it to a named pod and that the
+pod still exists; it does not prove the pod is the party presenting it. So:
+
+- **Closed here:** a token from another workload, another audience or another
+  cluster; a replaced pod at the same name; a pod running an unapproved build or
+  any unapproved container; a stopped container or a pod being deleted; a token
+  older than 10 minutes.
+- **Not closed — the residual:** a peer that has COPIED a still-valid token
+  from an approved, running pod (and holds the broker's perimeter credential)
+  can mint as that pod's principal for the rest of that token's lifetime, and
+  the mint record attributes it to the victim pod. TokenReview cannot close
+  this, and nothing on this host can tell the copy from the original.
+- **The strongest closing option — an owner decision, not built:** bind each
+  mint to request-origin identity. The mesh's pod-specific mTLS identity of the
+  connection that carried the request is conveyed by the broker in a header only
+  the broker can set, and accounts requires it to name the same pod UID the
+  TokenReview did. A copied token is then useless from any other pod. It needs
+  the mesh to issue per-pod (not per-ServiceAccount) identities, and the gateway
+  to forward the verified peer, so it is a platform decision rather than a change
+  to this mint.
 
 **Three digest types, and conflating any two defeats the check.** They are
 separate Go types rather than three strings for exactly that reason:
@@ -595,11 +684,12 @@ A principal bearing no approved build binds with **neither** field set, because
 core's seal makes `build_incarnation` and `image_digest` optional *and paired* —
 a digest without an incarnation is refused by its schema.
 
-**Not wired yet:** no mint calls `BindExecution`, and the approved digests are
-not populated from the delivered authority documents, so this is exercised by
-tests rather than by a running deployment. `module_operation_context.go`'s
-binding search is unblocked by the sealed binding id, which the Work Context
-cutover carries and which is still outstanding.
+**Wired (#1056):** every module mint calls `BindExecution`, and the approved
+digests come from the delivered authority documents through
+`ApprovedBuildReconciler`. `TestEveryModuleMintIsExecutionBound` (module/tools)
+holds the call chain. `module_operation_context.go`'s binding search is
+unblocked by the sealed binding id, which the Work Context cutover carries and
+which is still outstanding.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,
@@ -615,8 +705,9 @@ exchanges that produce one.
 brokered by the gateway's `/modules/_operation-context`) is the headless
 counterpart of the delegated operation exchange: background work calling another
 module's service when nobody is signed in. It authenticates exactly like
-`MintModuleWorkContext` — the same identity secret, the same refusal of an
-undeclared prefix, the same tenant existence check — and the request adds only a
+`MintModuleWorkContext` — the same projected token bound by `BindExecution`, the
+same refusal of an undeclared prefix, the same tenant existence check — and the
+request adds only a
 `binding`, a key of that module's `operation_audiences`.
 
 - The child is addressed to the binding's `audience` and carries **exactly** its

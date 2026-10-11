@@ -44,9 +44,6 @@ type Service struct {
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
 	oauthState                *auth.OAuthStateSigner
-	moduleRegistrar           *registrationAuthority
-	moduleIdentity            *registrationAuthority
-	solutionRegistrar         *registrationAuthority
 	oauthPolicy               *auth.OAuthRequestPolicy
 	clientRegistry            *auth.ClientRegistry
 	clientMetadata            *auth.ClientMetadataResolver
@@ -121,12 +118,10 @@ type Service struct {
 	// on read, so no map the service authorizes against is addressable by
 	// anything else.
 	//
-	// What this does NOT yet give is one immutable snapshot per REQUEST. Each
-	// read takes the registry as it is at that moment, so a request that
-	// consults it twice can straddle a replacement. Each read is of a whole,
-	// validated registry, so a straddling request sees two coherent ceilings,
-	// never a half-built one; threading a request-scoped snapshot through every
-	// call site is still owed.
+	// Mint and authority decisions capture this pointer once, pass it through
+	// their resolvers, and fence that capture against the committed envelope.
+	// A mint also fences after signing and recording, with a fresh revision
+	// read, before releasing the capability.
 	modulePrincipals atomic.Pointer[installedModuleRegistry]
 
 	// envelopeRevisionSeen is the highest module envelope revision this

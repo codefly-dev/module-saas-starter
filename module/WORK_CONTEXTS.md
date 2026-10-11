@@ -289,9 +289,14 @@ acting for itself, not for a viewer. `ModuleCapabilitiesService.MintModuleOperat
 is that case, and it is deliberately a separate, narrower grant rather than a
 relaxation of the delegated exchange.
 
-The module authenticates exactly as for its own Work Context — the identity
-secret for its prefix, checked against `federation/MODULE_IDENTITY_SECRETS` —
-and names one of its installed operation bindings. Nothing else is requestable.
+The module authenticates exactly as for its own Work Context — its pod's
+projected ServiceAccount token (audience `accounts`), which `BindExecution` holds
+against the workload its principal declares and the build its authority document
+approves (#1056) — and names one of its installed operation bindings. What the
+binding requires (one principal per ServiceAccount, every container of the pod
+approved, a running regular container in a running pod, a token of at most 600
+seconds) and the replay it does NOT close are stated in
+[services/accounts/AGENTS.md](services/accounts/AGENTS.md#establishing-what-a-caller-is-running). Nothing else is requestable.
 The host mints a child Work Context with:
 
 - `aud` = the binding's `audience`;
@@ -454,7 +459,8 @@ tenant) exactly; a read exchange always does.
 | Missing | `FAILED_PRECONDITION` | `DELEGATION_MISSING` | `412`, body `DELEGATION_MISSING` | The source has no active delegation to this module. A person must connect or reconnect it. |
 | Revoked | `PERMISSION_DENIED` | `DELEGATION_REVOKED` | `403`, body `DELEGATION_REVOKED` | The delegation was revoked, or was just found unsupported and revoked. |
 | Invalid | `PERMISSION_DENIED` | `DELEGATION_INVALID` | `403`, body `DELEGATION_INVALID` | No such delegation for this module — another module's is deliberately indistinguishable from one that does not exist. |
-| Unproven | `UNAUTHENTICATED` | — | `401` | The module's identity secret was not accepted. |
+| Unproven | `UNAUTHENTICATED` | — | `401` | The module's projected token was refused, belongs to another workload, or its pod runs an unapproved build. |
+| Unbound | `UNAVAILABLE` | — | `503` | The host could not establish what the module's pod is running; nothing was decided. |
 
 The gateway's refusal body is the plain-text reason, read from the
 `ErrorInfo` and never from the message, and it relays only the three reasons

@@ -1263,17 +1263,6 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
-    "saas.module.registration_minted": {
-      "address": "saas.module.registration_minted",
-      "title": "saas.module.registration_minted",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.module.registration_minted"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
     "saas.module.work_context_minted": {
       "address": "saas.module.work_context_minted",
       "title": "saas.module.work_context_minted",
@@ -1643,17 +1632,6 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.solution.registration_deleted"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
-    "saas.solution.registration_minted": {
-      "address": "saas.solution.registration_minted",
-      "title": "saas.solution.registration_minted",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.solution.registration_minted"
         }
       },
       "x-visibility": "external",
@@ -2832,13 +2810,6 @@
       },
       "title": "saas publishes saas.module.org_admins_notified"
     },
-    "send:saas.module.registration_minted": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.module.registration_minted"
-      },
-      "title": "saas publishes saas.module.registration_minted"
-    },
     "send:saas.module.work_context_minted": {
       "action": "send",
       "channel": {
@@ -3076,13 +3047,6 @@
         "$ref": "#/channels/saas.solution.registration_deleted"
       },
       "title": "saas publishes saas.solution.registration_deleted"
-    },
-    "send:saas.solution.registration_minted": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.solution.registration_minted"
-      },
-      "title": "saas publishes saas.solution.registration_minted"
     },
     "send:saas.sso.disabled": {
       "action": "send",
@@ -4116,13 +4080,6 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
-      "saas.module.registration_minted": {
-        "name": "saas.module.registration_minted",
-        "title": "saas.module.registration_minted",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
       "saas.module.work_context_minted": {
         "name": "saas.module.work_context_minted",
         "title": "saas.module.work_context_minted",
@@ -4357,13 +4314,6 @@
       "saas.solution.registration_deleted": {
         "name": "saas.solution.registration_deleted",
         "title": "saas.solution.registration_deleted",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
-      "saas.solution.registration_minted": {
-        "name": "saas.solution.registration_minted",
-        "title": "saas.solution.registration_minted",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

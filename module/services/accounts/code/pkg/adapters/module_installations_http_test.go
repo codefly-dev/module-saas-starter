@@ -87,6 +87,9 @@ func TestInstallerHTTPUnknownFieldsCannotRequestOwnerOrAuthority(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodPost, moduleInstallationPrefix+mode, bytes.NewBufferString(body))
 		req.Header.Set(workcontext.WorkContextHeaderName, "a-token")
+		// The token route reads its credential from Authorization (#1056), so the
+		// body is decoded — and its unknown fields refused — only past it.
+		req.Header.Set("Authorization", "Bearer projected-token")
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, req)
 		require.Equal(t, 400, w.Code)

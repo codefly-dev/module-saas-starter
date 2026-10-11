@@ -22,8 +22,8 @@ const ModuleOperationContextTTL = 60 * time.Second
 
 // ErrModuleOperationContextRefused reports that an authenticated module named a
 // binding it may not mint headless: the binding is not declared, or it declares
-// no headless_scopes. It is distinct from ErrModuleRegistrationDenied, which is
-// a failure to prove the module's identity at all.
+// no headless_scopes. It is distinct from ErrModuleIdentityDenied, which is a
+// failure to prove the module's identity at all.
 var ErrModuleOperationContextRefused = errors.New("module operation binding is not mintable without a person present")
 
 // ModuleOperationContextAuthority is what one headless operation mint asserts:
@@ -48,15 +48,18 @@ func (a ModuleOperationContextAuthority) WireScopes() []*gen.WorkContextScope {
 // be issued, with no person present, for one of its installed operation
 // audiences.
 //
-// The module authenticates exactly as for its own Work Context — the identity
-// secret for its prefix — so nothing new is trusted. The caller then names only
+// The module authenticates exactly as for its own Work Context — its pod's
+// projected ServiceAccount token, bound to the build it is running — so nothing
+// new is trusted. The caller then names only
 // the binding; audience and scopes are deployment policy. The scopes are the
 // binding's headless_scopes and nothing else: invoke_scopes describe what the
 // module may do on a person's behalf and are never reused for work that has no
 // person, so a binding that declares no headless_scopes is refused (fail closed).
-func (s *Service) ModuleAuthorizeOperationContext(ctx context.Context, prefix, secret, bindingID string) (ModuleOperationContextAuthority, error) {
-	// Identity, tenant, binding, scopes and revision from ONE fenced snapshot.
-	identity, grant, err := s.authorizeModuleIdentity(ctx, prefix, secret)
+func (s *Service) ModuleAuthorizeOperationContext(
+	ctx context.Context, prefix, serviceAccountToken, bindingID string,
+) (ModuleOperationContextAuthority, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	identity, grant, err := s.authorizeModuleIdentity(ctx, snapshot, prefix, serviceAccountToken)
 	if err != nil {
 		return ModuleOperationContextAuthority{}, err
 	}
@@ -91,15 +94,19 @@ func (s *Service) ModuleAuthorizeOperationContext(ctx context.Context, prefix, s
 func (s *Service) RecordModuleOperationContextMint(
 	ctx context.Context, prefix string, authority ModuleOperationContextAuthority,
 ) error {
+	payload := map[string]any{
+		"prefix":     prefix,
+		"tenant":     authority.Tenant,
+		"binding_id": authority.BindingID,
+		"audience":   authority.Audience,
+		"scopes":     operationScopeGrants(authority.Scopes),
+	}
+	for key, value := range authority.Execution.auditFields() {
+		payload[key] = value
+	}
 	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.emitTx(ctx, authority.PrincipalID, "system", EventModuleOperationContextMint, "module", prefix,
-			authority.Tenant, map[string]any{
-				"prefix":     prefix,
-				"tenant":     authority.Tenant,
-				"binding_id": authority.BindingID,
-				"audience":   authority.Audience,
-				"scopes":     operationScopeGrants(authority.Scopes),
-			})
+			authority.Tenant, payload)
 	})
 }
 

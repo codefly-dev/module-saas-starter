@@ -96,8 +96,36 @@ func isDisallowedRegisteredUpstreamHost(host string) bool {
 // this prefix rather than against a resolved route.
 const modulePrefix = "/modules/"
 
-// moduleSecretHeader carries the module identity secret to accounts.
-const moduleSecretHeader = "X-Codefly-Module-Secret"
+// projectedTokenScheme is how a module presents its pod's projected
+// ServiceAccount token to a mint: as the request's bearer, which this broker
+// forwards to accounts verbatim and never inspects. accounts reviews it
+// (TokenReview, audience `accounts`), reads the pod it names and holds that pod's
+// running image against the build the principal's authority approves (#1056).
+//
+// It replaced X-Codefly-Module-Secret, a static per-module secret: a bearer that
+// proved only that its holder had been handed it, and that outlived every build
+// it was issued to. No header carrying a secret is read any more.
+const projectedTokenScheme = "Bearer "
+
+// maxProjectedTokenBytes bounds the forwarded token at the bound the mint
+// request itself declares.
+const maxProjectedTokenBytes = 64 * 1024
+
+// projectedServiceAccountToken reads the module pod's projected token from the
+// one Authorization header a mint request may carry. A second header, another
+// scheme, an empty or oversized token are each refused rather than chosen
+// between.
+func projectedServiceAccountToken(r *http.Request) (string, bool) {
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 || !strings.HasPrefix(values[0], projectedTokenScheme) {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(values[0], projectedTokenScheme))
+	if token == "" || len(token) > maxProjectedTokenBytes {
+		return "", false
+	}
+	return token, true
+}
 
 // ErrorInfo domain shared with accounts source-delegation refusals.
 const solutionRegistryErrorDomain = "accounts.saas.codefly.dev"
@@ -106,8 +134,8 @@ const solutionRegistryErrorDomain = "accounts.saas.codefly.dev"
 const moduleExchangeTimeout = 10 * time.Second
 
 // moduleWorkContextPath serves the identity exchange a module runs at startup: it
-// presents its identity secret and receives the Work Context its
-// service principal calls the module-facing capability surface with.
+// presents its pod's projected ServiceAccount token and receives the Work
+// Context its service principal calls the module-facing capability surface with.
 const moduleWorkContextPath = "/modules/_work-context"
 
 // mintModuleWorkContextMethod is accounts' Work Context mint for a composed
@@ -120,21 +148,22 @@ const mintModuleWorkContextMethod = "/saas.accounts.v1.ModuleCapabilitiesService
 //
 // It brokers for the same reason the credential exchange does: a composed module
 // cannot reach accounts' internal listener itself, and this handler makes no
-// authorization decision — accounts decides which principal the presented secret
-// is good for and which tenant it may act on.
+// authorization decision — accounts decides whether the presented token's pod is
+// the principal's workload running its approved build, and which tenant it may
+// act on.
 // logModuleExchangeRefusal records WHY accounts refused a module exchange, where
 // the client is told only that it was refused.
 //
 // Every branch below answers a fixed, reasonless string — "unauthorized",
 // "forbidden" — and that is right: these endpoints are reached by a module
-// presenting its own secret, and the reply must not tell a caller which of the
+// presenting its own pod's token, and the reply must not tell a caller which of the
 // composition's declarations it fell foul of. But accounts names the fault
 // exactly ("owner is not allowed <resource>:<action> at requested scope", an
 // unknown binding, a prefix whose grant is missing), and dropping it left the
 // gateway with no record at all: a composition whose module registry entry is
 // wrong produced a bare 403 here and silence in the log, which is how a
 // deployed module's refusal became undiagnosable. gRPC status messages carry no
-// credential — the secret never reaches accounts' error.
+// credential — the token never reaches accounts' error.
 func logModuleExchangeRefusal(exchange, prefix string, err error) {
 	log.Printf("WARN: module exchange refused: exchange=%s prefix=%s code=%s reason=%q",
 		exchange, prefix, status.Code(err), status.Convert(err).Message())
@@ -153,8 +182,8 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
-	secret := r.Header.Get(moduleSecretHeader)
-	if secret == "" {
+	serviceAccountToken, presented := projectedServiceAccountToken(r)
+	if !presented {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
@@ -173,7 +202,7 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
-	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, secret)
+	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, serviceAccountToken)
 	if err != nil {
 		logModuleExchangeRefusal("module-work-context", payload.Prefix, err)
 		switch status.Code(err) {
@@ -181,6 +210,10 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 			httpError(w, http.StatusUnauthorized, "unauthorized")
 		case codes.InvalidArgument:
 			httpError(w, http.StatusBadRequest, "invalid request")
+		case codes.Unavailable:
+			// accounts could not establish what the caller is running: nothing
+			// was decided, so the module retries rather than stops.
+			httpError(w, http.StatusServiceUnavailable, "work context unavailable")
 		default:
 			httpError(w, http.StatusBadGateway, "work context unavailable")
 		}
@@ -205,7 +238,7 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 }
 
 // moduleOperationContextPath serves the headless operation exchange: a module
-// presents its identity secret and one of its installed operation bindings, and
+// presents its pod's projected token and one of its installed operation bindings, and
 // receives a short-lived Work Context addressed to that binding's audience, for
 // work no person is present for.
 const moduleOperationContextPath = "/modules/_operation-context"
@@ -218,7 +251,7 @@ const mintModuleOperationContextMethod = "/saas.accounts.v1.ModuleCapabilitiesSe
 // returns true when it has handled the request.
 //
 // It brokers exactly as handleModuleWorkContext does, on the same perimeter
-// (cluster-internal token plus the module's identity secret), and decides
+// (cluster-internal token plus the module pod's projected token), and decides
 // nothing: accounts alone knows which bindings a module declared and which of
 // them may be minted with no person present. Unlike that exchange the outcome
 // has two refusals worth telling apart — an unproven module (401) and a proven
@@ -236,8 +269,8 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
-	secret := r.Header.Get(moduleSecretHeader)
-	if secret == "" {
+	serviceAccountToken, presented := projectedServiceAccountToken(r)
+	if !presented {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
@@ -261,7 +294,7 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 
 	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
-	issued, err := g.authz.mintModuleOperationContext(ctx, payload.Prefix, secret, payload.Binding)
+	issued, err := g.authz.mintModuleOperationContext(ctx, payload.Prefix, serviceAccountToken, payload.Binding)
 	if err != nil {
 		logModuleExchangeRefusal("module-operation-context/"+payload.Binding, payload.Prefix, err)
 		switch status.Code(err) {
@@ -271,6 +304,8 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 			httpError(w, http.StatusForbidden, "forbidden")
 		case codes.InvalidArgument:
 			httpError(w, http.StatusBadRequest, "invalid request")
+		case codes.Unavailable:
+			httpError(w, http.StatusServiceUnavailable, "operation context unavailable")
 		default:
 			httpError(w, http.StatusBadGateway, "operation context unavailable")
 		}
@@ -300,14 +335,14 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 }
 
 func (s *ExtAuthz) mintModuleWorkContext(
-	ctx context.Context, prefix, secret string,
+	ctx context.Context, prefix, serviceAccountToken string,
 ) (*accountsv1.ModuleMintWorkContextResponse, error) {
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
 	response := &accountsv1.ModuleMintWorkContextResponse{}
-	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, Secret: secret}
+	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken}
 	if err := s.backendConn.Invoke(ctx, mintModuleWorkContextMethod, request, response); err != nil {
 		return nil, err
 	}
@@ -315,14 +350,14 @@ func (s *ExtAuthz) mintModuleWorkContext(
 }
 
 func (s *ExtAuthz) mintModuleOperationContext(
-	ctx context.Context, prefix, secret, binding string,
+	ctx context.Context, prefix, serviceAccountToken, binding string,
 ) (*accountsv1.ModuleMintOperationContextResponse, error) {
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
 	response := &accountsv1.ModuleMintOperationContextResponse{}
-	request := &accountsv1.ModuleMintOperationContextRequest{Prefix: prefix, Secret: secret, Binding: binding}
+	request := &accountsv1.ModuleMintOperationContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, Binding: binding}
 	if err := s.backendConn.Invoke(ctx, mintModuleOperationContextMethod, request, response); err != nil {
 		return nil, err
 	}
@@ -330,7 +365,7 @@ func (s *ExtAuthz) mintModuleOperationContext(
 }
 
 // moduleSourceOperationContextPath serves the source-delegation exchange: a
-// module presents its identity secret and a delegation — by id, or by the
+// module presents its pod's projected token and a delegation — by id, or by the
 // source whose active delegation to the module is meant — and receives the
 // short-lived Work Context that source's sync runs with, owned by the person
 // who connected the source.
@@ -365,7 +400,7 @@ const (
 // request.
 //
 // It brokers exactly as handleModuleOperationContext does, on the same
-// perimeter (cluster-internal token plus the module's identity secret), and
+// perimeter (cluster-internal token plus the module pod's projected token), and
 // decides nothing: accounts alone holds the delegation and re-checks it. Three
 // refusals are worth telling apart, and the status says which:
 //   - 401: the module is not proven;
@@ -387,8 +422,8 @@ func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *h
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
-	secret := r.Header.Get(moduleSecretHeader)
-	if secret == "" {
+	serviceAccountToken, presented := projectedServiceAccountToken(r)
+	if !presented {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
@@ -406,7 +441,7 @@ func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *h
 		httpError(w, http.StatusBadRequest, "invalid prefix")
 		return true
 	}
-	request := &accountsv1.ModuleMintSourceOperationContextRequest{Prefix: payload.Prefix, Secret: secret}
+	request := &accountsv1.ModuleMintSourceOperationContextRequest{Prefix: payload.Prefix, ServiceAccountToken: serviceAccountToken}
 	switch {
 	case payload.DelegationID != "" && payload.SourceID == "" && len(payload.DelegationID) <= 64:
 		request.Delegation = &accountsv1.ModuleMintSourceOperationContextRequest_DelegationId{DelegationId: payload.DelegationID}
@@ -434,6 +469,8 @@ func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *h
 			}
 		case codes.InvalidArgument:
 			httpError(w, http.StatusBadRequest, "invalid request")
+		case codes.Unavailable:
+			httpError(w, http.StatusServiceUnavailable, "source operation context unavailable")
 		case codes.FailedPrecondition:
 			if sourceDelegationReason(err) == sourceDelegationMissingReason {
 				httpError(w, http.StatusPreconditionFailed, sourceDelegationMissingReason)

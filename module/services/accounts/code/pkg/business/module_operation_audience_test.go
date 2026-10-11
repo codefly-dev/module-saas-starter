@@ -113,15 +113,14 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 		`"interactive":{"audience":"other","invoke_scopes":[{"resource_kind":"profiles","actions":["invoke","read"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}]}}}}`)
 	require.NoError(t, err)
-	secrets, err := ParseRegistrationSecrets("example:" + declarationDigest("example-secret"))
-	require.NoError(t, err)
 	s := &Service{}
 	withCurrentAuthority(s)
 	withCurrentAuthority(s)
 	s.SetModulePrincipals(registry)
-	s.SetModuleIdentitySecrets(secrets)
+	token := bindTestModule(s, "example")
+	ctx := context.Background()
 
-	authority, err := s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "model")
+	authority, err := s.ModuleAuthorizeOperationContext(ctx, "example", token, "model")
 	require.NoError(t, err)
 	require.Equal(t, ModulePrincipalID("example"), authority.PrincipalID)
 	require.Equal(t, "019f6bf7-5b4b-74e5-8c17-092259bb1661", authority.Tenant)
@@ -132,18 +131,18 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 
 	// The returned grant is a copy: mutating it cannot widen the declared policy.
 	authority.Scopes[0].Actions[0] = "delete"
-	again, err := s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "model")
+	again, err := s.ModuleAuthorizeOperationContext(ctx, "example", token, "model")
 	require.NoError(t, err)
 	require.Equal(t, []string{"invoke"}, again.Scopes[0].Actions)
 
-	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "interactive")
+	_, err = s.ModuleAuthorizeOperationContext(ctx, "example", token, "interactive")
 	require.ErrorIs(t, err, ErrModuleOperationContextRefused)
-	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "absent")
+	_, err = s.ModuleAuthorizeOperationContext(ctx, "example", token, "absent")
 	require.ErrorIs(t, err, ErrModuleOperationContextRefused)
-	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "guessed", "model")
-	require.ErrorIs(t, err, ErrModuleRegistrationDenied)
-	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "unknown", "example-secret", "model")
-	require.ErrorIs(t, err, ErrModuleRegistrationDenied)
+	_, err = s.ModuleAuthorizeOperationContext(ctx, "example", "guessed", "model")
+	require.ErrorIs(t, err, ErrModuleIdentityDenied)
+	_, err = s.ModuleAuthorizeOperationContext(ctx, "unknown", token, "model")
+	require.ErrorIs(t, err, ErrModuleIdentityDenied)
 }
 
 func TestModuleOperationContextRevisionIsADeterministicDigestOfTheGrant(t *testing.T) {

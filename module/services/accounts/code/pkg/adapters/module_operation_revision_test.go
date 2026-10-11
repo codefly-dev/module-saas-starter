@@ -63,7 +63,7 @@ func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthoriza
 
 func mintedOperationContextClaims(t *testing.T) *basev0.WorkContextV1 {
 	t.Helper()
-	resp, err := mintModuleOperationContext("documents", "documents-secret", "model")
+	resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
 	require.NoError(t, err)
 	return verifyOperationContext(t, resp.GetToken())
 }
@@ -72,7 +72,7 @@ func mintedOperationContextClaims(t *testing.T) *basev0.WorkContextV1 {
 // context against current authority was answered with an error that was not a
 // denial, and read it as an authority outage. The context must confirm.
 func TestCheckAuthorizationRevisionConfirmsAMintedModuleOperationContext(t *testing.T) {
-	installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	ctx := revisionTestContext(t)
 
@@ -86,7 +86,7 @@ func TestCheckAuthorizationRevisionConfirmsAMintedModuleOperationContext(t *test
 }
 
 func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *testing.T) {
-	installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	ctx := revisionTestContext(t)
 	signed := mintedOperationContextClaims(t)
@@ -133,7 +133,7 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 // A narrower subset of the headless grant still confirms: a consumer may check
 // only what it is about to use.
 func TestCheckAuthorizationRevisionAcceptsANarrowerModuleOperationSubject(t *testing.T) {
-	installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	ctx := revisionTestContext(t)
 	request := revisionRequestFromClaims(mintedOperationContextClaims(t))
@@ -155,7 +155,7 @@ func TestCheckAuthorizationRevisionRevokesModuleOperationContextsOnConfigChange(
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.NotEqual(t, headlessPrincipals, changed)
-			installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+			installModuleOperationContextService(t, headlessPrincipals)
 			installModuleWorkContextAuthority(t)
 			ctx := revisionTestContext(t)
 			request := revisionRequestFromClaims(mintedOperationContextClaims(t))
@@ -183,7 +183,7 @@ func TestCheckAuthorizationRevisionRevokesModuleOperationContextsOnConfigChange(
 // Every other owner — a person, or an installation — keeps taking the
 // row-backed check, even while module principals are declared.
 func TestCheckAuthorizationRevisionLeavesNonModuleOwnersToTheStore(t *testing.T) {
-	installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	installModuleOperationContextService(t, headlessPrincipals)
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	fake := &workContextConsumerAuthorityFake{}

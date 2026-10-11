@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -42,7 +43,7 @@ const delegationPrincipals = `{"docstore":{"workload":{"service_account":"module
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 	`"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}},` +
-	`"reports":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + delegationOrg + `"}}`
+	`"reports":{"workload":{"service_account":"reports","namespace":"acme-prod","container":"app"},"tenant":"` + delegationOrg + `"}}`
 
 type sourceDelegationMemoryStore struct {
 	business.Store
@@ -141,12 +142,9 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 	}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	secrets, err := business.ParseRegistrationSecrets("docstore:" + registrationDigest("docstore-secret") +
-		",reports:" + registrationDigest("reports-secret"))
-	require.NoError(t, err)
-	svc.SetModuleIdentitySecrets(secrets)
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
+	bindModuleExecution(t, svc, registry)
 	audit := &validatingAudit{}
 	svc.SetAuditEmitter(audit)
 	WithService(svc)
@@ -154,8 +152,8 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 	return store, audit
 }
 
-func mintSourceContext(prefix, secret string, ref business.SourceDelegationRef) (*gen.ModuleMintSourceOperationContextResponse, error) {
-	req := &gen.ModuleMintSourceOperationContextRequest{Prefix: prefix, Secret: secret}
+func mintSourceContext(prefix, token string, ref business.SourceDelegationRef) (*gen.ModuleMintSourceOperationContextResponse, error) {
+	req := &gen.ModuleMintSourceOperationContextRequest{Prefix: prefix, ServiceAccountToken: token}
 	if ref.DelegationID != "" {
 		req.Delegation = &gen.ModuleMintSourceOperationContextRequest_DelegationId{DelegationId: ref.DelegationID}
 	} else {
@@ -201,7 +199,7 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			_, audit := installSourceDelegationService(t)
 			module := business.ModulePrincipalID("docstore")
 
-			resp, err := mintSourceContext("docstore", "docstore-secret", ref)
+			resp, err := mintSourceContext("docstore", moduleToken(t, "docstore"), ref)
 			require.NoError(t, err)
 			require.Equal(t, module, resp.GetPrincipalId())
 			require.Equal(t, delegationPerson, resp.GetOwnerPrincipalId())
@@ -235,6 +233,13 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			require.Equal(t, module, used[0].ActorID)
 			require.Equal(t, delegationOrg, used[0].OrgID)
 			require.Equal(t, delegationSource, used[0].ResourceID)
+			payload := used[0].Payload
+			require.Equal(t, executiontest.Image("docstore"), payload["running_digest"],
+				"the mint names the build that obtained the delegated capability")
+			require.NotEmpty(t, payload["pod_uid"])
+			for _, key := range []string{"namespace", "service_account", "pod", "pod_uid", "container", "running_digest", "build_incarnation"} {
+				delete(payload, key)
+			}
 			require.Equal(t, map[string]any{
 				"delegation_id": delegationID, "source_id": delegationSource, "principal_id": delegationPerson,
 				"module": "docstore", "binding_id": "source-sync",
@@ -242,7 +247,7 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 				// A plain mint is never the receipt-lookup narrowing, and the
 				// trail says so rather than leaving it to be inferred.
 				"lookup": false,
-			}, used[0].Payload)
+			}, payload)
 		})
 	}
 }
@@ -255,26 +260,26 @@ func TestMintSourceOperationContextRefusals(t *testing.T) {
 	})
 	t.Run("another module's delegation", func(t *testing.T) {
 		installSourceDelegationService(t)
-		_, err := mintSourceContext("reports", "reports-secret", business.SourceDelegationRef{DelegationID: delegationID})
+		_, err := mintSourceContext("reports", moduleToken(t, "reports"), business.SourceDelegationRef{DelegationID: delegationID})
 		requireRefusal(t, err, codes.PermissionDenied, SourceDelegationInvalidReason)
 	})
 	t.Run("unknown delegation", func(t *testing.T) {
 		installSourceDelegationService(t)
-		_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{DelegationID: delegationSource})
+		_, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{DelegationID: delegationSource})
 		requireRefusal(t, err, codes.PermissionDenied, SourceDelegationInvalidReason)
 	})
 	t.Run("missing for a source", func(t *testing.T) {
 		installSourceDelegationService(t)
-		_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{SourceID: delegationPerson})
+		_, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{SourceID: delegationPerson})
 		requireRefusal(t, err, codes.FailedPrecondition, SourceDelegationMissingReason)
 	})
 	t.Run("revoked", func(t *testing.T) {
 		store, _ := installSourceDelegationService(t)
 		store.revoke(t)
-		_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{DelegationID: delegationID})
+		_, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{DelegationID: delegationID})
 		requireRefusal(t, err, codes.PermissionDenied, SourceDelegationRevokedReason)
 		// By source, a revoked delegation leaves the source with none.
-		_, err = mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{SourceID: delegationSource})
+		_, err = mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{SourceID: delegationSource})
 		requireRefusal(t, err, codes.FailedPrecondition, SourceDelegationMissingReason)
 	})
 }
@@ -294,7 +299,7 @@ func TestSourceDelegationReasonsAreTheWireContract(t *testing.T) {
 func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 	mint := func(t *testing.T) (*sourceDelegationMemoryStore, *gen.CheckAuthorizationRevisionRequest) {
 		store, _ := installSourceDelegationService(t)
-		resp, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{DelegationID: delegationID})
+		resp, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{DelegationID: delegationID})
 		require.NoError(t, err)
 		request := revisionRequestFromClaims(verifySourceContext(t, resp.GetToken()))
 		require.NoError(t, Validate(request))
@@ -360,7 +365,7 @@ func TestMintSourceOperationContextRevokesWhatNoLongerHolds(t *testing.T) {
 			store, audit := installSourceDelegationService(t)
 			test.mutate(store)
 
-			_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{SourceID: delegationSource})
+			_, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{SourceID: delegationSource})
 			requireRefusal(t, err, codes.PermissionDenied, SourceDelegationRevokedReason)
 
 			require.False(t, store.delegations[delegationID].Active())

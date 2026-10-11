@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:b2b6a63c2e6affff7bece0cc27617bdc68f065b6836c8e7673730c7bfe657d45",
+      "digest": "sha256:6de44477a253ce97486fb86171994e148d1c564ef0ba6410a1b5584ebb27553a",
       "services": [
         {
           "name": "APIKeyService",
@@ -240,9 +240,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
@@ -494,7 +492,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:b2b6a63c2e6affff7bece0cc27617bdc68f065b6836c8e7673730c7bfe657d45",
+      "digest": "sha256:6de44477a253ce97486fb86171994e148d1c564ef0ba6410a1b5584ebb27553a",
       "services": [
         {
           "name": "APIKeyService",
@@ -724,9 +722,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
@@ -978,7 +974,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:0c2b91ff00eb67f00dc415914d68b3f699119c71e010a13662057056fa10314d",
+      "digest": "sha256:563f35ddb76e5c2b94fb61ced0696b03c394f72db714f5922d0ebbae04eef16f",
       "services": [
         {
           "name": "AuthGatewayService",
