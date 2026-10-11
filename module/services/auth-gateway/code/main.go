@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -40,25 +41,31 @@ func main() {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
 	httpPort = httpNet.Port
-	workloadNet, err := codefly.For(ctx).Endpoint("workload").API("http").ResolveNetworkInstance()
-	if err != nil || workloadNet == nil || workloadNet.Port == 0 {
-		panic(fmt.Sprintf("Codefly workload endpoint is unavailable: %v", err))
-	}
 	workload, err := loadWorkloadIdentity(func(key string) (string, error) {
 		return codefly.For(ctx).WorkspaceValue("workload-identity", key)
 	})
 	if err != nil {
 		panic(err)
 	}
-	workloadTLS, err := workload.serverTLSConfig()
+	workloadListener, workloadTLS, err := workload.listen(func() (net.Listener, error) {
+		workloadNet, err := codefly.For(ctx).Endpoint("workload").API("http").ResolveNetworkInstance()
+		if err != nil || workloadNet == nil || workloadNet.Port == 0 {
+			return nil, fmt.Errorf("Codefly workload endpoint is unavailable: %v", err)
+		}
+		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", workloadNet.Port))
+		if err != nil {
+			return nil, fmt.Errorf("workload listener: %w", err)
+		}
+		return listener, nil
+	})
 	if err != nil {
 		panic(err)
 	}
-	workloadListener, err := net.Listen("tcp", fmt.Sprintf(":%d", workloadNet.Port))
-	if err != nil {
-		panic(fmt.Sprintf("workload listener: %v", err))
+	if workloadListener != nil {
+		defer workloadListener.Close()
+	} else {
+		slog.Info("workload endpoint is off because no workload identity is projected")
 	}
-	defer workloadListener.Close()
 	var otelProvider *wooltel.Provider
 	var otelMetricProvider *otelMetrics
 	if observabilityEnabled() {
@@ -281,17 +288,19 @@ func main() {
 			IdleTimeout:       120 * time.Second,
 			MaxHeaderBytes:    1 << 20, // 1 MiB
 		}
-		workloadServer = &http.Server{
-			Handler: workload.handler(httpServer.Handler), TLSConfig: workloadTLS,
-			ReadHeaderTimeout: httpServer.ReadHeaderTimeout, ReadTimeout: httpServer.ReadTimeout,
-			IdleTimeout: httpServer.IdleTimeout, MaxHeaderBytes: httpServer.MaxHeaderBytes,
-		}
-		go func() {
-			if err := workloadServer.ServeTLS(workloadListener, "", ""); err != nil && err != http.ErrServerClosed {
-				log.Printf("workload server: %v", err)
-				stop()
+		if workloadListener != nil {
+			workloadServer = &http.Server{
+				Handler: workload.handler(httpServer.Handler), TLSConfig: workloadTLS,
+				ReadHeaderTimeout: httpServer.ReadHeaderTimeout, ReadTimeout: httpServer.ReadTimeout,
+				IdleTimeout: httpServer.IdleTimeout, MaxHeaderBytes: httpServer.MaxHeaderBytes,
 			}
-		}()
+			go func() {
+				if err := workloadServer.ServeTLS(workloadListener, "", ""); err != nil && err != http.ErrServerClosed {
+					log.Printf("workload server: %v", err)
+					stop()
+				}
+			}()
+		}
 		go func() {
 			fmt.Printf("auth-gateway API gateway (HTTP) listening on :%d (api: %s, routes: %d)\n",
 				httpPort, apiHTTPURL, len(routeEntries))

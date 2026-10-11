@@ -33,18 +33,33 @@ type workloadIdentity struct {
 }
 
 // Resolve only the declared group: bare environment variables are not a second
-// source of workload credentials. Validate every projected path before serving.
+// source of workload credentials. An entirely absent projection disables the
+// workload endpoint; any supplied value requires the complete TLS identity.
 func loadWorkloadIdentity(value func(string) (string, error)) (*workloadIdentity, error) {
 	paths := make(map[string]string)
-	for _, key := range []string{"CERT_FILE", "KEY_FILE", "TRUST_BUNDLE_FILE", "ALLOWED_CALLERS_FILE", "TOKEN_FILE"} {
+	keys := []string{"CERT_FILE", "KEY_FILE", "TRUST_BUNDLE_FILE", "ALLOWED_CALLERS_FILE"}
+	var missing error
+	for _, key := range keys {
 		path, err := value(key)
 		if err != nil || strings.TrimSpace(path) == "" {
-			return nil, fmt.Errorf("workload-identity %s: missing path (%v)", key, err)
+			if missing == nil {
+				missing = fmt.Errorf("workload-identity %s: missing path (%v)", key, err)
+			}
 		}
-		if _, err := os.ReadFile(path); err != nil {
+		if strings.TrimSpace(path) != "" {
+			paths[key] = path
+		}
+	}
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if missing != nil {
+		return nil, missing
+	}
+	for _, key := range keys {
+		if _, err := os.ReadFile(paths[key]); err != nil {
 			return nil, fmt.Errorf("workload-identity %s: %w", key, err)
 		}
-		paths[key] = path
 	}
 	reloader, err := codefly.NewCertificateReloader(paths["CERT_FILE"], paths["KEY_FILE"])
 	if err != nil {
@@ -61,6 +76,23 @@ func loadWorkloadIdentity(value func(string) (string, error)) (*workloadIdentity
 		return nil, fmt.Errorf("workload-identity CERT_FILE: %w", err)
 	}
 	return w, nil
+}
+
+// Resolve and open the endpoint only when an identity is projected. Plain-only
+// startup must not depend on workload endpoint discovery or bind its socket.
+func (w *workloadIdentity) listen(listen func() (net.Listener, error)) (net.Listener, *tls.Config, error) {
+	if w == nil {
+		return nil, nil, nil
+	}
+	config, err := w.serverTLSConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	listener, err := listen()
+	if err != nil {
+		return nil, nil, err
+	}
+	return listener, config, nil
 }
 
 var workloadSPIFFEPattern = regexp.MustCompile(`^spiffe://[a-z0-9._-]{1,255}(?:/[A-Za-z0-9._-]+)+$`)

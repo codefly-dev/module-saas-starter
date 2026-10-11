@@ -111,8 +111,15 @@ other drops.
 ## Workload TLS endpoint and solution upstreams
 
 `workload` (`api: http`) serves the same mux over TLS 1.3 with required, verified
-client certificates. The `workload-identity` workspace group supplies all five
-projected file paths; absent or unreadable files fail boot naming their key.
+client certificates when the `workload-identity` workspace group supplies
+`CERT_FILE`, `KEY_FILE`, `TRUST_BUNDLE_FILE`, and `ALLOWED_CALLERS_FILE`. If all
+four values are absent, the gateway boots with only its existing plain endpoints,
+does not resolve or open the workload endpoint, and logs once at info that no
+workload identity is projected. Solution mints remain unreachable over mTLS and
+solution proxying stays refused without a workload identity. Any partial set of
+values or missing/unreadable supplied file fails boot naming its key. Keep the
+`workload-identity` workspace dependency declared: renders use it to select
+consumers of the projection.
 The pinned SDK's `CertificateReloader` supplies both certificate callbacks.
 Every handshake checks a single SPIFFE URI against the live caller file; every
 request checks it again so keep-alive connections cannot outlive revocation.

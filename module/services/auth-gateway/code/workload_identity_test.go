@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -83,13 +84,56 @@ func workloadTestIdentity(t *testing.T, ca *workloadTestCA, id, allowed string) 
 	_, cert, key := ca.leaf(t, id)
 	paths := map[string]string{}
 	dir := t.TempDir()
-	for name, body := range map[string][]byte{"CERT_FILE": cert, "KEY_FILE": key, "TRUST_BUNDLE_FILE": ca.pem, "ALLOWED_CALLERS_FILE": []byte(allowed), "TOKEN_FILE": []byte("projected-token")} {
+	for name, body := range map[string][]byte{"CERT_FILE": cert, "KEY_FILE": key, "TRUST_BUNDLE_FILE": ca.pem, "ALLOWED_CALLERS_FILE": []byte(allowed)} {
 		paths[name] = filepath.Join(dir, name)
 		require.NoError(t, os.WriteFile(paths[name], body, 0600))
 	}
 	identity, err := loadWorkloadIdentity(func(key string) (string, error) { return paths[key], nil })
 	require.NoError(t, err)
+	require.NotNil(t, identity)
 	return identity, paths
+}
+
+func TestWorkloadIdentityAbsentServesOnlyPlainEndpoints(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value func(string) (string, error)
+	}{
+		{"empty values", func(string) (string, error) { return "", nil }},
+		{"blank values", func(string) (string, error) { return " \t\n", nil }},
+		{"unprojected group", func(key string) (string, error) {
+			return "", fmt.Errorf("no workspace configuration value for workload-identity/%s", key)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			identity, err := loadWorkloadIdentity(test.value)
+			require.NoError(t, err)
+			require.Nil(t, identity)
+			listener, config, err := identity.listen(func() (net.Listener, error) {
+				t.Fatal("absent identity must not resolve or open the workload endpoint")
+				return nil, nil
+			})
+			require.NoError(t, err)
+			require.Nil(t, listener)
+			require.Nil(t, config)
+
+			gateway := NewGateway(&ExtAuthz{}, NewRouteMatcher([]*RouteEntry{
+				{Service: "self", Method: http.MethodGet, Path: "/health"},
+			}, nil), nil, nil, newFakeSolutionRegistry(), nil)
+			gateway.workload = identity
+			recorder := httptest.NewRecorder()
+			gateway.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
+			require.Equal(t, http.StatusOK, recorder.Code)
+
+			// Even a declared solution with a valid SPIFFE identity cannot be
+			// reached when the gateway has no identity of its own.
+			registerSolutionHalves(t, gateway, "example", "https://solution")
+			recorder = httptest.NewRecorder()
+			gateway.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/solutions/example/assets/entry.js", nil))
+			require.Equal(t, http.StatusBadGateway, recorder.Code)
+			require.Contains(t, recorder.Body.String(), "solution workload identity unavailable")
+		})
+	}
 }
 
 // net.Pipe preserves the temporary deadline errors TLS requires when HTTP
@@ -150,14 +194,18 @@ func workloadMemoryClient(t *testing.T, identity *workloadIdentity, listener *wo
 func TestWorkloadListenerAdmissionAndRevocation(t *testing.T) {
 	ca := newWorkloadTestCA(t)
 	gateway, paths := workloadTestIdentity(t, ca, gatewayTestSPIFFE, "# callers\n"+callerTestSPIFFE+"\n")
-	config, err := gateway.serverTLSConfig()
+	listener := &workloadTestListener{connections: make(chan net.Conn), done: make(chan struct{})}
+	opened, config, err := gateway.listen(func() (net.Listener, error) { return listener, nil })
 	require.NoError(t, err)
-	listener := workloadMemoryServer(t, config, gateway.handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	require.Same(t, listener, opened)
+	server := &http.Server{TLSConfig: config, Handler: gateway.handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := workloadPeer(r.Context())
 		require.True(t, ok)
 		require.Equal(t, callerTestSPIFFE, id)
 		w.WriteHeader(http.StatusNoContent)
-	})))
+	}))}
+	go func() { _ = server.ServeTLS(opened, "", "") }()
+	t.Cleanup(func() { _ = server.Close(); _ = listener.Close() })
 	for _, test := range []struct {
 		name    string
 		ca      *workloadTestCA
@@ -351,7 +399,21 @@ func TestWorkloadFilesRequiredAndRotation(t *testing.T) {
 			require.ErrorContains(t, err, key)
 			_, err = loadWorkloadIdentity(func(k string) (string, error) {
 				if k == key {
+					return "", fmt.Errorf("no workspace configuration value")
+				}
+				return paths[k], nil
+			})
+			require.ErrorContains(t, err, key)
+			_, err = loadWorkloadIdentity(func(k string) (string, error) {
+				if k == key {
 					return filepath.Join(t.TempDir(), "absent"), nil
+				}
+				return paths[k], nil
+			})
+			require.ErrorContains(t, err, key)
+			_, err = loadWorkloadIdentity(func(k string) (string, error) {
+				if k == key {
+					return t.TempDir(), nil // A directory cannot be read as a file.
 				}
 				return paths[k], nil
 			})
