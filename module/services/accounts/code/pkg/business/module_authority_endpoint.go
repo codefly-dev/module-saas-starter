@@ -58,7 +58,7 @@ var moduleAuthorityReadOracles = map[string]struct{}{
 //
 //   - authenticates the calling module from a signed Work Context and
 //     authorizes it against the grant its composition declared
-//     (MODULE_PRINCIPALS) — the whole module capability surface does this; or
+//     (the module principal registry) — the whole module capability surface does this; or
 //   - is one of the read-only oracles named in moduleAuthorityReadOracles.
 //
 // Deliberately absent, and reachable only on the private listener:

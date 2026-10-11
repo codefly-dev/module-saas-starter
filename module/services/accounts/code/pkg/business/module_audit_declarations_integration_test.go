@@ -136,6 +136,13 @@ func TestModuleAuditDeclarations_DeclareEmitExport(t *testing.T) {
 
 	_, org := mustUserAndOrg(t, testCtx, "declared@module-audit.test", "declared-module-audit", "Acme Module Audit")
 	caller.BoundOrg = org
+	// The capability check holds the credential to its grant's tenant, so the
+	// grant names the organization the emits are bound to.
+	registry := svc.ModulePrincipals()
+	grant := registry[caller.PrincipalID]
+	grant.Tenant = org
+	registry[caller.PrincipalID] = grant
+	svc.SetModulePrincipals(registry)
 	emit := func(payload map[string]any) error {
 		fields, err := structpb.NewStruct(payload)
 		require.NoError(t, err)

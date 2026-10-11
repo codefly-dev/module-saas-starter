@@ -143,6 +143,10 @@ type ModuleAuthorityStore interface {
 	LiveModuleAuthority(ctx context.Context, principalID, orgID, installationID string) (*LiveModuleAuthority, error)
 }
 
+// ErrModuleTenantNotCurrent reports a credential bound to a tenant its
+// principal's current grant no longer names.
+var ErrModuleTenantNotCurrent = errors.New("the credential's tenant is not the module principal's current tenant")
+
 // LiveModuleAuthority is what the live read answers.
 type LiveModuleAuthority struct {
 	InstallationID       string
@@ -165,16 +169,45 @@ type LiveModuleAuthority struct {
 func (s *Service) AuthorizeModuleCapability(
 	ctx context.Context, caller ModuleCaller,
 ) (*ModuleCapabilityAuthority, error) {
-	grant, err := s.moduleGrant(caller)
+	authority, _, err := s.authorizeModuleCapability(ctx, caller)
+	return authority, err
+}
+
+// authorizeModuleCapability is AuthorizeModuleCapability returning the fenced
+// registry snapshot the grant came from, for a decision that must read a
+// second principal's grant from the same registry.
+func (s *Service) authorizeModuleCapability(
+	ctx context.Context, caller ModuleCaller,
+) (*ModuleCapabilityAuthority, *installedModuleRegistry, error) {
+	if caller.PrincipalID == "" {
+		return nil, nil, status.Error(codes.Unauthenticated, "module caller identity required")
+	}
+	// ONE SNAPSHOT: the grant this decision authorizes from is the grant of
+	// the registry the revision fence checks, read once — a registry installed
+	// between a grant read and a fence read can lend the fence its revision
+	// while the decision acts on the older grant.
+	grant, found, snapshot, err := s.currentModuleGrantIn(ctx, caller.PrincipalID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if !found {
+		return nil, nil, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
+	}
+	// THE TENANT IS THE CURRENT GRANT'S. A credential seals the tenant it was
+	// minted for, and the envelope can move a principal to another tenant at
+	// runtime; a credential minted before the move would otherwise go on
+	// acting in the old tenant under the new grant. A cross-tenant principal
+	// names its tenant per mint, so for it the bound org is not compared.
+	if !grant.CrossTenant && caller.BoundOrg != grant.Tenant {
+		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent,
+			"principal %s credential is bound to %s and its current tenant is %s", caller.PrincipalID, caller.BoundOrg, grant.Tenant)
 	}
 	if s.moduleAuthority == nil {
 		// Fail closed. A host with no live authority read cannot honour a
 		// narrowing, so it must not authorize capabilities at all rather than
 		// authorize them on the declared ceiling alone — which is the state this
 		// file exists to end.
-		return nil, status.Error(codes.FailedPrecondition,
+		return nil, nil, status.Error(codes.FailedPrecondition,
 			"this host cannot re-read live module authority, so no capability may be exercised")
 	}
 
@@ -188,11 +221,11 @@ func (s *Service) AuthorizeModuleCapability(
 		ctx, caller.PrincipalID, caller.BoundOrg, sealedInstallation)
 	if err != nil {
 		if errors.Is(err, ErrModuleInstallationInactive) {
-			return nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive,
+			return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive,
 				"principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
 		}
 		if errors.Is(err, ErrModuleAuthorityUnreadable) {
-			return nil, wrapStatus(codes.InvalidArgument, ErrModuleAuthorityUnreadable,
+			return nil, nil, wrapStatus(codes.InvalidArgument, ErrModuleAuthorityUnreadable,
 				"principal %s", caller.PrincipalID)
 		}
 		// The live read failed. NOT a denial and NOT an allow: the host does not
@@ -200,7 +233,7 @@ func (s *Service) AuthorizeModuleCapability(
 		// Unavailable and the caller retries. Treating it as a denial would make
 		// a database blip look like mass revocation; as an allow, it would be
 		// the check not running.
-		return nil, status.Errorf(codes.Unavailable, "cannot re-read live module authority: %v", err)
+		return nil, nil, status.Errorf(codes.Unavailable, "cannot re-read live module authority: %v", err)
 	}
 
 	authority := &ModuleCapabilityAuthority{
@@ -211,9 +244,9 @@ func (s *Service) AuthorizeModuleCapability(
 		ProducerEpoch:        live.ProducerEpoch,
 	}
 	if err := authority.checkAgainstSealed(caller.Sealed); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return authority, nil
+	return authority, snapshot, nil
 }
 
 // checkAgainstSealed is the intersection: the live facts must still match what

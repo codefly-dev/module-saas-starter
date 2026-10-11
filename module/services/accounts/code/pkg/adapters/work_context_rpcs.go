@@ -125,7 +125,7 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	// A context owned by a declared module's service principal has no
 	// row-backed authority to resolve: it is confirmed against the module's
 	// current declaration instead. Every other owner takes the store path below.
-	if handled, err := checkModuleOperationContextRevision(req); handled {
+	if handled, err := checkModuleOperationContextRevision(ctx, req); handled {
 		return nil, err
 	}
 	// A context minted from a source delegation is owned by a person but
@@ -182,7 +182,7 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 // (once with the authority scopes, once as the actor hop with its granted
 // scopes). Every refusal is PermissionDenied: a consumer must read a changed or
 // forged module context as denied, never as an authority outage it may retry.
-func checkModuleOperationContextRevision(req *gen.CheckAuthorizationRevisionRequest) (bool, error) {
+func checkModuleOperationContextRevision(ctx context.Context, req *gen.CheckAuthorizationRevisionRequest) (bool, error) {
 	if service == nil {
 		return false, nil
 	}
@@ -202,12 +202,18 @@ func checkModuleOperationContextRevision(req *gen.CheckAuthorizationRevisionRequ
 		})
 	}
 	handled, err := service.CheckModuleOperationContextRevision(
-		req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), subjects,
+		ctx, req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), subjects,
 	)
 	if !handled {
 		return false, nil
 	}
 	if err != nil {
+		// A registry this replica cannot vouch for is not a revocation: the
+		// consumer is told to retry rather than to drop a context that may
+		// still be current.
+		if status.Code(err) == codes.Unavailable {
+			return true, err
+		}
 		return true, status.Error(codes.PermissionDenied, business.ErrModuleOperationContextStale.Error())
 	}
 	return true, nil
@@ -1513,13 +1519,12 @@ func mintContentReads(audience string) contentReadEligible {
 // issued — while the reverse, a recheck narrower than the mint that issued the
 // capability, reports a live capability as revoked.
 //
-// That reverse is not hypothetical. The declaration is MODULE_PRINCIPALS, read
-// once at process start, so two hosts in one fleet disagree about it for the
-// length of any rollout that changes it: a capability minted by a host that
+// That reverse is not hypothetical. The declaration is the module registry,
+// which each replica derives on its own reconcile pass, so two hosts in one
+// fleet disagree about it for up to one pass after any change: a capability minted by a host that
 // declares the type is refused by a host that does not, and the consumer reads
 // ErrWorkContextAuthorizationStale as a revocation. Resolving a recheck without
-// the declaration takes process-start configuration out of the staleness
-// verdict. Revocation is still caught, by the live grant, share and platform
+// the declaration takes the registry out of the staleness verdict. Revocation is still caught, by the live grant, share and platform
 // bases the branch requires and by the authorization revision compared after.
 func recheckContentReads() contentReadEligible {
 	return func(string) bool { return true }

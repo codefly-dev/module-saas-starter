@@ -30,6 +30,12 @@ type Store interface {
 	// deliberate.
 	WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error
 
+	// WithControlPlaneReadSnapshot is WithControlPlane as one REPEATABLE READ,
+	// read-only transaction: every read fn makes sees the same committed
+	// state. For a decision that derives several answers from several
+	// relations and must not see one of them change between reads.
+	WithControlPlaneReadSnapshot(ctx context.Context, fn func(ctx context.Context) error) error
+
 	// As returns a Store handle bound to an identity (see Scoped). It is the
 	// identity-first entry point the With* wrappers collapse into: As(id).Within
 	// sets the same RLS context, but the identity is explicit and carried by the

@@ -303,19 +303,33 @@ type ModuleWorkContextAuthority struct {
 // its principal is derived from the prefix that secret is bound to, and its
 // tenant is the one the deployment declared — so a
 // module can never name a tenant it was not granted by asking for it.
-func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkContextAuthority, error) {
+func (s *Service) ModuleAuthorizeWorkContext(ctx context.Context, prefix, secret string) (ModuleWorkContextAuthority, error) {
+	identity, _, err := s.authorizeModuleIdentity(ctx, prefix, secret)
+	return identity, err
+}
+
+// authorizeModuleIdentity authenticates the module and resolves its identity
+// AND its grant from one fenced registry snapshot, so every mint built on it —
+// identity, tenant, binding, scopes, revision — is one decision about one
+// registry, judged against the committed envelope revision.
+func (s *Service) authorizeModuleIdentity(
+	ctx context.Context, prefix, secret string,
+) (ModuleWorkContextAuthority, ModulePrincipalGrant, error) {
 	authority := s.moduleIdentity
 	if authority == nil ||
 		!registrationIdentityPattern.MatchString(prefix) ||
 		!authority.authorize(prefix, secret) {
-		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, ErrModuleRegistrationDenied
 	}
 	principalID := ModulePrincipalID(prefix)
-	grant, registered := s.declaredModules()[principalID]
-	if !registered {
-		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
+	grant, registered, err := s.currentModuleGrant(ctx, principalID)
+	if err != nil {
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, err
 	}
-	return ModuleWorkContextAuthority{PrincipalID: principalID, Tenant: grant.Tenant}, nil
+	if !registered {
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, ErrModuleRegistrationDenied
+	}
+	return ModuleWorkContextAuthority{PrincipalID: principalID, Tenant: grant.Tenant}, grant, nil
 }
 
 // ErrModuleTenantUnknown reports that a module principal's declared tenant

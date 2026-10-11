@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
@@ -131,7 +132,7 @@ func newModuleService(t *testing.T, backend *fakeJobBackend) *business.Service {
 	}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, Queues: []string{"datasource", "documents"}},
 	})
 	return svc
 }
@@ -144,7 +145,7 @@ func newModuleServiceWithStore(t *testing.T, store business.Store, backend *fake
 	}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
 	})
 	return svc
 }
@@ -874,7 +875,7 @@ func TestApprovalResumeEnqueuedOnQuorum(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"documents"}},
+		modulePrincSvc: {Tenant: moduleTenantA, Queues: []string{"documents"}},
 	})
 	id, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
 		OrgID: moduleTenantA, Resource: "document_quarantine", Action: "release", RequestedBy: "requester-1",
@@ -928,7 +929,7 @@ func TestApprovalResumeStampsCompletingDecider(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"documents"}},
+		modulePrincSvc: {Tenant: moduleTenantA, Queues: []string{"documents"}},
 	})
 	id, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
 		OrgID: moduleTenantA, Resource: "document_quarantine", Action: "release", RequestedBy: "requester-1",
@@ -1008,8 +1009,8 @@ func TestModuleRequestApproval_ResumeQueueMustBeAllowed(t *testing.T) {
 // The registry is authored under the prefix a module already federates with, and
 // indexed by the principal id derived from it, so a deployment never hand-writes
 // an opaque id and every side computes the same one.
-func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
-	registry, err := business.ParseModulePrincipalRegistry(
+func TestModulePrincipalGrant_IndexesByDerivedPrincipal(t *testing.T) {
+	registry, err := moduleregistrytest.Parse(
 		`{"documents":{"queues":["datasource"],"namespaces":["document"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -1028,8 +1029,8 @@ func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
 
 // A module's own content types are untouched by the reservation above: only the
 // two the host reads out of a sealed capability are refused.
-func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing.T) {
-	registry, err := business.ParseModulePrincipalRegistry(
+func TestModulePrincipalGrant_AcceptsOrdinaryContentResources(t *testing.T) {
+	registry, err := moduleregistrytest.Parse(
 		`{"documents":{"resources":["documents.files","rolesets"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -1047,7 +1048,7 @@ func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing
 	}
 }
 
-func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) {
+func TestModulePrincipalGrant_RejectsUnusableDeclarations(t *testing.T) {
 	tests := map[string]string{
 		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 		// The tenant is sealed into a signed capability and compared against
@@ -1072,7 +1073,7 @@ func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) 
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := business.ParseModulePrincipalRegistry(raw); err == nil {
+			if _, err := moduleregistrytest.Parse(raw); err == nil {
 				t.Fatal("expected an unusable module principal declaration to be rejected")
 			}
 		})
@@ -1116,7 +1117,7 @@ func newVisibilityService(t *testing.T, store business.Store, crossTenant bool) 
 	}
 	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", CrossTenant: crossTenant},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, CrossTenant: crossTenant},
 	})
 	return svc
 }
@@ -1550,7 +1551,7 @@ func TestAModulePrincipalMustDeclareItsWorkload(t *testing.T) {
 		"no container":       `"workload":{"service_account":"documents","namespace":"acme-prod"},`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := business.ParseModulePrincipalRegistry(
+			_, err := moduleregistrytest.Parse(
 				`{"documents":{` + workload + `"tenant":"` + tenant + `"}}`)
 			if err == nil {
 				t.Fatal("a principal that can never be authenticated must not parse")
@@ -1563,7 +1564,7 @@ func TestAModulePrincipalMustDeclareItsWorkload(t *testing.T) {
 
 	// NON-VACUITY: a fully declared workload parses, so the cases above fail for
 	// the workload rather than for something else in the fixture.
-	registry, err := business.ParseModulePrincipalRegistry(
+	registry, err := moduleregistrytest.Parse(
 		`{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},` +
 			`"tenant":"` + tenant + `"}}`)
 	if err != nil {
@@ -1613,7 +1614,7 @@ func TestAMalformedModuleWorkloadIsRefusedAtParseNotAtTheMint(t *testing.T) {
 				strings.Repeat("a", 64) + `"},`, "container"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := business.ParseModulePrincipalRegistry(
+			_, err := moduleregistrytest.Parse(
 				`{"documents":{` + fixture.workload + `"tenant":"` + tenant + `"}}`)
 			if err == nil {
 				t.Fatal("a workload that can never name a real object must not parse: " +
@@ -1624,5 +1625,29 @@ func TestAMalformedModuleWorkloadIsRefusedAtParseNotAtTheMint(t *testing.T) {
 					"or the operator goes looking at the caller: %v", fixture.field, err)
 			}
 		})
+	}
+}
+
+// TestACredentialForThePrincipalsOldTenantIsRefused: the envelope moved the
+// principal to tenant B, and a credential sealed for tenant A is still valid.
+// The capability check compares the credential's tenant with the CURRENT
+// grant's, so it refuses — naming the reason — instead of acting in A under
+// B's grant.
+func TestACredentialForThePrincipalsOldTenantIsRefused(t *testing.T) {
+	backend := &fakeJobBackend{}
+	svc, err := business.NewService(fakeTxStore{})
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantB, Queues: []string{"documents"}},
+	})
+	_, err = svc.ModuleEnqueueJob(context.Background(), moduleCaller(), moduleTenantA, orgScopedJob(moduleTenantA, "documents"))
+	if !errors.Is(err, business.ErrModuleTenantNotCurrent) {
+		t.Fatalf("enqueue under the old tenant: got %v, want ErrModuleTenantNotCurrent", err)
+	}
+	if len(backend.enqueued) != 0 {
+		t.Fatalf("a refused credential enqueued %d jobs", len(backend.enqueued))
 	}
 }

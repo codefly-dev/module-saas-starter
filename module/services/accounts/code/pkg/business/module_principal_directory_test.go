@@ -36,7 +36,7 @@ func (s *pagedPrincipalStore) ListPrincipals(_ context.Context, _, kind string, 
 // operation-context revision check, the bound org a Work Context seals — is a
 // string compare against the lowercase id Postgres returns, so a non-canonical
 // spelling would pass validation and then match its own organization nowhere.
-func TestParseModulePrincipalRegistry_CanonicalizesTheTenant(t *testing.T) {
+func TestModulePrincipalGrant_CanonicalizesTheTenant(t *testing.T) {
 	const canonical = "019f6bf7-6a01-7001-8001-0000000000c1"
 	for _, spelling := range []string{
 		canonical,
@@ -46,7 +46,7 @@ func TestParseModulePrincipalRegistry_CanonicalizesTheTenant(t *testing.T) {
 		"019f6bf76a01700180010000000000c1",
 	} {
 		t.Run(spelling, func(t *testing.T) {
-			registry, err := ParseModulePrincipalRegistry(`{"documents": {"workload": {"service_account": "module", "namespace": "acme-prod", "container": "app"}, "tenant": "` + spelling + `"}}`)
+			registry, err := parseRegistryFixture(`{"documents": {"workload": {"service_account": "module", "namespace": "acme-prod", "container": "app"}, "tenant": "` + spelling + `"}}`)
 			require.NoError(t, err)
 			require.Equal(t, canonical, registry[ModulePrincipalID("documents")].Tenant)
 		})

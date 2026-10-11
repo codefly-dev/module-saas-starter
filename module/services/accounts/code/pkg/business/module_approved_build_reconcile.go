@@ -72,7 +72,7 @@ var ErrApprovedBuildAmbiguous = errors.New("more than one live authority documen
 // Distinct from an empty view: nothing was judged. The previous view keeps
 // serving, which is the same posture the presence reconciler takes for an
 // unreadable mount — an unreadable inbox is not an empty desired set.
-var ErrApprovedBuildInboxUnreadable = errors.New("the delivered authority inbox could not be established, so the approved-build view is unchanged")
+var ErrApprovedBuildInboxUnreadable = errors.New("the delivered authority inbox or the ceiling could not be established, so the approved-build view is unchanged")
 
 // ApprovedBuildReconciler rebuilds the approved-build view from the delivered
 // authority inbox, keeping the ordering guarantee across passes.
@@ -178,23 +178,37 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 	// This returned the ceiling-unavailable error as a pass failure, and a test
 	// found it: every presence reconcile on a host with no envelope — or with no
 	// delivery inbox wired — started failing. That is precisely the coupling
-	// this design forbids. `newSolutionAuthorityActivation` says it outright: a
-	// host that reconciles presence with no ceiling delivered is a CORRECT,
-	// COMPLETE deployment, and making the presence half depend on the authority
-	// half being configured is the wrong direction.
+	// this design forbids: a host that reconciles presence with no ceiling
+	// written is a CORRECT, COMPLETE deployment.
 	//
-	// Nothing is hidden by returning early. The view stays empty, so every
-	// principal is UNKNOWN and every module mint is refused; and the operator
-	// learns by name at the point of use, where activation already refuses with
-	// ErrSolutionAuthorityCeilingUnavailable. The envelope is read once at boot
-	// and cannot change under a running process, so there is no case where a
-	// host had a ceiling and this skipped a refresh it owed.
-	if r.activation.envelope.Revision == 0 {
+	// Nothing is hidden by returning early. The view is EMPTIED, so every
+	// principal is UNKNOWN and every module mint is refused. The envelope is
+	// append-only, so "none written" is only ever the state before the first
+	// write; a ceiling that exists and cannot be read is the other case, below.
+	envelope, err := r.activation.currentEnvelope(ctx)
+	if err != nil {
+		// The ceiling could not be established. Nothing was judged, so the
+		// previous view keeps serving — reading the failure as "no ceiling"
+		// would withdraw every approval on a transient read error, and reading
+		// it as the last good ceiling is what keeping the view already does.
+		return fmt.Errorf("%w: %w", ErrApprovedBuildInboxUnreadable, err)
+	}
+	if envelope == nil {
 		r.recordNothingToAnswer()
 		return nil
 	}
 
-	documents, err := r.activation.liveAuthorityDocuments(ctx)
+	var (
+		live    []liveVerifiedAuthority
+		refused []error
+	)
+	inputs, err := r.activation.readRegistryInputs(ctx)
+	if err == nil {
+		var withdrawn map[string]string
+		if withdrawn, err = r.activation.withdrawnIn(inputs); err == nil {
+			live, refused = r.activation.liveAuthorityIn(ctx, inputs, withdrawn)
+		}
+	}
 	switch {
 	case errors.Is(err, ErrSolutionAuthorityCeilingUnavailable):
 		// No delivery inbox wired: the same "answers nothing" posture as no
@@ -218,10 +232,11 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 	// call a delivery writer could approve any image at all by signing a
 	// document that names it, which is the entire check this view feeds.
 	//
-	inside := make([]*solutionhost.AuthorityDocument, 0, len(documents))
-	var outside []error
-	for _, document := range documents {
-		if err := document.ValidateAgainst(r.activation.envelope); err != nil {
+	inside := make([]*solutionhost.AuthorityDocument, 0, len(live))
+	outside := refused
+	for _, one := range live {
+		document := one.document
+		if err := document.ValidateAgainst(envelope.authorityEnvelopeFor(document)); err != nil {
 			// Per document, not per pass: a document outside the ceiling is one
 			// delivery writer's problem, and the principals it names simply get
 			// no entry. Refusing the whole inbox over it would let any
@@ -232,7 +247,7 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 		}
 		inside = append(inside, document)
 	}
-	documents = inside
+	documents := inside
 
 	// Which principals more than one live document grants to. Collected over
 	// the whole inbox before anything is approved, because the second document
@@ -337,6 +352,10 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 func (r *ApprovedBuildReconciler) recordNothingToAnswer() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+	// The view is emptied as well: a host whose ceiling is gone — or never
+	// written — approves nothing, and a view kept from an earlier pass would
+	// go on approving builds no ceiling allows.
+	r.view = NewMonotonicApprovedBuilds()
 	r.outcome = approvedBuildNothingToAnswer
 }
 

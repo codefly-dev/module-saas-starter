@@ -502,13 +502,9 @@ func (a SourceOperationContextAuthority) WireActorScopes() []*gen.WorkContextSco
 // The tenant is the delegation's organization; nothing in the request names it,
 // and the module's declared tenant and cross_tenant grant play no part.
 func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, secret string, ref SourceDelegationRef) (SourceOperationContextAuthority, error) {
-	identity, err := s.ModuleAuthorizeWorkContext(prefix, secret)
+	identity, grant, err := s.authorizeModuleIdentity(ctx, prefix, secret)
 	if err != nil {
 		return SourceOperationContextAuthority{}, err
-	}
-	grant, registered := s.declaredModules()[identity.PrincipalID]
-	if !registered {
-		return SourceOperationContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	return s.authorizeSourceDelegation(ctx, identity.PrincipalID, grant, ref)
 }
@@ -542,10 +538,15 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 func (s *Service) AuthorizeDelegationReferenceExchange(
 	ctx context.Context, caller ModuleCaller, delegationID, bindingID string, lookup bool,
 ) (SourceOperationContextAuthority, error) {
-	grant, err := s.moduleCapability(ctx, caller)
+	// ONE FENCED SNAPSHOT for both principals: the caller's grant and the
+	// delegator's are read from the same registry, so a registry installed
+	// while this decision is in flight can never pair one revision's caller
+	// with another revision's delegator.
+	callerAuthority, snapshot, err := s.authorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return SourceOperationContextAuthority{}, err
 	}
+	grant := callerAuthority.Grant
 	if delegationID == "" || bindingID == "" {
 		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
 	}
@@ -568,7 +569,7 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		}
 		// The delegating module is the one the person granted to, which is not
 		// the caller: the caller is the module that grant authorizes calling.
-		delegating, declared := s.declaredModules()[ModulePrincipalID(delegation.ModulePrefix)]
+		delegating, declared := snapshot.registry[ModulePrincipalID(delegation.ModulePrefix)]
 		if !declared {
 			return ErrSourceDelegationInvalid
 		}
@@ -816,16 +817,27 @@ func (s *Service) confirmSourceDelegationTx(
 // source-delegation context when the owner is not a declared module principal
 // and some actor is; the module grant returned is that actor's. Every other
 // context is not one (ok false) and takes the checks it always took.
-func (s *Service) sourceDelegationShape(ownerPrincipalID string, actorPrincipalIDs []string) (ModulePrincipalGrant, bool) {
-	if _, ownerIsModule := s.declaredModules()[ownerPrincipalID]; ownerIsModule {
-		return ModulePrincipalGrant{}, false
+//
+// The shape and the grant come from ONE registry snapshot, and a shape that is
+// a source-delegation context is fenced against the committed envelope like
+// every other module authority decision: the delegation authorizes the tenant,
+// never a registry a committed narrowing has replaced.
+func (s *Service) sourceDelegationShape(
+	ctx context.Context, ownerPrincipalID string, actorPrincipalIDs []string,
+) (ModulePrincipalGrant, bool, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	if _, ownerIsModule := snapshot.registry[ownerPrincipalID]; ownerIsModule {
+		return ModulePrincipalGrant{}, false, nil
 	}
 	for _, actor := range actorPrincipalIDs {
-		if grant, isModule := s.declaredModules()[actor]; isModule {
-			return grant, true
+		if grant, isModule := snapshot.registry[actor]; isModule {
+			if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
+				return ModulePrincipalGrant{}, true, err
+			}
+			return grant, true, nil
 		}
 	}
-	return ModulePrincipalGrant{}, false
+	return ModulePrincipalGrant{}, false, nil
 }
 
 // CheckSourceDelegationContextRevision confirms a Work Context minted from a
@@ -846,7 +858,10 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	for _, subject := range subjects[min(1, len(subjects)):] {
 		actors = append(actors, subject.PrincipalID)
 	}
-	grant, ok := s.sourceDelegationShape(ownerPrincipalID, actors)
+	grant, ok, err := s.sourceDelegationShape(ctx, ownerPrincipalID, actors)
+	if err != nil {
+		return true, err
+	}
 	if !ok {
 		return false, nil
 	}
@@ -908,7 +923,10 @@ func (s *Service) ConfirmSourceDelegationParent(
 	for _, hop := range hops {
 		actors = append(actors, hop.PrincipalID)
 	}
-	grant, ok := s.sourceDelegationShape(ownerPrincipalID, actors)
+	grant, ok, err := s.sourceDelegationShape(ctx, ownerPrincipalID, actors)
+	if err != nil {
+		return true, nil, err
+	}
 	if !ok {
 		return false, nil, nil
 	}

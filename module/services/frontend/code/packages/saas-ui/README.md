@@ -414,7 +414,7 @@ solution.
 
 The collection panel reads its content resource from the `contentResource` on the
 gateway binding, and the server matches grants against the `resources` each composed
-module declares in `MODULE_PRINCIPALS`. Neither names a resource itself: this kit
+module's grant lists in the module envelope. Neither names a resource itself: this kit
 ships with the host, which holds no domain content. A deployment that declares none
 grants nothing, and its `listAccessibleScopes` rejects rather than resolving
 empty, so the panel reports the viewer's read access as unresolved. It does not

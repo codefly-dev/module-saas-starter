@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
@@ -124,7 +125,7 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 	t.Helper()
 	previous := service
 	t.Cleanup(func() { service = previous })
-	registry, err := business.ParseModulePrincipalRegistry(delegationPrincipals)
+	registry, err := moduleregistrytest.Parse(delegationPrincipals)
 	require.NoError(t, err)
 	binding := registry[business.ModulePrincipalID("docstore")].OperationAudiences["source-sync"]
 	store := &sourceDelegationMemoryStore{

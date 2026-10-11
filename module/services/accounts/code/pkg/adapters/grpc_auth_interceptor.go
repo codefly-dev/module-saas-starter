@@ -84,7 +84,7 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 			return nil, err
 		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
-		return handler(ctx, req)
+		return handler(business.WithModuleEnvelopeRevisionMemo(ctx), req)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -180,7 +181,7 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 	require.NotEmpty(t, input.Secrets[contractSourceModule])
 	require.NotEmpty(t, input.Secrets[contractRuntimeModule])
 
-	registry, err := business.ParseModulePrincipalRegistry(contractPrincipals)
+	registry, err := moduleregistrytest.Parse(contractPrincipals)
 	require.NoError(t, err)
 	binding := registry[business.ModulePrincipalID(contractSourceModule)].OperationAudiences["source-sync"]
 	digest := business.SourceDelegationBindingDigest(binding)

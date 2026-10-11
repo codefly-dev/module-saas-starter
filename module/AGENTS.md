@@ -93,9 +93,11 @@ Design records: [SOLUTION_REGISTRATION.md](./SOLUTION_REGISTRATION.md),
 ## Configuration
 
 `configurations/<env>/*` declares the groups composition provisions into a
-consumer workspace — `legal`, `identity`, `internal-auth`, `federation`,
-`module-capabilities`, and the rest. A consumer overrides a group only by
-declaring one of the same name.
+consumer workspace — `legal`, `identity`, `internal-auth`, `federation`, and
+the rest. A consumer overrides a group only by declaring one of the same name.
+No group declares module authority: the module principal registry is derived
+from delivered authority inside the module envelope a platform super_admin
+writes ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
 **Do not generalise about how an unset value behaves — read the group.** The three
 digest maps in `federation` (`MODULE_REGISTRATION_SECRETS`,
