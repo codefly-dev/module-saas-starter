@@ -38,10 +38,16 @@ func realOAuthService(t *testing.T) (*business.Service, business.SecretCipher) {
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
 	svc.SetDatasourceConnector(keys.Cipher, nil, "")
-	seed := make([]byte, 32)
-	_, err = rand.Read(seed)
+	// Each message-authentication purpose holds its own delivered key, so this
+	// helper delivers two independent ones rather than a single seed both
+	// purposes are derived from.
+	ticketKey := make([]byte, 32)
+	_, err = rand.Read(ticketKey)
 	require.NoError(t, err)
-	svc.SetDatasourceTicketKey(seed)
+	accountLinkKey := make([]byte, 32)
+	_, err = rand.Read(accountLinkKey)
+	require.NoError(t, err)
+	svc.SetDatasourceKeys(ticketKey, accountLinkKey)
 	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
 	require.NoError(t, err)
 	t.Cleanup(emitter.Close)
