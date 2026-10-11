@@ -484,9 +484,20 @@ could not run is `ErrExecutionUnbound`, not one.
   projected token, so the pod may hold only the authenticating container plus
   init containers that ran to completion. Any other regular container, an init
   container still running or restartable (a native sidecar), and an ephemeral
-  (debug) container in ANY state is `ErrExecutionUnapprovedContainer`. The
-  approval names one container's build; until it names an inventory with a
-  digest per container, a pod with a mesh or logging sidecar mints nothing.
+  (debug) container in ANY state is `ErrExecutionUnapprovedContainer`.
+  **The stronger rule this falls short of, and why:** admit every container the
+  applied, signed presence document declares for the workload, each RUNNING its
+  declared digest. Presence cannot express it today: core's
+  `solutionhost.Workload` (v0.17.2 through main) carries the authenticating
+  container with its digest and every other container as a NAME only
+  (`non_authenticating`), and the CLI renders exactly that. Admitting a sidecar
+  by name would let it run any image, so every other container is refused.
+  **The cost:** a module pod with a sidecar — a Cloud SQL Auth Proxy, or a
+  namespace still on istio sidecar injection — mints nothing until presence
+  carries a digest per container (a core field, the CLI render, this check).
+  In the cell today the Cloud SQL proxy sidecars are on accounts (the host, which
+  mints for no one) and on database Jobs, and delivered namespaces are ambient,
+  so no module serving pod is known to carry one.
 - **Only a live regular container supplies the digest.** The pod must be
   `Running` with no `deletionTimestamp`, and the declared container must be a
   regular container in state `running`; a stopped container keeps its approved

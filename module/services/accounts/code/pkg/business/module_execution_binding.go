@@ -511,6 +511,18 @@ func principalsDeclaringWorkload(modules ModulePrincipalRegistry, namespace, ser
 //     present. Init containers that ran to completion before the application
 //     started are the only others tolerated.
 //
+// WHY NOT ADMIT A DECLARED SIDECAR AT ITS DIGEST. That is the stronger-and-
+// workable rule — every container the applied, signed presence document
+// declares, each running its declared digest — and it cannot be enforced yet,
+// because presence does not carry the digests. core's solutionhost.Workload
+// (v0.17.2 through main) names the authenticating Container with its Image
+// digest, and the others only as NonAuthenticating NAMES; the CLI renders
+// exactly that (cli pkg/gitops/presence_workloads.go). Admitting a sidecar by
+// name would let it run any image, so every other container is refused instead.
+// The cost: a module pod with a sidecar — a Cloud SQL Auth Proxy, an
+// istio-injected namespace — mints nothing until presence carries a digest per
+// container (a core field, the CLI's render, and this check reading it).
+//
 // A pod that has not started its container yet is ErrExecutionUnbound — the
 // host could not establish a live execution, and a retry may — while a pod or
 // container that has stopped or is being deleted is a verdict.
