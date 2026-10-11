@@ -29,6 +29,8 @@ import (
 	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoregistry"
 )
@@ -104,6 +106,56 @@ type sourceWireAudit struct{ events []business.AuditEntry }
 
 func (a *sourceWireAudit) Emit(_ context.Context, e business.AuditEntry) {
 	a.events = append(a.events, e)
+}
+
+func TestSourceOperationInaccessibleSourceDoesNotRevealEffect(t *testing.T) {
+	org, actor, owner, source := "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"
+	for _, personal := range []bool{false, true} {
+		t.Run(fmt.Sprintf("personal=%t", personal), func(t *testing.T) {
+			store := &sourceWireStore{allowed: personal, source: &business.DatasourceSource{ID: source, OrgID: org, BoundaryNodeID: "boundary"}, attempt: &business.SourceOperationAttempt{OrgID: org, ActorID: owner, SourceID: source, Operation: "read_item", EffectID: "owners-effect"}}
+			if personal {
+				store.source.PersonalOwnerUserID = owner
+			}
+			svc, err := business.NewService(store)
+			require.NoError(t, err)
+			svc.SetAuditEmitter(&sourceWireAudit{})
+			previous, cache := service, orgMembershipCache
+			service, orgMembershipCache = svc, nil
+			t.Cleanup(func() { service, orgMembershipCache = previous, cache })
+			ctx := stampVerifiedIdentity(t.Context(), actor, org, auth.Assurance{})
+			handler := &datasourceConnectHandler{svc: svc}
+			var refusal string
+			for _, effect := range []string{"missing-effect", "owners-effect"} {
+				_, err := handler.InvokeSourceOperation(ctx, connect.NewRequest(&gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source, Operation: "read_item", InputJson: "{}", EffectId: effect}))
+				require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), effect)
+				if refusal == "" {
+					refusal = err.Error()
+				}
+				require.Equal(t, refusal, err.Error(), "effect existence must not change the source-access refusal")
+			}
+		})
+	}
+}
+
+func TestSourceOperationRemovedSourceOnlyRecoversOwnEffect(t *testing.T) {
+	for _, owner := range []string{"caller", "other", ""} {
+		t.Run("owner="+owner, func(t *testing.T) {
+			store := &sourceWireStore{}
+			if owner != "" {
+				store.attempt = &business.SourceOperationAttempt{ActorID: owner, SourceID: "source", Operation: "read_item", EffectID: "effect"}
+			}
+			svc, err := business.NewService(store)
+			require.NoError(t, err)
+			for _, lookup := range []bool{false, true} {
+				_, _, err := svc.SourceOperationAuthority(t.Context(), "caller", "org", "source", "read_item", "effect", lookup)
+				if owner == "caller" {
+					require.Equal(t, codes.FailedPrecondition, status.Code(err))
+				} else {
+					require.Equal(t, codes.NotFound, status.Code(err), "another actor's effect must not change the missing-source refusal")
+				}
+			}
+		})
+	}
 }
 
 func TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority(t *testing.T) {

@@ -85,17 +85,22 @@ otherwise independent runs and migration revisions.
 Core dependencies are pinned to released v0.18.0 in every owning Go module,
 including the module-authority qualification module. Run qualification with
 `GOWORK=off` so a developer workspace cannot mask the released dependency.
-Accounts declares Go 1.27.0 as its supported minimum, matching the pinned
-go-grpc builder. The development/CI compiler may be newer; do not raise the
-module minimum to that patch version without qualifying the image builder too.
+Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.54,
+whose builder uses Go 1.27.2 under `GOTOOLCHAIN=local`; CI uses the same patch.
+Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).
+A source audit under a newer compiler does not qualify the compiler used in the
+image: move the owning agent and image contract together, regenerate the recipe,
+and check the built executable's toolchain evidence. Never lower the accounts
+minimum to accommodate an older builder.
 CLI v0.1.185 requires an explicit run-level test outcome from every service
 agent. The cache, store and vault manifests pin released Redis 0.0.97,
 Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-The older auth-gateway, policy-log, store and telemetry SDK pins also move to
-released SDK v0.3.1 for compatibility. Their listeners resolve allocated
+Accounts, auth-gateway, policy-log, store and telemetry use released SDK v0.3.1;
+accounts must not retain the pre-release SDK SHA from the callable-source
+development branch. Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local
 endpoint from the runtime environment; the removed `WithDefaultNetwork` switch
 must not be replaced with a hard-coded address or port.

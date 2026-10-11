@@ -58,23 +58,31 @@ func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, sour
 	var declaration operations.Declaration
 	declarationRemoved := false
 	err := s.store.WithOrgTx(ctx, org, func(ctx context.Context) error {
-		attempt, err := attempts.GetSourceOperationAttempt(ctx, org, effectID)
-		if err != nil {
-			return operationUnavailable()
-		}
-		if attempt != nil && (attempt.ActorID != actor || attempt.SourceID != source || attempt.Operation != operation) {
-			return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
-		}
 		action := "invoke"
 		if lookup {
 			action = "read"
 		}
-		src, err = s.sourceOperationAccess(ctx, actor, org, source, action)
+		// Refuse inaccessible sources before inspecting effect bindings: an
+		// unauthorized caller must not learn whether another actor's effect exists.
+		var accessErr error
+		src, accessErr = s.sourceOperationAccess(ctx, actor, org, source, action)
+		if accessErr != nil && status.Code(accessErr) != codes.NotFound {
+			return accessErr
+		}
+		attempt, err := attempts.GetSourceOperationAttempt(ctx, org, effectID)
 		if err != nil {
-			if attempt != nil && status.Code(err) == codes.NotFound {
+			return operationUnavailable()
+		}
+		if accessErr != nil {
+			// A removed source cannot turn the caller's own retained attempt into
+			// a "never attempted" answer. Other actors' attempts remain private.
+			if attempt != nil && attempt.ActorID == actor {
 				return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
 			}
-			return err
+			return accessErr
+		}
+		if attempt != nil && (attempt.ActorID != actor || attempt.SourceID != source || attempt.Operation != operation) {
+			return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
 		}
 		if lookup {
 			if attempt == nil {

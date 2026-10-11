@@ -47,7 +47,12 @@ gate. Work Context callers present the existing delegated-audience exchange's
 The `source` scope slot requires invoke/read and read-only lookup for the same
 IDs. The host checks current delegation/binding/revision, owner membership,
 boundary permission and personal ownership. Invoke also fences the current
-declaration, including on replay. The lookup request contains only `effect_id`; its tenant and source
+declaration, including on replay. Source access is checked before the effect
+binding: a member without boundary access, or a different personal-source owner,
+gets the same PermissionDenied response whether another actor's effect exists or
+not. If the source itself was removed, only the caller's own retained attempt
+can turn NotFound into `SOURCE_EFFECT_BINDING_CHANGED`.
+The lookup request contains only `effect_id`; its tenant and source
 binding are recovered from verified identity and durable attempt metadata.
 
 ## Receipts and uncertain outcomes

@@ -6,7 +6,7 @@
     {
       "name": "accounts-connect-invoke-source-operation",
       "version": "0.1.0",
-      "digest": "6cc3a4a60970e9468efbcc6686fbe3e18b081ca56533d35a53b284fd53e22083",
+      "digest": "70e00061ad57c8ed7a868b9cad536b61b8562ee4eba7dfabf0fd97e1d3f6f52d",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
@@ -17,7 +17,7 @@
     {
       "name": "accounts-connect-prune-source-operation-receipts",
       "version": "0.1.0",
-      "digest": "e45ebb98e7fd538733a25bde55cfbd1641dc7d5455b0c49efd49e08f649518c2",
+      "digest": "8b2e2691848ec6e9ab3d9be8f5124390f3a7ca65abfb0c9413f220365a7c52a0",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
