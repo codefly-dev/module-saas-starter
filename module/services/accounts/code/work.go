@@ -1929,6 +1929,7 @@ func configuredSolutionHostBindingReconciler(
 		return nil, err
 	}
 	service.SetSolutionDelivery(verifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	service.SetSolutionDeliveryCoordinate(coordinate)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
 	// the gateway because a solution runtime is an independently deployed

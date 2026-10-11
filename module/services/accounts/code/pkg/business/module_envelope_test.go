@@ -3,6 +3,8 @@ package business
 import (
 	"encoding/json"
 	"errors"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -374,9 +376,94 @@ func TestOnlyAnApprovedWorkloadBindsThePrincipal(t *testing.T) {
 	}
 }
 
-func TestSpiffeIdentityIsReadNeverGuessed(t *testing.T) {
-	require.Equal(t, "api", spiffeServiceAccount("spiffe://acme.test/ns/acme-prod/sa/api"))
-	require.Equal(t, "acme-prod", spiffeNamespace("spiffe://acme.test/ns/acme-prod/sa/api"))
-	require.Empty(t, spiffeServiceAccount("spiffe://acme.test/workload/api"))
-	require.Empty(t, spiffeServiceAccount("api"))
+// TestSPIFFEIDsAreParsedStrictly is round 2's finding 5: the namespace and
+// service account come from the exact /ns/<ns>/sa/<sa> path, never from a scan
+// that can read the trust domain as the namespace, and a string that names no
+// workload is refused — at envelope write time and wherever else it is read.
+func TestSPIFFEIDsAreParsedStrictly(t *testing.T) {
+	identity, err := ParseKubernetesSPIFFEID("spiffe://ns/ns/acme-prod/sa/reports")
+	require.NoError(t, err)
+	require.Equal(t, KubernetesSPIFFEID{TrustDomain: "ns", Namespace: "acme-prod", ServiceAccount: "reports"}, identity,
+		"a trust domain named like a path segment is the trust domain, not the namespace")
+	identity, err = ParseKubernetesSPIFFEID("spiffe://sa/ns/sa/sa/ns")
+	require.NoError(t, err)
+	require.Equal(t, "sa", identity.Namespace)
+	require.Equal(t, "ns", identity.ServiceAccount)
+
+	for _, malformed := range []string{
+		"spiffe://acme.test:8443/ns/acme-prod/sa/reports",
+		"spiffe:///ns/acme-prod/sa/reports",
+		"spiffe://user@acme.test/ns/acme-prod/sa/reports",
+		"spiffe://Acme.Test/ns/acme-prod/sa/reports",
+		"spiffe://acme.test/sa/reports/ns/acme-prod",
+		"spiffe://acme.test/ns/acme-prod/ns/other/sa/reports",
+		"spiffe://acme.test/ns/acme-prod/sa/reports/extra",
+		"spiffe://acme.test/ns/acme-prod/sa/",
+		"spiffe://acme.test/ns/Acme/sa/reports",
+		"spiffe://acme.test/ns/acme-prod/sa/reports?x=1",
+		"spiffe://acme.test",
+		"https://acme.test/ns/acme-prod/sa/reports",
+		"acme-prod/reports",
+	} {
+		t.Run(malformed, func(t *testing.T) {
+			_, err := ParseKubernetesSPIFFEID(malformed)
+			require.ErrorIs(t, err, ErrSPIFFEIDMalformed)
+			document := testEnvelopeDocument()
+			document["principals"].(map[string]any)[testModulePrefix].(map[string]any)["workload_identities"] =
+				[]any{map[string]any{"spiffe_id": malformed, "container": testContainer}}
+			_, err = ParseModuleEnvelope(encodeEnvelope(t, document))
+			require.ErrorIs(t, err, ErrModuleEnvelopeInvalid, "the envelope refuses it at write time")
+		})
+	}
+
+	// The reviewer's case end to end: the approved string projects to the
+	// namespace in its path.
+	document := testEnvelopeDocument()
+	document["principals"].(map[string]any)[testModulePrefix].(map[string]any)["workload_identities"] =
+		[]any{map[string]any{"spiffe_id": "spiffe://ns/ns/acme-prod/sa/reports", "container": testContainer}}
+	envelope, err := ParseModuleEnvelope(encodeEnvelope(t, document))
+	require.NoError(t, err)
+	require.Equal(t, ModuleWorkload{ServiceAccount: "reports", Namespace: "acme-prod", Container: testContainer},
+		envelope.Principals[testModulePrefix].WorkloadIdentities[0].workload())
+}
+
+// TestOneWorkloadMapsToOnePrincipal: two principals allowing the same
+// namespace and service account — whatever their containers — would let one
+// module's pod token authorize the other's prefix, so the envelope is refused.
+func TestOneWorkloadMapsToOnePrincipal(t *testing.T) {
+	document := testEnvelopeDocument()
+	principals := document["principals"].(map[string]any)
+	other := map[string]any{}
+	for key, value := range principals[testModulePrefix].(map[string]any) {
+		other[key] = value
+	}
+	other["workload_identities"] = []any{map[string]any{"spiffe_id": testSPIFFEID, "container": "another-container"}}
+	other["bindings"] = []any{map[string]any{"id": "acme.test.other:run:invoke", "revision": float64(1), "scope": "profiles:read"}}
+	principals["other"] = other
+	_, err := ParseModuleEnvelope(encodeEnvelope(t, document))
+	require.ErrorIs(t, err, ErrModuleEnvelopeInvalid)
+	require.ErrorContains(t, err, "one workload identity maps to exactly one principal")
+
+	other["workload_identities"] = []any{map[string]any{"spiffe_id": "spiffe://acme.test/ns/acme-prod/sa/other", "container": testContainer}}
+	_, err = ParseModuleEnvelope(encodeEnvelope(t, document))
+	require.NoError(t, err, "a different service account is a different workload")
+}
+
+// TestTheDerivationOmitsEveryPrincipalSharingAWorkload: the same rule at
+// derivation — whatever reached the registry, no workload maps to two
+// principals.
+func TestTheDerivationOmitsEveryPrincipalSharingAWorkload(t *testing.T) {
+	shared := ModuleWorkload{ServiceAccount: "reports", Namespace: "acme-prod", Container: "app"}
+	published := &publishedModuleRegistry{
+		registry: ModulePrincipalRegistry{
+			"a": {Prefix: "first", Workload: shared},
+			"b": {Prefix: "second", Workload: ModuleWorkload{ServiceAccount: "reports", Namespace: "acme-prod", Container: "other"}},
+			"c": {Prefix: "third", Workload: ModuleWorkload{ServiceAccount: "third", Namespace: "acme-prod", Container: "app"}},
+		},
+		sources: map[string]modulePrincipalSource{},
+	}
+	refusals := published.oneWorkloadOnePrincipal()
+	require.Len(t, refusals, 1)
+	require.ErrorIs(t, refusals[0], ErrModulePrincipalOmitted)
+	require.Equal(t, []string{"c"}, slices.Collect(maps.Keys(published.registry)))
 }

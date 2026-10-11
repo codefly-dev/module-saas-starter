@@ -169,9 +169,19 @@ type LiveModuleAuthority struct {
 func (s *Service) AuthorizeModuleCapability(
 	ctx context.Context, caller ModuleCaller,
 ) (*ModuleCapabilityAuthority, error) {
-	grant, err := s.moduleGrant(caller)
+	if caller.PrincipalID == "" {
+		return nil, status.Error(codes.Unauthenticated, "module caller identity required")
+	}
+	// ONE SNAPSHOT: the grant this decision authorizes from is the grant of
+	// the registry the revision fence checks, read once — a registry installed
+	// between a grant read and a fence read can lend the fence its revision
+	// while the decision acts on the older grant.
+	grant, found, err := s.currentModuleGrant(ctx, caller.PrincipalID)
 	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return nil, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	// THE TENANT IS THE CURRENT GRANT'S. A credential seals the tenant it was
 	// minted for, and the envelope can move a principal to another tenant at
@@ -181,11 +191,6 @@ func (s *Service) AuthorizeModuleCapability(
 	if !grant.CrossTenant && caller.BoundOrg != grant.Tenant {
 		return nil, wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent,
 			"principal %s credential is bound to %s and its current tenant is %s", caller.PrincipalID, caller.BoundOrg, grant.Tenant)
-	}
-	// THE REVISION FENCE: the registry the grant came from must be derived
-	// from the committed envelope, or a narrowing it predates is not applied.
-	if err := s.fenceModuleRegistry(ctx); err != nil {
-		return nil, err
 	}
 	if s.moduleAuthority == nil {
 		// Fail closed. A host with no live authority read cannot honour a

@@ -125,7 +125,7 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	// A context owned by a declared module's service principal has no
 	// row-backed authority to resolve: it is confirmed against the module's
 	// current declaration instead. Every other owner takes the store path below.
-	if handled, err := checkModuleOperationContextRevision(req); handled {
+	if handled, err := checkModuleOperationContextRevision(ctx, req); handled {
 		return nil, err
 	}
 	// A context minted from a source delegation is owned by a person but
@@ -182,7 +182,7 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 // (once with the authority scopes, once as the actor hop with its granted
 // scopes). Every refusal is PermissionDenied: a consumer must read a changed or
 // forged module context as denied, never as an authority outage it may retry.
-func checkModuleOperationContextRevision(req *gen.CheckAuthorizationRevisionRequest) (bool, error) {
+func checkModuleOperationContextRevision(ctx context.Context, req *gen.CheckAuthorizationRevisionRequest) (bool, error) {
 	if service == nil {
 		return false, nil
 	}
@@ -202,12 +202,18 @@ func checkModuleOperationContextRevision(req *gen.CheckAuthorizationRevisionRequ
 		})
 	}
 	handled, err := service.CheckModuleOperationContextRevision(
-		req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), subjects,
+		ctx, req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), subjects,
 	)
 	if !handled {
 		return false, nil
 	}
 	if err != nil {
+		// A registry this replica cannot vouch for is not a revocation: the
+		// consumer is told to retry rather than to drop a context that may
+		// still be current.
+		if status.Code(err) == codes.Unavailable {
+			return true, err
+		}
 		return true, status.Error(codes.PermissionDenied, business.ErrModuleOperationContextStale.Error())
 	}
 	return true, nil

@@ -34,20 +34,27 @@ import (
 // applied on this host. Its entry is the envelope's grant intersected with what
 // the document asks for — never wider than either.
 //
-// A NARROWING IS NEVER UNDONE BY A READ FAILURE. Each pass reads the current
-// envelope first. If the envelope itself cannot be read, nothing is installed —
-// and the revision fence (fenceModuleRegistry, declaredModules) refuses every
-// check against a registry older than the committed revision, so the old
-// registry cannot keep serving past a narrowing it predates. If the envelope is
-// read and the inbox or the applied state is not, the registry is derived from
-// the last inputs read successfully, held to the CURRENT envelope: whatever the
-// new ceiling withdrew is gone, and nothing it does not allow is installed.
+// A READ FAILURE NEVER ADDS AUTHORITY, AND NEVER KEEPS ONE A REVOCATION
+// REMOVED. Each pass reads the withdrawal history and the envelope before
+// anything else, independently of the newest documents. When every input is
+// read, the registry is derived from them. When one is not, nothing new is
+// derived — fresh documents are never combined with stale inputs — and the
+// pass publishes a DEGRADED registry instead: the entries of the last registry
+// it published, kept only where that registry was derived from the current
+// envelope revision, the binding is not withdrawn, its presence has not been
+// withdrawn by delivery, and its signer is still admitted for its domain. So a
+// degraded registry is never wider than the last confirmed one and still
+// honours every revocation that could be read. If the withdrawal history
+// itself cannot be read, nothing can be honoured, and the degraded registry is
+// empty. If the envelope cannot be read, nothing is stamped with a revision the
+// fence would accept for a newer ceiling.
 //
 // A principal the inputs describe incoherently — two live documents, a
-// withdrawn binding, a signer the policy no longer admits, a workload the
-// envelope does not allow, an entry that fails validation — is OMITTED by name
-// and never widened. The host-wide inbox is why omission is per principal: one
-// module's bad delivery must not take every other module off the host.
+// withdrawn binding, a document that no longer verifies, a signer the policy no
+// longer admits, a workload the envelope does not allow, an entry that fails
+// validation — is OMITTED by name and never widened. The host-wide inbox is why
+// omission is per principal: one module's bad delivery must not take every
+// other module off the host.
 //
 // GENERATIONS. The inbox keeps every generation and the desired set is the
 // newest per authority id, so within an id a lower generation can never be the
@@ -56,15 +63,13 @@ import (
 // documents is refused. A principal moving from one authority to another — X
 // stops naming it, Y names it — is accepted only because Y is inside the
 // current envelope: its units are filed under Y's presence binding, so the
-// envelope admitting them is the administrator's approval of the move. An
-// earlier version kept per-principal generation marks in memory, which made
-// that answer depend on whether the process had restarted.
+// envelope admitting them is the administrator's approval of the move.
 
 var (
 	// ErrModulePrincipalInputsUnreadable reports that an input could not be
-	// read. When the envelope could not be read the registry is unchanged
-	// (and fenced); otherwise it was derived from the last inputs read, held
-	// to the current envelope.
+	// read, and that the registry published by the pass is degraded (see the
+	// file comment) or, when the envelope itself could not be read, that the
+	// published registry was not re-stamped.
 	ErrModulePrincipalInputsUnreadable = errors.New("an input of the module registry could not be read")
 
 	// ErrModulePrincipalOmitted reports a principal left out of the registry
@@ -89,19 +94,27 @@ var (
 type ModulePrincipalReconciler struct {
 	activation *SolutionAuthorityActivation
 
-	// mutex serializes passes and guards the cached inputs.
+	// mutex serializes passes and guards last.
 	mutex sync.Mutex
-	// cachedAuthority and cachedApplied are the last authority and presence
-	// inputs read successfully. A pass whose read of one fails derives from
-	// the cached one, held to the envelope it DID read — so a narrowing takes
-	// effect even while the inbox is unreadable.
-	cachedAuthority *cachedAuthorityRead
-	cachedApplied   map[string]*SolutionHostBindingRecord
+	// last is the registry this reconciler last published, with where each
+	// entry came from. A degraded pass may only keep entries of it.
+	last *publishedModuleRegistry
 }
 
-type cachedAuthorityRead struct {
-	live     []liveVerifiedAuthority
-	refusals []error
+// publishedModuleRegistry is one published registry, the envelope revision it
+// was derived from, and the source of each entry.
+type publishedModuleRegistry struct {
+	registry ModulePrincipalRegistry
+	revision uint64
+	sources  map[string]modulePrincipalSource
+}
+
+// modulePrincipalSource is what an entry was derived from: enough to re-judge
+// it against a revocation without re-deriving it.
+type modulePrincipalSource struct {
+	presenceBinding string
+	domain          string
+	signer          string
 }
 
 // NewModulePrincipalReconciler builds the reconciler over the activation
@@ -114,59 +127,120 @@ func NewModulePrincipalReconciler(activation *SolutionAuthorityActivation) (*Mod
 	return &ModulePrincipalReconciler{activation: activation}, nil
 }
 
+func (r *ModulePrincipalReconciler) publish(published *publishedModuleRegistry) {
+	r.last = published
+	r.activation.reconciler.service.installDerivedModulePrincipals(published.registry, published.revision)
+}
+
+// degraded is the last published registry kept only where it is still
+// confirmed: derived from revision, over a binding neither withdrawn nor with
+// its presence withdrawn, by a signer the host still admits for its domain.
+// Never wider than the last published registry, by construction: it only
+// removes entries.
+func (r *ModulePrincipalReconciler) degraded(
+	revision uint64, withdrawn map[string]string, withdrawnPresence map[string]bool,
+) *publishedModuleRegistry {
+	kept := &publishedModuleRegistry{registry: ModulePrincipalRegistry{}, revision: revision, sources: map[string]modulePrincipalSource{}}
+	if r.last == nil || r.last.revision != revision || withdrawn == nil || withdrawnPresence == nil {
+		return kept
+	}
+	host := r.activation.reconciler.host
+	for id, grant := range r.last.registry {
+		source, known := r.last.sources[id]
+		if !known {
+			continue
+		}
+		if _, gone := withdrawn[source.presenceBinding]; gone || withdrawnPresence[source.presenceBinding] {
+			continue
+		}
+		if !slices.Contains(host.Domains, source.domain) || !slices.Contains(host.DomainsBySigner[source.signer], source.domain) {
+			continue
+		}
+		kept.registry[id] = grant
+		kept.sources[id] = source
+	}
+	return kept
+}
+
 // RunOnce derives the registry from the current inputs and installs it, tagged
 // with the envelope revision it was derived from.
 //
 // It returns every refusal joined: a principal omitted, an operation audience
-// omitted, a document outside the ceiling, an input that could not be read.
+// omitted, a document outside the ceiling or refused, an input that could not
+// be read.
 func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	service := r.activation.reconciler.service
 
-	envelope, err := r.activation.currentEnvelope(ctx)
-	if err != nil {
-		// Nothing installed; the fence refuses what this registry predates.
-		return fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, err)
+	// THE REVOCATIONS FIRST, independently of everything else.
+	withdrawn, historyErr := r.activation.withdrawnBindings(ctx)
+	if errors.Is(historyErr, ErrSolutionAuthorityCeilingUnavailable) {
+		// No delivery inbox wired: no document can ever be delivered, so no
+		// principal can ever be asked for.
+		envelope, err := r.activation.currentEnvelope(ctx)
+		if err != nil {
+			return fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, err)
+		}
+		var revision uint64
+		if envelope != nil {
+			revision = envelope.Revision
+		}
+		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}, revision: revision})
+		return nil
+	}
+	envelope, envelopeErr := r.activation.currentEnvelope(ctx)
+	if envelopeErr != nil {
+		// The ceiling is unknown, so nothing is stamped with a new revision:
+		// the last registry is narrowed by whatever revocation could be read
+		// and keeps its own revision, which the fence refuses once a newer one
+		// is committed.
+		if r.last != nil {
+			presence, presenceErr := r.activation.withdrawnPresence(ctx)
+			if historyErr != nil || presenceErr != nil {
+				withdrawn, presence = nil, nil
+			}
+			r.publish(r.degraded(r.last.revision, withdrawn, presence))
+		}
+		return errors.Join(fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, envelopeErr), historyErr)
 	}
 	if envelope == nil {
 		// No ceiling has ever been written: nothing is allowed, so nothing is
 		// granted. Not an unreadable input — the empty registry is the answer.
-		service.installDerivedModulePrincipals(ModulePrincipalRegistry{}, 0)
+		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}})
 		return nil
 	}
-
-	var failures []error
-	live, refusals, err := r.activation.liveAuthority(ctx)
-	switch {
-	case errors.Is(err, ErrSolutionAuthorityCeilingUnavailable):
-		// No delivery inbox wired: no document can ever be delivered, so no
-		// principal can ever be asked for.
-		service.installDerivedModulePrincipals(ModulePrincipalRegistry{}, envelope.Revision)
-		return nil
-	case err != nil:
-		failures = append(failures, fmt.Errorf("%w: the authority inbox: %w", ErrModulePrincipalInputsUnreadable, err))
-		if r.cachedAuthority != nil {
-			live, refusals = r.cachedAuthority.live, r.cachedAuthority.refusals
-		} else {
-			live, refusals = nil, nil
-		}
-	default:
-		r.cachedAuthority = &cachedAuthorityRead{live: live, refusals: refusals}
-	}
-	applied := r.cachedApplied
-	if records, err := service.ListSolutionHostBindings(ctx); err != nil {
-		failures = append(failures, fmt.Errorf("%w: the applied presence: %w", ErrModulePrincipalInputsUnreadable, err))
-	} else {
-		applied = make(map[string]*SolutionHostBindingRecord, len(records))
-		for _, record := range records {
-			applied[record.BindingID] = record
-		}
-		r.cachedApplied = applied
+	if historyErr != nil {
+		// No revocation can be established, so no entry can be kept.
+		r.publish(r.degraded(envelope.Revision, nil, nil))
+		return fmt.Errorf("%w: the withdrawal history: %w", ErrModulePrincipalInputsUnreadable, historyErr)
 	}
 
-	refusals = append(slices.Clone(refusals), failures...)
-	var inside []*solutionhost.AuthorityDocument
+	live, refusals, liveErr := r.activation.liveAuthority(ctx)
+	records, appliedErr := service.ListSolutionHostBindings(ctx)
+	if liveErr != nil || appliedErr != nil {
+		presence, presenceErr := r.activation.withdrawnPresence(ctx)
+		if presenceErr != nil {
+			presence = nil
+		}
+		r.publish(r.degraded(envelope.Revision, withdrawn, presence))
+		var failures []error
+		for _, failure := range []struct {
+			input string
+			err   error
+		}{{"the authority inbox", liveErr}, {"the applied presence", appliedErr}, {"the presence inbox", presenceErr}} {
+			if failure.err != nil {
+				failures = append(failures, fmt.Errorf("%w: %s: %w", ErrModulePrincipalInputsUnreadable, failure.input, failure.err))
+			}
+		}
+		return errors.Join(failures...)
+	}
+	applied := make(map[string]*SolutionHostBindingRecord, len(records))
+	for _, record := range records {
+		applied[record.BindingID] = record
+	}
+
+	var inside []liveVerifiedAuthority
 	for _, one := range live {
 		document := one.document
 		// THE CEILING, through core: the projection of the current envelope
@@ -176,21 +250,22 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 				ErrModuleAuthorityOutsideEnvelope, document.Authority, document.Generation, err))
 			continue
 		}
-		inside = append(inside, document)
+		inside = append(inside, one)
 	}
 
 	// Which principals more than one document inside the ceiling grants to,
 	// collected before anything is derived: the second document is what makes
 	// the first ambiguous too.
 	grantedBy := map[string][]string{}
-	for _, document := range inside {
-		for _, principal := range document.Principals {
-			grantedBy[principal.Principal] = append(grantedBy[principal.Principal], document.Authority)
+	for _, one := range inside {
+		for _, principal := range one.document.Principals {
+			grantedBy[principal.Principal] = append(grantedBy[principal.Principal], one.document.Authority)
 		}
 	}
 
-	next := ModulePrincipalRegistry{}
-	for _, document := range inside {
+	next := &publishedModuleRegistry{registry: ModulePrincipalRegistry{}, revision: envelope.Revision, sources: map[string]modulePrincipalSource{}}
+	for _, one := range inside {
+		document := one.document
 		candidates, workloadErr := r.workloadsFor(document, applied[document.PresenceBinding])
 		for _, principal := range document.Principals {
 			prefix := principal.Principal
@@ -227,12 +302,43 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 				omit(err)
 				continue
 			}
-			next[ModulePrincipalID(prefix)] = grant
+			id := ModulePrincipalID(prefix)
+			next.registry[id] = grant
+			next.sources[id] = modulePrincipalSource{presenceBinding: document.PresenceBinding, domain: document.OwnershipDomain, signer: one.signer}
 		}
 	}
+	refusals = append(refusals, next.oneWorkloadOnePrincipal()...)
 
-	service.installDerivedModulePrincipals(next, envelope.Revision)
+	r.publish(next)
 	return errors.Join(refusals...)
+}
+
+// oneWorkloadOnePrincipal omits every principal whose workload (namespace and
+// service account) another principal also derived. The envelope refuses such
+// an overlap when written; this is the same rule at derivation, so a pod token
+// can never authorize two prefixes whatever reached the registry.
+func (p *publishedModuleRegistry) oneWorkloadOnePrincipal() []error {
+	holders := map[ModuleWorkload][]string{}
+	for id, grant := range p.registry {
+		key := ModuleWorkload{Namespace: grant.Workload.Namespace, ServiceAccount: grant.Workload.ServiceAccount}
+		holders[key] = append(holders[key], id)
+	}
+	var refusals []error
+	for key, ids := range holders {
+		if len(ids) < 2 {
+			continue
+		}
+		var prefixes []string
+		for _, id := range ids {
+			prefixes = append(prefixes, p.registry[id].Prefix)
+			delete(p.registry, id)
+			delete(p.sources, id)
+		}
+		sort.Strings(prefixes)
+		refusals = append(refusals, fmt.Errorf("%w: %v all run as workload %s/%s, and one workload maps to exactly one principal",
+			ErrModulePrincipalOmitted, prefixes, key.Namespace, key.ServiceAccount))
+	}
+	return refusals
 }
 
 // workloadsFor reads the workloads a document's principals could run as, from
@@ -322,23 +428,6 @@ func approvedWorkload(
 	}
 	return ModuleWorkload{}, fmt.Errorf("%d allowed workloads of binding %q run build %s, so the principal's identity has no single answer",
 		len(allowed), document.PresenceBinding, document.ApprovedBuild)
-}
-
-// spiffeServiceAccount reads the service account out of
-// `spiffe://<trust domain>/ns/<ns>/sa/<account>`, empty when the shape is not
-// that — never a guess, for the reason spiffeNamespace gives.
-func spiffeServiceAccount(id string) string {
-	_, path, found := strings.Cut(id, "://")
-	if !found {
-		return ""
-	}
-	segments := strings.Split(path, "/")
-	for index := 0; index+1 < len(segments); index++ {
-		if segments[index] == "sa" {
-			return segments[index+1]
-		}
-	}
-	return ""
 }
 
 // deriveModulePrincipalGrant is one registry entry: the envelope's grant for the

@@ -77,7 +77,7 @@ pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControl
 pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).PutModuleEnvelope: WithControlPlane
-pkg/business/module_envelope.go: (*Service).fenceModuleRegistry: WithControlPlane
+pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
 pkg/business/module_registration.go: (*Service).ModuleMintRegistration: WithControlPlane
@@ -134,6 +134,7 @@ pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPl
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
 pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: WithControlPlane
 pkg/business/solution_delivery.go: (*Service).ReceiveSolutionDelivery: WithControlPlane
+pkg/business/solution_delivery.go: (*Service).admitAuthorityTarget: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).newestDelivered: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).withdrawnBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane

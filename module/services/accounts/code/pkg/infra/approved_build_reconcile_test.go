@@ -232,15 +232,15 @@ func TestAnAuthorityOutsideTheCeilingApprovesNothing(t *testing.T) {
 		"a document the ceiling does not cover must approve nothing, however well signed")
 }
 
-// TestAnUnreadableInboxLeavesThePreviousViewServing is the one failure that IS
-// whole-pass, and the distinction is the point.
+// TestAnUnverifiableDocumentApprovesNothing: a row this host can no longer
+// verify approves nothing, and says so by name.
 //
-// A row this host can no longer verify leaves the approved state for EVERY
-// principal unestablished, because which principals a row grants to is only
-// knowable by reading it — and the one row whose disappearance grants something
-// is a tombstone. So nothing is installed and the last good view keeps serving,
-// which is a different answer from "no principal is approved".
-func TestAnUnreadableInboxLeavesThePreviousViewServing(t *testing.T) {
+// It used to make the whole pass unreadable and keep the previous view, on the
+// argument that an unverifiable row might be a tombstone whose disappearance
+// grants something. Withdrawals are now read from the whole history first and
+// independently of verification, so that argument no longer holds — and
+// keeping the previous view would keep serving an approval nothing can verify.
+func TestAnUnverifiableDocumentApprovesNothing(t *testing.T) {
 	scenario := newApprovedBuildScenario(t, "abu")
 
 	scenario.deliverAuthority(t, scenario.authority(t, "a", 2, false, scenario.principal))
@@ -256,18 +256,10 @@ func TestAnUnreadableInboxLeavesThePreviousViewServing(t *testing.T) {
 		activationForVerifier(t, scenario.delivery.service, productionPathCoordinate,
 			scenario.envelope, refusingBundleVerifier{}))
 	require.NoError(t, err)
-
-	// It has its own empty view, so prove it refuses the read FIRST — then the
-	// assertion below is about the pass rather than about a fresh instance.
-	require.ErrorIs(t, refusing.RunOnce(testCtx), business.ErrApprovedBuildInboxUnreadable)
-
-	// The ORIGINAL reconciler is untouched: a pass that could not read the
-	// inbox installs nothing, so its view still serves what it last
-	// established.
-	_, incarnation, err = scenario.reconciler.ApprovedBuild(testCtx, scenario.principal)
-	require.NoError(t, err)
-	require.Equal(t, uint64(2), incarnation,
-		"an unreadable inbox must not retract what a readable one established")
+	require.ErrorIs(t, refusing.RunOnce(testCtx), business.ErrSolutionAuthorityUnverifiable)
+	_, _, err = refusing.ApprovedBuild(testCtx, scenario.principal)
+	require.ErrorIs(t, err, business.ErrUnknownExecutionPrincipal,
+		"a document that no longer verifies approves nothing")
 }
 
 // approvedBuildScenario is one solution's delivery, its envelope, and the

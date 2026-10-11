@@ -284,17 +284,24 @@ three inputs agree:
   identities the principal may run as (SPIFFE ID and container), the scope
   ceilings, and the grant ceiling below.
 - **a live authority document inside that envelope** — signed, delivered,
-  re-verified on every pass against the host's CURRENT signer-to-domain policy,
-  over a presence binding no tombstone in the whole inbox history ever withdrew
-  (a withdrawal is terminal for the binding, whatever later generation or
-  authority id follows), and held by core's `ValidateAgainst` to the envelope's
+  re-verified on every pass against the host's CURRENT signer-to-domain policy
+  (a document that no longer verifies is refused by name), over a presence
+  binding no ADMITTED tombstone in the whole inbox history ever withdrew — one
+  addressed to this host and speaking for the binding's established ownership
+  domain (its first presence generation's); a withdrawal is terminal for the
+  binding, whatever later generation or authority id follows, and a foreign
+  tombstone is refused at receipt and ignored in history — and held by core's
+  `ValidateAgainst` to the envelope's
   own units (exact containment: a unit that differs from the admitted one in any
   field puts the whole document outside, and it grants nothing).
 - **the applied presence document** the authority is granted over — the workload
   running the approved build gives the entry's `workload` (namespace and service
-  account from its SPIFFE ID, container from the presence), and only when the
+  account from its SPIFFE ID, read by the one strict parser
+  `ParseKubernetesSPIFFEID`, container from the presence), and only when the
   envelope allows that exact identity, so a later presence generation cannot
-  move the principal to another workload.
+  move the principal to another workload. One workload (namespace and service
+  account) maps to exactly one principal: the envelope refuses an overlap when
+  written and the derivation omits it.
 
 The entry is the envelope's grant bounded by the document: queues and namespaces
 the document also declares, resources its scope ceilings name, and each
@@ -305,15 +312,20 @@ or whose entry fails validation is **omitted by name, never widened**. Within an
 authority id the newest generation is the answer (the inbox is append-only);
 across ids a principal moves only to a document inside the envelope.
 
-**The registry is fenced by the committed envelope revision.** Every capability
-check (`AuthorizeModuleCapability`) reads the highest revision from the store
-and refuses with `ErrModuleRegistryStale` (Unavailable, a pass requested) when
-the registry was derived from an older one, and a replica that has seen a newer
-revision serves nothing from the older registry — so a narrowing written on one
-replica, or committed while a pass was reading the previous ceiling, refuses
-the next check everywhere. An unreadable inbox or applied state derives from the
-last inputs read, held to the CURRENT envelope; an unreadable envelope installs
-nothing and the fence refuses. The credential's tenant must be the current
+**The registry is fenced by the committed envelope revision.** Every module
+authority decision — `AuthorizeModuleCapability`, the work-context and
+headless operation-context mints, the source-delegation mint, and the
+revision confirmations behind `CheckAuthorizationRevision` — takes its grant
+from ONE registry snapshot, reads the committed revision from the store (once
+per request under `WithModuleEnvelopeRevisionMemo`), and refuses with
+`ErrModuleRegistryStale` (Unavailable, a pass requested) unless that snapshot
+was derived from exactly it; a replica that has seen a newer revision serves
+nothing from the older registry. A pass reads the withdrawal history and the
+envelope first; when another input cannot be read it never combines fresh and
+stale inputs, and publishes a DEGRADED registry — the last published entries,
+kept only where still derived from the current revision, not withdrawn, their
+presence not withdrawn by delivery, and their signer still admitted — or an
+empty one when the history itself cannot be read. The credential's tenant must be the current
 grant's (unless `cross_tenant`), so moving a principal's tenant revokes
 credentials sealed for the old one at the next check. The grant ceiling's keys:
 

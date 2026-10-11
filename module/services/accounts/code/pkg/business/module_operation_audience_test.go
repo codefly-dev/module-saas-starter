@@ -1,6 +1,7 @@
 package business
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -120,7 +121,7 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 	s.SetModulePrincipals(registry)
 	s.SetModuleIdentitySecrets(secrets)
 
-	authority, err := s.ModuleAuthorizeOperationContext("example", "example-secret", "model")
+	authority, err := s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "model")
 	require.NoError(t, err)
 	require.Equal(t, ModulePrincipalID("example"), authority.PrincipalID)
 	require.Equal(t, "019f6bf7-5b4b-74e5-8c17-092259bb1661", authority.Tenant)
@@ -131,17 +132,17 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 
 	// The returned grant is a copy: mutating it cannot widen the declared policy.
 	authority.Scopes[0].Actions[0] = "delete"
-	again, err := s.ModuleAuthorizeOperationContext("example", "example-secret", "model")
+	again, err := s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "model")
 	require.NoError(t, err)
 	require.Equal(t, []string{"invoke"}, again.Scopes[0].Actions)
 
-	_, err = s.ModuleAuthorizeOperationContext("example", "example-secret", "interactive")
+	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "interactive")
 	require.ErrorIs(t, err, ErrModuleOperationContextRefused)
-	_, err = s.ModuleAuthorizeOperationContext("example", "example-secret", "absent")
+	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "example-secret", "absent")
 	require.ErrorIs(t, err, ErrModuleOperationContextRefused)
-	_, err = s.ModuleAuthorizeOperationContext("example", "guessed", "model")
+	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "example", "guessed", "model")
 	require.ErrorIs(t, err, ErrModuleRegistrationDenied)
-	_, err = s.ModuleAuthorizeOperationContext("unknown", "example-secret", "model")
+	_, err = s.ModuleAuthorizeOperationContext(context.Background(), "unknown", "example-secret", "model")
 	require.ErrorIs(t, err, ErrModuleRegistrationDenied)
 }
 
@@ -171,10 +172,10 @@ func TestModuleOperationContextRevisionIsADeterministicDigestOfTheGrant(t *testi
 	withCurrentAuthority(s)
 	s.SetModulePrincipals(first)
 	owner := []ModuleOperationRevisionSubject{{PrincipalID: id, Scopes: []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"invoke"}, ResourceIDs: []string{"p-1"}}}}}
-	handled, err := s.CheckModuleOperationContextRevision("019f6bf7-5b4b-74e5-8c17-092259bb1661", id, revision, owner)
+	handled, err := s.CheckModuleOperationContextRevision(context.Background(), "019f6bf7-5b4b-74e5-8c17-092259bb1661", id, revision, owner)
 	require.True(t, handled)
 	require.NoError(t, err)
-	handled, err = s.CheckModuleOperationContextRevision("019f6bf7-5b4b-74e5-8c17-092259bb1661", "019fec91-1000-7000-8000-000000000002", revision, owner)
+	handled, err = s.CheckModuleOperationContextRevision(context.Background(), "019f6bf7-5b4b-74e5-8c17-092259bb1661", "019fec91-1000-7000-8000-000000000002", revision, owner)
 	require.False(t, handled)
 	require.NoError(t, err)
 }

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	modulecontract "github.com/codefly-dev/core/contracts/module"
@@ -120,13 +121,14 @@ type ModuleWorkloadIdentity struct {
 }
 
 // workload is the identity as the registry holds it: namespace and service
-// account read from the SPIFFE ID.
+// account read from the SPIFFE ID by the one strict parser. A SPIFFE ID it
+// refuses yields an empty workload, which validation refuses in turn.
 func (w ModuleWorkloadIdentity) workload() ModuleWorkload {
-	return ModuleWorkload{
-		ServiceAccount: spiffeServiceAccount(w.SPIFFEID),
-		Namespace:      spiffeNamespace(w.SPIFFEID),
-		Container:      w.Container,
+	identity, err := ParseKubernetesSPIFFEID(w.SPIFFEID)
+	if err != nil {
+		return ModuleWorkload{Container: w.Container}
 	}
+	return ModuleWorkload{ServiceAccount: identity.ServiceAccount, Namespace: identity.Namespace, Container: w.Container}
 }
 
 // ModuleEnvelopeRecord is one stored revision: the document as written, and who
@@ -218,6 +220,29 @@ func (wire moduleEnvelopeGrantWire) grant(prefix string) ModulePrincipalGrant {
 		CrossTenant:        wire.CrossTenant,
 		Tenant:             wire.Tenant,
 	}
+}
+
+// workloadOwners refuses two principals allowing one Kubernetes workload
+// identity (namespace and service account).
+func (e *ModuleEnvelope) workloadOwners() error {
+	owner := map[ModuleWorkload]string{}
+	prefixes := make([]string, 0, len(e.Principals))
+	for prefix := range e.Principals {
+		prefixes = append(prefixes, prefix)
+	}
+	slices.Sort(prefixes)
+	for _, prefix := range prefixes {
+		for _, identity := range e.Principals[prefix].WorkloadIdentities {
+			workload := identity.workload()
+			key := ModuleWorkload{Namespace: workload.Namespace, ServiceAccount: workload.ServiceAccount}
+			if other, taken := owner[key]; taken && other != prefix {
+				return fmt.Errorf("module principals %q and %q both allow workload %s/%s; one workload identity maps to exactly one principal",
+					other, prefix, key.Namespace, key.ServiceAccount)
+			}
+			owner[key] = prefix
+		}
+	}
+	return nil
 }
 
 // envelopeIDPattern is core's opaque-ID shape for authority, principal and
@@ -322,6 +347,14 @@ func ParseModuleEnvelope(raw []byte) (*ModuleEnvelope, error) {
 		}
 		envelope.Principals[prefix] = parsed
 	}
+	// ONE WORKLOAD, ONE PRINCIPAL. A pod's token names its namespace and
+	// service account — never its container — so two principals allowing the
+	// same (namespace, service account) would let one module's pod token
+	// authorize the other module's prefix. Refused by name, whatever the
+	// containers.
+	if err := envelope.workloadOwners(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrModuleEnvelopeInvalid, err)
+	}
 	return envelope, nil
 }
 
@@ -364,12 +397,12 @@ func parseModuleEnvelopePrincipal(prefix string, wire moduleEnvelopePrincipalWir
 		return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q allows no workload identity, so no delivered presence can ever bind it", prefix)
 	}
 	for _, identity := range wire.WorkloadIdentities {
-		if err := identity.workload().validateForm(prefix); err != nil {
-			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q allows workload identity %q in container %q, which does not name a service account in a namespace: %w",
-				prefix, identity.SPIFFEID, identity.Container, err)
+		if _, err := ParseKubernetesSPIFFEID(identity.SPIFFEID); err != nil {
+			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q allows workload identity: %w", prefix, err)
 		}
-		if !strings.HasPrefix(identity.SPIFFEID, "spiffe://") {
-			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q allows workload identity %q, which is not a SPIFFE ID", prefix, identity.SPIFFEID)
+		if err := identity.workload().validateForm(prefix); err != nil {
+			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q allows workload identity %q in container %q: %w",
+				prefix, identity.SPIFFEID, identity.Container, err)
 		}
 	}
 	if err := validateEnvelopeScopeCeilings(prefix, wire.ScopeCeilings); err != nil {
@@ -658,8 +691,8 @@ func (s *Service) PutModuleEnvelope(
 	}
 	// This replica fences its registry at once — it serves nothing derived
 	// from the replaced ceiling — and asks for the pass that derives the new
-	// one. Every other replica fences at its next capability check, which reads
-	// the committed revision (fenceModuleRegistry).
+	// one. Every other replica fences at its next authority decision, which
+	// reads the committed revision (fenceModuleRegistrySnapshot).
 	s.observeModuleEnvelopeRevision(record.Revision)
 	s.requestRegistryPass()
 	return record, nil
@@ -672,36 +705,105 @@ func (s *Service) PutModuleEnvelope(
 // has.
 var ErrModuleRegistryStale = errors.New("the module registry predates the committed module envelope")
 
-// fenceModuleRegistry is the revision fence every capability decision passes:
-// it reads the committed envelope revision from the store and refuses when the
-// registry this replica serves was derived from an older one.
+// moduleRegistrySnapshot is the installed registry and the envelope revision
+// it was derived from, loaded ONCE. A decision reads its grant from this value
+// and fences this value — never a second load — so a registry installed between
+// the two can neither lend its revision to a grant it does not hold nor hand a
+// grant to a fence it did not pass.
+func (s *Service) moduleRegistrySnapshot() *installedModuleRegistry {
+	if installed := s.modulePrincipals.Load(); installed != nil {
+		return installed
+	}
+	return &installedModuleRegistry{}
+}
+
+// fenceModuleRegistrySnapshot is the revision fence every module authority
+// decision passes: it reads the committed envelope revision from the store and
+// refuses unless THIS snapshot was derived from exactly that revision.
 //
 // Durable and per replica. The registry is in memory and each replica derives
 // its own, on its own pass; the committed revision is in the store. Comparing
-// the two at authorization is what makes a narrowing written on one replica —
-// or committed while a pass was reading the previous ceiling — refuse at the
-// next check on every replica, rather than at each one's next pass.
-func (s *Service) fenceModuleRegistry(ctx context.Context) error {
+// the snapshot a decision authorizes from with the store is what makes a
+// narrowing written on one replica — or committed while a pass was reading the
+// previous ceiling, or installed while this decision was in flight — refuse at
+// the next decision on every replica, rather than at each one's next pass.
+//
+// Where no envelope store is wired (a registry stated directly by a test)
+// there is no committed revision to compare with.
+func (s *Service) fenceModuleRegistrySnapshot(ctx context.Context, snapshot *installedModuleRegistry) error {
 	if s.moduleEnvelopes == nil {
 		return nil
 	}
-	var latest uint64
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var err error
-		latest, err = s.moduleEnvelopes.LatestModuleEnvelopeRevision(ctx)
-		return err
-	}); err != nil {
+	latest, err := s.committedModuleEnvelopeRevision(ctx)
+	if err != nil {
 		return status.Errorf(codes.Unavailable, "cannot read the committed module envelope revision: %v", err)
 	}
 	s.observeModuleEnvelopeRevision(latest)
-	var derived uint64
-	if installed := s.modulePrincipals.Load(); installed != nil {
-		derived = installed.envelopeRevision
-	}
-	if latest > derived {
+	if latest != snapshot.envelopeRevision {
 		s.requestRegistryPass()
 		return wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
-			"the registry was derived from envelope revision %d and revision %d is committed", derived, latest)
+			"the registry was derived from envelope revision %d and revision %d is committed", snapshot.envelopeRevision, latest)
 	}
 	return nil
+}
+
+// moduleEnvelopeRevisionMemo carries one committed-revision read for the
+// lifetime of a request context, so a request that makes several module
+// authority decisions pays for one read. The value is the revision committed
+// when the request first asked, which is the instant its decisions are judged
+// at.
+type moduleEnvelopeRevisionMemo struct {
+	once     sync.Once
+	revision uint64
+	err      error
+}
+
+type moduleEnvelopeRevisionMemoKey struct{}
+
+// WithModuleEnvelopeRevisionMemo scopes one committed-revision read to ctx and
+// everything derived from it.
+func WithModuleEnvelopeRevisionMemo(ctx context.Context) context.Context {
+	if _, already := ctx.Value(moduleEnvelopeRevisionMemoKey{}).(*moduleEnvelopeRevisionMemo); already {
+		return ctx
+	}
+	return context.WithValue(ctx, moduleEnvelopeRevisionMemoKey{}, &moduleEnvelopeRevisionMemo{})
+}
+
+func (s *Service) committedModuleEnvelopeRevision(ctx context.Context) (uint64, error) {
+	read := func() (uint64, error) {
+		var latest uint64
+		err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			latest, err = s.moduleEnvelopes.LatestModuleEnvelopeRevision(ctx)
+			return err
+		})
+		return latest, err
+	}
+	memo, scoped := ctx.Value(moduleEnvelopeRevisionMemoKey{}).(*moduleEnvelopeRevisionMemo)
+	if !scoped {
+		return read()
+	}
+	memo.once.Do(func() { memo.revision, memo.err = read() })
+	return memo.revision, memo.err
+}
+
+// currentModuleGrant resolves a principal's grant from ONE registry snapshot
+// and fences that snapshot. found is false only for a principal the snapshot
+// does not hold and that is not fenced; a fenced or stale registry is an
+// error, so a caller never mistakes "not current" for "not a module".
+func (s *Service) currentModuleGrant(ctx context.Context, principalID string) (ModulePrincipalGrant, bool, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	grant, found := snapshot.registry[principalID]
+	if !found {
+		if s.moduleEnvelopes != nil && s.envelopeRevisionSeen.Load() > snapshot.envelopeRevision {
+			s.requestRegistryPass()
+			return ModulePrincipalGrant{}, false, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+				"principal %s: a newer module envelope is committed than the registry was derived from", principalID)
+		}
+		return ModulePrincipalGrant{}, false, nil
+	}
+	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
+		return ModulePrincipalGrant{}, true, err
+	}
+	return grant, true, nil
 }

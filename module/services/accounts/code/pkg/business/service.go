@@ -156,6 +156,10 @@ type Service struct {
 	deliveryStore           SolutionDeliveryStore
 	deliveryCarrier         SolutionDeliveryCarrierAuthorizer
 	deliveryDomainsBySigner map[string][]string
+	// deliveryCoordinate is this host's coordinate, so an authority document
+	// addressed to another host is refused at receipt. Empty skips that check
+	// (the reconcile pass still applies it).
+	deliveryCoordinate string
 
 	// The policy log's wiring: the external append-only record, this host's
 	// local receipts and cursor, and an overridable clock.

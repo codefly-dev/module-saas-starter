@@ -173,7 +173,9 @@ func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.Una
 			return nil, translateGRPCError(err)
 		}
 		shadowPolicyCoverage(ctx, req.Spec().Procedure)
-		return next(ctx, req)
+		// One committed module-envelope revision read per unary request,
+		// however many module authority decisions the handler makes.
+		return next(business.WithModuleEnvelopeRevisionMemo(ctx), req)
 	}
 }
 

@@ -548,9 +548,9 @@ func TestConfigureModuleIdentity(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-			_, err = service.ModuleAuthorizeWorkContext("documents", "registration-secret")
+			_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", "registration-secret")
 			require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
-			authority, err := service.ModuleAuthorizeWorkContext("documents", "identity-secret")
+			authority, err := service.ModuleAuthorizeWorkContext(context.Background(), "documents", "identity-secret")
 			if !test.authorized {
 				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
 				return
@@ -562,7 +562,7 @@ func TestConfigureModuleIdentity(t *testing.T) {
 			t.Setenv(test.key, "")
 			require.NoError(t, configureModuleIdentity(service))
 			for _, secret := range []string{"identity-secret", "registration-secret"} {
-				_, err = service.ModuleAuthorizeWorkContext("documents", secret)
+				_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", secret)
 				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
 			}
 		})

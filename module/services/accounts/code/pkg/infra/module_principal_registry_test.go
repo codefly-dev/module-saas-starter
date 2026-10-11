@@ -484,9 +484,9 @@ func (v *switchVerifier) VerifyBundle(ctx context.Context, payload []byte, bundl
 }
 
 // TestANarrowingHoldsWhileTheInboxIsUnreadable (finding 4): the envelope is
-// read and the inbox is not. The registry is derived from the last inbox read,
-// held to the NEW ceiling — so the narrowing takes effect — rather than the
-// previous registry being kept.
+// narrowed and the documents no longer verify. The registry is derived from
+// the NEW ceiling — the narrowing takes effect — rather than the previous
+// registry being kept.
 func TestANarrowingHoldsWhileTheInboxIsUnreadable(t *testing.T) {
 	s := newRegistryScenario(t, "unb")
 	verifier := &switchVerifier{}
@@ -497,7 +497,7 @@ func TestANarrowingHoldsWhileTheInboxIsUnreadable(t *testing.T) {
 	s.putEnvelope(t, envelopeOptions{none: true})
 	verifier.refuse.Store(true)
 	err := s.reconciler.ModulePrincipals().RunOnce(testCtx)
-	require.ErrorIs(t, err, business.ErrModulePrincipalInputsUnreadable, "the unreadable inbox is reported")
+	require.ErrorIs(t, err, business.ErrSolutionAuthorityUnverifiable, "a document that no longer verifies is refused by name")
 	_, present := s.entry()
 	require.False(t, present, "a read failure never keeps a grant the committed ceiling withdrew")
 	_, err = s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(s.tenant))
