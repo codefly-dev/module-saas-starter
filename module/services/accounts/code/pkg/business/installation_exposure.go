@@ -47,10 +47,6 @@ type OrganizationInstallation struct {
 // is the one outcome an administrator granting "exposure" must never be handed.
 var ErrRoleDoesNotExposeSolution = errors.New("role does not permit using a solution")
 
-// ErrTeamOutsideOrganization refuses exposing an installation to a team that
-// does not belong to the installation's organization.
-var ErrTeamOutsideOrganization = errors.New("team is not in this organization")
-
 // ListOrganizationInstallations lists orgID's ACTIVE installations, one page, with
 // live health, exposure and the catalogue row of each installed target.
 //
@@ -173,9 +169,6 @@ func (s *Service) GrantInstallationToTeam(
 		if err != nil {
 			return err
 		}
-		if err := s.requireTeamInOrgTx(ctx, orgID, teamID); err != nil {
-			return err
-		}
 		permits, err := s.installationStore().RolePermits(ctx, roleID, ResourceTypeSolution, ActionUseSolution)
 		if err != nil {
 			return err
@@ -217,7 +210,7 @@ func (s *Service) RevokeInstallationFromTeam(
 		if err != nil {
 			return err
 		}
-		return s.requireTeamInOrgTx(ctx, orgID, teamID)
+		return s.requireSubjectInOrgTx(ctx, orgID, teamID, gen.SubjectKind_SUBJECT_KIND_TEAM)
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke installation from team")
 	}
@@ -234,21 +227,6 @@ func (s *Service) RevokeInstallationFromTeam(
 		return s.revokeScopeApply(ctx, actorID, req)
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke installation from team")
-	}
-	return nil
-}
-
-// requireTeamInOrgTx refuses a team that is not orgID's. It runs inside the
-// organization's transaction, where RLS hides every other tenant's team, and
-// compares the owning organization as well, so a team of another organization
-// is refused whichever of the two gates would have caught it.
-func (s *Service) requireTeamInOrgTx(ctx context.Context, orgID, teamID string) error {
-	teamOrgID, err := s.store.GetTeamOrgID(ctx, teamID)
-	if err != nil {
-		return err
-	}
-	if teamOrgID != orgID {
-		return NewStoreError(fmt.Errorf("%w: %s", ErrTeamOutsideOrganization, teamID), ErrTypePermission)
 	}
 	return nil
 }

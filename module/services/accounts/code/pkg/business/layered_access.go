@@ -135,11 +135,15 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 }
 
 // grantScopeTx is one scope grant inside the caller's organization transaction:
-// the row, the tenant-visible scope.granted event and the audit record, all in
-// that transaction. GrantScope runs it on its own; GrantInstallationToTeam runs it
-// in the same transaction that resolved the installation's authority root, so
-// the grant cannot land on a node whose installation was uninstalled in between.
+// the subject's tenancy (requireSubjectInOrgTx, under the membership lock a
+// removal takes), the row, the tenant-visible scope.granted event and the audit
+// record, all in that transaction. GrantScope runs it on its own;
+// GrantInstallationToTeam runs it in the transaction that locked the
+// installation, so the grant cannot land on an installation already uninstalled.
 func (s *Service) grantScopeTx(ctx context.Context, actorID string, req *gen.GrantScopeRequest) (*gen.ScopeGrant, error) {
+	if err := s.requireSubjectInOrgTx(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+		return nil, err
+	}
 	grant := &gen.ScopeGrant{
 		Id:          NewIDString(),
 		OrgId:       req.OrgId,

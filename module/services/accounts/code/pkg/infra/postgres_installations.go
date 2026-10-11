@@ -617,8 +617,15 @@ func (s *PostgresStore) UninstallSolution(ctx context.Context, orgID, installati
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
 	executor := s.getQueryExecutor(ctx)
 
+	// The installation row is locked FIRST, before any grant is touched. An
+	// exposure grant locks the same row (FOR SHARE, InstallationRootScopePath)
+	// before it writes, and both writes fire triggers that lock the
+	// organization's revision row. Taking the installation lock first on both
+	// paths is what keeps that a single lock order rather than a cycle: whichever
+	// transaction holds the installation row finishes before the other touches a
+	// grant.
 	current, err := scanInstallation(executor.QueryRow(ctx,
-		`SELECT `+installationColumns+` FROM installations WHERE id = $1 AND org_id = $2`,
+		`SELECT `+installationColumns+` FROM installations WHERE id = $1 AND org_id = $2 FOR UPDATE`,
 		installationID, orgID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

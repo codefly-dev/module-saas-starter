@@ -182,8 +182,10 @@ Four distinctions the projections keep:
   written and reveal nothing. That permission is the minimum, not a ceiling: the
   team holds everything the role permits beneath the installation's root, as a
   `GrantScope` of that role at that node would give it. The resolution holds a
-  share lock on the installation row to commit, so a grant and an uninstall
-  serialize and a grant never lands on an installation already uninstalled. The
+  share lock on the installation row to commit, and uninstall locks the same row
+  before it touches any grant, so both take the installation lock before any
+  trigger-acquired lock: a grant and an uninstall serialize, without a lock cycle,
+  and a grant never lands on an installation already uninstalled. The
   write is `GrantScope`'s own body, so it emits the same `scope.granted` event
   and audit record. `RevokeInstallationFromTeam`
   is `RevokeScope` after the same resolution: a narrowing under the policy log,

@@ -82,7 +82,7 @@ func TestInstallationExposureErrorMapping(t *testing.T) {
 	}{
 		// Another organization's installation id resolves to nothing under RLS.
 		{"unknown installation", business.NewStoreError(errors.New("installation x is not an active installation in this organization"), business.ErrTypeNotFound), codes.NotFound},
-		{"team outside organization", fmt.Errorf("wrapped: %w", business.NewStoreError(business.ErrTeamOutsideOrganization, business.ErrTypePermission)), codes.PermissionDenied},
+		{"team outside organization", fmt.Errorf("cannot expose installation to team: %w", business.ErrSubjectOutsideOrganization), codes.PermissionDenied},
 		{"role exposes nothing", business.NewStoreError(business.ErrRoleDoesNotExposeSolution, business.ErrTypeValidation), codes.InvalidArgument},
 		// The host's own refusal of an unwitnessed narrowing keeps its words.
 		{"unwitnessed narrowing", fmt.Errorf("cannot revoke scope: %w: this host has no policy log, so authority cannot be narrowed", business.ErrPolicyLogUnreachable), codes.FailedPrecondition},

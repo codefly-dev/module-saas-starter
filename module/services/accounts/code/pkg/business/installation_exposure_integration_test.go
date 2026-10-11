@@ -289,23 +289,56 @@ func TestGrantInstallationToTeamSerializesWithUninstall(t *testing.T) {
 		require.Empty(t, entitledInstallations(t, w.org, w.inTeam))
 	})
 
-	t.Run("the grant locks first: the uninstall waits for it", func(t *testing.T) {
+	// The two grant-first interleavings, each WRITING the team grant through the
+	// real grant body, so the scope_grants trigger takes the organization's
+	// revision row exactly as it does in production. The uninstall deletes the
+	// agent's standing grant, whose trigger takes the same row; the installation
+	// lock both take first is what keeps the two from deadlocking.
+	grantFirst := func(t *testing.T, writeBeforeUninstallArrives bool) {
 		w := newExposureWorld(t)
 		uninstalled := make(chan error, 1)
+		var written *gen.ScopeGrant
 		require.NoError(t, testStore.WithOrgTx(testCtx, w.org, func(ctx context.Context) error {
-			if _, err := testStore.InstallationRootScopePath(ctx, w.org, w.installation); err != nil {
+			path, err := testStore.InstallationRootScopePath(ctx, w.org, w.installation)
+			if err != nil {
 				return err
 			}
+			write := func() error {
+				written, err = testService.GrantScopeTxForTest(ctx, w.admin, &gen.GrantScopeRequest{
+					OrgId: w.org, SubjectId: w.team, SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM,
+					ScopePath: path, RoleId: w.useRole,
+				})
+				return err
+			}
+			if writeBeforeUninstallArrives {
+				if err := write(); err != nil {
+					return err
+				}
+			}
 			go func() { uninstalled <- testService.UninstallSolution(testCtx, w.admin, w.org, w.installation) }()
-			requireARowLockWaiter(t, "the uninstall should wait on the row the grant holds")
+			requireARowLockWaiter(t, "the uninstall should wait on the installation row the grant holds")
 			select {
 			case err := <-uninstalled:
 				t.Fatalf("the uninstall finished while the grant held the row: %v", err)
 			default:
 			}
+			if !writeBeforeUninstallArrives {
+				// The interleaving that deadlocked when uninstall touched grants
+				// before the installation row: the uninstall is already waiting,
+				// and the grant now writes.
+				return write()
+			}
 			return nil
-		}))
-		require.NoError(t, <-uninstalled)
+		}), "the grant transaction must commit, not be chosen as a deadlock victim")
+		require.NoError(t, <-uninstalled, "the uninstall must complete after the grant, not deadlock")
+		require.NotNil(t, written)
+		require.Equal(t, w.team, written.GetSubjectId())
+	}
+	t.Run("the grant locks and writes first: the uninstall waits for it", func(t *testing.T) {
+		grantFirst(t, true)
+	})
+	t.Run("the grant locks first, the uninstall arrives, then the grant writes", func(t *testing.T) {
+		grantFirst(t, false)
 	})
 }
 
@@ -332,7 +365,20 @@ func TestInstallationExposureAdmitsPlatformSuperAdmin(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = server.ListOrganizationInstallations(storyCallerContext(testCtx, support, supportOrg),
-		&gen.ListOrganizationInstallationsRequest{OrgId: w.org})
+	_, err = server.RevokeInstallationFromTeam(storyCallerContext(testCtx, superAdmin, ownOrg), &gen.RevokeInstallationFromTeamRequest{
+		OrgId: w.org, InstallationId: w.installation, TeamId: w.team, RoleId: w.useRole,
+	})
+	require.NoError(t, err)
+
+	supportCaller := storyCallerContext(testCtx, support, supportOrg)
+	_, err = server.ListOrganizationInstallations(supportCaller, &gen.ListOrganizationInstallationsRequest{OrgId: w.org})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	_, err = server.GrantInstallationToTeam(supportCaller, &gen.GrantInstallationToTeamRequest{
+		OrgId: w.org, InstallationId: w.installation, TeamId: w.team, RoleId: w.useRole,
+	})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	_, err = server.RevokeInstallationFromTeam(supportCaller, &gen.RevokeInstallationFromTeamRequest{
+		OrgId: w.org, InstallationId: w.installation, TeamId: w.team, RoleId: w.useRole,
+	})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
