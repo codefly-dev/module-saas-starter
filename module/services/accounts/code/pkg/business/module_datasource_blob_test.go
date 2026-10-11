@@ -20,7 +20,7 @@ func moduleBlobService(t *testing.T, store business.Store, gh business.GitHubCon
 	t.Helper()
 	svc, audit := newDatasourceService(store, &recordingProducer{}, gh)
 	_ = audit
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(&fakeJobBackend{}, &fakeJobBackend{}, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Tenant: moduleTenantA, Queues: queues, CrossTenant: crossTenant},
 	})
@@ -141,7 +141,7 @@ func TestModuleFetchDatasourceBlob_ConnectorUnconfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(&fakeJobBackend{}, &fakeJobBackend{}, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Queues: []string{"datasource"}, CrossTenant: true},
 	})

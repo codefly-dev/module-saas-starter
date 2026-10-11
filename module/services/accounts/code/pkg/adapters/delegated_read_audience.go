@@ -36,6 +36,12 @@ type delegatedAudienceRequest struct {
 }
 
 func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context, encodedParent string, request delegatedAudienceRequest, resolve delegatedAudienceResolver) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
@@ -199,6 +205,12 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 // authenticates the caller rather than the parent — a reference is an
 // identifier, not a credential, and on its own it authorizes nothing.
 func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Context, delegationID string, request delegatedAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
@@ -311,6 +323,12 @@ func delegatedAudienceRefusalCode(err error) string {
 }
 
 func (s *ModuleCapabilitiesServer) ExchangeDelegatedReadAudience(ctx context.Context, req *gen.ModuleExchangeDelegatedReadAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -323,6 +341,12 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedReadAudience(ctx context.Con
 }
 
 func (s *ModuleCapabilitiesServer) ExchangeDelegatedOperationAudience(ctx context.Context, req *gen.ModuleExchangeDelegatedOperationAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}

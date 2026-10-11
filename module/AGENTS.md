@@ -69,6 +69,42 @@ reference composition), for six in total; a consumer's root module is its own.
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.
 
+The recurring worker-heartbeat test uses Go's `testing/synctest` virtual clock;
+its assertions must not depend on wall-clock scheduling under parallel CI load.
+The module-authority qualification helper models both the declared cross-tenant
+ceiling and current installation consent; a person's source delegation alone
+must never substitute for either. Its runtime credential and delegated parent
+must also name the same installation organization.
+
+Dependency-backed tests use Core's default isolated control channel. With CLI
+v0.1.185, keep the SDK session suffix on each package's naming scope: it gives
+each invocation fresh database state. Do not opt into `WithSharedControlChannel`,
+which is only for older CLIs and reuses fixed local database directories across
+otherwise independent runs and migration revisions.
+
+Core dependencies are pinned to released v0.18.0 in every owning Go module,
+including the module-authority qualification module. Run qualification with
+`GOWORK=off` so a developer workspace cannot mask the released dependency.
+Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.54,
+whose builder uses Go 1.27.2 under `GOTOOLCHAIN=local`; CI uses the same patch.
+Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).
+A source audit under a newer compiler does not qualify the compiler used in the
+image: move the owning agent and image contract together, regenerate the recipe,
+and check the built executable's toolchain evidence. Never lower the accounts
+minimum to accommodate an older builder.
+CLI v0.1.185 requires an explicit run-level test outcome from every service
+agent. The cache, store and vault manifests pin released Redis 0.0.97,
+Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
+An empty legacy response is not evidence that tests passed; do not bypass that
+check or disable the service's test phase to accept it.
+
+Accounts, auth-gateway, policy-log, store and telemetry use released SDK v0.3.1;
+accounts must not retain the pre-release SDK SHA from the callable-source
+development branch. Their listeners resolve allocated
+endpoints through `ResolveNetworkInstance`, which selects the delivered or local
+endpoint from the runtime environment; the removed `WithDefaultNetwork` switch
+must not be replaced with a hard-coded address or port.
+
 ## Runtime composition seams
 
 Solutions and composed modules are independently deployed and **self-register at

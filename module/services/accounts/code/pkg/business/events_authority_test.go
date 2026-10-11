@@ -69,7 +69,7 @@ func newEventService(t *testing.T, store business.Store, transport events.Transp
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(&fakeJobBackend{}, &fakeJobBackend{}, business.ModulePrincipalRegistry{
 		modulePrincSvc: {
 			Tenant:     moduleTenantA,

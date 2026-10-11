@@ -730,3 +730,54 @@ Each package passes individually; the flake only appears when several processes 
 Editor diagnostics may flag `github.com/oklog/run`, `go.opentelemetry.io/proto/otlp`, etc. as "not in your go.mod file" on generated grpc-gateway files. Those deps ARE present (`go build ./...` succeeds — verify with `cd module/services/api/code && go build ./...`). The diagnostics are stale LSP cache from a previous proto-gen iteration; they clear after restarting `gopls` or running `go mod tidy` in the api/code dir. No real build issue.
 - Bump on proto-breaking changes (renamed RPCs, removed fields).
 - Compatible-additive (new RPC, new field, new built-in role): patch-bump.
+
+## Callable data sources
+
+An API source can be connected for declared operations independently of the
+connector's sync conformance. `accepts_new_sources` still describes sync;
+`accepts_operations` and `operations_gap` describe the call surface. New API
+connections are operation-only, with no automatic sync or reconcile schedule.
+Existing API sources retain sync. Calls and legacy sync spend the same
+credential budget, reserving capacity for interactive calls. New sources that
+share a credential share a deployment-keyed budget identifier; OAuth rotation
+preserves that identifier. Older source records retain their source-scoped key.
+
+OAuth supports the existing refresh-token grant and `client_credentials`.
+Unspecified grant means refresh-token behavior for compatibility. With client
+credentials, `credential` is the client secret and the envelope contains no
+refresh token. The existing source row lock serializes token exchanges and
+caches the token and expiry in that same envelope.
+
+Authorization-code sources use the host's deployment-wide
+[`datasource-oauth` group](module/configurations/README.md). An administrator
+creates an API source with the authorization-code grant and no credential, then
+passes its `source_id` to `BeginDatasourceAccountLink`. The same person completes
+the browser sign-in. PKCE uses S256; the state is consumed before token exchange
+and cannot be replayed, including after a lost exchange response. A fresh sign-in
+is needed after such a failure. Only the provider tokens and expiry are sealed; app credentials and endpoints
+are read from the current deployment registration at refresh. This version
+supports one `api` registration and refuses connector-linker overrides. The
+token set is committed alongside
+the account link and its audit event. The source is personal to that caller;
+other members cannot read it or its declarations. Generic OAuth alone does not
+attest a remote user identity: this link identifies a source authorization and
+is never used to infer a provider account from an email or grant provider ACLs.
+
+Administrators replace a source's complete declaration set through
+`DeclareSourceOperations`; boundary readers use `ListSourceOperations`.
+Declarations fix the method, path template, query fields, closed input-object
+schema, output-object schema, effect, and output byte cap. Their canonical digest
+covers every declaration field. Parameters fill percent-encoded path segments;
+query fields become query parameters; remaining fields form a JSON body and are
+refused for GET and DELETE. Headers are not input mappings. Schema references
+that could fetch another document are refused. The declaration audit contains
+operation names only, never schemas, input, output, or credentials.
+
+
+`InvokeSourceOperation` and `LookupInvokeSourceOperation` expose the bounded call
+and its durable receipt on the accounts Connect endpoint. Each wire JSON value
+is a string containing exactly one object; the host validates it against the
+admitted declaration. A repeated effect replays only after current source and
+delegated authority checks. An uncertain external mutation is retained as
+unknown and never sent again. [Callable sources](module/CALLABLE_SOURCES.md)
+describes the JSON limits, Runnable source slot, custody and recovery contract.

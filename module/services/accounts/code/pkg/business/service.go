@@ -4,6 +4,7 @@ import (
 	"accounts/pkg/abuse"
 	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
+	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/datasource/connector"
 	"accounts/pkg/email"
 	"accounts/pkg/events"
@@ -19,12 +20,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/codefly-dev/sdk-go/receipts"
+
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
 )
 
 type Service struct {
+	sourceReceiptStore        receipts.Store
+	sourceReceiptGuard        *receipts.Interceptor
 	store                     Store
 	hasher                    KeyHasher
 	validator                 auth.TokenValidator // production: validates provider tokens after OAuth code exchange
@@ -76,6 +81,7 @@ type Service struct {
 	datasourceConnectors      *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
 	datasourceLinkKey         []byte              // signs account-link states; derived from the deployment's internal key
 	datasourceLinkers         map[string]DatasourceAccountLinker
+	datasourceOAuth           map[string]DatasourceOAuthProvider
 	datasourceTXTResolver     TXTResolver
 	datasourceBudgets         DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
 	githubBaseURL             string                // api.github.com override for the datasource connector
@@ -96,6 +102,11 @@ type Service struct {
 	moduleProducer           jobs.Producer     // request-scoped, transactional outbox producer for the module-facing surface
 	moduleJobStore           jobs.Store        // privileged worker store (claim/finalize) for the module-facing surface
 	eventTransport           events.Transport  // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
+
+	// Outbound API operation and OAuth provider dependencies.
+	newOAuth2AuthorizationCode func(context.Context, apisource.OAuth2Config, string, string, string, string) (*apisource.OAuth2Token, error)
+	newAPIOperationClient      func(apisource.Config, string) APIOperationClient
+	newOAuth2ClientCredentials OAuth2RefreshFunc
 
 	// modulePrincipals holds the per-principal capability grants for the
 	// module-facing surface, behind an atomic pointer rather than as a bare
@@ -324,17 +335,18 @@ func (s *Service) ModulePrincipals() ModulePrincipalRegistry {
 	return maps.Clone(s.declaredModules())
 }
 
-// SetModulePrincipals replaces the registry at runtime. Its production caller is
-// the module principal reconciler, which swaps in each pass's whole derived
-// registry. It clones, for the same reason the accessor does: storing the
-// caller's own map would leave the backing map addressable by whoever passed it.
+// SetModulePrincipals replaces an unversioned registry. A registry derived from
+// a live envelope is published with InstallDerivedModulePrincipals instead.
+// It clones, for the same reason the accessor does: storing the caller's own
+// map would leave the backing map addressable by whoever passed it.
 func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 	s.storeModulePrincipals(registry)
 }
 
-// installDerivedModulePrincipals publishes a registry derived from one envelope
-// revision. The reconciler is its only caller.
-func (s *Service) installDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64) {
+// InstallDerivedModulePrincipals publishes a registry derived from one envelope
+// revision. Callers must derive the entries from that revision before publishing;
+// this operation does not infer or advance a revision from the current database.
+func (s *Service) InstallDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64) {
 	s.observeModuleEnvelopeRevision(envelopeRevision)
 	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision})
 }
@@ -430,8 +442,10 @@ func NewService(store Store) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	authority, _ := store.(ModuleAuthorityStore)
 	return &Service{
 		store:                     store,
+		moduleAuthority:           authority,
 		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
 		waitlistEmailVerification: true,
 		usageMeters:               usageMeters,

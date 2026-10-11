@@ -526,7 +526,7 @@ executable inventory and this table in the same change.
 | Scope | Relations | Required database boundary |
 |---|---|---|
 | `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `policy_log_commits`, `policy_log_cursor`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
-| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
+| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `codefly_effect_receipts`, `datasource_operation_attempts`, `datasource_oauth_consumed_states`, `datasource_source_operations`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
@@ -537,6 +537,11 @@ LEVEL SECURITY`, and policy presence for every public application table against
 a live database. Migration `65_role_permissions_rls` closes the former
 child-table gap: `role_permissions` reads follow parent-role visibility, while
 inserts may target only a custom role owned by the current tenant.
+
+Callable-source declarations, consumed OAuth states, operation attempts and
+effect receipts grant no table privileges to `app_control_plane`. Their reads,
+writes and retention use the tenant transaction. The live exact-grants test
+asserts this absence for all four tables as well as their forced tenant RLS.
 
 ## Partitions carry their parent's row security
 
@@ -582,6 +587,104 @@ policies too: a non-superuser owner-level `pg_dump` or `COPY` of a partition,
 attached or detached, now needs a `BYPASSRLS` role to read every row, which the
 partition offload planned in
 [ADR 0006](./docs/adr/0006-audit-sink-and-retention-tiers.md) has to provision.
+
+## Audit retention drops a partition by its recorded range, under lock
+
+Audit retention is a partition drop, and a dropped partition cannot be
+recovered. `audit_events_drop_partitions_before(cutoff)`, as migration
+`34_audit_retention_partition_bounds` defines it, drops a monthly partition only
+when the upper bound PostgreSQL records for it ends by the cutoff. Earlier
+releases cut a partition's bounds at the midnights of the session zone that
+created it, so the function reads each bound from `pg_get_expr(relpartbound)`,
+never from the month in the name, and renders and reads it under a `DateStyle`
+and `TimeZone` it pins, never the caller's. It never drops a partition whose
+bounds are not a bounded range (`DEFAULT`, `MINVALUE`, `MAXVALUE`) or whose
+detach has begun.
+
+The cutoff is one the `audit_events` retention policy allows by the database's
+clock. The function refuses (SQLSTATE 22023) a cutoff later than the start of
+its transaction less the policy's window, a missing one, and any when there is
+no policy, so a caller whose clock runs ahead cannot drop a partition still
+inside the window. Once something is due it reads the policy again, with a row
+lock (`FOR SHARE NOWAIT`) it holds until it commits, and checks the cutoff
+against that, so the window it keeps to is the one in force when it commits: a
+change to the policy made while a run waits for its locks waits in turn for the
+run, and one already under way when the run reads the policy makes the run
+refuse (55P03) rather than wait. A window is a positive number of days:
+`data_retention_policies` refuses any other with a check constraint, and the
+migration that added it refuses to apply while a policy holds one, naming it,
+rather than leave retention to guess what it meant.
+
+When something is due the function locks `audit_events` `ACCESS EXCLUSIVE` and
+decides again from the catalog as it stands once the lock is held, so a
+partition detached while it waited is left alone. That lock stops a partition
+being created, attached, detached or given other bounds, but not renamed, and
+`LOCK TABLE` finds the table it locks by name: a partition renamed away while a
+`LOCK TABLE` waits for it, and another renamed to its name, would lead that
+`LOCK TABLE` on to the other one, and to a second wait. So the function locks
+each partition it chose by identity, under the name it has at that moment, with
+`LOCK TABLE ... NOWAIT` tried again until its deadline rather than a wait in the
+lock queue, and refuses unless the lock it holds is on that very partition.
+Holding them all, it decides a third time. It drops them only if exactly those
+are still due, and otherwise drops nothing (55000). Only a READ COMMITTED
+statement reads the catalog as it stands, so the function refuses any other
+isolation level (25000). `DropAuditPartitionsBefore` opens its own control-plane
+transaction at READ COMMITTED when its caller has none, whatever the database's
+default isolation, and that is how `RunRetention` calls it. The function waits
+ten seconds in all for its locks, not ten for each: it takes the policy's table
+and `audit_events` each in a statement of its own, after setting `lock_timeout`
+to what remains of ten seconds from its start, and each partition it locks with
+`NOWAIT`, tried again until then. Each `DROP` runs under what remains too, which
+bounds its wait for the DEFAULT partition, if there is one, which dropping a
+range partition also locks. It gives up with 55P03, dropping nothing, once
+nothing remains. When nothing is due it takes no lock at all: it reads bounds
+with `pg_get_expr(relpartbound, 0)`, which does not open the partition.
+
+`RunRetention` counts every window back from the database's clock, in days of
+24 hours, so the cutoff it passes is exactly the window before the database's
+present, and always in the past. It refuses a window that is not a positive
+number of days. A run goes on past a part that fails and returns every failure
+together; the scheduler logs that as an error and sets the gauge
+`saas.retention.failing` to 1 for each failed part, and back to 0 once a run no
+longer fails it. The alert pack's `retention_failures` alert fires while a part
+reads 1, from the first scrape after the failure, and CI tests it with
+`promtool` ([MEASUREMENT_RUNBOOKS.md](./MEASUREMENT_RUNBOOKS.md#retention)).
+`pkg/infra/postgres_audit_retention_test.go` holds the function's rules against
+PostgreSQL, and the retention tests in `pkg/business` hold the window's.
+
+## Audit partitions are provisioned at UTC midnights, within ten seconds of waiting
+
+`audit_events_provision_partitions(months_ahead)` is the store's one
+provisioning call, at startup and on every retention run, whatever the
+policies. It creates the partitions of the months from the previous one to
+`months_ahead` ahead, by the database's clock in UTC, then brings every
+partition's row-level security in step with the parent's.
+`audit_events_ensure_partition(month)` and `audit_events_secure_all_partitions()`
+remain for migrations and operators. Execute on all three stays with
+`app_control_plane`.
+
+Creating a partition locks `audit_events` `ACCESS EXCLUSIVE`, which audit writes
+queue behind, so provisioning takes that lock only when a month lacks its
+partition, decides again under the lock what to create, and waits ten seconds in
+all for every lock it takes, like retention, before giving up with 55P03 and
+creating nothing. The months ahead are provisioned in advance, so a call that
+gives up leaves the next one time to try again. Bringing a partition in step
+locks it only when it is out of step, by identity as retention does, and decides
+again under that lock what to change. A partition locked that way is tried again
+rather than waited for in the queue, so one that other sessions keep in use
+throughout can make the call give up at its deadline, and the next run tries
+again. Bringing every partition in step reads the list of partitions holding
+`audit_events` `ACCESS SHARE`, so a retention run cannot drop a partition the
+call has listed before it reaches it.
+
+A new partition's bounds are UTC midnights, whatever the zone of the session
+that provisions it. A partition an earlier release cut at another zone's
+midnight still borders it, and a range from UTC midnight would overlap one cut
+west of UTC or leave a gap after one cut east of it, where an insert would find
+no partition. So a new partition starts where its predecessor ends, and ends
+where its successor starts, when that neighbour's bound lies within a day of
+the UTC midnight. `pkg/infra/postgres_audit_provisioning_test.go` holds these
+rules against PostgreSQL.
 
 ## SECURITY DEFINER functions list pg_temp last
 
@@ -1056,3 +1159,15 @@ The shared relation catalog classifies this table as tenant-scoped with a direct
 RLS, and policy against that classification. Column-level qualification permits
 updates only to the two revocation columns and verifies that the control-plane
 role has no table grant.
+
+The callable-source declaration and consumed OAuth state relations are tenant-only
+(migration `33_callable_sources`). Both force RLS on `org_id`; an operation's
+composite source foreign key also binds it to that organization. OAuth states
+persist only a digest and expiry. Credential tokens remain in the source's
+existing encrypted envelope. No control-plane role can read either new relation.
+
+`PruneSourceOperationReceipts` joins tenant receipts to the selected source's
+attempt markers under the request pool's RLS. Expired response bytes, a typed
+audit event and the cleanup operation's own receipt commit atomically. Compact
+markers are retained so expiry cannot authorize redispatch of a mutation.
+No control-plane grant or host retention timer is added.

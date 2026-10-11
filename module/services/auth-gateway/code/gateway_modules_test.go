@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -185,11 +186,12 @@ func TestGateway_ModuleWorkContext_TakesOnlyTheProjectedTokenBearer(t *testing.T
 // registered under the real service and method name so the test exercises the
 // exact procedure string the generated mesh policy admits.
 type fakeAccountsWorkContextMint struct {
-	code         codes.Code
-	lastInternal string
-	lastPrefix   string
-	lastToken    string
-	requestCount int
+	code             codes.Code
+	lastInternal     string
+	lastPrefix       string
+	lastOrganization string
+	lastToken        string
+	requestCount     int
 }
 
 func (f *fakeAccountsWorkContextMint) handle(ctx context.Context, dec func(any) error) (any, error) {
@@ -199,6 +201,7 @@ func (f *fakeAccountsWorkContextMint) handle(ctx context.Context, dec func(any) 
 	}
 	f.requestCount++
 	f.lastPrefix = req.GetPrefix()
+	f.lastOrganization = req.GetOrganizationId()
 	f.lastToken = req.GetServiceAccountToken()
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if values := md.Get("x-codefly-internal-token"); len(values) > 0 {
@@ -346,4 +349,14 @@ func TestGateway_ModuleWorkContext_MethodNotAllowed(t *testing.T) {
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestGateway_ModuleWorkContext_ForwardsOrganizationSelector(t *testing.T) {
+	gw, mint := newWorkContextExchangeHarness(t)
+	req := workContextRequest("example", "projected-token", "test-internal-token")
+	req.Body = io.NopCloser(strings.NewReader(`{"prefix":"example","organization_id":"11111111-1111-4111-8111-111111111111"}`))
+	recorder := httptest.NewRecorder()
+	gw.ServeHTTP(recorder, req)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "11111111-1111-4111-8111-111111111111", mint.lastOrganization)
 }

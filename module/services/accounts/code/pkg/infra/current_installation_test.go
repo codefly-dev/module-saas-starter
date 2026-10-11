@@ -19,6 +19,7 @@ func TestModuleCurrentInstallationTenantMembershipAndRevocation(t *testing.T) {
 	require.NoError(t, err)
 	caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID("example"), BoundOrg: org}
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{caller.PrincipalID: {Prefix: "example", Tenant: org}})
+	installCapabilityFixture(t, svc, org, owner)
 	ctx := auth.WithVerifiedDatabaseIdentity(testCtx, owner, org)
 	out, err := svc.ModuleCurrentInstallation(ctx, caller, org, owner, "example", installed.Id)
 	require.NoError(t, err)

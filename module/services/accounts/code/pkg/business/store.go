@@ -558,6 +558,11 @@ type Store interface {
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
 	ListAuditEventTypes(ctx context.Context) ([]AuditEventTypeRow, error)
 	EnsureAuditPartitions(ctx context.Context, months int) error
+	// DropAuditPartitionsBefore drops the audit partitions whose recorded range
+	// ends by `before`, which must be no later than the audit_events retention
+	// policy allows by the database's clock. It runs on a transaction already on
+	// ctx, which must be READ COMMITTED, or else in a control-plane transaction
+	// of its own at READ COMMITTED.
 	DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// Invitations
@@ -888,6 +893,9 @@ type Store interface {
 	// append-only trigger blocks that — but a partition drop; see
 	// DropAuditPartitionsBefore above.
 	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)
+	// DatabaseNow reads the database's clock. Retention counts every cutoff
+	// from it rather than from this process's clock, which may run ahead.
+	DatabaseNow(ctx context.Context) (time.Time, error)
 	DeleteOldSessions(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldNotifications(ctx context.Context, before time.Time) (int64, error)

@@ -18,12 +18,12 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
-        digest: sha256:6de44477a253ce97486fb86171994e148d1c564ef0ba6410a1b5584ebb27553a
+        digest: sha256:e4fbe4fd6bbd4d025ec8b3978fca2afbe0a5597c9f01eacd2ee095305a1b61f4
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:6de44477a253ce97486fb86171994e148d1c564ef0ba6410a1b5584ebb27553a
+        digest: sha256:e4fbe4fd6bbd4d025ec8b3978fca2afbe0a5597c9f01eacd2ee095305a1b61f4
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -31,7 +31,7 @@ services:
         kind: protobuf
         package: saas.gateway.auth.v1
         path: contracts/api/auth-gateway/grpc/contract.binpb
-        digest: sha256:563f35ddb76e5c2b94fb61ced0696b03c394f72db714f5922d0ebbae04eef16f
+        digest: sha256:0b293e6c50e9d7ef4921b178ab8575002a4b8bf75689322671ac7ee2421f74d7
   - name: cache
     endpoints: [read, write]
   - name: frontend
@@ -181,6 +181,8 @@ claims:
   - {kind: permission, key: "dashboards:read", owner: base}
   - {kind: permission, key: "dashboards:share", owner: base}
   - {kind: permission, key: "dashboards:write", owner: base}
+  - {kind: permission, key: "datasource:read", owner: base}
+  - {kind: permission, key: "datasource:invoke", owner: base}
   - {kind: permission, key: "entitlements:read", owner: base}
   - {kind: permission, key: "invitations:read", owner: base}
   - {kind: permission, key: "invitations:write", owner: base}

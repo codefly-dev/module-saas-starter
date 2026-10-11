@@ -33,14 +33,16 @@ func TestStory_HOST_JOB_001(t *testing.T) {
 
 	// Given a job leased by a module, through the surface a module actually
 	// calls — the guards on that surface are part of the story.
-	jobID := insertExecutionJob(t, pool, executionJob{queue: queue, maxAttempts: 5})
+	authority, err := module.AuthorizeModuleCapability(testCtx, caller)
+	require.NoError(t, err)
+	jobID := insertExecutionJob(t, pool, executionJob{queue: queue, maxAttempts: 5, attributes: authority.JobAuthority().Attributes()})
 	leased := claimModuleJobs(t, module, caller, queue, "module-worker").GetJobs()
 	require.Len(t, leased, 1)
 	require.Equal(t, jobID.String(), leased[0].GetId())
 	require.EqualValues(t, 1, leased[0].GetAttemptCount())
 
 	// When the module crashes before acknowledging, its lease runs out.
-	_, err := pool.Exec(testCtx, `
+	_, err = pool.Exec(testCtx, `
 		UPDATE job_messages
 		SET lease_expires_at = NOW() - INTERVAL '1 second'
 		WHERE id = $1`, jobID)
@@ -119,16 +121,20 @@ func moduleJobSurface(
 	queue string,
 ) (*business.Service, business.ModuleCaller) {
 	t.Helper()
-	service, err := business.NewService(nil)
+	service, err := business.NewService(testStore)
 	require.NoError(t, err)
 	principal := uuid.NewString()
-	// Claiming reads across tenants, so the surface requires a cross-tenant
-	// grant for it — a claim without one is refused before the store is reached.
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	// Claims are confined to the installation stamped on this organization's
+	// jobs, even when the module ceiling permits installation across tenants.
+	service.SetModuleAuthorityReads(testStore, nil)
 	service.SetModuleCapabilities(store, store, business.ModulePrincipalRegistry{
 		principal: {Queues: []string{queue}, CrossTenant: true},
 	})
-	return service, business.ModuleCaller{PrincipalID: principal}
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	seedOrgAdministrator(t, org, owner)
+	installCapabilityFixture(t, service, org, owner)
+	return service, business.ModuleCaller{PrincipalID: principal, BoundOrg: org}
 }
 
 func claimModuleJobs(

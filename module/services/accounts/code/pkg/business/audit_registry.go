@@ -382,6 +382,7 @@ const (
 	EventRecordShareRevoked  EventType = "saas.record.share_revoked"
 
 	EventInstallationCreated              EventType = "saas.installation.created"
+	EventInstallationNarrowed             EventType = "saas.installation.narrowed"
 	EventInstallationRevoked              EventType = "saas.installation.revoked"
 	EventInstallationOwnershipTransferred EventType = "saas.installation.ownership_transferred"
 
@@ -459,6 +460,9 @@ const (
 	EventWebhookSecretRotated EventType = "saas.webhook.secret_rotated"
 	EventJobReplayed          EventType = "saas.job.replayed"
 
+	EventDatasourceReceiptsPruned       EventType = "saas.datasource.receipts.pruned"
+	EventDatasourceOperationDeclared    EventType = "saas.datasource.operation.declared"
+	EventDatasourceOperationInvoked     EventType = "saas.datasource.operation.invoked"
 	EventDatasourceSourceAdded          EventType = "saas.datasource.source.added"
 	EventDatasourceSyncCompleted        EventType = "saas.datasource.sync.completed"
 	EventDatasourceCredentialUpdated    EventType = "saas.datasource.credential.updated"
@@ -650,6 +654,7 @@ var auditEventCatalog = []AuditEventDefinition{
 		uid("agent_principal_id"), uid("target_id"), uid("role_id"), uid("owner_principal_id"), str("allowed_audiences"), str("allowed_scopes")),
 	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled, or the presence it was installed from was withdrawn: its agent principal and standing grant were revoked and its scope node soft-deleted.",
 		uid("target_id"), str("binding_id"), str("generation"), str("revoked_reason")),
+	mutation(EventInstallationNarrowed, CategoryAccess, "An installation scope was narrowed and its affected work canceled.", str("scope"), str("revision"), str("binding_id")),
 	mutation(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
 		uid("owner_principal_id")),
 	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
@@ -747,6 +752,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
 		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2),
 	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
+	mutation(EventDatasourceReceiptsPruned, CategorySystem, "Expired source receipt responses were pruned.", str("effect_id"), PayloadField{Name: "receipts", Kind: FieldInt}),
+	mutation(EventDatasourceOperationDeclared, CategorySystem, "A source operation set was declared.", strs("operations")),
+	observation(EventDatasourceOperationInvoked, CategorySystem, "A source operation was invoked.", str("operation"), enum("effect", "READ_ONLY", "MUTATION", "UNKNOWN"), enum("outcome", "committed", "refused", "unresolved", "rate_limited"), str("effect_id")),
 	observation(EventDatasourceAccountLinkStarted, CategorySystem, "A person started linking a provider account.", str("connector")),
 	mutation(EventDatasourceAccountLinked, CategorySystem, "A person linked a provider account they signed in as.",
 		str("connector"), str("provider_account_id")),

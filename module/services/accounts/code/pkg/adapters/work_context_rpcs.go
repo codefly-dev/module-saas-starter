@@ -678,18 +678,16 @@ var ErrWorkContextAuthorityUnconfigured = errors.New("Work Context authority is 
 // module-facing surface, with the module's service principal as both owner and
 // sole actor.
 //
-// It seals identity and tenant, not capabilities: what the principal may do is
-// re-read from the declared grant on every call, so a narrowed grant takes
-// effect at once instead of when the outstanding token expires. Sealing the
-// grant here too would put the same authority in two places that disagree for a
-// token lifetime, and an empty scope set denies at any consumer that reads one.
+// It seals identity and tenant. Every capability use re-reads and intersects
+// the live installation under an authority fence; no capabilities removed from
+// that consent can be exercised. Installation id/revision are resolved by the
+// business mint but are not encoded by this signer. Retained capabilities, and
+// scope explicitly consented by a later reinstall, can still be used by an
+// unexpired identity token. A mint-time ceiling and installation-identity
+// revocation require the separate Work Context signing-format cutover.
 //
-// Unlike every other mint here the authority is not resolved from the database:
-// a module principal is declared by the deployment rather than registered per
-// organization, so there is no owner of record to resolve, no standing grant to
-// intersect, and no authorization revision to seal. For the same reason no
-// actor-chain hop is journaled — that journal records hops between registered
-// principals — and the durable record is the issuance audit event instead.
+// This method only signs already-resolved authority. The business layer owns
+// execution binding, live consent, tenant validation and the issuance audit.
 func (s *WorkContextAuthorityServer) StartModuleTask(
 	authority business.ModuleWorkContextAuthority,
 ) (workcontext.WorkContextToken, *basev0.WorkContextV1, error) {

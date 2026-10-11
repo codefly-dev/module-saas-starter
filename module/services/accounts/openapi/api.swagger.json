@@ -22,6 +22,30 @@
       },
       "type": "object"
     },
+    "DatasourceServiceDeclareSourceOperationsBody": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DatasourceServiceInvokeSourceOperationBody": {
+      "description": "InvokeSourceOperationRequest carries exactly one JSON object in input_json.\neffect_id must match x-codefly-effect-id; either location may supply it.",
+      "properties": {
+        "effectId": {
+          "type": "string"
+        },
+        "inputJson": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "DelegationServiceDecideDelegationBody": {
       "properties": {
         "decision": {
@@ -48,6 +72,19 @@
           "type": "string"
         },
         "teamId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceNarrowInstallationBody": {
+      "description": "An org administrator may only remove installed authority. The host reads\nthe current revision and serializes the narrowing with other lifecycle acts.",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "scope": {
+          "description": "Same JSON shape as InstallSolution.scope; {} removes all capability access.",
           "type": "string"
         }
       },
@@ -236,6 +273,15 @@
         }
       },
       "type": "object"
+    },
+    "SourceOperationEffect": {
+      "default": "EFFECT_UNSPECIFIED",
+      "enum": [
+        "EFFECT_UNSPECIFIED",
+        "EFFECT_READ_ONLY",
+        "EFFECT_MUTATION"
+      ],
+      "type": "string"
     },
     "TeamServiceCreateTeamBody": {
       "properties": {
@@ -1517,6 +1563,18 @@
       },
       "type": "object"
     },
+    "v1DeclareSourceOperationsResponse": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "v1DelegationEvent": {
       "description": "DelegationEvent is one streaming event delivered to a\nsubscriber. The agent SDK reads exactly one event (the\nterminal decision) and disconnects.",
       "properties": {
@@ -2330,6 +2388,10 @@
           "description": "Human-readable display label for the solution's authority-root scope node\n(kind='solution'). The node's ltree path is derived server-side, not this.",
           "type": "string"
         },
+        "scope": {
+          "description": "Installed consent as JSON: capabilities, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences and\nartifact_policies, with the same shapes as the module envelope grant.\nMust be a subset of the current ceiling. Omitted selects that ceiling;\nan explicit {} grants nothing. Tenant and identity are never scope fields.",
+          "type": "string"
+        },
         "targetId": {
           "description": "The solution target being installed, from ListAvailableSolutions. Required.\n\nAn installer chooses an identity, never an address. The target must be LIVE\nand ACCEPTED when the install lands: installing a withdrawn target would\nrecord consent to a presence that already ended, and installing a target\nwhose newest generation was refused would record consent to a release this\nhost never admitted.",
           "type": "string"
@@ -2543,6 +2605,18 @@
         "status": {
           "title": "paid | open | void | uncollectible | draft",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1InvokeSourceOperationResponse": {
+      "properties": {
+        "outputJson": {
+          "description": "Exactly one JSON object; {} when unknown.",
+          "type": "string"
+        },
+        "receipt": {
+          "$ref": "#/definitions/v1SourceOperationReceipt"
         }
       },
       "type": "object"
@@ -3329,6 +3403,18 @@
         "shares": {
           "items": {
             "$ref": "#/definitions/v1RecordShare",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListSourceOperationsResponse": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
             "type": "object"
           },
           "type": "array"
@@ -4895,6 +4981,71 @@
         "SOLUTION_REGISTRATION_STATUS_TOMBSTONED"
       ],
       "type": "string"
+    },
+    "v1SourceOperation": {
+      "description": "DatasourceService is the tenant-facing surface a solution drives (directly or\nthrough the generated SDK) to declare and operate connected datasources.\nSourceOperation is an admitted route and bounded JSON contract, never a credential.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "effect": {
+          "$ref": "#/definitions/SourceOperationEffect"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "maxOutputBytes": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "outputSchema": {
+          "type": "object"
+        },
+        "path": {
+          "type": "string"
+        },
+        "query": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1SourceOperationReceipt": {
+      "description": "SourceOperationReceipt contains only the committed result and safe metadata.",
+      "properties": {
+        "committedAt": {
+          "description": "UTC RFC3339Nano, empty for an unknown outcome.",
+          "type": "string"
+        },
+        "effectId": {
+          "type": "string"
+        },
+        "outputJson": {
+          "description": "Exactly one JSON object; {} when unknown.",
+          "type": "string"
+        },
+        "providerStatus": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "description": "committed or unknown; unknown never authorizes redispatch.",
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "v1StartChildSessionWorkContextRequest": {
       "properties": {
@@ -6970,6 +7121,37 @@
         ]
       }
     },
+    "/v1/datasource-operation-receipts/{effectId}": {
+      "get": {
+        "operationId": "DatasourceService_LookupInvokeSourceOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "effectId",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "LookupInvokeSourceOperation recovers a receipt without contacting the provider.\nNotFound \"source effect not found\" means there is no attempt marker; retrying\nthe same effect is safe. An unknown receipt never authorizes redispatch.\nOnce an attempt exists, retained receipt evidence survives declaration\nremoval or replacement. Current source read authority still applies.",
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
     "/v1/delegations": {
       "post": {
         "operationId": "DelegationService_RequestDelegation",
@@ -7551,6 +7733,46 @@
           }
         },
         "summary": "RevokeInstallationFromTeam removes one team grant at an installation's\nauthority-root node. It is a narrowing, so it runs under the policy log\nexactly as RevokeScope does: a host that cannot witness the narrowing refuses\nit, and says so, rather than revoking unwitnessed. It removes the one grant\nat the authority root that granted_teams reports; a team that also reaches\nthe installation from a grant above keeps that reach. Organisation-admin,\nwith the same platform super administrator exception.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:narrow": {
+      "post": {
+        "operationId": "InstallationService_NarrowInstallation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceNarrowInstallationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "Narrowing is witnessed in the policy log before commit, then atomically\nbumps the installation revision, cancels its org's work and records audit.",
         "tags": [
           "InstallationService"
         ]
@@ -8387,6 +8609,137 @@
         },
         "tags": [
           "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/datasources/{sourceId}/operations": {
+      "get": {
+        "operationId": "DatasourceService_ListSourceOperations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSourceOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListSourceOperations reads the currently admitted declarations under source authority.",
+        "tags": [
+          "DatasourceService"
+        ]
+      },
+      "post": {
+        "operationId": "DatasourceService_DeclareSourceOperations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceDeclareSourceOperationsBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeclareSourceOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "DeclareSourceOperations atomically replaces the source operation set, as an administrator.",
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/datasources/{sourceId}/operations/{operation}:invoke": {
+      "post": {
+        "operationId": "DatasourceService_InvokeSourceOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "operation",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceInvokeSourceOperationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "InvokeSourceOperation calls an admitted operation under current authority.\nFailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN\nmeans this effect will not be redispatched and its receipt stays unresolved.\nSOURCE_OPERATION_DECLARATION_REMOVED refuses a retained effect whose\ndeclaration was removed; ErrorInfo.metadata[\"receipt_status\"] is committed\nor unknown. Recover that same effect with Lookup; never choose a fresh ID.\nOther refusal reasons do not mean unknown. Provider refusals include the\ndecimal HTTP status in ErrorInfo.metadata[\"provider_status\"] when known.\nInvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.",
+        "tags": [
+          "DatasourceService"
         ]
       }
     },

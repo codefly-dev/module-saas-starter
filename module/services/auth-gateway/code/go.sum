@@ -44,8 +44,8 @@ github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os8IaYg++6uMOdKK83QtkkvJik=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
-github.com/codefly-dev/core v0.17.2 h1:7jVf62OUuUZOFYBk4aGJ6Tr5VuIwXvw45XP2ZJMEtXA=
-github.com/codefly-dev/core v0.17.2/go.mod h1:FKBqn6GMGIsx9b3LNY6kKCRxCEjjeswvqt2CxSZWq20=
+github.com/codefly-dev/core v0.18.0 h1:G7KmDlTUUfiTHQVKLEs9Vo+YywxjhmI11RqEBUA0L7Q=
+github.com/codefly-dev/core v0.18.0/go.mod h1:FKBqn6GMGIsx9b3LNY6kKCRxCEjjeswvqt2CxSZWq20=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/sdk-go v0.3.1 h1:ljKwrfHIiESV+R/MXO3a7XTdKwFNaY6vdw0+8YAo9g8=

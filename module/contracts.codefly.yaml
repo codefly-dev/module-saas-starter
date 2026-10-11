@@ -1,0 +1,3 @@
+schema: codefly/module-contracts-config/v1
+surfaces:
+  accounts: generated/api-contract-surfaces.json

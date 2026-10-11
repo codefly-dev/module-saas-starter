@@ -130,6 +130,16 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
+	effectReceipts, closeEffectReceipts, err := store.NewEffectReceipts()
+	if err != nil {
+		return nil, err
+	}
+	if err = service.ConfigureSourceOperationReceipts(effectReceipts); err != nil {
+		closeEffectReceipts()
+		return nil, err
+	}
+	// The pool is owned by the process; close the receipt handle at shutdown.
+	go func() { <-ctx.Done(); closeEffectReceipts() }()
 	abuseVerifier, err := configuredAbuseVerifier()
 	if err != nil {
 		return nil, err
@@ -355,6 +365,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		workspaceEnv("github-app", "GITHUB_APP_CLIENT_ID"),
 		workspaceEnv("github-app", "GITHUB_APP_CLIENT_SECRET"),
 	)
+	if err := service.ConfigureDatasourceOAuth(workspaceEnv("datasource-oauth", "providers"), workspaceEnv("datasource-oauth", "client_id"), workspaceEnv("datasource-oauth", "client_secret")); err != nil {
+		return nil, err
+	}
+
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(cipher, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
@@ -1147,21 +1161,17 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Start background data retention goroutine. Runs once on startup and
 	// then every 24 hours, deleting records older than their configured
-	// retention period.
+	// retention period. A run that fails in any part is an error, and sets
+	// saas.retention.failing, which the alert pack watches: nobody reads the
+	// log of a job that runs once a day.
+	retentionMetrics, err := newRetentionTelemetry(otel.Meter("github.com/codefly-dev/module-saas-starter/accounts"))
+	if err != nil {
+		return nil, fmt.Errorf("register retention metrics: %w", err)
+	}
 	retentionCtx, retentionCancel := context.WithCancel(ctx)
 	go func() {
 		rw := wool.Get(retentionCtx).In("retention")
-		runRetention := func() {
-			if deleted, err := service.RunRetention(retentionCtx); err != nil {
-				rw.Warn("scheduled run failed", wool.ErrField(err))
-			} else {
-				for k, v := range deleted {
-					if v > 0 {
-						rw.Info("deleted records", wool.Field("count", v), wool.Field("kind", k))
-					}
-				}
-			}
-		}
+		runRetention := func() { runScheduledRetention(retentionCtx, service, retentionMetrics) }
 		// Single-use replay markers expire with their token (≤ 15 min), so they
 		// are swept far more often than the daily retention pass or they would
 		// pile up for a day before reclamation.

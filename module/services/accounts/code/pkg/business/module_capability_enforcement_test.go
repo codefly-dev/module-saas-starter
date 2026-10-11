@@ -81,6 +81,7 @@ func caller() ModuleCaller {
 func liveAt(revision, epoch uint64) *fakeModuleAuthority {
 	return &fakeModuleAuthority{live: &LiveModuleAuthority{
 		InstallationID:       "install-1",
+		Scope:                InstallationScope{Capabilities: true, Queues: []string{"a"}},
 		InstallationRevision: revision,
 		ProducerEpoch:        epoch,
 	}}
@@ -430,4 +431,8 @@ func TestRevokedDeferredWorkIsTerminalWhileAnOutageIsRetryable(t *testing.T) {
 	require.NotErrorIs(t, err, ErrDeferredWorkRevoked,
 		"an unreadable authority must stay retryable — nothing was decided")
 	require.Equal(t, codes.Unavailable, status.Code(err))
+}
+
+func (f *fakeModuleAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
 }

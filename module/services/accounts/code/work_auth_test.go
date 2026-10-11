@@ -11,6 +11,7 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/installationtest"
 	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
@@ -512,6 +513,15 @@ func TestNoModuleSecretAuthenticatesAMint(t *testing.T) {
 	registry, err := moduleregistrytest.Parse(
 		`{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},"tenant":"` + tenant + `"}}`)
 	require.NoError(t, err)
+	principal := business.ModulePrincipalID("documents")
+	grant := registry[principal]
+	grant.PresenceBinding = "acme.test.documents"
+	registry[principal] = grant
+	scope := business.FullInstallationScope(grant)
+	installations := &installationtest.Store{}
+	_, err = installations.InstallSolution(context.Background(), &business.InstallSolutionParams{OrgID: tenant, RegistryPrincipalID: principal, RegistryBindingID: grant.PresenceBinding, Scope: &scope})
+	require.NoError(t, err)
+	service.SetModuleAuthorityReads(installations, nil)
 	service.SetModuleCapabilities(nil, nil, registry)
 	cluster := executiontest.New()
 	service.SetExecutionBinding(cluster, cluster)

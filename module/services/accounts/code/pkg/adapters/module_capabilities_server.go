@@ -79,10 +79,16 @@ func moduleIdentityError(err error, denied codes.Code, message string) error {
 // authority document approves. The principal is derived from the prefix, which
 // the token must back.
 func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, req *gen.ModuleMintWorkContextRequest) (*gen.ModuleMintWorkContextResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.ModuleAuthorizeWorkContext(ctx, req.GetPrefix(), req.GetServiceAccountToken())
+	authority, err := service.ModuleAuthorizeWorkContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetOrganizationId())
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.PermissionDenied, "module work context denied"); mapped != nil {
 			return nil, mapped
@@ -141,10 +147,16 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 // headless; FailedPrecondition when the declared tenant is missing or the
 // issuer is unconfigured.
 func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Context, req *gen.ModuleMintOperationContextRequest) (*gen.ModuleMintOperationContextResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority, err := service.ModuleAuthorizeOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetBinding())
+	authority, err := service.ModuleAuthorizeOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetBinding(), req.GetOrganizationId())
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.Unauthenticated, "module operation context denied"); mapped != nil {
 			return nil, mapped
@@ -187,6 +199,12 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 }
 
 func (s *ModuleCapabilitiesServer) EnqueueJob(ctx context.Context, req *gen.ModuleEnqueueJobRequest) (*gen.ModuleEnqueueJobResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -202,6 +220,12 @@ func (s *ModuleCapabilitiesServer) EnqueueJob(ctx context.Context, req *gen.Modu
 }
 
 func (s *ModuleCapabilitiesServer) ClaimJobs(ctx context.Context, req *gen.ModuleClaimJobsRequest) (*gen.ModuleClaimJobsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -222,6 +246,12 @@ func (s *ModuleCapabilitiesServer) ClaimJobs(ctx context.Context, req *gen.Modul
 }
 
 func (s *ModuleCapabilitiesServer) HeartbeatJob(ctx context.Context, req *gen.ModuleHeartbeatJobRequest) (*gen.ModuleHeartbeatJobResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -237,6 +267,12 @@ func (s *ModuleCapabilitiesServer) HeartbeatJob(ctx context.Context, req *gen.Mo
 }
 
 func (s *ModuleCapabilitiesServer) AckJob(ctx context.Context, req *gen.ModuleAckJobRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -251,6 +287,12 @@ func (s *ModuleCapabilitiesServer) AckJob(ctx context.Context, req *gen.ModuleAc
 }
 
 func (s *ModuleCapabilitiesServer) NackJob(ctx context.Context, req *gen.ModuleNackJobRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -267,6 +309,12 @@ func (s *ModuleCapabilitiesServer) NackJob(ctx context.Context, req *gen.ModuleN
 // NotifyOrgAdmins returns only whether any administrator received the
 // notification: the recipients stay the host's.
 func (s *ModuleCapabilitiesServer) NotifyOrgAdmins(ctx context.Context, req *gen.ModuleNotifyOrgAdminsRequest) (*gen.ModuleNotifyOrgAdminsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -290,6 +338,12 @@ func (s *ModuleCapabilitiesServer) NotifyOrgAdmins(ctx context.Context, req *gen
 }
 
 func (s *ModuleCapabilitiesServer) NotifyUser(ctx context.Context, req *gen.ModuleNotifyUserRequest) (*gen.ModuleNotifyUserResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -314,6 +368,12 @@ func (s *ModuleCapabilitiesServer) NotifyUser(ctx context.Context, req *gen.Modu
 }
 
 func (s *ModuleCapabilitiesServer) RequestApproval(ctx context.Context, req *gen.ModuleRequestApprovalRequest) (*gen.ModuleRequestApprovalResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -344,6 +404,12 @@ func (s *ModuleCapabilitiesServer) RequestApproval(ctx context.Context, req *gen
 }
 
 func (s *ModuleCapabilitiesServer) GetApproval(ctx context.Context, req *gen.ModuleGetApprovalRequest) (*gen.ModuleApproval, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -359,6 +425,12 @@ func (s *ModuleCapabilitiesServer) GetApproval(ctx context.Context, req *gen.Mod
 }
 
 func (s *ModuleCapabilitiesServer) CancelApproval(ctx context.Context, req *gen.ModuleCancelApprovalRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -422,6 +494,12 @@ func moduleAuditDeclarations(types []*gen.ModuleAuditEventTypeDeclaration) []bus
 }
 
 func (s *ModuleCapabilitiesServer) DeclareAuditEventTypes(ctx context.Context, req *gen.ModuleDeclareAuditEventTypesRequest) (*gen.ModuleDeclareAuditEventTypesResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -441,6 +519,12 @@ func (s *ModuleCapabilitiesServer) DeclareAuditEventTypes(ctx context.Context, r
 }
 
 func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -456,6 +540,12 @@ func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.
 }
 
 func (s *ModuleCapabilitiesServer) ListSubjectVisibility(ctx context.Context, req *gen.ModuleListSubjectVisibilityRequest) (*gen.ModuleListSubjectVisibilityResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -482,7 +572,12 @@ func (s *ModuleCapabilitiesServer) ListSubjectVisibility(ctx context.Context, re
 // buffered whole in the business layer (it is already capped there), so this
 // handler's only job is to slice it into bounded wire frames.
 func (s *ModuleCapabilitiesServer) FetchDatasourceBlob(req *gen.FetchDatasourceBlobRequest, stream grpc.ServerStreamingServer[gen.FetchDatasourceBlobChunk]) error {
-	return streamDatasourceBlob(stream.Context(), req, stream)
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(stream.Context())
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+	return streamDatasourceBlob(ctx, req, stream)
 }
 
 // datasourceBlobChunkBytes bounds each streamed frame. It sits well under the
@@ -501,6 +596,12 @@ type datasourceBlobSender interface {
 // receiver can size its buffer and label the content from the first frame; an
 // empty blob still yields exactly one frame so that metadata always arrives.
 func streamDatasourceBlob(ctx context.Context, req *gen.FetchDatasourceBlobRequest, stream datasourceBlobSender) error {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return err
 	}
@@ -546,7 +647,12 @@ func writeDatasourceBlobFrames(content []byte, contentType string, stream dataso
 // bounded data frames. The business layer reads the batch from the source's
 // repository mirror in request order, so nothing is buffered beyond one frame.
 func (s *ModuleCapabilitiesServer) FetchDatasourceFiles(req *gen.FetchDatasourceFilesRequest, stream grpc.ServerStreamingServer[gen.FetchDatasourceFilesFrame]) error {
-	return streamDatasourceFiles(stream.Context(), req, stream)
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(stream.Context())
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+	return streamDatasourceFiles(ctx, req, stream)
 }
 
 // datasourceFilesSender is the send half both the gRPC and Connect server
@@ -556,6 +662,12 @@ type datasourceFilesSender interface {
 }
 
 func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesRequest, stream datasourceFilesSender) error {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return err
 	}
@@ -608,6 +720,12 @@ func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesReq
 }
 
 func (s *ModuleCapabilitiesServer) PlaceRecord(ctx context.Context, req *gen.ModulePlaceRecordRequest) (*gen.ModulePlaceRecordResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -623,6 +741,12 @@ func (s *ModuleCapabilitiesServer) PlaceRecord(ctx context.Context, req *gen.Mod
 }
 
 func (s *ModuleCapabilitiesServer) PublishEvent(ctx context.Context, req *gen.ModulePublishEventRequest) (*gen.ModulePublishEventResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -638,6 +762,12 @@ func (s *ModuleCapabilitiesServer) PublishEvent(ctx context.Context, req *gen.Mo
 }
 
 func (s *ModuleCapabilitiesServer) Subscribe(ctx context.Context, req *gen.ModuleSubscribeRequest) (*gen.ModuleSubscribeResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -653,6 +783,12 @@ func (s *ModuleCapabilitiesServer) Subscribe(ctx context.Context, req *gen.Modul
 }
 
 func (s *ModuleCapabilitiesServer) Unsubscribe(ctx context.Context, req *gen.ModuleUnsubscribeRequest) (*emptypb.Empty, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -667,6 +803,12 @@ func (s *ModuleCapabilitiesServer) Unsubscribe(ctx context.Context, req *gen.Mod
 }
 
 func (s *ModuleCapabilitiesServer) ListSubscriptions(ctx context.Context, req *gen.ModuleListSubscriptionsRequest) (*gen.ModuleListSubscriptionsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -686,6 +828,12 @@ func (s *ModuleCapabilitiesServer) ListSubscriptions(ctx context.Context, req *g
 }
 
 func (s *ModuleCapabilitiesServer) ReplayEvents(ctx context.Context, req *gen.ModuleReplayEventsRequest) (*gen.ModuleReplayEventsResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}

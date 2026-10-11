@@ -55,6 +55,9 @@ func (s *PostgresStore) AppendModuleEnvelopeRecord(
 	if record.Revision != expectedRevision+1 {
 		return fmt.Errorf("%w: revision %d does not follow %d", business.ErrModuleEnvelopeConflict, record.Revision, expectedRevision)
 	}
+	if _, err := s.getQueryExecutor(ctx).Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('module-envelope-installation',0))`); err != nil {
+		return err
+	}
 	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
 		INSERT INTO public.module_envelopes (revision, document, written_by)
 		SELECT $1, $2::jsonb, $3::uuid
@@ -80,3 +83,21 @@ func (s *PostgresStore) LatestModuleEnvelopeRevision(ctx context.Context) (uint6
 }
 
 var _ business.ModuleEnvelopeStore = (*PostgresStore)(nil)
+
+func (s *PostgresStore) ModuleInstallations(ctx context.Context) ([]business.ModuleInstallationConsent, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `SELECT id::text, org_id::text, registry_principal_id::text
+        FROM public.installations WHERE status='active' AND registry_principal_id IS NOT NULL ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []business.ModuleInstallationConsent
+	for rows.Next() {
+		var row business.ModuleInstallationConsent
+		if err := rows.Scan(&row.ID, &row.OrgID, &row.PrincipalID); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}

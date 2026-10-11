@@ -41,9 +41,9 @@ func TestInstallSolutionEmitsAuditWithGrantorAndCeiling(t *testing.T) {
 	// member a forwarded viewer context names — declared here the way a
 	// composition declares it, through the principal registry.
 	previousPrincipals := testService.ModulePrincipals()
-	testService.SetModulePrincipals(business.ModulePrincipalRegistry{
-		business.ModulePrincipalID("acme.collection"): {Prefix: "acme.collection"},
-	})
+	registry := testService.ModulePrincipals()
+	registry[business.ModulePrincipalID("acme.collection")] = business.ModulePrincipalGrant{Prefix: "acme.collection"}
+	testService.SetModulePrincipals(registry)
 	t.Cleanup(func() { testService.SetModulePrincipals(previousPrincipals) })
 
 	installation, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{

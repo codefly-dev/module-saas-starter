@@ -10,17 +10,8 @@ package main
 // at the head before this file a composed module was not reachable over REST at
 // all.
 //
-// This copies the solution shape rather than inventing a second one: the same
-// cache, the same single carried resolution, the same upstream policy, the same
-// tombstone semantics, the same 120 s revocation bound. What it deliberately does
-// NOT copy is per-viewer admission. A solution route resolves the viewer's
-// installation of the record's target; a module is part of the composition, not
-// something an organisation installs, so the ordinary authenticated pipeline is
-// the whole gate — exactly as main's federated route was.
-//
-// That asymmetry is why the registry must SAY which kind a record is, and why
-// neither surface guesses: routing a solution's upstream here would put it behind
-// no installation check at all.
+// Declaration supplies the destination; accounts supplies organization consent
+// and viewer exposure on every request. Neither fact substitutes for the other.
 
 import (
 	"net/http"
@@ -174,12 +165,27 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 	// can call back through the gateway on the user's behalf, exactly as solution
 	// passthrough does.
 	//
-	// rateLimitThenProxy, not proxyTo: a module data endpoint must consume the
+	// A module data endpoint and its admission read must consume the
 	// same per-org/per-IP budget an equivalent catalog route does, or /v1/<alias>/*
 	// would be an unmetered proxy an authenticated caller could flood past the org
 	// budget.
 	entry := &RouteEntry{Service: moduleServicePrefix + alias, Protected: true}
-	g.rateLimitThenProxy(w, r, routing.Upstream, entry)
+	org, viewer := r.Header.Get("X-Org-Id"), effectiveViewer(r)
+	if org == "" || viewer == "" {
+		httpError(w, http.StatusForbidden, "no organization in this session")
+		return true
+	}
+	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch g.admitViewerSolution(r.Context(), org, viewer, routing) {
+		case viewerSolutionNotEntitled:
+			httpError(w, http.StatusForbidden, "module is not installed for this organization")
+			return
+		case viewerSolutionUndecidable:
+			httpError(w, http.StatusServiceUnavailable, "module installation authority unavailable")
+			return
+		}
+		g.proxyTo(w, r, routing.Upstream, entry)
+	}))
 	return true
 }
 
