@@ -49,6 +49,8 @@ import {
 	type TeamGrantRow,
 } from "../model/installations";
 import {
+	useGrantInstallationToTeam,
+	useInstallSolution,
 	useRevokeInstallationFromTeam,
 	useUninstallSolution,
 } from "../service/mutations";
@@ -105,6 +107,8 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 	const [installing, setInstalling] = useState<AvailableSolution | null>(null);
 	const available = useAvailableSolutions(orgId);
 	const installed = useInstallations(orgId);
+	// This owner survives dismissal of the form and reports every host result.
+	const install = useInstallSolution(orgId);
 
 	return (
 		<div className="space-y-6">
@@ -147,7 +151,11 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 				<>
 					<AvailableSection
 						query={available}
-						onInstall={(solution) => setInstalling(solution)}
+						installing={install.isPending}
+						onInstall={(solution) => {
+							install.reset();
+							setInstalling(solution);
+						}}
 					/>
 					<InstalledSection orgId={orgId} query={installed} />
 				</>
@@ -157,6 +165,23 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 				<InstallSolutionDialog
 					orgId={orgId}
 					solution={installing}
+					isPending={install.isPending}
+					error={install.isError ? hostRefusal(install.error) : undefined}
+					onSubmit={(values) => {
+						install.mutate(
+							{ targetId: installing.targetId, values },
+							{
+								onSuccess: () => {
+									toast.success(`${installing.routeAlias} installed`);
+									setInstalling(null);
+								},
+								onError: (error) =>
+									toast.error(
+										`The host refused the install: ${hostRefusal(error)}`,
+									),
+							},
+						);
+					}}
 					onClose={() => setInstalling(null)}
 				/>
 			)}
@@ -166,9 +191,11 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 
 function AvailableSection({
 	query,
+	installing,
 	onInstall,
 }: {
 	query: ReturnType<typeof useAvailableSolutions>;
+	installing: boolean;
 	onInstall: (solution: AvailableSolution) => void;
 }) {
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
@@ -199,12 +226,13 @@ function AvailableSection({
 							"the available solutions",
 							"No solution is available to this organization.",
 						)}
+						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
 				) : (
 					<>
 						{stale && (
 							<p role="status" className="mb-2 text-sm text-muted-foreground">
-								{stale}
+								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
 						<Table aria-label="Available solutions">
@@ -239,7 +267,7 @@ function AvailableSection({
 										<TableCell className="text-right">
 											<Button
 												size="sm"
-												disabled={row.installed}
+												disabled={row.installed || installing}
 												aria-label={`Install ${row.alias}`}
 												onClick={() => onInstall(row.solution)}
 											>
@@ -266,6 +294,7 @@ function InstalledSection({
 }) {
 	const uninstall = useUninstallSolution(orgId);
 	const revoke = useRevokeInstallationFromTeam(orgId);
+	const grant = useGrantInstallationToTeam(orgId);
 	const [confirming, setConfirming] = useState<InstalledRow | null>(null);
 	const [granting, setGranting] = useState<InstalledRow | null>(null);
 	const [refusal, setRefusal] = useState<{
@@ -303,7 +332,9 @@ function InstalledSection({
 			},
 			{
 				onSuccess: () =>
-					toast.success(`${team.team} no longer reaches ${name(row)}`),
+					toast.success(
+						`${team.team}'s ${team.role} grant removed from ${name(row)}`,
+					),
 				onError: (error) =>
 					setRefusal({
 						title: `The host refused to remove ${team.team} from ${name(row)}`,
@@ -344,12 +375,13 @@ function InstalledSection({
 							"the installed solutions",
 							"Nothing is installed in this organization.",
 						)}
+						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
 				) : (
 					<>
 						{stale && (
 							<p role="status" className="text-sm text-muted-foreground">
-								{stale}
+								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
 						<Table aria-label="Installed solutions">
@@ -380,7 +412,11 @@ function InstalledSection({
 												row={row}
 												name={name(row)}
 												revoking={revoke.isPending}
-												onGrant={() => setGranting(row)}
+												granting={grant.isPending}
+												onGrant={() => {
+													grant.reset();
+													setGranting(row);
+												}}
 												onRevoke={(team) => runRevoke(row, team)}
 											/>
 										</TableCell>
@@ -435,8 +471,24 @@ function InstalledSection({
 			{granting && (
 				<GrantTeamDialog
 					orgId={orgId}
-					installationId={granting.installationId}
 					solution={name(granting)}
+					isPending={grant.isPending}
+					error={grant.isError ? hostRefusal(grant.error) : undefined}
+					onSubmit={(values) => {
+						grant.mutate(
+							{ installationId: granting.installationId, ...values },
+							{
+								onSuccess: () => {
+									toast.success(`Team grant recorded for ${name(granting)}`);
+									setGranting(null);
+								},
+								onError: (error) =>
+									toast.error(
+										`The host refused the grant: ${hostRefusal(error)}`,
+									),
+							},
+						);
+					}}
 					onClose={() => setGranting(null)}
 				/>
 			)}
@@ -453,12 +505,14 @@ function TeamExposure({
 	row,
 	name,
 	revoking,
+	granting,
 	onGrant,
 	onRevoke,
 }: {
 	row: InstalledRow;
 	name: string;
 	revoking: boolean;
+	granting: boolean;
 	onGrant: () => void;
 	onRevoke: (team: TeamGrantRow) => void;
 }) {
@@ -505,6 +559,7 @@ function TeamExposure({
 				variant="outline"
 				size="sm"
 				aria-label={`Grant a team access to ${name}`}
+				disabled={granting}
 				onClick={onGrant}
 			>
 				Grant a team

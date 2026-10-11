@@ -1,4 +1,6 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	screen,
@@ -6,22 +8,47 @@ import {
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
+import Page from "@/app/admin/solutions/page";
+import type { OrgRole, PlatformRole } from "@/lib/auth-session";
+import { FRONTEND_NAVIGATION } from "@/gen/saas/frontend/v1/plugin_catalog";
+import { canPresent } from "@/lib/plugins/presentation";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 
-// The page belongs to the active organization from the session. Pin it so the
-// container renders the organization's solutions, not the selector prompt.
-vi.mock("@/lib/auth", () => ({
-	useAuth: () => ({
-		organizationId: "org-1",
-		switchOrganization: async () => {},
-	}),
+const session = vi.hoisted(() => ({
+	organizationId: "org-1",
+	isAuthenticated: true,
+	orgRole: "owner" as OrgRole | undefined,
+	platformRole: undefined as PlatformRole | undefined,
+	switchOrganization: async () => {},
 }));
+vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { SolutionInstallationsPage } from "./solution-installations-page";
+const checkedRequests: { actual: unknown; expected: unknown }[] = [];
+async function assertBody(request: Request, expected: unknown) {
+	const actual = await request.json();
+	checkedRequests.push({ actual, expected });
+	expect(actual).toEqual(expected);
+}
 
-afterEach(cleanup);
+beforeEach(() => {
+	session.organizationId = "org-1";
+	session.isAuthenticated = true;
+	session.orgRole = "owner";
+	session.platformRole = undefined;
+	checkedRequests.length = 0;
+	vi.clearAllMocks();
+});
+afterEach(() => {
+	cleanup();
+	// MSW turns handler exceptions into HTTP errors. Assert again here so a
+	// malformed request can never pass a test that expects a host refusal.
+	for (const { actual, expected } of checkedRequests)
+		expect(actual).toEqual(expected);
+});
 
 const EXPENSES_TARGET = "aaaaaaaa-0000-4000-8000-000000000001";
 const LEDGER_TARGET = "aaaaaaaa-0000-4000-8000-000000000002";
@@ -129,7 +156,11 @@ const teams = {
 
 // Picks an option in a kit Select, the way the other admin tests do.
 async function choose(dialog: HTMLElement, label: string, option: string) {
-	fireEvent.click(within(dialog).getByRole("combobox", { name: label }));
+	const control = within(dialog).getByRole("combobox", { name: label });
+	await waitFor(() =>
+		expect((control as HTMLButtonElement).disabled).toBe(false),
+	);
+	fireEvent.click(control);
 	const item = await screen.findByRole("option", { name: option });
 	fireEvent.pointerDown(item, { pointerType: "mouse" });
 	fireEvent.click(item);
@@ -138,28 +169,91 @@ async function choose(dialog: HTMLElement, label: string, option: string) {
 function serve({
 	availableBody = available,
 	installationsBody = installations,
+	orgId = "org-1",
+	rolesBody = roles,
+	teamsBody = teams,
 }: {
 	availableBody?: JsonBodyType;
 	installationsBody?: JsonBodyType;
+	orgId?: string;
+	rolesBody?: JsonBodyType;
+	teamsBody?: JsonBodyType;
 } = {}) {
+	const reads = { available: 0, installed: 0, roles: 0, teams: 0 };
 	server.use(
-		http.post(rpc("InstallationService", "ListAvailableSolutions"), () =>
-			HttpResponse.json(availableBody),
+		http.post(
+			rpc("InstallationService", "ListAvailableSolutions"),
+			async ({ request }) => {
+				await assertBody(request, { orgId, pageSize: 500 });
+				reads.available++;
+				return HttpResponse.json(availableBody);
+			},
 		),
-		http.post(rpc("InstallationService", "ListOrganizationInstallations"), () =>
-			HttpResponse.json(installationsBody),
+		http.post(
+			rpc("InstallationService", "ListOrganizationInstallations"),
+			async ({ request }) => {
+				await assertBody(request, { orgId, pageSize: 500 });
+				reads.installed++;
+				return HttpResponse.json(installationsBody);
+			},
 		),
-		http.post(rpc("PermissionService", "ListRoles"), () =>
-			HttpResponse.json(roles),
-		),
-		http.post(rpc("TeamService", "ListTeams"), () => HttpResponse.json(teams)),
+		http.post(rpc("PermissionService", "ListRoles"), async ({ request }) => {
+			await assertBody(request, { orgId });
+			reads.roles++;
+			return HttpResponse.json(rolesBody);
+		}),
+		http.post(rpc("TeamService", "ListTeams"), async ({ request }) => {
+			await assertBody(request, { orgId });
+			reads.teams++;
+			return HttpResponse.json(teamsBody);
+		}),
+	);
+	return reads;
+}
+
+async function openInstall() {
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Install ledger" }),
+	);
+	const dialog = await screen.findByRole("dialog");
+	await choose(dialog, "Agent role", "Expense reader — expenses:read");
+	return dialog;
+}
+
+async function openGrant() {
+	fireEvent.click(
+		await screen.findByRole("button", {
+			name: "Grant a team access to expenses",
+		}),
+	);
+	const dialog = await screen.findByRole("dialog");
+	await choose(dialog, "Team", "Support");
+	await choose(dialog, "Role", "Solution user — solution:use");
+	return dialog;
+}
+
+function expectFieldError(control: HTMLElement, message: string) {
+	expect(control.getAttribute("aria-invalid")).toBe("true");
+	const descriptions = (control.getAttribute("aria-describedby") ?? "")
+		.split(" ")
+		.map((id) => document.getElementById(id));
+	const error = descriptions.find(
+		(element) => element?.textContent === message,
+	);
+	expect(error?.getAttribute("role")).toBe("alert");
+}
+
+function refusal(message: string, code = "permission_denied") {
+	return HttpResponse.json(
+		{ code, message },
+		{ status: code === "permission_denied" ? 403 : 400 },
 	);
 }
 
 describe("SolutionInstallationsPage admin container", () => {
 	it("lists what is available and what is installed, from the host's two reads", async () => {
 		serve();
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 
 		const availableTable = await screen.findByRole("table", {
 			name: "Available solutions",
@@ -222,19 +316,33 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 		await screen.findByRole("table", { name: "Installed solutions" });
-		expect(asked).toMatchObject({ orgId: "org-1" });
+		expect(asked).toEqual({ orgId: "org-1", pageSize: 500 });
 	});
 
 	it("installs the chosen target with the role and ceiling the administrator gave", async () => {
 		let installed: Record<string, unknown> | undefined;
-		serve();
+		const availableBody = structuredClone(available);
+		const installationsBody = structuredClone(installations);
+		const reads = serve({ availableBody, installationsBody });
 		server.use(
 			http.post(
 				rpc("InstallationService", "InstallSolution"),
 				async ({ request }) => {
 					installed = (await request.json()) as Record<string, unknown>;
+					availableBody.solutions[1].installed = true;
+					installationsBody.installations.push({
+						...structuredClone(installations.installations[0]),
+						installation: {
+							...installations.installations[0].installation,
+							id: "bbbbbbbb-0000-4000-8000-000000000002",
+							targetId: LEDGER_TARGET,
+						},
+						target: availableBody.solutions[1],
+						grantedTeams: [],
+						inheritedTeams: [],
+					});
 					return HttpResponse.json({
 						id: "bbbbbbbb-0000-4000-8000-000000000002",
 						orgId: "org-1",
@@ -244,7 +352,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Install ledger" }),
@@ -255,31 +363,52 @@ describe("SolutionInstallationsPage admin container", () => {
 				.value,
 		).toBe("acme/ledger:0.9.1");
 
-		fireEvent.click(
-			within(dialog).getByRole("combobox", { name: "Agent role" }),
-		);
-		const reader = await screen.findByRole("option", {
-			name: "Expense reader — expenses:read",
-		});
-		fireEvent.pointerDown(reader, { pointerType: "mouse" });
-		fireEvent.click(reader);
+		await choose(dialog, "Agent role", "Expense reader — expenses:read");
 		fireEvent.change(within(dialog).getByLabelText("Allowed audiences"), {
 			target: { value: "solution:binding-ledger\n\nsolution:binding-ledger" },
+		});
+		fireEvent.change(within(dialog).getByLabelText("Agent name (optional)"), {
+			target: { value: "  Ledger agent  " },
+		});
+		fireEvent.change(
+			within(dialog).getByLabelText("Access boundary name (optional)"),
+			{ target: { value: "  Ledger boundary  " } },
+		);
+		fireEvent.change(within(dialog).getByLabelText("Allowed resource kinds"), {
+			target: { value: "entry, entry\naccount" },
 		});
 		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
 
 		await waitFor(() => expect(installed).toBeDefined());
-		expect(installed).toMatchObject({
+		expect(installed).toEqual({
 			orgId: "org-1",
 			// The immutable target the row named, never its route alias.
 			targetId: LEDGER_TARGET,
 			agentIdentifier: "acme/ledger:0.9.1",
 			roleId: READER_ROLE,
 			allowedAudiences: ["solution:binding-ledger"],
+			displayName: "Ledger agent",
+			rootScopeLabel: "Ledger boundary",
+			allowedScopes: ["entry", "account"],
 		});
 		// Left empty, so the host records the calling administrator as owner.
 		expect(installed?.ownerPrincipalId).toBeUndefined();
 		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+		expect(reads.available).toBe(2);
+		expect(reads.installed).toBe(2);
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Install ledger",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(true);
+		expect(
+			within(
+				screen.getByRole("table", { name: "Installed solutions" }),
+			).getByText("ledger"),
+		).toBeTruthy();
+		expect(toast.success).toHaveBeenCalledWith("ledger installed");
 	});
 
 	it("does not install without a role for the solution's agent", async () => {
@@ -291,11 +420,20 @@ describe("SolutionInstallationsPage admin container", () => {
 				return HttpResponse.json({});
 			}),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Install ledger" }),
 		);
 		const dialog = await screen.findByRole("dialog");
+		await waitFor(() =>
+			expect(
+				(
+					within(dialog).getByRole("button", {
+						name: "Install",
+					}) as HTMLButtonElement
+				).disabled,
+			).toBe(false),
+		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
 		expect(
 			await within(dialog).findByText(
@@ -319,19 +457,12 @@ describe("SolutionInstallationsPage admin container", () => {
 				),
 			),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Install ledger" }),
 		);
 		const dialog = await screen.findByRole("dialog");
-		fireEvent.click(
-			within(dialog).getByRole("combobox", { name: "Agent role" }),
-		);
-		const reader = await screen.findByRole("option", {
-			name: "Expense reader — expenses:read",
-		});
-		fireEvent.pointerDown(reader, { pointerType: "mouse" });
-		fireEvent.click(reader);
+		await choose(dialog, "Agent role", "Expense reader — expenses:read");
 		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
 
 		const alert = await within(dialog).findByRole("alert");
@@ -339,6 +470,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			'audience is not in the host vocabulary: "nowhere"',
 		);
 		expect(screen.getByRole("dialog")).toBeTruthy();
+		expect(toast.success).not.toHaveBeenCalled();
 	});
 
 	it("shows a refused uninstall as the host words it, never as done", async () => {
@@ -360,7 +492,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Uninstall expenses" }),
@@ -375,6 +507,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			screen.getByText("The host refused to uninstall expenses"),
 		).toBeTruthy();
 		expect(refusal).toBeTruthy();
+		expect(toast.success).not.toHaveBeenCalled();
 		expect(uninstalled).toEqual({
 			orgId: "org-1",
 			installationId: EXPENSES_INSTALLATION,
@@ -390,17 +523,33 @@ describe("SolutionInstallationsPage admin container", () => {
 
 	it("grants a team by installation, team and role, never by scope path", async () => {
 		let granted: Record<string, unknown> | undefined;
-		serve();
+		const availableBody = structuredClone(available);
+		const installationsBody = structuredClone(installations);
+		// A grant does not make a disabled installation healthy.
+		installationsBody.installations[0].health =
+			"INSTALLATION_HEALTH_AGENT_DISABLED";
+		const reads = serve({ availableBody, installationsBody });
 		server.use(
 			http.post(
 				rpc("InstallationService", "GrantInstallationToTeam"),
 				async ({ request }) => {
 					granted = (await request.json()) as Record<string, unknown>;
+					installationsBody.installations[0].grantedTeams.push({
+						grant: {
+							...installations.installations[0].grantedTeams[0].grant,
+							id: "grant-3",
+							subjectId: SUPPORT_TEAM,
+						},
+						subjectLabel: "Support",
+						roleName: "Solution user",
+					});
+					// The host's available release advances during the operation.
+					availableBody.solutions[0].appliedGeneration = "4";
 					return HttpResponse.json({ grant: { id: "grant-3" } });
 				},
 			),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 
 		fireEvent.click(
 			await screen.findByRole("button", {
@@ -420,6 +569,26 @@ describe("SolutionInstallationsPage admin container", () => {
 			roleId: USE_ROLE,
 		});
 		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+		expect(reads.available).toBe(2);
+		expect(reads.installed).toBe(2);
+		expect(
+			within(
+				screen.getByRole("table", { name: "Available solutions" }),
+			).getByText("Generation 4 (opened at 2)"),
+		).toBeTruthy();
+		expect(
+			within(
+				screen.getByRole("list", { name: "Teams granted expenses" }),
+			).getByText("Support"),
+		).toBeTruthy();
+		expect(
+			within(
+				screen.getByRole("table", { name: "Installed solutions" }),
+			).getByText("Agent disabled"),
+		).toBeTruthy();
+		expect(toast.success).toHaveBeenCalledExactlyOnceWith(
+			"Team grant recorded for expenses",
+		);
 	});
 
 	it("shows the host's refusal of a grant in its own words", async () => {
@@ -436,7 +605,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				),
 			),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 		fireEvent.click(
 			await screen.findByRole("button", {
 				name: "Grant a team access to expenses",
@@ -450,6 +619,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(alert.textContent).toContain(
 			"so a grant of it would expose nothing",
 		);
+		expect(toast.success).not.toHaveBeenCalled();
 	});
 
 	it("removes a team through RevokeInstallationFromTeam and shows a refusal as the host words it", async () => {
@@ -471,7 +641,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 
 		fireEvent.click(
 			await screen.findByRole("button", {
@@ -489,6 +659,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				"cannot revoke installation from team: policy log unreachable: this host has no policy log, so authority cannot be narrowed",
 			),
 		).toBeTruthy();
+		expect(toast.success).not.toHaveBeenCalled();
 		expect(revoked).toEqual({
 			orgId: "org-1",
 			installationId: EXPENSES_INSTALLATION,
@@ -520,12 +691,16 @@ describe("SolutionInstallationsPage admin container", () => {
 					),
 			),
 		);
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 		expect(
 			await screen.findByText(
 				/You don't have permission to see the installed solutions/,
 			),
 		).toBeTruthy();
+		expect(screen.getByRole("alert").textContent).toContain(
+			"requires organization admin",
+		);
+		expect(toast.success).not.toHaveBeenCalled();
 		expect(screen.queryByText(/Nothing is installed/)).toBeNull();
 		expect(
 			await screen.findByRole("table", { name: "Available solutions" }),
@@ -537,12 +712,746 @@ describe("SolutionInstallationsPage admin container", () => {
 			availableBody: { solutions: [] },
 			installationsBody: { installations: [] },
 		});
-		renderInApp(<SolutionInstallationsPage />);
+		renderInApp(<Page />);
 		expect(
 			await screen.findByText("No solution is available to this organization."),
 		).toBeTruthy();
 		expect(
 			await screen.findByText("Nothing is installed in this organization."),
 		).toBeTruthy();
+	});
+});
+
+describe("organization administration boundary", () => {
+	it.each([
+		{ orgRole: "member", platformRole: undefined, allowed: false },
+		{ orgRole: "member", platformRole: "support", allowed: false },
+		{ orgRole: "member", platformRole: "billing", allowed: false },
+		{ orgRole: "admin", platformRole: undefined, allowed: true },
+		{ orgRole: "owner", platformRole: undefined, allowed: true },
+		{ orgRole: "member", platformRole: "super_admin", allowed: true },
+	] as const)(
+		"uses the same navigation and route capability for $orgRole / $platformRole",
+		async ({ orgRole, platformRole, allowed }) => {
+			session.orgRole = orgRole;
+			session.platformRole = platformRole;
+			const reads = serve();
+			const navigation = FRONTEND_NAVIGATION.find(
+				(item) => item.id === "admin-solutions",
+			);
+			expect(navigation?.requiredPermission).toBe("roles:write");
+			if (!navigation) throw new Error("Solutions navigation missing");
+			expect(canPresent(navigation, session)).toBe(allowed);
+			const { client } = renderInApp(<Page />);
+			if (allowed) {
+				await screen.findByRole("table", { name: "Installed solutions" });
+				expect(reads.available).toBe(1);
+				expect(reads.installed).toBe(1);
+			} else {
+				expect(
+					screen.getByText("Organization administrator required"),
+				).toBeTruthy();
+				expect(client.getQueryCache().getAll()).toHaveLength(0);
+				expect(Object.values(reads)).toEqual([0, 0, 0, 0]);
+			}
+		},
+	);
+
+	it("does not read without an active organization", () => {
+		session.organizationId = "";
+		const reads = serve();
+		renderInApp(<Page />);
+		expect(
+			screen.getByText("Select an organization to manage its solutions"),
+		).toBeTruthy();
+		expect(Object.values(reads)).toEqual([0, 0, 0, 0]);
+	});
+
+	it("reads every page with the organization and opaque token for each listing", async () => {
+		const availableTokens: unknown[] = [];
+		const installedTokens: unknown[] = [];
+		serve();
+		server.use(
+			http.post(
+				rpc("InstallationService", "ListAvailableSolutions"),
+				async ({ request }) => {
+					const second = availableTokens.length > 0;
+					await assertBody(request, {
+						orgId: "org-1",
+						pageSize: 500,
+						...(second ? { pageToken: "available-next" } : {}),
+					});
+					availableTokens.push(second);
+					return HttpResponse.json({
+						solutions: [available.solutions[second ? 1 : 0]],
+						nextPageToken: second ? "" : "available-next",
+					});
+				},
+			),
+			http.post(
+				rpc("InstallationService", "ListOrganizationInstallations"),
+				async ({ request }) => {
+					const second = installedTokens.length > 0;
+					await assertBody(request, {
+						orgId: "org-1",
+						pageSize: 500,
+						...(second ? { pageToken: "installed-next" } : {}),
+					});
+					installedTokens.push(second);
+					return HttpResponse.json({
+						installations: second
+							? [
+									{
+										...installations.installations[0],
+										installation: {
+											...installations.installations[0].installation,
+											id: "installation-2",
+										},
+										target: available.solutions[1],
+									},
+								]
+							: installations.installations,
+						nextPageToken: second ? "" : "installed-next",
+					});
+				},
+			),
+		);
+		renderInApp(<Page />);
+		for (const name of ["Available solutions", "Installed solutions"]) {
+			const table = await screen.findByRole("table", { name });
+			expect(within(table).getByText("expenses")).toBeTruthy();
+			expect(within(table).getByText("ledger")).toBeTruthy();
+		}
+		expect(availableTokens).toEqual([false, true]);
+		expect(installedTokens).toEqual([false, true]);
+	});
+
+	it.each(["install", "grant"])(
+		"discards the %s draft and scopes all reads and the next grant after an organization switch",
+		async (draft) => {
+			serve();
+			const { client, rerender } = renderInApp(<Page />);
+			if (draft === "install") await openInstall();
+			else await openGrant();
+
+			const secondAvailable = structuredClone(available);
+			secondAvailable.solutions[0].routeAlias = "payables";
+			secondAvailable.solutions[1].routeAlias = "receipts";
+			const secondInstalled = structuredClone(installations);
+			secondInstalled.installations[0].installation.id = "installation-org-2";
+			secondInstalled.installations[0].installation.orgId = "org-2";
+			secondInstalled.installations[0].target = secondAvailable.solutions[0];
+			secondInstalled.installations[0].grantedTeams = [];
+			secondInstalled.installations[0].inheritedTeams = [];
+			const reads = serve({
+				orgId: "org-2",
+				availableBody: secondAvailable,
+				installationsBody: secondInstalled,
+				rolesBody: {
+					roles: [
+						{ id: "role-org-2", orgId: "org-2", name: "Organization two role" },
+					],
+				},
+				teamsBody: {
+					teams: [
+						{ id: "team-org-2", orgId: "org-2", name: "Organization two team" },
+					],
+				},
+			});
+			const grant = vi.fn();
+			server.use(
+				http.post(
+					rpc("InstallationService", "GrantInstallationToTeam"),
+					async ({ request }) => {
+						await assertBody(request, {
+							orgId: "org-2",
+							installationId: "installation-org-2",
+							teamId: "team-org-2",
+							roleId: "role-org-2",
+						});
+						grant();
+						return HttpResponse.json({ grant: { id: "grant-org-2" } });
+					},
+				),
+			);
+			session.organizationId = "org-2";
+			rerender(
+				<QueryClientProvider client={client}>
+					<Page />
+				</QueryClientProvider>,
+			);
+			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+			expect(
+				within(
+					await screen.findByRole("table", { name: "Installed solutions" }),
+				).queryByText("expenses"),
+			).toBeNull();
+			fireEvent.click(
+				await screen.findByRole("button", {
+					name: "Grant a team access to payables",
+				}),
+			);
+			const dialog = await screen.findByRole("dialog");
+			expect(within(dialog).queryByText("Support")).toBeNull();
+			await choose(dialog, "Team", "Organization two team");
+			await choose(dialog, "Role", "Organization two role");
+			fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
+			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+			expect(grant).toHaveBeenCalledOnce();
+			expect(reads).toEqual({ available: 2, installed: 2, roles: 1, teams: 1 });
+		},
+	);
+});
+
+describe("host read refusals and retained data", () => {
+	it.each([
+		["ListAvailableSolutions", "Available solutions"],
+		["ListOrganizationInstallations", "Installed solutions"],
+	])(
+		"shows the host's reason on a cold refusal of %s",
+		async (method, table) => {
+			serve();
+			const reason = `requires org admin or owner role: ${method}`;
+			server.use(
+				http.post(rpc("InstallationService", method), async ({ request }) => {
+					await assertBody(request, { orgId: "org-1", pageSize: 500 });
+					return refusal(reason);
+				}),
+			);
+			renderInApp(<Page />);
+			expect((await screen.findByRole("alert")).textContent).toContain(reason);
+			expect(screen.queryByRole("table", { name: table })).toBeNull();
+			expect(toast.success).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["permission_denied", "unavailable"])(
+		"handles both table refreshes ending in %s with the host's reason",
+		async (code) => {
+			serve();
+			renderInApp(<Page />);
+			await screen.findByRole("table", { name: "Available solutions" });
+			await screen.findByRole("table", { name: "Installed solutions" });
+			for (const method of [
+				"ListAvailableSolutions",
+				"ListOrganizationInstallations",
+			]) {
+				server.use(
+					http.post(rpc("InstallationService", method), async ({ request }) => {
+						await assertBody(request, { orgId: "org-1", pageSize: 500 });
+						return refusal(`${method} host explanation`, code);
+					}),
+				);
+			}
+			fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+			for (const method of [
+				"ListAvailableSolutions",
+				"ListOrganizationInstallations",
+			]) {
+				expect(
+					await screen.findByText(new RegExp(`${method} host explanation`)),
+				).toBeTruthy();
+			}
+			if (code === "permission_denied") {
+				expect(
+					screen.queryByRole("table", { name: "Available solutions" }),
+				).toBeNull();
+				expect(
+					screen.queryByRole("table", { name: "Installed solutions" }),
+				).toBeNull();
+			} else {
+				expect(
+					screen
+						.getAllByRole("status")
+						.filter((element) => element.textContent?.includes("out of date")),
+				).toHaveLength(2);
+				expect(
+					screen.getByRole("table", { name: "Available solutions" }),
+				).toBeTruthy();
+				expect(
+					screen.getByRole("table", { name: "Installed solutions" }),
+				).toBeTruthy();
+			}
+			expect(toast.success).not.toHaveBeenCalled();
+		},
+	);
+
+	const pickers = [
+		{
+			kind: "install",
+			label: "Agent role",
+			service: "PermissionService",
+			method: "ListRoles",
+			key: ["roles", "org-1"],
+			selected: "Expense reader — expenses:read",
+			action: "Install",
+		},
+		{
+			kind: "grant",
+			label: "Team",
+			service: "TeamService",
+			method: "ListTeams",
+			key: ["teams", "org-1", ""],
+			selected: "Support",
+			action: "Grant",
+		},
+		{
+			kind: "grant",
+			label: "Role",
+			service: "PermissionService",
+			method: "ListRoles",
+			key: ["roles", "org-1"],
+			selected: "Solution user — solution:use",
+			action: "Grant",
+		},
+	];
+	it.each(pickers)(
+		"shows a cold read refusal beside $kind / $label",
+		async ({ kind, label, service, method, action }) => {
+			serve();
+			server.use(
+				http.post(rpc(service, method), async ({ request }) => {
+					await assertBody(request, { orgId: "org-1" });
+					return refusal(`${method}: membership removed`);
+				}),
+			);
+			renderInApp(<Page />);
+			fireEvent.click(
+				await screen.findByRole("button", {
+					name:
+						kind === "install"
+							? "Install ledger"
+							: "Grant a team access to expenses",
+				}),
+			);
+			const dialog = await screen.findByRole("dialog");
+			expect((await within(dialog).findByRole("alert")).textContent).toContain(
+				`${method}: membership removed`,
+			);
+			expect(
+				(
+					within(dialog).getByRole("combobox", {
+						name: label,
+					}) as HTMLButtonElement
+				).disabled,
+			).toBe(true);
+			expect(
+				(
+					within(dialog).getByRole("button", {
+						name: action,
+					}) as HTMLButtonElement
+				).disabled,
+			).toBe(true);
+		},
+	);
+
+	it.each(pickers)(
+		"withholds $kind / $label and blocks a previously valid selection after refusal",
+		async ({ kind, label, service, method, key, selected, action }) => {
+			serve();
+			const mutation = vi.fn();
+			server.use(
+				http.post(
+					rpc(
+						"InstallationService",
+						kind === "install" ? "InstallSolution" : "GrantInstallationToTeam",
+					),
+					() => {
+						mutation();
+						return HttpResponse.json({});
+					},
+				),
+			);
+			const { client } = renderInApp(<Page />);
+			const dialog =
+				kind === "install" ? await openInstall() : await openGrant();
+			server.use(
+				http.post(rpc(service, method), async ({ request }) => {
+					await assertBody(request, { orgId: "org-1" });
+					return refusal(`${method}: permission withdrawn`);
+				}),
+			);
+			await act(async () => {
+				await client.invalidateQueries({ queryKey: key });
+			});
+			expect((await within(dialog).findByRole("alert")).textContent).toContain(
+				`${method}: permission withdrawn`,
+			);
+			const control = within(dialog).getByRole("combobox", { name: label });
+			expect((control as HTMLButtonElement).disabled).toBe(true);
+			expect(control.textContent).not.toContain(selected);
+			fireEvent.click(control);
+			expect(screen.queryByRole("option", { name: selected })).toBeNull();
+			expect(
+				(
+					within(dialog).getByRole("button", {
+						name: action,
+					}) as HTMLButtonElement
+				).disabled,
+			).toBe(true);
+			// Even submitting the form directly cannot reuse the refused selection.
+			const form = dialog.querySelector("form");
+			if (!form) throw new Error("Form missing");
+			await act(async () => {
+				fireEvent.submit(form);
+			});
+			expect(mutation).not.toHaveBeenCalled();
+			expect(toast.success).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(pickers)(
+		"keeps $kind / $label options with a visible stale notice on transient failure",
+		async ({ kind, label, service, method, key, selected }) => {
+			serve();
+			const { client } = renderInApp(<Page />);
+			const dialog =
+				kind === "install" ? await openInstall() : await openGrant();
+			server.use(
+				http.post(rpc(service, method), async ({ request }) => {
+					await assertBody(request, { orgId: "org-1" });
+					return refusal(
+						`${method}: host temporarily unavailable`,
+						"unavailable",
+					);
+				}),
+			);
+			await act(async () => {
+				await client.invalidateQueries({ queryKey: key });
+			});
+			const notice = await within(dialog).findByRole("status");
+			expect(notice.textContent).toContain("out of date");
+			expect(notice.textContent).toContain(
+				`${method}: host temporarily unavailable`,
+			);
+			await choose(dialog, label, selected);
+		},
+	);
+});
+
+describe("mutation results belong to the page", () => {
+	it.each([
+		["install", "Cancel"],
+		["install", "Close"],
+		["install", "Escape"],
+		["grant", "Cancel"],
+		["grant", "Close"],
+		["grant", "Escape"],
+	])(
+		"shows a delayed %s refusal after %s dismissal without success",
+		async (kind, dismiss) => {
+			const reads = serve();
+			let finish!: () => void;
+			const pending = new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			const received = vi.fn();
+			const message =
+				'host refuses <img src="x" onerror="alert(1)">: authority changed';
+			server.use(
+				http.post(
+					rpc(
+						"InstallationService",
+						kind === "install" ? "InstallSolution" : "GrantInstallationToTeam",
+					),
+					async ({ request }) => {
+						await assertBody(
+							request,
+							kind === "install"
+								? {
+										orgId: "org-1",
+										targetId: LEDGER_TARGET,
+										agentIdentifier: "acme/ledger:0.9.1",
+										roleId: READER_ROLE,
+									}
+								: {
+										orgId: "org-1",
+										installationId: EXPENSES_INSTALLATION,
+										teamId: SUPPORT_TEAM,
+										roleId: USE_ROLE,
+									},
+						);
+						received();
+						await pending;
+						return refusal(message);
+					},
+				),
+			);
+			renderInApp(<Page />);
+			const dialog =
+				kind === "install" ? await openInstall() : await openGrant();
+			fireEvent.click(
+				within(dialog).getByRole("button", {
+					name: kind === "install" ? "Install" : "Grant",
+				}),
+			);
+			await waitFor(() => expect(received).toHaveBeenCalledOnce());
+			try {
+				if (dismiss === "Escape")
+					fireEvent.keyDown(dialog, { key: "Escape", code: "Escape" });
+				else
+					fireEvent.click(
+						within(dialog).getByRole("button", { name: dismiss }),
+					);
+				await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+				expect(toast.success).not.toHaveBeenCalled();
+			} finally {
+				finish();
+			}
+			await waitFor(() =>
+				expect(toast.error).toHaveBeenCalledExactlyOnceWith(
+					`The host refused the ${kind}: ${message}`,
+				),
+			);
+			expect(toast.success).not.toHaveBeenCalled();
+			expect(reads.available).toBe(2);
+			expect(reads.installed).toBe(2);
+			expect(
+				(
+					screen.getByRole("button", {
+						name: "Install ledger",
+					}) as HTMLButtonElement
+				).disabled,
+			).toBe(false);
+			expect(
+				screen.queryByRole("button", { name: "Remove Support from expenses" }),
+			).toBeNull();
+		},
+	);
+
+	it("refreshes both reads after witnessed removal and reports only that role grant removed", async () => {
+		const availableBody = structuredClone(available);
+		const installationsBody = structuredClone(installations);
+		// The same team also has inherited access, which this action cannot remove.
+		installationsBody.installations[0].inheritedTeams[0].subjectLabel =
+			"Finance";
+		installationsBody.installations[0].inheritedTeams[0].grant.subjectId =
+			FINANCE_TEAM;
+		const reads = serve({ availableBody, installationsBody });
+		server.use(
+			http.post(
+				rpc("InstallationService", "RevokeInstallationFromTeam"),
+				async ({ request }) => {
+					await assertBody(request, {
+						orgId: "org-1",
+						installationId: EXPENSES_INSTALLATION,
+						teamId: FINANCE_TEAM,
+						roleId: USE_ROLE,
+					});
+					installationsBody.installations[0].grantedTeams = [];
+					availableBody.solutions[0].appliedGeneration = "4";
+					return HttpResponse.json({});
+				},
+			),
+		);
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Remove Finance from expenses",
+			}),
+		);
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledExactlyOnceWith(
+				"Finance's Solution user grant removed from expenses",
+			),
+		);
+		expect(reads.available).toBe(2);
+		expect(reads.installed).toBe(2);
+		expect(
+			within(
+				screen.getByRole("table", { name: "Available solutions" }),
+			).getByText("Generation 4 (opened at 2)"),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: "Remove Finance from expenses" }),
+		).toBeNull();
+		expect(screen.getByText("Inherited from above: Finance")).toBeTruthy();
+	});
+
+	it("refreshes both reads after a witnessed uninstall", async () => {
+		const availableBody = structuredClone(available);
+		const installationsBody = structuredClone(installations);
+		const reads = serve({ availableBody, installationsBody });
+		server.use(
+			http.post(
+				rpc("InstallationService", "UninstallSolution"),
+				async ({ request }) => {
+					await assertBody(request, {
+						orgId: "org-1",
+						installationId: EXPENSES_INSTALLATION,
+					});
+					installationsBody.installations = [];
+					availableBody.solutions[0].installed = false;
+					return HttpResponse.json({});
+				},
+			),
+		);
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Uninstall expenses" }),
+		);
+		const dialog = await screen.findByRole("alertdialog");
+		fireEvent.click(within(dialog).getByRole("button", { name: "Uninstall" }));
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledExactlyOnceWith(
+				"expenses uninstalled",
+			),
+		);
+		expect(reads.available).toBe(2);
+		expect(reads.installed).toBe(2);
+		expect(
+			screen.getByText("Nothing is installed in this organization."),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: "Uninstall expenses" }),
+		).toBeNull();
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Install expenses",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(false);
+	});
+});
+
+describe("accessible validation and host text", () => {
+	it.each([
+		["Agent identifier", "", "An agent identifier is required"],
+		["Agent identifier", "x".repeat(513), "At most 512 characters"],
+		["Agent name (optional)", "x".repeat(513), "At most 512 characters"],
+		[
+			"Access boundary name (optional)",
+			"x".repeat(513),
+			"At most 512 characters",
+		],
+	])(
+		"explains invalid %s and focuses its associated error",
+		async (label, value, message) => {
+			serve();
+			const install = vi.fn();
+			server.use(
+				http.post(rpc("InstallationService", "InstallSolution"), () => {
+					install();
+					return HttpResponse.json({});
+				}),
+			);
+			renderInApp(<Page />);
+			const dialog = await openInstall();
+			const control = within(dialog).getByLabelText(label);
+			fireEvent.change(control, { target: { value } });
+			fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
+			expect((await within(dialog).findByRole("alert")).textContent).toBe(
+				message,
+			);
+			expectFieldError(control, message);
+			await waitFor(() => expect(document.activeElement).toBe(control));
+			expect(install).not.toHaveBeenCalled();
+			expect(toast.success).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["install", "grant"])(
+		"announces missing %s picker values and focuses the first invalid control",
+		async (kind) => {
+			serve();
+			const mutation = vi.fn();
+			server.use(
+				http.post(
+					rpc(
+						"InstallationService",
+						kind === "install" ? "InstallSolution" : "GrantInstallationToTeam",
+					),
+					() => {
+						mutation();
+						return HttpResponse.json({});
+					},
+				),
+			);
+			renderInApp(<Page />);
+			fireEvent.click(
+				await screen.findByRole("button", {
+					name:
+						kind === "install"
+							? "Install ledger"
+							: "Grant a team access to expenses",
+				}),
+			);
+			const dialog = await screen.findByRole("dialog");
+			const submit = within(dialog).getByRole("button", {
+				name: kind === "install" ? "Install" : "Grant",
+			});
+			await waitFor(() =>
+				expect((submit as HTMLButtonElement).disabled).toBe(false),
+			);
+			fireEvent.click(submit);
+			await within(dialog).findAllByRole("alert");
+			const first = within(dialog).getByRole("combobox", {
+				name: kind === "install" ? "Agent role" : "Team",
+			});
+			if (kind === "install")
+				expectFieldError(
+					first,
+					"Choose the role the solution's agent is granted",
+				);
+			else {
+				expectFieldError(first, "Choose a team");
+				expectFieldError(
+					within(dialog).getByRole("combobox", { name: "Role" }),
+					"Choose the role the team is granted",
+				);
+			}
+			await waitFor(() => expect(document.activeElement).toBe(first));
+			expect(mutation).not.toHaveBeenCalled();
+		},
+	);
+
+	it("renders hostile host names and refusal details as text in lists and controls", async () => {
+		const hostile = '<img src="x" onerror="alert(1)">';
+		const availableBody = structuredClone(available);
+		availableBody.solutions[1].routeAlias = hostile;
+		const installationsBody = structuredClone(installations);
+		installationsBody.installations[0].grantedTeams[0].subjectLabel = hostile;
+		serve({
+			availableBody,
+			installationsBody,
+			rolesBody: {
+				roles: [{ id: READER_ROLE, orgId: "org-1", name: hostile }],
+			},
+		});
+		server.use(
+			http.post(
+				rpc("InstallationService", "InstallSolution"),
+				async ({ request }) => {
+					await assertBody(request, {
+						orgId: "org-1",
+						targetId: LEDGER_TARGET,
+						agentIdentifier: "acme/ledger:0.9.1",
+						roleId: READER_ROLE,
+					});
+					return refusal(`Cannot accept ${hostile}`);
+				},
+			),
+		);
+		renderInApp(<Page />);
+		expect(
+			within(
+				await screen.findByRole("table", { name: "Available solutions" }),
+			).getByText(hostile),
+		).toBeTruthy();
+		expect(
+			within(
+				await screen.findByRole("table", { name: "Installed solutions" }),
+			).getByText(hostile),
+		).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: `Install ${hostile}` }));
+		const dialog = await screen.findByRole("dialog");
+		await choose(dialog, "Agent role", hostile);
+		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
+		expect((await within(dialog).findByRole("alert")).textContent).toContain(
+			`Cannot accept ${hostile}`,
+		);
+		expect(document.querySelector("img, script")).toBeNull();
+		expect(toast.success).not.toHaveBeenCalled();
 	});
 });

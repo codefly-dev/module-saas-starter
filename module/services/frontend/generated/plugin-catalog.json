@@ -688,6 +688,7 @@
       "icon": "Layers",
       "group": "Integrations",
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "roles:write",
       "surfaces": [
         "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
         "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",

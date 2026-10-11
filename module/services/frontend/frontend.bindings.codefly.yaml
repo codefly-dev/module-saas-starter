@@ -273,6 +273,7 @@ navigation:
     icon: Layers
     group: Integrations
     access: admin
+    permission: roles:write
     surfaces:
       - command_palette
       - plugin_registry

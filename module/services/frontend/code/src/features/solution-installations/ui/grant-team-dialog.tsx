@@ -1,11 +1,17 @@
 "use client";
 
+import { Field } from "@codefly-dev/ui/layout";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { toast } from "sonner";
+import { Controller, useForm } from "react-hook-form";
 import { useRoles } from "@/features/roles/service/queries";
 import { teamQueries } from "@/features/teams/service/queries";
-import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
+import {
+	mayKeepRetainedRows,
+	readOutcome,
+	readOutcomeMessage,
+	staleReadNotice,
+} from "@/shared/lib/read-outcome";
 import {
 	Button,
 	Dialog,
@@ -14,7 +20,6 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	Label,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -22,49 +27,75 @@ import {
 	SelectValue,
 } from "@/shared/ui";
 import { hostRefusal, roleOptionLabel } from "../model/installations";
-import { useGrantInstallationToTeam } from "../service/mutations";
+import { type GrantTeamValues, grantTeamSchema } from "../model/schemas";
 
-/**
- * Exposes one installation to one team. The administrator names the team and
- * the role it holds there; the host resolves where the grant is written, and
- * refuses a role that would expose nothing — in its own words, shown here.
- */
+/** The host resolves the grant's scope; the page owns its eventual result. */
 export function GrantTeamDialog({
 	orgId,
-	installationId,
 	solution,
+	onSubmit,
+	isPending,
+	error,
 	onClose,
 }: {
 	orgId: string;
-	installationId: string;
 	solution: string;
+	onSubmit: (values: GrantTeamValues) => void;
+	isPending: boolean;
+	error?: string;
 	onClose: () => void;
 }) {
-	const grant = useGrantInstallationToTeam(orgId);
 	const teams = useQuery(teamQueries.list(orgId));
 	const roles = useRoles(orgId);
-	const [teamId, setTeamId] = useState("");
-	const [roleId, setRoleId] = useState("");
-
-	const teamList = teams.data?.teams ?? [];
-	const roleList = roles.data ?? [];
-	const teamName = new Map(teamList.map((t) => [t.id, t.name] as const));
-	const roleLabel = new Map(
-		roleList.map((r) => [r.id, roleOptionLabel(r)] as const),
+	const teamsOutcome = readOutcome(teams.isError, teams.error);
+	const rolesOutcome = readOutcome(roles.isError, roles.error);
+	const teamsWithheld = !mayKeepRetainedRows(teamsOutcome);
+	const rolesWithheld = !mayKeepRetainedRows(rolesOutcome);
+	const teamList = teamsWithheld ? [] : (teams.data?.teams ?? []);
+	const roleList = rolesWithheld ? [] : (roles.data ?? []);
+	const teamName = new Map(
+		teamList.map((team) => [team.id, team.name] as const),
 	);
-
-	const submit = () =>
-		grant.mutate(
-			{ installationId, teamId, roleId },
-			{
-				onSuccess: () => {
-					toast.success(
-						`${teamName.get(teamId) ?? "Team"} can now use ${solution}`,
-					);
-					onClose();
-				},
-			},
-		);
+	const roleLabel = new Map(
+		roleList.map((role) => [role.id, roleOptionLabel(role)] as const),
+	);
+	const teamReadError = teams.isError
+		? `${teamList.length ? staleReadNotice(teamsOutcome, "this organization's teams") : readOutcomeMessage(teamsOutcome, "this organization's teams", "This organization has no team yet.")} ${hostRefusal(teams.error)}`
+		: undefined;
+	const roleReadError = roles.isError
+		? `${roleList.length ? staleReadNotice(rolesOutcome, "this organization's roles") : readOutcomeMessage(rolesOutcome, "this organization's roles", "No roles available.")} ${hostRefusal(roles.error)}`
+		: undefined;
+	const form = useForm<GrantTeamValues>({
+		resolver: zodResolver(grantTeamSchema),
+		defaultValues: { teamId: "", roleId: "" },
+	});
+	const errors = form.formState.errors;
+	const blocked =
+		isPending ||
+		teamsWithheld ||
+		rolesWithheld ||
+		teams.isPending ||
+		roles.isPending;
+	const submit = form.handleSubmit((values) => {
+		if (blocked) return;
+		if (!teamName.has(values.teamId)) {
+			form.setError(
+				"teamId",
+				{ message: "Choose an available team" },
+				{ shouldFocus: true },
+			);
+			return;
+		}
+		if (!roleLabel.has(values.roleId)) {
+			form.setError(
+				"roleId",
+				{ message: "Choose an available role" },
+				{ shouldFocus: true },
+			);
+			return;
+		}
+		onSubmit(values);
+	});
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -72,104 +103,134 @@ export function GrantTeamDialog({
 				<DialogHeader>
 					<DialogTitle>Grant a team access to {solution}</DialogTitle>
 					<DialogDescription>
-						Members of the team see and use the solution. Other members of the
-						organization do not.
+						Record a role grant for this team at the installation. Availability
+						and effective access are reported by the host.
 					</DialogDescription>
 				</DialogHeader>
-				<div className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor="grant-team">Team</Label>
-						<Select value={teamId} onValueChange={(v) => setTeamId(v ?? "")}>
-							<SelectTrigger
-								id="grant-team"
-								aria-label="Team"
-								className="w-full"
+				<form onSubmit={submit} className="space-y-4" noValidate>
+					<Controller
+						control={form.control}
+						name="teamId"
+						render={({ field }) => (
+							<Field
+								label="Team"
+								error={
+									teamReadError && !teamList.length
+										? teamReadError
+										: errors.teamId?.message
+								}
+								description={
+									teamReadError && teamList.length ? (
+										<span role="status">{teamReadError}</span>
+									) : !teams.isPending && !teams.isError && !teamList.length ? (
+										"This organization has no team yet."
+									) : undefined
+								}
 							>
-								<SelectValue placeholder="Choose a team…">
-									{teamId
-										? teamName.get(teamId) || "Team unavailable"
-										: undefined}
-								</SelectValue>
-							</SelectTrigger>
-							<SelectContent>
-								{teamList.length === 0 ? (
-									<div className="px-2 py-2 text-sm text-muted-foreground">
-										{teams.isLoading
-											? "Loading teams…"
-											: readOutcomeMessage(
-													readOutcome(teams.isError, teams.error),
-													"this organization's teams",
-													"This organization has no team yet.",
-												)}
-									</div>
-								) : (
-									teamList.map((team) => (
-										<SelectItem key={team.id} value={team.id}>
-											{team.name}
-										</SelectItem>
-									))
+								{(control) => (
+									<Select
+										value={teamsWithheld ? "" : field.value}
+										onValueChange={(value) => field.onChange(value ?? "")}
+										disabled={
+											teamsWithheld || teams.isPending || !teamList.length
+										}
+									>
+										<SelectTrigger
+											{...control}
+											ref={field.ref}
+											onBlur={field.onBlur}
+											className="w-full"
+										>
+											<SelectValue placeholder="Choose a team…">
+												{!teamsWithheld && field.value
+													? teamName.get(field.value) || "Team unavailable"
+													: undefined}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{teamList.map((team) => (
+												<SelectItem key={team.id} value={team.id}>
+													{team.name}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								)}
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="grant-role">Role</Label>
-						<Select value={roleId} onValueChange={(v) => setRoleId(v ?? "")}>
-							<SelectTrigger
-								id="grant-role"
-								aria-label="Role"
-								aria-describedby="grant-role-help"
-								className="w-full"
+							</Field>
+						)}
+					/>
+					<Controller
+						control={form.control}
+						name="roleId"
+						render={({ field }) => (
+							<Field
+								label="Role"
+								error={
+									roleReadError && !roleList.length
+										? roleReadError
+										: errors.roleId?.message
+								}
+								description={
+									<>
+										What the team may do inside the solution. The role must
+										permit using a solution, or the host refuses the grant.
+										{roleReadError && roleList.length > 0 && (
+											<span role="status" className="block">
+												{roleReadError}
+											</span>
+										)}
+										{!roles.isPending && !roles.isError && !roleList.length && (
+											<span className="block">No roles available.</span>
+										)}
+									</>
+								}
 							>
-								<SelectValue placeholder="Choose a role…">
-									{roleId
-										? roleLabel.get(roleId) || "Role unavailable"
-										: undefined}
-								</SelectValue>
-							</SelectTrigger>
-							<SelectContent>
-								{roleList.length === 0 ? (
-									<div className="px-2 py-2 text-sm text-muted-foreground">
-										{roles.isLoading
-											? "Loading roles…"
-											: readOutcomeMessage(
-													readOutcome(roles.isError, roles.error),
-													"this organization's roles",
-													"No roles available.",
-												)}
-									</div>
-								) : (
-									roleList.map((role) => (
-										<SelectItem key={role.id} value={role.id}>
-											{roleOptionLabel(role)}
-										</SelectItem>
-									))
+								{(control) => (
+									<Select
+										value={rolesWithheld ? "" : field.value}
+										onValueChange={(value) => field.onChange(value ?? "")}
+										disabled={
+											rolesWithheld || roles.isPending || !roleList.length
+										}
+									>
+										<SelectTrigger
+											{...control}
+											ref={field.ref}
+											onBlur={field.onBlur}
+											className="w-full"
+										>
+											<SelectValue placeholder="Choose a role…">
+												{!rolesWithheld && field.value
+													? roleLabel.get(field.value) || "Role unavailable"
+													: undefined}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{roleList.map((role) => (
+												<SelectItem key={role.id} value={role.id}>
+													{roleOptionLabel(role)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								)}
-							</SelectContent>
-						</Select>
-						<p id="grant-role-help" className="text-xs text-muted-foreground">
-							What the team may do inside the solution. The role must permit
-							using a solution, or the host refuses the grant.
-						</p>
-					</div>
-					{grant.isError && (
+							</Field>
+						)}
+					/>
+					{error && (
 						<p role="alert" className="text-sm text-destructive">
-							The host refused the grant: {hostRefusal(grant.error)}
+							The host refused the grant: {error}
 						</p>
 					)}
-				</div>
-				<DialogFooter>
-					<Button type="button" variant="outline" onClick={onClose}>
-						Cancel
-					</Button>
-					<Button
-						type="button"
-						disabled={!teamId || !roleId || grant.isPending}
-						onClick={submit}
-					>
-						{grant.isPending ? "Granting…" : "Grant"}
-					</Button>
-				</DialogFooter>
+					<DialogFooter>
+						<Button type="button" variant="outline" onClick={onClose}>
+							Cancel
+						</Button>
+						<Button type="submit" disabled={blocked}>
+							{isPending ? "Granting…" : "Grant"}
+						</Button>
+					</DialogFooter>
+				</form>
 			</DialogContent>
 		</Dialog>
 	);
