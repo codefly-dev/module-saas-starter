@@ -829,6 +829,279 @@ func TestTwoRetentionRunsAtOnceDropEachPartitionOnce(t *testing.T) {
 	}
 }
 
+// retentionSession opens a session of the tables' owner outside every pool, to
+// hold a lock in, or change the catalog from, while retention runs in another.
+func retentionSession(t *testing.T) *pgx.Conn {
+	t.Helper()
+	dsn, err := codefly.For(testCtx).Service("store").Secret("postgres", "owner-connection")
+	require.NoError(t, err)
+	conn, err := pgx.Connect(testCtx, dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close(testCtx) })
+	return conn
+}
+
+// retentionAwaitWaiters waits until n sessions wait for a lock on relation.
+func retentionAwaitWaiters(t *testing.T, relation string, n int) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var waiting int
+		err := testPool.QueryRow(testCtx, `
+			SELECT count(*) FROM pg_locks WHERE relation = to_regclass($1) AND NOT granted`, relation).Scan(&waiting)
+		return err == nil && waiting >= n
+	}, 10*time.Second, 20*time.Millisecond, "%d sessions never waited for %s", n, relation)
+}
+
+// retentionKeepPolicy puts the audit_events retention policy back as it is now
+// once the test is over, whatever the test changes it to, or if it deletes it.
+func retentionKeepPolicy(t *testing.T) {
+	t.Helper()
+	var id string
+	var days int
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		require.NoError(t, conn.QueryRow(ctx, `
+			SELECT id::text, retention_days FROM data_retention_policies WHERE resource_type = 'audit_events'`).Scan(&id, &days))
+	})
+	t.Cleanup(func() {
+		asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+			_, err := conn.Exec(ctx, `
+				INSERT INTO data_retention_policies (id, resource_type, retention_days) VALUES ($1, 'audit_events', $2)
+				ON CONFLICT (resource_type) DO UPDATE SET retention_days = EXCLUDED.retention_days`, id, days)
+			require.NoError(t, err)
+		})
+	})
+}
+
+// Holding audit_events does not stop a partition being renamed, and LOCK TABLE
+// finds the table it locks by name. Retention chooses March and waits for it
+// behind a reader, and meanwhile an operator renames March away and April to
+// March's name. Locking by that name would reach April, which ends after the
+// cutoff, and drop it and its event. Retention locks March by identity, so it
+// refuses, drops nothing, and April keeps its event. That holds whether March's
+// new name takes it out of retention's names or is another month's, under which
+// March is still due; the next run decides from the catalog as the renames left
+// it.
+func TestRetentionDropsNothingWhenAPartitionItChoseIsRenamedWhileItWaits(t *testing.T) {
+	const march, april = "audit_events_1994_03", "audit_events_1994_04"
+	for _, tc := range []struct {
+		name, renamed string
+		nextDrops     int64
+	}{
+		{"out of retention's names", "audit_events_1994_03_renamed", 0},
+		{"to another month's name", "audit_events_1993_12", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			org := uuid.NewString()
+			for _, table := range []string{march, april, tc.renamed} {
+				retentionDropTableAfter(t, table)
+			}
+			retentionProvisionMonth(t, "1994-03-15", time.Date(1994, 3, 10, 12, 0, 0, 0, time.UTC), org)
+			retentionProvisionMonth(t, "1994-04-15", time.Date(1994, 4, 2, 12, 0, 0, 0, time.UTC), org)
+			cutoff := time.Date(1994, 4, 1, 0, 0, 0, 0, time.UTC)
+
+			reader := retentionSession(t)
+			_, err := reader.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+march+` IN ACCESS SHARE MODE`)
+			require.NoError(t, err)
+			operator := retentionSession(t)
+			renames := make(chan error, 1)
+			go func() {
+				_, err := operator.Exec(testCtx, `BEGIN;
+					ALTER TABLE public.`+march+` RENAME TO `+tc.renamed+`;
+					ALTER TABLE public.`+april+` RENAME TO `+march+`;
+					COMMIT`)
+				renames <- err
+			}()
+			retentionAwaitWaiters(t, "public."+march, 1)
+
+			ran := make(chan retentionOutcome, 1)
+			go func() {
+				dropped, err := retentionCommitted(cutoff)
+				ran <- retentionOutcome{dropped, err}
+			}()
+			retentionAwaitWaiters(t, "public."+march, 2)
+			_, err = reader.Exec(testCtx, `COMMIT`)
+			require.NoError(t, err)
+			require.NoError(t, <-renames, "the premise: the renames committed while retention waited")
+
+			got := <-ran
+			var pgErr *pgconn.PgError
+			require.ErrorAs(t, got.err, &pgErr, "retention refused")
+			require.Equal(t, "55000", pgErr.Code, "object_not_in_prerequisite_state")
+			require.Zero(t, got.dropped)
+			asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+				require.Equal(t, int64(1), retentionOwnerRows(t, ctx, conn, march, org), "April, under March's name, keeps its event")
+				require.Equal(t, int64(1), retentionOwnerRows(t, ctx, conn, tc.renamed, org), "and March, renamed, its own")
+			})
+
+			dropped, err := retentionCommitted(cutoff)
+			require.NoError(t, err)
+			require.Equal(t, tc.nextDrops, dropped, "the next run decides from the catalog as the renames left it")
+			exists, _ := retentionPartitionRows(t, march)
+			require.True(t, exists, "and April is never due")
+		})
+	}
+}
+
+// Renaming a partition out of retention's names keeps it from retention, and
+// does so even while a run that chose it waits for a lock: the run, holding
+// every partition it chose, reads which are due once more, and drops none when
+// one is no longer. Retention chooses February and March and waits behind a
+// reader for February; an operator renames March out of retention's names
+// meanwhile. The run drops nothing, and the next one drops February alone.
+func TestRetentionKeepsAPartitionRenamedOutOfItsNamesWhileItWaits(t *testing.T) {
+	const february, march, kept = "audit_events_1994_02", "audit_events_1994_03", "audit_events_1994_03_kept"
+	org := uuid.NewString()
+	for _, table := range []string{february, march, kept} {
+		retentionDropTableAfter(t, table)
+	}
+	retentionProvisionMonth(t, "1994-02-15", time.Date(1994, 2, 10, 12, 0, 0, 0, time.UTC), org)
+	retentionProvisionMonth(t, "1994-03-15", time.Date(1994, 3, 10, 12, 0, 0, 0, time.UTC), org)
+	cutoff := time.Date(1994, 4, 1, 0, 0, 0, 0, time.UTC)
+
+	reader := retentionSession(t)
+	_, err := reader.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+february+` IN ACCESS SHARE MODE`)
+	require.NoError(t, err)
+	ran := make(chan retentionOutcome, 1)
+	go func() {
+		dropped, err := retentionCommitted(cutoff)
+		ran <- retentionOutcome{dropped, err}
+	}()
+	retentionAwaitWaiters(t, "public."+february, 1)
+	_, err = retentionSession(t).Exec(testCtx, `ALTER TABLE public.`+march+` RENAME TO `+kept)
+	require.NoError(t, err, "the premise: March is renamed while retention waits for February")
+	_, err = reader.Exec(testCtx, `COMMIT`)
+	require.NoError(t, err)
+
+	got := <-ran
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, got.err, &pgErr, "retention refused")
+	require.Equal(t, "55000", pgErr.Code, "object_not_in_prerequisite_state")
+	require.Zero(t, got.dropped)
+
+	dropped, err := retentionCommitted(cutoff)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), dropped, "the next run drops February alone")
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		require.Equal(t, int64(1), retentionOwnerRows(t, ctx, conn, kept, org), "March, renamed out, keeps its event")
+	})
+}
+
+// A run holds the audit_events policy it keeps to until it commits. A change
+// to the policy made while the run waits for a lock -- on audit_events, or on
+// the partition it drops -- waits in turn for the run: whether it extends the
+// window or deletes the policy to keep every record, it cannot commit under a
+// run that decided by the policy it replaces. It goes through once the run
+// has committed.
+func TestAPolicyChangeWaitsForARetentionRunUnderWay(t *testing.T) {
+	const due = "audit_events_1994_01"
+	for _, change := range []struct{ name, statement string }{
+		{"extending the window", `UPDATE data_retention_policies SET retention_days = 20000 WHERE resource_type = 'audit_events'`},
+		{"deleting the policy", `DELETE FROM data_retention_policies WHERE resource_type = 'audit_events'`},
+	} {
+		for _, held := range []string{"audit_events", due} {
+			t.Run(change.name+" while it waits for "+held, func(t *testing.T) {
+				retentionDropTableAfter(t, due)
+				retentionProvisionMonth(t, "1994-01-15", time.Date(1994, 1, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+				retentionKeepPolicy(t)
+
+				holder := retentionSession(t)
+				_, err := holder.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+held+` IN ACCESS SHARE MODE`)
+				require.NoError(t, err)
+				ran := make(chan retentionOutcome, 1)
+				go func() {
+					dropped, err := retentionCommitted(time.Date(1994, 2, 1, 0, 0, 0, 0, time.UTC))
+					ran <- retentionOutcome{dropped, err}
+				}()
+				retentionAwaitWaiters(t, "public."+held, 1)
+
+				operator := retentionSession(t)
+				_, err = operator.Exec(testCtx, `BEGIN; SET LOCAL lock_timeout = '1s'; `+change.statement)
+				var pgErr *pgconn.PgError
+				require.ErrorAs(t, err, &pgErr, "the change waits for the run")
+				require.Equal(t, "55P03", pgErr.Code, "lock_not_available")
+				_, err = operator.Exec(testCtx, `ROLLBACK`)
+				require.NoError(t, err)
+
+				_, err = holder.Exec(testCtx, `COMMIT`)
+				require.NoError(t, err)
+				got := <-ran
+				require.NoError(t, got.err)
+				require.Equal(t, int64(1), got.dropped, "the run kept to the policy it held")
+				_, err = operator.Exec(testCtx, change.statement)
+				require.NoError(t, err, "once the run has committed, the change goes through")
+			})
+		}
+	}
+}
+
+// The cutoff is checked against the policy as the run reads it under its row
+// lock, not as it read it before. A run finds a partition due, then waits to
+// lock the policy behind an operator who has the table to themselves and
+// extends the window; once the change commits, the run reads the new window,
+// refuses the cutoff, and drops nothing.
+func TestRetentionKeepsToAPolicyChangedWhileItWaitsToLockIt(t *testing.T) {
+	const due = "audit_events_1994_09"
+	retentionDropTableAfter(t, due)
+	retentionProvisionMonth(t, "1994-09-15", time.Date(1994, 9, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+	retentionKeepPolicy(t)
+
+	operator := retentionSession(t)
+	_, err := operator.Exec(testCtx, `BEGIN; LOCK TABLE data_retention_policies IN EXCLUSIVE MODE`)
+	require.NoError(t, err)
+	ran := make(chan retentionOutcome, 1)
+	go func() {
+		dropped, err := retentionCommitted(time.Date(1994, 10, 1, 0, 0, 0, 0, time.UTC))
+		ran <- retentionOutcome{dropped, err}
+	}()
+	retentionAwaitWaiters(t, "public.data_retention_policies", 1)
+	_, err = operator.Exec(testCtx, `
+		UPDATE data_retention_policies SET retention_days = 20000 WHERE resource_type = 'audit_events';
+		COMMIT`)
+	require.NoError(t, err)
+
+	got := <-ran
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, got.err, &pgErr, "the run keeps to the window the change left")
+	require.Equal(t, "22023", pgErr.Code, "invalid_parameter_value")
+	require.Zero(t, got.dropped)
+	exists, _ := retentionPartitionRows(t, due)
+	require.True(t, exists)
+}
+
+// A change to the policy already under way when a run, having found something
+// due, reads the policy again makes the run refuse rather than wait: which
+// window the change leaves is unknown until it commits. The run drops nothing,
+// at once, and the next run keeps to what the change left -- here a window
+// that does not allow the cutoff.
+func TestRetentionRefusesWhileItsPolicyIsBeingChanged(t *testing.T) {
+	const due = "audit_events_1994_06"
+	retentionDropTableAfter(t, due)
+	retentionProvisionMonth(t, "1994-06-15", time.Date(1994, 6, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+	retentionKeepPolicy(t)
+	cutoff := time.Date(1994, 7, 1, 0, 0, 0, 0, time.UTC)
+
+	operator := retentionSession(t)
+	_, err := operator.Exec(testCtx, `BEGIN; UPDATE data_retention_policies SET retention_days = 20000 WHERE resource_type = 'audit_events'`)
+	require.NoError(t, err)
+	started := time.Now()
+	dropped, err := retentionCommitted(cutoff)
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr, "the run refused")
+	require.Equal(t, "55P03", pgErr.Code, "lock_not_available")
+	require.Zero(t, dropped)
+	require.Less(t, time.Since(started), 5*time.Second, "without waiting for the change")
+	exists, _ := retentionPartitionRows(t, due)
+	require.True(t, exists)
+
+	_, err = operator.Exec(testCtx, `COMMIT`)
+	require.NoError(t, err)
+	_, err = retentionCommitted(cutoff)
+	require.ErrorAs(t, err, &pgErr, "the next run keeps to the window the change left")
+	require.Equal(t, "22023", pgErr.Code, "invalid_parameter_value")
+	exists, _ = retentionPartitionRows(t, due)
+	require.True(t, exists)
+}
+
 // withSessionDefault returns connection with a server setting every session it
 // opens starts with.
 func withSessionDefault(t *testing.T, connection, setting, value string) string {

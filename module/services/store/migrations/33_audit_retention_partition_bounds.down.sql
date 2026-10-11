@@ -1,8 +1,9 @@
 -- Reverts migration 33. Retention and provisioning give up its rules: what
 -- retention drops depends again on the zone of the session that runs it and of
 -- the one that created each partition, it accepts a cutoff the policy does not
--- allow, a partition being detached, or detached while it ran, is dropped like
--- any other, and neither retention nor provisioning bounds its wait for a lock.
+-- allow, a partition being detached, or detached or renamed while it ran, is
+-- dropped like any other, and neither retention nor provisioning bounds its
+-- wait for a lock.
 -- A new partition's bounds are again the creating session's midnights, and
 -- data_retention_policies accepts a window that is not a positive number of days.
 --
@@ -159,4 +160,6 @@ $$;
 DROP FUNCTION public.audit_events_provision_partitions(integer);
 DROP FUNCTION public.audit_events_create_partitions(date[], timestamp with time zone);
 DROP FUNCTION public.audit_events_secure_partition_within(regclass, timestamp with time zone);
+DROP FUNCTION public.audit_partitions_due(timestamp with time zone);
+DROP FUNCTION public.audit_partition_lock(regclass, timestamp with time zone);
 DROP FUNCTION public.audit_partition_lock_budget(timestamp with time zone);

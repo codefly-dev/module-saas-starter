@@ -75,17 +75,23 @@ provider responses into an incident channel.
 
 1. Read the accounts `retention` log line `scheduled run failed`. It names each
    failed resource, the step (`load`, `provision`, `policy` or `remove`) and the
-   database's error; `saas.retention.failures` carries the same resource and
-   step, never a record.
+   database's error. `saas.retention.failing` is 1 for the same resource and
+   step until a run no longer fails it, and carries no record.
 2. SQLSTATE 55P03 means retention or audit partition provisioning waited ten
-   seconds in all for its locks and gave up: nothing was dropped or created.
-   Find the transaction holding `audit_events` or one of its partitions in
-   `pg_locks` and `pg_stat_activity`. The next run, a day later or at the next
-   restart, tries again, and partitions are provisioned three months ahead, so
-   one refusal does not stop audit writes.
-3. A `policy` failure is a `data_retention_policies` window that is not a
+   seconds in all for its locks and gave up, or found the `audit_events` policy
+   being changed: nothing was dropped or created. Find the transaction holding
+   `audit_events`, one of its partitions or the policy's row in `pg_locks` and
+   `pg_stat_activity`. The next run, a day later or at the next restart, tries
+   again, and partitions are provisioned three months ahead, so one refusal does
+   not stop audit writes.
+3. SQLSTATE 55000 means an audit partition retention chose, or provisioning was
+   bringing in step, was renamed or dropped while it waited for its lock, and
+   nothing was dropped or changed. Look for the session renaming or dropping
+   audit partitions; the next run decides again from the catalog as it stands.
+4. A `policy` failure is a `data_retention_policies` window that is not a
    positive number of days, and SQLSTATE 22023 from the audit drop is a cutoff
    later than the `audit_events` policy allows by the database's clock. Correct
    the policy or the caller; never widen the check.
-4. Confirm the next run reports no failure, and that the partitions past the
-   `audit_events` window are gone while the months ahead exist.
+5. Confirm the next run reports no failure, which clears the alert, and that the
+   partitions past the `audit_events` window are gone while the months ahead
+   exist.

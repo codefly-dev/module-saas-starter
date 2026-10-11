@@ -209,6 +209,68 @@ func TestProvisioningWaitsTenSecondsInAllForItsLocks(t *testing.T) {
 	})
 }
 
+// Bringing a partition in step locks it by identity, as retention does. While a
+// call waits for a partition out of step, an operator renames it away and
+// another partition to its name: the call refuses rather than lock that other
+// one in its place, and a refused call changes neither. The partition is out of
+// step for want of policies, so the call reads it without opening it and waits
+// first for its lock.
+func TestBringingAPartitionInStepRefusesOneRenamedWhileItWaits(t *testing.T) {
+	const target, other, renamed = "audit_events_1993_06", "audit_events_1993_07", "audit_events_1993_06_renamed"
+	for _, table := range []string{target, other, renamed} {
+		retentionDropTableAfter(t, table)
+	}
+	retentionProvisionMonth(t, "1993-06-15", time.Date(1993, 6, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+	retentionProvisionMonth(t, "1993-07-15", time.Date(1993, 7, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+	policies := func(table string) (count int) {
+		require.NoError(t, testPool.QueryRow(testCtx,
+			`SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass('public.' || $1)`, table).Scan(&count))
+		return count
+	}
+	operator := retentionSession(t)
+	_, err := operator.Exec(testCtx, `DO $$
+		DECLARE
+			pol record;
+		BEGIN
+			FOR pol IN SELECT polname FROM pg_policy WHERE polrelid = 'public.`+target+`'::regclass LOOP
+				EXECUTE format('DROP POLICY %I ON public.`+target+`', pol.polname);
+			END LOOP;
+		END $$`)
+	require.NoError(t, err)
+	require.Zero(t, policies(target), "the premise: a partition out of step")
+	require.Positive(t, policies(other))
+
+	reader := retentionSession(t)
+	_, err = reader.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+target+` IN ACCESS SHARE MODE`)
+	require.NoError(t, err)
+	renames := make(chan error, 1)
+	go func() {
+		_, err := operator.Exec(testCtx, `BEGIN;
+			ALTER TABLE public.`+target+` RENAME TO `+renamed+`;
+			ALTER TABLE public.`+other+` RENAME TO `+target+`;
+			COMMIT`)
+		renames <- err
+	}()
+	retentionAwaitWaiters(t, "public."+target, 1)
+	secured := make(chan error, 1)
+	go func() {
+		secured <- testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+			_, err := storetx.Tx(ctx).Exec(ctx, `SELECT audit_events_ensure_partition('1993-06-15'::date)`)
+			return err
+		})
+	}()
+	retentionAwaitWaiters(t, "public."+target, 2)
+	_, err = reader.Exec(testCtx, `COMMIT`)
+	require.NoError(t, err)
+	require.NoError(t, <-renames, "the premise: the renames committed while the call waited")
+
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, <-secured, &pgErr, "the call refused")
+	require.Equal(t, "55000", pgErr.Code, "object_not_in_prerequisite_state")
+	require.Zero(t, policies(renamed), "the partition it was to bring in step is as it was")
+	require.Positive(t, policies(target), "and so is the one that took its name")
+}
+
 // Provisioning and retention are DDL on the audit table, so execute on their
 // entry points stays with the control plane, and on the functions they share
 // with nobody but their owner.
@@ -225,6 +287,8 @@ func TestOnlyTheControlPlaneProvisionsOrRetiresAuditPartitions(t *testing.T) {
 		{"audit_events_secure_partition_within(regclass, timestamptz)", false},
 		{"audit_events_secure_partition(regclass)", false},
 		{"audit_partition_lock_budget(timestamptz)", false},
+		{"audit_partition_lock(regclass, timestamptz)", false},
+		{"audit_partitions_due(timestamptz)", false},
 	} {
 		t.Run(strings.SplitN(tc.function, "(", 2)[0], func(t *testing.T) {
 			var publicMay, controlPlaneMay, tenantMay bool
