@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
+
 	"github.com/stretchr/testify/require"
 )
 
