@@ -18,23 +18,38 @@ export function LogoutPage() {
 	const { logout } = useAuth();
 	const [incomplete, setIncomplete] = useState(false);
 
-	const signOut = useCallback(async () => {
-		setIncomplete(false);
-		try {
-			const { complete } = await logout();
-			if (complete) {
-				window.location.replace("/auth/login");
-				return;
-			}
-		} catch {
-			// Treated the same as an explicit incompleteness: nothing confirmed
-			// the session ended.
-		}
-		setIncomplete(true);
-	}, [logout]);
+	// The outcome arrives through a CALLBACK, which is the shape the react-hooks
+	// rule asks for: an effect may start external work and set state when that
+	// work reports back, but may not set state in its own body — synchronously or
+	// through a helper it awaits, which the compiler traces either way.
+	const signOut = useCallback(
+		(report: (incomplete: boolean) => void) => {
+			logout().then(
+				({ complete }) => {
+					if (complete) {
+						window.location.replace("/auth/login");
+						return;
+					}
+					report(true);
+				},
+				// A rejection is the same fact as an explicit incompleteness:
+				// nothing confirmed the session ended.
+				() => report(true),
+			);
+		},
+		[logout],
+	);
 
 	useEffect(() => {
-		void signOut();
+		let live = true;
+		signOut((value) => {
+			if (live) {
+				setIncomplete(value);
+			}
+		});
+		return () => {
+			live = false;
+		};
 	}, [signOut]);
 
 	if (!incomplete) {
@@ -51,7 +66,13 @@ export function LogoutPage() {
 				We could not finish signing you out. Your session may still be usable
 				for a few minutes. Please try again.
 			</p>
-			<Button variant="outline" onClick={() => void signOut()}>
+			<Button
+				variant="outline"
+				onClick={() => {
+					setIncomplete(false);
+					signOut(setIncomplete);
+				}}
+			>
 				Try again
 			</Button>
 		</div>
