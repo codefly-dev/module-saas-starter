@@ -312,6 +312,7 @@ export function DashboardWidget({
 				metric={metric}
 				actions={actions}
 				labelAs={widget.title != null ? "h3" : "span"}
+				trend="accent"
 				className={className}
 			/>
 		);

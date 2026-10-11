@@ -121,6 +121,11 @@ function aggregateHandler(
 	);
 }
 
+// A rejected refetch reaches the component a tick after `refetchQueries`
+// resolves. Without this wait an assertion can run while the previous state is
+// still rendered, which makes the retention tests pass whatever the code does.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
 const DEFAULT_ORDER = ["Logins over time", "Top event types", "Total logins"];
 
 // The tile titles, in the order the dashboard shows them. The kit's renderer
@@ -263,6 +268,96 @@ describe("SolutionDashboards", () => {
 				expect(screen.getAllByText("37").length).toBeGreaterThan(0);
 			}
 		});
+	});
+
+	// The longer sequence, and the one that matters most: a refusal followed by
+	// an ordinary failure, with no authorized read in between. The cached
+	// snapshot outlives the refusal, so unless the refusal LATCHES, the next
+	// error makes those values eligible again and hands them straight back.
+	describe.each(["line", "area", "bar", "number", "table"] as const)(
+		"a refused %s widget",
+		(visualization) => {
+			const oneWidget: DataGraph = {
+				...graph,
+				dashboards: [
+					{
+						...graph.dashboards[0],
+						widgets: [{ ...graph.dashboards[0].widgets[0], visualization }],
+					},
+				],
+			};
+
+			it.each([
+				[
+					"a 503",
+					() => HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+				],
+				["a dropped connection", () => HttpResponse.error()],
+			])("does not resurrect its values on %s", async (_name, fail) => {
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({
+							buckets: [{ key: "2026-09-01", count: "37" }],
+						}),
+					),
+				);
+				const { client } = renderInApp(
+					<SolutionDashboards graph={oneWidget} solutionId="example" />,
+				);
+				expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+					),
+				);
+				await act(async () => {
+					await client.refetchQueries({ queryKey: ["solution-widget"] });
+					await settle();
+				});
+				expect(await screen.findByText("No access")).toBeTruthy();
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+
+				server.use(http.post(rpc("AuditService", "AggregateAuditLog"), fail));
+				await act(async () => {
+					await client.refetchQueries({ queryKey: ["solution-widget"] });
+					await settle();
+				});
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+			});
+		},
+	);
+
+	it("lets a successful authorized read lift the refusal", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		// Authority restored: the latch lifts and the NEW values are drawn.
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "42" }] }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+		});
+		expect(await screen.findAllByText("42")).not.toHaveLength(0);
+		expect(screen.queryByText("No access")).toBeNull();
 	});
 
 	it("reads as loading until the org context resolves, never as empty", () => {

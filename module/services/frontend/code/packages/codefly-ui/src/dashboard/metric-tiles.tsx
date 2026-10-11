@@ -203,6 +203,20 @@ function hasTrend(series: number[] | undefined): series is number[] {
 	return !!series && series.length > 1;
 }
 
+/**
+ * Whether this metric's value may be derived from at all.
+ *
+ * `forbidden` is not a state of the data, it is a statement about the reader's
+ * authority, so everything computed FROM the value goes with the value: a tile
+ * that dashed its number and still drew "+170%" beside a trend line would have
+ * published the same figure twice over, in the two forms that are hardest to
+ * notice. Every other state here is about the data — an average legitimately
+ * has no total and a meaningful delta — so only this one withholds.
+ */
+function withholdsValue(metric: Metric): boolean {
+	return metric.state === "forbidden";
+}
+
 // The card props that turn a metric into a control. Both StatTile and
 // MetricCard apply these, because `onSelect` lives on the Metric rather than on
 // one component's props: a renderer that ignored it would silently drop the
@@ -245,10 +259,18 @@ function selectableCard(metric: Metric): {
  * owns the tile as well as the number — a dashboard whose viewer can drag,
  * remove or interrogate each tile. Without it the tile is purely presentational.
  */
+/** The colour a dashboard's accent reaches the first chart series through. */
+const ACCENT_TREND = "var(--chart-1)";
+
+function trendTone(trend: "muted" | "accent"): string | undefined {
+	return trend === "muted" ? "text-muted-foreground/70" : undefined;
+}
+
 export function StatTile({
 	metric,
 	actions,
 	labelAs = "span",
+	trend = "muted",
 	className,
 }: {
 	metric: Metric;
@@ -260,6 +282,14 @@ export function StatTile({
 	 * a heading gives for free and a tile otherwise takes away.
 	 */
 	labelAs?: "span" | "h3";
+	/**
+	 * How the trend sparkline is coloured. `"muted"` is a tile reading beside
+	 * other content; `"accent"` takes the dashboard's own accent, which a
+	 * scalar widget wants for the same reason its charts do — a declared
+	 * accent that coloured the line charts and not the sparklines beside them
+	 * left one dashboard drawn in two palettes.
+	 */
+	trend?: "muted" | "accent";
 	className?: string;
 }) {
 	const Label = labelAs;
@@ -288,16 +318,22 @@ export function StatTile({
 			<div className="flex items-end justify-between gap-3">
 				<div className="flex flex-col gap-1">
 					<MetricValue metric={metric} />
-					<MetricDelta
-						delta={metric.delta}
-						deltaLabel={metric.deltaLabel}
-						higherIsBetter={metric.higherIsBetter}
-					/>
+					{!withholdsValue(metric) && (
+						<MetricDelta
+							delta={metric.delta}
+							deltaLabel={metric.deltaLabel}
+							higherIsBetter={metric.higherIsBetter}
+						/>
+					)}
 				</div>
-				{hasTrend(metric.series) && (
+				{!withholdsValue(metric) && hasTrend(metric.series) && (
 					<Sparkline
 						points={metric.series}
-						className="shrink-0 text-muted-foreground/70"
+						className={cn("shrink-0", trendTone(trend))}
+						// A token, not a utility class, so the accent a dashboard
+						// scopes onto its subtree reaches the trend: the sparkline
+						// strokes `currentColor`, and a muted utility would pin it.
+						style={trend === "accent" ? { color: ACCENT_TREND } : undefined}
 					/>
 				)}
 			</div>
@@ -332,13 +368,15 @@ export function MetricCard({
 			<CardContent className="flex items-end justify-between gap-3">
 				<div className="flex flex-col gap-1">
 					<MetricValue metric={metric} className="type-metric-value-lg" />
-					<MetricDelta
-						delta={metric.delta}
-						deltaLabel={metric.deltaLabel}
-						higherIsBetter={metric.higherIsBetter}
-					/>
+					{!withholdsValue(metric) && (
+						<MetricDelta
+							delta={metric.delta}
+							deltaLabel={metric.deltaLabel}
+							higherIsBetter={metric.higherIsBetter}
+						/>
+					)}
 				</div>
-				{hasTrend(metric.series) && (
+				{!withholdsValue(metric) && hasTrend(metric.series) && (
 					<Sparkline
 						points={metric.series}
 						width={128}

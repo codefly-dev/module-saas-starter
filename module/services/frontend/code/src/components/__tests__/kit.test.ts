@@ -195,69 +195,180 @@ function isHostSurface(specifier: string, fromPath: string): boolean {
 }
 
 /**
- * The kit components a file has a binding for, as local-name → kit-name, with
- * a namespace import recorded as `*`.
+ * What a local name in a file refers to.
  *
- * Resolved from the AST rather than by regex, because a declaration's own body
- * has to be checked against these bindings: file-wide import presence proved
- * nothing. An unrelated `export { Card as KitCard } from "@codefly-dev/ui"`
- * was enough to exempt a hand-rolled `Card` sitting beside it, which is the
- * shape a duplicate actually arrives in — somebody re-exports the kit's thing
- * for a neighbour and writes their own in the same file.
+ * `{ kit }` is a kit component, under the kit's OWN name whatever the local
+ * spelling. `{ namespace }` is a whole module imported as one object, so
+ * `<D.LineChart/>` has to be resolved through it at the use site.
+ */
+type Binding =
+	| { kind: "kit"; kit: string }
+	| { kind: "namespace"; surface: boolean };
+
+/**
+ * Every local name in a file that refers to the kit, resolved through named,
+ * aliased, default and namespace imports, and then through local aliases
+ * (`const Local = KitCard`).
+ *
+ * A host surface's names are mapped back to the kit's own: `src/shared/ui`
+ * re-exports `CardRoot` as `Card`, so importing or qualifying `Card` from
+ * there composes `CardRoot`, and a declaration named `Card` beside it is still
+ * a second `Card`.
  */
 function kitBindings(
 	file: ts.SourceFile,
 	path: string,
 	surface: Map<string, string>,
-): Map<string, string> {
-	const bindings = new Map<string, string>();
+): Map<string, Binding> {
+	const bindings = new Map<string, Binding>();
+	const named = (published: string, fromKit: boolean): string | undefined =>
+		fromKit ? published : surface.get(published);
+
 	for (const statement of file.statements) {
 		if (!ts.isImportDeclaration(statement)) continue;
 		if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
 		const specifier = statement.moduleSpecifier.text;
-		const kit = KIT_SPECIFIER.test(specifier);
-		const host = isHostSurface(specifier, path);
-		if (!kit && !host) continue;
+		const fromKit = KIT_SPECIFIER.test(specifier);
+		const fromSurface = isHostSurface(specifier, path);
+		if (!fromKit && !fromSurface) continue;
 		const clause = statement.importClause;
-		if (!clause) continue;
-		// `import * as UI from "@/shared/ui"` — every member access on it is a
-		// kit component, so the namespace itself is the binding.
-		if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
-			bindings.set(clause.namedBindings.name.text, "*");
+		// A type-only import renders nothing, so it is no evidence either way.
+		if (!clause || clause.isTypeOnly) continue;
+		const { namedBindings } = clause;
+		if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+			bindings.set(namedBindings.name.text, {
+				kind: "namespace",
+				surface: fromSurface,
+			});
 			continue;
 		}
-		if (!clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) {
-			continue;
-		}
-		for (const element of clause.namedBindings.elements) {
-			const published = (element.propertyName ?? element.name).text;
-			// Through a host surface the published name is that file's, so it is
-			// resolved back to the kit's own: `src/shared/ui` re-exports
-			// `CardRoot` as `Card`, so importing `Card` from there composes
-			// `CardRoot`, and a declaration named `Card` beside it is still a
-			// second `Card`.
-			const kitName = kit ? published : surface.get(published);
-			if (kitName) bindings.set(element.name.text, kitName);
+		if (namedBindings && ts.isNamedImports(namedBindings)) {
+			for (const element of namedBindings.elements) {
+				if (element.isTypeOnly) continue;
+				const kit = named((element.propertyName ?? element.name).text, fromKit);
+				if (kit) bindings.set(element.name.text, { kind: "kit", kit });
+			}
 		}
 	}
+
+	// Local aliases of an import: `const Local = KitCard`. Chased to a fixed
+	// point so a chain of them resolves, which is how a wrapper that reads
+	// more nicely still counts as composition.
+	for (let pass = 0; pass < 4; pass += 1) {
+		let changed = false;
+		const visit = (node: ts.Node) => {
+			if (
+				ts.isVariableDeclaration(node) &&
+				ts.isIdentifier(node.name) &&
+				node.initializer &&
+				ts.isIdentifier(node.initializer) &&
+				!bindings.has(node.name.text)
+			) {
+				const target = bindings.get(node.initializer.text);
+				if (target) {
+					bindings.set(node.name.text, target);
+					changed = true;
+				}
+			}
+			ts.forEachChild(node, visit);
+		};
+		visit(file);
+		if (!changed) break;
+	}
 	return bindings;
+}
+
+/**
+ * The kit component a JSX tag renders, or undefined when it renders something
+ * else. Only JSX counts: a parameter typed `ComponentProps<typeof KitCard>`
+ * mentions the kit and draws nothing, and reading plain identifiers let exactly
+ * that exempt a `Card` whose body was a bare `<div>`.
+ *
+ * `shadowed` are names the enclosing declaration binds itself, which outrank
+ * the import — `const KitCard = () => <div/>` inside the body is not the kit's.
+ */
+function renderedKitComponent(
+	tag: ts.JsxTagNameExpression,
+	bindings: Map<string, Binding>,
+	surface: Map<string, string>,
+	shadowed: Set<string>,
+): string | undefined {
+	if (ts.isIdentifier(tag)) {
+		if (shadowed.has(tag.text)) return undefined;
+		const binding = bindings.get(tag.text);
+		return binding?.kind === "kit" ? binding.kit : undefined;
+	}
+	if (ts.isPropertyAccessExpression(tag) && ts.isIdentifier(tag.expression)) {
+		if (shadowed.has(tag.expression.text)) return undefined;
+		const binding = bindings.get(tag.expression.text);
+		if (binding?.kind !== "namespace") return undefined;
+		const member = tag.name.text;
+		// Through a surface namespace the member is that file's published
+		// name, so it resolves to the kit name behind it.
+		return binding.surface ? surface.get(member) : member;
+	}
+	return undefined;
+}
+
+/** Every name declared inside `node` — the ones that shadow an import. */
+function locallyBound(node: ts.Node): Set<string> {
+	const names = new Set<string>();
+	const visit = (child: ts.Node) => {
+		if (
+			(ts.isVariableDeclaration(child) ||
+				ts.isFunctionDeclaration(child) ||
+				ts.isClassDeclaration(child) ||
+				ts.isParameter(child)) &&
+			child.name &&
+			ts.isIdentifier(child.name)
+		) {
+			names.add(child.name.text);
+		}
+		ts.forEachChild(child, visit);
+	};
+	ts.forEachChild(node, visit);
+	return names;
+}
+
+/** The kit components this declaration RENDERS, by kit name. */
+function renderedWithin(
+	node: ts.Node,
+	bindings: Map<string, Binding>,
+	surface: Map<string, string>,
+): Set<string> {
+	const shadowed = locallyBound(node);
+	const rendered = new Set<string>();
+	const visit = (child: ts.Node) => {
+		if (ts.isJsxOpeningElement(child) || ts.isJsxSelfClosingElement(child)) {
+			const kit = renderedKitComponent(
+				child.tagName,
+				bindings,
+				surface,
+				shadowed,
+			);
+			if (kit) rendered.add(kit);
+		}
+		ts.forEachChild(child, visit);
+	};
+	ts.forEachChild(node, visit);
+	return rendered;
 }
 
 /**
  * Every component this file declares, by the name it is PUBLISHED under, with
  * the declaration's own node.
  *
- * The published name is what matters, and it is not always the declared one:
- * `const LocalPanel = …; export { LocalPanel as Card }` ships a `Card`, and
- * reading only declaration names let that straight through.
+ * The published name is not always the declared one: `const LocalPanel = …;
+ * export { LocalPanel as Card }` ships a `Card`, and reading only declaration
+ * names let that straight through.
  */
 function declarations(file: ts.SourceFile): Map<string, ts.Node> {
 	const declared = new Map<string, ts.Node>();
-	const published = new Map<string, ts.Node>();
 	const visit = (node: ts.Node) => {
-		if (ts.isFunctionDeclaration(node) && node.name) {
-			declared.set(node.name.text, node);
-		} else if (ts.isClassDeclaration(node) && node.name) {
+		if (
+			(ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+			node.name
+		) {
 			declared.set(node.name.text, node);
 		} else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
 			declared.set(node.name.text, node);
@@ -265,8 +376,12 @@ function declarations(file: ts.SourceFile): Map<string, ts.Node> {
 		ts.forEachChild(node, visit);
 	};
 	visit(file);
-	// `export { Local as Published }` with no `from`: a local declaration
-	// published under another name.
+
+	const all = new Map<string, ts.Node>();
+	for (const [name, node] of declared) {
+		if (/^[A-Z][A-Za-z0-9]*$/.test(name)) all.set(name, node);
+	}
+	// `export { Local as Published }` with no `from`.
 	for (const statement of file.statements) {
 		if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier) {
 			continue;
@@ -276,58 +391,28 @@ function declarations(file: ts.SourceFile): Map<string, ts.Node> {
 		for (const element of clause.elements) {
 			const local = (element.propertyName ?? element.name).text;
 			const node = declared.get(local);
-			if (node) published.set(element.name.text, node);
+			const published = element.name.text;
+			if (node && /^[A-Z][A-Za-z0-9]*$/.test(published)) {
+				all.set(published, node);
+			}
 		}
-	}
-	const all = new Map<string, ts.Node>();
-	for (const [name, node] of declared) {
-		if (/^[A-Z][A-Za-z0-9]*$/.test(name)) all.set(name, node);
-	}
-	for (const [name, node] of published) {
-		if (/^[A-Z][A-Za-z0-9]*$/.test(name)) all.set(name, node);
 	}
 	return all;
 }
 
-/** Whether this declaration's own body renders the kit component `kitName`. */
-function composesWithin(
-	node: ts.Node,
-	kitName: string,
-	bindings: Map<string, string>,
-): boolean {
-	let found = false;
-	const visit = (child: ts.Node) => {
-		if (found) return;
-		if (ts.isIdentifier(child) && bindings.get(child.text) === kitName) {
-			found = true;
-			return;
-		}
-		// `UI.Badge` off a namespace import.
-		if (
-			ts.isPropertyAccessExpression(child) &&
-			ts.isIdentifier(child.expression) &&
-			bindings.get(child.expression.text) === "*" &&
-			child.name.text === kitName
-		) {
-			found = true;
-			return;
-		}
-		ts.forEachChild(child, visit);
-	};
-	ts.forEachChild(node, visit);
-	return found;
-}
-
 /**
- * The kit's dashboard marks. A host surface may compose ONE of these — a page
- * drawing a chart — but a file that reaches for several is dispatching over a
- * widget's visualization, which is `<Dashboard>`'s whole job.
+ * The kit's dashboard marks. A surface may compose several of these on one
+ * page — a KPI row above a chart is a page, not a renderer. What it may not do
+ * is BRANCH between them: choosing a mark by a widget's kind is a dispatch over
+ * visualizations, and that is `<Dashboard>`'s whole job.
  *
- * This is the leg that catches a duplicate under a NEW name, which no
- * name-based rule can: the renderer #1041 deleted declared `WidgetBody`,
- * `WidgetValues` and `WidgetCard` — not one of them a name the kit exports —
- * and so produced zero offences from the legs above while being the exact
- * duplication this file exists to prevent.
+ * Branching is the test, not the count, because counting file-wide imports
+ * caught a page that composed two marks side by side and could be escaped by a
+ * namespace import or a local alias. This is also the only leg that catches a
+ * duplicate under a NEW name: the renderer #1041 deleted declared
+ * `WidgetBody`, `WidgetValues` and `WidgetCard` — not one of them a name the
+ * kit exports — so every name-based leg passed it while it was the duplication
+ * itself.
  */
 const DASHBOARD_MARKS = new Set([
 	"LineChart",
@@ -345,11 +430,67 @@ const DASHBOARD_MARKS = new Set([
 ]);
 
 /**
- * Files that draw with more than one of the kit's marks and may keep doing so,
- * with what each is and what would retire it. They are the host's older
- * dashboard renderers, the same ones {@link ALLOWED} names; this list exists so
- * a NEW one cannot join them quietly.
+ * Whether this declaration picks between dashboard marks by branch: two
+ * different marks reachable from alternative arms of one conditional, if, or
+ * switch.
  */
+function dispatchesOverMarks(
+	node: ts.Node,
+	bindings: Map<string, Binding>,
+	surface: Map<string, string>,
+): string[] {
+	const marksOf = (branch: ts.Node | undefined): Set<string> => {
+		if (!branch) return new Set();
+		// A branch is often the element itself (`cond ? <A/> : <B/>`), and
+		// `renderedWithin` walks a node's children rather than the node, so
+		// the branch's own tag is read here.
+		const rendered = renderedWithin(branch, bindings, surface);
+		if (ts.isJsxSelfClosingElement(branch) || ts.isJsxOpeningElement(branch)) {
+			const kit = renderedKitComponent(
+				branch.tagName,
+				bindings,
+				surface,
+				locallyBound(branch),
+			);
+			if (kit) rendered.add(kit);
+		}
+		if (ts.isJsxElement(branch)) {
+			const kit = renderedKitComponent(
+				branch.openingElement.tagName,
+				bindings,
+				surface,
+				locallyBound(branch),
+			);
+			if (kit) rendered.add(kit);
+		}
+		return new Set([...rendered].filter((mark) => DASHBOARD_MARKS.has(mark)));
+	};
+	const found = new Set<string>();
+	const consider = (branches: (ts.Node | undefined)[]) => {
+		const perBranch = branches.map(marksOf);
+		const union = new Set(perBranch.flatMap((marks) => [...marks]));
+		// Two distinct marks, reached through different arms.
+		if (
+			union.size > 1 &&
+			perBranch.filter((marks) => marks.size > 0).length > 1
+		) {
+			for (const mark of union) found.add(mark);
+		}
+	};
+	const visit = (child: ts.Node) => {
+		if (ts.isConditionalExpression(child)) {
+			consider([child.whenTrue, child.whenFalse]);
+		} else if (ts.isIfStatement(child)) {
+			consider([child.thenStatement, child.elseStatement]);
+		} else if (ts.isSwitchStatement(child)) {
+			consider([...child.caseBlock.clauses]);
+		}
+		ts.forEachChild(child, visit);
+	};
+	visit(node);
+	return [...found].sort();
+}
+
 const DISPATCHERS: Record<string, string> = {
 	"src/components/dashboard.tsx":
 		"the widget-slot renderer: a union of host-supplied widgets, each with its own loading/error/empty state. Goes when the audit page's widgets become a DashboardView and it mounts the kit's renderer.",
@@ -446,10 +587,32 @@ interface Offence {
 const ROUTE_CONVENTION =
 	/^src\/app\/(?:.*\/)?(page|layout|template|default|error|global-error|loading|not-found|forbidden|unauthorized)\.tsx?$/;
 
-/** The names a file's default export declares, to exempt a route component. */
+/**
+ * The names a file's default export resolves to, in every form a route
+ * component is written: `export default function Page`, `export default Page`,
+ * and `export { Page as default }`. Resolving only the first rejected two
+ * conventional pages.
+ */
 function defaultExportNames(file: ts.SourceFile): Set<string> {
 	const names = new Set<string>();
 	for (const statement of file.statements) {
+		if (ts.isExportAssignment(statement)) {
+			if (ts.isIdentifier(statement.expression)) {
+				names.add(statement.expression.text);
+			}
+			continue;
+		}
+		if (ts.isExportDeclaration(statement) && !statement.moduleSpecifier) {
+			const clause = statement.exportClause;
+			if (clause && ts.isNamedExports(clause)) {
+				for (const element of clause.elements) {
+					if (element.name.text === "default" && element.propertyName) {
+						names.add(element.propertyName.text);
+					}
+				}
+			}
+			continue;
+		}
 		const isDefault = ts
 			.getModifiers(statement as ts.HasModifiers)
 			?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
@@ -466,10 +629,59 @@ function defaultExportNames(file: ts.SourceFile): Set<string> {
 }
 
 /**
- * Declarations that take a kit export's name without composing the kit's
- * component of that name WITHIN their own body, plus files that dispatch over
- * more than one of the kit's dashboard marks. Pure, so the fixtures below can
- * exercise it on sources that are not in the tree.
+ * Names a file publishes that are declared in ANOTHER file of the set:
+ * `export { LocalPanel as Card } from "./local"`. Without this, splitting the
+ * copy and its kit-named export across two files hid it from both.
+ */
+function reExportedLocally(
+	files: { path: string; source: string }[],
+): { name: string; path: string }[] {
+	const declaredIn = new Map<string, Set<string>>();
+	for (const { path, source } of files) {
+		declaredIn.set(path, new Set(declarations(parse(path, source)).keys()));
+	}
+	const published: { name: string; path: string }[] = [];
+	for (const { path, source } of files) {
+		const file = parse(path, source);
+		for (const statement of file.statements) {
+			if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier) {
+				continue;
+			}
+			if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+			const specifier = statement.moduleSpecifier.text;
+			if (!specifier.startsWith(".")) continue;
+			const target = join(dirname(path), specifier).replaceAll("\\", "/");
+			const names = [...declaredIn.entries()].find(
+				([other]) =>
+					other === target ||
+					other.startsWith(`${target}.`) ||
+					other.startsWith(`${target}/`),
+			)?.[1];
+			if (!names) continue;
+			const clause = statement.exportClause;
+			if (!clause || !ts.isNamedExports(clause)) continue;
+			for (const element of clause.elements) {
+				const local = (element.propertyName ?? element.name).text;
+				const name = element.name.text;
+				// Only an ALIASING re-export publishes a name the declaration
+				// does not already carry. `export { Dashboard } from "./ui"` is
+				// a barrel: that declaration was judged at its own site, and
+				// flagging it again would demand a second exception for one
+				// component. `export { LocalPanel as Card }` is the other
+				// thing entirely — a kit name appearing where no declaration
+				// answers for it.
+				if (local !== name && names.has(local)) published.push({ name, path });
+			}
+		}
+	}
+	return published;
+}
+
+/**
+ * Declarations that take a kit export's name without RENDERING the kit's
+ * component of that name, plus declarations that branch between the kit's
+ * dashboard marks. Pure, so the fixtures below can exercise it on sources that
+ * are not in the tree.
  */
 function findOffences(
 	files: { path: string; source: string }[],
@@ -480,8 +692,9 @@ function findOffences(
 	dispatchers: Record<string, string> = DISPATCHERS,
 ): Offence[] {
 	const offences: Offence[] = [];
-	for (const { path, source } of files) {
-		if (KIT_SURFACES.includes(path)) continue;
+	const scanned = files.filter(({ path }) => !KIT_SURFACES.includes(path));
+
+	for (const { path, source } of scanned) {
 		const file = parse(path, source);
 		const bindings = kitBindings(file, path, surface);
 		const routeDefaults = ROUTE_CONVENTION.test(path)
@@ -490,24 +703,27 @@ function findOffences(
 
 		for (const [name, node] of declarations(file)) {
 			if (!kit.has(name) || routeDefaults.has(name)) continue;
-			if (composesWithin(node, name, bindings)) continue;
+			if (renderedWithin(node, bindings, surface).has(name)) continue;
 			if (`${name} in ${path}` in allowed) continue;
 			offences.push({ name, path, kind: "name" });
 		}
 
 		if (!(path in dispatchers)) {
-			const marks = new Set<string>();
-			for (const kitName of bindings.values()) {
-				if (DASHBOARD_MARKS.has(kitName)) marks.add(kitName);
-			}
-			if (marks.size > 1) {
-				offences.push({
-					name: [...marks].sort().join("+"),
-					path,
-					kind: "dispatch",
-				});
+			for (const [, node] of declarations(file)) {
+				const marks = dispatchesOverMarks(node, bindings, surface);
+				if (marks.length > 1) {
+					offences.push({ name: marks.join("+"), path, kind: "dispatch" });
+					break;
+				}
 			}
 		}
+	}
+
+	for (const { name, path } of reExportedLocally(scanned)) {
+		if (!kit.has(name)) continue;
+		if (`${name} in ${path}` in allowed) continue;
+		if (offences.some((o) => o.name === name && o.path === path)) continue;
+		offences.push({ name, path, kind: "name" });
 	}
 	return offences;
 }
@@ -600,6 +816,14 @@ describe("the detector", () => {
 		["Badge", "Badge"],
 		["Card", "CardRoot"],
 	]);
+	const deletedRenderer = () =>
+		readFileSync(
+			join(
+				appRoot,
+				"src/components/__tests__/fixtures/deleted-solution-dashboard.txt",
+			),
+			"utf8",
+		);
 	const detect = (path: string, source: string) =>
 		findOffences([{ path, source }], kit, {}, surface, {}).map(
 			(o) => `${o.name} in ${o.path}`,
@@ -808,24 +1032,163 @@ export const Badge = (props) => <KitBadge {...props} />;`,
 		).toEqual([]);
 	});
 
-	it("rejects the exact renderer this gate was written to prevent", async () => {
+	it("rejects the exact renderer this gate was written to prevent", () => {
 		// The case that shows the name legs are not enough on their own: the
 		// renderer #1041 deleted declared WidgetBody, WidgetValues and
 		// WidgetCard — not one of them a name the kit exports — so every
 		// name-based leg passed it while it was the duplication itself. The
-		// dispatch leg is what catches it, and this reads the real deleted
-		// source rather than a paraphrase of it.
-		const { execFileSync } = await import("node:child_process");
-		const deleted = execFileSync(
-			"git",
-			[
-				"show",
-				"8590d329:module/services/frontend/code/src/solutions/SolutionDashboard.tsx",
-			],
-			{ encoding: "utf8", cwd: appRoot },
-		);
+		// dispatch leg is what catches it.
+		//
+		// Read from a committed fixture, not with `git show`: this suite ships
+		// inside an immutable module package, where a consuming repository
+		// carries the source tree and not this repository's history, so a
+		// fixture reaching for an upstream commit fails there while passing in
+		// full-history CI.
 		expect(
-			detect("src/solutions/SolutionDashboard.tsx", deleted).length,
+			detect("src/solutions/SolutionDashboard.tsx", deletedRenderer()).length,
+		).toBeGreaterThan(0);
+	});
+
+	it("still rejects that renderer when its imports become a namespace", () => {
+		// Changing only how the marks are imported, and qualifying the JSX,
+		// must not change the verdict: a gate that reads local names rather
+		// than what they resolve to is escaped by one edit.
+		const named =
+			/import \{\s*AreaChart,\s*BarList,\s*LineChart,\s*SortableGrid,\s*StatChart,\s*\} from "@codefly-dev\/ui\/dashboard";/;
+		const original = deletedRenderer();
+		expect(named.test(original)).toBe(true);
+		const namespaced = original
+			.replace(named, 'import * as Charts from "@codefly-dev/ui/dashboard";')
+			.replace(
+				/<(\/?)(AreaChart|BarList|LineChart|SortableGrid|StatChart)\b/g,
+				"<$1Charts.$2",
+			);
+		expect(
+			detect("src/solutions/SolutionDashboard.tsx", namespaced).length,
+		).toBeGreaterThan(0);
+	});
+
+	it("rejects that renderer when its marks are local aliases", () => {
+		expect(
+			detect(
+				"src/features/x/ui/widget.tsx",
+				`import { LineChart as L, AreaChart as A } from "@codefly-dev/ui/dashboard";
+export function WidgetBody({ kind }) {
+	return kind === "line" ? <L points={[]} /> : <A points={[]} />;
+}`,
+			).length,
+		).toBeGreaterThan(0);
+	});
+
+	it("does not read a type reference as composition", () => {
+		// A parameter typed ComponentProps<typeof KitCard> mentions the kit and
+		// draws nothing; reading plain identifiers exempted a Card whose body
+		// was a bare <div>.
+		expect(
+			detect(
+				"src/features/x/ui/card.tsx",
+				`import { Card as KitCard } from "@codefly-dev/ui/layout";
+export const Card = (props: React.ComponentProps<typeof KitCard>) => (
+	<div>{props.children}</div>
+);`,
+			),
+		).toEqual(["Card in src/features/x/ui/card.tsx"]);
+	});
+
+	it("does not let a local shadow stand in for the kit's component", () => {
+		expect(
+			detect(
+				"src/features/x/ui/card.tsx",
+				`import { Card as KitCard } from "@codefly-dev/ui/layout";
+export function Card() {
+	const KitCard = () => <div />;
+	return <KitCard />;
+}`,
+			),
+		).toEqual(["Card in src/features/x/ui/card.tsx"]);
+	});
+
+	it("resolves a surface namespace member to the kit name behind it", () => {
+		// `@/shared/ui` publishes CardRoot as Card, so <UI.Card> composes
+		// CardRoot and a declaration named Card is still a second Card.
+		expect(
+			detect(
+				"src/features/x/ui/card.tsx",
+				`import * as UI from "@/shared/ui";
+export const Card = () => <UI.Card><h3>copy</h3></UI.Card>;`,
+			),
+		).toEqual(["Card in src/features/x/ui/card.tsx"]);
+	});
+
+	it("follows a local alias of a kit import", () => {
+		expect(
+			detect(
+				"src/features/x/ui/card.tsx",
+				`import { Card as KitCard } from "@codefly-dev/ui/layout";
+const Local = KitCard;
+export const Card = (props) => <Local {...props} />;`,
+			),
+		).toEqual([]);
+	});
+
+	it("allows a wrapper that renders through a kit namespace", () => {
+		expect(
+			detect(
+				"src/features/x/ui/badge.tsx",
+				`import * as UI from "@codefly-dev/ui/layout";
+export default function Badge(props) { return <UI.Badge {...props} />; }`,
+			),
+		).toEqual([]);
+	});
+
+	it.each([
+		[
+			"a default identifier",
+			"const Page = () => <main/>; export default Page;",
+		],
+		[
+			"an aliased default",
+			"const Page = () => <main/>; export { Page as default };",
+		],
+	])("applies the route exception to %s", (_name, source) => {
+		expect(detect("src/app/page.tsx", source)).toEqual([]);
+	});
+
+	it("does not read two marks composed side by side as a dispatch", () => {
+		// A KPI row above a chart is a page. What a page may not do is BRANCH
+		// between marks, which is the dispatch <Dashboard> owns.
+		expect(
+			detect(
+				"src/features/x/ui/overview.tsx",
+				`import { KPIRow, MetricLineChart } from "@codefly-dev/ui/dashboard";
+export const Overview = () => (
+	<>
+		<KPIRow metrics={[]} />
+		<MetricLineChart title="t" series={[]} />
+	</>
+);`,
+			),
+		).toEqual([]);
+	});
+
+	it("catches a copy split across two files by an aliasing re-export", () => {
+		expect(
+			findOffences(
+				[
+					{
+						path: "src/features/x/ui/local.tsx",
+						source: "export const LocalPanel = () => <div>copy</div>;",
+					},
+					{
+						path: "src/features/x/ui/index.ts",
+						source: 'export { LocalPanel as Card } from "./local";',
+					},
+				],
+				kit,
+				{},
+				surface,
+				{},
+			).length,
 		).toBeGreaterThan(0);
 	});
 

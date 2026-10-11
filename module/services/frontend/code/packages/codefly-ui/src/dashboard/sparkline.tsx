@@ -18,6 +18,7 @@
  *     dividing by zero; the visual "no change" answer is correct.
  */
 
+import type { CSSProperties } from "react";
 import { useId } from "react";
 import { linearScale } from "./geometry.js";
 
@@ -26,6 +27,12 @@ interface SparklineProps {
 	width?: number;
 	height?: number;
 	className?: string;
+	/**
+	 * Inline style for the svg. The line strokes `currentColor`, so this is how
+	 * a caller gives it a colour from a token rather than from a utility class
+	 * — which is what lets a themed subtree's own accent reach it.
+	 */
+	style?: CSSProperties;
 	// strokeWidth defaults to 1.5 — looks crisp at 1× and 2× DPR.
 	strokeWidth?: number;
 }
@@ -36,6 +43,7 @@ export function Sparkline({
 	height = 24,
 	strokeWidth = 1.5,
 	className,
+	style,
 }: SparklineProps) {
 	const gradId = `sparkline-grad-${useId().replaceAll(":", "")}`;
 
@@ -46,6 +54,7 @@ export function Sparkline({
 				height={height}
 				viewBox={`0 0 ${width} ${height}`}
 				className={className}
+				style={style}
 				aria-hidden
 			/>
 		);
@@ -81,6 +90,7 @@ export function Sparkline({
 			height={height}
 			viewBox={`0 0 ${width} ${height}`}
 			className={className}
+			style={style}
 			aria-hidden
 		>
 			<defs>

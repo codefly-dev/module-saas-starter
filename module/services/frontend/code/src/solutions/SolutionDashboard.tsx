@@ -20,9 +20,14 @@ import {
 	SortableGrid,
 	type WidgetReadFailure,
 } from "@codefly-dev/ui/dashboard";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, Info, Plus, X } from "lucide-react";
-import { type ReactNode, useState, useSyncExternalStore } from "react";
+import {
+	type ReactNode,
+	useEffect,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import { flushSync } from "react-dom";
 import { resolveActor } from "@/features/audit/model/transforms";
 import {
@@ -126,6 +131,7 @@ function SolutionWidget({
 	// declaration refetches instead of serving another graph's cached series that
 	// happens to share the same solution/dashboard/widget/org ids. Disabled until
 	// the org resolves so the pre-org window reads as loading, never as empty.
+	const client = useQueryClient();
 	const { data, isError, error } = useQuery({
 		queryKey: [
 			"solution-widget",
@@ -152,19 +158,55 @@ function SolutionWidget({
 	// wrong answer `mayKeepRetainedRows` exists to make unwritable, arrived at
 	// from the dashboard instead of from a table. A transient failure says
 	// nothing about authority, so those values stay and read as stale.
+	//
+	// Hiding the snapshot for the refusal alone is not enough, and that was
+	// this component's bug: the cached snapshot survived the refusal, so the
+	// NEXT error — a 503, a dropped connection — made it eligible again and
+	// handed the refused values straight back, with no authorized read in
+	// between. A refusal therefore latches: the snapshot stays ineligible
+	// until a successful read replaces it.
 	const outcome = readOutcome(isError, error);
-	const retained = mayKeepRetainedRows(outcome) ? (data?.series ?? null) : null;
+	const authorized = !isError && data !== undefined;
+	// The latch lives in the query cache, beside the snapshot it guards, for
+	// two reasons: it outlives this component (a latch in state or a ref
+	// forgets on remount, and the snapshot does not), and it expires with the
+	// cache that holds the values, so neither can outlast the other.
+	const latchKey = refusedLatchKey(solutionId, dashboardId, widget.id, orgId);
+	const latched = client.getQueryData<boolean>(latchKey) === true;
+	const widgetId = widget.id;
+	useEffect(() => {
+		const key = refusedLatchKey(solutionId, dashboardId, widgetId, orgId);
+		if (outcome === "forbidden") client.setQueryData(key, true);
+		else if (authorized) client.setQueryData(key, false);
+	}, [client, outcome, authorized, solutionId, dashboardId, widgetId, orgId]);
+
+	const refused = outcome === "forbidden" || (!authorized && latched);
+	const retained =
+		!refused && mayKeepRetainedRows(outcome) ? (data?.series ?? null) : null;
 
 	return (
 		<DashboardWidget
 			widget={{
 				...declaredWidget(widget),
 				series: retained,
-				failure: WIDGET_FAILURE[outcome],
+				failure: refused ? "refused" : WIDGET_FAILURE[outcome],
 			}}
 			actions={actions}
 		/>
 	);
+}
+
+// Where a widget's refusal latch is kept in the query cache. Not a read: it
+// holds a boolean this component writes, under its own prefix so it can never
+// be mistaken for a resolved widget. Built by a function rather than inline so
+// the effect below depends on its parts and not on a fresh array each render.
+function refusedLatchKey(
+	solutionId: string,
+	dashboardId: string,
+	widgetId: string,
+	orgId: string,
+): readonly string[] {
+	return ["solution-widget-refused", solutionId, dashboardId, widgetId, orgId];
 }
 
 // The host's read classification as the renderer's presentational one. A read

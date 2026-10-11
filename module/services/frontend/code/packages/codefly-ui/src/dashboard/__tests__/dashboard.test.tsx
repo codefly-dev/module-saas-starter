@@ -93,6 +93,29 @@ describe("Dashboard", () => {
 		expect(section.style.getPropertyValue("--primary")).toBe("hotpink");
 	});
 
+	it("reaches a scalar's own trend with the accent, not just the charts", () => {
+		// A declared accent that coloured the line charts but not the
+		// sparklines beside them drew one dashboard in two palettes.
+		const { container } = render(
+			<Dashboard
+				data={{
+					accent: "hotpink",
+					widgets: [{ id: "total", visualization: "number", series: daily }],
+				}}
+			/>,
+		);
+		// The delta draws a lucide arrow, so the sparkline is not the first svg.
+		const [trend] = [...container.querySelectorAll("svg")].filter(
+			(svg) => !svg.classList.contains("lucide"),
+		);
+		expect((trend as SVGElement).style.color).toBe("var(--chart-1)");
+		expect(
+			(
+				container.querySelector("section") as HTMLElement
+			).style.getPropertyValue("--chart-1"),
+		).toBe("hotpink");
+	});
+
 	it("keeps a titled scalar reachable by heading navigation", () => {
 		// It was a Card with an <h3>; a StatTile's label is a span, so the
 		// title left the document outline when the tier changed.
