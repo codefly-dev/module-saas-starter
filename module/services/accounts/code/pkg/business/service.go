@@ -1045,6 +1045,13 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 // RLS-protected (Phase 2E). Empty OrgId means a platform-level
 // assignment (super_admin etc.) — handler authz already required
 // platform_admin; the write goes through bypass.
+//
+// An organization assignment names a subject of that organization. The row's
+// RLS policy checks only the assignment's own organization and nothing ties
+// subject_id to a membership, so the subject is checked here, in the write's
+// transaction and under the membership lock a removal takes
+// (requireSubjectInOrgTx). The platform-level path names no organization and is
+// authorised separately, so it is not narrowed by this.
 func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*gen.AssignRoleResponse, error) {
 	assignment := &gen.RoleAssignment{
 		Id:          NewIDString(),
@@ -1055,6 +1062,11 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 		Scope:       req.Scope,
 	}
 	wrap := func(ctx context.Context) error {
+		if req.OrgId != "" {
+			if err := s.requireSubjectInOrgTx(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+				return err
+			}
+		}
 		if err := s.store.AssignRole(ctx, assignment); err != nil {
 			return err
 		}

@@ -225,6 +225,11 @@ func (s *Service) revokeScopeApply(ctx context.Context, actorID string, req *gen
 }
 
 // ShareRecord grants a principal/team a role on a specific record.
+//
+// The share names a subject of the share's organization: record_shares' RLS
+// policy checks only the share's organization and nothing ties subject_id to a
+// membership, so the subject is checked in the share's own transaction, under
+// the membership lock a removal takes (requireSubjectInOrgTx).
 func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.ShareRecordRequest) (*gen.ShareRecordResponse, error) {
 	w := wool.Get(ctx).In("ShareRecord")
 	share := &gen.RecordShare{
@@ -239,6 +244,9 @@ func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.Shar
 		ExpiresAt:    req.ExpiresAt,
 	}
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		if err := s.requireSubjectInOrgTx(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+			return err
+		}
 		if err := s.store.ShareRecord(ctx, share); err != nil {
 			return err
 		}
