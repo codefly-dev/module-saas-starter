@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // TestAuditEventTypes_Parity verifies the DB projection reconciles exactly to
@@ -126,7 +127,9 @@ func TestQueryAuditLog_FiltersByNamespace(t *testing.T) {
 // TestAuditRetention_DropsOldPartitions proves retention actually removes data
 // now: it drops whole partitions whose range is entirely older than the cutoff
 // (which the append-only trigger would have blocked as a row DELETE), while
-// leaving current-month data intact.
+// leaving current-month data intact. The old month lies far past any window
+// the audit_events policy keeps, since a cutoff the policy does not allow is
+// refused.
 func TestAuditRetention_DropsOldPartitions(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
@@ -134,7 +137,11 @@ func TestAuditRetention_DropsOldPartitions(t *testing.T) {
 	_, org := mustUserAndOrg(t, ctx, "ret@audit-test.com", "ret-audit", "Retention Co")
 
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		return testStore.EnsureAuditPartitions(ctx, 3)
+		if err := testStore.EnsureAuditPartitions(ctx, 3); err != nil {
+			return err
+		}
+		_, err := storetx.Tx(ctx).Exec(ctx, `SELECT audit_events_ensure_partition('2000-02-15'::date)`)
+		return err
 	}))
 
 	// A current-month event we expect to survive retention.
@@ -144,18 +151,17 @@ func TestAuditRetention_DropsOldPartitions(t *testing.T) {
 		})
 	}))
 
-	// Cutoff = first instant of the current month. The empty prior-month
-	// partitions (seeded at migration + EnsureAuditPartitions) are entirely
-	// older than the cutoff and must be dropped; the current partition must not.
-	now := time.Now().UTC()
-	cutoff := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	// The February 2000 partition is entirely older than the cutoff and must be
+	// dropped; the current partition must not.
+	cutoff := time.Date(2000, 3, 1, 0, 0, 0, 0, time.UTC)
 	var dropped int64
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		dropped, err = testStore.DropAuditPartitionsBefore(ctx, cutoff)
 		return err
 	}))
-	require.Positive(t, dropped, "expected at least one old empty partition to be dropped")
+	require.Positive(t, dropped, "expected the old partition to be dropped")
+	now := time.Now().UTC()
 
 	// Current-month data survives.
 	past := now.Add(-time.Hour)

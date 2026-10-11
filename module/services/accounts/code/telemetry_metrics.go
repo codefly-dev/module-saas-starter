@@ -33,12 +33,7 @@ func enableOTELMetrics(ctx context.Context, serviceName, endpoint string) (*otel
 		return nil, err
 	}
 	registry := prometheus.NewRegistry()
-	scrapeExporter, err := otelprometheus.New(
-		otelprometheus.WithRegisterer(registry),
-		otelprometheus.WithResourceAsConstantLabels(
-			attribute.NewAllowKeysFilter("service.name"),
-		),
-	)
+	scrapeExporter, err := newScrapeExporter(registry)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +64,17 @@ func enableOTELMetrics(ctx context.Context, serviceName, endpoint string) (*otel
 		provider: provider,
 		handler:  promhttp.HandlerFor(registry, promhttp.HandlerOpts{}),
 	}, nil
+}
+
+// newScrapeExporter is the exporter the /metrics scrape serves: the names it
+// gives instruments are the ones the alert pack's expressions read.
+func newScrapeExporter(registry prometheus.Registerer) (*otelprometheus.Exporter, error) {
+	return otelprometheus.New(
+		otelprometheus.WithRegisterer(registry),
+		otelprometheus.WithResourceAsConstantLabels(
+			attribute.NewAllowKeysFilter("service.name"),
+		),
+	)
 }
 
 func startGCActivityMetrics(provider *metric.MeterProvider) error {
