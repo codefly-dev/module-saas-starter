@@ -183,33 +183,55 @@ func TestNarrowingEntries_OperationIDsAreFreshPerAttempt(t *testing.T) {
 // PostgreSQL in policy_log_production_path_test.go.
 func TestWitnessedNarrowings_AHostWithNoLogRefuses(t *testing.T) {
 	ctx := context.Background()
+	// Canonical ids, where the entry fixtures above are content with "org-1".
+	//
+	// An entry point that canonicalises its arguments refuses a malformed id
+	// BEFORE it reaches the narrowing, which is right — nothing has been
+	// narrowed, so there is nothing to witness — but the refusal it returns is
+	// InvalidArgument, not ErrPolicyLogUnreachable, and this test reads that as
+	// "the call site is not going through WithPolicyLoggedNarrowing". The
+	// diagnosis would be the opposite of the truth.
+	//
+	// So every id here is one that passes validation, and a path that gains a
+	// canonicalising guard tomorrow still arrives at the question this test
+	// asks. Each is distinct, so a mix-up in a request literal cannot read as
+	// a pass.
+	const (
+		actorID      = "57313bcf-d7be-44cc-95cd-2d3080325257"
+		orgID        = "5fc85e13-db69-42ba-ba18-328b29c61819"
+		userID       = "68b1505b-0c31-40cc-a871-ae6bff2d4473"
+		roleID       = "ede17c79-091a-4dc9-a24a-60569d3a8fe6"
+		apiKeyID     = "ef0c9ce1-46aa-4d8a-9ec6-395445123229"
+		delegationID = "054e2d3a-9144-4b8d-87a9-64f14c0c7394"
+		documentID   = "60d33f79-183a-4b9a-8091-f0b388c32eb4"
+	)
 	for _, tc := range []struct {
 		name string
 		call func(*Service) error
 	}{
 		{"RevokeRole", func(s *Service) error {
-			return s.RevokeRole(ctx, "admin-1", &gen.RevokeRoleRequest{
-				OrgId: "org-1", SubjectId: "user-1", RoleId: "role-1", Scope: "/acme",
+			return s.RevokeRole(ctx, actorID, &gen.RevokeRoleRequest{
+				OrgId: orgID, SubjectId: userID, RoleId: roleID, Scope: "/acme",
 			})
 		}},
 		{"RevokeShare", func(s *Service) error {
-			return s.RevokeShare(ctx, "admin-1", &gen.RevokeShareRequest{
-				OrgId: "org-1", ResourceType: "document", ResourceId: "doc-1",
-				SubjectId: "user-1", RoleId: "role-1",
+			return s.RevokeShare(ctx, actorID, &gen.RevokeShareRequest{
+				OrgId: orgID, ResourceType: "document", ResourceId: documentID,
+				SubjectId: userID, RoleId: roleID,
 			})
 		}},
 		{"RevokeAPIKey", func(s *Service) error {
-			return s.RevokeAPIKey(ctx, "admin-1", &gen.RevokeAPIKeyRequest{
-				Id: "key-1", OrganizationId: "org-1",
+			return s.RevokeAPIKey(ctx, actorID, &gen.RevokeAPIKeyRequest{
+				Id: apiKeyID, OrganizationId: orgID,
 			})
 		}},
 		{"RemoveOrgMember", func(s *Service) error {
-			return s.RemoveOrgMember(ctx, "admin-1", &gen.RemoveOrgMemberRequest{
-				OrgId: "org-1", UserId: "user-1",
+			return s.RemoveOrgMember(ctx, actorID, &gen.RemoveOrgMemberRequest{
+				OrgId: orgID, UserId: userID,
 			})
 		}},
 		{"RevokeSourceDelegation", func(s *Service) error {
-			_, err := s.RevokeSourceDelegation(ctx, "admin-1", "org-1", "delegation-1")
+			_, err := s.RevokeSourceDelegation(ctx, actorID, orgID, delegationID)
 			return err
 		}},
 	} {
