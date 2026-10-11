@@ -540,13 +540,18 @@ func moduleRefusal(code codes.Code, reason, message string) error {
 //
 // A non-member is FailedPrecondition, never PermissionDenied: the caller's
 // credential, principal and grant are all in order, and what refuses the call
-// is a fact about the tenant's membership that a person can change. Every
-// module-side refusal on this surface stays PermissionDenied, so a consumer
-// driving this surface from a journal can tell a departed person — final for
-// that person, and nothing the module may retry its way out of — from a
-// composition whose MODULE_PRINCIPALS entry or identity secret is wrong, which
-// is an operator's to fix and whose work is worth holding. The audit surface's
-// own member check already answers this way (resolveModuleAuditActor).
+// is a fact about the tenant's membership that a person can change. A failure
+// of the caller's own AUTHORITY stays Unauthenticated or PermissionDenied — an
+// identity it cannot prove, a principal no composition registered, a tenant it
+// is not bound to — held apart from a malformed request (InvalidArgument) and
+// from an operational condition of this host, which answers FailedPrecondition
+// under a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
+// consumer driving this surface from a journal can tell a departed person —
+// final for that person, and nothing the module may retry its way out of —
+// from a composition whose MODULE_PRINCIPALS entry or identity secret is wrong,
+// which is an operator's to fix and whose work is worth holding. The audit
+// surface's own member check already answers this way
+// (resolveModuleAuditActor).
 func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string) error {
 	var member bool
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {

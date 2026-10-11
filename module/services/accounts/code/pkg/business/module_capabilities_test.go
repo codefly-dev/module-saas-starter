@@ -920,10 +920,10 @@ func TestModuleSurfaceUnconfiguredAuthorityNamesItsOwnReason(t *testing.T) {
 // refusal means. A recipient who is no longer a member is final for that
 // recipient and nothing a retry resolves; a composition missing its
 // MODULE_PRINCIPALS entry, or naming a tenant it was never bound to, is an
-// operator's to fix and its work is worth holding. So only the member fact
-// answers FailedPrecondition with a reason, and every refusal of the caller
-// keeps PermissionDenied (or Unauthenticated) and names none — a sentinel built
-// on the reason matches the departed recipient alone.
+// operator's to fix and its work is worth holding. So of the facts below only
+// the member one answers FailedPrecondition with a reason, and every refusal of
+// the caller's authority keeps PermissionDenied (or Unauthenticated) and names
+// none — a sentinel built on the reason matches the departed recipient alone.
 func TestModuleSurfaceSeparatesANonMemberFromAModuleSideRefusal(t *testing.T) {
 	noMembers := func() fakeTxStore { return fakeTxStore{members: map[string]bool{}} }
 	surfaces := map[string]func(*testing.T, fakeTxStore, business.ModuleCaller, string) error{
