@@ -9,13 +9,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,10 +56,16 @@ func (ca *workloadTestCA) leaf(t *testing.T, ids ...string) (tls.Certificate, []
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	require.NoError(t, err)
 	tmpl := &x509.Certificate{SerialNumber: serial, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}}
-	for _, id := range ids {
-		u, err := url.Parse(id)
+	// Encode the actual SAN bytes: url.Parse would normalize adversarial IDs
+	// before the certificate under test was even issued.
+	if len(ids) != 0 {
+		var names []asn1.RawValue
+		for _, id := range ids {
+			names = append(names, asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 6, Bytes: []byte(id)})
+		}
+		san, err := asn1.Marshal(names)
 		require.NoError(t, err)
-		tmpl.URIs = append(tmpl.URIs, u)
+		tmpl.ExtraExtensions = []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 17}, Value: san}}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, &key.PublicKey, ca.key)
 	require.NoError(t, err)
@@ -163,6 +169,8 @@ func TestWorkloadListenerAdmissionAndRevocation(t *testing.T) {
 		{name: "untrusted chain", ca: newWorkloadTestCA(t), ids: []string{callerTestSPIFFE}},
 		{name: "unlisted identity", ca: ca, ids: []string{"spiffe://acme.test/ns/acme-prod/sa/intruder"}},
 		{name: "two URI SANs", ca: ca, ids: []string{callerTestSPIFFE, callerTestSPIFFE}},
+		{name: "uppercase raw scheme", ca: ca, ids: []string{strings.Replace(callerTestSPIFFE, "spiffe://", "SPIFFE://", 1)}},
+		{name: "empty raw fragment", ca: ca, ids: []string{callerTestSPIFFE + "#"}},
 		{name: "non SPIFFE URI", ca: ca, ids: []string{"https://example.com/worker"}},
 		{name: "listed identity", ca: ca, ids: []string{callerTestSPIFFE}, allowed: true},
 	} {
@@ -234,6 +242,98 @@ func TestWorkloadSolutionTLSIdentity(t *testing.T) {
 		require.NoError(t, err)
 		_ = response.Body.Close()
 		require.Equal(t, "solution", string(body))
+	}
+}
+
+func TestWorkloadSolutionRejectsNoncanonicalRawSAN(t *testing.T) {
+	ca := newWorkloadTestCA(t)
+	gateway, _ := workloadTestIdentity(t, ca, gatewayTestSPIFFE, callerTestSPIFFE+"\n")
+	for _, id := range []string{
+		strings.Replace(callerTestSPIFFE, "spiffe://", "SPIFFE://", 1),
+		callerTestSPIFFE + "#",
+	} {
+		t.Run(id, func(t *testing.T) {
+			leaf, _, _ := ca.leaf(t, id)
+			listener := workloadMemoryServer(t, &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{leaf}}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			client := workloadMemoryClient(t, gateway, listener, callerTestSPIFFE)
+			response, err := client.Get("https://solution/assets/entry.js")
+			if response != nil {
+				_ = response.Body.Close()
+			}
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestWorkloadCertificateSPIFFEIDUsesCanonicalRawSAN(t *testing.T) {
+	ca := newWorkloadTestCA(t)
+	for _, test := range []struct {
+		name    string
+		ids     []string
+		allowed bool
+	}{
+		{"Kubernetes identity", []string{callerTestSPIFFE}, true},
+		{"generic path", []string{"spiffe://acme.test/Example_1/worker.v2-test"}, true},
+		{"no URI", nil, false},
+		{"duplicate URI", []string{callerTestSPIFFE, callerTestSPIFFE}, false},
+		{"additional other URI", []string{callerTestSPIFFE, "https://example.com"}, false},
+		{"uppercase scheme", []string{"SPIFFE://acme.test/ns/acme-prod/sa/worker"}, false},
+		{"uppercase trust domain", []string{"spiffe://Acme.test/ns/acme-prod/sa/worker"}, false},
+		{"empty path", []string{"spiffe://acme.test"}, false},
+		{"empty path segment", []string{"spiffe://acme.test/ns//worker"}, false},
+		{"trailing slash", []string{callerTestSPIFFE + "/"}, false},
+		{"query", []string{callerTestSPIFFE + "?key=value"}, false},
+		{"empty query", []string{callerTestSPIFFE + "?"}, false},
+		{"fragment", []string{callerTestSPIFFE + "#fragment"}, false},
+		{"empty fragment", []string{callerTestSPIFFE + "#"}, false},
+		{"percent encoding", []string{"spiffe://acme.test/ns/acme-prod/sa/%77orker"}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			leaf, _, _ := ca.leaf(t, test.ids...)
+			id, err := certificateSPIFFEID(leaf.Leaf)
+			if test.allowed {
+				require.NoError(t, err)
+				require.Equal(t, test.ids[0], id)
+			} else {
+				require.Error(t, err)
+				require.Empty(t, id)
+			}
+		})
+	}
+}
+
+func TestWorkloadAllowedCallersRequiresCompleteSnapshot(t *testing.T) {
+	ca := newWorkloadTestCA(t)
+	gateway, paths := workloadTestIdentity(t, ca, gatewayTestSPIFFE, callerTestSPIFFE+"\n")
+	leaf, _, _ := ca.leaf(t, callerTestSPIFFE)
+	state := tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf.Leaf}, VerifiedChains: [][]*x509.Certificate{{leaf.Leaf, ca.cert}}}
+	for _, test := range []struct {
+		name, body string
+		allowed    bool
+	}{
+		{"complete", callerTestSPIFFE + "\n", true},
+		{"partial identity", callerTestSPIFFE, false},
+		{"complete entry then partial identity", callerTestSPIFFE + "\nspiffe://acme.test/ns/acme-prod/sa/oth", false},
+		{"complete replacement", callerTestSPIFFE + "-admin\n", false},
+		{"empty", "", false},
+		{"malformed", callerTestSPIFFE + "\ninvalid\n", false},
+		{"ASCII whitespace and comments", " # callers\n\t " + callerTestSPIFFE + " \t\r# worker\r\n", true},
+		{"Unicode whitespace", "\u00a0" + callerTestSPIFFE + "\n", false},
+		{"restored", callerTestSPIFFE + "\n", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.NoError(t, os.WriteFile(paths["ALLOWED_CALLERS_FILE"], []byte(test.body), 0600))
+			id, err := gateway.admit(state)
+			if test.allowed {
+				require.NoError(t, err)
+				require.Equal(t, callerTestSPIFFE, id)
+			} else {
+				require.Error(t, err)
+				require.Empty(t, id)
+			}
+		})
 	}
 }
 

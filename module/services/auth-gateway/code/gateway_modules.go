@@ -335,12 +335,8 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 	return true
 }
 
-func (s *ExtAuthz) mintModuleWorkContext(
-	ctx context.Context, prefix, serviceAccountToken, organizationID string,
-) (*accountsv1.ModuleMintWorkContextResponse, error) {
-	if s.backendConn == nil {
-		return nil, fmt.Errorf("accounts connection not configured")
-	}
+// moduleMintContext carries the listener attestation on every module mint.
+func (s *ExtAuthz) moduleMintContext(ctx context.Context) context.Context {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
 	// Replace, never append to, caller metadata. Only the verified listener
 	// context may attest a workload to accounts' internal mint.
@@ -350,7 +346,16 @@ func (s *ExtAuthz) mintModuleWorkContext(
 	if id, ok := workloadPeer(ctx); ok {
 		md.Set(workloadSPIFFEHeader, id)
 	}
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+func (s *ExtAuthz) mintModuleWorkContext(
+	ctx context.Context, prefix, serviceAccountToken, organizationID string,
+) (*accountsv1.ModuleMintWorkContextResponse, error) {
+	if s.backendConn == nil {
+		return nil, fmt.Errorf("accounts connection not configured")
+	}
+	ctx = s.moduleMintContext(ctx)
 	response := &accountsv1.ModuleMintWorkContextResponse{}
 	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, OrganizationId: organizationID}
 	if err := s.backendConn.Invoke(ctx, mintModuleWorkContextMethod, request, response); err != nil {
@@ -365,7 +370,7 @@ func (s *ExtAuthz) mintModuleOperationContext(
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	ctx = s.moduleMintContext(ctx)
 	response := &accountsv1.ModuleMintOperationContextResponse{}
 	request := &accountsv1.ModuleMintOperationContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, Binding: binding, OrganizationId: organizationID}
 	if err := s.backendConn.Invoke(ctx, mintModuleOperationContextMethod, request, response); err != nil {
@@ -537,7 +542,7 @@ func (s *ExtAuthz) mintSourceOperationContext(
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	ctx = s.moduleMintContext(ctx)
 	response := &accountsv1.ModuleMintSourceOperationContextResponse{}
 	if err := s.backendConn.Invoke(ctx, mintSourceOperationContextMethod, request, response); err != nil {
 		return nil, err

@@ -117,11 +117,17 @@ The pinned SDK's `CertificateReloader` supplies both certificate callbacks.
 Every handshake checks a single SPIFFE URI against the live caller file; every
 request checks it again so keep-alive connections cannot outlive revocation.
 
-On this endpoint `/modules/_work-context` uses the SVID plus projected bearer.
-The gateway conveys its verified peer to accounts on the authenticated internal
-RPC. Accounts binds it to TokenReview and the applied presence; a mismatch is
-403. Caller-supplied identity headers never attest a peer. The plain `rest`
-module mint still requires the internal token and keeps its existing behavior.
+On this endpoint every module mint (`/modules/_work-context`,
+`/modules/_operation-context`, `/modules/_source-operation-context`) conveys
+the verified SVID peer to accounts on the authenticated internal RPC. Accounts
+binds it to TokenReview and the applied presence before signing. Caller-supplied
+identity headers never attest a peer. Plain `rest` module mints still require
+the internal token and keep their existing behavior.
+
+SPIFFE comparisons use the certificate's raw URI SAN, without URL normalization.
+The live caller file must end in a newline; an incomplete or invalid snapshot
+admits nobody, including on an existing connection. Entries trim only ASCII
+space, tab and CR, with `#` introducing a comment.
 
 Solutions are proxied only over TLS 1.3 with the gateway SVID. The server's chain
 and single SPIFFE URI must match the applied presence read alongside its registry

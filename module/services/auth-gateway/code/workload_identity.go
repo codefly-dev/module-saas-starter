@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/asn1"
 	"fmt"
 	"net"
 	"net/http"
@@ -62,13 +63,48 @@ func loadWorkloadIdentity(value func(string) (string, error)) (*workloadIdentity
 	return w, nil
 }
 
-var workloadSPIFFEPattern = regexp.MustCompile(`^spiffe://[a-z0-9._-]{1,255}/ns/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?/sa/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+var workloadSPIFFEPattern = regexp.MustCompile(`^spiffe://[a-z0-9._-]{1,255}(?:/[A-Za-z0-9._-]+)+$`)
+
+var subjectAltNameOID = asn1.ObjectIdentifier{2, 5, 29, 17}
 
 func certificateSPIFFEID(cert *x509.Certificate) (string, error) {
-	if cert == nil || len(cert.URIs) != 1 || !workloadSPIFFEPattern.MatchString(cert.URIs[0].String()) {
-		return "", fmt.Errorf("expected exactly one Kubernetes SPIFFE URI SAN")
+	if cert == nil {
+		return "", fmt.Errorf("certificate required")
 	}
-	return cert.URIs[0].String(), nil
+	// cert.URIs has already passed through net/url, which lowercases schemes
+	// and drops empty fragments. Admission compares the original SAN bytes.
+	var id string
+	foundSAN := false
+	for _, extension := range cert.Extensions {
+		if !extension.Id.Equal(subjectAltNameOID) {
+			continue
+		}
+		if foundSAN {
+			return "", fmt.Errorf("duplicate subjectAltName extension")
+		}
+		foundSAN = true
+		var names []asn1.RawValue
+		rest, err := asn1.Unmarshal(extension.Value, &names)
+		if err != nil || len(rest) != 0 {
+			return "", fmt.Errorf("invalid subjectAltName extension")
+		}
+		for _, name := range names {
+			if name.Class != asn1.ClassContextSpecific {
+				return "", fmt.Errorf("invalid subjectAltName GeneralName")
+			}
+			if name.Tag != 6 {
+				continue
+			}
+			if id != "" || name.IsCompound || !workloadSPIFFEPattern.Match(name.Bytes) {
+				return "", fmt.Errorf("expected exactly one canonical SPIFFE URI SAN")
+			}
+			id = string(name.Bytes)
+		}
+	}
+	if id == "" {
+		return "", fmt.Errorf("expected exactly one canonical SPIFFE URI SAN")
+	}
+	return id, nil
 }
 
 func (w *workloadIdentity) roots() (*x509.CertPool, error) {
@@ -90,10 +126,15 @@ func (w *workloadIdentity) allowedCallers() (map[string]bool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("workload-identity ALLOWED_CALLERS_FILE: %w", err)
 	}
+	// A valid-looking prefix of an in-place write is still incomplete. Refuse
+	// the entire snapshot, including any complete entries before that prefix.
+	if len(body) > 0 && body[len(body)-1] != '\n' {
+		return nil, fmt.Errorf("workload-identity ALLOWED_CALLERS_FILE: missing final newline")
+	}
 	allowed := make(map[string]bool)
 	for _, line := range strings.Split(string(body), "\n") {
 		line, _, _ = strings.Cut(line, "#")
-		id := strings.TrimSpace(line)
+		id := strings.Trim(line, " \t\r")
 		if id == "" {
 			continue
 		}
