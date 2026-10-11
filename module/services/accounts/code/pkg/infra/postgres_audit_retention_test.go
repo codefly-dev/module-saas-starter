@@ -291,8 +291,8 @@ func retentionPartitionRows(t *testing.T, name string) (exists bool, rows int64)
 // A writer that does not finish makes retention refuse, not hang: the function
 // bounds its wait for the table's lock, drops nothing, and a later run, when the
 // writer is gone, drops the partition. And a run with nothing due takes no lock
-// at all, so it neither waits for the writer nor fails because of it: retention
-// runs on a schedule and a partition comes due about once a month.
+// the writer holds up, so it neither waits for the writer nor fails because of
+// it: retention runs on a schedule and a partition comes due about once a month.
 func TestRetentionRefusesInsteadOfHangingBehindAWriterThatDoesNotFinish(t *testing.T) {
 	retentionRetire(t, "1999-01-01")
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
@@ -630,8 +630,8 @@ func TestRetentionLeavesAPartitionDetachedWhileItWaitedForItsLock(t *testing.T) 
 		}()
 		retentionAwaitQueuedLocks(t, 1)
 
-		// Retention finds the partition due without a lock, and then waits for
-		// its lock behind the detach.
+		// Retention finds the partition due before it locks audit_events, and
+		// then waits for that lock behind the detach.
 		ran := make(chan retentionOutcome, 1)
 		go func() {
 			dropped, err := retentionCommitted(time.Date(1995, 4, 1, 0, 0, 0, 0, time.UTC))

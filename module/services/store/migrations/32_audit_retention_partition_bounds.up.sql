@@ -50,9 +50,12 @@
 -- finish makes the run fail with lock_not_available (55P03) and drop nothing,
 -- and the next scheduled run tries again, instead of holding audit writes behind
 -- it for as long as the writer runs. When nothing is due the function takes no
--- lock at all: a partition comes due about once a month, and locking the table
--- on every run would stall audit writes behind any long reader for a drop that
--- never happens.
+-- lock on audit_events and none a writer waits behind: a partition comes due
+-- about once a month, and locking the table on every run would stall audit
+-- writes behind any long reader for a drop that never happens. Reading a
+-- partition's bound holds ACCESS SHARE on that partition only while it is read,
+-- so such a run waits, ten seconds at most, only behind a session holding a
+-- partition ACCESS EXCLUSIVE.
 --
 -- The signature, the return value (the number of partitions dropped), the owner
 -- and the grants are unchanged: CREATE OR REPLACE keeps the owner and the ACL,
@@ -84,9 +87,9 @@ BEGIN
     END IF;
 
     FOR pass IN 1..2 LOOP
-        -- Pass 1 reads the catalog without a lock, to learn whether anything is
-        -- due. Pass 2 reads it again with audit_events held ACCESS EXCLUSIVE, in
-        -- a snapshot taken after the lock, and decides.
+        -- Pass 1 reads the catalog before locking audit_events, to learn
+        -- whether anything is due. Pass 2 reads it again with audit_events held
+        -- ACCESS EXCLUSIVE, in a snapshot taken after the lock, and decides.
         IF pass = 2 THEN
             LOCK TABLE public.audit_events IN ACCESS EXCLUSIVE MODE;
         END IF;
