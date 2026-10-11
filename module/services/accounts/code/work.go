@@ -1147,8 +1147,8 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Start background data retention goroutine. Runs once on startup and
 	// then every 24 hours, deleting records older than their configured
-	// retention period. A run that fails in any part is an error, counted in
-	// saas.retention.failures, which the alert pack watches: nobody reads the
+	// retention period. A run that fails in any part is an error, and sets
+	// saas.retention.failing, which the alert pack watches: nobody reads the
 	// log of a job that runs once a day.
 	retentionMetrics, err := newRetentionTelemetry(otel.Meter("github.com/codefly-dev/module-saas-starter/accounts"))
 	if err != nil {

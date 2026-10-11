@@ -1,0 +1,82 @@
+# promtool rule tests for the alerts in slo_pack.json. Each alert there becomes
+# a Prometheus alerting rule named by its id, with its expression, and these
+# tests feed those rules series and say what fires. CI's "Test the alert pack's
+# rules with promtool" step writes the rules beside this file and runs them; by
+# hand, from this directory:
+#
+#   jq '{groups: [{name: "slo_pack", rules: [.alerts[] | {alert: .id, expr: .expression}]}]}' \
+#     slo_pack.json > slo_pack.rules.json
+#   promtool test rules slo_pack_test.yml
+#
+# Loading the rules parses every alert's expression, so an expression
+# Prometheus cannot run fails here too.
+
+rule_files:
+  - slo_pack.rules.json
+
+evaluation_interval: 1m
+
+tests:
+  # Retention runs at startup and then once a day. saas_retention_failing is 1
+  # for each part of the most recent run that failed, so the scrape after a
+  # failed run is the first sample of its series: the alert needs no earlier
+  # one, where a counter's increase over its first sample is 0.
+  - name: retention_failures, the first failed run alerts at once
+    interval: 1m
+    input_series:
+      - series: 'saas_retention_failing{resource="audit_events",step="remove"}'
+        values: '_ 1x120'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: retention_failures
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: retention_failures
+        exp_alerts:
+          - exp_labels:
+              resource: audit_events
+              step: remove
+      - eval_time: 2h
+        alertname: retention_failures
+        exp_alerts:
+          - exp_labels:
+              resource: audit_events
+              step: remove
+
+  # A part the run before failed reads 0 once a run no longer fails it.
+  - name: retention_failures, a run that no longer fails a part clears it
+    interval: 1m
+    input_series:
+      - series: 'saas_retention_failing{resource="sessions",step="policy"}'
+        values: '1x5 0x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: retention_failures
+        exp_alerts:
+          - exp_labels:
+              resource: sessions
+              step: policy
+      - eval_time: 6m
+        alertname: retention_failures
+        exp_alerts: []
+
+  # Each failed part alerts on its own, by resource and step.
+  - name: retention_failures, each failed part alerts
+    interval: 1m
+    input_series:
+      - series: 'saas_retention_failing{resource="audit_events",step="provision"}'
+        values: '1x10'
+      - series: 'saas_retention_failing{resource="data_retention_policies",step="load"}'
+        values: '0x10'
+      - series: 'saas_retention_failing{resource="retention",step="run"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: retention_failures
+        exp_alerts:
+          - exp_labels:
+              resource: audit_events
+              step: provision
+          - exp_labels:
+              resource: retention
+              step: run

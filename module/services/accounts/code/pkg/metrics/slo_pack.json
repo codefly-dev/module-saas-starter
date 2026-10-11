@@ -126,11 +126,11 @@
     },
     {
       "id": "retention_failures",
-      "signal": "saas.retention.failures",
-      "condition": "a scheduled retention run failed in any part within the last hour",
+      "signal": "saas.retention.failing",
+      "condition": "the most recent scheduled retention run failed in some part",
       "runbook": "retention",
       "expression_language": "promql",
-      "expression": "increase(saas_retention_failures_total[1h]) > 0"
+      "expression": "saas_retention_failing > 0"
     }
   ]
 }
