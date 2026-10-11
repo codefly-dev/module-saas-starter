@@ -167,11 +167,25 @@ func (s *PostgresStore) ListSolutionTargets(ctx context.Context) ([]*business.So
 func (s *PostgresStore) RevokeInstallationsOfTarget(
 	ctx context.Context, targetID, reason string, now time.Time,
 ) ([]business.RevokedInstallation, error) {
-	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+	executor := s.getQueryExecutor(ctx)
+	// Match organization deletion's lock order before changing any installation.
+	// Consume the whole result first, then update only the locked batch.
+	locked, err := executor.Query(ctx, `
+		SELECT id FROM public.installations
+		 WHERE target_id = $1::uuid AND status = 'active'
+		 ORDER BY id FOR UPDATE`, targetID)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pgx.CollectRows(locked, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	rows, err := executor.Query(ctx, `
 		UPDATE public.installations
 		   SET status = 'revoked', revoked_at = $3, revoked_reason = $2
-		 WHERE target_id = $1::uuid AND status = 'active'
-		RETURNING id::text, org_id::text`, targetID, reason, now)
+		 WHERE target_id = $1::uuid AND status = 'active' AND id = ANY($4::uuid[])
+		RETURNING id::text, org_id::text`, targetID, reason, now, ids)
 	if err != nil {
 		return nil, err
 	}
