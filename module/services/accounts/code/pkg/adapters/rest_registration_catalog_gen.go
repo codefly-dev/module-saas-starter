@@ -262,6 +262,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+/teams$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+/teams/[^/]+:revoke$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:narrow$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:transferOwnership$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:uninstall$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/invitations/[^/]+:resend$")},

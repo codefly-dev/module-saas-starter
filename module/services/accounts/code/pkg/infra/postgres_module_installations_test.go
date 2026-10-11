@@ -151,7 +151,7 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
 	require.NoError(t, err)
 	svc := auditedService(t, emitter)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(testStore, nil)
 	// The installer's own principal, plus the audiences its ceiling names: a
 	// ceiling may only name values this host's vocabulary holds, and the installer
 	// path validates it like every other write path (issue #952). Declaring
@@ -163,6 +163,7 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 		}},
 		business.ModulePrincipalID("example.api"): {Prefix: "example.api"},
 	})
+	installCapabilityFixture(t, svc, p.OrgID, p.OwnerPrincipalID)
 	// The installer proves which module it is with its pod's projected token,
 	// bound to the build its authority approves (#1056).
 	cluster := executiontest.New()

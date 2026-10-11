@@ -232,7 +232,7 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 		targetIDs = []string{}
 	}
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
-		SELECT t.id::text, t.binding_id, t.solution_id,
+		SELECT t.id::text, t.binding_id, t.solution_id, r.declared_kind,
 		       b.applied_release, t.opened_generation, b.applied_generation,
 		       ($1 <> '' AND EXISTS (
 		           SELECT 1 FROM public.installations i
@@ -240,6 +240,7 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 		       ))
 		  FROM public.solution_targets t
 		  JOIN public.solution_host_bindings b ON b.binding_id = t.binding_id
+		  JOIN public.solution_registrations r ON r.declared_target_id = t.id
 		 WHERE t.closed_generation IS NULL
 		   AND b.applied_generation IS NOT NULL
 		   AND b.applied_removed = FALSE
@@ -260,7 +261,7 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 			openedGeneration  int64
 			appliedGeneration int64
 		)
-		if err := rows.Scan(&entry.TargetID, &entry.BindingID, &entry.RouteAlias,
+		if err := rows.Scan(&entry.TargetID, &entry.BindingID, &entry.RouteAlias, &entry.Kind,
 			&release, &openedGeneration, &appliedGeneration, &entry.Installed); err != nil {
 			return nil, err
 		}

@@ -20,8 +20,9 @@ import (
 const moduleInstallationPrefix = "/v1/module-installations/"
 
 type moduleInstallationService interface {
+	BeginModuleAuthorityUse(context.Context) (context.Context, func(), error)
 	FenceModuleMint(context.Context, business.ModuleWorkContextAuthority) error
-	ModuleAuthorizeWorkContext(context.Context, string, string) (business.ModuleWorkContextAuthority, error)
+	ModuleAuthorizeWorkContext(context.Context, string, string, ...string) (business.ModuleWorkContextAuthority, error)
 	VerifyModuleTenant(context.Context, business.ModuleWorkContextAuthority) error
 	RecordModuleWorkContextMint(context.Context, string, business.ModuleWorkContextAuthority) error
 	ReconcileModuleInstallation(context.Context, business.ModuleCaller, *business.InstallerPolicy, business.ModuleInstallationRequest, bool) (*business.ModuleInstallationResult, error)
@@ -185,12 +186,20 @@ func (h *ModuleInstallationHTTPHandler) token(w http.ResponseWriter, r *http.Req
 	}
 	serviceAccountToken := strings.TrimSpace(strings.TrimPrefix(authorization[0], installerTokenScheme))
 	var req struct {
-		Prefix string `json:"prefix"`
+		Prefix         string `json:"prefix"`
+		OrganizationID string `json:"organization_id,omitempty"`
 	}
 	if !installerDecode(w, r, &req) {
 		return
 	}
-	authority, err := h.service.ModuleAuthorizeWorkContext(r.Context(), req.Prefix, serviceAccountToken)
+	ctx, releaseAuthority, err := h.service.BeginModuleAuthorityUse(r.Context())
+	if err != nil {
+		installerError(w, http.StatusServiceUnavailable, "module authority fence unavailable")
+		return
+	}
+	defer releaseAuthority()
+	r = r.WithContext(ctx)
+	authority, err := h.service.ModuleAuthorizeWorkContext(r.Context(), req.Prefix, serviceAccountToken, req.OrganizationID)
 	if errors.Is(err, business.ErrExecutionUnbound) || status.Code(err) == codes.Unavailable {
 		// The host could not establish what the caller is running. Not a
 		// verdict, so not a 403: an installer that retries may succeed.

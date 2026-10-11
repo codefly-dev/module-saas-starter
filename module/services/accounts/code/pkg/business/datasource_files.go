@@ -80,6 +80,12 @@ type DatasourceFile struct {
 // scope at that version under that item id, and the batch must fit its limits;
 // otherwise the whole call is refused before visit is first called.
 func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleCaller, sourceID, version string, refs []DatasourceFileRequest, visit func(DatasourceFile, io.Reader) error) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleFetchDatasourceFiles")
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {

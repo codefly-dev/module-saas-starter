@@ -164,7 +164,7 @@ func TestCheckAuthorizationRevisionRevokesModuleOperationContextsOnConfigChange(
 			// is unchanged, so only the declaration can revoke the context.
 			registry, err := moduleregistrytest.Parse(changed)
 			require.NoError(t, err)
-			service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+			service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 			service.SetModuleCapabilities(nil, nil, registry)
 
 			_, err = WorkContextSingleton().CheckAuthorizationRevision(ctx, request)

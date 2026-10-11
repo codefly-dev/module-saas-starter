@@ -34,9 +34,9 @@ import "google/protobuf/timestamp.proto";
 // the workload that principal declares, running the build its authority
 // document approves.
 //
-// The tenant the capability is bound to is not requested. It is the one declared
-// for that principal by the deployment, so a module cannot name a tenant by
-// asking, and the response reports which one was sealed.
+// A tenant-pinned principal keeps its declared tenant. A shared principal must
+// select an organization whose live installation consents to this principal;
+// requesting an organization is not authority over it.
 message ModuleMintWorkContextRequest {
   // Field 2 was the module's identity secret, deleted with the secret (#1056).
   reserved 2;
@@ -53,6 +53,13 @@ message ModuleMintWorkContextRequest {
     min_len: 1
     max_len: 65536
   }];
+  // Required for a shared principal with cross_tenant in its envelope. For a
+  // tenant-pinned principal, omit or match its tenant. Accounts validates the
+  // requested organization's live installation after authenticating execution.
+  string organization_id = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
 }
 
 // ModuleMintWorkContextResponse carries the signed capability plus the identity
@@ -93,6 +100,13 @@ message ModuleMintOperationContextRequest {
     min_len: 1
     max_len: 65536
   }];
+  // Required for a shared principal with cross_tenant in its envelope. For a
+  // tenant-pinned principal, omit or match its tenant. Accounts validates the
+  // requested organization's live installation after authenticating execution.
+  string organization_id = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
 }
 
 // ModuleMintOperationContextResponse carries the signed capability and what it

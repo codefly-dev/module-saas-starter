@@ -125,7 +125,7 @@ func NewModulePrincipalReconciler(activation *SolutionAuthorityActivation) (*Mod
 
 func (r *ModulePrincipalReconciler) publish(published *publishedModuleRegistry) {
 	r.last = published
-	r.activation.reconciler.service.installDerivedModulePrincipals(published.registry, published.revision)
+	r.activation.reconciler.service.InstallDerivedModulePrincipals(published.registry, published.revision)
 }
 
 // degraded is the last published registry kept only where it is still
@@ -468,6 +468,7 @@ func deriveModulePrincipalGrant(
 ) (ModulePrincipalGrant, []error, error) {
 	ceiling := entry.Grant
 	grant := ModulePrincipalGrant{
+		PresenceBinding:  document.PresenceBinding,
 		ArtifactPolicies: maps.Clone(ceiling.ArtifactPolicies),
 		ReadAudiences:    maps.Clone(ceiling.ReadAudiences),
 		Prefix:           prefix,
