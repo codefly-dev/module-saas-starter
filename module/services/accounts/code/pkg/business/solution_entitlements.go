@@ -46,6 +46,12 @@ const (
 // union CheckAccess resolves in one statement, so the projection can never offer
 // what an authority check would deny.
 func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSolutionEntitlementsRequest) (*gen.ListSolutionEntitlementsResponse, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ListSolutionEntitlements",
 		wool.Field("org_id", req.GetOrgId()), wool.Field("subject_id", req.GetSubjectId()))
 	pageSize := int(req.GetPageSize())
@@ -114,6 +120,12 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 // Empty backfills cannot become module authority if a later declaration changes
 // a target's routing kind. Re-consent must create the explicit association.
 func (s *Service) installationEntitlementCurrent(ctx context.Context, snapshot *installedModuleRegistry, orgID, id string, state *InstallationAuthorityState) (bool, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return false, fenceErr
+	}
+	defer releaseAuthority()
+
 	if state == nil {
 		return false, nil
 	}

@@ -156,6 +156,12 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 // that took none could not. It had none, which is why it was one of the paths
 // deciding on the declared ceiling alone.
 func (s *Service) ModuleOperationAudience(ctx context.Context, caller ModuleCaller, tenant, parentAudience, bindingID string) (ModuleOperationAudience, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleOperationAudience{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleOperationAudience{}, err
@@ -178,6 +184,12 @@ func (s *Service) ModuleOperationAudience(ctx context.Context, caller ModuleCall
 // belong to the same organization; neither delegation nor cross_tenant bypasses
 // that organization's installation and the current envelope.
 func (s *Service) ModuleOperationAudienceForDelegation(ctx context.Context, caller ModuleCaller, delegation *SourceDelegation, parentAudience, bindingID string) (ModuleOperationAudience, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleOperationAudience{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	if !delegation.Active() {
 		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "source delegation is not active")
 	}

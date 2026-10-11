@@ -320,3 +320,7 @@ func TestDynamicInstallationServiceUsesSuppliedStore(t *testing.T) {
 	_, err = unwired.AuthorizeModuleCapability(context.Background(), caller)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
+
+func (f *installationDecisionStore) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}

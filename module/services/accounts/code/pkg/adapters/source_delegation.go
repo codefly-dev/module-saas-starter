@@ -60,6 +60,12 @@ func sourceDelegationRefusal(code codes.Code, reason, message string) error {
 // DELEGATION_REVOKED or DELEGATION_INVALID when the delegation cannot be used;
 // FailedPrecondition with no reason when the issuer is unconfigured.
 func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Context, req *gen.ModuleMintSourceOperationContextRequest) (*gen.ModuleMintSourceOperationContextResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}

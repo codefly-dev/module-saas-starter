@@ -13,12 +13,30 @@ import (
 )
 
 func (s *ModuleCapabilitiesServer) ApproveExecutableArtifact(ctx context.Context, req *gen.ModuleExecutableArtifactRequest) (*gen.ModuleExecutableArtifactResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	return s.decideExecutableArtifact(ctx, req, "approve")
 }
 func (s *ModuleCapabilitiesServer) AuthorizeExecutableArtifact(ctx context.Context, req *gen.ModuleExecutableArtifactRequest) (*gen.ModuleExecutableArtifactResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	return s.decideExecutableArtifact(ctx, req, "authorize")
 }
 func (s *ModuleCapabilitiesServer) RevokeExecutableArtifact(ctx context.Context, req *gen.ModuleRevokeExecutableArtifactRequest) (*gen.ModuleExecutableArtifactResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -42,6 +60,12 @@ func (s *ModuleCapabilitiesServer) RevokeExecutableArtifact(ctx context.Context,
 }
 
 func (s *ModuleCapabilitiesServer) decideExecutableArtifact(ctx context.Context, req *gen.ModuleExecutableArtifactRequest, action string) (*gen.ModuleExecutableArtifactResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -55,7 +79,7 @@ func (s *ModuleCapabilitiesServer) decideExecutableArtifact(ctx context.Context,
 	if action != "authorize" && actor != nil {
 		return nil, status.Error(codes.PermissionDenied, "artifact consent requires the person present")
 	}
-	policy, err := service.ExecutableArtifactPolicyFor(caller, parent.TenantId, parent.Audience, req.PolicyId)
+	policy, err := service.ExecutableArtifactPolicyFor(ctx, caller, parent.TenantId, parent.Audience, req.PolicyId)
 	if err != nil {
 		return nil, err
 	}

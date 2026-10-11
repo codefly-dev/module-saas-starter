@@ -552,6 +552,12 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 func (s *Service) AuthorizeDelegationReferenceExchange(
 	ctx context.Context, caller ModuleCaller, delegationID, bindingID string, lookup bool,
 ) (SourceOperationContextAuthority, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return SourceOperationContextAuthority{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	// ONE FENCED SNAPSHOT for both principals: the caller's grant and the
 	// delegator's are read from the same registry, so a registry installed
 	// while this decision is in flight can never pair one revision's caller
@@ -681,6 +687,12 @@ func (s *Service) revokeStaleDelegation(ctx context.Context, principalID string,
 func (s *Service) authorizeSourceDelegation(
 	ctx context.Context, snapshot *installedModuleRegistry, principalID string, ref SourceDelegationRef,
 ) (SourceOperationContextAuthority, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return SourceOperationContextAuthority{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant := snapshot.registry[principalID]
 	if (ref.DelegationID == "") == (ref.SourceID == "") {
 		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
@@ -857,6 +869,12 @@ func (s *Service) confirmSourceDelegationTx(
 func (s *Service) sourceDelegationShape(
 	ctx context.Context, orgID, ownerPrincipalID string, actorPrincipalIDs []string,
 ) (ModulePrincipalGrant, bool, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModulePrincipalGrant{}, false, fenceErr
+	}
+	defer releaseAuthority()
+
 	snapshot := s.moduleRegistrySnapshot()
 	if _, ownerIsModule := snapshot.registry[ownerPrincipalID]; ownerIsModule {
 		return ModulePrincipalGrant{}, false, nil
@@ -887,6 +905,12 @@ func (s *Service) sourceDelegationShape(
 func (s *Service) CheckSourceDelegationContextRevision(
 	ctx context.Context, orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
 ) (handled bool, err error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return false, fenceErr
+	}
+	defer releaseAuthority()
+
 	actors := make([]string, 0, len(subjects))
 	for _, subject := range subjects[min(1, len(subjects)):] {
 		actors = append(actors, subject.PrincipalID)
@@ -952,6 +976,12 @@ func (s *Service) ConfirmSourceDelegationParent(
 	ctx context.Context, orgID, ownerPrincipalID string, revision uint64,
 	ownerScopes []ModuleOperationScope, hops []SourceDelegationHop,
 ) (handled bool, delegation *SourceDelegation, err error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return false, nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	actors := make([]string, 0, len(hops))
 	for _, hop := range hops {
 		actors = append(actors, hop.PrincipalID)

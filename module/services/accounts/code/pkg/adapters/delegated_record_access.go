@@ -14,6 +14,12 @@ import (
 )
 
 func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Context, req *gen.CheckWorkContextRecordAccessRequest) (*gen.CheckWorkContextRecordAccessResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}

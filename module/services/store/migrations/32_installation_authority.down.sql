@@ -9,6 +9,7 @@ DROP FUNCTION public.lock_module_job_authority(jsonb);
 DROP FUNCTION public.module_job_authority_current(jsonb);
 DROP TRIGGER cancel_installation_work ON public.installations;
 DROP FUNCTION public.cancel_installation_work();
+ALTER TABLE public.job_messages DROP COLUMN consumer_authority;
 DROP TRIGGER installation_authority_revision ON public.installations;
 DROP FUNCTION public.installation_authority_revision();
 DROP INDEX public.installations_active_principal;

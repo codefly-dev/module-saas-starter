@@ -13,6 +13,8 @@ import (
 type ModuleAuthority struct {
 	PrincipalID, OrganizationID, InstallationID, BindingID string
 	InstallationRevision                                   uint64
+	// AllowsGlobal comes only from the live envelope, never from job attributes.
+	AllowsGlobal bool
 }
 
 func (a ModuleAuthority) Attributes() map[string]string {

@@ -34,3 +34,7 @@ func withCurrentAuthority(service *Service) *Service {
 	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	return service
 }
+
+func (f currentModuleAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}

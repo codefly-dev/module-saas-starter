@@ -748,3 +748,7 @@ func TestRegistryInputsKeepConcurrentWithdrawalInTheNextSnapshot(t *testing.T) {
 func (*fakeEnvelopeStore) ModuleInstallations(context.Context) ([]ModuleInstallationConsent, error) {
 	return nil, nil
 }
+
+func (f reviewLiveAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}

@@ -56,10 +56,20 @@ func (a ModuleOperationContextAuthority) WireScopes() []*gen.WorkContextScope {
 // module may do on a person's behalf and are never reused for work that has no
 // person, so a binding that declares no headless_scopes is refused (fail closed).
 func (s *Service) ModuleAuthorizeOperationContext(
-	ctx context.Context, prefix, serviceAccountToken, bindingID string,
+	ctx context.Context, prefix, serviceAccountToken, bindingID string, requestedOrganization ...string,
 ) (ModuleOperationContextAuthority, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleOperationContextAuthority{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	snapshot := s.moduleRegistrySnapshot()
 	identity, grant, err := s.authorizeModuleIdentity(ctx, snapshot, prefix, serviceAccountToken)
+	if err != nil {
+		return ModuleOperationContextAuthority{}, err
+	}
+	identity.Tenant, err = moduleMintOrganization(grant, requestedOrganization)
 	if err != nil {
 		return ModuleOperationContextAuthority{}, err
 	}
@@ -193,6 +203,12 @@ var ErrModuleOperationContextStale = errors.New("module operation context is not
 func (s *Service) CheckModuleOperationContextRevision(
 	ctx context.Context, orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
 ) (handled bool, err error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return false, fenceErr
+	}
+	defer releaseAuthority()
+
 	// The confirmation is a decision about current authority like the mint,
 	// so it is judged from one snapshot fenced against the committed envelope:
 	// a stale replica must not confirm what a committed narrowing revoked.

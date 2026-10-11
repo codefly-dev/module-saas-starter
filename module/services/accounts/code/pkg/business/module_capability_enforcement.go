@@ -119,10 +119,14 @@ type ModuleCapabilityAuthority struct {
 
 // ModuleAuthorityStore is the live authority read.
 //
-// One method, deliberately: the terms are read at ONE snapshot, because reading
-// them separately lets a revoke land between two reads and produce a decision
-// describing a state that never existed.
+// One live read supplies all terms at a single snapshot; the use span retains
+// its locks. Separate reads could combine states that never coexisted, and a
+// read without that span could be revoked before the capability takes effect.
 type ModuleAuthorityStore interface {
+	// BeginModuleAuthorityUse holds authority locks until release. The context
+	// carries a separate lock transaction, never a tenant/RLS executor.
+	BeginModuleAuthorityUse(context.Context) (context.Context, func(), error)
+
 	// Resolve the exact (principal, organization) consent; when sealed, also
 	// require the named id. Installation, scope, epoch and envelope revision
 	// are read in ONE SQL snapshot. Absence always refuses.
@@ -152,12 +156,18 @@ type LiveModuleAuthority struct {
 // that makes "every path" true rather than aspirational.
 //
 // The declared grant is resolved FIRST and the live read second. That order is
-// deliberate: an unknown principal must be refused without a database round
-// trip, both because it is cheaper and because an unauthenticated caller must
-// not be able to make this host do work.
+// deliberate: an unknown principal is refused before querying installation
+// authority. The outer use span reserves its connection before any effect
+// transaction so the two pools cannot deadlock while acquiring each other.
 func (s *Service) AuthorizeModuleCapability(
 	ctx context.Context, caller ModuleCaller,
 ) (*ModuleCapabilityAuthority, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	authority, _, err := s.authorizeModuleCapability(ctx, caller)
 	return authority, err
 }
@@ -412,6 +422,12 @@ var ErrDeferredWorkRevoked = errors.New("deferred work was enqueued under author
 func (s *Service) AuthorizeDeferredWork(
 	ctx context.Context, stamp DeferredWorkAuthority,
 ) (*ModuleCapabilityAuthority, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	sealed := &SealedModuleAuthority{
 		InstallationID:       &stamp.InstallationID,
 		InstallationRevision: &stamp.InstallationRevision,
@@ -438,5 +454,17 @@ func (s *Service) AuthorizeDeferredWork(
 // JobAuthority uses only the facts this decision checked, never request data.
 func (a *ModuleCapabilityAuthority) JobAuthority() jobs.ModuleAuthority {
 	return jobs.ModuleAuthority{PrincipalID: a.Caller.PrincipalID, OrganizationID: a.Caller.BoundOrg,
-		InstallationID: a.InstallationID, InstallationRevision: a.InstallationRevision, BindingID: a.Grant.PresenceBinding}
+		InstallationID: a.InstallationID, InstallationRevision: a.InstallationRevision, BindingID: a.Grant.PresenceBinding, AllowsGlobal: a.Grant.CrossTenant}
+}
+
+// BeginModuleAuthorityUse spans a capability's decision and its effect, including
+// nested decisions and adapter signing. Callers must defer release until all
+// effects commit. The store keeps its lock transaction separate from RLS work.
+func (s *Service) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	if s == nil || s.moduleAuthority == nil {
+		// Non-module revision classifiers also enter here. A real module
+		// decision still refuses in authorizeModuleCapabilityFromSnapshot.
+		return ctx, func() {}, nil
+	}
+	return s.moduleAuthority.BeginModuleAuthorityUse(ctx)
 }

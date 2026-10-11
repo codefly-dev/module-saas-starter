@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"accounts/pkg/business"
+	"accounts/pkg/business/installationtest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"strings"
@@ -87,7 +88,14 @@ func TestExecutableArtifactServedTransport(t *testing.T) {
 	require.NoError(t, err)
 	digest := "sha256:" + strings.Repeat("a", 64)
 	policy := business.ExecutableArtifactPolicy{Schema: "example.artifact/v1", Sources: map[string]string{"acme.example": artifactTransportBindingID}, Activate: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Run: business.ArtifactPermission{Resource: "definitions", Action: "run"}, Contracts: []business.ArtifactContract{{Kind: "model", Name: "example/chat", Digest: digest}}, RequiredKinds: []string{"model"}}
-	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, ArtifactPolicies: map[string]business.ExecutableArtifactPolicy{"content": policy}}})
+	principal := business.ModulePrincipalID("example")
+	grant := business.ModulePrincipalGrant{Prefix: "example", Tenant: readOrg, PresenceBinding: artifactTransportBindingID, ArtifactPolicies: map[string]business.ExecutableArtifactPolicy{"content": policy}}
+	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{principal: grant})
+	installations := &installationtest.Store{}
+	scope := business.FullInstallationScope(grant)
+	_, err = installations.InstallSolution(context.Background(), &business.InstallSolutionParams{OrgID: readOrg, RegistryPrincipalID: principal, RegistryBindingID: grant.PresenceBinding, Scope: &scope})
+	require.NoError(t, err)
+	service.SetModuleAuthorityReads(installations, nil)
 	parent := mint("example", "definitions", "configure")
 	body := &gen.ModuleExecutableArtifactRequest{ParentWorkContextToken: parent, InstallationId: uuid.NewString(), PolicyId: "content", Identity: &gen.ExecutableArtifactIdentity{Schema: policy.Schema, Source: "acme.example", Subject: []byte(`{"configuration":"pinned","scripts":[]}`), ExpectedRevision: 9007199254740993, Contracts: []*gen.ExecutableArtifactContract{{Kind: "model", Name: "example/chat", Digest: digest}}}}
 	request := func(parent string) *connect.Request[gen.ModuleExecutableArtifactRequest] {

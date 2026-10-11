@@ -28,3 +28,7 @@ func (f currentModuleAuthority) LiveModuleAuthority(
 	grant := f.service.ModulePrincipals()[principal]
 	return &business.LiveModuleAuthority{InstallationID: "installation-current", RegistryBindingID: grant.PresenceBinding, Scope: business.FullInstallationScope(grant)}, nil
 }
+
+func (f currentModuleAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}

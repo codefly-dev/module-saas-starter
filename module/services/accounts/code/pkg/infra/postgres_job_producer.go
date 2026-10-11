@@ -180,7 +180,7 @@ func enqueuePreparedJob(
 		return nil, err
 	}
 	if attributes["codefly.installation_id"] != "" {
-		if _, err := executor.Exec(ctx, `SELECT public.lock_module_job_authority($1::jsonb)`, job.attributes); err != nil {
+		if err := lockModuleJobAuthority(ctx, executor, job.attributes); err != nil {
 			return nil, err
 		}
 	}

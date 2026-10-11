@@ -15,6 +15,12 @@ import (
 // installation read it grants no permission to use the installed solution.
 // The adapter supplies tenant, owner and audience from a verified current parent.
 func (s *Service) ModuleCurrentInstallation(ctx context.Context, caller ModuleCaller, tenant, owner, audience, id string) (*gen.ModuleCurrentInstallationResponse, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err

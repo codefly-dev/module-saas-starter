@@ -7,6 +7,7 @@ import (
 	"regexp"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 )
 
@@ -52,7 +53,7 @@ var registrationIdentityPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z
 // sealed here — every call re-reads the declared grant, so narrowing a module's
 // authority takes effect immediately rather than when its current token expires.
 type ModuleWorkContextAuthority struct {
-	// Resolved consent for the Work Context cutover; the SDK encoding cannot yet seal it.
+	// Resolved live consent; sealing these facts is the separate Work Context cutover.
 	InstallationID       string
 	InstallationRevision uint64
 	ProducerEpoch        uint64
@@ -74,15 +75,26 @@ type ModuleWorkContextAuthority struct {
 // projected token must back it. BindExecution holds the token's ServiceAccount
 // and namespace against the workload the principal declares, and the running
 // image against the approved build, so a module holding its own valid token
-// cannot mint as another prefix. The tenant is the one the deployment declared
-// for that principal, so a module can never name a tenant by asking.
+// cannot mint as another prefix. A tenant-pinned principal keeps its declared
+// tenant. A shared principal
+// selects an organization whose live installation must authorize the mint.
 func (s *Service) ModuleAuthorizeWorkContext(
-	ctx context.Context, prefix, serviceAccountToken string,
+	ctx context.Context, prefix, serviceAccountToken string, requestedOrganization ...string,
 ) (ModuleWorkContextAuthority, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleWorkContextAuthority{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	snapshot := s.moduleRegistrySnapshot()
-	identity, _, err := s.authorizeModuleIdentity(ctx, snapshot, prefix, serviceAccountToken)
+	identity, grant, err := s.authorizeModuleIdentity(ctx, snapshot, prefix, serviceAccountToken)
 	if err != nil {
 		return identity, err
+	}
+	identity.Tenant, err = moduleMintOrganization(grant, requestedOrganization)
+	if err != nil {
+		return ModuleWorkContextAuthority{}, err
 	}
 	installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: identity.PrincipalID, BoundOrg: identity.Tenant})
 	if err != nil {
@@ -136,6 +148,12 @@ func (s *Service) authorizeModuleIdentity(
 // after signing and recording, immediately before returning the token. The
 // request's earlier memoized revision cannot answer this final check.
 func (s *Service) FenceModuleMint(ctx context.Context, authority ModuleWorkContextAuthority) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	snapshot := authority.snapshot
 	if snapshot == nil {
 		return wrapStatus(codes.Unavailable, ErrModuleRegistryStale, "module mint has no registry snapshot")
@@ -227,4 +245,32 @@ func (e ExecutionIdentity) auditFields() map[string]any {
 		"running_digest":    string(e.Running),
 		"build_incarnation": int64(e.Incarnation),
 	}
+}
+
+// A shared principal selects consent, not authority: execution still proves the
+// principal and the subsequent live read must find that org's installation.
+// A tenant-pinned principal cannot switch orgs even if it has cross_tenant.
+func moduleMintOrganization(grant ModulePrincipalGrant, requested []string) (string, error) {
+	if len(requested) > 1 {
+		return "", wrapStatus(codes.InvalidArgument, ErrModuleTenantNotCurrent, "one organization required")
+	}
+	org := ""
+	if len(requested) == 1 {
+		org = requested[0]
+	}
+	if org != "" {
+		if id, err := uuid.Parse(org); err != nil || id.String() != org {
+			return "", wrapStatus(codes.InvalidArgument, ErrModuleTenantNotCurrent, "organization must be a canonical UUID")
+		}
+	}
+	if grant.Tenant != "" {
+		if org != "" && org != grant.Tenant {
+			return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "requested organization differs from pinned tenant")
+		}
+		return grant.Tenant, nil
+	}
+	if !grant.CrossTenant || org == "" {
+		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "shared mint requires cross_tenant and an organization")
+	}
+	return org, nil
 }

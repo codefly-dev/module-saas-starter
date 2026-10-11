@@ -44,3 +44,7 @@ func (s *Store) LiveModuleAuthority(_ context.Context, principal, org, id string
 	out := *row
 	return &out, nil
 }
+
+func (s *Store) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}

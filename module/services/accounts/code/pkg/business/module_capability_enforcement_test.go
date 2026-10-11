@@ -432,3 +432,7 @@ func TestRevokedDeferredWorkIsTerminalWhileAnOutageIsRetryable(t *testing.T) {
 		"an unreadable authority must stay retryable — nothing was decided")
 	require.Equal(t, codes.Unavailable, status.Code(err))
 }
+
+func (f *fakeModuleAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}

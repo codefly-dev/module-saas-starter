@@ -383,157 +383,60 @@ image, approved incarnation. The response carries
   reports no image yet. Execution binding is wired only with delivered authority
   (`configuredSolutionHostBindingReconciler`), so **a host with no delivery mints
   for no module**, and a module run outside Kubernetes has no token to present.
-- The tenant is **not requestable** — it is the one the module envelope's grant
-  declares for that principal, so a module cannot name a tenant by asking.
-- The capability's effective authority **is, in a running deployment today, the
-  LIVE half alone.** `min(sealed, live)` is the target — blocker decision **B1**,
-  which *reverses* what this file said before it — and it is **not yet reached**.
+- A tenant-pinned module keeps the envelope's `tenant`; requesting a different
+  organization is refused. A shared module must name `organization_id` and have
+  `cross_tenant` in the envelope. Execution proves the principal first; the
+  organization's live installation then authorizes the mint. A selector grants
+  nothing by itself.
+- **Unsealed-credential disclosure remains in force pending the database proof.**
+  `checkAgainstSealed` enforces NOTHING on a module capability with no seal.
+  Uninstalling a solution does not revoke a module capability in flight.
+  These are the conservative disclosures required by
+  `TestUnsealedCredentialDisclosureMatchesTheCode`; this branch must not
+  replace them with an all-path revocation guarantee until database-backed
+  tests demonstrate the next-use refusal for enqueue, claim, fetch, delegated
+  exchange, module proxy and executable artifacts with an already minted
+  credential. Compiling those tests is not that evidence.
+- The implementation under test resolves the caller organization's installation
+  status, scope, revision, binding and envelope revision in
+  `AuthorizeModuleCapability`, before `checkAgainstSealed`. Its use span,
+  `BeginModuleAuthorityUse`, is intended to retain shared installation, target
+  and envelope locks through the effect, including signing and exchange.
+  The separate lock pool does not lend control-plane privileges to effects.
+  This describes the implementation, not a verified every-path guarantee.
+- **The sealed target, `min(sealed, live)`, remains a separate cutover.**
+  `StartModuleTask` and `VerifyModuleWorkContext` carry identity and tenant,
+  not installation id/revision, epoch, binding or build identity. Even if all
+  next-use checks pass, reinstalling restores an old credential's authority
+  under the new consent, and later widening can expand that credential's
+  authority. Revocation across reinstall and a mint-time ceiling are absent.
+- Every mint calls `BindExecution`: the projected token is reviewed and its
+  running pod/build checked against delivered approval. Installation facts are
+  resolved into mint authority and checked again by `FenceModuleMint` after
+  signing/audit. The SDK signing-format cutover is still needed to seal them.
+- **The exact binding lookup exists; `moduleOperationContextStale` still
+  searches** the current operation bindings for a compatible scope superset.
+  Replacing this with `ExactOperationBinding` requires the sealed binding id.
+  The required model is an **exact binding lookup**, never a scope search.
+- Deferred work keeps producer provenance, and module claims separately stamp
+  `job_messages.consumer_authority`, including installation id/revision and org.
+  Narrowing/uninstall cancels pending, retrying and processing work carrying
+  either authority for that installation and organization, closes attempts and
+  clears leases. Consumer stamps survive retries and lease expiry. Ordinary
+  replay cannot resurrect canceled work. Heartbeat/ack/nack also require the
+  current caller's exact consumer stamp.
+- Global datasource jobs retain their existing `datasource.org_id` attribution.
+  Claims require every nonempty organization hint to equal the caller's bound
+  org. Truly global jobs without an organization hint require the envelope's
+  `cross_tenant` grant as well as the queue grant. Neither route admits another
+  organization's jobs.
 
-  **In a running deployment this mechanism enforces NOTHING on a module
-  capability, and that has to be said in those words.** The comparison against a
-  sealed ceiling is written and tested, but nothing populates the seal — the
-  module Work Context mint (`StartModuleTask`) passes only audience, tenant,
-  owner principal, task, session, actor chain and TTL, and `sdk-go`'s token
-  carries no installation id, producer epoch, binding revision, build
-  incarnation or image digest to put there.
-
-  `checkAgainstSealed` returns on its first line when the seal is nil. So for
-  every real module credential the live read runs, fetches the epoch, and the
-  result is **discarded**: `AuthorizeModuleCapability` is `moduleGrant` plus a
-  database round trip whose answer nothing compares. The declared grant alone
-  binds, which is the behaviour that preceded this work.
-
-  The consequences, stated rather than left to be derived:
-
-  - **Uninstalling a solution does not revoke a module capability in flight.**
-  - **Advancing an organisation's or a principal's authority epoch does not
-    revoke one.**
-  - An earlier version of this paragraph said "the intersection has one operand".
-    That was still too generous: an intersection of one operand would at least be
-    bounded by the live read. Nothing is.
-
-  Code that exists and a behaviour that holds are different facts, and a rules
-  file other agents read as a statement of what is in place must lead with the
-  second. This bullet has now been corrected three times, each time in the
-  direction of claiming less, which is itself the thing to notice about it.
-
-  **What moved, and what the move does NOT yet reach.** Two of the pieces this
-  bullet described as absent now exist and run:
-
-  - `ApprovedBuildReconciler` populates the approved-build view from the
-    delivered authority inbox, in the same reconcile pass as presence. Before
-    it, `MonotonicApprovedBuilds` was never written to, so every principal was
-    UNKNOWN and `ApprovedBuild` refused every one.
-  - `SetExecutionBinding` is called from `work.go`, with the Kubernetes client
-    that reviews a delivery carrier and that approved-build view. Before it, the
-    execution reviewer was nil on every running host and `BindExecution`
-    answered ErrExecutionUnbound for every caller — the mechanism was built,
-    guarded, unit-tested and unreachable.
-
-  **Every module mint now calls it (#1056), and the seal is still empty.**
-  `BindExecution` gates `MintModuleWorkContext`, `MintModuleOperationContext`,
-  `MintSourceOperationContext` and the installer's token route, so a pod on an
-  unapproved build mints nothing. What the mint does NOT yet do is SEAL what it
-  established: `StartModuleTask` still passes audience, tenant, owner principal,
-  task, session, actor chain and TTL, because the host signs the `sdk-go`
-  encoding, which has no seal field, and core's `WorkSealV1` — which does carry
-  installation id and revision, build incarnation and image digest — requires an
-  installation id. #1057 now resolves that id and revision from the calling
-  organization's explicit installation and carries them in mint authority.
-  Passing them to the signer remains part of the Work Context cutover. The
-  execution is bound at mint and recorded in its audit; `checkAgainstSealed`
-  still returns on its first line for every real module credential, so every
-  consequence listed above is still a consequence until the Work Context cutover
-  seals it.
-
-  This bullet has now been wrong twice in opposite directions. It first asserted
-  the whole model in the present tense while none of it existed. It was then
-  corrected to "the live half is built, the sealed half is partly built" — true
-  of the code and still misleading about the deployment, because "partly built"
-  invites a reader to assume some sealing happens. None does.
-
-  What follows separates what the code does from what it is still to do, and the
-  separation is load-bearing rather than cautious.
-
-  **Both halves bind, and neither alone is enough.** Re-reading alone means a
-  widened grant, or a database restored to a broader state, retroactively widens
-  a credential already in flight. Sealing alone means a narrowing does not take
-  effect until the outstanding credential expires. So the effective authority is
-  the intersection, which is strictly stronger than either.
-
-  **What is built.** Every module capability path resolves its authority through
-  `Service.AuthorizeModuleCapability`, which re-reads the live installation, its
-  scope, revision, registry binding, envelope revision and principal epoch in
-  **one** statement, against the decision's single fenced registry snapshot.
-  No installation grants no capability, even for an unsealed credential. Scope
-  is intersected with delivered authority and the envelope on every use. The revocation predicate is a
-  conjunction and each term closes a different hole:
-
-  - **installation freshness**, without which an uninstall-and-reinstall produces
-    a new installation an old credential would satisfy;
-  - **producer epoch**, without which a narrowing revokes only the credential
-    being held and the replacement is reminted with the old authority — so the
-    narrowing undoes itself after one credential lifetime;
-  - **binding revision**, for an operation context, resolved by
-    `Service.ExactOperationBinding`.
-
-  A host that *cannot* re-read refuses every capability (`FailedPrecondition`)
-  rather than falling back to the declared ceiling. A read that *fails* is
-  `Unavailable` — neither a denial nor an allow, because a database blip is not
-  mass revocation and an allow would be the check not running.
-
-  **The exact binding lookup exists; one call site still searches, and it is
-  named here rather than glossed.** `Service.ExactOperationBinding` resolves the
-  one binding a credential named, by id, and refuses a capability that names none
-  rather than falling back — an optional exact lookup is a search with extra
-  steps, so the fallback is the whole defect.
-
-  But `moduleOperationContextStale` (`module_operation_context.go`) **still
-  searches**: it iterates `grant.OperationAudiences` and accepts if **any**
-  binding's `headless_scopes` contain the presented set. So a context minted
-  against a narrow binding is satisfied by any **wider** binding the principal
-  also holds, and narrowing one binding achieves nothing while a broader one
-  survives. That is the defect both reviews named.
-
-  It cannot be routed through the exact lookup yet, and the reason is structural
-  rather than effort: the staleness check has no binding id to look up, because
-  the credential does not carry one. Sealing the binding id is the Work Context
-  cutover, so this site is **gated on condition 2**, not pending on condition 1.
-  Until then, `operationScopesSubset` there is bounding-by-search and the
-  narrowing it misses is real.
-
-  **Deferred work is re-checked when it runs**, not when it is enqueued, because
-  "at use" has to mean at the moment of use. A producer stamps
-  `DeferredWorkAuthority`; a worker re-checks it and revoked work fails
-  **terminally** (`ErrDeferredWorkRevoked`) rather than retrying — the authority
-  will not come back by waiting. An unreadable authority stays retryable, because
-  nothing was decided.
-
-  **Absence is not zero, and this is the trap.** `SealedModuleAuthority`'s fields
-  are pointers, so a credential carrying no claim about a term is skipped rather
-  than compared against zero. "Treat missing as zero" is the shorter
-  implementation, it looks exactly like a check, and it admits every unsealed
-  credential — which is all of them until the Work Context cutover. Core's own
-  seal made the same change for the same reason: `build_incarnation` and
-  `image_digest` became optional so "bears no execution" and "bears execution
-  zero" stopped being the same bytes.
-
-  `TestEveryModuleCapabilityPathReReadsLiveAuthority` in `module/tools` is what
-  makes "every path" true rather than aspirational: it walks the AST for any
-  function calling `moduleGrant` directly and holds the set against a
-  **shrink-only** baseline of the remaining explicitly classified readers. Its non-vacuity check is anchored on the
-  enforcement rather than on the violations — zero direct callers is the goal, so
-  deleting the wrapper must not satisfy it.
-
-  **What is NOT built, and so must not be relied on.** The credential seals
-  identity and tenant only: the mint does not yet populate the installation id,
-  revision, epoch or binding fields, so in a running deployment every
-  `Sealed` is nil and the intersection is the live half alone. That is sound for
-  narrowing and silent about widening, which is strictly better than before and
-  strictly weaker than the target. The live intersection now covers queues,
-  resources, namespaces, external publication, read and operation audiences and
-  artifact approvals. Binding these ceilings into the credential remains part
-  of the cutover to core's `workcontext`.
+`TestEveryModuleCapabilityPathReReadsLiveAuthority` in `module/tools` holds the
+remaining direct registry readers to a shrink-only baseline. Artifact policy
+resolution and revocation are no longer exceptions. Database concurrency and
+job lifecycle regressions live in `pkg/infra/installation_review_test.go`; the
+actual signer/verifier regression is
+`pkg/adapters/installation_credential_test.go`.
 
 ## Establishing what a caller is running
 
@@ -710,13 +613,14 @@ counterpart of the delegated operation exchange: background work calling another
 module's service when nobody is signed in. It authenticates exactly like
 `MintModuleWorkContext` — the same projected token bound by `BindExecution`, the
 same refusal of an undeclared prefix, the same tenant existence check — and the
-request adds only a
-`binding`, a key of that module's `operation_audiences`.
+request adds a
+`binding`, a key of that module's `operation_audiences`, and uses the same
+`organization_id` selector as the module Work Context mint.
 
 - The child is addressed to the binding's `audience` and carries **exactly** its
   `headless_scopes`, as both the authority scopes and the module actor's granted
   scopes. Owner and sole actor are the module's service principal; the tenant is
-  the declared one. It lives 60 seconds (`business.ModuleOperationContextTTL`,
+  the selected installation's organization. It lives 60 seconds (`business.ModuleOperationContextTTL`,
   the exchanged-operation ceiling) with the idempotent replay policy.
 - A binding without `headless_scopes` is refused (`PermissionDenied`); the invoke
   scopes are never reused implicitly. An unproven module is `Unauthenticated`.

@@ -72,6 +72,10 @@ $$;
 CREATE TRIGGER installation_authority_revision BEFORE UPDATE ON public.installations
     FOR EACH ROW EXECUTE FUNCTION public.installation_authority_revision();
 
+-- Consumer authority survives retries and expired leases. It is not producer
+-- provenance, and cannot be supplied via caller-controlled job attributes.
+ALTER TABLE public.job_messages ADD COLUMN consumer_authority jsonb;
+
 -- Revocation must fence already leased work as well as queued work.
 CREATE OR REPLACE FUNCTION public.job_state_transition_is_valid(from_state text, to_state text) RETURNS boolean
 LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE SET search_path = pg_catalog AS $$
@@ -93,8 +97,10 @@ BEGIN
            SET state = 'canceled', completed_at = clock_timestamp(),
                lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
                last_error_code = 'revoked_authority', last_error_message = 'installation authority changed'
-         WHERE attributes->>'codefly.installation_id' = OLD.id::text
-           AND attributes->>'codefly.organization_id' = OLD.org_id::text
+         WHERE ((attributes->>'codefly.installation_id' = OLD.id::text
+           AND attributes->>'codefly.organization_id' = OLD.org_id::text)
+           OR (consumer_authority->>'codefly.installation_id' = OLD.id::text
+           AND consumer_authority->>'codefly.organization_id' = OLD.org_id::text))
            AND state IN ('pending', 'processing', 'retrying')
          RETURNING id
     )
