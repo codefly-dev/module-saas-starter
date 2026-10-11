@@ -88,6 +88,12 @@ including the module-authority qualification module. Run qualification with
 Accounts declares Go 1.27.0 as its supported minimum, matching the pinned
 go-grpc builder. The development/CI compiler may be newer; do not raise the
 module minimum to that patch version without qualifying the image builder too.
+CLI v0.1.185 requires an explicit run-level test outcome from every service
+agent. The cache, store and vault manifests pin released Redis 0.0.97,
+Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
+An empty legacy response is not evidence that tests passed; do not bypass that
+check or disable the service's test phase to accept it.
+
 The older auth-gateway, policy-log, store and telemetry SDK pins also move to
 released SDK v0.3.1 for compatibility. Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local
