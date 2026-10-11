@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -43,14 +45,44 @@ func retentionSetZone(t *testing.T, ctx context.Context, tx pgx.Tx, zone string)
 	require.NoError(t, err)
 }
 
-// retentionEnsureMonth creates the monthly partition holding day, from a session
-// in zone: the partition's bounds are that zone's midnights, whatever zone
-// retention later runs in.
+// retentionEnsureMonth provisions the monthly partition holding day, the way the
+// store does, from a session in zone: its bounds are UTC midnights whatever the
+// zone, met to any neighbour an earlier release cut at another zone's midnight.
 func retentionEnsureMonth(t *testing.T, ctx context.Context, tx pgx.Tx, zone, day string) {
 	t.Helper()
 	retentionSetZone(t, ctx, tx, zone)
 	_, err := tx.Exec(ctx, fmt.Sprintf(`SELECT audit_events_ensure_partition('%s'::date)`, day))
 	require.NoError(t, err)
+}
+
+// retentionLegacyMonth creates the monthly partition holding day the way
+// releases before migration 33 did, from a session in zone: its bounds are that
+// zone's midnights. Deployments still hold partitions cut this way, and
+// retention and provisioning are held to them too.
+func retentionLegacyMonth(t *testing.T, ctx context.Context, tx pgx.Tx, zone, day string) {
+	t.Helper()
+	retentionSetZone(t, ctx, tx, zone)
+	inMonth, err := time.Parse(time.DateOnly, day)
+	require.NoError(t, err)
+	first := time.Date(inMonth.Year(), inMonth.Month(), 1, 0, 0, 0, 0, time.UTC)
+	_, err = tx.Exec(ctx, fmt.Sprintf(`CREATE TABLE public.%s PARTITION OF public.audit_events FOR VALUES FROM ('%s') TO ('%s')`,
+		pgx.Identifier{"audit_events_" + first.Format("2006_01")}.Sanitize(),
+		first.Format(time.DateOnly), first.AddDate(0, 1, 0).Format(time.DateOnly)))
+	require.NoError(t, err)
+}
+
+// retentionBounds reads the range PostgreSQL records for a partition, as
+// instants. It reads it in ISO and UTC, which the rest of the transaction keeps.
+func retentionBounds(t *testing.T, ctx context.Context, tx pgx.Tx, partition string) (lower, upper time.Time) {
+	t.Helper()
+	_, err := tx.Exec(ctx, `SELECT set_config('DateStyle', 'ISO, MDY', true), set_config('TimeZone', 'UTC', true)`)
+	require.NoError(t, err)
+	require.NoError(t, tx.QueryRow(ctx, `
+		SELECT r[1]::timestamptz, r[2]::timestamptz
+		  FROM pg_class c,
+		       regexp_match(pg_get_expr(c.relpartbound, 0), '^FOR VALUES FROM \(''([^'']+)''\) TO \(''([^'']+)''\)$') AS r
+		 WHERE c.oid = to_regclass('public.' || $1)`, partition).Scan(&lower, &upper))
+	return lower.UTC(), upper.UTC()
 }
 
 // retentionPartitions lists the partitions attached to audit_events, by name.
@@ -116,16 +148,16 @@ func runRetentionIn(t *testing.T, ctx context.Context, tx pgx.Tx, cutoff time.Ti
 	return dropped
 }
 
-// A partition created from a session whose zone is not UTC has bounds on that
-// zone's midnights, so audit_events_1996_08 created from New York ends at 04:00
-// UTC on 1 September. Retention run from UTC with a cutoff of 1 September 00:00
+// A partition an earlier release created from a session whose zone is not UTC
+// has bounds on that zone's midnights, so audit_events_1996_08 created from New
+// York ends at 04:00 UTC on 1 September. Retention run from UTC with a cutoff of 1 September 00:00
 // UTC must leave it alone: its last four hours hold September's events, which
 // are newer than the cutoff. Choosing it by its name, read in the UTC session,
 // dropped it and them.
 func TestRetentionKeepsAPartitionThatEndsAfterTheCutoffWhateverZoneCreatedIt(t *testing.T) {
 	asRetention(t, func(ctx context.Context, tx pgx.Tx) {
-		retentionEnsureMonth(t, ctx, tx, "America/New_York", "1996-07-15")
-		retentionEnsureMonth(t, ctx, tx, "America/New_York", "1996-08-15")
+		retentionLegacyMonth(t, ctx, tx, "America/New_York", "1996-07-15")
+		retentionLegacyMonth(t, ctx, tx, "America/New_York", "1996-08-15")
 		retentionEnsureMonth(t, ctx, tx, "UTC", "1996-06-15")
 
 		_, err := tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
@@ -158,8 +190,8 @@ func TestRetentionDecidesAlikeFromAnyZone(t *testing.T) {
 	for _, zone := range []string{"UTC", "America/New_York", "Asia/Kolkata", "Pacific/Auckland"} {
 		t.Run(zone, func(t *testing.T) {
 			asRetention(t, func(ctx context.Context, tx pgx.Tx) {
-				retentionEnsureMonth(t, ctx, tx, "America/New_York", "1996-07-15")
-				retentionEnsureMonth(t, ctx, tx, "America/New_York", "1996-08-15")
+				retentionLegacyMonth(t, ctx, tx, "America/New_York", "1996-07-15")
+				retentionLegacyMonth(t, ctx, tx, "America/New_York", "1996-08-15")
 
 				_, err := tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
 				require.NoError(t, err)
@@ -368,6 +400,29 @@ func TestRetentionRefusesInsteadOfHangingBehindAWriterThatDoesNotFinish(t *testi
 	require.False(t, exists)
 }
 
+// When nothing is due the function takes no lock at all. It reads bounds without
+// opening a partition, so a session holding one ACCESS EXCLUSIVE -- another run
+// dropping it, or DDL on it -- does not hold up a run that drops nothing.
+func TestRetentionTakesNoLockWhenNothingIsDue(t *testing.T) {
+	const held = "audit_events_1991_03"
+	retentionRetire(t, "1992-01-01")
+	retentionProvisionMonth(t, "1991-03-15", time.Date(1991, 3, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		tx, err := conn.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback(ctx) }()
+		_, err = tx.Exec(ctx, `LOCK TABLE public.`+held+` IN ACCESS EXCLUSIVE MODE`)
+		require.NoError(t, err)
+
+		// Nothing is due: the partition ends after the cutoff.
+		started := time.Now()
+		dropped, err := retentionCommitted(time.Date(1991, 3, 20, 0, 0, 0, 0, time.UTC))
+		require.NoError(t, err, "a run with nothing due does not wait for the partition")
+		require.Zero(t, dropped)
+		require.Less(t, time.Since(started), 5*time.Second)
+	})
+}
+
 // The migration replaced the function's body, and CREATE OR REPLACE keeps its
 // owner and grants; what it must have changed is the wait and the settings it
 // reads bounds under. Execute stays with the control plane alone: retention is
@@ -429,20 +484,32 @@ func TestRetentionReadsEveryBoundAsTheInstantPostgreSQLRecorded(t *testing.T) {
 	}
 }
 
-// A cutoff is in the past. One later than the start of the transaction reaches
-// the partition holding the present and the ones provisioned ahead of it, so
-// the function refuses it, and a missing one, and drops nothing.
-func TestRetentionRefusesACutoffThatIsNotInThePast(t *testing.T) {
+// The cutoff is one the audit_events policy allows by the database's clock: no
+// later than the start of the transaction less the policy's window. A later one
+// reaches partitions still inside the window -- the one holding the present and
+// those provisioned ahead of it, or one a caller whose clock runs ahead counts
+// as old -- so the function refuses it, and a missing one, and any at all when
+// there is no policy, and drops nothing.
+func TestRetentionRefusesACutoffThePolicyDoesNotAllow(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		cutoff any
+		name     string
+		noPolicy bool
+		cutoff   func(allowed time.Time) any
 	}{
-		{"after the present partition ends", time.Now().AddDate(0, 2, 0)},
-		{"infinity", pgtype.Timestamptz{InfinityModifier: pgtype.Infinity, Valid: true}},
-		{"NULL", nil},
+		{name: "after the present partition ends", cutoff: func(time.Time) any { return time.Now().AddDate(0, 2, 0) }},
+		{name: "infinity", cutoff: func(time.Time) any { return pgtype.Timestamptz{InfinityModifier: pgtype.Infinity, Valid: true} }},
+		{name: "NULL", cutoff: func(time.Time) any { return nil }},
+		{name: "a second later than the policy allows", cutoff: func(allowed time.Time) any { return allowed.Add(time.Second) }},
+		{name: "from a clock eleven hours ahead", cutoff: func(allowed time.Time) any { return allowed.Add(11 * time.Hour) }},
+		{name: "with no policy", noPolicy: true, cutoff: func(allowed time.Time) any { return allowed.AddDate(-10, 0, 0) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			asRetention(t, func(ctx context.Context, tx pgx.Tx) {
+				retentionSetZone(t, ctx, tx, "UTC")
+				var allowed time.Time
+				require.NoError(t, tx.QueryRow(ctx, `
+					SELECT now() - make_interval(days => retention_days)
+					  FROM data_retention_policies WHERE resource_type = 'audit_events'`).Scan(&allowed))
 				_, err := tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
 				require.NoError(t, err)
 				// Other tests may have written to the present partition too, so
@@ -452,10 +519,14 @@ func TestRetentionRefusesACutoffThatIsNotInThePast(t *testing.T) {
 
 				attempt, err := tx.Begin(ctx)
 				require.NoError(t, err)
+				if tc.noPolicy {
+					_, err = attempt.Exec(ctx, `DELETE FROM data_retention_policies WHERE resource_type = 'audit_events'`)
+					require.NoError(t, err)
+				}
 				var dropped int64
-				err = attempt.QueryRow(ctx, `SELECT audit_events_drop_partitions_before($1)`, tc.cutoff).Scan(&dropped)
+				err = attempt.QueryRow(ctx, `SELECT audit_events_drop_partitions_before($1)`, tc.cutoff(allowed)).Scan(&dropped)
 				var pgErr *pgconn.PgError
-				require.ErrorAs(t, err, &pgErr, "a cutoff that is not in the past is refused")
+				require.ErrorAs(t, err, &pgErr, "a cutoff the policy does not allow is refused")
 				require.Equal(t, "22023", pgErr.Code, "invalid_parameter_value")
 				require.NoError(t, attempt.Rollback(ctx))
 
@@ -464,6 +535,44 @@ func TestRetentionRefusesACutoffThatIsNotInThePast(t *testing.T) {
 			})
 		})
 	}
+}
+
+// A caller whose clock runs eleven hours ahead counts a partition still inside
+// the window as old. The function holds the cutoff to the policy by the
+// database's clock, so it refuses that one, and the partition and its event
+// survive; at the cutoff the policy allows the partition is not due, since it
+// ends after it. The policy's window is moved, inside the transaction, to end in
+// 1970, where no other partition lies.
+func TestRetentionKeepsAPartitionInsideTheWindowWhateverTheCallersClock(t *testing.T) {
+	asRetention(t, func(ctx context.Context, tx pgx.Tx) {
+		retentionSetZone(t, ctx, tx, "UTC")
+		var allowed time.Time
+		require.NoError(t, tx.QueryRow(ctx, `
+			UPDATE data_retention_policies SET retention_days = now()::date - date '1970-06-15'
+			 WHERE resource_type = 'audit_events'
+			RETURNING now() - make_interval(days => retention_days)`).Scan(&allowed))
+		const probe = "audit_events_1970_06"
+		_, err := tx.Exec(ctx, fmt.Sprintf(`CREATE TABLE public.%s PARTITION OF public.audit_events FOR VALUES FROM ('%s') TO ('%s')`,
+			probe, allowed.Add(-time.Hour).Format(time.RFC3339Nano), allowed.Add(time.Hour).Format(time.RFC3339Nano)))
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
+		require.NoError(t, err)
+		require.Equal(t, probe, retentionInsertEvent(t, ctx, tx, allowed.Add(30*time.Minute)),
+			"the premise: the partition holds an event inside the window")
+
+		attempt, err := tx.Begin(ctx)
+		require.NoError(t, err)
+		_, err = testStore.DropAuditPartitionsBefore(infra.BindControlPlaneTx(ctx, attempt), allowed.Add(11*time.Hour))
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, err, &pgErr, "the cutoff of a clock eleven hours ahead is refused")
+		require.Equal(t, "22023", pgErr.Code)
+		require.NoError(t, attempt.Rollback(ctx))
+		require.Contains(t, retentionPartitions(t, ctx, tx), probe)
+		require.Equal(t, int64(1), retentionRowsIn(t, ctx, tx, probe), "the event inside the window survives")
+
+		require.Zero(t, runRetentionIn(t, ctx, tx, allowed), "at the cutoff the policy allows, the partition is not due")
+		require.Equal(t, int64(1), retentionRowsIn(t, ctx, tx, probe))
+	})
 }
 
 // The function decides under its lock from the catalog as it stands once the
@@ -775,4 +884,122 @@ func TestRetentionRunsAtReadCommittedWhateverTheDatabaseDefault(t *testing.T) {
 	require.Equal(t, int64(1), dropped)
 	exists, _ = retentionPartitionRows(t, due)
 	require.False(t, exists)
+}
+
+// The function waits ten seconds in all for its locks, not ten for each:
+// lock_timeout bounds one wait, and a run that drops two partitions waits up to
+// three times, each time holding audit_events ACCESS EXCLUSIVE, which audit
+// writes queue behind. Two sessions each hold a due partition; the first lets go
+// after six seconds, the second not until the run is over. The run gives up
+// when its ten seconds are spent, drops nothing, and a later run drops both.
+func TestRetentionWaitsTenSecondsInAllForItsLocks(t *testing.T) {
+	retentionRetire(t, "1993-01-01")
+	for _, day := range []string{"1992-01-15", "1992-02-15"} {
+		retentionProvisionMonth(t, day, time.Date(1992, 1, 10, 12, 0, 0, 0, time.UTC), uuid.NewString())
+	}
+	dsn, err := codefly.For(testCtx).Service("store").Secret("postgres", "owner-connection")
+	require.NoError(t, err)
+	hold := func(partition string) (release func()) {
+		conn, err := pgx.Connect(testCtx, dsn)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = conn.Close(testCtx) })
+		_, err = conn.Exec(testCtx, `BEGIN; LOCK TABLE ONLY public.`+pgx.Identifier{partition}.Sanitize()+` IN ACCESS SHARE MODE`)
+		require.NoError(t, err)
+		var once sync.Once
+		release = func() { once.Do(func() { _, err := conn.Exec(testCtx, `COMMIT`); require.NoError(t, err) }) }
+		t.Cleanup(release)
+		return release
+	}
+	awaitWaitingFor := func(partition string) {
+		require.Eventually(t, func() bool {
+			var waiting int
+			err := testPool.QueryRow(testCtx, `
+				SELECT count(*) FROM pg_locks
+				 WHERE relation = to_regclass('public.' || $1) AND mode = 'AccessExclusiveLock' AND NOT granted`,
+				partition).Scan(&waiting)
+			return err == nil && waiting > 0
+		}, 10*time.Second, 20*time.Millisecond, "retention never waited for %s", partition)
+	}
+	releaseFirst := hold("audit_events_1992_01")
+	releaseSecond := hold("audit_events_1992_02")
+
+	type outcome struct {
+		dropped int64
+		err     error
+		elapsed time.Duration
+	}
+	ran := make(chan outcome, 1)
+	go func() {
+		started := time.Now()
+		dropped, err := retentionCommitted(time.Date(1992, 3, 1, 0, 0, 0, 0, time.UTC))
+		ran <- outcome{dropped, err, time.Since(started)}
+	}()
+	awaitWaitingFor("audit_events_1992_01")
+	time.Sleep(6 * time.Second)
+	releaseFirst()
+	awaitWaitingFor("audit_events_1992_02")
+
+	select {
+	case got := <-ran:
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, got.err, &pgErr, "retention gave up for want of its locks")
+		require.Equal(t, "55P03", pgErr.Code, "lock_not_available")
+		require.Zero(t, got.dropped)
+		require.Less(t, got.elapsed, 11*time.Second, "ten seconds of waiting in all, not ten for each lock")
+	case <-time.After(30 * time.Second):
+		t.Fatal("retention went on waiting past its ten seconds")
+	}
+	for _, partition := range []string{"audit_events_1992_01", "audit_events_1992_02"} {
+		exists, _ := retentionPartitionRows(t, partition)
+		require.True(t, exists, "a run that gave up dropped nothing")
+	}
+
+	releaseSecond()
+	dropped, err := retentionCommitted(time.Date(1992, 3, 1, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Equal(t, int64(2), dropped, "with its locks free, the next run drops both")
+}
+
+// A retention window is a positive number of days, and the table refuses any
+// other, so no writer can leave a window retention would have to read as
+// something it does not say.
+func TestARetentionPolicyKeepsRecordsForAPositiveNumberOfDays(t *testing.T) {
+	asRetention(t, func(ctx context.Context, tx pgx.Tx) {
+		for _, days := range []int{0, -1} {
+			for _, statement := range []string{
+				`UPDATE data_retention_policies SET retention_days = $1 WHERE resource_type = 'sessions'`,
+				`INSERT INTO data_retention_policies (resource_type, retention_days) VALUES ('example_records', $1)`,
+			} {
+				attempt, err := tx.Begin(ctx)
+				require.NoError(t, err)
+				_, err = attempt.Exec(ctx, statement, days)
+				var pgErr *pgconn.PgError
+				require.ErrorAs(t, err, &pgErr, "%d days is refused: %s", days, statement)
+				require.Equal(t, "23514", pgErr.Code, "check_violation")
+				require.NoError(t, attempt.Rollback(ctx))
+			}
+		}
+	})
+}
+
+// The migration that made a window a positive number of days refuses to apply
+// while a policy holds one that is not, and names it: which window was meant is
+// the operator's to say, not retention's to guess.
+func TestTheRetentionMigrationRefusesAWindowThatIsNotPositive(t *testing.T) {
+	paths, err := filepath.Glob("../../../../store/migrations/*_audit_retention_partition_bounds.up.sql")
+	require.NoError(t, err)
+	require.Len(t, paths, 1, "the migration that holds the rule")
+	migration, err := os.ReadFile(paths[0])
+	require.NoError(t, err)
+	asRetention(t, func(ctx context.Context, tx pgx.Tx) {
+		_, err := tx.Exec(ctx, `
+			ALTER TABLE data_retention_policies DROP CONSTRAINT data_retention_policies_retention_days_positive;
+			UPDATE data_retention_policies SET retention_days = 0 WHERE resource_type = 'sessions'`)
+		require.NoError(t, err, "the premise: a policy from before the rule")
+		_, err = tx.Exec(ctx, string(migration))
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, err, &pgErr, "the migration refuses")
+		require.Equal(t, "23514", pgErr.Code, "check_violation")
+		require.Contains(t, pgErr.Message, "sessions (0 days)", "and names the policy")
+	})
 }

@@ -107,24 +107,22 @@ func (s *PostgresStore) ListAuditEventTypes(ctx context.Context) ([]business.Aud
 }
 
 // EnsureAuditPartitions provisions the current month plus the next `months`
-// (and the previous month, to absorb clock skew / late writes) via the
-// SECURITY DEFINER maintenance function, then brings every partition's
-// row-level security back in step with the parent's. Retention keeps far more
-// months than this window provisions, and a partition queried by name is
-// checked against its own policies, so a policy change on audit_events must
-// reach the older partitions too. Called at startup and on each retention tick.
+// (and the previous month, to absorb late writes), by the database's clock in
+// UTC, then brings every partition's row-level security back in step with the
+// parent's. Retention keeps far more months than this window provisions, and a
+// partition queried by name is checked against its own policies, so a policy
+// change on audit_events must reach the older partitions too. Called at startup
+// and on each retention tick.
+//
+// It is one call to audit_events_provision_partitions, so its waits for locks
+// add up to ten seconds at most: creating a partition takes audit_events ACCESS
+// EXCLUSIVE, which audit writes queue behind, and is the only lock it takes
+// when every partition is in step. When the ten seconds run out it fails with
+// SQLSTATE 55P03 and creates nothing; the months ahead are provisioned in
+// advance, so the next call has time to try again.
 func (s *PostgresStore) EnsureAuditPartitions(ctx context.Context, months int) error {
-	q := s.getQueryExecutor(ctx)
-	base := time.Now().UTC()
-	for m := -1; m <= months; m++ {
-		month := base.AddDate(0, m, 0)
-		first := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.UTC)
-		if _, err := q.Exec(ctx, `SELECT audit_events_ensure_partition($1::date)`, first); err != nil {
-			return fmt.Errorf("ensure audit partition %s: %w", first.Format("2006-01"), err)
-		}
-	}
-	if _, err := q.Exec(ctx, `SELECT audit_events_secure_all_partitions()`); err != nil {
-		return fmt.Errorf("secure audit partitions: %w", err)
+	if _, err := s.getQueryExecutor(ctx).Exec(ctx, `SELECT audit_events_provision_partitions($1)`, months); err != nil {
+		return fmt.Errorf("provision audit partitions: %w", err)
 	}
 	return nil
 }
@@ -142,11 +140,12 @@ func (s *PostgresStore) EnsureAuditPartitions(ctx context.Context, months int) e
 // opens a control-plane transaction of its own at READ COMMITTED, whatever the
 // database's default isolation, which is how scheduled retention calls it.
 //
-// It refuses a `before` that is not in the past (22023), and gives up with
-// 55P03 after ten seconds rather than wait for a writer that does not finish;
-// nothing is dropped then, and the next scheduled run tries again. A partition
-// whose bounds are not a bounded range, or whose detach has begun, is never
-// dropped.
+// It refuses a `before` later than the audit_events retention policy allows by
+// the database's clock, or with no policy at all (22023), so a caller whose
+// clock runs ahead cannot drop a partition still inside the window. Its waits
+// for locks add up to ten seconds at most; past that it fails with 55P03 and
+// drops nothing, and the next scheduled run tries again. A partition whose
+// bounds are not a bounded range, or whose detach has begun, is never dropped.
 func (s *PostgresStore) DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error) {
 	if storetx.Tx(ctx) == nil {
 		// A deliberate control-plane elevation, counted with the direct
