@@ -55,7 +55,7 @@ func declareAuditManifest(svc *business.Service, id, manifest string) error {
 		}
 		declarations = append(declarations, declaration)
 	}
-	_, _, err = svc.ModuleDeclareAuditEventTypes(testCtx, business.ModuleCaller{PrincipalID: business.ModulePrincipalID(id)}, id, declarations)
+	_, _, err = svc.ModuleDeclareAuditEventTypes(testCtx, business.ModuleCaller{PrincipalID: business.ModulePrincipalID(id), BoundOrg: svc.ModulePrincipals()[business.ModulePrincipalID(id)].Tenant}, id, declarations)
 	return err
 }
 
@@ -66,13 +66,15 @@ func declaringService(t *testing.T, bound map[string][]string) *business.Service
 	t.Helper()
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	id := business.NewIDString()
+	owner, org := mustUserAndOrg(t, testCtx, id+"@example.com", id, "Acme Audit")
 	registry := business.ModulePrincipalRegistry{}
 	for solution, namespaces := range bound {
-		registry[business.ModulePrincipalID(solution)] = business.ModulePrincipalGrant{Prefix: solution, Namespaces: namespaces, CrossTenant: true}
+		registry[business.ModulePrincipalID(solution)] = business.ModulePrincipalGrant{Prefix: solution, Tenant: org, Namespaces: namespaces, CrossTenant: true}
 	}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(testStore, nil)
 	svc.SetModulePrincipals(registry)
+	installCapabilityFixture(t, svc, org, owner)
 	return svc
 }
 
@@ -134,17 +136,18 @@ func TestSolutionAuditEvents_DeclaredAndEmitted(t *testing.T) {
 
 	// The solution's principal emits its own type into a real tenant; the audit
 	// row resolves through the foreign key the admitted row satisfies.
-	_, org := mustUserAndOrg(t, testCtx, "declared@audit-test.com", "declared-audit", "Declared Co")
+	owner, org := mustUserAndOrg(t, testCtx, "declared@audit-test.com", "declared-audit", "Declared Co")
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
 	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
 	require.NoError(t, err)
 	svc.SetAuditEmitter(emitter)
 	backend := &fakeJobBackend{}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(testStore, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Tenant: org, Namespaces: []string{namespace}},
 	})
+	installCapabilityFixture(t, svc, org, owner)
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
 	fields, err := structpb.NewStruct(map[string]any{"count": 2, "score": 0.5, "stage": "final"})
 	require.NoError(t, err)

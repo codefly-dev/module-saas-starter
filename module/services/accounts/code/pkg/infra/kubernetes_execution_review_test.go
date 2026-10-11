@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/installationtest"
 	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
@@ -81,7 +82,16 @@ func reviewService(t *testing.T, client *KubernetesClient, registry string) *bus
 	parsed, err := moduleregistrytest.Parse(registry)
 	require.NoError(t, err)
 	service := &business.Service{}
+	installations := &installationtest.Store{}
+	for principal, grant := range parsed {
+		grant.PresenceBinding = "example." + grant.Prefix
+		parsed[principal] = grant
+		scope := business.FullInstallationScope(grant)
+		_, err := installations.InstallSolution(context.Background(), &business.InstallSolutionParams{OrgID: grant.Tenant, RegistryPrincipalID: principal, RegistryBindingID: grant.PresenceBinding, Scope: &scope})
+		require.NoError(t, err)
+	}
 	service.SetModulePrincipals(parsed)
+	service.SetModuleAuthorityReads(installations, nil)
 	service.SetExecutionBinding(client, reviewApproval{})
 	return service
 }

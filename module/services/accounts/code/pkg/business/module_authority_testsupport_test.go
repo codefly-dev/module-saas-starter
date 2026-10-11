@@ -19,17 +19,22 @@ import "context"
 // It reports revision and epoch 0 deliberately: a credential sealed at any
 // non-zero value is refused by it, so a test that wants to prove a stale seal is
 // refused does not have to opt out of this.
-type currentModuleAuthority struct{}
+type currentModuleAuthority struct{ service *Service }
 
-func (currentModuleAuthority) LiveModuleAuthority(
-	_ context.Context, _, _, _ string,
+func (f currentModuleAuthority) LiveModuleAuthority(
+	_ context.Context, principal, _, _ string,
 ) (*LiveModuleAuthority, error) {
-	return &LiveModuleAuthority{InstallationID: "installation-current"}, nil
+	grant := f.service.ModulePrincipals()[principal]
+	return &LiveModuleAuthority{InstallationID: "installation-current", RegistryBindingID: grant.PresenceBinding, Scope: FullInstallationScope(grant)}, nil
 }
 
 // withCurrentAuthority wires it. Named so a reader of a failing test can see at
 // once that the live read is a fixture rather than the thing under test.
 func withCurrentAuthority(service *Service) *Service {
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	return service
+}
+
+func (f currentModuleAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
 }

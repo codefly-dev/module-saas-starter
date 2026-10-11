@@ -39,7 +39,7 @@ func TestModuleEmitAuditEventDedupsRetriedTenantEmit(t *testing.T) {
 	require.NoError(t, err)
 	svc.SetAuditEmitter(emitter)
 	backend := &fakeJobBackend{}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Tenant: org, Queues: []string{"datasource", "documents"}},
 	})
@@ -92,7 +92,7 @@ func TestModuleEmitAuditEventRowKeepsItsActorAndEntry(t *testing.T) {
 	require.NoError(t, err)
 	svc.SetAuditEmitter(emitter)
 	backend := &fakeJobBackend{}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Tenant: org, Queues: []string{"documents"}},
 	})

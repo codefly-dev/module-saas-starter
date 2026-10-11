@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
@@ -91,6 +92,9 @@ func newRegistryScenario(t *testing.T, label string) *registryScenario {
 		tenant:   business.NewIDString(),
 		primary:  newRegistryBinding(t, label),
 	}
+	seedHumanPrincipal(t, scenario.admin, "Jane Doe")
+	scenario.tenant = seedOrg(t, scenario.admin)
+	require.NoError(t, testStore.As(business.Identity{OrgID: scenario.tenant}).AddOrgMember(testCtx, scenario.admin, "admin"))
 	scenario.prefix = "mod-" + scenario.primary.solutionID
 	scenario.resource = scenario.prefix + ".reports"
 	grantPlatformRoleForTest(t, scenario.admin, "super_admin")
@@ -158,6 +162,7 @@ func (s *registryScenario) currentRevision(t *testing.T) uint64 {
 
 // envelopeOptions is what one revision of the ceiling admits.
 type envelopeOptions struct {
+	crossTenant bool
 	// resources lets the module's own content kind through the grant.
 	resources bool
 	// tenant overrides the scenario's tenant.
@@ -179,9 +184,10 @@ func (s *registryScenario) envelope(t *testing.T, revision uint64, options envel
 		options.bindings = []*registryBinding{s.primary}
 	}
 	grant := map[string]any{
-		"tenant":     tenant,
-		"queues":     []string{"reports.render"},
-		"namespaces": []string{"reports"},
+		"tenant":       tenant,
+		"cross_tenant": options.crossTenant,
+		"queues":       []string{"reports.render"},
+		"namespaces":   []string{"reports"},
 		"operation_audiences": map[string]any{
 			"run": map[string]any{
 				"audience":      "example-producer",
@@ -301,6 +307,7 @@ func (s *registryScenario) established(t *testing.T) uint64 {
 	s.pass(t)
 	_, present := s.entry()
 	require.True(t, present, "the module must be in the registry before anything can take it out")
+	s.install(t, s.tenant)
 	_, err := s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(s.tenant))
 	require.NoError(t, err, "and a capability check must pass")
 	return revision
@@ -381,6 +388,7 @@ func TestDeliveringAuthorityChangesTheRegistryWithNoRestart(t *testing.T) {
 	resources, err := s.delivery.service.ModuleContentResources(s.prefix)
 	require.NoError(t, err, "the capability decision reads the derived registry")
 	require.Equal(t, []string{s.resource}, resources)
+	s.install(t, s.tenant)
 	_, err = s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(s.tenant))
 	require.NoError(t, err)
 }
@@ -656,7 +664,8 @@ func TestAWidenedUnitIsRefusedAndActivatesNothing(t *testing.T) {
 func TestMovingThePrincipalsTenantRevokesTheOldTenantsCredentials(t *testing.T) {
 	s := newRegistryScenario(t, "ten")
 	s.established(t)
-	moved := business.NewIDString()
+	moved := seedOrg(t, s.admin)
+	require.NoError(t, testStore.As(business.Identity{OrgID: moved}).AddOrgMember(testCtx, s.admin, "admin"))
 
 	revision := s.putEnvelope(t, envelopeOptions{resources: true, tenant: moved})
 	s.deliverPresence(t, s.primary, 2, revision)
@@ -666,6 +675,11 @@ func TestMovingThePrincipalsTenantRevokesTheOldTenantsCredentials(t *testing.T) 
 
 	_, err := s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(s.tenant))
 	require.ErrorIs(t, err, business.ErrModuleTenantNotCurrent, "the old tenant's credential is refused, and named as such")
+	_, err = testStore.LiveModuleAuthority(testCtx, business.ModulePrincipalID(s.prefix), s.tenant, "")
+	require.ErrorIs(t, err, business.ErrModuleInstallationInactive, "tenancy revoked the previous consent in the envelope transaction")
+	_, err = s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(moved))
+	require.ErrorIs(t, err, business.ErrModuleInstallationInactive, "moving tenancy creates no consent")
+	s.install(t, moved)
 	_, err = s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(moved))
 	require.NoError(t, err)
 }
@@ -757,4 +771,28 @@ func TestTheEnvelopeIsWrittenOnlyAtTheNextRevision(t *testing.T) {
 func jsonNumber(value uint64) string {
 	raw, _ := json.Marshal(value)
 	return string(raw)
+}
+
+// Registry tests explicitly install only when they exercise capability use.
+// Delivery and reconciliation themselves never synthesize consent.
+func (s *registryScenario) install(t *testing.T, org string) *gen.Installation {
+	t.Helper()
+	available, _, err := s.delivery.service.ListAvailableSolutions(testCtx, org, "", 500)
+	require.NoError(t, err)
+	var target string
+	for _, entry := range available {
+		if entry.BindingID == s.primary.binding {
+			target = entry.TargetID
+		}
+	}
+	require.NotEmpty(t, target)
+	role := business.NewIDString()
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.CreateRole(ctx, &gen.Role{Id: role, OrgId: org, Name: "Example role " + role, Permissions: []*gen.Permission{{Resource: "solution", Action: "use"}}})
+	}))
+	installation, err := s.delivery.service.InstallSolution(testCtx, s.admin, &business.InstallSolutionParams{
+		OrgID: org, TargetID: target, AgentIdentifier: "acme.example/registry:1.0.0", RoleID: role,
+	})
+	require.NoError(t, err)
+	return installation
 }

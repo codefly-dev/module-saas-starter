@@ -82,6 +82,7 @@ type AvailableSolutionQuery struct {
 // an administrator must not be able to consent to: consenting to a release this
 // host never admitted records authority over a presence that does not exist.
 type AvailableSolutionTarget struct {
+	Kind       string
 	TargetID   string
 	BindingID  string
 	RouteAlias string

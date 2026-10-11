@@ -1032,6 +1032,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.installation.narrowed": {
+      "address": "saas.installation.narrowed",
+      "title": "saas.installation.narrowed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.installation.narrowed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.installation.ownership_transferred": {
       "address": "saas.installation.ownership_transferred",
       "title": "saas.installation.ownership_transferred",
@@ -2663,6 +2674,13 @@
       },
       "title": "saas publishes saas.installation.created"
     },
+    "send:saas.installation.narrowed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.installation.narrowed"
+      },
+      "title": "saas publishes saas.installation.narrowed"
+    },
     "send:saas.installation.ownership_transferred": {
       "action": "send",
       "channel": {
@@ -3929,6 +3947,13 @@
       "saas.installation.created": {
         "name": "saas.installation.created",
         "title": "saas.installation.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.installation.narrowed": {
+        "name": "saas.installation.narrowed",
+        "title": "saas.installation.narrowed",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

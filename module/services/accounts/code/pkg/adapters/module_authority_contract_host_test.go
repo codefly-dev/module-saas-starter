@@ -221,7 +221,7 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 	})
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	cluster := bindModuleExecution(t, svc, registry)
 	tokens := map[string]string{}

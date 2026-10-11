@@ -467,3 +467,22 @@ func TestTheDerivationOmitsEveryPrincipalSharingAWorkload(t *testing.T) {
 	require.ErrorIs(t, refusals[0], ErrModulePrincipalOmitted)
 	require.Equal(t, []string{"c"}, slices.Collect(maps.Keys(published.registry)))
 }
+
+func TestSharedEnvelopeTenantIsNotAnOrganizationGrant(t *testing.T) {
+	document := testEnvelopeDocument()
+	document["principals"].(map[string]any)[testModulePrefix].(map[string]any)["grant"].(map[string]any)["tenant"] = ""
+	raw, err := json.Marshal(document)
+	require.NoError(t, err)
+	envelope, err := ParseModuleEnvelope(raw)
+	require.NoError(t, err)
+	require.Empty(t, envelope.Principals[testModulePrefix].Grant.Tenant)
+	tenant, err := canonicalModuleTenant("example", "")
+	require.NoError(t, err)
+	require.Empty(t, tenant)
+	grant := ModulePrincipalGrant{Prefix: "example", Tenant: tenant}
+	require.NoError(t, validateModulePrincipalCeiling("example", grant))
+	require.True(t, moduleAvailableToOrganization(grant, testEnvelopeTenant))
+	require.False(t, moduleAvailableToOrganization(grant, ""), "shared tenancy cannot authorize an unbound credential")
+	_, err = canonicalModuleTenant("example", "not-an-organization")
+	require.Error(t, err)
+}

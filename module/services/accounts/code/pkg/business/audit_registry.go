@@ -382,6 +382,7 @@ const (
 	EventRecordShareRevoked  EventType = "saas.record.share_revoked"
 
 	EventInstallationCreated              EventType = "saas.installation.created"
+	EventInstallationNarrowed             EventType = "saas.installation.narrowed"
 	EventInstallationRevoked              EventType = "saas.installation.revoked"
 	EventInstallationOwnershipTransferred EventType = "saas.installation.ownership_transferred"
 
@@ -650,6 +651,7 @@ var auditEventCatalog = []AuditEventDefinition{
 		uid("agent_principal_id"), uid("target_id"), uid("role_id"), uid("owner_principal_id"), str("allowed_audiences"), str("allowed_scopes")),
 	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled, or the presence it was installed from was withdrawn: its agent principal and standing grant were revoked and its scope node soft-deleted.",
 		uid("target_id"), str("binding_id"), str("generation"), str("revoked_reason")),
+	mutation(EventInstallationNarrowed, CategoryAccess, "An installation scope was narrowed and its affected work canceled.", str("scope"), str("revision"), str("binding_id")),
 	mutation(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
 		uid("owner_principal_id")),
 	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),

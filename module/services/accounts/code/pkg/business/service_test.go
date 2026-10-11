@@ -209,6 +209,7 @@ func runBusinessTests(m *testing.M) int {
 	}
 
 	testStore = store
+	service.SetModuleAuthorityReads(testStore, nil)
 	testService = service
 	testCtx = ctx
 

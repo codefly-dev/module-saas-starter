@@ -15,6 +15,7 @@ import (
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/jobs"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,11 +28,12 @@ import (
 // calls the module surface makes so the guard and delegation can be asserted
 // without a database.
 type fakeJobBackend struct {
-	enqueued   []*jobsv1.EnqueueJobRequest
-	claimQueue string
-	completed  []*jobsv1.CompleteJobRequest
-	retried    []*jobsv1.RetryJobRequest
-	deadLetter []*jobsv1.DeadLetterJobRequest
+	enqueued       []*jobsv1.EnqueueJobRequest
+	claimQueue     string
+	claimAuthority jobs.ModuleAuthority
+	completed      []*jobsv1.CompleteJobRequest
+	retried        []*jobsv1.RetryJobRequest
+	deadLetter     []*jobsv1.DeadLetterJobRequest
 }
 
 func (f *fakeJobBackend) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
@@ -39,8 +41,9 @@ func (f *fakeJobBackend) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJobReq
 	return &jobsv1.EnqueueJobResponse{JobId: "00000000-0000-0000-0000-000000000001", Disposition: jobsv1.JobEnqueueDisposition_JOB_ENQUEUE_DISPOSITION_INSERTED}, nil
 }
 
-func (f *fakeJobBackend) Claim(_ context.Context, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
+func (f *fakeJobBackend) Claim(ctx context.Context, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
 	f.claimQueue = req.GetQueue()
+	f.claimAuthority, _ = jobs.ModuleClaim(ctx)
 	return &jobsv1.ClaimJobsResponse{Jobs: []*jobsv1.JobEnvelope{{Id: "00000000-0000-0000-0000-000000000009"}}}, nil
 }
 
@@ -130,7 +133,7 @@ func newModuleService(t *testing.T, backend *fakeJobBackend) *business.Service {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, Queues: []string{"datasource", "documents"}},
 	})
@@ -143,7 +146,7 @@ func newModuleServiceWithStore(t *testing.T, store business.Store, backend *fake
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
 	})
@@ -586,18 +589,18 @@ func TestModuleClaimJobs_DisallowedQueueRejected(t *testing.T) {
 	requireCode(t, err, codes.PermissionDenied)
 }
 
-// TestModuleClaimJobs_RequiresCrossTenant pins the fix for the claim isolation
-// leak: claiming a queue reads across tenants, so a principal without the cross-
-// tenant grant is denied even on a queue it is otherwise allowed to use.
-func TestModuleClaimJobs_RequiresCrossTenant(t *testing.T) {
+// Claims now carry explicit organization/installation predicates into the store,
+// so a tenant-bound module can lease its own work without cross-tenant authority.
+func TestModuleClaimJobs_BindsTheInstallationPredicate(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc := newModuleService(t, backend)
 	_, err := svc.ModuleClaimJobs(context.Background(), moduleCaller(), &jobsv1.ClaimJobsRequest{
-		Queue: "datasource", WorkerId: "w1", Limit: 1, LeaseDuration: durationpb.New(time.Minute),
-	})
-	requireCode(t, err, codes.PermissionDenied)
-	if backend.claimQueue != "" {
-		t.Fatalf("no claim should have reached the store, got queue %q", backend.claimQueue)
+		Queue: "datasource", WorkerId: "w1", Limit: 1, LeaseDuration: durationpb.New(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.claimAuthority.OrganizationID != moduleTenantA || backend.claimAuthority.InstallationID != "installation-current" {
+		t.Fatalf("claim lost installation attribution: %+v", backend.claimAuthority)
 	}
 }
 
@@ -873,7 +876,7 @@ func TestApprovalResumeEnqueuedOnQuorum(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	backend := &fakeJobBackend{}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Tenant: moduleTenantA, Queues: []string{"documents"}},
 	})
@@ -927,7 +930,7 @@ func TestApprovalResumeStampsCompletingDecider(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	backend := &fakeJobBackend{}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Tenant: moduleTenantA, Queues: []string{"documents"}},
 	})
@@ -1115,7 +1118,7 @@ func newVisibilityService(t *testing.T, store business.Store, crossTenant bool) 
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, CrossTenant: crossTenant},
 	})
@@ -1639,7 +1642,7 @@ func TestACredentialForThePrincipalsOldTenantIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantB, Queues: []string{"documents"}},
 	})
