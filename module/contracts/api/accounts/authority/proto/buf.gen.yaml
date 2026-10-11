@@ -1,4 +1,9 @@
 version: v2
+# Generate owned declarations only, including in the agent sync-drift check.
+inputs:
+  - directory: .
+    paths:
+      - saas
 managed:
   enabled: true
   disable:
@@ -6,6 +11,8 @@ managed:
       module: buf.build/googleapis/googleapis
     - file_option: go_package
       module: buf.build/bufbuild/protovalidate
+    - file_option: go_package
+      path: vendor
   override:
     - file_option: go_package_prefix
       value: accounts/pkg/gen
@@ -14,16 +21,56 @@ plugins:
   # Local plugins avoid mutable registry execution and anonymous rate limits.
   - local: protoc-gen-go
     out: ../code/pkg/gen
-    opt: paths=source_relative
+    opt:
+      - paths=source_relative
+      - Mcodefly/base/v0/agent.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/endpoint.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/library.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/network.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/readiness.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/runnable.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/scope.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/work_context.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/runnable/v0/options.proto=github.com/codefly-dev/core/generated/go/codefly/runnable/v0
   - local: protoc-gen-go-grpc
     out: ../code/pkg/gen
-    opt: paths=source_relative
+    opt:
+      - paths=source_relative
+      - Mcodefly/base/v0/agent.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/endpoint.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/library.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/network.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/readiness.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/runnable.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/scope.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/work_context.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/runnable/v0/options.proto=github.com/codefly-dev/core/generated/go/codefly/runnable/v0
   - local: protoc-gen-grpc-gateway
     out: ../code/pkg/gen
-    opt: paths=source_relative
+    opt:
+      - paths=source_relative
+      - Mcodefly/base/v0/agent.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/endpoint.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/library.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/network.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/readiness.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/runnable.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/scope.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/work_context.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/runnable/v0/options.proto=github.com/codefly-dev/core/generated/go/codefly/runnable/v0
   - local: protoc-gen-connect-go
     out: ../code/pkg/gen
-    opt: paths=source_relative
+    opt:
+      - paths=source_relative
+      - Mcodefly/base/v0/agent.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/endpoint.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/library.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/network.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/readiness.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/runnable.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/scope.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/base/v0/work_context.proto=github.com/codefly-dev/core/generated/go/codefly/base/v0
+      - Mcodefly/runnable/v0/options.proto=github.com/codefly-dev/core/generated/go/codefly/runnable/v0
   - local: protoc-gen-openapiv2
     # This is a checked generator input for the REST-surface compiler, not a
     # disposable cache. The service declares the directory as Codefly-owned.

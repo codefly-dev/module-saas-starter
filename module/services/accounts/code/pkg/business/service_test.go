@@ -106,10 +106,9 @@ func runBusinessTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
-	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 5*time.Minute)
+	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 10*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithSharedControlChannel(),
 		sdk.WithExcludedDependencies("cache", "telemetry"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
@@ -119,7 +118,7 @@ func runBusinessTests(m *testing.M) int {
 		// A clean machine may need to pull Postgres and Vault
 		// before the first integration test. Keep the dependency-start budget
 		// separate from individual test timeouts so cold CI is deterministic.
-		sdk.WithTimeout(5*time.Minute),
+		sdk.WithTimeout(10*time.Minute),
 		sdk.WithSilence("store"),
 	)
 	setupDone(err)
