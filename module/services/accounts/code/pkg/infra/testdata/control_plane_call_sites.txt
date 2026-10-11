@@ -120,6 +120,7 @@ pkg/business/retention.go: (*Service).PurgeExpiredWorkContextReplays: WithContro
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
+pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/service.go: (*Service).AssignRole: WithControlPlane
 pkg/business/service.go: (*Service).CheckPermission: WithControlPlane
 pkg/business/service.go: (*Service).CreateRole: WithControlPlane
@@ -163,6 +164,7 @@ pkg/infra/postgres.go: (*PostgresStore).LinkIdentity: txbind.BindRequest
 pkg/infra/postgres.go: (*PostgresStore).RegisterUser: pgx.BeginTxFunc(controlPlane)
 pkg/infra/postgres.go: (*PostgresStore).RegisterUser: txbind.BindControlPlane
 pkg/infra/postgres.go: (*PostgresStore).RunInTransaction: txbind.BindRequest
+pkg/infra/postgres_audit_registry.go: (*PostgresStore).DropAuditPartitionsBefore: withControlPlaneTx
 pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthBootstrapTx: withControlPlaneTx
 pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthLookupTx: withControlPlaneTx
 pkg/infra/postgres_client_authorization.go: (*PostgresStore).ConsumeClientAuthorizationCode: WithControlPlane
