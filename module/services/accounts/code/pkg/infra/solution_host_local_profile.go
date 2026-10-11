@@ -1,9 +1,11 @@
 package infra
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -65,7 +67,9 @@ import (
 //  2. the API server the host reaches, over a transport whose ONLY root is the
 //     pinned certificate and which follows no redirect, authenticates this
 //     pod's OWN projected token (a TokenReview of the host's own credential) as
-//     a bound service-account token in this pod's namespace. A genuine API
+//     exactly THIS pod — the namespace, service account, pod name and pod UID
+//     the token's own claims name, the namespace also matching the
+//     kubelet-projected namespace file. A genuine API
 //     server accepts only tokens its own cluster minted, so an endpoint that
 //     merely holds a certificate under the pinned authority — the developer's
 //     real cluster, relayed to a deployed pod — refuses the deployed pod's token;
@@ -103,8 +107,11 @@ import (
 //     Kubernetes decision this host makes — TokenReview, pod reads — so the
 //     local profile adds no capability it did not have; the composition holds
 //     none of the three by itself;
-//   - two clusters sharing one CA (and accepting each other's tokens) are one
-//     cluster to this check.
+//   - a CA is not a cluster boundary when it is shared or cloned. Clusters
+//     sharing one authority are one cluster to this check, and anyone holding
+//     that authority's key can run a server the check accepts and answer its
+//     TokenReview as it likes — whether or not the genuine servers accept each
+//     other's tokens.
 
 // ErrSolutionHostLocalPolicyOutsideItsCluster reports a local verification
 // policy on a host that is not running in the cluster the policy is bound to —
@@ -173,7 +180,8 @@ func (v *keylessBundleVerifier) ProveLocalCluster(ctx context.Context, cluster S
 //     fingerprint;
 //  2. over a transport trusting only that certificate and following no
 //     redirect, the API server must authenticate this pod's own projected
-//     token as a bound service account in this pod's namespace;
+//     token as exactly this pod: the namespace, service account, pod name and
+//     pod UID the token names;
 //  3. only then does that transport replace this client's, for the life of the
 //     process — so it is the transport every later cluster call uses.
 //
@@ -196,13 +204,25 @@ func (c *KubernetesClient) BindToAuthority(ctx context.Context, fingerprint stri
 }
 
 // reviewOwnToken asks the API server whether it authenticates the token the
-// kubelet projected into THIS pod, as a bound service-account token in this
-// pod's namespace.
+// kubelet projected into THIS pod, and requires the identity it answers with to
+// be THIS pod's: the same namespace, service account, pod name and pod UID the
+// token itself names.
 //
-// No audience is sent, deliberately and only here: the host's own token is
-// minted for the API server's own audiences, and a review with none checks
-// exactly those. Every review of a CALLER's token still requires the host's
-// audience (reviewToken).
+// The expected identity comes from platform-owned inputs only: the projected
+// token's own `kubernetes.io` claims, which the cluster wrote and the kubelet
+// projected, and the kubelet-projected namespace file — never from workspace
+// environment, which the composition delivers. The claims are read, not
+// verified: verifying them is what the TokenReview asks the API server to do,
+// and this compares its answer against them. That catches an answer about
+// some OTHER credential — another service account, another pod, a token with
+// no pod — rather than about the one presented. It does not, and cannot, stop a
+// control plane that is itself malicious and copies the expected claims back;
+// that limit is the CA binding's, stated where the binding is.
+//
+// No audience is sent, deliberately and only here: a review with none is
+// checked against the API server's OWN audiences, which are exactly what the
+// host's in-cluster token is minted for. Every review of a CALLER's token
+// still names and checks the host's audience (reviewToken).
 func (c *KubernetesClient) reviewOwnToken(ctx context.Context) error {
 	token, err := os.ReadFile(c.tokenPath)
 	if err != nil {
@@ -211,6 +231,14 @@ func (c *KubernetesClient) reviewOwnToken(ctx context.Context) error {
 	namespace, err := os.ReadFile(c.namespacePath)
 	if err != nil {
 		return fmt.Errorf("%w: cannot read this service's namespace: %w", ErrKubernetesUnavailable, err)
+	}
+	own, err := boundTokenIdentity(strings.TrimSpace(string(token)))
+	if err != nil {
+		return err
+	}
+	if projected := strings.TrimSpace(string(namespace)); own.Namespace != projected {
+		return fmt.Errorf("%w: this pod's own token names namespace %q, and the kubelet projected namespace %q",
+			ErrTokenRejected, own.Namespace, projected)
 	}
 	body, err := json.Marshal(tokenReviewRequest{
 		APIVersion: "authentication.k8s.io/v1",
@@ -227,19 +255,66 @@ func (c *KubernetesClient) reviewOwnToken(ctx context.Context) error {
 	if !reviewed.Status.Authenticated {
 		return fmt.Errorf("%w: this pod's own token was refused: %s", ErrTokenRejected, reviewed.Status.Error)
 	}
-	_, reviewedNamespace, err := parseServiceAccountUsername(reviewed.Status.User.Username)
+	account, reviewedNamespace, err := parseServiceAccountUsername(reviewed.Status.User.Username)
 	if err != nil {
 		return err
 	}
-	if want := strings.TrimSpace(string(namespace)); reviewedNamespace != want {
-		return fmt.Errorf("%w: this pod's own token authenticated in namespace %q, and this pod runs in %q",
-			ErrTokenRejected, reviewedNamespace, want)
+	answered := ReviewedToken{
+		ServiceAccount: account,
+		Namespace:      reviewedNamespace,
+		PodName:        firstClaim(reviewed.Status.User.Extra, podNameClaim),
+		PodUID:         firstClaim(reviewed.Status.User.Extra, podUIDClaim),
 	}
-	if firstClaim(reviewed.Status.User.Extra, podUIDClaim) == "" {
-		return fmt.Errorf("%w: this pod's own token authenticated without naming a pod, so it is not the bound token the kubelet projects",
-			ErrTokenRejected)
+	if answered != own {
+		return fmt.Errorf("%w: the API server authenticated this pod's own token as %s/%s (pod %q, uid %q), "+
+			"and the token names %s/%s (pod %q, uid %q); an answer about another identity is not an answer about this pod",
+			ErrTokenRejected, answered.Namespace, answered.ServiceAccount, answered.PodName, answered.PodUID,
+			own.Namespace, own.ServiceAccount, own.PodName, own.PodUID)
 	}
 	return nil
+}
+
+// boundTokenIdentity reads the identity a projected service-account token
+// names in its `kubernetes.io` claims, requiring every part of it: a token that
+// names no pod is not the bound token the kubelet projects.
+//
+// The payload is DECODED, not verified — see reviewOwnToken for why that is
+// the right division of labour.
+func boundTokenIdentity(token string) (ReviewedToken, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ReviewedToken{}, fmt.Errorf("%w: this pod's own token is not a JWT", ErrTokenRejected)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ReviewedToken{}, fmt.Errorf("%w: this pod's own token has an undecodable payload: %w", ErrTokenRejected, err)
+	}
+	var claims struct {
+		Kubernetes struct {
+			Namespace string `json:"namespace"`
+			Pod       struct {
+				Name string `json:"name"`
+				UID  string `json:"uid"`
+			} `json:"pod"`
+			ServiceAccount struct {
+				Name string `json:"name"`
+			} `json:"serviceaccount"`
+		} `json:"kubernetes.io"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ReviewedToken{}, fmt.Errorf("%w: this pod's own token has unreadable claims: %w", ErrTokenRejected, err)
+	}
+	identity := ReviewedToken{
+		ServiceAccount: claims.Kubernetes.ServiceAccount.Name,
+		Namespace:      claims.Kubernetes.Namespace,
+		PodName:        claims.Kubernetes.Pod.Name,
+		PodUID:         claims.Kubernetes.Pod.UID,
+	}
+	if identity.ServiceAccount == "" || identity.Namespace == "" || identity.PodName == "" || identity.PodUID == "" {
+		return ReviewedToken{}, fmt.Errorf("%w: this pod's own token does not name its namespace, service account, pod and pod UID, "+
+			"so it is not the bound token the kubelet projects", ErrTokenRejected)
+	}
+	return identity, nil
 }
 
 // exactlyTheAuthority returns the projected bundle's one certificate when it is
@@ -249,14 +324,24 @@ func (c *KubernetesClient) reviewOwnToken(ctx context.Context) error {
 func exactlyTheAuthority(bundle []byte, fingerprint string) (*x509.Certificate, error) {
 	var certificates []*x509.Certificate
 	var seen []string
-	rest := bundle
-	for {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
+	// Every byte is accounted for: whitespace between blocks, and blocks that
+	// decode. pem.Decode alone SKIPS anything before a block it can decode —
+	// junk, or a malformed block whose END it cannot find — so each step
+	// requires the remainder to START with a block and the decoded span to hold
+	// exactly one BEGIN line. "Exactly the pinned certificate" then means
+	// exactly that, rather than "one certificate survived parsing".
+	rest := bytes.TrimLeft(bundle, " \t\r\n")
+	for len(rest) > 0 {
+		if !bytes.HasPrefix(rest, []byte("-----BEGIN ")) {
+			return nil, fmt.Errorf("%w: the projected certificate authority bundle carries bytes that are not a certificate",
+				ErrSolutionHostLocalPolicyOutsideItsCluster)
 		}
-		if block.Type != "CERTIFICATE" {
+		block, next := pem.Decode(rest)
+		if block == nil || bytes.Count(rest[:len(rest)-len(next)], []byte("-----BEGIN ")) != 1 {
+			return nil, fmt.Errorf("%w: the projected certificate authority bundle holds a malformed PEM block",
+				ErrSolutionHostLocalPolicyOutsideItsCluster)
+		}
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
 			return nil, fmt.Errorf("%w: the projected certificate authority bundle holds a %q block, and it may hold exactly one certificate",
 				ErrSolutionHostLocalPolicyOutsideItsCluster, block.Type)
 		}
@@ -268,10 +353,7 @@ func exactlyTheAuthority(bundle []byte, fingerprint string) (*x509.Certificate, 
 		sum := sha256.Sum256(certificate.Raw)
 		certificates = append(certificates, certificate)
 		seen = append(seen, hex.EncodeToString(sum[:]))
-	}
-	if strings.TrimSpace(string(rest)) != "" {
-		return nil, fmt.Errorf("%w: the projected certificate authority bundle carries bytes that are not a certificate",
-			ErrSolutionHostLocalPolicyOutsideItsCluster)
+		rest = bytes.TrimLeft(next, " \t\r\n")
 	}
 	if len(certificates) == 1 && seen[0] == fingerprint {
 		return certificates[0], nil

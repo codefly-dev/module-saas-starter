@@ -10,17 +10,20 @@ Connect clients.
 
 ## Current surface
 
-The accounts projection contains 120 descriptor routes across 24 services:
+The accounts projection contains 165 descriptor routes across 29 services
+(counted from `generated/rest-surface.json` when the organization-installation
+routes of issue #1061 landed; recount from that file, which is the source):
 
-- 12 public routes and 108 authenticated routes;
-- 100 OpenAPI paths and 120 operations;
-- zero of the seven internal RPCs;
-- eleven explicit non-protobuf extensions loaded by auth-gateway: magic-link
+- 18 public routes and 147 authenticated routes;
+- 140 OpenAPI paths and 165 operations;
+- zero of the 54 internal RPCs;
+- fifteen explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing and Resend email webhooks, the two GitHub
   delivery receivers, the public status surface, the subscriptions stream,
-  checkout, free-plan, and portal.
+  checkout, free-plan, portal, and the four OAuth 2 authorization-server routes
+  (metadata, authorize validation, authorize grant, token).
 
-The generated runtime therefore authorizes 131 REST routes in total. Descriptor
+The generated runtime therefore authorizes 180 REST routes in total. Descriptor
 routes and extensions remain separate so an extension can never be mistaken
 for a protobuf procedure or inherit policy by path similarity.
 
@@ -43,12 +46,13 @@ the pinned set, not this paragraph, when the answer has to be right.
 | `services/accounts/generated/rest-surface.json` | Typed target-neutral REST catalog. |
 | `services/accounts/code/pkg/adapters/rest_registration_catalog_gen.go` | Accounts registration and exact/template allowlist. |
 | `services/auth-gateway/code/routing_rest_catalog_gen.go` | Auth-gateway descriptor REST inventory. |
-| `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Eleven explicit routes without protobuf ownership. |
+| `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Fifteen explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
-The strict binding file covers every surface service exactly once. Twenty-two
-services use generated grpc-gateway registration; `PrincipalService` and
-`DelegationService` retain the modular `permissions` plugin registration. An
+The strict binding file covers every surface service exactly once. Twenty-five
+services use generated grpc-gateway registration; `PrincipalService`,
+`DelegationService`, `InstallationService` and `WorkContextService` use the
+modular `permissions` plugin registration. An
 unknown field, missing/extra service, unsupported binding kind, duplicate
 plugin, unsafe template, route collision, internal exposure, or ownership drift
 fails generation.
@@ -59,12 +63,12 @@ Accounts registers only catalog-selected services and wraps grpc-gateway in a
 generated method/path allowlist. The allowlist is defense in depth: unknown,
 wrong-method, and internal paths return 404 before reaching grpc-gateway. The
 transcoder dials the generated Connect port, whose Connect-Go handler serves
-Connect, gRPC, and gRPC-Web for all 24 services; it no longer depends on the
+Connect, gRPC, and gRPC-Web for all 29 services; it no longer depends on the
 incomplete legacy raw-gRPC registration set.
 
-Auth-gateway loads the 120 descriptor routes from generated Go and joins each
+Auth-gateway loads the 165 descriptor routes from generated Go and joins each
 one to generated authorization metadata by canonical procedure. One
-extension-only YAML file owns the seven routes without protobuf procedures.
+extension-only YAML file owns the fifteen routes without protobuf procedures.
 Startup rejects disabled extension entries and any method/path collision with a
 descriptor route, so the file cannot become a shadow descriptor inventory.
 
@@ -82,8 +86,8 @@ verifies every operation against `rest-surface.json`, rejects missing or
 unexpected routes, normalizes path-parameter spelling, adds
 `x-codefly-rest-schema` and `x-codefly-owner`, prunes unreachable definitions,
 and writes the public document to `openapi/api.swagger.json`. The current raw
-and public documents both have 120 operations; pruning reduces definitions
-from 195 to 194.
+and public documents both have 165 operations; pruning reduces definitions
+from 314 to 311.
 
 ## Regeneration
 

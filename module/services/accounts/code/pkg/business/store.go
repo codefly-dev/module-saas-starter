@@ -337,7 +337,8 @@ type Store interface {
 	RevokeOrgAPIKeys(ctx context.Context, orgID string) (int64, error)
 	// RevokeOrgPendingInvitations revokes every pending invitation.
 	RevokeOrgPendingInvitations(ctx context.Context, orgID string) (int64, error)
-	// ActiveInstallationIDs lists an organization's unrevoked installations.
+	// ActiveInstallationIDs locks all unrevoked installations in ID order before
+	// returning their IDs; the caller's transaction must enclose the whole batch.
 	ActiveInstallationIDs(ctx context.Context, orgID string) ([]string, error)
 	// CountOrgMembers counts an organization's memberships.
 	CountOrgMembers(ctx context.Context, orgID string) (int, error)

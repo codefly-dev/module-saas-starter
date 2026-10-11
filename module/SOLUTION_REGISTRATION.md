@@ -174,6 +174,29 @@ Four distinctions the projections keep:
   ancestor node (the organization root) does reach a solution node, because that is
   the scope tree's own hierarchical rule and the same union `CheckAccess` resolves
   — narrowing tighter here would hide what an authority check permits.
+- **An organization administrator writes that grant by installation and team**
+  (`InstallationService.GrantInstallationToTeam`, issue #1061), never by scope
+  path: the host resolves the installation's authority-root node in the same
+  transaction that writes the grant, refuses a team of another organization, and
+  refuses a role that does not permit `(solution, use)` — a grant of one would be
+  written and reveal nothing. That permission is the minimum, not a ceiling: the
+  team holds everything the role permits beneath the installation's root, as a
+  `GrantScope` of that role at that node would give it. The resolution holds a
+  share lock on the installation row to commit, and uninstall locks the same row
+  before it touches any grant, so both take the installation lock before any
+  trigger-acquired lock: a grant and an uninstall serialize, without a lock cycle,
+  and a grant never lands on an installation already uninstalled. The
+  write is `GrantScope`'s own body, so it emits the same `scope.granted` event
+  and audit record. `RevokeInstallationFromTeam`
+  is `RevokeScope` after the same resolution: a narrowing under the policy log,
+  refused in the host's words when the log cannot witness it.
+  `ListOrganizationInstallations` is the administrator's read of the same state —
+  each active installation with its health, installed target, authority-root path
+  and the teams granted there or inherited from above. It is org-admin and bound to
+  the caller's own organization (a platform super administrator, who passes
+  every organization-admin check, is the inherited exception), unlike the
+  internal `ListInstallations` the gateway reads for a projected tenant. It reads
+  the installations and their exposure on one repeatable-read snapshot.
 - An unreadable registry is still `503`, and a missing or malformed `client` still
   `400`. Neither ever renders as an empty list.
 
@@ -931,8 +954,11 @@ only what the kubelet puts in its pod — the CA bundle and its own token:
    removed rather than argued with.
 2. **The API server authenticates this pod's own token.** Over a transport whose
    only root is the pinned certificate and which follows no redirect, the host
-   submits a TokenReview of its own projected token and requires it to come back
-   as a bound service account in its own namespace. A genuine API server accepts
+   submits a TokenReview of its own projected token and requires the answer to
+   name exactly this pod — the namespace, service account, pod name and pod UID
+   the token's own claims name (the namespace also matching the
+   kubelet-projected namespace file); an answer about any other identity, or a
+   token naming no pod, is refused. A genuine API server accepts
    only tokens its own cluster minted, so a server that merely holds a
    certificate under the pinned authority — the developer's real cluster, relayed
    to a deployed pod — refuses the deployed pod's token.
@@ -995,8 +1021,13 @@ pod's real cluster minted.
   read — so the local profile gives it nothing it lacked. The composition holds
   none of the three by itself: it delivers workspace environment, and neither the
   pod spec, the projected CA nor the developer's cluster key.
-- *Two clusters sharing one CA and accepting each other's tokens* are one cluster
-  to this check.
+- *A CA is not a cluster boundary when it is shared or cloned.* Clusters sharing
+  one authority are one cluster to this check, and anyone holding that
+  authority's key can run a server the check accepts and answer its TokenReview
+  as it likes — whether or not the genuine servers accept each other's tokens.
+  The own-identity comparison checks that an honest API server answered about
+  this pod; it cannot stop a control plane that is itself hostile and copies the
+  expected claims back.
 
 **The cost:** a local profile is valid in exactly one cluster. Recreating the
 cluster mints a new authority and the profile must be rewritten — one copy of the

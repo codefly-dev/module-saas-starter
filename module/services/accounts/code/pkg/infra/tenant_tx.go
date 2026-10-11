@@ -230,6 +230,45 @@ func (s *PostgresStore) WithOrgTx(ctx context.Context, orgID string, fn func(ctx
 	return tx.Commit(ctx)
 }
 
+// beginOrgReadSnapshot opens one read-only REPEATABLE READ transaction bound to
+// orgID alone: every statement in it reads the same snapshot, under the same
+// tenant RLS binding WithOrgTx sets. The caller rolls it back or commits it.
+func (s *PostgresStore) beginOrgReadSnapshot(ctx context.Context, orgID string) (pgx.Tx, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, err
+	}
+	if err := bindRequestScope(ctx, tx, orgID, ""); err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	return tx, nil
+}
+
+// WithOrgReadSnapshot is the read-only twin of WithOrgTx for a read that must
+// describe ONE moment: fn's statements share a REPEATABLE READ snapshot, so a
+// write that commits between two of them is seen by neither or by both. Store
+// methods inside it reach the snapshot through getQueryExecutor exactly as they
+// reach a WithOrgTx transaction. Same no-nesting rule as WithOrgTx.
+//
+// It is the transaction WithSourceReadSnapshot opens, without that path's
+// verified-identity binding: the caller has already admitted the request, the
+// same way a WithOrgTx caller has.
+func (s *PostgresStore) WithOrgReadSnapshot(ctx context.Context, orgID string, fn func(ctx context.Context) error) error {
+	if orgID == "" {
+		return errEmptyOrgID
+	}
+	tx, err := s.beginOrgReadSnapshot(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	if err := fn(txbind.BindRequest(ctx, tx, orgID, "")); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // errEmptyOrgID is returned when WithOrgTx is invoked without an
 // org id. Loud failure so a bug surfaces in tests, not silently
 // in production behind RLS.

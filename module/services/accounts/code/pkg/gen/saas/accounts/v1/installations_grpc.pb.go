@@ -27,6 +27,9 @@ const (
 	InstallationService_GetInstallation_FullMethodName               = "/saas.accounts.v1.InstallationService/GetInstallation"
 	InstallationService_ListInstallations_FullMethodName             = "/saas.accounts.v1.InstallationService/ListInstallations"
 	InstallationService_ListAvailableSolutions_FullMethodName        = "/saas.accounts.v1.InstallationService/ListAvailableSolutions"
+	InstallationService_ListOrganizationInstallations_FullMethodName = "/saas.accounts.v1.InstallationService/ListOrganizationInstallations"
+	InstallationService_GrantInstallationToTeam_FullMethodName       = "/saas.accounts.v1.InstallationService/GrantInstallationToTeam"
+	InstallationService_RevokeInstallationFromTeam_FullMethodName    = "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam"
 )
 
 // InstallationServiceClient is the client API for InstallationService service.
@@ -80,6 +83,42 @@ type InstallationServiceClient interface {
 	// not: here the alias is a display and routing fact read from the target in
 	// the same statement, not an identity anything joins on.
 	ListAvailableSolutions(ctx context.Context, in *ListAvailableSolutionsRequest, opts ...grpc.CallOption) (*ListAvailableSolutionsResponse, error)
+	// ListOrganizationInstallations is an organisation administrator's view of
+	// what that organisation has installed: each active installation with its live
+	// health, the catalogue row of the target it installed, the scope path of its
+	// authority root, and the teams a grant reaches there.
+	//
+	// It is the org-admin companion to the internal ListInstallations, and it is a
+	// separate method rather than a relaxed policy on that one: ListInstallations
+	// is read by the gateway for an organisation it projected from a verified
+	// identity, and a bare tenant credential must never reach it. This one binds
+	// the organisation to the caller's own admin membership, exactly as
+	// ListAvailableSolutions does, so no organisation's administrator can read
+	// another's. The one exception is inherited, not added here: a platform
+	// super administrator (not impersonating) passes the organisation-admin check
+	// for every organisation, as on every other organisation-admin method, and so
+	// may list any organisation's installations.
+	ListOrganizationInstallations(ctx context.Context, in *ListOrganizationInstallationsRequest, opts ...grpc.CallOption) (*ListOrganizationInstallationsResponse, error)
+	// GrantInstallationToTeam exposes an installation to a team: a scope grant of
+	// the given role to the team at the installation's authority-root node. The
+	// host resolves that node from the installation, so a caller never names a
+	// scope path. The role must permit using a solution, or the grant would expose
+	// nothing; the team must belong to the organisation. Using a solution is the
+	// minimum the role must permit, not a ceiling: the team holds everything the
+	// role permits beneath the installation's authority root, exactly as a
+	// GrantScope of that role at that node would give it. Emits scope.granted, the
+	// same event and audit record as any other scope grant, because it is one.
+	// Organisation-admin, with the same platform super administrator exception
+	// ListOrganizationInstallations describes.
+	GrantInstallationToTeam(ctx context.Context, in *GrantInstallationToTeamRequest, opts ...grpc.CallOption) (*GrantInstallationToTeamResponse, error)
+	// RevokeInstallationFromTeam removes one team grant at an installation's
+	// authority-root node. It is a narrowing, so it runs under the policy log
+	// exactly as RevokeScope does: a host that cannot witness the narrowing refuses
+	// it, and says so, rather than revoking unwitnessed. It removes the one grant
+	// at the authority root that granted_teams reports; a team that also reaches
+	// the installation from a grant above keeps that reach. Organisation-admin,
+	// with the same platform super administrator exception.
+	RevokeInstallationFromTeam(ctx context.Context, in *RevokeInstallationFromTeamRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type installationServiceClient struct {
@@ -150,6 +189,36 @@ func (c *installationServiceClient) ListAvailableSolutions(ctx context.Context, 
 	return out, nil
 }
 
+func (c *installationServiceClient) ListOrganizationInstallations(ctx context.Context, in *ListOrganizationInstallationsRequest, opts ...grpc.CallOption) (*ListOrganizationInstallationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOrganizationInstallationsResponse)
+	err := c.cc.Invoke(ctx, InstallationService_ListOrganizationInstallations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *installationServiceClient) GrantInstallationToTeam(ctx context.Context, in *GrantInstallationToTeamRequest, opts ...grpc.CallOption) (*GrantInstallationToTeamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GrantInstallationToTeamResponse)
+	err := c.cc.Invoke(ctx, InstallationService_GrantInstallationToTeam_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *installationServiceClient) RevokeInstallationFromTeam(ctx context.Context, in *RevokeInstallationFromTeamRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, InstallationService_RevokeInstallationFromTeam_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InstallationServiceServer is the server API for InstallationService service.
 // All implementations must embed UnimplementedInstallationServiceServer
 // for forward compatibility.
@@ -201,6 +270,42 @@ type InstallationServiceServer interface {
 	// not: here the alias is a display and routing fact read from the target in
 	// the same statement, not an identity anything joins on.
 	ListAvailableSolutions(context.Context, *ListAvailableSolutionsRequest) (*ListAvailableSolutionsResponse, error)
+	// ListOrganizationInstallations is an organisation administrator's view of
+	// what that organisation has installed: each active installation with its live
+	// health, the catalogue row of the target it installed, the scope path of its
+	// authority root, and the teams a grant reaches there.
+	//
+	// It is the org-admin companion to the internal ListInstallations, and it is a
+	// separate method rather than a relaxed policy on that one: ListInstallations
+	// is read by the gateway for an organisation it projected from a verified
+	// identity, and a bare tenant credential must never reach it. This one binds
+	// the organisation to the caller's own admin membership, exactly as
+	// ListAvailableSolutions does, so no organisation's administrator can read
+	// another's. The one exception is inherited, not added here: a platform
+	// super administrator (not impersonating) passes the organisation-admin check
+	// for every organisation, as on every other organisation-admin method, and so
+	// may list any organisation's installations.
+	ListOrganizationInstallations(context.Context, *ListOrganizationInstallationsRequest) (*ListOrganizationInstallationsResponse, error)
+	// GrantInstallationToTeam exposes an installation to a team: a scope grant of
+	// the given role to the team at the installation's authority-root node. The
+	// host resolves that node from the installation, so a caller never names a
+	// scope path. The role must permit using a solution, or the grant would expose
+	// nothing; the team must belong to the organisation. Using a solution is the
+	// minimum the role must permit, not a ceiling: the team holds everything the
+	// role permits beneath the installation's authority root, exactly as a
+	// GrantScope of that role at that node would give it. Emits scope.granted, the
+	// same event and audit record as any other scope grant, because it is one.
+	// Organisation-admin, with the same platform super administrator exception
+	// ListOrganizationInstallations describes.
+	GrantInstallationToTeam(context.Context, *GrantInstallationToTeamRequest) (*GrantInstallationToTeamResponse, error)
+	// RevokeInstallationFromTeam removes one team grant at an installation's
+	// authority-root node. It is a narrowing, so it runs under the policy log
+	// exactly as RevokeScope does: a host that cannot witness the narrowing refuses
+	// it, and says so, rather than revoking unwitnessed. It removes the one grant
+	// at the authority root that granted_teams reports; a team that also reaches
+	// the installation from a grant above keeps that reach. Organisation-admin,
+	// with the same platform super administrator exception.
+	RevokeInstallationFromTeam(context.Context, *RevokeInstallationFromTeamRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedInstallationServiceServer()
 }
 
@@ -228,6 +333,15 @@ func (UnimplementedInstallationServiceServer) ListInstallations(context.Context,
 }
 func (UnimplementedInstallationServiceServer) ListAvailableSolutions(context.Context, *ListAvailableSolutionsRequest) (*ListAvailableSolutionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAvailableSolutions not implemented")
+}
+func (UnimplementedInstallationServiceServer) ListOrganizationInstallations(context.Context, *ListOrganizationInstallationsRequest) (*ListOrganizationInstallationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListOrganizationInstallations not implemented")
+}
+func (UnimplementedInstallationServiceServer) GrantInstallationToTeam(context.Context, *GrantInstallationToTeamRequest) (*GrantInstallationToTeamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GrantInstallationToTeam not implemented")
+}
+func (UnimplementedInstallationServiceServer) RevokeInstallationFromTeam(context.Context, *RevokeInstallationFromTeamRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeInstallationFromTeam not implemented")
 }
 func (UnimplementedInstallationServiceServer) mustEmbedUnimplementedInstallationServiceServer() {}
 func (UnimplementedInstallationServiceServer) testEmbeddedByValue()                             {}
@@ -358,6 +472,60 @@ func _InstallationService_ListAvailableSolutions_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InstallationService_ListOrganizationInstallations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOrganizationInstallationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).ListOrganizationInstallations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_ListOrganizationInstallations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).ListOrganizationInstallations(ctx, req.(*ListOrganizationInstallationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InstallationService_GrantInstallationToTeam_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GrantInstallationToTeamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).GrantInstallationToTeam(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_GrantInstallationToTeam_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).GrantInstallationToTeam(ctx, req.(*GrantInstallationToTeamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InstallationService_RevokeInstallationFromTeam_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeInstallationFromTeamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).RevokeInstallationFromTeam(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_RevokeInstallationFromTeam_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).RevokeInstallationFromTeam(ctx, req.(*RevokeInstallationFromTeamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InstallationService_ServiceDesc is the grpc.ServiceDesc for InstallationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -388,6 +556,18 @@ var InstallationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAvailableSolutions",
 			Handler:    _InstallationService_ListAvailableSolutions_Handler,
+		},
+		{
+			MethodName: "ListOrganizationInstallations",
+			Handler:    _InstallationService_ListOrganizationInstallations_Handler,
+		},
+		{
+			MethodName: "GrantInstallationToTeam",
+			Handler:    _InstallationService_GrantInstallationToTeam_Handler,
+		},
+		{
+			MethodName: "RevokeInstallationFromTeam",
+			Handler:    _InstallationService_RevokeInstallationFromTeam_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
