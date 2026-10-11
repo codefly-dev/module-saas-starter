@@ -46,6 +46,8 @@ export const PERMISSIONS = {
   DASHBOARDS_READ: "dashboards:read",
   DASHBOARDS_SHARE: "dashboards:share",
   DASHBOARDS_WRITE: "dashboards:write",
+  DATASOURCE_INVOKE: "datasource:invoke",
+  DATASOURCE_READ: "datasource:read",
   ENTITLEMENTS_READ: "entitlements:read",
   INVITATIONS_READ: "invitations:read",
   INVITATIONS_WRITE: "invitations:write",
@@ -64,8 +66,8 @@ export const PERMISSIONS = {
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-export type PermissionResource = "api_keys" | "audit" | "billing" | "dashboards" | "entitlements" | "invitations" | "knowledge" | "orgs" | "roles" | "teams" | "users" | "webhooks";
-export type PermissionAction = "read" | "share" | "write";
+export type PermissionResource = "api_keys" | "audit" | "billing" | "dashboards" | "datasource" | "entitlements" | "invitations" | "knowledge" | "orgs" | "roles" | "teams" | "users" | "webhooks";
+export type PermissionAction = "invoke" | "read" | "share" | "write";
 export type PermissionGrant = Permission | `${PermissionResource}:*` | `*:${PermissionAction}`;
 
 export interface PermissionDefinition {
@@ -86,6 +88,8 @@ export const PERMISSION_DEFINITIONS: Readonly<Record<Permission, PermissionDefin
   [PERMISSIONS.DASHBOARDS_READ]: { resource: "dashboards", action: "read", description: "List and open own and org-shared dashboards.", builtInRoles: ["admin (via *:*)", "editor", "viewer"], apiKeyScope: false },
   [PERMISSIONS.DASHBOARDS_SHARE]: { resource: "dashboards", action: "share", description: "Promote a dashboard to org-shared visibility.", builtInRoles: ["admin (via *:*)"], apiKeyScope: false },
   [PERMISSIONS.DASHBOARDS_WRITE]: { resource: "dashboards", action: "write", description: "Create, rename, edit, and delete own dashboards.", builtInRoles: ["admin (via *:*)", "editor", "viewer"], apiKeyScope: false },
+  [PERMISSIONS.DATASOURCE_INVOKE]: { resource: "datasource", action: "invoke", description: "Invoke declared operations on a source boundary.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
+  [PERMISSIONS.DATASOURCE_READ]: { resource: "datasource", action: "read", description: "Read declared operations on a source boundary.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.ENTITLEMENTS_READ]: { resource: "entitlements", action: "read", description: "View entitlement limits, overrides, and usage.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.INVITATIONS_READ]: { resource: "invitations", action: "read", description: "List organization invitations.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.INVITATIONS_WRITE]: { resource: "invitations", action: "write", description: "Create and revoke organization invitations.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
@@ -117,6 +121,8 @@ export const API_KEY_SCOPES = [
   PERMISSIONS.AUDIT_READ,
   PERMISSIONS.BILLING_READ,
   PERMISSIONS.BILLING_WRITE,
+  PERMISSIONS.DATASOURCE_INVOKE,
+  PERMISSIONS.DATASOURCE_READ,
   PERMISSIONS.ENTITLEMENTS_READ,
   PERMISSIONS.INVITATIONS_READ,
   PERMISSIONS.INVITATIONS_WRITE,
@@ -133,8 +139,8 @@ export const API_KEY_SCOPES = [
 ] as const;
 
 export type APIKeyScope = (typeof API_KEY_SCOPES)[number];
-export type APIKeyScopeResource = "api_keys" | "audit" | "billing" | "entitlements" | "invitations" | "orgs" | "roles" | "teams" | "users" | "webhooks";
-export type APIKeyScopeAction = "read" | "write";
+export type APIKeyScopeResource = "api_keys" | "audit" | "billing" | "datasource" | "entitlements" | "invitations" | "orgs" | "roles" | "teams" | "users" | "webhooks";
+export type APIKeyScopeAction = "invoke" | "read" | "write";
 export type APIKeyScopeGrant = APIKeyScope | `${APIKeyScopeResource}:*` | `*:${APIKeyScopeAction}`;
 
 export const ENTITLEMENTS = {

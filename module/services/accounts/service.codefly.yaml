@@ -10,7 +10,8 @@ agent:
     # codefly whose host support reaches v4 — see scripts/ci/install-codefly.sh.
     # 0.1.53 additionally carries core v0.15.2 and the fix that lets a scaffolded
     # service resolve its own address (service-go-grpc#165).
-    version: 0.1.53
+    # 0.1.54 builds with Go 1.27.2, including the GO-2026-6613 fix.
+    version: 0.1.54
     publisher: codefly.dev
 service-dependencies:
     - name: cache
@@ -31,6 +32,7 @@ workspace-configuration-dependencies:
     - application
     - billing
     - datasource-keys
+    - datasource-oauth
     - email
     - federation
     - gateway-trust

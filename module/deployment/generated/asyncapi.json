@@ -537,6 +537,39 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.datasource.operation.declared": {
+      "address": "saas.datasource.operation.declared",
+      "title": "saas.datasource.operation.declared",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.operation.declared"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.operation.invoked": {
+      "address": "saas.datasource.operation.invoked",
+      "title": "saas.datasource.operation.invoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.operation.invoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.receipts.pruned": {
+      "address": "saas.datasource.receipts.pruned",
+      "title": "saas.datasource.receipts.pruned",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.receipts.pruned"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.datasource.snapshot_too_large": {
       "address": "saas.datasource.snapshot_too_large",
       "title": "saas.datasource.snapshot_too_large",
@@ -2359,6 +2392,27 @@
       },
       "title": "saas publishes saas.datasource.group_unbound"
     },
+    "send:saas.datasource.operation.declared": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.operation.declared"
+      },
+      "title": "saas publishes saas.datasource.operation.declared"
+    },
+    "send:saas.datasource.operation.invoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.operation.invoked"
+      },
+      "title": "saas publishes saas.datasource.operation.invoked"
+    },
+    "send:saas.datasource.receipts.pruned": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.receipts.pruned"
+      },
+      "title": "saas publishes saas.datasource.receipts.pruned"
+    },
     "send:saas.datasource.snapshot_too_large": {
       "action": "send",
       "channel": {
@@ -3632,6 +3686,27 @@
       "saas.datasource.group_unbound": {
         "name": "saas.datasource.group_unbound",
         "title": "saas.datasource.group_unbound",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.operation.declared": {
+        "name": "saas.datasource.operation.declared",
+        "title": "saas.datasource.operation.declared",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.operation.invoked": {
+        "name": "saas.datasource.operation.invoked",
+        "title": "saas.datasource.operation.invoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.receipts.pruned": {
+        "name": "saas.datasource.receipts.pruned",
+        "title": "saas.datasource.receipts.pruned",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

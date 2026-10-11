@@ -40,7 +40,11 @@ func main() {
 		panic(err.Error())
 	}
 
-	grpcPort := codefly.For(ctx).API(standards.GRPC).NetworkInstance().Port
+	grpcNetwork, err := codefly.For(ctx).API(standards.GRPC).ResolveNetworkInstance()
+	if err != nil || grpcNetwork == nil || grpcNetwork.Port == 0 {
+		panic(fmt.Sprintf("Codefly gRPC endpoint is unavailable: %v", err))
+	}
+	grpcPort := grpcNetwork.Port
 	var httpPort uint16
 	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
 	if httpNetErr != nil || httpNet == nil {

@@ -59,13 +59,14 @@ const (
 	contractDelegation = "b"                                    // delegation ids are "b" + source id's tail
 )
 
-// contractPrincipals declares the source module bound to another tenant (the
-// delegation alone admits the source's organization) with a source-delegation
-// binding addressed to the runtime module and a separate headless binding, and
-// the runtime module with one operation binding the parent is exchanged
-// through.
+// contractPrincipals declares the source module bound to another tenant with
+// an explicit cross-tenant ceiling. The currentModuleAuthority fixture supplies
+// the source organization's live installation consent separately from the
+// person's delegation. The runtime module is bound to that source organization:
+// its own credential and the delegated parent must name the same installation
+// organization when it exchanges through its operation binding.
 const contractPrincipals = `{` +
-	`"` + contractSourceModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + contractModuleOrg + `","operation_audiences":{` +
+	`"` + contractSourceModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + contractModuleOrg + `","cross_tenant":true,"operation_audiences":{` +
 	`"source-sync":{"audience":"` + contractRuntimeModule + `",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
@@ -74,7 +75,7 @@ const contractPrincipals = `{` +
 	`"invoke_scopes":[{"resource_kind":"indexes","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"indexes","actions":["read"]}],` +
 	`"headless_scopes":[{"resource_kind":"indexes","actions":["write"]}]}}},` +
-	`"` + contractRuntimeModule + `":{"workload":{"service_account":"runtime","namespace":"acme-prod","container":"app"},"tenant":"` + contractModuleOrg + `","operation_audiences":{` +
+	`"` + contractRuntimeModule + `":{"workload":{"service_account":"runtime","namespace":"acme-prod","container":"app"},"tenant":"` + contractOrg + `","operation_audiences":{` +
 	`"ingest":{"audience":"docstore-ingest",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`

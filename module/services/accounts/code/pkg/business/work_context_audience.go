@@ -173,6 +173,7 @@ func (s *Service) HostAudiences(ctx context.Context) (map[string]struct{}, error
 	modules := s.declaredModules()
 	set := make(map[string]struct{}, len(bindings)+len(modules)+1)
 	set[ModuleCapabilitiesAudience] = struct{}{}
+	set[SourceOperationAudience] = struct{}{}
 	for _, binding := range bindings {
 		if binding = strings.TrimSpace(binding); binding != "" {
 			set[SolutionAudience(binding)] = struct{}{}

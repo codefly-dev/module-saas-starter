@@ -100,10 +100,11 @@ func main() {
 	ctx = provider.Inject(ctx)
 	defer codefly.CatchPanic(ctx)
 
-	port := codefly.For(ctx).API("grpc").NetworkInstance().Port
-	if port == 0 {
-		log.Fatal("telemetry: Codefly did not inject the collector gRPC port")
+	grpcNetwork, err := codefly.For(ctx).API("grpc").ResolveNetworkInstance()
+	if err != nil || grpcNetwork == nil || grpcNetwork.Port == 0 {
+		log.Fatalf("telemetry: Codefly collector gRPC endpoint is unavailable: %v", err)
 	}
+	port := grpcNetwork.Port
 	sink, err := collector.New(resolveExporterConfig(ctx))
 	if err != nil {
 		log.Fatal(err)

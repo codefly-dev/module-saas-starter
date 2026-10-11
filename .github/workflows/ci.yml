@@ -423,8 +423,15 @@ jobs:
             codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
-      - name: Check exported API contracts are in sync with the proto
+      - name: Check endpoint procedure inventories against their listener owners
+        working-directory: module/services/accounts/code
+        env:
+          GOWORK: "off"
+        run: go test -tags pure ./pkg/cataloggen -run '^TestAPIContractSurfaces' -count=1
+      - name: Check exported API contracts are in sync with the proto and endpoint inventories
         run: codefly generate contracts saas-starter --check
+      - name: Check derived source operations
+        run: codefly generate runnables saas-starter --check
 
   module-package:
     name: Immutable module package
@@ -474,9 +481,18 @@ jobs:
           git fetch --no-tags origin \
             refs/heads/main:refs/remotes/origin/main
           git archive origin/main module/services/accounts/proto | tar -x -C "${baseline}"
-          buf breaking module/services/accounts/proto \
-            --against "${baseline}/module/services/accounts/proto" \
-            --exclude-imports
+          # Compare the owned module as one Buf image; the vendored option
+          # closure is a separate module, not a second public API to compare.
+          # Both sides are built with the same --path filter. The proto
+          # directory holds two buf modules (the owned API and the vendored
+          # option closure under vendor/), so an unfiltered baseline yields two
+          # images against the filtered input's one and buf refuses to compare.
+          buf build module/services/accounts/proto --path module/services/accounts/proto/saas -o "${baseline}/current.binpb"
+          buf build "${baseline}/module/services/accounts/proto" \
+            --path "${baseline}/module/services/accounts/proto/saas" -o "${baseline}/against.binpb"
+          buf breaking "${baseline}/current.binpb" \
+            --against "${baseline}/against.binpb" \
+            --config module/services/accounts/proto/buf.yaml --exclude-imports
       - name: Execute declared generators and reject drift
         working-directory: module/tools
         env:

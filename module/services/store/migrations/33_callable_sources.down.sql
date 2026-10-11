@@ -1,0 +1,5 @@
+DROP TABLE public.codefly_effect_receipts;
+DROP TABLE public.datasource_operation_attempts;
+DROP TABLE public.datasource_oauth_consumed_states;
+DROP TABLE public.datasource_source_operations;
+ALTER TABLE public.datasource_sources DROP CONSTRAINT datasource_sources_org_identity;
