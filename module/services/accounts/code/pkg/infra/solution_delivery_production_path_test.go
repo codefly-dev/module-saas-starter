@@ -386,7 +386,7 @@ func productionPathBinding(
 ) *solutionhost.SolutionHostBinding {
 	t.Helper()
 	document := &solutionhost.SolutionHostBinding{
-		Schema:           solutionhost.SchemaPresenceV2,
+		Schema:           solutionhost.SchemaPresenceV1,
 		Kind:             solutionhost.KindSolution,
 		Binding:          "acme.test." + solutionID,
 		Generation:       generation,

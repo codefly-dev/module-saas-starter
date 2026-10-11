@@ -3,7 +3,7 @@ module telemetry
 go 1.27.0
 
 require (
-	github.com/codefly-dev/sdk-go v0.2.1-0.20260926212413-b91ce91eb23e
+	github.com/codefly-dev/sdk-go v0.3.1
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/proto/otlp v1.11.0
 	google.golang.org/grpc v1.83.2
@@ -18,7 +18,7 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
-	github.com/codefly-dev/core v0.9.0 // indirect
+	github.com/codefly-dev/core v0.17.2 // indirect
 	github.com/go-openapi/analysis v1.0.0 // indirect
 	github.com/go-openapi/errors v0.22.8 // indirect
 	github.com/go-openapi/jsonpointer v1.0.1 // indirect
