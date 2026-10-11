@@ -28,7 +28,7 @@ const clients = vi.hoisted(() => ({
 	},
 }));
 
-const logout = vi.hoisted(() => vi.fn(async () => undefined));
+const logout = vi.hoisted(() => vi.fn(async () => ({ complete: true })));
 
 vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
@@ -91,6 +91,35 @@ describe("ConsentBanner", () => {
 		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
 		await waitFor(() => expect(replace).toHaveBeenCalledWith("/auth/login"));
 		expect(logout).toHaveBeenCalledTimes(1);
+		vi.unstubAllGlobals();
+	});
+
+	// The same control, when the server could NOT finish revoking.
+	//
+	// This banner is one of the two sign-out controls a person reaches when the
+	// account menu is unavailable, and it redirected to the login page whatever
+	// `logout()` reported — so the one case where a sign-out must not claim to
+	// have finished was the case it claimed loudest. Local state is cleared either
+	// way, which is what made it invisible: the app looks signed out while an
+	// unmarked access token stays valid until it expires.
+	it("sends an INCOMPLETE sign-out to the retry journey, not to login", async () => {
+		authState.isAuthenticated = true;
+		clients.consent.getStatus.mockResolvedValue({
+			currentTermsVersion: "terms-v1",
+			termsAcceptedVersion: "",
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+		logout.mockResolvedValueOnce({ complete: false });
+		const replace = vi.fn();
+		vi.stubGlobal("location", { ...window.location, replace });
+
+		render(<ConsentBanner legalConfigured={legalState.configured} />);
+
+		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+		await waitFor(() => expect(replace).toHaveBeenCalled());
+		expect(replace).toHaveBeenCalledWith("/auth/logout");
+		expect(replace).not.toHaveBeenCalledWith("/auth/login");
 		vi.unstubAllGlobals();
 	});
 

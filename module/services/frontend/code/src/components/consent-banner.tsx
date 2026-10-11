@@ -12,6 +12,7 @@ import {
 import { WaitlistService } from "@/gen/saas/accounts/v1/waitlist_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
+import { signOutAndLeave } from "@/lib/sign-out-journey";
 import { Button, Notice, Switch } from "@/shared/ui";
 
 const STORAGE_KEY = "saas-starter:consent-preferences";
@@ -155,10 +156,10 @@ export function ConsentBanner({
 				// leave the session. The kit renders it always, never disabled.
 				escape={{
 					label: "Sign out",
-					onSelect: async () => {
-						await logout();
-						window.location.replace("/auth/login");
-					},
+					// The shared journey, not a redirect of its own: an incomplete
+					// sign-out must not land on the login page, which would present a
+					// session the server could not revoke as ended.
+					onSelect: () => signOutAndLeave(logout),
 				}}
 				actions={
 					<Button
