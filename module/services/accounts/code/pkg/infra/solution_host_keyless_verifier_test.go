@@ -1,6 +1,10 @@
 package infra_test
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -77,6 +81,34 @@ func TestKeylessVerifierAcceptsAnAllowlistedSigner(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "delivery", signer)
 	require.Equal(t, map[string][]string{"delivery": {"acme"}}, infra.KeylessSignerDomains(verifier))
+}
+
+// The WIRE path: a carrier's bundle as delivery writes it — Sigstore bundle
+// v0.3 JSON with an inclusion proof — through the public VerifyBundle a host
+// calls, not the decision underneath. A workflow of the accepted repository is
+// admitted; the same workflow's certificate with no SCT, or with an SCT from a
+// log the root does not name, is refused.
+func TestVerifyBundleAdmitsAWorkflowAndRefusesAnUnloggedCertificate(t *testing.T) {
+	sigstore := newSigstoreWithCT(t)
+	payload := []byte(`{"schema":"codefly/solution-host-binding/v2","generation":1}`)
+	verifier, err := infra.NewSolutionHostKeylessVerifierFrom(sigstore, acceptedPolicy())
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	signer, err := verifier.VerifyBundle(ctx, payload,
+		sigstore.SignBundleWith(t, testIdentity, testIssuer, payload, signing{repository: testRepository}))
+	require.NoError(t, err)
+	require.Equal(t, "delivery", signer)
+
+	_, err = verifier.VerifyBundle(ctx, payload,
+		sigstore.SignBundleWith(t, testIdentity, testIssuer, payload, signing{repository: testRepository, noSCT: true}))
+	require.ErrorContains(t, err, "SCT")
+
+	unlisted, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	_, err = verifier.VerifyBundle(ctx, payload,
+		sigstore.SignBundleWith(t, testIdentity, testIssuer, payload, signing{repository: testRepository, sctKey: unlisted}))
+	require.ErrorContains(t, err, "SCT")
 }
 
 // The signature covers THESE bytes. A bundle that verifies over one payload must

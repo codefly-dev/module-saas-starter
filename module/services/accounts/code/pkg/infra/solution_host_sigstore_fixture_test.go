@@ -22,6 +22,7 @@ import (
 	cttls "github.com/google/certificate-transparency-go/tls"
 	ctx509 "github.com/google/certificate-transparency-go/x509"
 	ctx509util "github.com/google/certificate-transparency-go/x509util"
+	protobundle "github.com/sigstore/protobuf-specs/gen/pb-go/bundle/v1"
 	protocommon "github.com/sigstore/protobuf-specs/gen/pb-go/common/v1"
 	protorekor "github.com/sigstore/protobuf-specs/gen/pb-go/rekor/v1"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
@@ -31,6 +32,7 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/tlog"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // An in-process Sigstore whose certificates are what the public-good Fulcio
@@ -111,13 +113,28 @@ type signing struct {
 }
 
 // Sign issues a certificate for identity at issuer — an e-mail SAN for a
-// person, a URI SAN for a workflow — and signs payload with it.
-func (s *sigstoreWithCT) Sign(t *testing.T, identity, issuer string, payload []byte) verify.SignedEntity {
+// person, a URI SAN for a workflow — signs payload with it, and returns the
+// signed entity DECODED FROM THE SERIALIZED BUNDLE, so even the tests that drive
+// the verifier's decision directly hold an input the wire decoder accepted.
+func (s *sigstoreWithCT) Sign(t *testing.T, identity, issuer string, payload []byte) *bundle.Bundle {
 	t.Helper()
 	return s.SignWith(t, identity, issuer, payload, signing{})
 }
 
-func (s *sigstoreWithCT) SignWith(t *testing.T, identity, issuer string, payload []byte, how signing) verify.SignedEntity {
+func (s *sigstoreWithCT) SignWith(t *testing.T, identity, issuer string, payload []byte, how signing) *bundle.Bundle {
+	t.Helper()
+	decoded := &bundle.Bundle{}
+	require.NoError(t, decoded.UnmarshalJSON(s.SignBundleWith(t, identity, issuer, payload, how)),
+		"the fixture's bundle must be one the production decoder accepts")
+	return decoded
+}
+
+// SignBundleWith returns the carrier's `bundle` field exactly as delivery
+// writes it: a Sigstore bundle v0.3 in its JSON encoding, with a message
+// signature, the leaf certificate, an RFC 3161 timestamp, and a Rekor
+// hashedrekord entry carrying BOTH its signed entry timestamp and an inclusion
+// proof with a signed checkpoint — which the decoder requires from v0.2 on.
+func (s *sigstoreWithCT) SignBundleWith(t *testing.T, identity, issuer string, payload []byte, how signing) json.RawMessage {
 	t.Helper()
 	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -129,12 +146,24 @@ func (s *sigstoreWithCT) SignWith(t *testing.T, identity, issuer string, payload
 	stamp, err := s.TimestampResponse(signature)
 	require.NoError(t, err)
 
-	return &entityWithCT{
-		leaf:       leaf,
-		signature:  bundle.NewMessageSignature(digest[:], "SHA2_256", signature),
-		timestamps: [][]byte{stamp},
-		entries:    []*tlog.Entry{s.logEntry(t, leaf, digest[:], signature)},
-	}
+	encoded, err := protojson.Marshal(&protobundle.Bundle{
+		MediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
+		VerificationMaterial: &protobundle.VerificationMaterial{
+			Content: &protobundle.VerificationMaterial_Certificate{
+				Certificate: &protocommon.X509Certificate{RawBytes: leaf.Raw},
+			},
+			TlogEntries: []*protorekor.TransparencyLogEntry{s.logEntry(t, leaf, digest[:], signature)},
+			TimestampVerificationData: &protobundle.TimestampVerificationData{
+				Rfc3161Timestamps: []*protocommon.RFC3161SignedTimestamp{{SignedTimestamp: stamp}},
+			},
+		},
+		Content: &protobundle.Bundle_MessageSignature{MessageSignature: &protocommon.MessageSignature{
+			MessageDigest: &protocommon.HashOutput{Algorithm: protocommon.HashAlgorithm_SHA2_256, Digest: digest[:]},
+			Signature:     signature,
+		}},
+	})
+	require.NoError(t, err)
+	return encoded
 }
 
 // issue mints the leaf the way a CT-logging CA does: the TBS certificate is
@@ -223,9 +252,10 @@ func (s *sigstoreWithCT) create(t *testing.T, template *x509.Certificate, leafKe
 	return parsed
 }
 
-// logEntry records the signature in the fixture's Rekor as a hashedrekord, with
-// a signed entry timestamp the root's Rekor key verifies.
-func (s *sigstoreWithCT) logEntry(t *testing.T, leaf *x509.Certificate, digest, signature []byte) *tlog.Entry {
+// logEntry records the signature in the fixture's Rekor as a hashedrekord,
+// with a signed entry timestamp AND an inclusion proof whose checkpoint the
+// root's Rekor key signed.
+func (s *sigstoreWithCT) logEntry(t *testing.T, leaf *x509.Certificate, digest, signature []byte) *protorekor.TransparencyLogEntry {
 	t.Helper()
 	certificatePEM := "-----BEGIN CERTIFICATE-----\n" + base64.StdEncoding.EncodeToString(leaf.Raw) + "\n-----END CERTIFICATE-----\n"
 	// Canonical JSON: keys sorted, no whitespace — the encoding Rekor stores
@@ -252,16 +282,32 @@ func (s *sigstoreWithCT) logEntry(t *testing.T, leaf *x509.Certificate, digest, 
 		Body: base64.StdEncoding.EncodeToString(body), IntegratedTime: integrated, LogIndex: logIndex, LogID: logID,
 	})
 	require.NoError(t, err)
-	entry, err := tlog.NewTlogEntry(&protorekor.TransparencyLogEntry{
-		LogIndex:          logIndex,
-		LogId:             &protocommon.LogId{KeyId: logIDBytes},
-		KindVersion:       &protorekor.KindVersion{Kind: "hashedrekord", Version: "0.0.1"},
-		IntegratedTime:    integrated,
-		InclusionPromise:  &protorekor.InclusionPromise{SignedEntryTimestamp: promise},
-		CanonicalizedBody: body,
-	})
+
+	proof, err := s.GetInclusionProof(body)
 	require.NoError(t, err)
-	return entry
+	rootHash, err := hex.DecodeString(*proof.RootHash)
+	require.NoError(t, err)
+	hashes := make([][]byte, 0, len(proof.Hashes))
+	for _, encoded := range proof.Hashes {
+		hash, err := hex.DecodeString(encoded)
+		require.NoError(t, err)
+		hashes = append(hashes, hash)
+	}
+	return &protorekor.TransparencyLogEntry{
+		LogIndex:         logIndex,
+		LogId:            &protocommon.LogId{KeyId: logIDBytes},
+		KindVersion:      &protorekor.KindVersion{Kind: "hashedrekord", Version: "0.0.1"},
+		IntegratedTime:   integrated,
+		InclusionPromise: &protorekor.InclusionPromise{SignedEntryTimestamp: promise},
+		InclusionProof: &protorekor.InclusionProof{
+			LogIndex:   *proof.LogIndex,
+			RootHash:   rootHash,
+			TreeSize:   *proof.TreeSize,
+			Hashes:     hashes,
+			Checkpoint: &protorekor.Checkpoint{Envelope: *proof.Checkpoint},
+		},
+		CanonicalizedBody: body,
+	}
 }
 
 func publicKeyID(public crypto.PublicKey) [32]byte {
@@ -271,26 +317,6 @@ func publicKeyID(public crypto.PublicKey) [32]byte {
 	}
 	return sha256.Sum256(der)
 }
-
-// entityWithCT is the signed entity a v0.3 bundle presents: a leaf
-// certificate, a message signature over the payload's digest, a timestamp,
-// and the Rekor entry with its inclusion promise.
-type entityWithCT struct {
-	leaf       *x509.Certificate
-	signature  *bundle.MessageSignature
-	timestamps [][]byte
-	entries    []*tlog.Entry
-}
-
-func (e *entityWithCT) VerificationContent() (verify.VerificationContent, error) {
-	return bundle.NewCertificate(e.leaf), nil
-}
-func (e *entityWithCT) SignatureContent() (verify.SignatureContent, error) { return e.signature, nil }
-func (e *entityWithCT) Timestamps() ([][]byte, error)                      { return e.timestamps, nil }
-func (e *entityWithCT) TlogEntries() ([]*tlog.Entry, error)                { return e.entries, nil }
-func (e *entityWithCT) HasInclusionPromise() bool                          { return true }
-func (e *entityWithCT) HasInclusionProof() bool                            { return false }
-func (e *entityWithCT) Version() (string, error)                           { return "v0.3", nil }
 
 // The fixture is only evidence if the verifier really checks what it emits, so
 // the fixture is held to the host's own verification strength first: an SCT

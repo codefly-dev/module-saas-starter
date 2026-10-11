@@ -2,7 +2,7 @@ package infra
 
 import (
 	"context"
-	"encoding/pem"
+	"crypto/x509"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -225,15 +225,46 @@ func NewKubernetesClientForTestWithToken(t testingT, server *httptest.Server, to
 		endpoint:  server.URL,
 		tokenPath: tokenPath,
 		http:      server.Client(),
-		authority: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}),
 	}
 }
 
-// WithProjectedAuthorityForTest replaces the CA bundle a test client believes
-// the kubelet projected, so a test can hand it a bundle naming a cluster other
-// than the one serving — or both.
+// NewKubernetesClientInCluster builds a client the way NewKubernetesClient
+// does — the same construction, roots and redirect refusal — for a pod whose
+// kubelet projected this CA bundle, this token and this namespace, with
+// KUBERNETES_SERVICE_HOST/PORT pointing at endpoint.
+func NewKubernetesClientInCluster(t testingT, endpoint string, authority []byte, token, namespace string) *KubernetesClient {
+	t.Helper()
+	directory := t.TempDir()
+	tokenPath := filepath.Join(directory, "token")
+	namespacePath := filepath.Join(directory, "namespace")
+	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	if err := os.WriteFile(namespacePath, []byte(namespace), 0o600); err != nil {
+		t.Fatalf("write namespace: %v", err)
+	}
+	client, err := kubernetesClientFrom(endpoint, authority, tokenPath, namespacePath)
+	if err != nil {
+		t.Fatalf("build client: %v", err)
+	}
+	return client
+}
+
+// WithProjectedAuthorityForTest replaces the CA bundle a client believes the
+// kubelet projected, so a test can hand it a bundle naming more than one
+// cluster, or none.
 func WithProjectedAuthorityForTest(client *KubernetesClient, bundle []byte) *KubernetesClient {
 	client.authority = bundle
+	return client
+}
+
+// WithInitialRootsForTest widens the roots a client was CONSTRUCTED with, so a
+// test can prove a local binding replaces them rather than relying on how the
+// client happened to be built.
+func WithInitialRootsForTest(client *KubernetesClient, roots []byte) *KubernetesClient {
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(roots)
+	client.http = newKubernetesHTTPClient(pool)
 	return client
 }
 

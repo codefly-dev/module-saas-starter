@@ -1908,13 +1908,14 @@ func configuredSolutionHostBindingReconciler(
 	//
 	// A verification policy that declares itself local admits a developer's
 	// own identity, and it is bound to ONE cluster by that cluster's
-	// certificate authority. The proof is that the API server this host
-	// reviews tokens with completes a TLS handshake under that authority alone
-	// — the one fact about its deployment the host can establish without
-	// trusting the composition, which delivers this process's environment and
-	// writes neither the trust anchor nor the projected CA. A deployed host
-	// handed a local profile fails here, by name, rather than admitting a
-	// person. A deployed policy is bound to no cluster and this does nothing.
+	// certificate authority. The proof uses only what the kubelet puts in this
+	// pod: the projected CA bundle must be exactly the pinned certificate, and
+	// the API server reached under that certificate alone must authenticate
+	// this pod's own token. On success the pinned, redirect-refusing transport
+	// becomes THIS client's for the life of the process, so the TokenReviews
+	// and pod reads wired below run under the same binding. A host in any other
+	// cluster fails here, by name. A deployed policy is bound to no cluster and
+	// this does nothing.
 	//
 	// Not left to this call alone: until it succeeds the verifier itself
 	// refuses every carrier under a local policy, so a boot path that forgot to

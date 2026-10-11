@@ -911,19 +911,39 @@ kubectl --context <cluster.context> -n default get configmap kube-root-ca.crt \
   -o jsonpath='{.data.ca\.crt}' | openssl x509 -outform der | shasum -a 256
 ```
 
-At boot, before a carrier is read, the host proves it runs in that cluster: the
-projected CA bundle must hold a certificate with that fingerprint, **and** the API
-server the host reviews tokens with must complete a TLS handshake whose only root
-is that certificate. Until the proof succeeds a local profile admits nothing,
-so a boot path that skipped it would refuse developers rather than admit them
-elsewhere. A host that cannot prove it — a deployed host handed a local profile,
-or a local host whose cluster was recreated — refuses to start, naming the
-fingerprints its cluster does project.
+At boot, before a carrier is read, the host proves it runs in that cluster, using
+only what the kubelet puts in its pod — the CA bundle and its own token:
 
-**Why the cluster's authority, and not anything simpler.** The decisive question
-is how a host that is not the developer's refuses a local profile **without
-trusting anything the composition controls** — and the composition delivers this
-process's workspace environment, which is why the anchor's path is a constant.
+1. **The projected CA bundle is exactly the pinned certificate**: one
+   certificate, that fingerprint, nothing else. A bundle carrying any other root
+   is refused outright — the developer's authority beside a deployed cluster's
+   own is the shape every confusion between two clusters needs, so the case is
+   removed rather than argued with.
+2. **The API server authenticates this pod's own token.** Over a transport whose
+   only root is the pinned certificate and which follows no redirect, the host
+   submits a TokenReview of its own projected token and requires it to come back
+   as a bound service account in its own namespace. A genuine API server accepts
+   only tokens its own cluster minted, so a server that merely holds a
+   certificate under the pinned authority — the developer's real cluster, relayed
+   to a deployed pod — refuses the deployed pod's token.
+3. **The binding lasts for the life of the process.** That pinned,
+   redirect-refusing transport becomes the one the host's cluster client uses for
+   every later call — each TokenReview that authorises a delivery, each pod read.
+   A backend or DNS switch after boot to a server under any other authority breaks
+   authentication instead of continuing under a proof made against someone else.
+
+Until the proof succeeds a local profile admits nothing, so a boot path that
+skipped it would refuse developers rather than admit them elsewhere. A host that
+cannot prove it — a deployed host handed a local profile, or a local host whose
+cluster was recreated — refuses to start, naming the fingerprints its cluster does
+project. Every client this host has for the cluster follows no redirect, local or
+not.
+
+**Why the cluster's authority and the pod's own token, and not anything
+simpler.** The decisive question is how a host that is not the developer's refuses
+a local profile **without trusting anything the composition controls** — and the
+composition delivers this process's workspace environment, which is why the
+anchor's path is a constant.
 
 - *A setting, a coordinate prefix, any environment value* — refused. The
   composition could declare itself local; the deleted `local` trust policy died of
@@ -932,30 +952,46 @@ process's workspace environment, which is why the anchor's path is a constant.
 - *A cluster's self-description* — a `+k3s` server version, a node's provider
   ID — is a convention, not a property. A deployed cell may run k3s.
 - *The `kube-system` namespace UID* — unforgeable through an authenticated API
-  server, but it needs a cluster-scoped read this host does not otherwise hold, to
-  learn what the handshake establishes with no grant at all.
-- ***The certificate authority the API server proves it serves under*** — chosen.
-  It is the one fact about its own deployment the host can establish without the
-  composition: the kubelet projects the CA, and the handshake is made against the
-  pinned certificate **alone**. A CA bundle carrying the developer's authority
-  beside the deployed cluster's own does not pass — the deployed API server's
-  chain ends at its own authority — and neither does a redirected
-  `KUBERNETES_SERVICE_HOST`, which would need the private key of the developer's
-  cluster.
+  server, but it needs a cluster-scoped read this host does not otherwise hold,
+  and the own-token review already binds the pod to the cluster with the
+  TokenReview permission the host has.
+- ***The projected CA, held exactly and for the process lifetime, and the
+  cluster's acceptance of this pod's own token*** — chosen. Both are put in the
+  pod by the kubelet, not by the composition.
+
+**What is guaranteed.** A host whose pod carries the CA bundle and the
+service-account token of any cluster other than the pinned one refuses the
+profile at boot — whatever its workspace environment, its coordinate or its
+`KUBERNETES_SERVICE_HOST`/`PORT` say. A steered API address does not change that:
+the server it reaches must present a chain to the pinned authority (which a
+deployed pod's own bundle does not even contain) and must accept a token only the
+pod's real cluster minted.
+
+**What is not guaranteed, precisely:**
+
+- *The binding is to one cluster, not to the word "local".* Nothing a host can
+  observe distinguishes a developer's cluster from a production one by kind, so
+  whoever writes a deployed host's trust anchor could deliberately pin *that*
+  cluster's authority and admit a person there. That grants nothing new — the
+  anchor's writer can already list any workflow identity — and it cannot happen
+  by accident: a profile copied to another cluster names the wrong authority.
+- *An attacker holding three things at once defeats it:* the power to replace
+  this pod's projected CA bundle with exactly the pinned certificate (pod-spec
+  control, or a write to the namespace's `kube-root-ca.crt` ConfigMap the kubelet
+  projects, which the control plane reconciles back), the power to steer
+  `KUBERNETES_SERVICE_HOST`/`PORT`, **and** the pinned cluster's CA private key, to
+  run a fake API server that accepts any token. Such an attacker already decides
+  every Kubernetes answer this host relies on — every TokenReview, every pod
+  read — so the local profile gives it nothing it lacked. The composition holds
+  none of the three by itself: it delivers workspace environment, and neither the
+  pod spec, the projected CA nor the developer's cluster key.
+- *Two clusters sharing one CA and accepting each other's tokens* are one cluster
+  to this check.
 
 **The cost:** a local profile is valid in exactly one cluster. Recreating the
 cluster mints a new authority and the profile must be rewritten — one copy of the
-fingerprint the boot refusal prints.
-
-**The residual risk, precisely:** the binding is to *one cluster*, not to the
-word "local". Nothing a host can observe distinguishes a developer's cluster from
-a production one by kind, so whoever writes a deployed host's trust anchor could
-deliberately pin *that* cluster's authority and admit a person there. That grants
-nothing new — the anchor's writer can already list any workflow identity — and it
-cannot happen by accident: a local profile copied to another cluster names the
-wrong authority and refuses the boot. The composition can do neither: it writes
-neither the anchor nor the projected CA, and cannot make a server hold a key the
-pinned authority certified.
+fingerprint the boot refusal prints. And the host needs nothing new: it already
+creates TokenReviews.
 
 ### What a local run must therefore supply
 
