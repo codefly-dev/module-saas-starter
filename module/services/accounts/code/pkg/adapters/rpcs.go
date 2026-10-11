@@ -924,6 +924,19 @@ func (s *APIKeyServer) CreateAPIKey(ctx context.Context, req *gen.CreateAPIKeyRe
 	if err := requireOrgAdmin(ctx, actorID, req.OrganizationId); err != nil {
 		return nil, err
 	}
+	// Issuing a credential is a privilege-changing mutation, so it sits behind a
+	// recent second factor like the others (SP-IDENT-10). The key this returns
+	// authenticates as its creator for as long as it lives and without the
+	// session that asked for it, which is the thing a factor is protecting: an
+	// owner whose session was taken could mint a credential that outlives the
+	// theft and survives a password change.
+	//
+	// AFTER the authorization guards and BEFORE the mutation. requireMFA is
+	// fail-closed for a privileged actor, so an unenrolled owner or platform
+	// role is refused rather than admitted.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	response, err := service.CreateAPIKey(ctx, actorID, req)
 	return response, quotaStatusError(err)
 }

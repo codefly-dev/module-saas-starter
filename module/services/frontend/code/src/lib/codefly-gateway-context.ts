@@ -49,6 +49,21 @@ const runtimeSDK: CodeflyRuntimeReader = {
  * accepts and keeps it: no origin can be served on port 0, and the same range check
  * on both sides is worth more than matching the parser on a value that cannot occur.
  */
+// writtenHostname is the host as the operator SPELLED it, lowercased, with no
+// parsing beyond finding the authority. It exists so canonicalOrigin can tell a
+// dotted quad that was WRITTEN as one from a dotted quad the parser produced out
+// of an integer spelling, which is the only question the rule needs answered.
+function writtenHostname(candidate: string): string {
+	const afterScheme = candidate.slice(candidate.indexOf("//") + 2);
+	const authority = afterScheme.split(/[/?#]/, 1)[0] ?? "";
+	const hostAndPort = authority.slice(authority.lastIndexOf("@") + 1);
+	if (hostAndPort.startsWith("[")) {
+		return hostAndPort.slice(0, hostAndPort.indexOf("]") + 1).toLowerCase();
+	}
+	const colon = hostAndPort.indexOf(":");
+	return (colon === -1 ? hostAndPort : hostAndPort.slice(0, colon)).toLowerCase();
+}
+
 function canonicalOrigin(candidate: string): string | undefined {
 	try {
 		const parsed = new URL(candidate);
@@ -79,6 +94,26 @@ function canonicalOrigin(candidate: string): string | undefined {
 					return undefined;
 				}
 			}
+		}
+		// A NUMERIC spelling of an IPv4 address is refused, even though this
+		// parser accepts it, because it does not keep what was written:
+		// `2130706433`, `0x7f000001`, `127.1` and `0177.0.0.1` all come back as
+		// `127.0.0.1`, while Go's net/url preserves the original. Both services
+		// would be configured with one value and compare two, so every
+		// same-origin check fails and sign-in refuses — a configuration that
+		// cannot work, accepted at boot.
+		//
+		// Narrowed to exactly that rewrite: the parsed host is a dotted quad AND
+		// it is not what was written. The two rewrites the two sides DO agree on
+		// are untouched — an IPv6 literal compresses on both (`[0:0:…:1]` →
+		// `[::1]`) and a Unicode hostname encodes on both (`bücher.example` →
+		// `xn--bcher-kva.example`) — so this cannot be the broader "the parser
+		// changed something" test, which refused both of those.
+		if (
+			/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname) &&
+			writtenHostname(candidate) !== parsed.hostname
+		) {
+			return undefined;
 		}
 		return parsed.origin;
 	} catch {

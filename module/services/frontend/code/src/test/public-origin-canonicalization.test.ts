@@ -52,6 +52,10 @@ const refusedPublicOriginVectors: string[] = [
 	"https://app.example?q=1",
 	"https://app.example#f",
 	"https://user:secret@app.example",
+	"https://2130706433",
+	"https://0x7f000001",
+	"https://127.1",
+	"https://0177.0.0.1",
 	"app.example",
 	"",
 ];

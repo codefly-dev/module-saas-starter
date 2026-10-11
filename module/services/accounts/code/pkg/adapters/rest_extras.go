@@ -68,7 +68,21 @@ func refreshTokenCookie(next http.Handler) http.Handler {
 		rec := &bodyCapture{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 
-		if isLogout {
+		// The cookie is cleared only when the sign-out COMPLETED.
+		//
+		// It was cleared on every logout response, including the 503 that says
+		// "logout incomplete, retry". That answer exists so the caller can retry,
+		// and the retry needs the refresh token the cookie holds — clearing it
+		// destroyed the only credential that could finish the job, while an
+		// unmarked access token stayed valid. The browser then had no way back to
+		// a complete sign-out and no way to tell that it had not had one.
+		//
+		// A failed sign-out leaving the credential in place is the lesser harm of
+		// the two: the family revocation runs LAST in Logout and its error is
+		// returned directly, so a 5xx here means the durable half did not land
+		// either and the session is genuinely still live. Pretending otherwise is
+		// what this avoids.
+		if isLogout && rec.status >= 200 && rec.status < 300 {
 			clearRefreshCookie(w)
 		}
 		body := rec.buf.Bytes()

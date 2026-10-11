@@ -140,11 +140,58 @@ func canonicalPublicOriginHost(hostname string) (string, error) {
 		// and net.IP.String() picks the same representation the browser does.
 		return ip.String(), nil
 	}
+	if numericHostSpelling(hostname) {
+		// A host the WHATWG parser reads as an IPv4 ADDRESS but spells differently
+		// from this side. `https://2130706433`, `https://0x7f000001` and
+		// `https://127.1` are all 127.0.0.1 to a browser and to the frontend's
+		// `new URL(...)`, which rewrites them to the dotted quad; Go's net/url
+		// preserves whatever was written. Both sides would then be configured with
+		// one value and compare two, so every same-origin check fails and sign-in
+		// refuses — a configuration that cannot work, accepted at boot.
+		//
+		// Refused rather than rewritten. Rewriting would mean reimplementing that
+		// parser's integer-host rules in Go and keeping them in step forever, for a
+		// spelling no deployment needs: a dotted quad says the same thing and both
+		// sides already agree on it.
+		return "", fmt.Errorf(
+			"public origin host %q is a numeric spelling of an address, which this "+
+				"host and the browser's URL parser render differently; write it as a "+
+				"dotted quad (or a hostname)", hostname)
+	}
 	ascii, err := publicOriginHostProfile.ToASCII(hostname)
 	if err != nil {
 		return "", fmt.Errorf("public origin host is not a usable hostname")
 	}
 	return ascii, nil
+}
+
+// numericHostSpelling reports whether a hostname that is NOT already a canonical
+// IP literal would be read as an IPv4 address by the WHATWG URL parser.
+//
+// That parser's trigger is the last label: if it parses as a number — decimal,
+// hex `0x…`, or octal with a leading zero — the whole host is an address and is
+// re-rendered as a dotted quad. net.ParseIP has already accepted every spelling
+// the two sides agree on before this runs, so anything reaching here with a
+// numeric final label is a spelling only one side would keep.
+func numericHostSpelling(hostname string) bool {
+	labels := strings.Split(hostname, ".")
+	last := labels[len(labels)-1]
+	if last == "" {
+		// A trailing dot: the label before it decides.
+		if len(labels) < 2 {
+			return false
+		}
+		last = labels[len(labels)-2]
+	}
+	if last == "" {
+		return false
+	}
+	if lower := strings.ToLower(last); strings.HasPrefix(lower, "0x") {
+		_, err := strconv.ParseUint(lower[2:], 16, 64)
+		return err == nil && len(lower) > 2
+	}
+	_, err := strconv.ParseUint(last, 10, 64)
+	return err == nil
 }
 
 // canonicalPublicOriginPort renders the port as the ":NNN" suffix of a canonical

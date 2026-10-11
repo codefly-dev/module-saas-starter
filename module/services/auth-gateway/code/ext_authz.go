@@ -35,6 +35,10 @@ type accessClaims struct {
 	ScopedRoles           map[string][]string `json:"sr,omitempty"`
 	ScopedRolesTruncated  bool                `json:"srt,omitempty"`
 	SessionID             string              `json:"sid"`
+	// FamilyID is the refresh family, stable across the rotation that changes
+	// `sid`. A sign-out revokes it, so it is what matches an access token minted
+	// before the last refresh.
+	FamilyID string `json:"fid"`
 	ActingAsUserID        string              `json:"acting,omitempty"`
 	MFASatisfied          bool                `json:"mfa,omitempty"`
 	AuthenticationMethods []string            `json:"amr,omitempty"`
@@ -329,12 +333,21 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		}
 	}
 
-	// Session-scoped revocation (admin session-kill). A single marker keyed by
-	// the `sid` claim invalidates every access token in the session, covering
-	// the path where the admin never held the victim's token. Same fail-closed
-	// stance as the jti check.
-	if claims.SessionID != "" {
-		revoked, err := s.revoker.RevokedSession(ctx, claims.SessionID)
+	// Session- and family-scoped revocation. One marker invalidates every access
+	// token it covers, which is what the paths needing it have in common: the
+	// admin never held the victim's token (session-kill), and the token predates
+	// the last refresh (sign-out). Same fail-closed stance as the jti check.
+	//
+	// BOTH keys, because `sid` changes on every refresh and the family does not.
+	// Checking the session alone let an access token minted before the last
+	// refresh outlive the sign-out that revoked its family. accounts stamps the
+	// family on every access token in the chain and writes the same marker on
+	// logout; the two sides are held together by TestAccessClaimsMatchTheGateway.
+	for _, revocationKey := range []string{claims.SessionID, claims.FamilyID} {
+		if revocationKey == "" {
+			continue
+		}
+		revoked, err := s.revoker.RevokedSession(ctx, revocationKey)
 		switch {
 		case err != nil && !s.revocationFailOpen:
 			log.Printf("session revocation check failed, denying (fail-closed): %v", err)

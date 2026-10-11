@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -102,4 +105,42 @@ func TestAnAPIKeyIsRefusedAtAToolEndpoint(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "names no resource")
 	require.Nil(t, example.lastHeaders, "and the runtime is not reached")
+}
+
+// The amplification case, asserted at the decision point rather than through
+// ServeHTTP: the Work Context mint.
+//
+// It is the worst of the escapes, which is why it gets its own test. Admitted
+// there, a captured resource token buys capabilities for FURTHER audiences — the
+// escape stops being "this one resource's traffic" and becomes the person's
+// authority anywhere a context can be minted for. The Connect route is not in
+// the test harness's catalog (ServeHTTP answers 404 before any credential is
+// read), so the confinement is asserted on ExtAuthz.Check, which is where it is
+// actually decided and where the real deployment reaches it.
+func TestResourceTokenIsRefusedAtTheWorkContextMint(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	s, priv := newTestExtAuthz(t)
+
+	bound := validClaims(time.Now())
+	bound.Audience = jwt.ClaimStrings{
+		"saas-starter", testPublicBase + "/api/solutions/example/proxy/mcp",
+	}
+
+	resp, err := s.Check(context.Background(), checkReq(
+		"/saas.accounts.v1.WorkContextService/StartTask", map[string]string{
+			"authorization": "Bearer " + signClaims(t, priv, bound),
+		}))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetDeniedResponse(),
+		"a resource-bound token must not be admitted at the mint")
+	require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))
+
+	// The control: an unbound session still mints. Confinement must narrow a
+	// resource token, not close the mint.
+	ok, err := s.Check(context.Background(), checkReq(
+		"/saas.accounts.v1.WorkContextService/StartTask", map[string]string{
+			"authorization": "Bearer " + signClaims(t, priv, validClaims(time.Now())),
+		}))
+	require.NoError(t, err)
+	require.NotNil(t, ok.GetOkResponse(), "an ordinary session still reaches the mint")
 }

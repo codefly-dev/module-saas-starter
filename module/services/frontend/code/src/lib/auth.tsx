@@ -310,6 +310,19 @@ export async function deriveOAuthNonce(state: string): Promise<string> {
 // provider's token endpoint as `code_verifier`. The provider re-hashes
 // it and compares — this binds the code redemption to the original
 // authorize request and blocks a stolen-code replay.
+/**
+ * What a sign-out actually achieved.
+ *
+ * `complete: false` means the server could not finish revoking — it answers 503
+ * "logout incomplete, retry" when an access-revocation marker cannot be written
+ * — or that nothing answered at all. The refresh family is only revoked when the
+ * server returns success, and the refresh cookie is kept in the incomplete case
+ * so a retry still has the credential it needs.
+ */
+export interface SignOutResult {
+	complete: boolean;
+}
+
 export async function newPkce(): Promise<{
 	verifier: string;
 	challenge: string;
@@ -393,7 +406,12 @@ interface AuthContextType extends AuthState {
 		userId?: string,
 		mfaToken?: string,
 	) => boolean;
-	logout: () => Promise<void>;
+	// Reports whether the sign-out COMPLETED. An incomplete one (the server
+	// answers 503 "logout incomplete, retry") leaves an unmarked access token
+	// valid until it expires, so a caller that presents sign-out to a person must
+	// not present it as finished. Callers free to ignore it still get the local
+	// state cleared; what they lose is only the ability to say so.
+	logout: () => Promise<SignOutResult>;
 	switchOrganization: (organizationId: string) => Promise<void>;
 	// Installs an impersonation access token as the active session. The admin's
 	// own refresh cookie is untouched, so it remains the way back out.
@@ -822,21 +840,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		window.location.replace("/auth/login");
 	}, []);
 
-	const logout = useCallback(async () => {
+	const logout = useCallback(async (): Promise<SignOutResult> => {
 		// Always hit logout so the server clears the httpOnly refresh cookie, even
 		// if we have no access token in memory. The refresh token is read from the
 		// cookie server-side (no body token needed).
-		await fetch("/v1/auth/logout", {
-			method: "POST",
-			credentials: "include",
-			headers: {
-				"Content-Type": "application/json",
-				...(state.accessToken
-					? { Authorization: `Bearer ${state.accessToken}` }
-					: {}),
-			},
-			body: JSON.stringify({}),
-		}).catch(() => {});
+		//
+		// The OUTCOME is observed. This swallowed every failure, so a 503 saying
+		// "logout incomplete, retry" cleared the local state and rendered a
+		// finished sign-out while an unmarked access token stayed valid — the
+		// product asserting something the server had just refused to assert. A
+		// network failure counts as incomplete for the same reason: nothing
+		// confirmed the session ended.
+		let complete = false;
+		try {
+			const response = await fetch("/v1/auth/logout", {
+				method: "POST",
+				credentials: "include",
+				headers: {
+					"Content-Type": "application/json",
+					...(state.accessToken
+						? { Authorization: `Bearer ${state.accessToken}` }
+						: {}),
+				},
+				body: JSON.stringify({}),
+			});
+			complete = response.ok;
+		} catch {
+			complete = false;
+		}
+		// The local state is cleared either way: the person asked to sign out, and
+		// leaving them signed in HERE would neither end the session nor tell them
+		// anything. The server keeps the refresh cookie on an incomplete sign-out,
+		// so the retry credential survives this.
 		clearRefreshToken();
 		sessionStorage.removeItem("codefly_mfa_login_token");
 		setConnectToken(null);
@@ -850,6 +885,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			isLoading: false,
 			isAuthenticated: false,
 		});
+		return { complete };
 	}, [state.accessToken]);
 
 	const enterImpersonation = useCallback(

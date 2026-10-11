@@ -48,12 +48,19 @@ var canonicalPublicOriginVectors = []struct{ Input, Canonical string }{
 	{"https://BÜCHER.example", "https://xn--bcher-kva.example"},
 }
 
-// Refused on both sides. Every entry but one is refused by the browser parser too.
+// Refused on both sides. Most entries are refused by the browser parser too.
 //
-// The exception is port 0, which `new URL` accepts and keeps. It is refused here
-// because no origin can be served on it, and a rule both sides apply is worth more
-// than matching the parser on a value that cannot occur: the frontend's
-// canonicalOrigin applies the same range check, so the two still agree.
+// Two groups are deliberately stricter than that parser, because a rule both sides
+// apply is worth more than matching it on a value no deployment needs:
+//
+//   - PORT 0, which `new URL` accepts and keeps. No origin can be served on it,
+//     and the frontend's canonicalOrigin applies the same range check.
+//   - A NUMERIC SPELLING of an address, which that parser accepts and REWRITES:
+//     `2130706433`, `0x7f000001`, `127.1` and `0177.0.0.1` all come back as
+//     `127.0.0.1`, while Go's net/url preserves what was written. Configuring
+//     either side with one of these gives the two services different values from
+//     the same configuration, so every same-origin comparison fails and sign-in
+//     refuses. A dotted quad says the same thing and both sides keep it.
 var refusedPublicOriginVectors = []string{
 	"https://:443",
 	"https://app.example:99999",
@@ -65,6 +72,10 @@ var refusedPublicOriginVectors = []string{
 	"https://app.example?q=1",
 	"https://app.example#f",
 	"https://user:secret@app.example",
+	"https://2130706433",
+	"https://0x7f000001",
+	"https://127.1",
+	"https://0177.0.0.1",
 	"app.example",
 	"",
 }
