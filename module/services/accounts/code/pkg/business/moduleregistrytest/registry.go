@@ -46,9 +46,13 @@ func Parse(raw string) (business.ModulePrincipalRegistry, error) {
 	for prefix, declared := range wire {
 		// The tenant is canonicalized as the envelope parser canonicalizes it,
 		// so a fixture spelling it in upper case states what a host would hold.
-		tenant, err := uuid.Parse(declared.Tenant)
-		if err != nil {
-			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
+		tenant := ""
+		if declared.Tenant != "" {
+			parsed, err := uuid.Parse(declared.Tenant)
+			if err != nil {
+				return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
+			}
+			tenant = parsed.String()
 		}
 		grant := business.ModulePrincipalGrant{
 			ArtifactPolicies:   declared.ArtifactPolicies,
@@ -60,7 +64,7 @@ func Parse(raw string) (business.ModulePrincipalRegistry, error) {
 			ExternalNamespaces: declared.ExternalNamespaces,
 			Resources:          declared.Resources,
 			CrossTenant:        declared.CrossTenant,
-			Tenant:             tenant.String(),
+			Tenant:             tenant,
 			Workload:           declared.Workload,
 		}
 		if err := business.ValidateModulePrincipalGrant(prefix, grant); err != nil {

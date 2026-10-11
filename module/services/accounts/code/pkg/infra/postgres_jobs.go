@@ -36,7 +36,17 @@ func (s *PostgresJobStore) Claim(
 	}
 
 	response := &jobsv1.ClaimJobsResponse{}
+	claim, module := jobs.ModuleClaim(ctx)
+	var stamp []byte
+	if module {
+		stamp, _ = json.Marshal(claim.Attributes())
+	} else {
+		stamp = []byte("null")
+	}
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := cancelRevokedModuleJobs(ctx, tx, request.GetQueue()); err != nil {
+			return err
+		}
 		if err := recoverExpiredJobLeases(ctx, tx, request.GetQueue(), request.GetLimit()); err != nil {
 			return err
 		}
@@ -46,6 +56,7 @@ func (s *PostgresJobStore) Claim(
 			request.GetLimit(),
 			request.GetWorkerId(),
 			request.GetLeaseDuration().AsDuration().Seconds(),
+			stamp,
 		)
 		if err != nil {
 			return err
@@ -384,6 +395,12 @@ const claimJobsSQL = `
 		FROM job_messages message
 		WHERE message.queue = $1
 		  AND message.state IN ('pending', 'retrying')
+		  AND (NOT (message.attributes ? 'codefly.installation_id') OR public.module_job_authority_current(message.attributes))
+		  AND ($5::jsonb = 'null'::jsonb OR (
+		      public.module_job_authority_current($5::jsonb)
+		      AND (message.organization_id::text = $5::jsonb->>'codefly.organization_id'
+		           OR message.attributes->>'codefly.organization_id' = $5::jsonb->>'codefly.organization_id')
+		  ))
 		  AND message.available_at <= NOW()
 		  AND message.attempt_count < message.max_attempts
 		  AND (
@@ -552,4 +569,20 @@ func optionalTimestamp(value *time.Time) *timestamppb.Timestamp {
 		return nil
 	}
 	return timestamppb.New(*value)
+}
+
+// Unleased cancellation: stale work must release its ordering key even when no
+// worker may claim it. Revocation's trigger normally already did this.
+func cancelRevokedModuleJobs(ctx context.Context, tx pgx.Tx, queue string) error {
+	_, err := tx.Exec(ctx, `WITH canceled AS (
+ UPDATE public.job_messages SET state='canceled', completed_at=clock_timestamp(),
+ lease_owner=NULL, lease_token=NULL, lease_expires_at=NULL, heartbeat_at=NULL,
+ last_error_code='revoked_authority', last_error_message='installation authority changed'
+ WHERE queue=$1 AND state IN ('pending','processing','retrying')
+ AND attributes ? 'codefly.installation_id' AND NOT public.module_job_authority_current(attributes)
+ RETURNING id)
+ UPDATE public.job_attempts a SET finished_at=clock_timestamp(), outcome='canceled',
+ error_code='revoked_authority', error_message='installation authority changed'
+ FROM canceled c WHERE a.job_id=c.id AND a.finished_at IS NULL`, queue)
+	return err
 }

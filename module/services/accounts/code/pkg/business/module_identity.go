@@ -52,8 +52,12 @@ var registrationIdentityPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z
 // sealed here — every call re-reads the declared grant, so narrowing a module's
 // authority takes effect immediately rather than when its current token expires.
 type ModuleWorkContextAuthority struct {
-	PrincipalID string
-	Tenant      string
+	// Resolved consent for the Work Context cutover; the SDK encoding cannot yet seal it.
+	InstallationID       string
+	InstallationRevision uint64
+	ProducerEpoch        uint64
+	PrincipalID          string
+	Tenant               string
 	// Execution is what BindExecution established about the caller: the pod,
 	// its ServiceAccount, the image it is running and the approved build's
 	// incarnation. Every mint carries one; there is no unbound module identity.
@@ -77,7 +81,15 @@ func (s *Service) ModuleAuthorizeWorkContext(
 ) (ModuleWorkContextAuthority, error) {
 	snapshot := s.moduleRegistrySnapshot()
 	identity, _, err := s.authorizeModuleIdentity(ctx, snapshot, prefix, serviceAccountToken)
-	return identity, err
+	if err != nil {
+		return identity, err
+	}
+	installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: identity.PrincipalID, BoundOrg: identity.Tenant})
+	if err != nil {
+		return ModuleWorkContextAuthority{}, err
+	}
+	identity.InstallationID, identity.InstallationRevision, identity.ProducerEpoch = installed.InstallationID, installed.InstallationRevision, installed.ProducerEpoch
+	return identity, nil
 }
 
 // authorizeModuleIdentity derives every identity fact from the mint's one
@@ -131,6 +143,15 @@ func (s *Service) FenceModuleMint(ctx context.Context, authority ModuleWorkConte
 	fresh := context.WithValue(ctx, moduleEnvelopeRevisionMemoKey{}, &moduleEnvelopeRevisionMemo{})
 	if err := s.fenceModuleRegistrySnapshot(fresh, snapshot); err != nil {
 		return err
+	}
+	if authority.InstallationID != "" {
+		live, _, err := s.authorizeModuleCapabilityFromSnapshot(fresh, snapshot, ModuleCaller{PrincipalID: authority.PrincipalID, BoundOrg: authority.Tenant})
+		if err != nil {
+			return err
+		}
+		if live.InstallationID != authority.InstallationID || live.InstallationRevision != authority.InstallationRevision {
+			return wrapStatus(codes.PermissionDenied, ErrModuleAuthorityStale, "installation changed during mint")
+		}
 	}
 	if s.modulePrincipals.Load() != snapshot {
 		return wrapStatus(codes.Unavailable, ErrModuleRegistryStale, "module registry was replaced during the mint")

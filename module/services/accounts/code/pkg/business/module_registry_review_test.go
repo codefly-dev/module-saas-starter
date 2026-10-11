@@ -27,17 +27,18 @@ func (reviewControlPlaneStore) WithControlPlane(ctx context.Context, fn func(con
 }
 
 // reviewLiveAuthority answers every live read as current.
-type reviewLiveAuthority struct{}
+type reviewLiveAuthority struct{ service *Service }
 
-func (reviewLiveAuthority) LiveModuleAuthority(context.Context, string, string, string) (*LiveModuleAuthority, error) {
-	return &LiveModuleAuthority{}, nil
+func (f reviewLiveAuthority) LiveModuleAuthority(_ context.Context, principal string, _ string, _ string) (*LiveModuleAuthority, error) {
+	grant := f.service.ModulePrincipals()[principal]
+	return &LiveModuleAuthority{InstallationID: "current", RegistryBindingID: grant.PresenceBinding, Scope: FullInstallationScope(grant)}, nil
 }
 
 // reviewService holds one principal of tenant org-1, as a capability check
 // sees it.
 func reviewService() *Service {
 	service := &Service{store: reviewControlPlaneStore{}}
-	service.SetModuleAuthorityReads(reviewLiveAuthority{}, nil)
+	service.SetModuleAuthorityReads(reviewLiveAuthority{service: service}, nil)
 	service.SetModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}})
 	return service
 }
@@ -77,10 +78,10 @@ func (*fakeEnvelopeStore) AppendModuleEnvelopeRecord(context.Context, *ModuleEnv
 // load would see revision 4, pass, and hand out revision 3's queue.
 func TestTheFenceChecksTheSnapshotTheGrantCameFrom(t *testing.T) {
 	s := reviewService()
-	s.installDerivedModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}}, 3)
+	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}}, 3)
 	store := &fakeEnvelopeStore{latest: 4}
 	s.SetModuleEnvelopeStore(store)
-	store.duringRead = func() { s.installDerivedModulePrincipals(ModulePrincipalRegistry{}, 4) }
+	store.duringRead = func() { s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{}, 4) }
 
 	authority, err := s.AuthorizeModuleCapability(context.Background(), reviewCaller())
 	require.ErrorIs(t, err, ErrModuleRegistryStale, "the grant's own registry predates the committed revision")
@@ -99,7 +100,7 @@ func TestTheFenceRefusesWhenTheCommittedRevisionCannotBeRead(t *testing.T) {
 // pays one revision read however many decisions it makes.
 func TestOneRequestReadsTheCommittedRevisionOnce(t *testing.T) {
 	s := reviewService()
-	s.installDerivedModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}}, 3)
+	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}}, 3)
 	store := &fakeEnvelopeStore{latest: 3}
 	s.SetModuleEnvelopeStore(store)
 	ctx := WithModuleEnvelopeRevisionMemo(context.Background())
@@ -120,7 +121,7 @@ func TestMintsAndRevisionConfirmationReadTheCommittedRevision(t *testing.T) {
 		s := &Service{store: reviewControlPlaneStore{}}
 		grant := parseTestEnvelope(t).Principals[testModulePrefix].Grant
 		grant.Workload = ModuleWorkload{Namespace: "acme-prod", ServiceAccount: "reports", Container: "app"}
-		s.installDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID(testModulePrefix): grant}, 3)
+		s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID(testModulePrefix): grant}, 3)
 		s.SetModuleEnvelopeStore(store)
 		return s, bindTestModule(s, testModulePrefix)
 	}
@@ -320,7 +321,7 @@ func newRegistryReview(t *testing.T) *registryReview {
 	verifier := &stubBundleVerifier{signer: "example-signer"}
 	service := &Service{store: store, deliveryStore: inbox}
 	service.SetModuleEnvelopeStore(&fakeEnvelopeStore{latest: 3, record: &ModuleEnvelopeRecord{Revision: 3, Document: encodeEnvelope(t, testEnvelopeDocument())}})
-	service.SetModuleAuthorityReads(reviewLiveAuthority{}, nil)
+	service.SetModuleAuthorityReads(reviewLiveAuthority{service: service}, nil)
 	host := solutionhost.Host{
 		Coordinate:      authority.Host.Coordinate,
 		Domains:         []string{authority.OwnershipDomain, "other-domain"},
@@ -643,10 +644,10 @@ func referenceExchange(t *testing.T) (*Service, *referenceExchangeStore, *fakeEn
 		PrincipalID: "example-person", SourceID: "example-source", ModulePrefix: "source", BindingID: "sync",
 		BindingDigest: SourceDelegationBindingDigest(sourceBinding)}}
 	s := &Service{store: store}
-	s.SetModuleAuthorityReads(reviewLiveAuthority{}, nil)
+	s.SetModuleAuthorityReads(reviewLiveAuthority{service: s}, nil)
 	envelopes := &fakeEnvelopeStore{latest: 3}
 	s.SetModuleEnvelopeStore(envelopes)
-	s.installDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID("worker"): worker}, 3)
+	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID("worker"): worker}, 3)
 	return s, store, envelopes, ModuleCaller{PrincipalID: ModulePrincipalID("worker"), BoundOrg: testEnvelopeTenant},
 		ModulePrincipalRegistry{ModulePrincipalID("worker"): narrowed, ModulePrincipalID("source"): source}
 }
@@ -663,7 +664,7 @@ func TestAReferenceExchangeReadsBothPrincipalsFromOneSnapshot(t *testing.T) {
 
 	store.duringGet = func() {
 		envelopes.latest = 4
-		s.installDerivedModulePrincipals(newer, 4)
+		s.InstallDerivedModulePrincipals(newer, 4)
 	}
 	_, err = s.AuthorizeDelegationReferenceExchange(WithModuleEnvelopeRevisionMemo(context.Background()), caller, store.delegation.ID, "run", false)
 	require.ErrorIs(t, err, ErrSourceDelegationInvalid, "the delegator is read from the caller's snapshot, never a later install")
@@ -742,4 +743,8 @@ func TestRegistryInputsKeepConcurrentWithdrawalInTheNextSnapshot(t *testing.T) {
 	// The committed withdrawal is visible on the following pass.
 	require.NoError(t, r.reconciler.RunOnce(context.Background()))
 	require.False(t, r.present())
+}
+
+func (*fakeEnvelopeStore) ModuleInstallations(context.Context) ([]ModuleInstallationConsent, error) {
+	return nil, nil
 }

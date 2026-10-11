@@ -13,16 +13,11 @@
 #
 # A. CAPABILITY DECISIONS that must be routed through
 #    Service.AuthorizeModuleCapability. These are the real outstanding work.
-# Arrived with main's executable-artifact consent (#1025), which landed while
-# this gate lived on a branch, so neither side could see the other. Both decide
-# authority off the declared ceiling: the revocation decides who may withdraw
-# consent to run an artifact, and the current-installation read decides what a
-# declared module may learn about its own installation. Routing them is this
-# file's group-A work and is owed, not waived — and the revocation is owed a
-# policy-log receipt in the same pass (see unwitnessedNarrowings), so the two
-# belong in one change rather than two.
+# Executable-artifact revocation still decides who may withdraw consent from
+# the declared ceiling. It also needs a policy-log receipt (see
+# unwitnessedNarrowings). ModuleCurrentInstallation now re-reads consent and its
+# entry was removed by #1057; the baseline cannot permit its regression.
 executable_artifacts.go:RevokeApprovedExecutableArtifact
-current_installation.go:ModuleCurrentInstallation
 #
 # B. WRITES made under a capability already authorised upstream. They re-read the
 #    registry to resolve a declared value rather than to decide authority, so

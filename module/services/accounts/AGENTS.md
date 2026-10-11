@@ -438,8 +438,10 @@ image, approved incarnation. The response carries
   task, session, actor chain and TTL, because the host signs the `sdk-go`
   encoding, which has no seal field, and core's `WorkSealV1` — which does carry
   installation id and revision, build incarnation and image digest — requires an
-  installation id that module principals do not hold until #1057. The execution
-  is bound at mint and recorded in the mint's audit event; `checkAgainstSealed`
+  installation id. #1057 now resolves that id and revision from the calling
+  organization's explicit installation and carries them in mint authority.
+  Passing them to the signer remains part of the Work Context cutover. The
+  execution is bound at mint and recorded in its audit; `checkAgainstSealed`
   still returns on its first line for every real module credential, so every
   consequence listed above is still a consequence until the Work Context cutover
   seals it.
@@ -461,9 +463,10 @@ image, approved incarnation. The response carries
 
   **What is built.** Every module capability path resolves its authority through
   `Service.AuthorizeModuleCapability`, which re-reads the live installation, its
-  revision and the principal's producer epoch in **one** statement — three
-  separate reads would let a revoke land between two of them and produce a
-  decision describing a state that never existed. The revocation predicate is a
+  scope, revision, registry binding, envelope revision and principal epoch in
+  **one** statement, against the decision's single fenced registry snapshot.
+  No installation grants no capability, even for an unsealed credential. Scope
+  is intersected with delivered authority and the envelope on every use. The revocation predicate is a
   conjunction and each term closes a different hole:
 
   - **installation freshness**, without which an uninstall-and-reinstall produces
@@ -518,7 +521,7 @@ image, approved incarnation. The response carries
   `TestEveryModuleCapabilityPathReReadsLiveAuthority` in `module/tools` is what
   makes "every path" true rather than aspirational: it walks the AST for any
   function calling `moduleGrant` directly and holds the set against a
-  **shrink-only** baseline, now empty. Its non-vacuity check is anchored on the
+  **shrink-only** baseline of the remaining explicitly classified readers. Its non-vacuity check is anchored on the
   enforcement rather than on the violations — zero direct callers is the goal, so
   deleting the wrapper must not satisfy it.
 
@@ -527,10 +530,10 @@ image, approved incarnation. The response carries
   revision, epoch or binding fields, so in a running deployment every
   `Sealed` is nil and the intersection is the live half alone. That is sound for
   narrowing and silent about widening, which is strictly better than before and
-  strictly weaker than the target. The intersection also does not yet cover
-  queues, resources, namespaces, external publication and audiences; only the
-  three authority terms above. Those are gated on the Work Context cutover to
-  core's `workcontext`, tracked on #952 / PR #953 as Lane 3 condition 1.
+  strictly weaker than the target. The live intersection now covers queues,
+  resources, namespaces, external publication, read and operation audiences and
+  artifact approvals. Binding these ceilings into the credential remains part
+  of the cutover to core's `workcontext`.
 
 ## Establishing what a caller is running
 
@@ -768,17 +771,16 @@ that authority (`pkg/business/source_delegation.go`):
   — which recognises a person-owned context with a module actor and confirms it
   from the delegation rather than the row-backed agent path — stops confirming it
   once any of them moves.
-- **The delegation authorizes the organization; `cross_tenant` is never
-  consulted.** Recording, the mint, the revision check and the exchange ignore a
-  module's `tenant` and `cross_tenant`: a module bound to one tenant mints for a
-  delegation in another, a `cross_tenant` module gains nothing, and a principal
-  gains no cross-organization reach from a delegation beyond the one binding it
-  names.
+- **Delegation and installation are both required at use.** Minting, revision
+  confirmation and exchange hold the actor's installation in the delegation's
+  organization to the current envelope. `cross_tenant` permits consent in other
+  organizations; it never lets one organization's installation grant another's
+  data. An exchange's caller is bound to the same organization as its parent.
 - **Exchange, by parent token.** `ExchangeDelegatedOperationAudience` of a parent
   whose actor hop is a declared module principal carrying a delegation id admits
   the parent's tenant by re-checking that delegation
-  (`ConfirmSourceDelegationParent`), not by the caller's `authorizeTenant`; the
-  parent must still be addressed to the caller and the child is attenuated to the
+  (`ConfirmSourceDelegationParent`) and the actor's installation; the parent
+  must be in the caller's organization, addressed to the caller, and attenuated to the
   caller's binding. A parent without such a hop, and every read exchange, keep
   `authorizeTenant` unchanged. Exactly one actor hop is accepted: a delegation
   grants to one actor, and an audience exchange appends none, so a deeper chain

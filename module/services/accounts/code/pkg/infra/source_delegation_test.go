@@ -54,9 +54,9 @@ func bindDelegationModules(svc *business.Service, registry business.ModulePrinci
 	}
 }
 
-// delegationRegistry declares three modules, every one bound to otherTenant and
-// none holding cross_tenant — the delegation, never the declared tenancy, is
-// what admits an organization:
+// delegationRegistry declares three modules inside the requested tenancy.
+// An empty tenant is shared: each organization supplies its own installation,
+// and a source delegation independently supplies the person's authority:
 //   - docstore, whose one binding accepts source delegations and is addressed
 //     to the runtime module;
 //   - reports, which accepts delegations too, so "another module's delegation"
@@ -175,7 +175,7 @@ func newDelegationWorld(t *testing.T) *delegationWorld {
 	seedOrgAdministrator(t, w.org, w.other)
 	w.otherOrg = seedOrg(t, w.other)
 	seedOrgAdministrator(t, w.otherOrg, w.other)
-	w.svc = w.service(t, delegationRegistry(t, w.otherOrg))
+	w.svc = w.service(t, delegationRegistry(t, ""))
 	return w
 }
 
@@ -186,9 +186,11 @@ func (w *delegationWorld) service(t *testing.T, registry business.ModulePrincipa
 	// Revoking a principal or a delegation is a witnessed narrowing, so a
 	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
 	wireNarrowingPolicyLog(svc)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(testStore, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
-	bindDelegationModules(svc, registry)
+	installCapabilityFixture(t, svc, w.org, w.admin)
+	installCapabilityFixture(t, svc, w.otherOrg, w.other)
+	bindDelegationModules(svc, svc.ModulePrincipals())
 	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
 	svc.SetDatasourceConnector(delegationCipher{}, delegationProducer{}, "")
 	svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return delegationGitHub{} })
@@ -270,9 +272,8 @@ func TestSourceDelegation_ConnectThenMint(t *testing.T) {
 	sourceID := w.connect(t, w.org, w.admin)
 
 	// Every module whose binding declares source_delegation_scopes receives one,
-	// though both are bound to another organization and neither holds
-	// cross_tenant; the runtime module declares no such binding and receives
-	// none.
+	// each has explicit consent in this organization; the runtime module
+	// declares no such binding and receives none.
 	require.Len(t, w.active(t, w.org, sourceID), 2)
 	delegation := w.only(t, w.org, sourceID, delegationModule)
 	require.Equal(t, delegationModule, delegation.ModulePrefix)
@@ -465,7 +466,7 @@ func TestSourceDelegation_CrossOrganizationAndCrossModule(t *testing.T) {
 	_, err = w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleToken, business.SourceDelegationRef{DelegationID: business.NewIDString()})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
 
-	// Both organizations are reached through their delegations alone.
+	// Each organization is reached through its own installation and delegation.
 	authorityB, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleToken, business.SourceDelegationRef{DelegationID: delegationB.ID})
 	require.NoError(t, err)
 	require.Equal(t, w.otherOrg, authorityB.Tenant)
@@ -564,7 +565,7 @@ func TestSourceDelegation_BindingChanged(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
-	widened, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + w.otherOrg + `","operation_audiences":{` +
+	widened, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
@@ -620,4 +621,33 @@ func TestSourceDelegation_PublicSourceReconnectsWithoutACredential(t *testing.T)
 	authority, err := w.mint(business.SourceDelegationRef{SourceID: source.ID})
 	require.NoError(t, err)
 	require.Equal(t, w.other, authority.OwnerPrincipalID)
+}
+
+// An old cross-org delegation cannot bypass a dedicated envelope even when a
+// historical installation row still exists. No capability is minted.
+func TestSourceDelegation_DedicatedTenantCannotBorrowInstallation(t *testing.T) {
+	w := newDelegationWorld(t)
+	source := w.connect(t, w.org, w.admin)
+	registry := w.svc.ModulePrincipals()
+	principal := business.ModulePrincipalID(delegationModule)
+	grant := registry[principal]
+	grant.Tenant = w.otherOrg
+	registry[principal] = grant
+	var revision uint64
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		revision, err = testStore.LatestModuleEnvelopeRevision(ctx)
+		return err
+	}))
+	w.svc.InstallDerivedModulePrincipals(registry, revision)
+	_, err := w.mint(business.SourceDelegationRef{SourceID: source})
+	require.ErrorIs(t, err, business.ErrModuleTenantNotCurrent)
+	grant.Tenant = ""
+	registry[principal] = grant
+	w.svc.InstallDerivedModulePrincipals(registry, revision)
+	authority, err := w.mint(business.SourceDelegationRef{SourceID: source})
+	require.NoError(t, err)
+	require.NotEmpty(t, authority.InstallationID)
+	require.Equal(t, uint64(1), authority.InstallationRevision)
+	require.Equal(t, w.org, authority.Tenant)
 }

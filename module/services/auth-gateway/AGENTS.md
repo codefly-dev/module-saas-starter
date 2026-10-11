@@ -37,22 +37,16 @@ alias the catalog *owns* is refused outright rather than half-served — the mat
 takes only the paths it matches, so serving the rest would split one prefix
 between two authorities.
 
-Beyond that it is the **solution shape, with one deliberate difference**: the same
-cache, the same single carried resolution, the same upstream URL policy, the same
-guarded (resolve-revalidating) transport, the same tombstone rule, the same 120 s
-revocation bound — and **no per-viewer installation admission**, because a module
-is part of the composition rather than something an organisation installs. The
-path is forwarded **unchanged** (a module owns its own `/v1/<alias>` surface),
-where a solution's prefix is stripped.
+It uses the **solution shape**: the same cache, single carried resolution,
+upstream URL policy, guarded transport, tombstone rule and 120 s presence
+revocation bound. Before forwarding a bearer it asks accounts for the viewer's
+live entitlement to the resolved target, without caching that decision. Accounts
+intersects the delivered authority, envelope and organization's installation
+scope. The path is forwarded unchanged; a module owns its `/v1/<alias>` surface.
 
-That asymmetry is why the registry carries `SolutionDeclaredBinding.kind` and why
-neither surface guesses: routing a solution here would put its upstream behind no
-installation check. Each surface requires its own kind positively and answers a
-403 verdict for the other — `module is not declared on this host`, or `solution is
-not declared on this host`. `SOLUTION_DECLARED_KIND_UNSPECIFIED` is refused by
-**both**: it is what a reader decodes from a writer that did not set the field, not
-a third kind, so such a record is served by neither surface rather than by the one
-needing less authority.
+The registry's `SolutionDeclaredBinding.kind` positively identifies each surface.
+An unspecified kind is refused by both. Neither presence nor a reusable alias
+constitutes organization consent.
 
 Module identity exchanges are described below; accounts owns their authority.
 

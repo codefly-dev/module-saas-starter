@@ -146,6 +146,8 @@ func (w ModuleWorkload) validateForm(prefix string) error {
 }
 
 type ModulePrincipalGrant struct {
+	// PresenceBinding is the durable registry key proven by delivered authority.
+	PresenceBinding    string                              `json:"presence_binding,omitempty"`
 	ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
 	ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
 	OperationAudiences map[string]ModuleOperationAudience  `json:"operation_audiences"`
@@ -299,6 +301,11 @@ func ModulePrincipalID(prefix string) string {
 // returns, so an uppercase, braced, urn:uuid: or unhyphenated spelling would
 // pass a parse and then match its own organization nowhere.
 func canonicalModuleTenant(prefix, raw string) (string, error) {
+	// Empty is the envelope's shared tenancy. It does not select an organization:
+	// every capability still requires its own bound org and live installation.
+	if raw == "" {
+		return "", nil
+	}
 	tenant, err := uuid.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
@@ -488,9 +495,8 @@ func authorizeTenant(caller ModuleCaller, grant ModulePrincipalGrant, requested 
 	if requested == caller.BoundOrg {
 		return nil
 	}
-	if grant.CrossTenant {
-		return nil
-	}
+	// cross_tenant permits installations in other organizations; a capability
+	// decision is still bound to the installation read for its own organization.
 	return status.Errorf(codes.PermissionDenied, "principal %s may not act on tenant %s", caller.PrincipalID, requested)
 }
 
@@ -529,8 +535,12 @@ func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string
 // worker producer.
 func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, tenant string, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
 	w := wool.Get(ctx).In("ModuleEnqueueJob")
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
 	if err != nil {
+		return nil, err
+	}
+	grant := authority.Grant
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
 		return nil, err
 	}
 	job := req.GetJob()
@@ -541,6 +551,7 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, ten
 		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not use queue %q", caller.PrincipalID, job.GetQueue())
 	}
 
+	req = jobs.StampModuleJob(req, authority.JobAuthority())
 	scope := job.GetScope()
 	var resp *jobsv1.EnqueueJobResponse
 	switch {
@@ -594,27 +605,20 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, ten
 	return resp, nil
 }
 
-// ModuleClaimJobs leases a bounded batch from one queue the principal owns.
-// Claiming a queue reads every scope on it — global work and every tenant's
-// org- and subject-scoped jobs (the claim selects by queue with no tenant
-// filter) — so a claimed payload can belong to any tenant. That makes claiming
-// an inherently cross-tenant, inbox-worker operation: it requires the cross-
-// tenant grant, not merely the queue grant. Without this a tenant-bound
-// principal could read other tenants' confidential job payloads off a shared
-// queue (e.g. datasource, which carries every tenant's ingest jobs).
+// ModuleClaimJobs leases only work attributable to the caller's organization.
+// The store also re-checks the producer installation stamp before leasing; a
+// cross_tenant ceiling never turns this into an unscoped queue read.
 func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
 	w := wool.Get(ctx).In("ModuleClaimJobs")
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
+	grant := authority.Grant
 	if !grant.allowsQueue(req.GetQueue()) {
 		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not claim queue %q", caller.PrincipalID, req.GetQueue())
 	}
-	if !grant.CrossTenant {
-		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not claim queue %q: claiming reads across tenants and requires a cross-tenant grant", caller.PrincipalID, req.GetQueue())
-	}
-	resp, err := s.moduleJobStore.Claim(ctx, req)
+	resp, err := s.moduleJobStore.Claim(jobs.WithModuleClaim(ctx, authority.JobAuthority()), req)
 	if err != nil {
 		return nil, moduleJobError(w, err)
 	}

@@ -2,6 +2,9 @@ package business
 
 import (
 	"context"
+	"errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -13,6 +16,7 @@ import (
 // pattern so business depends on an interface rather than the full PostgresStore.
 // Its one method runs inside the caller's WithOrgTx transaction.
 type SolutionEntitlementStore interface {
+	InstallationAuthorityState(context.Context, string, string) (*InstallationAuthorityState, error)
 	// ListSolutionEntitlements returns the org's active installations whose
 	// authority-root scope node subjectID may act on, ordered on the keyset the
 	// cursor advances. limit is the wanted page size PLUS one: the extra row is how
@@ -52,14 +56,48 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 		pageSize = listSolutionEntitlementsMaxPageSize
 	}
 
+	snapshot := s.moduleRegistrySnapshot()
+	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
+		return nil, err
+	}
 	var entitlements []*gen.SolutionEntitlement
-	if err := s.store.WithOrgTx(ctx, req.GetOrgId(), func(ctx context.Context) error {
-		out, e := s.solutionEntitlementStore().ListSolutionEntitlements(
-			ctx, req.GetOrgId(), req.GetSubjectId(), req.GetPageToken(), pageSize+1)
-		entitlements = out
-		return e
-	}); err != nil {
-		return nil, w.Wrapf(err, "cannot list solution entitlements")
+	cursor := req.GetPageToken()
+	for len(entitlements) <= pageSize {
+		var rows []*gen.SolutionEntitlement
+		states := map[string]*InstallationAuthorityState{}
+		if err := s.store.WithOrgTx(ctx, req.GetOrgId(), func(ctx context.Context) error {
+			var err error
+			rows, err = s.solutionEntitlementStore().ListSolutionEntitlements(ctx, req.GetOrgId(), req.GetSubjectId(), cursor, pageSize+1)
+			if err != nil {
+				return err
+			}
+			for _, row := range rows {
+				state, err := s.solutionEntitlementStore().InstallationAuthorityState(ctx, req.GetOrgId(), row.GetInstallationId())
+				if err != nil {
+					return err
+				}
+				states[row.GetInstallationId()] = state
+			}
+			return nil
+		}); err != nil {
+			return nil, w.Wrapf(err, "cannot list solution entitlements")
+		}
+		for _, row := range rows {
+			allowed, err := s.installationEntitlementCurrent(ctx, snapshot, req.GetOrgId(), row.GetInstallationId(), states[row.GetInstallationId()])
+			if err != nil {
+				return nil, err
+			}
+			if allowed {
+				entitlements = append(entitlements, row)
+			}
+			if len(entitlements) > pageSize {
+				break
+			}
+		}
+		if len(rows) < pageSize+1 {
+			break
+		}
+		cursor = rows[len(rows)-1].GetInstallationId()
 	}
 
 	var nextToken string
@@ -70,4 +108,24 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 		nextToken = entitlements[pageSize-1].GetInstallationId()
 	}
 	return &gen.ListSolutionEntitlementsResponse{Entitlements: entitlements, NextPageToken: nextToken}, nil
+}
+
+// Every proxied installation requires explicit registry-associated consent.
+// Empty backfills cannot become module authority if a later declaration changes
+// a target's routing kind. Re-consent must create the explicit association.
+func (s *Service) installationEntitlementCurrent(ctx context.Context, snapshot *installedModuleRegistry, orgID, id string, state *InstallationAuthorityState) (bool, error) {
+	if state == nil {
+		return false, nil
+	}
+	if state.PrincipalID == "" {
+		return false, nil
+	}
+	authority, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: state.PrincipalID, BoundOrg: orgID})
+	if err != nil {
+		if status.Code(err) == codes.PermissionDenied || errors.Is(err, ErrModuleInstallationInactive) {
+			return false, nil
+		}
+		return false, err
+	}
+	return authority.InstallationID == id && authority.InstallationRevision == state.Revision && authority.Grant.PresenceBinding == state.BindingID, nil
 }

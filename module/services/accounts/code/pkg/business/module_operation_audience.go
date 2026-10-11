@@ -173,17 +173,16 @@ func (s *Service) ModuleOperationAudience(ctx context.Context, caller ModuleCall
 	return binding, nil
 }
 
-// ModuleOperationAudienceForDelegation resolves the calling module's operation
-// binding for a parent whose tenant a source delegation authorizes. It is
-// ModuleOperationAudience without the tenant check: the caller has already
-// re-checked the delegation (ConfirmSourceDelegationParent) — active, in the
-// parent's tenant, from the parent's owner — and that delegation, not the
-// caller's declared tenant or cross_tenant grant, is what admits the tenant.
-// The parent must still be addressed to the caller, and the binding must still
-// be one the caller declares.
+// ModuleOperationAudienceForDelegation resolves the caller's installed binding
+// after its parent delegation was confirmed. The delegation and caller must
+// belong to the same organization; neither delegation nor cross_tenant bypasses
+// that organization's installation and the current envelope.
 func (s *Service) ModuleOperationAudienceForDelegation(ctx context.Context, caller ModuleCaller, delegation *SourceDelegation, parentAudience, bindingID string) (ModuleOperationAudience, error) {
 	if !delegation.Active() {
 		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "source delegation is not active")
+	}
+	if delegation.OrgID != caller.BoundOrg {
+		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "delegation belongs to a different installation organization")
 	}
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {

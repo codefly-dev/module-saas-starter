@@ -20,10 +20,11 @@ import (
 // Revision and epoch are 0 on purpose: a credential sealed at any non-zero
 // value is still refused through this, so a test proving a stale seal is
 // rejected needs no opt-out.
-type currentModuleAuthority struct{}
+type currentModuleAuthority struct{ service *business.Service }
 
-func (currentModuleAuthority) LiveModuleAuthority(
-	_ context.Context, _, _, _ string,
+func (f currentModuleAuthority) LiveModuleAuthority(
+	_ context.Context, principal, _, _ string,
 ) (*business.LiveModuleAuthority, error) {
-	return &business.LiveModuleAuthority{InstallationID: "installation-current"}, nil
+	grant := f.service.ModulePrincipals()[principal]
+	return &business.LiveModuleAuthority{InstallationID: "installation-current", RegistryBindingID: grant.PresenceBinding, Scope: business.FullInstallationScope(grant)}, nil
 }

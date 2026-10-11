@@ -68,6 +68,16 @@ func (s *Service) ModuleAuthorizeOperationContext(
 		validateOperationAudiences(grant.Prefix, map[string]ModuleOperationAudience{bindingID: binding}) != nil {
 		return ModuleOperationContextAuthority{}, ErrModuleOperationContextRefused
 	}
+	installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: identity.PrincipalID, BoundOrg: identity.Tenant})
+	if err != nil {
+		return ModuleOperationContextAuthority{}, err
+	}
+	grant = installed.Grant
+	binding, declared = grant.OperationAudiences[bindingID]
+	if !declared || len(binding.HeadlessScopes) == 0 {
+		return ModuleOperationContextAuthority{}, ErrModuleOperationContextRefused
+	}
+	identity.InstallationID, identity.InstallationRevision, identity.ProducerEpoch = installed.InstallationID, installed.InstallationRevision, installed.ProducerEpoch
 	scopes := make([]ModuleOperationScope, 0, len(binding.HeadlessScopes))
 	for _, scope := range binding.HeadlessScopes {
 		scopes = append(scopes, ModuleOperationScope{
@@ -131,8 +141,8 @@ func operationScopeGrants(scopes []ModuleOperationScope) []string {
 // ModuleOperationContextRevision is the authorization revision a module
 // operation context is sealed with. A module principal is declared by the
 // deployment, not registered per organization, so it has no row-backed revision
-// counter; its authority IS its module registry entry. The revision is
-// therefore a digest of that entry: deterministic across replicas and restarts,
+// counter. The revision is a digest of the effective registry grant after
+// intersecting this organization's installation scope: deterministic across replicas and restarts,
 // and different the moment the entry changes, so a narrowed, widened or removed
 // grant stops confirming every context minted under the old one. It is never
 // zero, which the revision check's contract reserves for "no revision".
@@ -170,7 +180,7 @@ var ErrModuleOperationContextStale = errors.New("module operation context is not
 // not a module principal, so the caller falls through to the row-backed check
 // every person- and installation-owned context takes.
 //
-// For a module owner the answer comes from the declaration alone, and every
+// For a module owner the answer comes from current installed authority, and every
 // mismatch is ErrModuleOperationContextStale, never a widening:
 //   - the tenant must be the one the module principal declares (the mint never
 //     seals another);
@@ -186,14 +196,19 @@ func (s *Service) CheckModuleOperationContextRevision(
 	// The confirmation is a decision about current authority like the mint,
 	// so it is judged from one snapshot fenced against the committed envelope:
 	// a stale replica must not confirm what a committed narrowing revoked.
-	grant, isModule, err := s.currentModuleGrant(ctx, ownerPrincipalID)
+	grant, isModule, snapshot, err := s.currentModuleGrantIn(ctx, ownerPrincipalID)
 	if err != nil {
 		return true, err
 	}
 	if !isModule {
 		return false, nil
 	}
-	if orgID != grant.Tenant || revision != ModuleOperationContextRevision(grant) || len(subjects) == 0 {
+	installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: ownerPrincipalID, BoundOrg: orgID})
+	if err != nil {
+		return true, err
+	}
+	grant = installed.Grant
+	if !moduleAvailableToOrganization(grant, orgID) || revision != ModuleOperationContextRevision(grant) || len(subjects) == 0 {
 		return true, ErrModuleOperationContextStale
 	}
 	for _, subject := range subjects {

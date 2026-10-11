@@ -101,7 +101,7 @@ func installModuleWorkContextService(t *testing.T, declaredPrincipals string) *r
 	require.NoError(t, err)
 	registry, err := moduleregistrytest.Parse(declaredPrincipals)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	bindModuleExecution(t, svc, registry)
 	WithService(svc)

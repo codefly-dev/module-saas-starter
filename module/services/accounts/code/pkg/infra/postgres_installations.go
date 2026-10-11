@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -108,6 +109,11 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
 	executor := s.getQueryExecutor(ctx)
+	if params.RegistryPrincipalID != "" {
+		if err := checkInstallationEnvelope(ctx, executor, params.EnvelopeRevision); err != nil {
+			return nil, err
+		}
+	}
 	if err := lockSolutionInstallation(ctx, executor, params.OrgID, params.TargetID); err != nil {
 		return nil, err
 	}
@@ -173,15 +179,24 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		return nil, w.Wrapf(err, "failed to grant standing scope to agent")
 	}
 
-	// 4. The installation row with its owner of record.
+	// 4. Persist explicit consent. A direct store call with no scope grants none.
+	consent := params.Scope
+	if consent == nil {
+		consent = &business.InstallationScope{}
+	}
+	scopeJSON, err := json.Marshal(consent)
+	if err != nil {
+		return nil, err
+	}
 	installation, err := scanInstallation(executor.QueryRow(ctx, `
 		INSERT INTO installations
 			(id, org_id, agent_principal_id, target_id, owner_principal_id,
-			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id)
-		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, 'active', NULLIF($7, '')::uuid)
+			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope)
+		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, 'active', NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb)
 		RETURNING `+installationColumns,
 		params.OrgID, agentID, params.TargetID, params.OwnerPrincipalID,
 		stringArray(params.CoOwnerPrincipalIDs), nodeID, params.InstallerPrincipalID,
+		params.Kind, params.RegistryBindingID, params.RegistryPrincipalID, scopeJSON,
 	))
 	if err != nil {
 		// A concurrent install of the same solution won the race between the
@@ -283,6 +298,23 @@ func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *b
 // on record, so a narrowed ceiling is never silently discarded. Identical params
 // reconcile to a no-op and the caller returns the existing row.
 func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, existing *gen.Installation, params *business.InstallSolutionParams) error {
+	var installedScope []byte
+	var principal, binding, kind string
+	if err := executor.QueryRow(ctx, `SELECT scope, COALESCE(registry_principal_id::text,''), registry_binding_id, kind FROM installations WHERE id=$1::uuid AND org_id=$2::uuid`, existing.Id, existing.OrgId).Scan(&installedScope, &principal, &binding, &kind); err != nil {
+		return err
+	}
+	var current business.InstallationScope
+	if err := json.Unmarshal(installedScope, &current); err != nil {
+		return err
+	}
+	requested := business.InstallationScope{}
+	if params.Scope != nil {
+		requested = *params.Scope
+	}
+	sameAuthority := principal == params.RegistryPrincipalID &&
+		(params.RegistryBindingID == "" || binding == params.RegistryBindingID) &&
+		(params.Kind == "" || kind == params.Kind) &&
+		business.InstallationScopeWithin(current, requested) && business.InstallationScopeWithin(requested, current)
 	var allowedAudiences, allowedScopes []string
 	var agentIdentifier, displayName string
 	var live bool
@@ -305,7 +337,7 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 		existing.OrgId, existing.RootScopeNodeId, existing.AgentPrincipalId).Scan(&roleID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("load existing standing grant role: %w", err)
 	}
-	if roleID == params.RoleID && live && agentIdentifier == params.AgentIdentifier &&
+	if sameAuthority && roleID == params.RoleID && live && agentIdentifier == params.AgentIdentifier &&
 		existing.OwnerPrincipalId == params.OwnerPrincipalID &&
 		(params.DisplayName == "" || params.DisplayName == displayName) &&
 		sameStringSet(allowedAudiences, params.AllowedAudiences) &&

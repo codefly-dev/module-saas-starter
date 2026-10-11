@@ -81,6 +81,7 @@ func caller() ModuleCaller {
 func liveAt(revision, epoch uint64) *fakeModuleAuthority {
 	return &fakeModuleAuthority{live: &LiveModuleAuthority{
 		InstallationID:       "install-1",
+		Scope:                InstallationScope{Capabilities: true, Queues: []string{"a"}},
 		InstallationRevision: revision,
 		ProducerEpoch:        epoch,
 	}}
