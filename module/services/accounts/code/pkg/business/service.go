@@ -1053,30 +1053,37 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 // (requireSubjectInOrgTx). The platform-level path names no organization and is
 // authorised separately, so it is not narrowed by this.
 func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*gen.AssignRoleResponse, error) {
+	orgID, subjectID := req.OrgId, req.SubjectId
+	var err error
+	if orgID != "" {
+		orgID, subjectID, err = canonicalSubjectTenancyIDs(orgID, subjectID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	assignment := &gen.RoleAssignment{
 		Id:          NewIDString(),
-		SubjectId:   req.SubjectId,
+		SubjectId:   subjectID,
 		SubjectKind: req.SubjectKind,
 		RoleId:      req.RoleId,
-		OrgId:       req.OrgId,
+		OrgId:       orgID,
 		Scope:       req.Scope,
 	}
 	wrap := func(ctx context.Context) error {
-		if req.OrgId != "" {
-			if err := s.requireSubjectInOrgTx(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+		if orgID != "" {
+			if err := s.requireSubjectInOrgTx(ctx, orgID, subjectID, req.SubjectKind); err != nil {
 				return err
 			}
 		}
 		if err := s.store.AssignRole(ctx, assignment); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, req.SubjectId, "user", EventRoleAssigned, "role", req.RoleId, req.OrgId)
+		return s.emitTx(ctx, subjectID, "user", EventRoleAssigned, "role", req.RoleId, orgID)
 	}
-	var err error
-	if req.OrgId == "" {
+	if orgID == "" {
 		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
-		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
+		err = s.store.WithOrgTx(ctx, orgID, wrap)
 	}
 	if err != nil {
 		return nil, err

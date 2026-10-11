@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +18,8 @@ import (
 	"accounts/pkg/adapters"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -211,4 +215,222 @@ func TestSubjectWritesWaitForAConcurrentMembershipRemoval(t *testing.T) {
 			require.True(t, errors.Is(err, business.ErrSubjectOutsideOrganization), "got %v", err)
 		})
 	}
+}
+
+// Match a waiter against an advisory lock held by this exact transaction.
+// Waiting on an authorization-revision row is the bug, not proof of exclusion.
+func awaitSubjectMembershipWait(t *testing.T, holder context.Context) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var waiting bool
+		err := storetx.Tx(holder).QueryRow(holder, `
+			SELECT EXISTS (
+				SELECT 1 FROM pg_locks waiter JOIN pg_locks held
+				USING (locktype, database, classid, objid, objsubid)
+				WHERE NOT waiter.granted AND held.granted
+				  AND held.locktype = 'advisory' AND held.pid = pg_backend_pid()
+			)`).Scan(&waiting)
+		return err == nil && waiting
+	}, 5*time.Second, 20*time.Millisecond, "the contender must wait on this transaction's membership lock")
+}
+
+func writeTenancySubject(ctx context.Context, svc *business.Service, w *tenancyWorld, write, org, subject string) error {
+	if write == "AssignRole" {
+		_, err := svc.AssignRole(ctx, &gen.AssignRoleRequest{
+			SubjectId: subject, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			RoleId: w.role, OrgId: org, Scope: "docs",
+		})
+		return err
+	}
+	_, err := svc.ShareRecord(ctx, w.admin, &gen.ShareRecordRequest{
+		OrgId: org, ResourceType: "doc", ResourceId: "record-1",
+		SubjectId: subject, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, RoleId: w.role,
+	})
+	return err
+}
+
+func (w *tenancyWorld) requireNoSubjectWrite(t *testing.T) {
+	t.Helper()
+	assignments, err := testService.ListRoleAssignments(testCtx, &gen.ListRoleAssignmentsRequest{OrgId: w.org, SubjectId: w.member})
+	require.NoError(t, err)
+	for _, assignment := range assignments.Assignments {
+		require.NotEqual(t, w.role, assignment.RoleId, "no assignment may land after removal")
+	}
+	shares, err := testService.ListShares(testCtx, &gen.ListSharesRequest{OrgId: w.org, ResourceType: "doc", ResourceId: "record-1"})
+	require.NoError(t, err)
+	require.Empty(t, shares.Shares, "no share may land after removal")
+}
+
+func TestSubjectWritesWaitForNonCanonicalMembershipRemoval(t *testing.T) {
+	for name, spell := range map[string]func(string) string{
+		"uppercase": strings.ToUpper,
+		"compact":   func(id string) string { return strings.ReplaceAll(id, "-", "") },
+		"braced":    func(id string) string { return "{" + id + "}" },
+		"urn":       func(id string) string { return "urn:uuid:" + id },
+	} {
+		for _, spellingOnRemoval := range []bool{false, true} {
+			for _, write := range []string{"AssignRole", "ShareRecord"} {
+				which := "write"
+				if spellingOnRemoval {
+					which = "removal lock"
+				}
+				t.Run(name+"/"+which+"/"+write, func(t *testing.T) {
+					w := newTenancyWorld(t)
+					ctx, cancel := context.WithTimeout(testCtx, 15*time.Second)
+					var wg sync.WaitGroup
+					t.Cleanup(func() { cancel(); wg.Wait() })
+					done := make(chan error, 1)
+					require.NoError(t, testStore.WithControlPlane(ctx, func(txctx context.Context) error {
+						lockOrg, lockUser, writeOrg, writeUser := w.org, w.member, spell(w.org), spell(w.member)
+						if spellingOnRemoval {
+							lockOrg, lockUser, writeOrg, writeUser = spell(w.org), spell(w.member), w.org, w.member
+						}
+						if err := testStore.LockOrgMembership(txctx, lockOrg, lockUser); err != nil {
+							return err
+						}
+						if err := testStore.RemoveOrgMember(txctx, w.org, w.member); err != nil {
+							return err
+						}
+						wg.Add(1)
+						go func() { defer wg.Done(); done <- writeTenancySubject(ctx, testService, w, write, writeOrg, writeUser) }()
+						awaitSubjectMembershipWait(t, txctx)
+						return nil
+					}))
+					require.ErrorIs(t, <-done, business.ErrSubjectOutsideOrganization)
+					w.requireNoSubjectWrite(t)
+				})
+			}
+		}
+	}
+}
+
+// Pause after the real bulk DELETE while its transaction and locks remain open.
+type pausedBulkMembershipStore struct {
+	*infra.PostgresStore
+	removed chan context.Context
+	release <-chan struct{}
+}
+
+func (s *pausedBulkMembershipStore) RemoveAllOrgMembers(ctx context.Context, org string) (int64, error) {
+	n, err := s.PostgresStore.RemoveAllOrgMembers(ctx, org)
+	if err != nil {
+		return n, err
+	}
+	select {
+	case s.removed <- ctx:
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+	select {
+	case <-s.release:
+		return n, nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+}
+
+func TestSubjectWritesWaitForBulkMembershipRemoval(t *testing.T) {
+	for _, deletion := range []string{"RemoveAllOrgMembers", "DeleteOrganization"} {
+		for _, write := range []string{"AssignRole", "ShareRecord"} {
+			t.Run(deletion+"/"+write, func(t *testing.T) {
+				w := newTenancyWorld(t)
+				ctx, cancel := context.WithTimeout(testCtx, 15*time.Second)
+				release := make(chan struct{})
+				store := &pausedBulkMembershipStore{PostgresStore: testStore, removed: make(chan context.Context, 1), release: release}
+				writer, err := business.NewService(testStore)
+				require.NoError(t, err)
+				var wg sync.WaitGroup
+				t.Cleanup(func() { cancel(); wg.Wait(); testService.SetStore(testStore) })
+				testService.SetStore(store)
+				removed := make(chan error, 1)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					if deletion == "DeleteOrganization" {
+						removed <- testService.DeleteOrganization(ctx, w.admin, &gen.DeleteOrganizationRequest{OrgId: w.org, ConfirmSlug: "subject-a-admin-org"})
+					} else {
+						removed <- testStore.WithControlPlane(ctx, func(txctx context.Context) error { _, err := store.RemoveAllOrgMembers(txctx, w.org); return err })
+					}
+				}()
+				var holder context.Context
+				select {
+				case holder = <-store.removed:
+				case err := <-removed:
+					t.Fatalf("removal failed before barrier: %v", err)
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				}
+				written := make(chan error, 1)
+				wg.Add(1)
+				go func() { defer wg.Done(); written <- writeTenancySubject(ctx, writer, w, write, w.org, w.member) }()
+				awaitSubjectMembershipWait(t, holder)
+				close(release)
+				require.NoError(t, <-removed)
+				require.ErrorIs(t, <-written, business.ErrSubjectOutsideOrganization)
+				w.requireNoSubjectWrite(t)
+			})
+		}
+	}
+}
+
+// Pause an actual AssignRole after its membership check and before the write
+// acquires authorization-revision/session locks. Archiving must wait here.
+type pausedSubjectAssignmentStore struct {
+	*infra.PostgresStore
+	checked chan context.Context
+	release <-chan struct{}
+}
+
+func (s *pausedSubjectAssignmentStore) AssignRole(ctx context.Context, assignment *gen.RoleAssignment) error {
+	select {
+	case s.checked <- ctx:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-s.release:
+		return s.PostgresStore.AssignRole(ctx, assignment)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestDeleteOrganizationWaitsForSubjectAssignmentBeforeTriggerWrites(t *testing.T) {
+	w := newTenancyWorld(t)
+	hash := sha256.Sum256([]byte("member-refresh-" + w.member))
+	now := time.Now()
+	require.NoError(t, testSessionStore.Insert(testCtx, &authcore.SessionRecord{
+		UserID: uuid.MustParse(w.member), OrgID: uuid.MustParse(w.org), FamilyID: uuid.New(), RefreshHash: hash[:],
+		AuthenticatedAt: now, IdleExpiresAt: now.Add(time.Hour), ExpiresAt: now.Add(2 * time.Hour),
+	}))
+	ctx, cancel := context.WithTimeout(testCtx, 15*time.Second)
+	release := make(chan struct{})
+	store := &pausedSubjectAssignmentStore{PostgresStore: testStore, checked: make(chan context.Context, 1), release: release}
+	writer, err := business.NewService(store)
+	require.NoError(t, err)
+	var wg sync.WaitGroup
+	t.Cleanup(func() { cancel(); wg.Wait() })
+	written := make(chan error, 1)
+	wg.Add(1)
+	go func() { defer wg.Done(); written <- writeTenancySubject(ctx, writer, w, "AssignRole", w.org, w.member) }()
+	var holder context.Context
+	select {
+	case holder = <-store.checked:
+	case err := <-written:
+		t.Fatalf("assignment failed before barrier: %v", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	removed := make(chan error, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		removed <- testService.DeleteOrganization(ctx, w.admin, &gen.DeleteOrganizationRequest{OrgId: w.org, ConfirmSlug: "subject-a-admin-org"})
+	}()
+	awaitSubjectMembershipWait(t, holder)
+	close(release)
+	require.NoError(t, <-written, "the earlier assignment must commit without a trigger-lock deadlock")
+	require.NoError(t, <-removed)
+	require.False(t, isOrgMember(t, testCtx, w.org, w.member))
+	require.ErrorIs(t, writeTenancySubject(ctx, writer, w, "AssignRole", w.org, w.member), business.ErrSubjectOutsideOrganization)
 }

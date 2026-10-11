@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -73,10 +74,37 @@ func (s *PostgresStore) ArchiveOrganization(ctx context.Context, orgID, actorID 
 // RemoveAllOrgMembers deletes every membership of an organization. Team
 // memberships go with them (team_members cascades from organization_members),
 // and the organization_members session trigger revokes each former member's
-// sessions bound to the organization.
+// sessions bound to the organization. The caller must supply a transaction and
+// call this before other writes that acquire authorization or session locks.
+// Only the locked roster is deleted, including if an uncoordinated insert occurs.
 func (s *PostgresStore) RemoveAllOrgMembers(ctx context.Context, orgID string) (int64, error) {
+	org, err := business.ParseID(orgID)
+	if err != nil {
+		return 0, err
+	}
+	orgID = org.String()
+	// The administration lock keeps the roster stable while all membership
+	// locks are acquired. Take no trigger-producing write before these locks.
+	if err := s.LockOrgAdministration(ctx, orgID); err != nil {
+		return 0, err
+	}
+	rows, err := s.getQueryExecutor(ctx).Query(ctx,
+		`SELECT user_id FROM organization_members WHERE org_id = $1`, orgID)
+	if err != nil {
+		return 0, err
+	}
+	members, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return 0, err
+	}
+	slices.Sort(members)
+	for _, userID := range members {
+		if err := s.LockOrgMembership(ctx, orgID, userID); err != nil {
+			return 0, err
+		}
+	}
 	tag, err := s.getQueryExecutor(ctx).Exec(ctx,
-		`DELETE FROM organization_members WHERE org_id = $1`, orgID)
+		`DELETE FROM organization_members WHERE org_id = $1 AND user_id = ANY($2::uuid[])`, orgID, members)
 	if err != nil {
 		return 0, wool.Get(ctx).In("RemoveAllOrgMembers").Wrapf(err, "failed to remove organization members")
 	}

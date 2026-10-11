@@ -231,27 +231,31 @@ func (s *Service) revokeScopeApply(ctx context.Context, actorID string, req *gen
 // membership, so the subject is checked in the share's own transaction, under
 // the membership lock a removal takes (requireSubjectInOrgTx).
 func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.ShareRecordRequest) (*gen.ShareRecordResponse, error) {
+	orgID, subjectID, err := canonicalSubjectTenancyIDs(req.OrgId, req.SubjectId)
+	if err != nil {
+		return nil, err
+	}
 	w := wool.Get(ctx).In("ShareRecord")
 	share := &gen.RecordShare{
 		Id:           NewIDString(),
-		OrgId:        req.OrgId,
+		OrgId:        orgID,
 		ResourceType: req.ResourceType,
 		ResourceId:   req.ResourceId,
-		SubjectId:    req.SubjectId,
+		SubjectId:    subjectID,
 		SubjectKind:  req.SubjectKind,
 		RoleId:       req.RoleId,
 		GrantedBy:    actorID,
 		ExpiresAt:    req.ExpiresAt,
 	}
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		if err := s.requireSubjectInOrgTx(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := s.requireSubjectInOrgTx(ctx, orgID, subjectID, req.SubjectKind); err != nil {
 			return err
 		}
 		if err := s.store.ShareRecord(ctx, share); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventRecordShared, req.ResourceType, req.ResourceId, req.OrgId,
-			map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId})
+		return s.emitTx(ctx, actorID, "user", EventRecordShared, req.ResourceType, req.ResourceId, orgID,
+			map[string]any{"role_id": req.RoleId, "subject_id": subjectID})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot share record")
 	}

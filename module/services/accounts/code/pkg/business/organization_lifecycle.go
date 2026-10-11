@@ -117,26 +117,30 @@ func (s *Service) UpdateOrganization(ctx context.Context, actorID string, req *g
 // answer is to delete it — or the caller is its last administrator while
 // others remain, who would be stranded in an organization nobody can manage.
 func (s *Service) LeaveOrganization(ctx context.Context, userID string, req *gen.LeaveOrganizationRequest) error {
+	orgID, userID, err := canonicalSubjectTenancyIDs(req.OrgId, userID)
+	if err != nil {
+		return err
+	}
 	w := wool.Get(ctx).In("LeaveOrganization")
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		if err := s.store.LockOrgAdministration(ctx, req.OrgId); err != nil {
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := s.store.LockOrgAdministration(ctx, orgID); err != nil {
 			return w.Wrapf(err, "cannot lock organization administration")
 		}
-		members, err := s.store.CountOrgMembers(ctx, req.OrgId)
+		members, err := s.store.CountOrgMembers(ctx, orgID)
 		if err != nil {
 			return err
 		}
 		if members <= 1 {
 			return ErrOrgSoleMember
 		}
-		if err := s.removeOrgMembershipTx(ctx, userID, req.OrgId, userID); err != nil {
+		if err := s.removeOrgMembershipTx(ctx, userID, orgID, userID); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, userID, "user", EventOrgMemberLeft, "organization", req.OrgId, req.OrgId)
+		return s.emitTx(ctx, userID, "user", EventOrgMemberLeft, "organization", orgID, orgID)
 	}); err != nil {
 		return w.Wrapf(err, "cannot leave organization")
 	}
-	_ = s.invalidateMembership(ctx, req.OrgId, userID)
+	_ = s.invalidateMembership(ctx, orgID, userID)
 	return nil
 }
 
@@ -180,60 +184,66 @@ func (s *Service) LeaveOrganization(ctx context.Context, userID string, req *gen
 // organization's own scoping is not lost: every statement below names req.OrgId
 // explicitly, which is what the tenant policy would have checked.
 func (s *Service) DeleteOrganization(ctx context.Context, actorID string, req *gen.DeleteOrganizationRequest) error {
+	orgID, actorID, err := canonicalSubjectTenancyIDs(req.OrgId, actorID)
+	if err != nil {
+		return err
+	}
 	w := wool.Get(ctx).In("DeleteOrganization")
 	actorType := s.actorTypeForCreator(ctx, actorID)
 	var members []*gen.OrgMembership
 	if err := s.WithPolicyLoggedNarrowing(ctx,
-		deletedOrganizationPolicyLogEntry(actorID, req.OrgId),
+		deletedOrganizationPolicyLogEntry(actorID, orgID),
 		func(ctx context.Context) error {
-			if err := s.store.LockOrgAdministration(ctx, req.OrgId); err != nil {
+			if err := s.store.LockOrgAdministration(ctx, orgID); err != nil {
 				return w.Wrapf(err, "cannot lock organization administration")
 			}
-			org, err := s.store.GetOrganization(ctx, req.OrgId)
+			org, err := s.store.GetOrganization(ctx, orgID)
 			if err != nil {
 				return err
 			}
 			if org == nil || org.ArchivedAt != nil {
-				return NewStoreError(fmt.Errorf("organization %s not found", req.OrgId), ErrTypeNotFound)
+				return NewStoreError(fmt.Errorf("organization %s not found", orgID), ErrTypeNotFound)
 			}
 			if !strings.EqualFold(strings.TrimSpace(req.ConfirmSlug), org.Slug) {
 				return ErrOrgDeleteConfirmation
 			}
-			if members, err = s.store.ListOrgMembers(ctx, req.OrgId); err != nil {
+			if members, err = s.store.ListOrgMembers(ctx, orgID); err != nil {
 				return err
 			}
-			if _, err := s.store.RevokeOrgAPIKeys(ctx, req.OrgId); err != nil {
+			// Acquire every membership lock before any revocation can take an
+			// authorization-revision or session lock through its triggers.
+			if _, err := s.store.RemoveAllOrgMembers(ctx, orgID); err != nil {
 				return err
 			}
-			if _, err := s.store.RevokeOrgPendingInvitations(ctx, req.OrgId); err != nil {
+			if _, err := s.store.RevokeOrgAPIKeys(ctx, orgID); err != nil {
 				return err
 			}
-			installations, err := s.store.ActiveInstallationIDs(ctx, req.OrgId)
+			if _, err := s.store.RevokeOrgPendingInvitations(ctx, orgID); err != nil {
+				return err
+			}
+			installations, err := s.store.ActiveInstallationIDs(ctx, orgID)
 			if err != nil {
 				return err
 			}
 			for _, installationID := range installations {
-				if err := s.uninstallSolutionTx(ctx, actorID, actorType, req.OrgId, installationID); err != nil {
+				if err := s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID); err != nil {
 					return w.Wrapf(err, "cannot uninstall %s", installationID)
 				}
 			}
-			if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: req.OrgId}, SourceDelegationMemberRemoved); err != nil {
+			if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: orgID}, SourceDelegationMemberRemoved); err != nil {
 				return err
 			}
-			if _, err := s.store.RemoveAllOrgMembers(ctx, req.OrgId); err != nil {
+			if err := s.store.ArchiveOrganization(ctx, orgID, actorID); err != nil {
 				return err
 			}
-			if err := s.store.ArchiveOrganization(ctx, req.OrgId, actorID); err != nil {
-				return err
-			}
-			return s.emitTx(ctx, actorID, actorType, EventOrgDeleted, "organization", req.OrgId, req.OrgId, map[string]any{
+			return s.emitTx(ctx, actorID, actorType, EventOrgDeleted, "organization", orgID, orgID, map[string]any{
 				"slug": org.Slug,
 			})
 		}); err != nil {
 		return w.Wrapf(err, "cannot delete organization")
 	}
 	for _, member := range members {
-		_ = s.invalidateMembership(ctx, req.OrgId, member.UserId)
+		_ = s.invalidateMembership(ctx, orgID, member.UserId)
 	}
 	return nil
 }
