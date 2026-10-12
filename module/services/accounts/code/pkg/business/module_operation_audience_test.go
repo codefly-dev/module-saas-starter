@@ -26,13 +26,21 @@ func TestInstalledOperationAudiencePolicy(t *testing.T) {
 	invalid := []ModuleOperationAudience{
 		{},
 		{Audience: "example", InvokeScopes: valid.InvokeScopes, LookupScopes: valid.LookupScopes},
-		{Audience: "other", InvokeScopes: valid.InvokeScopes},
+		// Lookup present but empty is a misconfiguration, not "no lookup".
+		{Audience: "other", InvokeScopes: valid.InvokeScopes, LookupScopes: []ModuleOperationScope{}},
 		{Audience: "other", InvokeScopes: valid.InvokeScopes, LookupScopes: []ModuleOperationScope{{ResourceKind: "results", Actions: []string{"write"}, ResourceIDs: []string{"result-1"}}}},
 		{Audience: "other", InvokeScopes: valid.InvokeScopes, LookupScopes: []ModuleOperationScope{{ResourceKind: "results", Actions: []string{"read"}}}},
 	}
 	for _, binding := range invalid {
 		require.Error(t, validateOperationAudiences("example", map[string]ModuleOperationAudience{"generate": binding}))
 	}
+
+	// INVOKE-ONLY IS A WHOLE DECLARATION: absent lookup is "this binding
+	// redeems no lookup", and the binding is kept.
+	require.NoError(t, validateOperationAudiences("example", map[string]ModuleOperationAudience{
+		"verify": {Audience: "other", InvokeScopes: valid.InvokeScopes},
+	}))
+	require.Empty(t, ModuleOperationAudience{Audience: "other", InvokeScopes: valid.InvokeScopes}.WireScopes(true))
 }
 
 func TestInstalledOperationAudienceRejectsUnknownFieldsAndNonCanonicalSets(t *testing.T) {

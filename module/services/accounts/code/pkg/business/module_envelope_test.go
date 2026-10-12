@@ -2,7 +2,6 @@ package business
 
 import (
 	"encoding/json"
-	"errors"
 	"maps"
 	"slices"
 	"strings"
@@ -313,21 +312,22 @@ func TestTheDerivedEntryIsTheEnvelopeBoundedByTheDocument(t *testing.T) {
 	require.NoError(t, ValidateModulePrincipalGrant(testModulePrefix, grant))
 }
 
-// TestAnAudienceWithoutItsLookupIsOmittedByName: a document granting the
-// invoke unit and not the lookup one leaves an audience the registry cannot
-// hold, so it is dropped and the reason returned — never filled in from the
-// envelope.
-func TestAnAudienceWithoutItsLookupIsOmittedByName(t *testing.T) {
+// TestAnInvokeOnlyAudienceIsKept: a document granting the invoke unit and not
+// the lookup one declares an audience that redeems no lookup. It is kept, with
+// no lookup scopes — never filled in from the envelope, and never dropped as if
+// the module had not declared it (the shape of a module that verifies, as the
+// asking person, against a store it has nothing to look up in).
+func TestAnInvokeOnlyAudienceIsKept(t *testing.T) {
 	envelope := parseTestEnvelope(t)
 	units := []solutionhost.AuthorityBinding{testUnit("run", "invoke")}
 	document := testAuthority(t, units...)
 	require.NoError(t, document.ValidateAgainst(envelope.authorityEnvelopeFor(document)))
 	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], document, units, testWorkload)
 	require.NoError(t, err)
-	require.Empty(t, grant.OperationAudiences)
-	require.Len(t, omitted, 1)
-	require.True(t, errors.Is(omitted[0], ErrModulePrincipalBindingOmitted))
-	require.Contains(t, omitted[0].Error(), `"run"`)
+	require.Empty(t, omitted)
+	require.Contains(t, grant.OperationAudiences, "run")
+	require.NotEmpty(t, grant.OperationAudiences["run"].InvokeScopes)
+	require.Nil(t, grant.OperationAudiences["run"].LookupScopes, "no lookup unit, no lookup scopes")
 }
 
 // TestAHeadlessUnitGrantsOnlyWhatBothSidesAllow: headless is the module acting

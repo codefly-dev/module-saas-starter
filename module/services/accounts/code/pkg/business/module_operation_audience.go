@@ -149,9 +149,18 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 	for id, binding := range bindings {
 		if !validOperationValue(id, 128) || !validOperationValue(binding.Audience, 512) ||
 			(binding.Audience == prefix && !selfAdmittingBinding(binding)) ||
-			!validOperationScopes(binding.InvokeScopes, false) || !validOperationScopes(binding.LookupScopes, true) ||
-			!operationScopesSubset(binding.LookupScopes, binding.InvokeScopes) {
+			!validOperationScopes(binding.InvokeScopes, false) {
 			return fmt.Errorf("invalid installed module operation audience binding")
+		}
+		// Lookup is OPTIONAL, like headless: a binding that declares only invoke
+		// redeems no lookup, and that is a whole declaration — a module verifying
+		// citations as the asking person has nothing to look up. Absent is "this
+		// binding redeems no lookup" and a lookup exchange under it is refused;
+		// present but empty is a misconfiguration, not a second spelling of absent.
+		// Requiring it dropped every invoke-only binding a module declared, and the
+		// binding then read as never declared at all.
+		if binding.LookupScopes != nil && (!validOperationScopes(binding.LookupScopes, true) || !operationScopesSubset(binding.LookupScopes, binding.InvokeScopes)) {
+			return fmt.Errorf("invalid installed module operation audience lookup scopes")
 		}
 		// Absent is the fail-closed default (no headless mint); present but empty
 		// is a misconfiguration rather than a second spelling of absent.
