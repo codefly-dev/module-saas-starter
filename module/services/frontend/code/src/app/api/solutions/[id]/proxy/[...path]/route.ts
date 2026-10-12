@@ -5,7 +5,7 @@ import {
 	resolveVerifiedPublicOrigin,
 } from "@/lib/codefly-gateway-context";
 import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
-
+import { forwardTraceContext } from "@/lib/trace-context";
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -156,6 +156,10 @@ async function handler(
 	headers.set("accept", request.headers.get("accept") ?? "application/json");
 
 	if (resume !== null) headers.set("last-event-id", resume);
+	// Continue the caller's W3C trace so the solution's spans join it. Only a
+	// strictly valid traceparent (and the tracestate riding with it) travels,
+	// re-serialized rather than copied; baggage is never forwarded.
+	forwardTraceContext(request.headers, headers);
 
 	// Preserve the browser connection lifetime and avoid cached observations or
 	// forwarding its credentials through a gateway redirect. Never retry here.

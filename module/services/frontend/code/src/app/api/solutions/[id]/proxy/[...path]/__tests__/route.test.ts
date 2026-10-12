@@ -838,3 +838,165 @@ describe("solution proxy passthrough", () => {
 		error.mockRestore();
 	});
 });
+
+describe("solution proxy trace context", () => {
+	const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
+	const PARENT_ID = "00f067aa0ba902b7";
+	const TRACEPARENT = `00-${TRACE_ID}-${PARENT_ID}-01`;
+
+	async function forwarded(headers: Record<string, string>): Promise<Headers> {
+		withGateway();
+		registerAudit();
+		const res = await GET(
+			rawRequest(
+				"http://frontend/api/solutions/audit/proxy/records",
+				"GET",
+				headers,
+			),
+			context("audit", ["records"]),
+		);
+		expect(res.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		return fetchMock.mock.calls[0][1].headers as Headers;
+	}
+
+	it("forwards a valid traceparent and tracestate, re-serialized", async () => {
+		const headers = await forwarded({
+			traceparent: TRACEPARENT,
+			tracestate: " vendor=abc ,, other@sys=x y\t",
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.get("tracestate")).toBe("vendor=abc,other@sys=x y");
+	});
+
+	it("forwards only the 00-shaped prefix of a later version", async () => {
+		const headers = await forwarded({
+			traceparent: `cc-${TRACE_ID}-${PARENT_ID}-01-future-field`,
+		});
+
+		expect(headers.get("traceparent")).toBe(`cc-${TRACE_ID}-${PARENT_ID}-01`);
+	});
+
+	it.each([
+		["malformed", "not-a-traceparent"],
+		["trailing dash", `${TRACEPARENT}-`],
+		["trailing field on version 00", `${TRACEPARENT}-extra`],
+		["uppercase hex", `00-${TRACE_ID.toUpperCase()}-${PARENT_ID}-01`],
+		["zero trace id", `00-${"0".repeat(32)}-${PARENT_ID}-01`],
+		["zero parent id", `00-${TRACE_ID}-${"0".repeat(16)}-01`],
+		["invalid version ff", `ff-${TRACE_ID}-${PARENT_ID}-01`],
+		["non-hex flags", `00-${TRACE_ID}-${PARENT_ID}-0g`],
+		["short trace id", `00-${TRACE_ID.slice(1)}-${PARENT_ID}-01`],
+		["two values", `${TRACEPARENT}, 00-${TRACE_ID}-${PARENT_ID}-00`],
+		[
+			"two values of a later version",
+			`cc-${TRACE_ID}-${PARENT_ID}-01, cc-${TRACE_ID}-${PARENT_ID}-00`,
+		],
+	])("forwards no trace context for a %s traceparent", async (_, value) => {
+		const headers = await forwarded({
+			traceparent: value,
+			tracestate: "vendor=abc",
+		});
+
+		expect(headers.has("traceparent")).toBe(false);
+		expect(headers.has("tracestate")).toBe(false);
+	});
+
+	it("drops tracestate without a traceparent", async () => {
+		const headers = await forwarded({ tracestate: "vendor=abc" });
+
+		expect(headers.has("traceparent")).toBe(false);
+		expect(headers.has("tracestate")).toBe(false);
+	});
+
+	it("merges multiple tracestate header values with a comma", async () => {
+		const incoming = new Headers({ traceparent: TRACEPARENT });
+		incoming.append("tracestate", "a=1");
+		incoming.append("tracestate", "b=2,c=3");
+		withGateway();
+		registerAudit();
+
+		await GET(
+			{
+				method: "GET",
+				url: "http://frontend/api/solutions/audit/proxy/records",
+				headers: incoming,
+				arrayBuffer: async () => new ArrayBuffer(0),
+			} as unknown as Request,
+			context("audit", ["records"]),
+		);
+
+		const headers = fetchMock.mock.calls[0][1].headers as Headers;
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.get("tracestate")).toBe("a=1,b=2,c=3");
+	});
+
+	it.each([
+		["a duplicate key", "a=1,b=2,a=3"],
+		["an invalid key", "A=1"],
+		["an empty value", "a=1,b="],
+		["a non-ASCII value", "a=caf\u00e9"],
+		["a value containing =", "a=b=c"],
+		["a member without =", "a=1,b"],
+		[
+			"more than 32 members",
+			Array.from({ length: 33 }, (_, i) => `k${i}=v`).join(","),
+		],
+	])("drops all of a tracestate with %s", async (_, value) => {
+		const headers = await forwarded({
+			traceparent: TRACEPARENT,
+			tracestate: value,
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.has("tracestate")).toBe(false);
+	});
+
+	it("caps tracestate at 512 bytes, dropping large members first", async () => {
+		const large = `big=${"x".repeat(200)}`;
+		const small = Array.from(
+			{ length: 30 },
+			(_, i) => `k${String(i).padStart(2, "0")}=${"v".repeat(9)}`,
+		);
+		// 30 small members of 13 bytes = 419 bytes with separators; the large
+		// member pushes the list past 512 and is the one dropped.
+		const headers = await forwarded({
+			traceparent: TRACEPARENT,
+			tracestate: [small[0], large, ...small.slice(1)].join(","),
+		});
+
+		expect(headers.get("tracestate")).toBe(small.join(","));
+	});
+
+	it("caps tracestate at 512 bytes, then drops members from the right", async () => {
+		const members = Array.from(
+			{ length: 5 },
+			(_, i) => `k${i}=${"v".repeat(120)}`,
+		);
+		const headers = await forwarded({
+			traceparent: TRACEPARENT,
+			tracestate: members.join(","),
+		});
+
+		// Each member is 123 bytes: four fit in 495 bytes, five would be 619.
+		expect(headers.get("tracestate")).toBe(members.slice(0, 4).join(","));
+		expect(
+			new TextEncoder().encode(headers.get("tracestate") ?? "").length,
+		).toBeLessThanOrEqual(512);
+	});
+
+	it("never forwards baggage or other caller headers", async () => {
+		const headers = await forwarded({
+			traceparent: TRACEPARENT,
+			baggage: "userId=alice",
+			"x-forwarded-for": "10.0.0.1",
+			"x-b3-traceid": TRACE_ID,
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.has("baggage")).toBe(false);
+		expect(headers.has("x-forwarded-for")).toBe(false);
+		expect(headers.has("x-b3-traceid")).toBe(false);
+	});
+});
