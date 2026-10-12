@@ -219,6 +219,8 @@ describe("public frontend plugin composition", () => {
 			service({ protocol: "grpc" as "rest" }),
 			/unsupported protocol/,
 		],
+		// The origin root is a Connect-only prefix (see the acceptance below): a
+		// REST alias declaring it would be a prefix-less proxy of its upstream.
 		["root route", service({ routePrefix: "/" }), /route prefix.*unsafe/],
 		[
 			"traversal route",
@@ -266,6 +268,38 @@ describe("public frontend plugin composition", () => {
 			).toThrow(diagnostic);
 		},
 	);
+
+	it("accepts the origin root as a connect requirement's prefix", () => {
+		// Where the Connect protocol puts a procedure, and where this contract's
+		// own fixed capability handshake has always been probed. Without it a
+		// Connect backend serving at its root is unreachable through the
+		// transport, which is what made a composition take its Connect transport
+		// from somewhere else.
+		const config = defineFrontend({
+			branding: {
+				name: "Example",
+				mark: "E",
+				title: "Example",
+				description: "Example",
+			},
+			plugins: [
+				plugin({
+					services: [
+						service({
+							alias: "procedures",
+							protocol: "connect",
+							routePrefix: "/",
+						}),
+					],
+				}),
+			],
+		});
+		expect(config.services[0]).toMatchObject({
+			alias: "procedures",
+			protocol: "connect",
+			routePrefix: "/",
+		});
+	});
 
 	it("accepts a safe product-owned REST capability probe path", () => {
 		const config = defineFrontend({

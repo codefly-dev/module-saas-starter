@@ -2485,6 +2485,19 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/admin/platform/plugin-transport/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/plugin-transport"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/admin/platform/unattended-work/page.tsx",
       "imports": [
         "@/components/auth/role-gate",
@@ -4670,6 +4683,21 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/plugin-transport/ui/plugin-transport-playground.tsx",
+      "imports": [
+        "@codefly-dev/ui/plugin-host/runtime",
+        "react",
+        "@/shared/ui",
+        "../model/demo-plugin"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the plugin-transport workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
