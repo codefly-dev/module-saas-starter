@@ -3,6 +3,7 @@ package business
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -77,6 +78,19 @@ func teamRoleToString(role gen.TeamRole) string {
 }
 
 // RemoveTeamMember removes a member from a team.
+//
+// A NARROWING — a team is a subject roles are granted to, so losing a
+// membership reduces what the removed user may do — and it therefore runs under
+// the policy log: appended and receipted before the membership goes, with the
+// delete and the receipt's commit in one transaction.
+//
+// That transaction is the policy log's control-plane one, because the receipt
+// relation is control-plane only and the two writes must be atomic. The delete
+// itself is keyed on (team, user) and carries no organisation column, so
+// team_members' tenant policy was what confined it to this organisation; the
+// re-read below is that predicate made explicit on the same transaction. It is
+// not a convenience check: without it this delete would be addressable across
+// tenants by a caller that named another organisation's team.
 func (s *Service) RemoveTeamMember(ctx context.Context, actorID string, req *gen.RemoveTeamMemberRequest) error {
 	w := wool.Get(ctx).In("RemoveTeamMember")
 
@@ -85,12 +99,24 @@ func (s *Service) RemoveTeamMember(ctx context.Context, actorID string, req *gen
 		return w.Wrapf(err, "cannot resolve team org")
 	}
 
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		if err := s.store.RemoveTeamMember(ctx, req.TeamId, req.UserId); err != nil {
-			return err
-		}
-		return s.emitTx(ctx, actorID, "user", EventTeamMemberRemoved, "team", req.TeamId, orgID)
-	}); err != nil {
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		removeTeamMemberPolicyLogEntry(actorID, orgID, req.TeamId, req.UserId),
+		func(ctx context.Context) error {
+			owning, err := s.store.GetTeamOrgID(ctx, req.TeamId)
+			if err != nil {
+				return err
+			}
+			if owning != orgID {
+				return NewStoreError(
+					fmt.Errorf("team %s belongs to organization %q, not %q",
+						req.TeamId, owning, orgID),
+					ErrTypeValidation)
+			}
+			if err := s.store.RemoveTeamMember(ctx, req.TeamId, req.UserId); err != nil {
+				return err
+			}
+			return s.emitTx(ctx, actorID, "user", EventTeamMemberRemoved, "team", req.TeamId, orgID)
+		}); err != nil {
 		return w.Wrapf(err, "cannot remove team member")
 	}
 	return nil

@@ -3,6 +3,7 @@
 package business_test
 
 import (
+	"accounts/pkg/keyservice"
 	"crypto/ed25519"
 
 	authcore "accounts/pkg/auth"
@@ -105,10 +106,9 @@ func runBusinessTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
-	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 5*time.Minute)
+	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 10*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithSharedControlChannel(),
 		sdk.WithExcludedDependencies("cache", "telemetry"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
@@ -118,7 +118,7 @@ func runBusinessTests(m *testing.M) int {
 		// A clean machine may need to pull Postgres and Vault
 		// before the first integration test. Keep the dependency-start budget
 		// separate from individual test timeouts so cold CI is deterministic.
-		sdk.WithTimeout(5*time.Minute),
+		sdk.WithTimeout(10*time.Minute),
 		sdk.WithSilence("store"),
 	)
 	setupDone(err)
@@ -148,13 +148,21 @@ func runBusinessTests(m *testing.M) int {
 	}
 	service.SetWebhookJobProducer(store)
 
-	// Wire optional components
-	vaultClient, err := infra.NewVaultClient(ctx)
-	if err == nil {
-		service.SetHasher(vaultClient)
-		service.SetMFASecretCipher(vaultClient)
-		service.SetOrgIdentityProviderCipher(vaultClient)
-		service.SetConnectorCipher(vaultClient)
+	// The policy log's two halves. Every narrowing — uninstall, solution-target
+	// close, scope-grant revocation, team-membership removal — now REFUSES on a
+	// host with no log, so a service without one could not exercise any of them.
+	// The local half is the real postgres store; only the external warehouse is a
+	// double (policy_log_production_path_test.go says why).
+	wirePolicyLogForTests(service, store)
+
+	// Wire optional components. The key service is bound exactly as work.go
+	// binds it, so these suites exercise the real stored envelope format rather
+	// than a stand-in that cannot disagree with it.
+	if keys, err := keyservice.Load(ctx); err == nil {
+		service.SetHasher(keys.Cipher)
+		service.SetMFASecretCipher(keys.Cipher)
+		service.SetOrgIdentityProviderCipher(keys.Cipher)
+		service.SetConnectorCipher(keys.Cipher)
 	}
 
 	// New auth pipeline: IdentityResolver + JWTMinter both backed by Postgres.
@@ -200,6 +208,7 @@ func runBusinessTests(m *testing.M) int {
 	}
 
 	testStore = store
+	service.SetModuleAuthorityReads(testStore, nil)
 	testService = service
 	testCtx = ctx
 
@@ -534,7 +543,9 @@ func TestLogout(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken}, "")
+	// No access token and no verified session: the body's refresh credential alone
+	// must still end the family, which is what a non-browser caller presents.
+	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken}, "", "")
 	require.NoError(t, err)
 
 	_, err = testService.RefreshToken(testCtx, &gen.RefreshTokenRequest{

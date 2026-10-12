@@ -33,7 +33,18 @@ func main() {
 		panic(fmt.Sprintf("codefly init failed: %v", err))
 	}
 
-	grpcPort := codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port
+	// Refuse before anything is served: a deployed gateway holding a shipped
+	// placeholder, or a perimeter credential too short to be one, decides
+	// perimeter membership on a published value.
+	if err := requirePerimeterCredentials(codefly.IsLocal()); err != nil {
+		panic(err.Error())
+	}
+
+	grpcNetwork, err := codefly.For(ctx).API(standards.GRPC).ResolveNetworkInstance()
+	if err != nil || grpcNetwork == nil || grpcNetwork.Port == 0 {
+		panic(fmt.Sprintf("Codefly gRPC endpoint is unavailable: %v", err))
+	}
+	grpcPort := grpcNetwork.Port
 	var httpPort uint16
 	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
 	if httpNetErr != nil || httpNet == nil {
@@ -126,7 +137,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	rev, err := newRevoker(redisURL, revocationTTL)
+	rev, err := newRevoker(redisURL, revocationTTL, codefly.IsLocal())
 	if err != nil {
 		panic(fmt.Sprintf("configure access-token revocation: %v", err))
 	}
@@ -212,15 +223,21 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		// Malformed TRUSTED_PROXY_CIDRS fails boot rather than silently trusting
-		// a narrower/empty set — parity with accounts' ParseTrustedProxyCIDRs.
-		if _, err := parseProxyTrust(workspaceEnv("gateway", "TRUSTED_PROXY_CIDRS")); err != nil {
-			panic(err)
+		// A malformed OR empty TRUSTED_PROXY_CIDRS fails boot on a deployed
+		// runtime rather than silently collapsing every bucket onto the frontend's
+		// pod address.
+		if err := requireProxyTrust(workspaceEnv("gateway", "TRUSTED_PROXY_CIDRS"), codefly.IsLocal()); err != nil {
+			panic(err.Error())
 		}
-		rateLimiter = NewRateLimiter(1000,
+		// 1000 req/min per org/IP; stricter MFA budget is configured separately.
+		rateLimiter, err = NewRateLimiter(1000,
 			WithRedisURL(redisURL),
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
-		) // 1000 req/min per org/IP; stricter MFA budget is configured separately.
+			WithInProcessBackendAllowed(codefly.IsLocal()),
+		)
+		if err != nil {
+			panic(fmt.Sprintf("configure rate limiting: %v", err))
+		}
 		// The durable solution registry lives in accounts and is reached over the
 		// same internal connection as the other brokered internal calls. The
 		// reconcile loop rebuilds this replica's routing cache from it — once at
@@ -233,6 +250,10 @@ func main() {
 		// reach this replica without restarting it.
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
+		// The per-viewer solution entitlement read (#949), over the same internal
+		// connection. It is not a cache: the answer is per viewer and must not
+		// outlive a revoke, so every request asks.
+		gateway.solutionEntitlements = &accountsSolutionEntitlements{conn: internalAPIConn, internalToken: authz.internalToken}
 		go gateway.solutions.reconcile(ctx)
 		go gateway.clients.reconcile(ctx)
 		if apiHTTPURL != "" {

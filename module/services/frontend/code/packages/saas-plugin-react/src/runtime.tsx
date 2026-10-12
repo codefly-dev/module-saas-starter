@@ -4,7 +4,7 @@ import {
 	FRONTEND_PLUGIN_CAPABILITIES_BFF_PATH,
 	parseFrontendPluginCapabilities,
 	type GetFrontendPluginCapabilitiesResponse,
-} from "@codefly/saas-plugin-contract/capabilities";
+} from "@codefly-dev/saas-plugin-contract/capabilities";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import {
 	pluginErrorFromResponse,

@@ -150,15 +150,34 @@ type Installation struct {
 	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	OrgId               string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	AgentPrincipalId    string                 `protobuf:"bytes,3,opt,name=agent_principal_id,json=agentPrincipalId,proto3" json:"agent_principal_id,omitempty"`
-	SolutionIdentifier  string                 `protobuf:"bytes,4,opt,name=solution_identifier,json=solutionIdentifier,proto3" json:"solution_identifier,omitempty"`
 	OwnerPrincipalId    string                 `protobuf:"bytes,5,opt,name=owner_principal_id,json=ownerPrincipalId,proto3" json:"owner_principal_id,omitempty"`
 	CoOwnerPrincipalIds []string               `protobuf:"bytes,6,rep,name=co_owner_principal_ids,json=coOwnerPrincipalIds,proto3" json:"co_owner_principal_ids,omitempty"`
 	RootScopeNodeId     string                 `protobuf:"bytes,7,opt,name=root_scope_node_id,json=rootScopeNodeId,proto3" json:"root_scope_node_id,omitempty"`
 	Status              InstallationStatus     `protobuf:"varint,8,opt,name=status,proto3,enum=saas.accounts.v1.InstallationStatus" json:"status,omitempty"`
 	CreatedAt           *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	RevokedAt           *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=revoked_at,json=revokedAt,proto3,oneof" json:"revoked_at,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// The immutable solution target this installation was consented to: one
+	// continuous period of one binding's presence on this host. It is never
+	// reused, so a replacement binding — even one claiming the same route alias —
+	// is a different target and inherits nothing.
+	//
+	// Deliberately NOT accompanied by the route alias. The alias is a property of
+	// the target that a later generation may move, and resolving it here would
+	// mean joining the host's presence state into a request-path listing — which
+	// would require granting request traffic read over every organisation's
+	// presence to answer about one. A consumer that needs the alias asks
+	// ListAvailableSolutions, which serves accepted applied state, and joins on
+	// this id.
+	//
+	// Empty only on a revoked historical row whose target could not be
+	// established at the cutover; an active installation always names one.
+	TargetId string `protobuf:"bytes,11,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	// Why a revoked installation was revoked, when it was not an administrator
+	// uninstalling: the installation-identity cutover, or a tenancy narrowing that
+	// withdrew this organisation. Empty on an active row.
+	RevokedReason string `protobuf:"bytes,12,opt,name=revoked_reason,json=revokedReason,proto3" json:"revoked_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Installation) Reset() {
@@ -212,13 +231,6 @@ func (x *Installation) GetAgentPrincipalId() string {
 	return ""
 }
 
-func (x *Installation) GetSolutionIdentifier() string {
-	if x != nil {
-		return x.SolutionIdentifier
-	}
-	return ""
-}
-
 func (x *Installation) GetOwnerPrincipalId() string {
 	if x != nil {
 		return x.OwnerPrincipalId
@@ -261,13 +273,26 @@ func (x *Installation) GetRevokedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Installation) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *Installation) GetRevokedReason() string {
+	if x != nil {
+		return x.RevokedReason
+	}
+	return ""
+}
+
 type InstallSolutionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	// Canonical "publisher/name:version" of the solution's agent. The agent
 	// Principal is created idempotently per version.
-	AgentIdentifier    string `protobuf:"bytes,2,opt,name=agent_identifier,json=agentIdentifier,proto3" json:"agent_identifier,omitempty"`
-	SolutionIdentifier string `protobuf:"bytes,3,opt,name=solution_identifier,json=solutionIdentifier,proto3" json:"solution_identifier,omitempty"`
+	AgentIdentifier string `protobuf:"bytes,2,opt,name=agent_identifier,json=agentIdentifier,proto3" json:"agent_identifier,omitempty"`
 	// Human display name for the agent principal. Empty defaults to the identifier.
 	DisplayName string `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	// Human-readable display label for the solution's authority-root scope node
@@ -285,11 +310,34 @@ type InstallSolutionRequest struct {
 	CoOwnerPrincipalIds []string `protobuf:"bytes,9,rep,name=co_owner_principal_ids,json=coOwnerPrincipalIds,proto3" json:"co_owner_principal_ids,omitempty"`
 	// The agent's delegated-execution ceiling (migration 108): the Work Context
 	// audiences it may be minted for and the resource kinds it may ever touch.
-	// Empty = unrestricted.
+	//
+	// Empty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an
+	// administrator consented to when they installed it. It is NOT unrestricted
+	// for a mint made with a credential delivered to a THIRD PARTY on a person's
+	// behalf — an MCP client the person authorized for this one solution. There
+	// the installation is the only statement of what the solution may act for, so
+	// an empty list is read as nothing and such a mint is REFUSED by name
+	// (accounts' holdConfinedMintToItsConsumer). The two readings are opposite on
+	// purpose: one bounds a consumer an admin trusts, the other bounds a
+	// credential they never saw.
 	AllowedAudiences []string `protobuf:"bytes,10,rep,name=allowed_audiences,json=allowedAudiences,proto3" json:"allowed_audiences,omitempty"`
 	AllowedScopes    []string `protobuf:"bytes,11,rep,name=allowed_scopes,json=allowedScopes,proto3" json:"allowed_scopes,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The solution target being installed, from ListAvailableSolutions. Required.
+	//
+	// An installer chooses an identity, never an address. The target must be LIVE
+	// and ACCEPTED when the install lands: installing a withdrawn target would
+	// record consent to a presence that already ended, and installing a target
+	// whose newest generation was refused would record consent to a release this
+	// host never admitted.
+	TargetId string `protobuf:"bytes,12,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	// Installed consent as JSON: capabilities, queues, namespaces,
+	// external_namespaces, resources, read_audiences, operation_audiences and
+	// artifact_policies, with the same shapes as the module envelope grant.
+	// Must be a subset of the current ceiling. Omitted selects that ceiling;
+	// an explicit {} grants nothing. Tenant and identity are never scope fields.
+	Scope         *string `protobuf:"bytes,13,opt,name=scope,proto3,oneof" json:"scope,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InstallSolutionRequest) Reset() {
@@ -332,13 +380,6 @@ func (x *InstallSolutionRequest) GetOrgId() string {
 func (x *InstallSolutionRequest) GetAgentIdentifier() string {
 	if x != nil {
 		return x.AgentIdentifier
-	}
-	return ""
-}
-
-func (x *InstallSolutionRequest) GetSolutionIdentifier() string {
-	if x != nil {
-		return x.SolutionIdentifier
 	}
 	return ""
 }
@@ -392,6 +433,83 @@ func (x *InstallSolutionRequest) GetAllowedScopes() []string {
 	return nil
 }
 
+func (x *InstallSolutionRequest) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *InstallSolutionRequest) GetScope() string {
+	if x != nil && x.Scope != nil {
+		return *x.Scope
+	}
+	return ""
+}
+
+// An org administrator may only remove installed authority. The host reads
+// the current revision and serializes the narrowing with other lifecycle acts.
+type NarrowInstallationRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrgId          string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	InstallationId string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	// Same JSON shape as InstallSolution.scope; {} removes all capability access.
+	Scope         string `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NarrowInstallationRequest) Reset() {
+	*x = NarrowInstallationRequest{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NarrowInstallationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NarrowInstallationRequest) ProtoMessage() {}
+
+func (x *NarrowInstallationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NarrowInstallationRequest.ProtoReflect.Descriptor instead.
+func (*NarrowInstallationRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *NarrowInstallationRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *NarrowInstallationRequest) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *NarrowInstallationRequest) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
 type UninstallSolutionRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	OrgId          string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -402,7 +520,7 @@ type UninstallSolutionRequest struct {
 
 func (x *UninstallSolutionRequest) Reset() {
 	*x = UninstallSolutionRequest{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -414,7 +532,7 @@ func (x *UninstallSolutionRequest) String() string {
 func (*UninstallSolutionRequest) ProtoMessage() {}
 
 func (x *UninstallSolutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -427,7 +545,7 @@ func (x *UninstallSolutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UninstallSolutionRequest.ProtoReflect.Descriptor instead.
 func (*UninstallSolutionRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{2}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *UninstallSolutionRequest) GetOrgId() string {
@@ -458,7 +576,7 @@ type TransferInstallationOwnershipRequest struct {
 
 func (x *TransferInstallationOwnershipRequest) Reset() {
 	*x = TransferInstallationOwnershipRequest{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +588,7 @@ func (x *TransferInstallationOwnershipRequest) String() string {
 func (*TransferInstallationOwnershipRequest) ProtoMessage() {}
 
 func (x *TransferInstallationOwnershipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +601,7 @@ func (x *TransferInstallationOwnershipRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use TransferInstallationOwnershipRequest.ProtoReflect.Descriptor instead.
 func (*TransferInstallationOwnershipRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{3}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *TransferInstallationOwnershipRequest) GetOrgId() string {
@@ -524,7 +642,7 @@ type GetInstallationRequest struct {
 
 func (x *GetInstallationRequest) Reset() {
 	*x = GetInstallationRequest{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -536,7 +654,7 @@ func (x *GetInstallationRequest) String() string {
 func (*GetInstallationRequest) ProtoMessage() {}
 
 func (x *GetInstallationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -549,7 +667,7 @@ func (x *GetInstallationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInstallationRequest.ProtoReflect.Descriptor instead.
 func (*GetInstallationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{4}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetInstallationRequest) GetOrgId() string {
@@ -577,7 +695,7 @@ type GetInstallationResponse struct {
 
 func (x *GetInstallationResponse) Reset() {
 	*x = GetInstallationResponse{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -589,7 +707,7 @@ func (x *GetInstallationResponse) String() string {
 func (*GetInstallationResponse) ProtoMessage() {}
 
 func (x *GetInstallationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -602,7 +720,7 @@ func (x *GetInstallationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInstallationResponse.ProtoReflect.Descriptor instead.
 func (*GetInstallationResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{5}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetInstallationResponse) GetInstallation() *Installation {
@@ -619,16 +737,839 @@ func (x *GetInstallationResponse) GetHealth() InstallationHealth {
 	return InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED
 }
 
+// ListInstallationsRequest asks what one organization has installed. Every other
+// RPC on this service names a single installation, so until this existed nothing
+// could answer "what has this org installed?" — which is the authority read a
+// per-organization solution projection is built on (issue #949).
+type ListInstallationsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// Restrict to one lifecycle status. UNSPECIFIED returns every status, so a
+	// caller that must see only live installs asks for ACTIVE explicitly rather
+	// than leaning on a default that would silently widen if the enum grew.
+	Status InstallationStatus `protobuf:"varint,2,opt,name=status,proto3,enum=saas.accounts.v1.InstallationStatus" json:"status,omitempty"`
+	// Page bound. 0 -> server default; capped so an organization with many
+	// installations can never return an unbounded result in one call.
+	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Opaque cursor from a previous response's next_page_token; empty for page one.
+	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListInstallationsRequest) Reset() {
+	*x = ListInstallationsRequest{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInstallationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInstallationsRequest) ProtoMessage() {}
+
+func (x *ListInstallationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInstallationsRequest.ProtoReflect.Descriptor instead.
+func (*ListInstallationsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListInstallationsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListInstallationsRequest) GetStatus() InstallationStatus {
+	if x != nil {
+		return x.Status
+	}
+	return InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED
+}
+
+func (x *ListInstallationsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListInstallationsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+// InstallationSummary is one row of the listing: the installation, plus the health
+// resolved live beside it exactly as GetInstallation resolves it for one. Health
+// travels with the row because a consumer that renders an installed solution as
+// unavailable would otherwise need one GetInstallation per installation.
+type InstallationSummary struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Installation  *Installation          `protobuf:"bytes,1,opt,name=installation,proto3" json:"installation,omitempty"`
+	Health        InstallationHealth     `protobuf:"varint,2,opt,name=health,proto3,enum=saas.accounts.v1.InstallationHealth" json:"health,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallationSummary) Reset() {
+	*x = InstallationSummary{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallationSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallationSummary) ProtoMessage() {}
+
+func (x *InstallationSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallationSummary.ProtoReflect.Descriptor instead.
+func (*InstallationSummary) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *InstallationSummary) GetInstallation() *Installation {
+	if x != nil {
+		return x.Installation
+	}
+	return nil
+}
+
+func (x *InstallationSummary) GetHealth() InstallationHealth {
+	if x != nil {
+		return x.Health
+	}
+	return InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED
+}
+
+type ListInstallationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Installations []*InstallationSummary `protobuf:"bytes,1,rep,name=installations,proto3" json:"installations,omitempty"`
+	// Set when more installations remain; pass it back as page_token. Empty on the
+	// last page.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListInstallationsResponse) Reset() {
+	*x = ListInstallationsResponse{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInstallationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInstallationsResponse) ProtoMessage() {}
+
+func (x *ListInstallationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInstallationsResponse.ProtoReflect.Descriptor instead.
+func (*ListInstallationsResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListInstallationsResponse) GetInstallations() []*InstallationSummary {
+	if x != nil {
+		return x.Installations
+	}
+	return nil
+}
+
+func (x *ListInstallationsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type ListOrganizationInstallationsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// Page bound. 0 -> server default; capped as ListInstallations is.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Opaque cursor from a previous response's next_page_token; empty for page one.
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListOrganizationInstallationsRequest) Reset() {
+	*x = ListOrganizationInstallationsRequest{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListOrganizationInstallationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListOrganizationInstallationsRequest) ProtoMessage() {}
+
+func (x *ListOrganizationInstallationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListOrganizationInstallationsRequest.ProtoReflect.Descriptor instead.
+func (*ListOrganizationInstallationsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListOrganizationInstallationsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListOrganizationInstallationsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListOrganizationInstallationsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+// OrganizationInstallation is one active installation as its organisation's
+// administrator manages it.
+type OrganizationInstallation struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Installation *Installation          `protobuf:"bytes,1,opt,name=installation,proto3" json:"installation,omitempty"`
+	// Resolved live, exactly as ListInstallations resolves it.
+	Health InstallationHealth `protobuf:"varint,2,opt,name=health,proto3,enum=saas.accounts.v1.InstallationHealth" json:"health,omitempty"`
+	// The catalogue row of the installed target, from the same accepted applied
+	// state ListAvailableSolutions serves: its route alias, applied release and
+	// generations. Absent when this host no longer offers the target — the
+	// installation outlives the presence it was consented to, and an absent row
+	// says so rather than naming a release the host does not apply.
+	Target *AvailableSolution `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	// The scope path of the installation's authority-root node: where a grant
+	// that exposes it is written. Read from the node, never derived from its id.
+	RootScopePath string `protobuf:"bytes,4,opt,name=root_scope_path,json=rootScopePath,proto3" json:"root_scope_path,omitempty"`
+	// Teams an active grant reaches at this installation, in the two kinds the
+	// platform Catalogue keeps apart: granted at its authority root, and inherited
+	// from a grant above it. Only the first is exposure granted to this
+	// installation; RevokeInstallationFromTeam removes those.
+	GrantedTeams   []*CollectionReadGrant `protobuf:"bytes,5,rep,name=granted_teams,json=grantedTeams,proto3" json:"granted_teams,omitempty"`
+	InheritedTeams []*CollectionReadGrant `protobuf:"bytes,6,rep,name=inherited_teams,json=inheritedTeams,proto3" json:"inherited_teams,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *OrganizationInstallation) Reset() {
+	*x = OrganizationInstallation{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrganizationInstallation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrganizationInstallation) ProtoMessage() {}
+
+func (x *OrganizationInstallation) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrganizationInstallation.ProtoReflect.Descriptor instead.
+func (*OrganizationInstallation) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *OrganizationInstallation) GetInstallation() *Installation {
+	if x != nil {
+		return x.Installation
+	}
+	return nil
+}
+
+func (x *OrganizationInstallation) GetHealth() InstallationHealth {
+	if x != nil {
+		return x.Health
+	}
+	return InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED
+}
+
+func (x *OrganizationInstallation) GetTarget() *AvailableSolution {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *OrganizationInstallation) GetRootScopePath() string {
+	if x != nil {
+		return x.RootScopePath
+	}
+	return ""
+}
+
+func (x *OrganizationInstallation) GetGrantedTeams() []*CollectionReadGrant {
+	if x != nil {
+		return x.GrantedTeams
+	}
+	return nil
+}
+
+func (x *OrganizationInstallation) GetInheritedTeams() []*CollectionReadGrant {
+	if x != nil {
+		return x.InheritedTeams
+	}
+	return nil
+}
+
+type ListOrganizationInstallationsResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Installations []*OrganizationInstallation `protobuf:"bytes,1,rep,name=installations,proto3" json:"installations,omitempty"`
+	// Set when more installations remain; pass it back as page_token.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListOrganizationInstallationsResponse) Reset() {
+	*x = ListOrganizationInstallationsResponse{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListOrganizationInstallationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListOrganizationInstallationsResponse) ProtoMessage() {}
+
+func (x *ListOrganizationInstallationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListOrganizationInstallationsResponse.ProtoReflect.Descriptor instead.
+func (*ListOrganizationInstallationsResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListOrganizationInstallationsResponse) GetInstallations() []*OrganizationInstallation {
+	if x != nil {
+		return x.Installations
+	}
+	return nil
+}
+
+func (x *ListOrganizationInstallationsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type GrantInstallationToTeamRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrgId          string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	InstallationId string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	TeamId         string                 `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	// The role the team holds at the installation's authority root. It must permit
+	// using a solution (or carry the wildcard); a role that does not would expose
+	// nothing, and is refused rather than written. Everything else the role
+	// permits is granted too, beneath that root.
+	RoleId        string `protobuf:"bytes,4,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantInstallationToTeamRequest) Reset() {
+	*x = GrantInstallationToTeamRequest{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantInstallationToTeamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantInstallationToTeamRequest) ProtoMessage() {}
+
+func (x *GrantInstallationToTeamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantInstallationToTeamRequest.ProtoReflect.Descriptor instead.
+func (*GrantInstallationToTeamRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GrantInstallationToTeamRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *GrantInstallationToTeamRequest) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *GrantInstallationToTeamRequest) GetTeamId() string {
+	if x != nil {
+		return x.TeamId
+	}
+	return ""
+}
+
+func (x *GrantInstallationToTeamRequest) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+type GrantInstallationToTeamResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grant         *ScopeGrant            `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantInstallationToTeamResponse) Reset() {
+	*x = GrantInstallationToTeamResponse{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantInstallationToTeamResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantInstallationToTeamResponse) ProtoMessage() {}
+
+func (x *GrantInstallationToTeamResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantInstallationToTeamResponse.ProtoReflect.Descriptor instead.
+func (*GrantInstallationToTeamResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GrantInstallationToTeamResponse) GetGrant() *ScopeGrant {
+	if x != nil {
+		return x.Grant
+	}
+	return nil
+}
+
+type RevokeInstallationFromTeamRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrgId          string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	InstallationId string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	TeamId         string                 `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	// The role of the grant being removed, as granted_teams reports it. A team may
+	// hold more than one role at the same node, and each is its own grant.
+	RoleId        string `protobuf:"bytes,4,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeInstallationFromTeamRequest) Reset() {
+	*x = RevokeInstallationFromTeamRequest{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeInstallationFromTeamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeInstallationFromTeamRequest) ProtoMessage() {}
+
+func (x *RevokeInstallationFromTeamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeInstallationFromTeamRequest.ProtoReflect.Descriptor instead.
+func (*RevokeInstallationFromTeamRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RevokeInstallationFromTeamRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *RevokeInstallationFromTeamRequest) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *RevokeInstallationFromTeamRequest) GetTeamId() string {
+	if x != nil {
+		return x.TeamId
+	}
+	return ""
+}
+
+func (x *RevokeInstallationFromTeamRequest) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+// AvailableSolution is one installable solution target: its immutable identity,
+// the release the host currently has applied for it, and where it is routed.
+type AvailableSolution struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The immutable target identity an install names. Never reused.
+	TargetId string `protobuf:"bytes,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	// The binding whose presence this target records. Carried so an operator can
+	// correlate a catalogue row with delivery; an installation does not join on it,
+	// because one binding may have several targets over time.
+	BindingId string `protobuf:"bytes,2,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	// The route alias the applied generation claims — `/solutions/<alias>/*`. A
+	// later generation may move it, so it is never an identity.
+	RouteAlias string `protobuf:"bytes,3,opt,name=route_alias,json=routeAlias,proto3" json:"route_alias,omitempty"`
+	// The applied release: publisher, name, version.
+	ReleasePublisher string `protobuf:"bytes,4,opt,name=release_publisher,json=releasePublisher,proto3" json:"release_publisher,omitempty"`
+	ReleaseName      string `protobuf:"bytes,5,opt,name=release_name,json=releaseName,proto3" json:"release_name,omitempty"`
+	ReleaseVersion   string `protobuf:"bytes,6,opt,name=release_version,json=releaseVersion,proto3" json:"release_version,omitempty"`
+	// The generation that opened this target, and the newest applied generation.
+	// Equal until a later generation is applied for the same presence.
+	OpenedGeneration  uint64 `protobuf:"varint,7,opt,name=opened_generation,json=openedGeneration,proto3" json:"opened_generation,omitempty"`
+	AppliedGeneration uint64 `protobuf:"varint,8,opt,name=applied_generation,json=appliedGeneration,proto3" json:"applied_generation,omitempty"`
+	// True when this organization already has an ACTIVE installation of this
+	// target. A catalogue shows it as installed rather than offering it twice; the
+	// unique index over (org_id, target_id) would refuse the second install anyway,
+	// and an administrator should not have to discover that by being refused.
+	Installed     bool `protobuf:"varint,9,opt,name=installed,proto3" json:"installed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AvailableSolution) Reset() {
+	*x = AvailableSolution{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AvailableSolution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AvailableSolution) ProtoMessage() {}
+
+func (x *AvailableSolution) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AvailableSolution.ProtoReflect.Descriptor instead.
+func (*AvailableSolution) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *AvailableSolution) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *AvailableSolution) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *AvailableSolution) GetRouteAlias() string {
+	if x != nil {
+		return x.RouteAlias
+	}
+	return ""
+}
+
+func (x *AvailableSolution) GetReleasePublisher() string {
+	if x != nil {
+		return x.ReleasePublisher
+	}
+	return ""
+}
+
+func (x *AvailableSolution) GetReleaseName() string {
+	if x != nil {
+		return x.ReleaseName
+	}
+	return ""
+}
+
+func (x *AvailableSolution) GetReleaseVersion() string {
+	if x != nil {
+		return x.ReleaseVersion
+	}
+	return ""
+}
+
+func (x *AvailableSolution) GetOpenedGeneration() uint64 {
+	if x != nil {
+		return x.OpenedGeneration
+	}
+	return 0
+}
+
+func (x *AvailableSolution) GetAppliedGeneration() uint64 {
+	if x != nil {
+		return x.AppliedGeneration
+	}
+	return 0
+}
+
+func (x *AvailableSolution) GetInstalled() bool {
+	if x != nil {
+		return x.Installed
+	}
+	return false
+}
+
+type ListAvailableSolutionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// Page bound. 0 -> server default; capped for the same reason the installation
+	// listing is capped.
+	PageSize      int32  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAvailableSolutionsRequest) Reset() {
+	*x = ListAvailableSolutionsRequest{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAvailableSolutionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAvailableSolutionsRequest) ProtoMessage() {}
+
+func (x *ListAvailableSolutionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAvailableSolutionsRequest.ProtoReflect.Descriptor instead.
+func (*ListAvailableSolutionsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListAvailableSolutionsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListAvailableSolutionsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListAvailableSolutionsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ListAvailableSolutionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Solutions     []*AvailableSolution   `protobuf:"bytes,1,rep,name=solutions,proto3" json:"solutions,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAvailableSolutionsResponse) Reset() {
+	*x = ListAvailableSolutionsResponse{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAvailableSolutionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAvailableSolutionsResponse) ProtoMessage() {}
+
+func (x *ListAvailableSolutionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAvailableSolutionsResponse.ProtoReflect.Descriptor instead.
+func (*ListAvailableSolutionsResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListAvailableSolutionsResponse) GetSolutions() []*AvailableSolution {
+	if x != nil {
+		return x.Solutions
+	}
+	return nil
+}
+
+func (x *ListAvailableSolutionsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 var File_saas_accounts_v1_installations_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/installations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\x9e\x04\n" +
+	"$saas/accounts/v1/installations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1csaas/policy/v1/options.proto\"\xe3\x04\n" +
 	"\fInstallation\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1f\n" +
 	"\x06org_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x126\n" +
-	"\x12agent_principal_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x10agentPrincipalId\x12/\n" +
-	"\x13solution_identifier\x18\x04 \x01(\tR\x12solutionIdentifier\x126\n" +
+	"\x12agent_principal_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x10agentPrincipalId\x126\n" +
 	"\x12owner_principal_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x10ownerPrincipalId\x123\n" +
 	"\x16co_owner_principal_ids\x18\x06 \x03(\tR\x13coOwnerPrincipalIds\x125\n" +
 	"\x12root_scope_node_id\x18\a \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0frootScopeNodeId\x12<\n" +
@@ -637,14 +1578,14 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12>\n" +
 	"\n" +
 	"revoked_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampH\x00R\trevokedAt\x88\x01\x01B\r\n" +
-	"\v_revoked_at\"\xbf\x04\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampH\x00R\trevokedAt\x88\x01\x01\x12(\n" +
+	"\ttarget_id\x18\v \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\btargetId\x12/\n" +
+	"\x0erevoked_reason\x18\f \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\rrevokedReasonB\r\n" +
+	"\v_revoked_atJ\x04\b\x04\x10\x05R\x13solution_identifier\"\xf6\x04\n" +
 	"\x16InstallSolutionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x125\n" +
 	"\x10agent_identifier\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x0fagentIdentifier\x12;\n" +
-	"\x13solution_identifier\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x12solutionIdentifier\x12+\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x0fagentIdentifier\x12+\n" +
 	"\fdisplay_name\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\vdisplayName\x122\n" +
 	"\x10root_scope_label\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\x0erootScopeLabel\x12!\n" +
 	"\arole_id\x18\a \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x129\n" +
@@ -652,7 +1593,14 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\x16co_owner_principal_ids\x18\t \x03(\tB\x0f\xbaH\f\x92\x01\t\x10 \"\x05r\x03\xb0\x01\x01R\x13coOwnerPrincipalIds\x12<\n" +
 	"\x11allowed_audiences\x18\n" +
 	" \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\x04R\x10allowedAudiences\x126\n" +
-	"\x0eallowed_scopes\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\x01R\rallowedScopesJ\x04\b\x05\x10\x06R\x0froot_scope_path\"n\n" +
+	"\x0eallowed_scopes\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\x01R\rallowedScopes\x12%\n" +
+	"\ttarget_id\x18\f \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x12&\n" +
+	"\x05scope\x18\r \x01(\tB\v\xbaH\br\x06\x10\x02(\x80\x80@H\x00R\x05scope\x88\x01\x01B\b\n" +
+	"\x06_scopeJ\x04\b\x03\x10\x04J\x04\b\x05\x10\x06R\x13solution_identifierR\x0froot_scope_path\"\x92\x01\n" +
+	"\x19NarrowInstallationRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +
+	"\x05scope\x18\x03 \x01(\tB\v\xbaH\br\x06\x10\x02(\x80\x80@R\x05scope\"n\n" +
 	"\x18UninstallSolutionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\"\xff\x01\n" +
@@ -666,7 +1614,69 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\"\x9b\x01\n" +
 	"\x17GetInstallationResponse\x12B\n" +
 	"\finstallation\x18\x01 \x01(\v2\x1e.saas.accounts.v1.InstallationR\finstallation\x12<\n" +
-	"\x06health\x18\x02 \x01(\x0e2$.saas.accounts.v1.InstallationHealthR\x06health*z\n" +
+	"\x06health\x18\x02 \x01(\x0e2$.saas.accounts.v1.InstallationHealthR\x06health\"\xc1\x01\n" +
+	"\x18ListInstallationsRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12<\n" +
+	"\x06status\x18\x02 \x01(\x0e2$.saas.accounts.v1.InstallationStatusR\x06status\x12'\n" +
+	"\tpage_size\x18\x03 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xf4\x03(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\"\x97\x01\n" +
+	"\x13InstallationSummary\x12B\n" +
+	"\finstallation\x18\x01 \x01(\v2\x1e.saas.accounts.v1.InstallationR\finstallation\x12<\n" +
+	"\x06health\x18\x02 \x01(\x0e2$.saas.accounts.v1.InstallationHealthR\x06health\"\x90\x01\n" +
+	"\x19ListInstallationsResponse\x12K\n" +
+	"\rinstallations\x18\x01 \x03(\v2%.saas.accounts.v1.InstallationSummaryR\rinstallations\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8f\x01\n" +
+	"$ListOrganizationInstallationsRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12'\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xf4\x03(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x9d\x03\n" +
+	"\x18OrganizationInstallation\x12B\n" +
+	"\finstallation\x18\x01 \x01(\v2\x1e.saas.accounts.v1.InstallationR\finstallation\x12<\n" +
+	"\x06health\x18\x02 \x01(\x0e2$.saas.accounts.v1.InstallationHealthR\x06health\x12;\n" +
+	"\x06target\x18\x03 \x01(\v2#.saas.accounts.v1.AvailableSolutionR\x06target\x12&\n" +
+	"\x0froot_scope_path\x18\x04 \x01(\tR\rrootScopePath\x12J\n" +
+	"\rgranted_teams\x18\x05 \x03(\v2%.saas.accounts.v1.CollectionReadGrantR\fgrantedTeams\x12N\n" +
+	"\x0finherited_teams\x18\x06 \x03(\v2%.saas.accounts.v1.CollectionReadGrantR\x0einheritedTeams\"\xa1\x01\n" +
+	"%ListOrganizationInstallationsResponse\x12P\n" +
+	"\rinstallations\x18\x01 \x03(\v2*.saas.accounts.v1.OrganizationInstallationR\rinstallations\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xba\x01\n" +
+	"\x1eGrantInstallationToTeamRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +
+	"\ateam_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId\x12!\n" +
+	"\arole_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"U\n" +
+	"\x1fGrantInstallationToTeamResponse\x122\n" +
+	"\x05grant\x18\x01 \x01(\v2\x1c.saas.accounts.v1.ScopeGrantR\x05grant\"\xbd\x01\n" +
+	"!RevokeInstallationFromTeamRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +
+	"\ateam_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId\x12!\n" +
+	"\arole_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"\xed\x02\n" +
+	"\x11AvailableSolution\x12%\n" +
+	"\ttarget_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x02 \x01(\tR\tbindingId\x12\x1f\n" +
+	"\vroute_alias\x18\x03 \x01(\tR\n" +
+	"routeAlias\x12+\n" +
+	"\x11release_publisher\x18\x04 \x01(\tR\x10releasePublisher\x12!\n" +
+	"\frelease_name\x18\x05 \x01(\tR\vreleaseName\x12'\n" +
+	"\x0frelease_version\x18\x06 \x01(\tR\x0ereleaseVersion\x12+\n" +
+	"\x11opened_generation\x18\a \x01(\x04R\x10openedGeneration\x12-\n" +
+	"\x12applied_generation\x18\b \x01(\x04R\x11appliedGeneration\x12\x1c\n" +
+	"\tinstalled\x18\t \x01(\bR\tinstalled\"\x88\x01\n" +
+	"\x1dListAvailableSolutionsRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12'\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xf4\x03(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x8b\x01\n" +
+	"\x1eListAvailableSolutionsResponse\x12A\n" +
+	"\tsolutions\x18\x01 \x03(\v2#.saas.accounts.v1.AvailableSolutionR\tsolutions\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*z\n" +
 	"\x12InstallationStatus\x12#\n" +
 	"\x1fINSTALLATION_STATUS_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aINSTALLATION_STATUS_ACTIVE\x10\x01\x12\x1f\n" +
@@ -677,19 +1687,33 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"%INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER\x10\x02\x12%\n" +
 	"!INSTALLATION_HEALTH_AGENT_REVOKED\x10\x03\x12&\n" +
 	"\"INSTALLATION_HEALTH_AGENT_DISABLED\x10\x04\x12.\n" +
-	"*INSTALLATION_HEALTH_STANDING_GRANT_MISSING\x10\x052\xef\x06\n" +
+	"*INSTALLATION_HEALTH_STANDING_GRANT_MISSING\x10\x052\xd1\x10\n" +
 	"\x13InstallationService\x12\xba\x01\n" +
 	"\x0fInstallSolution\x12(.saas.accounts.v1.InstallSolutionRequest\x1a\x1e.saas.accounts.v1.Installation\"]\xc2\xf3\x18=\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x1d\n" +
 	"\x19saas.installation.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/installations\x12\xd2\x01\n" +
 	"\x11UninstallSolution\x12*.saas.accounts.v1.UninstallSolutionRequest\x1a\x16.google.protobuf.Empty\"y\xc2\xf3\x18=\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x1d\n" +
-	"\x19saas.installation.revoked\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x022:\x01*\"-/v1/installations/{installation_id}:uninstall\x12\x89\x02\n" +
+	"\x19saas.installation.revoked\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x022:\x01*\"-/v1/installations/{installation_id}:uninstall\x12\xd2\x01\n" +
+	"\x12NarrowInstallation\x12+.saas.accounts.v1.NarrowInstallationRequest\x1a\x16.google.protobuf.Empty\"w\xc2\xf3\x18>\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x1e\n" +
+	"\x1asaas.installation.narrowed\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02/:\x01*\"*/v1/installations/{installation_id}:narrow\x12\x89\x02\n" +
 	"\x1dTransferInstallationOwnership\x126.saas.accounts.v1.TransferInstallationOwnershipRequest\x1a\x1e.saas.accounts.v1.Installation\"\x8f\x01\xc2\xf3\x18K\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:+\n" +
 	"'saas.installation.ownership_transferred\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02::\x01*\"5/v1/installations/{installation_id}:transferOwnership\x12\xb9\x01\n" +
 	"\x0fGetInstallation\x12(.saas.accounts.v1.GetInstallationRequest\x1a).saas.accounts.v1.GetInstallationResponse\"Q\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02%\x12#/v1/installations/{installation_id}B\xba\x01\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02%\x12#/v1/installations/{installation_id}\x12\x86\x01\n" +
+	"\x11ListInstallations\x12*.saas.accounts.v1.ListInstallationsRequest\x1a+.saas.accounts.v1.ListInstallationsResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xca\x01\n" +
+	"\x16ListAvailableSolutions\x12/.saas.accounts.v1.ListAvailableSolutionsRequest\x1a0.saas.accounts.v1.ListAvailableSolutionsResponse\"M\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02!\x12\x1f/v1/installations:listAvailable\x12\xd1\x01\n" +
+	"\x1dListOrganizationInstallations\x126.saas.accounts.v1.ListOrganizationInstallationsRequest\x1a7.saas.accounts.v1.ListOrganizationInstallationsResponse\"?\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/installations\x12\xf0\x01\n" +
+	"\x17GrantInstallationToTeam\x120.saas.accounts.v1.GrantInstallationToTeamRequest\x1a1.saas.accounts.v1.GrantInstallationToTeamResponse\"p\xc2\xf3\x188\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x16\n" +
+	"\x12saas.scope.granted\x10\x02@\x01H\x04P\x03X\x03`\x01x\x02\x82\xd3\xe4\x93\x02.:\x01*\")/v1/installations/{installation_id}/teams\x12\xed\x01\n" +
+	"\x1aRevokeInstallationFromTeam\x123.saas.accounts.v1.RevokeInstallationFromTeamRequest\x1a\x16.google.protobuf.Empty\"\x81\x01\xc2\xf3\x188\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x16\n" +
+	"\x12saas.scope.revoked\x10\x02@\x01H\x04P\x03X\x03`\x01x\x02\x82\xd3\xe4\x93\x02?:\x01*\":/v1/installations/{installation_id}/teams/{team_id}:revokeB\xba\x01\n" +
 	"\x14com.saas.accounts.v1B\x12InstallationsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -705,38 +1729,77 @@ func file_saas_accounts_v1_installations_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_installations_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_saas_accounts_v1_installations_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_saas_accounts_v1_installations_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_saas_accounts_v1_installations_proto_goTypes = []any{
-	(InstallationStatus)(0),                      // 0: saas.accounts.v1.InstallationStatus
-	(InstallationHealth)(0),                      // 1: saas.accounts.v1.InstallationHealth
-	(*Installation)(nil),                         // 2: saas.accounts.v1.Installation
-	(*InstallSolutionRequest)(nil),               // 3: saas.accounts.v1.InstallSolutionRequest
-	(*UninstallSolutionRequest)(nil),             // 4: saas.accounts.v1.UninstallSolutionRequest
-	(*TransferInstallationOwnershipRequest)(nil), // 5: saas.accounts.v1.TransferInstallationOwnershipRequest
-	(*GetInstallationRequest)(nil),               // 6: saas.accounts.v1.GetInstallationRequest
-	(*GetInstallationResponse)(nil),              // 7: saas.accounts.v1.GetInstallationResponse
-	(*timestamppb.Timestamp)(nil),                // 8: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                        // 9: google.protobuf.Empty
+	(InstallationStatus)(0),                       // 0: saas.accounts.v1.InstallationStatus
+	(InstallationHealth)(0),                       // 1: saas.accounts.v1.InstallationHealth
+	(*Installation)(nil),                          // 2: saas.accounts.v1.Installation
+	(*InstallSolutionRequest)(nil),                // 3: saas.accounts.v1.InstallSolutionRequest
+	(*NarrowInstallationRequest)(nil),             // 4: saas.accounts.v1.NarrowInstallationRequest
+	(*UninstallSolutionRequest)(nil),              // 5: saas.accounts.v1.UninstallSolutionRequest
+	(*TransferInstallationOwnershipRequest)(nil),  // 6: saas.accounts.v1.TransferInstallationOwnershipRequest
+	(*GetInstallationRequest)(nil),                // 7: saas.accounts.v1.GetInstallationRequest
+	(*GetInstallationResponse)(nil),               // 8: saas.accounts.v1.GetInstallationResponse
+	(*ListInstallationsRequest)(nil),              // 9: saas.accounts.v1.ListInstallationsRequest
+	(*InstallationSummary)(nil),                   // 10: saas.accounts.v1.InstallationSummary
+	(*ListInstallationsResponse)(nil),             // 11: saas.accounts.v1.ListInstallationsResponse
+	(*ListOrganizationInstallationsRequest)(nil),  // 12: saas.accounts.v1.ListOrganizationInstallationsRequest
+	(*OrganizationInstallation)(nil),              // 13: saas.accounts.v1.OrganizationInstallation
+	(*ListOrganizationInstallationsResponse)(nil), // 14: saas.accounts.v1.ListOrganizationInstallationsResponse
+	(*GrantInstallationToTeamRequest)(nil),        // 15: saas.accounts.v1.GrantInstallationToTeamRequest
+	(*GrantInstallationToTeamResponse)(nil),       // 16: saas.accounts.v1.GrantInstallationToTeamResponse
+	(*RevokeInstallationFromTeamRequest)(nil),     // 17: saas.accounts.v1.RevokeInstallationFromTeamRequest
+	(*AvailableSolution)(nil),                     // 18: saas.accounts.v1.AvailableSolution
+	(*ListAvailableSolutionsRequest)(nil),         // 19: saas.accounts.v1.ListAvailableSolutionsRequest
+	(*ListAvailableSolutionsResponse)(nil),        // 20: saas.accounts.v1.ListAvailableSolutionsResponse
+	(*timestamppb.Timestamp)(nil),                 // 21: google.protobuf.Timestamp
+	(*CollectionReadGrant)(nil),                   // 22: saas.accounts.v1.CollectionReadGrant
+	(*ScopeGrant)(nil),                            // 23: saas.accounts.v1.ScopeGrant
+	(*emptypb.Empty)(nil),                         // 24: google.protobuf.Empty
 }
 var file_saas_accounts_v1_installations_proto_depIdxs = []int32{
-	0, // 0: saas.accounts.v1.Installation.status:type_name -> saas.accounts.v1.InstallationStatus
-	8, // 1: saas.accounts.v1.Installation.created_at:type_name -> google.protobuf.Timestamp
-	8, // 2: saas.accounts.v1.Installation.revoked_at:type_name -> google.protobuf.Timestamp
-	2, // 3: saas.accounts.v1.GetInstallationResponse.installation:type_name -> saas.accounts.v1.Installation
-	1, // 4: saas.accounts.v1.GetInstallationResponse.health:type_name -> saas.accounts.v1.InstallationHealth
-	3, // 5: saas.accounts.v1.InstallationService.InstallSolution:input_type -> saas.accounts.v1.InstallSolutionRequest
-	4, // 6: saas.accounts.v1.InstallationService.UninstallSolution:input_type -> saas.accounts.v1.UninstallSolutionRequest
-	5, // 7: saas.accounts.v1.InstallationService.TransferInstallationOwnership:input_type -> saas.accounts.v1.TransferInstallationOwnershipRequest
-	6, // 8: saas.accounts.v1.InstallationService.GetInstallation:input_type -> saas.accounts.v1.GetInstallationRequest
-	2, // 9: saas.accounts.v1.InstallationService.InstallSolution:output_type -> saas.accounts.v1.Installation
-	9, // 10: saas.accounts.v1.InstallationService.UninstallSolution:output_type -> google.protobuf.Empty
-	2, // 11: saas.accounts.v1.InstallationService.TransferInstallationOwnership:output_type -> saas.accounts.v1.Installation
-	7, // 12: saas.accounts.v1.InstallationService.GetInstallation:output_type -> saas.accounts.v1.GetInstallationResponse
-	9, // [9:13] is the sub-list for method output_type
-	5, // [5:9] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	0,  // 0: saas.accounts.v1.Installation.status:type_name -> saas.accounts.v1.InstallationStatus
+	21, // 1: saas.accounts.v1.Installation.created_at:type_name -> google.protobuf.Timestamp
+	21, // 2: saas.accounts.v1.Installation.revoked_at:type_name -> google.protobuf.Timestamp
+	2,  // 3: saas.accounts.v1.GetInstallationResponse.installation:type_name -> saas.accounts.v1.Installation
+	1,  // 4: saas.accounts.v1.GetInstallationResponse.health:type_name -> saas.accounts.v1.InstallationHealth
+	0,  // 5: saas.accounts.v1.ListInstallationsRequest.status:type_name -> saas.accounts.v1.InstallationStatus
+	2,  // 6: saas.accounts.v1.InstallationSummary.installation:type_name -> saas.accounts.v1.Installation
+	1,  // 7: saas.accounts.v1.InstallationSummary.health:type_name -> saas.accounts.v1.InstallationHealth
+	10, // 8: saas.accounts.v1.ListInstallationsResponse.installations:type_name -> saas.accounts.v1.InstallationSummary
+	2,  // 9: saas.accounts.v1.OrganizationInstallation.installation:type_name -> saas.accounts.v1.Installation
+	1,  // 10: saas.accounts.v1.OrganizationInstallation.health:type_name -> saas.accounts.v1.InstallationHealth
+	18, // 11: saas.accounts.v1.OrganizationInstallation.target:type_name -> saas.accounts.v1.AvailableSolution
+	22, // 12: saas.accounts.v1.OrganizationInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	22, // 13: saas.accounts.v1.OrganizationInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	13, // 14: saas.accounts.v1.ListOrganizationInstallationsResponse.installations:type_name -> saas.accounts.v1.OrganizationInstallation
+	23, // 15: saas.accounts.v1.GrantInstallationToTeamResponse.grant:type_name -> saas.accounts.v1.ScopeGrant
+	18, // 16: saas.accounts.v1.ListAvailableSolutionsResponse.solutions:type_name -> saas.accounts.v1.AvailableSolution
+	3,  // 17: saas.accounts.v1.InstallationService.InstallSolution:input_type -> saas.accounts.v1.InstallSolutionRequest
+	5,  // 18: saas.accounts.v1.InstallationService.UninstallSolution:input_type -> saas.accounts.v1.UninstallSolutionRequest
+	4,  // 19: saas.accounts.v1.InstallationService.NarrowInstallation:input_type -> saas.accounts.v1.NarrowInstallationRequest
+	6,  // 20: saas.accounts.v1.InstallationService.TransferInstallationOwnership:input_type -> saas.accounts.v1.TransferInstallationOwnershipRequest
+	7,  // 21: saas.accounts.v1.InstallationService.GetInstallation:input_type -> saas.accounts.v1.GetInstallationRequest
+	9,  // 22: saas.accounts.v1.InstallationService.ListInstallations:input_type -> saas.accounts.v1.ListInstallationsRequest
+	19, // 23: saas.accounts.v1.InstallationService.ListAvailableSolutions:input_type -> saas.accounts.v1.ListAvailableSolutionsRequest
+	12, // 24: saas.accounts.v1.InstallationService.ListOrganizationInstallations:input_type -> saas.accounts.v1.ListOrganizationInstallationsRequest
+	15, // 25: saas.accounts.v1.InstallationService.GrantInstallationToTeam:input_type -> saas.accounts.v1.GrantInstallationToTeamRequest
+	17, // 26: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:input_type -> saas.accounts.v1.RevokeInstallationFromTeamRequest
+	2,  // 27: saas.accounts.v1.InstallationService.InstallSolution:output_type -> saas.accounts.v1.Installation
+	24, // 28: saas.accounts.v1.InstallationService.UninstallSolution:output_type -> google.protobuf.Empty
+	24, // 29: saas.accounts.v1.InstallationService.NarrowInstallation:output_type -> google.protobuf.Empty
+	2,  // 30: saas.accounts.v1.InstallationService.TransferInstallationOwnership:output_type -> saas.accounts.v1.Installation
+	8,  // 31: saas.accounts.v1.InstallationService.GetInstallation:output_type -> saas.accounts.v1.GetInstallationResponse
+	11, // 32: saas.accounts.v1.InstallationService.ListInstallations:output_type -> saas.accounts.v1.ListInstallationsResponse
+	20, // 33: saas.accounts.v1.InstallationService.ListAvailableSolutions:output_type -> saas.accounts.v1.ListAvailableSolutionsResponse
+	14, // 34: saas.accounts.v1.InstallationService.ListOrganizationInstallations:output_type -> saas.accounts.v1.ListOrganizationInstallationsResponse
+	16, // 35: saas.accounts.v1.InstallationService.GrantInstallationToTeam:output_type -> saas.accounts.v1.GrantInstallationToTeamResponse
+	24, // 36: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:output_type -> google.protobuf.Empty
+	27, // [27:37] is the sub-list for method output_type
+	17, // [17:27] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_installations_proto_init() }
@@ -744,14 +1807,16 @@ func file_saas_accounts_v1_installations_proto_init() {
 	if File_saas_accounts_v1_installations_proto != nil {
 		return
 	}
+	file_saas_accounts_v1_authorization_proto_init()
 	file_saas_accounts_v1_installations_proto_msgTypes[0].OneofWrappers = []any{}
+	file_saas_accounts_v1_installations_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_installations_proto_rawDesc), len(file_saas_accounts_v1_installations_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   6,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

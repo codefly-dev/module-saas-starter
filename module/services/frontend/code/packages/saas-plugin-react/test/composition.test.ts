@@ -1,7 +1,7 @@
 import {
 	definePlugin,
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { lazy } from "react";
 import { describe, expect, it } from "vitest";
 

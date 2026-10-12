@@ -26,6 +26,12 @@ const nextConfig = {
         headers: [
           { key: "Content-Security-Policy", value: contentSecurityPolicy },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          // Pin the browser to HTTPS. The edge redirects plaintext to TLS, which
+          // protects the redirect and nothing before it: a browser's first request
+          // to a host it has never pinned goes out in the clear. Without
+          // includeSubDomains or preload, which commit hosts this site does not
+          // own; browsers ignore the header on a plaintext origin.
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-Content-Type-Options", value: "nosniff" },

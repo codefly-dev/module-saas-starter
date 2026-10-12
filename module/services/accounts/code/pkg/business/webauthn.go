@@ -18,8 +18,8 @@ import (
 
 const (
 	webAuthnCeremonyTTL       = 5 * time.Minute
-	webAuthnCredentialPurpose = "mfa-webauthn-credential"
-	webAuthnSessionPurpose    = "mfa-webauthn-session"
+	WebAuthnCredentialPurpose = "mfa-webauthn-credential"
+	WebAuthnSessionPurpose    = "mfa-webauthn-session"
 )
 
 var ErrWebAuthnCeremonyRejected = errors.New("WebAuthn ceremony rejected")
@@ -116,7 +116,7 @@ func (s *Service) BeginWebAuthnRegistration(ctx context.Context, userID string) 
 		if expiresAt.IsZero() || expiresAt.After(time.Now().Add(webAuthnCeremonyTTL)) {
 			expiresAt = time.Now().Add(webAuthnCeremonyTTL)
 		}
-		encrypted, err := s.mfaCipher.EncryptSecret(txCtx, webAuthnSessionPurpose, string(session))
+		encrypted, err := s.mfaCipher.EncryptSecret(txCtx, WebAuthnSessionPurpose, string(session))
 		if err != nil {
 			return w.Wrapf(err, "encrypt WebAuthn registration state")
 		}
@@ -160,7 +160,7 @@ func (s *Service) FinishWebAuthnRegistration(ctx context.Context, userID, ceremo
 		if err != nil {
 			return ErrWebAuthnCeremonyRejected
 		}
-		sessionJSON, err := s.mfaCipher.DecryptSecret(txCtx, webAuthnSessionPurpose, ceremony.SessionDataEncrypted)
+		sessionJSON, err := s.mfaCipher.DecryptSecret(txCtx, WebAuthnSessionPurpose, ceremony.SessionDataEncrypted)
 		if err != nil {
 			return w.Wrapf(err, "decrypt WebAuthn registration state")
 		}
@@ -172,7 +172,7 @@ func (s *Service) FinishWebAuthnRegistration(ctx context.Context, userID, ceremo
 		if err != nil || result == nil || len(result.ID) == 0 || len(result.CredentialJSON) == 0 {
 			return ErrWebAuthnCeremonyRejected
 		}
-		encrypted, err := s.mfaCipher.EncryptSecret(txCtx, webAuthnCredentialPurpose, string(result.CredentialJSON))
+		encrypted, err := s.mfaCipher.EncryptSecret(txCtx, WebAuthnCredentialPurpose, string(result.CredentialJSON))
 		if err != nil {
 			return w.Wrapf(err, "encrypt WebAuthn credential")
 		}
@@ -244,7 +244,7 @@ func (s *Service) BeginWebAuthnMFAChallenge(ctx context.Context, mfaToken string
 		if expiresAt.IsZero() || expiresAt.After(time.Now().Add(webAuthnCeremonyTTL)) {
 			expiresAt = time.Now().Add(webAuthnCeremonyTTL)
 		}
-		encrypted, err := s.mfaCipher.EncryptSecret(txCtx, webAuthnSessionPurpose, string(session))
+		encrypted, err := s.mfaCipher.EncryptSecret(txCtx, WebAuthnSessionPurpose, string(session))
 		if err != nil {
 			return w.Wrapf(err, "encrypt WebAuthn login state")
 		}
@@ -287,7 +287,7 @@ func (s *Service) CompleteWebAuthnMFAChallenge(ctx context.Context, mfaToken, ce
 		if err != nil {
 			return ErrMFAChallengeRejected
 		}
-		sessionJSON, err := s.mfaCipher.DecryptSecret(txCtx, webAuthnSessionPurpose, ceremony.SessionDataEncrypted)
+		sessionJSON, err := s.mfaCipher.DecryptSecret(txCtx, WebAuthnSessionPurpose, ceremony.SessionDataEncrypted)
 		if err != nil {
 			return w.Wrapf(err, "decrypt WebAuthn login state")
 		}
@@ -309,7 +309,7 @@ func (s *Service) CompleteWebAuthnMFAChallenge(ctx context.Context, mfaToken, ce
 		if matched == nil {
 			return ErrMFAChallengeRejected
 		}
-		matched.CredentialEncrypted, err = s.mfaCipher.EncryptSecret(txCtx, webAuthnCredentialPurpose, string(result.CredentialJSON))
+		matched.CredentialEncrypted, err = s.mfaCipher.EncryptSecret(txCtx, WebAuthnCredentialPurpose, string(result.CredentialJSON))
 		if err != nil {
 			return w.Wrapf(err, "encrypt updated WebAuthn credential")
 		}
@@ -370,7 +370,7 @@ func (s *Service) webAuthnUserAndRecordsInTx(ctx context.Context, store WebAuthn
 		return WebAuthnUser{}, nil, err
 	}
 	for _, record := range records {
-		plaintext, err := s.mfaCipher.DecryptSecret(ctx, webAuthnCredentialPurpose, record.CredentialEncrypted)
+		plaintext, err := s.mfaCipher.DecryptSecret(ctx, WebAuthnCredentialPurpose, record.CredentialEncrypted)
 		if err != nil {
 			return WebAuthnUser{}, nil, fmt.Errorf("decrypt WebAuthn credential %s: %w", base64.RawURLEncoding.EncodeToString(record.CredentialID), err)
 		}

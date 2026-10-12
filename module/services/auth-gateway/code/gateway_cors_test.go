@@ -237,11 +237,22 @@ func TestCORS_UpstreamGrantIsReplacedNotDuplicated(t *testing.T) {
 	require.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
 }
 
-// The public origin an accounts route is told about decides which relying party
-// a WebAuthn credential binds to and which redirect an OAuth start may use. A
-// registered client establishes it from its own registration, which names the
-// client — the frontend's shared-secret path only ever named the process.
-func TestCORS_PublicOriginComesFromTheRegistration(t *testing.T) {
+// A registered client's CORS origin is NOT this host's public origin, and this
+// test is the inversion of one that asserted it was.
+//
+// The replaced test read: "A registered client establishes it from its own
+// registration, which names the client — the frontend's shared-secret path only
+// ever named the process." Naming the client is true and is not the point. The
+// value names a property OF THIS HOST — which relying party an authenticator
+// binds to, which origin an emailed link is rooted at, which /auth/callback the
+// host's own sign-in may return to — and no client, however precisely
+// identified, is a witness to it.
+//
+// Held as two facts about two parties, both of which must be true at once:
+// the client reaches accounts on its own registered origin (it is entitled to,
+// which is the CORS decision), and accounts is told nothing about a public
+// origin by it (it is not entitled to say, which is this decision).
+func TestCORS_ARegisteredClientDoesNotSpeakForTheHostOrigin(t *testing.T) {
 	gw, api, _, priv := newGatewayHarness(t)
 	twoRegisteredClients(t, gw)
 
@@ -251,9 +262,48 @@ func TestCORS_PublicOriginComesFromTheRegistration(t *testing.T) {
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, addinOrigin, api.lastHeaders.Get("X-Codefly-Public-Origin"))
+	require.Equal(t, http.StatusOK, w.Code, "a registered client's request must still reach accounts")
+	require.Equal(t, []string{addinOrigin}, w.Header().Values("Access-Control-Allow-Origin"),
+		"and must still receive the CORS grant its registration earns")
 	require.Equal(t, "test-gateway-token", api.lastHeaders.Get("X-Codefly-Gateway-Token"))
+	require.Empty(t, api.lastHeaders.Get("X-Codefly-Public-Origin"),
+		"the client's origin must NOT arrive at accounts as this host's public origin")
+}
+
+// The whole of finding 1, as one request: with a host origin configured — which
+// deployed boot requires — a registered client on its own origin must reach an
+// accounts route rather than be refused by the pinning guard.
+//
+// It is a gateway test that asserts an ACCOUNTS outcome, because the defect
+// lived in neither service alone. Accounts' guard was right (a forwarded origin
+// is honoured only where it equals the configured one) and the gateway's CORS
+// decision was right (this client may call from this origin); what was wrong was
+// that one header carried both meanings, so configuring the host origin — the
+// supported, required deployment state — turned every registered-client request
+// into PermissionDenied. The stand-in below is what accounts does with the
+// value: nothing may arrive that is not the configured origin.
+func TestCORS_AConfiguredHostOriginDoesNotRefuseARegisteredClient(t *testing.T) {
+	gw, api, _, priv := newGatewayHarness(t)
+	twoRegisteredClients(t, gw)
+
+	const configuredHostOrigin = "https://host.example"
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+	req.Header.Set("Authorization", "Bearer "+signClientToken(t, priv, addinClient))
+	req.Header.Set("Origin", addinOrigin)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// Accounts' rule, applied here to exactly what the gateway stamped: a
+	// forwarded public origin is admitted only when it equals the configured one.
+	// An absent one carries no claim and is admitted; the client's own origin
+	// would be refused, which is the failure this closes.
+	forwarded := api.lastHeaders.Get("X-Codefly-Public-Origin")
+	require.NotEqual(t, addinOrigin, forwarded)
+	if forwarded != "" {
+		require.Equal(t, configuredHostOrigin, forwarded)
+	}
 }
 
 // The frontend still has its door: presenting the internal token alongside the
@@ -536,7 +586,7 @@ func TestCORS_PreflightRefusesWhatThePublicSolutionSurfaceCannotGrant(t *testing
 func TestCORS_ThrottledResponseIsReadableAndRefusalsCostNoBudget(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	twoRegisteredClients(t, gw)
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 
 	token := signClientToken(t, priv, addinClient)
 	call := func(origin string) *httptest.ResponseRecorder {

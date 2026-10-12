@@ -3,12 +3,15 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    # A released agent. 0.1.50 is the release that ships the runtime-packages
-    # capability this service's spec declares below, and it also carries #146 (a
-    # port rendered for every declared endpoint), which the dev prerelease this pin
-    # replaced predated. It advertises docker-build-recipe v3, v4 and v5, so it needs
-    # a codefly whose host support reaches v4 — see scripts/ci/install-codefly.sh.
-    version: 0.1.50
+    # A released agent, moved by `codefly update workspace`. The floor is 0.1.50:
+    # the release that ships the runtime-packages capability this service's spec
+    # declares below, and carries #146 (a port rendered for every declared
+    # endpoint). It advertises docker-build-recipe v3, v4 and v5, so it needs a
+    # codefly whose host support reaches v4 — see scripts/ci/install-codefly.sh.
+    # 0.1.53 additionally carries core v0.15.2 and the fix that lets a scaffolded
+    # service resolve its own address (service-go-grpc#165).
+    # 0.1.54 builds with Go 1.27.2, including the GO-2026-6613 fix.
+    version: 0.1.54
     publisher: codefly.dev
 service-dependencies:
     - name: cache
@@ -28,14 +31,17 @@ workspace-configuration-dependencies:
     - abuse-protection
     - application
     - billing
+    - datasource-keys
+    - datasource-oauth
     - email
     - federation
     - gateway-trust
     - github-app
     - identity
+    - identity-provider
     - internal-auth
     - internal-transport
-    - module-capabilities
+    - key-service
     - observability
     - product-analytics
     - security
@@ -47,9 +53,9 @@ endpoints:
     # private rest listener (INTERNAL_TRANSPORT.md).
     - name: authority
       api: grpc
-      visibility: module
+      visibility: internal
     - name: connect
-      visibility: module
+      visibility: internal
     - name: grpc
     - name: rest
 spec:

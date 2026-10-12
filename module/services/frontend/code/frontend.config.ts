@@ -1,4 +1,4 @@
-import { defineReactFrontend } from "@codefly/saas-plugin-react";
+import { defineReactFrontend } from "@codefly-dev/saas-plugin-react";
 import { FRONTEND_ROUTES } from "@/gen/saas/frontend/v1/plugin_catalog";
 import {
 	contributedPlugins,

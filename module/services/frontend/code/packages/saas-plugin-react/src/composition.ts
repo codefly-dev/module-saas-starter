@@ -6,7 +6,7 @@ import {
 	type FrontendPlugin,
 	type InstalledDashboardWidget,
 	type InstalledPluginRoute,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import type { ComponentType, LazyExoticComponent } from "react";
 
 export type FrontendPluginComponent = LazyExoticComponent<ComponentType>;

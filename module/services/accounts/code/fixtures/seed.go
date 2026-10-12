@@ -62,7 +62,7 @@ type fixtureUser struct {
 
 type fixtureOrg struct {
 	// ID pins the organization's uuid across reseeds, as fixtureUser.ID does
-	// for users: a module principal grant (MODULE_PRINCIPALS) must name its
+	// for users: a module principal grant (the module envelope) must name its
 	// tenant by organization id, and committed configuration can only quote
 	// an id that survives a fresh seed.
 	ID      string             `yaml:"id"`
@@ -662,7 +662,7 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 		// is exactly who needs a tenant id that survives a reseed. Say so
 		// once per seed rather than letting the omission stay invisible.
 		if org.ID == "" {
-			w.Warn("fixture organization declares no id, so every seed mints a fresh uuid: a module principal grant (MODULE_PRINCIPALS) naming this organization as its tenant has no stable id to quote. Add `id:` to the fixture organization",
+			w.Warn("fixture organization declares no id, so every seed mints a fresh uuid: a module principal grant (the module envelope) naming this organization as its tenant has no stable id to quote. Add `id:` to the fixture organization",
 				wool.Field("name", org.Name))
 		}
 
@@ -682,7 +682,7 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 				// primary key that memberships, teams and tenant rows
 				// reference. So the declared id cannot be honoured here, and
 				// continuing is not a safe degradation: an organization id is
-				// the tenant a MODULE_PRINCIPALS grant names, and nothing
+				// the tenant a module envelope grant names, and nothing
 				// downstream ever checks that tenant exists —
 				// ParseModulePrincipalRegistry validates the uuid's *form*
 				// only, ModuleAuthorizeWorkContext copies it verbatim, and

@@ -1,2 +1,2 @@
 /** Plugin host UI adapters (client): the error boundary and failure states. */
-export * from "@codefly/saas-plugin-react/ui";
+export * from "@codefly-dev/saas-plugin-react/ui";

@@ -7,7 +7,10 @@
 // thousands. Bounding *significant* digits (not fraction digits) is what keeps a
 // small fractional metric legible: `avg`/`ratio`/`percentile` series can tick in
 // the hundredths, and a fraction-digit cap would round every such tick to "0".
-const valueFormat = new Intl.NumberFormat(undefined, { notation: "compact", maximumSignificantDigits: 3 });
+const valueFormat = new Intl.NumberFormat(undefined, {
+	notation: "compact",
+	maximumSignificantDigits: 3,
+});
 
 export function formatAxisValue(value: number): string {
 	return valueFormat.format(value);
@@ -25,7 +28,8 @@ export function formatShare(value: number): string {
 // Series keys that are time buckets arrive as ISO timestamps from the audit RPC
 // (`YYYY-MM-DDThh:mm:ss±hh`); anything else is a plain category key. Gate on the
 // ISO shape so a non-date key ("US East", "42") is never coerced through Date.
-const ISO_TIME = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?([+-]\d{2}(:?\d{2})?|Z)?$/;
+const ISO_TIME =
+	/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?([+-]\d{2}(:?\d{2})?|Z)?$/;
 
 // Postgres' `OF` offset emits a bare-hour zone ("+00", "-05") that Date.parse
 // rejects; pad it to the "+00:00" the parser accepts. A "+0000" form gets its
@@ -33,7 +37,10 @@ const ISO_TIME = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?([+-]\d{2}(:?\d{2
 // date-only "2026-12-25" would be misread as an offset and mangled.
 function normalizeOffset(iso: string): string {
 	if (!iso.includes(":")) return iso;
-	return iso.replace(/([+-]\d{2})(\d{2})?$/, (_m, hh: string, mm?: string) => `${hh}:${mm ?? "00"}`);
+	return iso.replace(
+		/([+-]\d{2})(\d{2})?$/,
+		(_m, hh: string, mm?: string) => `${hh}:${mm ?? "00"}`,
+	);
 }
 
 // Time buckets are day/week/month grains, so a key at exact UTC midnight reads as

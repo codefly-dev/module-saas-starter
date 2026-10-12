@@ -28,8 +28,11 @@ import (
 // request, so a snapshot of any size costs its reader one call per batch and
 // GitHub one request per batch at most.
 const (
-	// datasourceErrorDomain scopes the ErrorInfo reasons below.
-	datasourceErrorDomain = "saas.accounts.v1"
+	// accountsErrorDomain scopes the ErrorInfo reasons this package attaches —
+	// the ones below and the module surface's own. It is not the service's only
+	// domain: the adapters layer answers under SolutionRegistryErrorDomain, so a
+	// reason is read together with the domain it arrived with.
+	accountsErrorDomain = "saas.accounts.v1"
 
 	DatasourceReasonRateLimited        = "DATASOURCE_RATE_LIMITED"
 	DatasourceReasonBatchTooLarge      = "DATASOURCE_BATCH_TOO_LARGE"
@@ -80,8 +83,14 @@ type DatasourceFile struct {
 // scope at that version under that item id, and the batch must fit its limits;
 // otherwise the whole call is refused before visit is first called.
 func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleCaller, sourceID, version string, refs []DatasourceFileRequest, visit func(DatasourceFile, io.Reader) error) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+
 	w := wool.Get(ctx).In("ModuleFetchDatasourceFiles")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -215,7 +224,7 @@ func datasourceConnectorStatus(w *wool.Wool, err error) error {
 // for a retryable refusal, a RetryInfo.
 func datasourceStatus(code codes.Code, reason, message string, metadata map[string]string, retry time.Duration) error {
 	st := status.New(code, message)
-	details := []protoadapt.MessageV1{&errdetails.ErrorInfo{Reason: reason, Domain: datasourceErrorDomain, Metadata: metadata}}
+	details := []protoadapt.MessageV1{&errdetails.ErrorInfo{Reason: reason, Domain: accountsErrorDomain, Metadata: metadata}}
 	if retry > 0 {
 		details = append(details, &errdetails.RetryInfo{RetryDelay: durationpb.New(retry)})
 	}

@@ -1,0 +1,172 @@
+syntax = "proto3";
+
+package saas.policylog.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Entry is one operation offered to the witness.
+//
+// It carries OPAQUE IDENTIFIERS ONLY. No domain content ever reaches this log:
+// narrowing_hash is the SHA-256 of the caller's canonical operation bytes, and
+// the witness stores that digest rather than the operation. Reconciliation can
+// identify an operation and verify its bytes; it cannot reconstruct them, so
+// the caller must retain or recover the canonical bytes to apply it.
+//
+// Every field takes part in entry_hash, so every field must stay IDENTICAL on a
+// retry of the same operation_id — requested_at included. The witness refuses a
+// reused operation_id that names different bytes.
+message Entry {
+  // operation_id identifies one logical operation for the lifetime of the log,
+  // and it is the caller's: only the caller knows that two attempts are the
+  // same operation. At most 1024 bytes of control-character-free UTF-8.
+  string operation_id = 1;
+
+  // kind is what the operation is about, at most 128 bytes.
+  string kind = 2;
+
+  // subject is what the operation acts on, at most 1024 bytes.
+  string subject = 3;
+
+  // tenant may be empty for a global operation. It grants no authority: this
+  // log performs no tenant scoping and the field is an identifier, not a claim.
+  string tenant = 4;
+
+  // narrowing_hash is exactly 32 bytes: the SHA-256 of the caller's canonical
+  // operation bytes, carried raw rather than hex or base64 so the digest the
+  // signature covers is the digest on the wire.
+  bytes narrowing_hash = 5;
+
+  // requested_at is the CALLER'S logical timestamp for the operation, not a
+  // deadline and not an ordering authority. It is covered by entry_hash, so an
+  // old operation can be retried without changing its identity only as long as
+  // this value is sent back unchanged.
+  google.protobuf.Timestamp requested_at = 6;
+}
+
+// Receipt is the witness's signed acknowledgement of one committed entry.
+//
+// Only a committed head makes a receipt exist. A signature over a prepared
+// candidate that never reached the head is not a receipt and is never returned.
+message Receipt {
+  // seq is the global sequence the witness assigned, never zero and never
+  // supplied by a caller. The first sequence is 1. Sequence, not clock time,
+  // orders operations.
+  uint64 seq = 1;
+
+  // entry_hash is the 32-byte digest of the appended entry. A caller compares
+  // it against the bytes it asked to append.
+  bytes entry_hash = 2;
+
+  // prev_hash is the 32-byte chain hash of seq-1, or 32 zero bytes at seq 1.
+  bytes prev_hash = 3;
+
+  // chain_hash is the 32-byte chain hash at seq.
+  bytes chain_hash = 4;
+
+  // issued_at comes from the witness, never from a caller.
+  google.protobuf.Timestamp issued_at = 5;
+
+  // signature is 64 bytes of Ed25519 over the canonical receipt encoding, which
+  // depends on no protobuf field ordering.
+  bytes signature = 6;
+}
+
+// Record is one entry together with the original receipt the witness issued for
+// it, which is what makes a read independently verifiable.
+message Record {
+  Entry entry = 1;
+  Receipt receipt = 2;
+}
+
+// Cursor is a signed OBSERVATION of the committed head. It is neither a receipt
+// nor a reset instruction: a verifying client never lowers a persisted cursor,
+// and a valid signature cannot by itself distinguish a historical cursor from a
+// current one, so the client also enforces its own freshness policy.
+message Cursor {
+  uint64 head_seq = 1;
+  bytes chain_hash = 2;
+  google.protobuf.Timestamp issued_at = 3;
+  bytes signature = 4;
+}
+
+// Key is the public half of the witness signing key, and the same schema as the
+// trust-anchor document composition delivers to the host. Publishing it is
+// discovery, never authority to replace a caller's pinned key.
+message Key {
+  // algorithm is "Ed25519".
+  string algorithm = 1;
+
+  // key_id is the lowercase SHA-256 hex of the raw public key.
+  string key_id = 2;
+
+  // public_key is the raw 32-byte public key.
+  bytes public_key = 3;
+}
+
+// AppendRequest offers one entry.
+message AppendRequest {
+  Entry entry = 1;
+}
+
+// AppendResponse carries the committed receipt. A retry of the identical entry
+// returns the exact original receipt rather than appending again.
+message AppendResponse {
+  Receipt receipt = 1;
+}
+
+// CursorRequest takes no argument: there is one log and one head.
+message CursorRequest {}
+
+// CursorResponse carries the signed head observation.
+message CursorResponse {
+  Cursor cursor = 1;
+}
+
+// ReadRequest asks for a bounded page of committed records.
+message ReadRequest {
+  // from_seq is INCLUSIVE and at least 1. Reading at head_seq + 1 returns an
+  // empty page; asking beyond it is refused, so a reconciler that is ahead of
+  // the log cannot mistake a rollback for inactivity. A caller holding an
+  // exclusive cursor sends cursor + 1.
+  uint64 from_seq = 1;
+
+  // limit is 1 through 500.
+  uint32 limit = 2;
+}
+
+// ReadResponse carries the page in ascending sequence order.
+message ReadResponse {
+  repeated Record records = 1;
+}
+
+// KeysRequest takes no argument.
+message KeysRequest {}
+
+// KeysResponse carries the public signing key document.
+message KeysResponse {
+  Key key = 1;
+}
+
+// WitnessService is the independent append-only witness for authority changes.
+//
+// Its protocol is append -> signed receipt -> the CALLER commits with the
+// receipt in the same transaction. This listener is PRIVATE to the module: it is
+// never published through the public gateway and never offered to a composed
+// module. Composition admits only the host's declared client, through
+// workload-authenticated mesh policy.
+service WitnessService {
+  // Append commits one entry and returns its receipt, within a five-second
+  // budget that includes queueing. A refusal carries no receipt and never
+  // mints a new sequence for a retried operation.
+  rpc Append(AppendRequest) returns (AppendResponse);
+
+  // Cursor returns the signed committed head.
+  rpc Cursor(CursorRequest) returns (CursorResponse);
+
+  // Read returns committed records with their original receipts.
+  rpc Read(ReadRequest) returns (ReadResponse);
+
+  // Keys returns the public signing key. It never returns private material and
+  // does not authorize trust-anchor replacement.
+  rpc Keys(KeysRequest) returns (KeysResponse);
+}

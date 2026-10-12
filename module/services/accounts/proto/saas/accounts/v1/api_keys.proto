@@ -112,7 +112,12 @@ service APIKeyService {
         target: RESOURCE_TARGET_ORGANIZATION
         lookup: RESOURCE_LOOKUP_DIRECT_ID
       }
-      mfa: MFA_REQUIREMENT_NONE
+      // Issuing a credential is a privilege-changing operation: the key it
+      // returns authenticates as its creator, for as long as it lives, without
+      // the session that asked for it. It declared MFA_REQUIREMENT_NONE while
+      // every other privilege-changing mutation on this host declared a factor,
+      // so an organization owner with no enrolled factor could mint one.
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
       audit: {
         events: "saas.api_key.created"
         emission: AUDIT_EMISSION_SUCCESS

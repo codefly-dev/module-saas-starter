@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.171}"
+version="${CODEFLY_VERSION:-0.1.185}"
 case "${version}" in
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
@@ -52,6 +52,16 @@ case "${version}" in
     # Core supports artifact-execution/v1, runtime-init-dependency-mappings/v1,
     # codefly.dev/docker-build-recipe/v4 and configuration-value-template/v1.
     checksum=0bdb109784b9835bea984a94ddb9a809c8c29f0e260c59f821a637cbff464ffe
+    ;;
+  0.1.179)
+    # Previous generator pin; retained for explicit historical qualifications.
+    checksum=6e7666ef095815a77c10fb1644c69e17b0e8869476c18713bfaa496971b5c45f
+    ;;
+  0.1.185)
+    # Released Core v0.18.0 and cli#947: scope-slot delivery, endpoint-served
+    # Runnable derivation, and CLI-owned module contracts.codefly.yaml.
+    # Digest from the signed release's checksums.txt (Linux amd64 archive).
+    checksum=72950d9a1b28d8153f8266a13e1425d3584f8fbbe0a40ebe7e89a521d7eeac7f
     ;;
   *)
     echo "Unsupported Codefly CI version: ${version}" >&2

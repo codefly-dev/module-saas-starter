@@ -154,10 +154,22 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	// internal gRPC hop to accounts that mints the credential; it reaches no
 	// external IdP.
 	"gateway_solution_credential.go": true,
-	// gateway_modules.go proxies runtime-registered composed-module REST
-	// upstreams. It runs the same ext_authz Check as any protected route and
+	// gateway_modules.go holds the module credential exchanges and the upstream
+	// transport. It runs the same ext_authz Check as any protected route and
 	// reaches no external IdP — the ext_authz check remains the token authority.
 	"gateway_modules.go": true,
+	// gateway_module_routes.go proxies a DECLARED composed module's REST surface
+	// at /v1/<alias>/*. Its network calls are the same two every protected route
+	// makes — the ext_authz Check, which stays the token authority, and the proxy
+	// hop to the declared upstream — and the upstream itself is read from the
+	// declared registry rather than named by a caller, through the same URL policy
+	// a solution upstream passes. It reaches no external IdP.
+	"gateway_module_routes.go": true,
+	// gateway_solution_entitlements.go answers what the calling viewer may use. It
+	// runs the same ext_authz Check as any protected route — so the token authority
+	// is unchanged and local — and its only network call is the internal gRPC hop to
+	// accounts for the installation and grant state. It reaches no external IdP.
+	"gateway_solution_entitlements.go": true,
 	// gateway_cors.go answers cross-origin access for registered clients. It
 	// decides from the registry snapshot and from the client id the ext_authz
 	// check already resolved from a locally verified token; it makes no network
@@ -253,6 +265,18 @@ var wantEmittedHeaders = []string{
 	"x-user-name", "x-session-id", "x-acting-as-user-id", "x-act", "x-scopes",
 	"x-credential-kind", "x-mfa-satisfied", "x-authentication-methods", "x-auth-time",
 	"x-assurance-level", "x-mfa-verified-at", "x-client-id",
+	// Added deliberately, which is what this list is for: the resource a
+	// confined credential was issued for, carried from the ext_authz decision to
+	// the Work Context mint so the mint can hold what it issues to the consumer
+	// the credential was delivered to.
+	//
+	// Eyeballed as this list demands. It leaks nothing: the value is an audience
+	// from the token this host itself minted — a public resource URL the client
+	// already dialled and the solution already publishes — never a provider
+	// identifier, and never anything derived from the caller's own headers. It is
+	// emitted empty for every credential that names no resource, like every
+	// canonical header beside it.
+	resourceConfinementHeader,
 }
 
 // TestPerimeter_SuccessPathEmitsCanonicalHeadersOnly asserts the ext_authz

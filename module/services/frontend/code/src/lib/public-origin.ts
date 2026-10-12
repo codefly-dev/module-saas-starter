@@ -1,20 +1,18 @@
+import "server-only";
+
+import { resolveVerifiedPublicOrigin } from "@/lib/codefly-gateway-context";
+
 /**
- * The public browser origin of a request, preferring the ingress-set forwarded
- * pair over the pod-local request URL — the same resolution src/proxy.ts uses,
- * because behind a TLS-terminating ingress the pod sees plaintext `http` and its
- * own host.
+ * The origin this deployment treats as its own, from operator configuration.
+ *
+ * It comes from `application/APP_BASE_URL`, or from a render that carries a real
+ * ingress host, and from nothing else — never from a request, because an origin a
+ * caller can name is not this deployment's origin. See `resolveVerifiedPublicOrigin`,
+ * which refuses rather than guessing.
+ *
+ * Returns undefined when this deployment has no verified public origin, which
+ * every caller must treat as a refusal.
  */
-export function requestPublicOrigin(request: Request): string {
-	const url = new URL(request.url);
-	const forwardedProto = request.headers
-		.get("x-forwarded-proto")
-		?.split(",")[0]
-		?.trim();
-	const forwardedHost = request.headers
-		.get("x-forwarded-host")
-		?.split(",")[0]
-		?.trim();
-	const protocol = forwardedProto ? `${forwardedProto}:` : url.protocol;
-	const host = forwardedHost || url.host;
-	return `${protocol}//${host}`;
+export function configuredPublicOrigin(): string | undefined {
+	return resolveVerifiedPublicOrigin();
 }

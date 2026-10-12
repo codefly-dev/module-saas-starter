@@ -2,60 +2,36 @@ package business
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// Durable solution registry (issue #534).
-//
-// A solution registers two halves that arrive as separate requests from
-// separate processes: the frontend manifest the host renders, and the upstream
-// the gateway proxies to. There is no cross-process transaction available to
-// make the pair atomic, so this service does not pretend to one. It stores each
-// half as it arrives, under one record and one revision line, and serves the
-// registration only once both halves are present, compatible, and live. A
-// half-registered solution is a durable PENDING record — never a page whose
-// backend does not exist.
-//
-// Revisions come from a database sequence, so they order writes across records
-// as well as within one. Compare-and-swap on that revision is what stops a
-// publisher still holding an older view from overwriting newer state; a
-// tombstone at a revision the caller does not hold is what stops a retiring
-// deployment's last retry from resurrecting a registration an operator removed.
+// Solution registrations are projections of reconciled declarations. Delivery
+// owns their presence and removal; runtime processes cannot write them.
 
 var (
 	// ErrSolutionRegistrationNotFound is returned when no record exists for the
-	// solution id — distinct from a tombstone, which is a record.
+	// solution a caller named.
+	//
+	// It survives the deletion of the runtime registration writer because it
+	// describes a READ, not a write: the Work Context mint looks a solution's
+	// boundary seed up by the id a verified credential named, and "there is no
+	// such registration" is one of the answers it must be able to give. See
+	// mapSolutionBoundaryError.
 	ErrSolutionRegistrationNotFound = errors.New("solution registration not found")
-	// ErrSolutionRegistrationStale is returned when the caller's
-	// expected_revision does not match the record's current revision.
-	ErrSolutionRegistrationStale = errors.New("solution registration revision is stale")
-	// ErrSolutionRegistrationRevisionRequired is returned when a caller tries to
-	// change a half that already holds different content without naming the
-	// revision it believes it is replacing.
-	ErrSolutionRegistrationRevisionRequired = errors.New("solution registration revision required to replace an existing half")
-	// ErrSolutionRegistrationTombstoned is returned when a write lands on a
-	// deregistered record without naming the tombstone's revision. This is the
-	// refusal a delayed heartbeat from a retired deployment gets.
+
+	// ErrSolutionRegistrationTombstoned is returned when the record exists and
+	// is withdrawn.
+	//
+	// Distinct from NotFound on purpose, and more load-bearing now than it was:
+	// the cold cutover WITHDRAWS a runtime-registered row rather than deleting
+	// it, so "exists but is not authorized" is a state the registry holds
+	// durably and a mint must refuse by name rather than reporting an absence.
 	ErrSolutionRegistrationTombstoned = errors.New("solution registration is tombstoned")
-	// ErrSolutionPublisherMismatch is returned when a registration names a
-	// different publisher than the one that owns the solution id.
-	ErrSolutionPublisherMismatch = errors.New("solution registration is owned by another publisher")
-	// ErrSolutionRegistrationHalfMissing is returned when a write names neither
-	// half.
-	ErrSolutionRegistrationHalfMissing = errors.New("solution registration must carry exactly one half")
-	// ErrSolutionRegistrationIdentityRequired is returned when a write names no
-	// solution id or no publisher. Distinct from the half rules: such a request
-	// is not addressable at all, and reporting it as a half problem sends the
-	// caller to inspect the wrong field.
-	ErrSolutionRegistrationIdentityRequired = errors.New("solution registration requires a solution id and publisher")
 )
 
 // SolutionRegistrationStatus is derived from the record at read time.
@@ -64,20 +40,16 @@ type SolutionRegistrationStatus string
 const (
 	SolutionRegistrationActive       SolutionRegistrationStatus = "active"
 	SolutionRegistrationPending      SolutionRegistrationStatus = "pending"
-	SolutionRegistrationExpired      SolutionRegistrationStatus = "expired"
 	SolutionRegistrationIncompatible SolutionRegistrationStatus = "incompatible"
 	SolutionRegistrationTombstoned   SolutionRegistrationStatus = "tombstoned"
 )
 
-// SolutionFrontendHalf is the stored frontend registration. Manifest is the
-// document the frontend validated, stored verbatim. The one part of it read
-// here is the audit event types its dashboard graph declares, which the audit
-// registry admits when the half is written (solution_audit_events.go).
+// SolutionFrontendHalf is a stored frontend observation. The frontend validates
+// the manifest and its runtime compatibility when reading the projection.
 type SolutionFrontendHalf struct {
 	Revision        int64
 	Manifest        string
 	ContractVersion string
-	LeaseExpiresAt  time.Time
 }
 
 // SolutionBackendHalf is the stored backend registration.
@@ -86,24 +58,73 @@ type SolutionBackendHalf struct {
 	Upstream        string
 	ServiceAlias    string
 	ContractVersion string
-	LeaseExpiresAt  time.Time
+}
+
+// SolutionDeclaredKind is what a declaration declares the presence of. Core
+// requires it on every presence document and refuses any other value
+// (solutionhost.Kind), so every admitted declaration has exactly one of these
+// two and the host never has to infer it.
+//
+// There is no third value and no zero value with a meaning. A record whose kind
+// is the empty string is a record this host cannot route, and both surfaces
+// refuse it by name rather than falling back to the kind that happens to be more
+// permissive — the module surface, which carries no per-viewer admission.
+type SolutionDeclaredKind string
+
+const (
+	// SolutionDeclaredKindSolution is a composed solution instance, routed at
+	// /solutions/<alias>/* behind per-viewer installation admission.
+	SolutionDeclaredKindSolution SolutionDeclaredKind = "solution"
+	// SolutionDeclaredKindModule is one module instance, routed at /v1/<alias>/*
+	// through the ordinary authenticated pipeline.
+	SolutionDeclaredKindModule SolutionDeclaredKind = "module"
+)
+
+// Valid reports whether a kind is one this host routes. Checked where a
+// declaration becomes a record, so an unknown kind is a refusal naming the
+// binding rather than a row no surface will serve.
+func (kind SolutionDeclaredKind) Valid() bool {
+	return kind == SolutionDeclaredKindSolution || kind == SolutionDeclaredKindModule
+}
+
+// SolutionDeclaredBinding is the declaration that produced this record: the
+// SolutionHostBinding delivery handed the host, and the generation of it the
+// host applied (solution_host_bindings.go, issue #952).
+type SolutionDeclaredBinding struct {
+	BindingID  string
+	Generation uint64
+	// Release is publisher/name@version of the applied generation. It is the
+	// declared release.
+	Release string
+	// TargetID is the immutable solution target this declaration opened — the
+	// identity an installation names, carried here so a consumer asked about a
+	// route alias can resolve it to a target and compare identities rather than
+	// strings.
+	TargetID string
+	// Kind is what the declaration declared the presence of, copied from the
+	// applied document. It decides which routing surface serves this record.
+	Kind SolutionDeclaredKind
 }
 
 // SolutionRegistration is the canonical record for one solution.
 //
-// RuntimeBoundary is the opaque id every Work Context minted for this solution
-// is sealed under (issue #1015). The store assigns it when the record is
-// created and no path here ever writes it again, which is what makes it the
-// host's and not the solution's: see SolutionRuntimeBoundaryStore.
+// It carries NO runtime-boundary seed. There used to be a `RuntimeBoundary`
+// field holding the stored per-registration random (issue #1015); migration 28
+// drops the column, and the boundary is derived from Declared.BindingID per
+// organization instead (SolutionRuntimeBoundary). A field no store can populate
+// would read as "this solution has no boundary" at every call site that found it
+// empty, which is the opposite of the truth.
 type SolutionRegistration struct {
-	SolutionID      string
-	Publisher       string
-	Revision        int64
-	RuntimeBoundary string
-	Frontend        *SolutionFrontendHalf
-	Backend         *SolutionBackendHalf
-	UpdatedAt       time.Time
-	TombstonedAt    *time.Time
+	SolutionID string
+	Publisher  string
+	Revision   int64
+	Frontend   *SolutionFrontendHalf
+	Backend    *SolutionBackendHalf
+	// Declared is the binding that declared this record, or nil when the record
+	// has not been reconciled from a declaration.
+	Declared     *SolutionDeclaredBinding
+	UpdatedAt    time.Time
+	TombstonedAt *time.Time
 }
 
 // SolutionRuntimeBoundarySeedStore reads the runtime-boundary seeds the Work
@@ -127,10 +148,22 @@ type SolutionRuntimeBoundarySeedStore interface {
 // SolutionBoundarySeed is what the mint reads about one registration: the seed
 // its boundary is derived from, the publisher of record, and whether the half
 // that mints is currently serving.
+// SolutionBoundarySeed is what the mint reads about one declared solution.
+//
+// BindingID replaced an opaque `Seed` read off the registration row: the
+// boundary is derived from the declared presence binding, not from a
+// per-registration random.
+//
+// BackendServing is DELIVERED presence, never a heartbeat or a lease. The
+// branch deleted the renewal path, so a row is serving when its applied
+// declared generation carries a backend half; MissingBackendHalf says so for
+// the refusal, which names the two columns it read rather than saying only
+// "not serving".
 type SolutionBoundarySeed struct {
-	Seed           string
-	Publisher      string
-	BackendServing bool
+	BindingID          string
+	Publisher          string
+	BackendServing     bool
+	MissingBackendHalf string
 }
 
 // SolutionRuntimeBoundary derives the boundary a solution's Work Context is
@@ -146,14 +179,40 @@ type SolutionBoundarySeed struct {
 // Rotation is deliberately coarse: the seed is the only input, so replacing it
 // moves every organization's boundary at once and orphans whatever is still
 // executing under the old one. SOLUTION_REGISTRATION.md §6 states that cost.
-func SolutionRuntimeBoundary(seed, orgID string) (string, error) {
-	namespace, err := uuid.Parse(seed)
-	if err != nil {
-		return "", fmt.Errorf("solution runtime boundary seed is not a UUID: %w", err)
+// solutionBoundaryNamespace is the fixed namespace the BINDING ID is hashed
+// under to produce a per-binding namespace. It is a constant of this host, not
+// a secret: unguessability comes from the org derivation below plus the fact
+// that a boundary is never returned on a readable record, not from hiding this.
+var solutionBoundaryNamespace = uuid.MustParse("6f1b1f3e-7c4a-5c2b-9e55-1a2b3c4d5e6f")
+
+// SolutionRuntimeBoundary derives one organization's boundary for a solution
+// from the DECLARED PRESENCE BINDING ID.
+//
+// It used to take the `runtime_boundary` column, a per-registration
+// `gen_random_uuid()` default. That was wrong in a way nothing caught: the
+// column is per REGISTRATION, so a solution withdrawn and re-registered took a
+// fresh random and every run filed under the old boundary was orphaned, while a
+// binding that never moved could still have its boundary replaced by a write it
+// did not make. The binding id is the identity that survives re-registration
+// and is terminal with its tombstone, which is exactly the lifetime a boundary
+// must have.
+//
+// The binding id is NOT a UUID — a binding may carry characters a path segment
+// may not — so it is hashed under this host's namespace to get one, and the org
+// derivation then runs unchanged. Two steps, because one boundary per solution
+// would make every tenant of a solution share one.
+//
+// Rotation is coarse by construction: the binding id is the only input, so a
+// boundary moves exactly when the binding does. SOLUTION_REGISTRATION.md §6
+// states that cost.
+func SolutionRuntimeBoundary(bindingID, orgID string) (string, error) {
+	if strings.TrimSpace(bindingID) == "" {
+		return "", errors.New("solution runtime boundary needs a declared binding id")
 	}
 	if orgID == "" {
 		return "", errors.New("solution runtime boundary needs an organization")
 	}
+	namespace := uuid.NewSHA1(solutionBoundaryNamespace, []byte(bindingID))
 	return uuid.NewSHA1(namespace, []byte(orgID)).String(), nil
 }
 
@@ -199,462 +258,40 @@ func IsSolutionRuntimeBoundary(seeds []string, candidate, orgID string) bool {
 	return false
 }
 
-// Status resolves the record against the wall clock.
+// Status reports declared availability, independent of a runtime clock.
 //
-// The order is deliberate. A tombstone outranks everything: the record was
-// removed, and nothing about its former endpoints is interesting. A contract
-// mismatch outranks an expired lease because it is a property of the record
-// itself — renewing the lease would not fix it — whereas expiry is a transient
-// liveness fact that the publisher's next heartbeat clears.
+// WHICH HALVES ARE REQUIRED DEPENDS ON THE KIND, and that is not a relaxation.
+// A solution serves a page and a backend, so both halves and agreeing contract
+// versions are what make it usable. A module has no browser remote at all: it is
+// reached at /v1/<alias>/*, nothing loads a manifest for it, and demanding a
+// frontend half would leave every module PENDING for ever — serving traffic the
+// gateway refuses while the registry reports it as waiting for a deployment that
+// is not coming. The incompatible case needs two contract versions to disagree,
+// so it cannot arise for a module either.
 //
-// Expiry is evaluated over whichever halves are present, and outranks pending.
-// A half that registered once and then stopped renewing is dead, not waiting:
-// reporting it as pending sends an operator hunting the deployment that never
-// arrived, when the one that did arrive is the thing that stopped.
-func (r *SolutionRegistration) Status(now time.Time) SolutionRegistrationStatus {
-	switch {
-	case r.TombstonedAt != nil:
+// A record with no declaration keeps the solution reading. It is the stricter of
+// the two, and an undeclared record is withdrawn by the cutover's own constraint
+// anyway, so this is the fail-closed direction.
+func (r *SolutionRegistration) Status() SolutionRegistrationStatus {
+	if r.TombstonedAt != nil {
 		return SolutionRegistrationTombstoned
+	}
+	if r.Declared != nil && r.Declared.Kind == SolutionDeclaredKindModule {
+		if r.Backend == nil {
+			return SolutionRegistrationPending
+		}
+		return SolutionRegistrationActive
+	}
+	switch {
 	case r.Frontend != nil && r.Backend != nil &&
 		r.Frontend.ContractVersion != "" && r.Backend.ContractVersion != "" &&
 		r.Frontend.ContractVersion != r.Backend.ContractVersion:
 		return SolutionRegistrationIncompatible
-	case r.Frontend != nil && !r.Frontend.LeaseExpiresAt.After(now):
-		return SolutionRegistrationExpired
-	case r.Backend != nil && !r.Backend.LeaseExpiresAt.After(now):
-		return SolutionRegistrationExpired
 	case r.Frontend == nil || r.Backend == nil:
 		return SolutionRegistrationPending
 	default:
 		return SolutionRegistrationActive
 	}
-}
-
-// SolutionFrontendRegistration is the caller-supplied frontend half.
-type SolutionFrontendRegistration struct {
-	Manifest        string
-	ContractVersion string
-}
-
-// SolutionBackendRegistration is the caller-supplied backend half.
-type SolutionBackendRegistration struct {
-	Upstream        string
-	ServiceAlias    string
-	ContractVersion string
-}
-
-// SolutionRegistrationWrite is one half-write. Exactly one of Frontend and
-// Backend is set; ExpectedRevision carries the compare-and-swap token when the
-// caller holds one.
-type SolutionRegistrationWrite struct {
-	SolutionID       string
-	Publisher        string
-	ExpectedRevision *int64
-	Lease            time.Duration
-	Frontend         *SolutionFrontendRegistration
-	Backend          *SolutionBackendRegistration
-}
-
-// PutSolutionRegistration writes or renews one half of one registration.
-//
-// A write whose content matches what is stored is a lease renewal: it refreshes
-// liveness and deliberately leaves the revision alone, so a heartbeat is
-// invisible to a consumer comparing snapshots and a heartbeat storm cannot
-// churn every replica's cache. Claiming a half the record does not yet hold
-// needs no token. Replacing a half that holds different content does, and it
-// must be the record's current revision.
-func (s *Service) PutSolutionRegistration(ctx context.Context, write SolutionRegistrationWrite) (*SolutionRegistration, error) {
-	if (write.Frontend == nil) == (write.Backend == nil) {
-		return nil, ErrSolutionRegistrationHalfMissing
-	}
-	if write.SolutionID == "" || write.Publisher == "" {
-		return nil, ErrSolutionRegistrationIdentityRequired
-	}
-
-	var result *SolutionRegistration
-	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		now := time.Now().UTC()
-		current, err := s.store.GetSolutionRegistrationForUpdate(ctx, write.SolutionID)
-		if err != nil {
-			return err
-		}
-		next, changed, err := planSolutionRegistrationWrite(current, write, now)
-		if err != nil {
-			return err
-		}
-		// The manifest's dashboard graph is also the solution's declaration of
-		// the audit event types it owns (solution_audit_events.go). They are
-		// admitted in this transaction, so a declaration the audit registry
-		// refuses refuses the whole write and the last admitted registration
-		// keeps serving. A renewal carries a manifest already admitted, and is
-		// deliberately not re-read: a rule tightened by a later release must
-		// not stop a working registration from renewing.
-		var takenOver []string
-		if changed && write.Frontend != nil {
-			declared, err := ParseDeclaredAuditEventTypes(write.SolutionID, write.Frontend.Manifest)
-			if err != nil {
-				return err
-			}
-			if takenOver, err = s.admitDeclaredAuditEventTypes(ctx, write.SolutionID, declared); err != nil {
-				return err
-			}
-		}
-		if changed {
-			revision, err := s.store.NextSolutionRegistryRevision(ctx)
-			if err != nil {
-				return err
-			}
-			next.Revision = revision
-			if write.Frontend != nil {
-				next.Frontend.Revision = revision
-			} else {
-				next.Backend.Revision = revision
-			}
-		}
-		if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
-			return err
-		}
-		// A renewal is not an event: it says the publisher is still alive, which
-		// the lease already records. Auditing only real changes keeps the trail
-		// readable at heartbeat cadence.
-		if changed {
-			half := "backend"
-			if write.Frontend != nil {
-				half = "frontend"
-			}
-			payload := map[string]any{
-				"solution_id": write.SolutionID,
-				"publisher":   write.Publisher,
-				"half":        half,
-				"revision":    next.Revision,
-			}
-			// A takeover moves every declared type in a namespace from the
-			// solution the operator unbound to this one, so it is recorded with
-			// the write that performed it.
-			if len(takenOver) > 0 {
-				payload["audit_namespaces_taken_over"] = takenOver
-			}
-			if err := s.emitTx(ctx, "solution:"+write.SolutionID, "system",
-				EventSolutionRegistrationUpdated, "solution", write.SolutionID, "", payload); err != nil {
-				return err
-			}
-		}
-		result = next
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-// planSolutionRegistrationWrite computes the record a write produces, and
-// whether it advanced the registration (as opposed to renewing a lease). It is
-// pure so the compare-and-swap rules can be exercised without a database.
-func planSolutionRegistrationWrite(
-	current *SolutionRegistration, write SolutionRegistrationWrite, now time.Time,
-) (*SolutionRegistration, bool, error) {
-	leaseUntil := now.Add(write.Lease)
-
-	if current == nil {
-		// Nothing to compare against: a caller presenting a token is working
-		// from a view of a record that no longer exists.
-		if write.ExpectedRevision != nil {
-			return nil, false, ErrSolutionRegistrationStale
-		}
-		// RuntimeBoundary is deliberately left empty: the store assigns it on
-		// the INSERT this write becomes and reports back what it assigned, so
-		// nothing above the database — including this planner — is ever in a
-		// position to choose one.
-		next := &SolutionRegistration{
-			SolutionID: write.SolutionID,
-			Publisher:  write.Publisher,
-			UpdatedAt:  now,
-		}
-		applySolutionHalf(next, write, leaseUntil)
-		return next, true, nil
-	}
-
-	if current.Publisher != write.Publisher {
-		return nil, false, ErrSolutionPublisherMismatch
-	}
-	if write.ExpectedRevision != nil && *write.ExpectedRevision != current.Revision {
-		return nil, false, ErrSolutionRegistrationStale
-	}
-
-	if current.TombstonedAt != nil {
-		// Re-registering a removed solution is allowed, but only for a caller
-		// that has seen the tombstone and named its revision. A retry still
-		// carrying the pre-deletion view — or none at all — is refused.
-		if write.ExpectedRevision == nil {
-			return nil, false, ErrSolutionRegistrationTombstoned
-		}
-		// The boundary is carried across the tombstone, not re-drawn: the
-		// record is the same solution under the same publisher, and the runs it
-		// already admitted stay the ones it can read.
-		next := &SolutionRegistration{
-			SolutionID:      current.SolutionID,
-			Publisher:       current.Publisher,
-			RuntimeBoundary: current.RuntimeBoundary,
-			UpdatedAt:       now,
-		}
-		applySolutionHalf(next, write, leaseUntil)
-		return next, true, nil
-	}
-
-	next := *current
-	next.UpdatedAt = now
-	if unchangedSolutionHalf(current, write) {
-		renewSolutionHalf(&next, write, leaseUntil)
-		return &next, false, nil
-	}
-	if solutionHalfPresent(current, write) && write.ExpectedRevision == nil {
-		return nil, false, ErrSolutionRegistrationRevisionRequired
-	}
-	applySolutionHalf(&next, write, leaseUntil)
-	return &next, true, nil
-}
-
-func solutionHalfPresent(record *SolutionRegistration, write SolutionRegistrationWrite) bool {
-	if write.Frontend != nil {
-		return record.Frontend != nil
-	}
-	return record.Backend != nil
-}
-
-func unchangedSolutionHalf(record *SolutionRegistration, write SolutionRegistrationWrite) bool {
-	if write.Frontend != nil {
-		return record.Frontend != nil &&
-			sameManifest(record.Frontend.Manifest, write.Frontend.Manifest) &&
-			record.Frontend.ContractVersion == write.Frontend.ContractVersion
-	}
-	return record.Backend != nil &&
-		record.Backend.Upstream == write.Backend.Upstream &&
-		record.Backend.ServiceAlias == write.Backend.ServiceAlias &&
-		record.Backend.ContractVersion == write.Backend.ContractVersion
-}
-
-// sameManifest reports whether a stored frontend manifest and a re-sent one are
-// the same JSON value.
-//
-// Comparing the bytes cannot tell: the registry stores the manifest as jsonb,
-// which Postgres re-serializes on read — keys reordered, a space after every
-// colon — so the stored text never equals the compact text the host sends.
-// Compared byte for byte, every heartbeat of an unchanged solution read as a
-// change: a new registry revision, a solution.registration_updated audit event
-// and a registry cache invalidation on every replica, once per beat, forever.
-// Two texts are the same manifest when they decode to equal values. Text that
-// does not decode is compared as bytes, as before.
-func sameManifest(stored, sent string) bool {
-	if stored == sent {
-		return true
-	}
-	storedValue, storedErr := decodeManifest(stored)
-	sentValue, sentErr := decodeManifest(sent)
-	if storedErr != nil || sentErr != nil {
-		return false
-	}
-	return sameJSONValue(storedValue, sentValue)
-}
-
-func decodeManifest(text string) (any, error) {
-	decoder := json.NewDecoder(strings.NewReader(text))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return nil, err
-	}
-	if decoder.More() {
-		return nil, errors.New("trailing data after the manifest")
-	}
-	return value, nil
-}
-
-// sameJSONValue compares two decoded manifests the way the column they live in
-// does. reflect.DeepEqual cannot: json.Number holds the literal as written, so
-// it compares spellings, and jsonb stores numbers as numeric — which never
-// renders an exponent. A manifest carrying 1e-7 comes back as 0.0000001 and
-// every heartbeat of it read as a change, which is the whole bug this function
-// exists to stop, surviving for exactly the manifests whose numbers Postgres
-// rewrites.
-func sameJSONValue(stored, sent any) bool {
-	switch left := stored.(type) {
-	case map[string]any:
-		right, ok := sent.(map[string]any)
-		if !ok || len(left) != len(right) {
-			return false
-		}
-		for key, value := range left {
-			other, present := right[key]
-			if !present || !sameJSONValue(value, other) {
-				return false
-			}
-		}
-		return true
-	case []any:
-		right, ok := sent.([]any)
-		if !ok || len(left) != len(right) {
-			return false
-		}
-		for index := range left {
-			if !sameJSONValue(left[index], right[index]) {
-				return false
-			}
-		}
-		return true
-	case json.Number:
-		right, ok := sent.(json.Number)
-		return ok && sameJSONNumber(left, right)
-	case string:
-		right, ok := sent.(string)
-		return ok && left == right
-	case bool:
-		right, ok := sent.(bool)
-		return ok && left == right
-	case nil:
-		return sent == nil
-	default:
-		return false
-	}
-}
-
-// maxComparableNumberExponent bounds the exponent a number literal may carry
-// before it is compared as text instead. A rational built from 1e999999999
-// would be materialised digit by digit, and the literal is caller-supplied:
-// the write that carries it is refused by the numeric column anyway, so
-// falling back to a text comparison costs a renewal that was never going to
-// land and spends no memory reaching that answer.
-const maxComparableNumberExponent = 10000
-
-// maxComparableNumberDigits bounds the mantissa for the same reason.
-const maxComparableNumberDigits = 4096
-
-// sameJSONNumber compares two JSON number literals by value, which is what
-// jsonb's own equality does once they are numerics. big.Rat is exact over
-// every JSON number — they are all finite decimals — so no change is lost to
-// float rounding.
-func sameJSONNumber(stored, sent json.Number) bool {
-	if stored == sent {
-		return true
-	}
-	if !comparableNumber(stored) || !comparableNumber(sent) {
-		return false
-	}
-	left, leftOK := new(big.Rat).SetString(string(stored))
-	right, rightOK := new(big.Rat).SetString(string(sent))
-	if !leftOK || !rightOK {
-		return false
-	}
-	return left.Cmp(right) == 0
-}
-
-func comparableNumber(literal json.Number) bool {
-	text := string(literal)
-	if len(text) > maxComparableNumberDigits {
-		return false
-	}
-	exponent := strings.IndexAny(text, "eE")
-	if exponent < 0 {
-		return true
-	}
-	magnitude, err := strconv.Atoi(strings.TrimPrefix(text[exponent+1:], "+"))
-	if err != nil {
-		return false
-	}
-	if magnitude < 0 {
-		magnitude = -magnitude
-	}
-	return magnitude <= maxComparableNumberExponent
-}
-
-func renewSolutionHalf(record *SolutionRegistration, write SolutionRegistrationWrite, leaseUntil time.Time) {
-	if write.Frontend != nil {
-		renewed := *record.Frontend
-		renewed.LeaseExpiresAt = leaseUntil
-		record.Frontend = &renewed
-		return
-	}
-	renewed := *record.Backend
-	renewed.LeaseExpiresAt = leaseUntil
-	record.Backend = &renewed
-}
-
-func applySolutionHalf(record *SolutionRegistration, write SolutionRegistrationWrite, leaseUntil time.Time) {
-	if write.Frontend != nil {
-		record.Frontend = &SolutionFrontendHalf{
-			Manifest:        write.Frontend.Manifest,
-			ContractVersion: write.Frontend.ContractVersion,
-			LeaseExpiresAt:  leaseUntil,
-		}
-		return
-	}
-	record.Backend = &SolutionBackendHalf{
-		Upstream:        write.Backend.Upstream,
-		ServiceAlias:    write.Backend.ServiceAlias,
-		ContractVersion: write.Backend.ContractVersion,
-		LeaseExpiresAt:  leaseUntil,
-	}
-}
-
-// DeleteSolutionRegistration deregisters a solution. The record survives as a
-// tombstone with both halves cleared: routing and page availability go away in
-// the same write that records the removal, and the tombstone is what a later
-// heartbeat collides with instead of recreating the registration.
-//
-// Deleting an already-tombstoned record is a no-op that returns the tombstone,
-// so a retried deregistration is safe.
-func (s *Service) DeleteSolutionRegistration(
-	ctx context.Context, solutionID string, expectedRevision *int64,
-) (*SolutionRegistration, error) {
-	var result *SolutionRegistration
-	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		now := time.Now().UTC()
-		current, err := s.store.GetSolutionRegistrationForUpdate(ctx, solutionID)
-		if err != nil {
-			return err
-		}
-		if current == nil {
-			return ErrSolutionRegistrationNotFound
-		}
-		if expectedRevision != nil && *expectedRevision != current.Revision {
-			return ErrSolutionRegistrationStale
-		}
-		if current.TombstonedAt != nil {
-			result = current
-			return nil
-		}
-		revision, err := s.store.NextSolutionRegistryRevision(ctx)
-		if err != nil {
-			return err
-		}
-		tombstoned := now
-		next := &SolutionRegistration{
-			SolutionID:      current.SolutionID,
-			Publisher:       current.Publisher,
-			Revision:        revision,
-			RuntimeBoundary: current.RuntimeBoundary,
-			UpdatedAt:       now,
-			TombstonedAt:    &tombstoned,
-		}
-		if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
-			return err
-		}
-		if err := s.emitTx(ctx, "solution:"+solutionID, "system",
-			EventSolutionRegistrationDeleted, "solution", solutionID, "",
-			map[string]any{
-				"solution_id": solutionID,
-				"publisher":   current.Publisher,
-				"revision":    revision,
-			}); err != nil {
-			return err
-		}
-		result = next
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // ListSolutionRegistrations returns the registry snapshot a consumer rebuilds

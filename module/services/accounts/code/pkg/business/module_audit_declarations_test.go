@@ -48,6 +48,8 @@ func newModuleDeclaringService(t *testing.T, store *declaredAuditStore, grants M
 	if err != nil {
 		t.Fatal(err)
 	}
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(grants)
 	audit := &recordingAudit{}
 	svc.SetAuditEmitter(audit)
@@ -70,7 +72,7 @@ func requireStatus(t *testing.T, err error, want codes.Code) {
 func TestModuleDeclareAuditEventTypes_AdmitsIntoTheBoundNamespace(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc, audit := newModuleDeclaringService(t, store, moduleGrants("acme", "acme"))
-	caller := ModuleCaller{PrincipalID: ModulePrincipalID("acme")}
+	caller := ModuleCaller{BoundOrg: "org-a", PrincipalID: ModulePrincipalID("acme")}
 
 	admitted, takenOver, err := svc.ModuleDeclareAuditEventTypes(context.Background(), caller, "acme", sharedConversationTypes())
 	if err != nil {
@@ -107,7 +109,7 @@ func TestModuleDeclareAuditEventTypes_AdmitsIntoTheBoundNamespace(t *testing.T) 
 }
 
 func TestModuleDeclareAuditEventTypes_FailsClosed(t *testing.T) {
-	caller := ModuleCaller{PrincipalID: ModulePrincipalID("acme")}
+	caller := ModuleCaller{BoundOrg: "org-a", PrincipalID: ModulePrincipalID("acme")}
 	for name, tc := range map[string]struct {
 		grants ModulePrincipalRegistry
 		caller ModuleCaller
@@ -172,7 +174,7 @@ func TestModuleDeclareAuditEventTypes_FailsClosed(t *testing.T) {
 func TestModuleDeclareAuditEventTypes_OnlyGrows(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc, _ := newModuleDeclaringService(t, store, moduleGrants("acme", "acme"))
-	caller := ModuleCaller{PrincipalID: ModulePrincipalID("acme")}
+	caller := ModuleCaller{BoundOrg: "org-a", PrincipalID: ModulePrincipalID("acme")}
 	if _, _, err := svc.ModuleDeclareAuditEventTypes(context.Background(), caller, "acme", sharedConversationTypes()); err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +192,7 @@ func TestModuleDeclareAuditEventTypes_OnlyGrows(t *testing.T) {
 func TestModuleDeclareAuditEventTypes_ThenEmit(t *testing.T) {
 	store := newDeclaredAuditStore()
 	svc, audit := newModuleDeclaringService(t, store, moduleGrants("acme", "acme"))
-	caller := ModuleCaller{PrincipalID: ModulePrincipalID("acme")}
+	caller := ModuleCaller{BoundOrg: "org-a", PrincipalID: ModulePrincipalID("acme")}
 	if _, _, err := svc.ModuleDeclareAuditEventTypes(context.Background(), caller, "acme", sharedConversationTypes()); err != nil {
 		t.Fatal(err)
 	}

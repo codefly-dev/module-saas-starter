@@ -109,6 +109,7 @@
         "/saas.accounts.v1.DatasourceService/ClaimDatasourceDomain",
         "/saas.accounts.v1.DatasourceService/CompleteDatasourceAccountLink",
         "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup",
+        "/saas.accounts.v1.DatasourceService/DeclareSourceOperations",
         "/saas.accounts.v1.DatasourceService/DeleteDatasourceAccountLink",
         "/saas.accounts.v1.DatasourceService/DeleteDatasourceDomain",
         "/saas.accounts.v1.DatasourceService/DeleteSource",
@@ -116,10 +117,15 @@
         "/saas.accounts.v1.DatasourceService/GetDatasourceDirectory",
         "/saas.accounts.v1.DatasourceService/GetSource",
         "/saas.accounts.v1.DatasourceService/GetSourceSync",
+        "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
         "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks",
         "/saas.accounts.v1.DatasourceService/ListSourceDelegations",
+        "/saas.accounts.v1.DatasourceService/ListSourceOperations",
         "/saas.accounts.v1.DatasourceService/ListSources",
+        "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
+        "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",
         "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+        "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
         "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
         "/saas.accounts.v1.DatasourceService/SyncSource",
         "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
@@ -167,7 +173,13 @@
       "full_name": "saas.accounts.v1.InstallationService",
       "procedures": [
         "/saas.accounts.v1.InstallationService/GetInstallation",
+        "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
         "/saas.accounts.v1.InstallationService/InstallSolution",
+        "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
+        "/saas.accounts.v1.InstallationService/ListInstallations",
+        "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+        "/saas.accounts.v1.InstallationService/NarrowInstallation",
+        "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
         "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
         "/saas.accounts.v1.InstallationService/UninstallSolution"
       ]
@@ -211,6 +223,8 @@
       "full_name": "saas.accounts.v1.ModuleCapabilitiesService",
       "procedures": [
         "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
+        "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",
         "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
         "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
         "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
@@ -222,14 +236,13 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
         "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles",
         "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
+        "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
         "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
         "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-        "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
         "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-        "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
         "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
         "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
@@ -238,6 +251,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
         "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
         "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+        "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
         "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
         "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
       ]
@@ -314,6 +328,7 @@
         "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
         "/saas.accounts.v1.PlatformAdminService/GetJob",
         "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+        "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
         "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
         "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
         "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
@@ -326,6 +341,7 @@
         "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
         "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+        "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
         "/saas.accounts.v1.PlatformAdminService/ReplayJob",
         "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
         "/saas.accounts.v1.PlatformAdminService/RevokeSession",
@@ -367,12 +383,18 @@
       ]
     },
     {
+      "name": "SolutionEntitlementService",
+      "full_name": "saas.accounts.v1.SolutionEntitlementService",
+      "procedures": [
+        "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
+      ]
+    },
+    {
       "name": "SolutionRegistryService",
       "full_name": "saas.accounts.v1.SolutionRegistryService",
       "procedures": [
-        "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
-        "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
-        "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
+        "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
+        "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
       ]
     },
     {
@@ -503,7 +525,7 @@
             "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
           }
         ],
-        "mfa": "MFA_REQUIREMENT_NONE",
+        "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
             "saas.api_key.created"
@@ -519,7 +541,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "mfa",
       "description": "Mint an API key for an administered organization.",
       "owner": {
         "module": "saas-starter",
@@ -2833,6 +2855,65 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/DeclareSourceOperations",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "DeclareSourceOperations",
+      "input_type": "saas.accounts.v1.DeclareSourceOperationsRequest",
+      "output_type": "saas.accounts.v1.DeclareSourceOperationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/organizations/{org_id}/datasources/{source_id}/operations",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.operation.declared"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Atomically replace an API source's declared operations as an organization administrator.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/DeleteDatasourceAccountLink",
       "service": "DatasourceService",
       "full_service": "saas.accounts.v1.DatasourceService",
@@ -3176,6 +3257,69 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "InvokeSourceOperation",
+      "input_type": "saas.accounts.v1.InvokeSourceOperationRequest",
+      "output_type": "saas.accounts.v1.InvokeSourceOperationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/organizations/{org_id}/datasources/{source_id}/operations/{operation}:invoke",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:invoke"
+        ],
+        "scopes": [
+          "datasource:invoke"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "source_id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.operation.invoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS_AND_FAILURE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_REQUIRED",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Call a declared source operation under current authority and an effect receipt.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks",
       "service": "DatasourceService",
       "full_service": "saas.accounts.v1.DatasourceService",
@@ -3274,6 +3418,67 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/ListSourceOperations",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "ListSourceOperations",
+      "input_type": "saas.accounts.v1.ListSourceOperationsRequest",
+      "output_type": "saas.accounts.v1.ListSourceOperationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/organizations/{org_id}/datasources/{source_id}/operations",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:read"
+        ],
+        "scopes": [
+          "datasource:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Read an API source's declared operations under current source authority.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/ListSources",
       "service": "DatasourceService",
       "full_service": "saas.accounts.v1.DatasourceService",
@@ -3317,6 +3522,120 @@
       },
       "policy_tier": "org_member",
       "description": "List the org's connected datasources.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "LookupInvokeSourceOperation",
+      "input_type": "saas.accounts.v1.LookupInvokeSourceOperationRequest",
+      "output_type": "saas.accounts.v1.InvokeSourceOperationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/datasource-operation-receipts/{effect_id}",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:read"
+        ],
+        "scopes": [
+          "datasource:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "effect_id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Read the current authorized outcome of a source effect without redispatching it.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "LookupPruneSourceOperationReceipts",
+      "input_type": "saas.accounts.v1.LookupPruneSourceOperationReceiptsRequest",
+      "output_type": "saas.accounts.v1.PruneSourceOperationReceiptsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:read"
+        ],
+        "scopes": [
+          "datasource:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "effect_id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Read an authorized source receipt-cleanup result.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -3368,6 +3687,61 @@
       },
       "policy_tier": "org_admin",
       "description": "Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "PruneSourceOperationReceipts",
+      "input_type": "saas.accounts.v1.PruneSourceOperationReceiptsRequest",
+      "output_type": "saas.accounts.v1.PruneSourceOperationReceiptsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:invoke"
+        ],
+        "scopes": [
+          "datasource:invoke"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "source_id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.receipts.pruned"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_REQUIRED",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Expire old source receipt output while retaining effect tombstones.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4291,6 +4665,65 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "GrantInstallationToTeam",
+      "input_type": "saas.accounts.v1.GrantInstallationToTeamRequest",
+      "output_type": "saas.accounts.v1.GrantInstallationToTeamResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/installations/{installation_id}/teams",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.scope.granted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "description": "Expose an installation to a team: grant a role permitting solution use at the installation's authority root.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.InstallationService/InstallSolution",
       "service": "InstallationService",
       "full_service": "saas.accounts.v1.InstallationService",
@@ -4344,6 +4777,281 @@
       },
       "policy_tier": "org_admin",
       "description": "Install a solution: compose its agent principal, scope node, standing grant, and installation row.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "ListAvailableSolutions",
+      "input_type": "saas.accounts.v1.ListAvailableSolutionsRequest",
+      "output_type": "saas.accounts.v1.ListAvailableSolutionsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/installations:listAvailable",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "List the solution targets an administrator may install: accepted applied presence, never a refused desired generation.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/ListInstallations",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "ListInstallations",
+      "input_type": "saas.accounts.v1.ListInstallationsRequest",
+      "output_type": "saas.accounts.v1.ListInstallationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List one organization's installations with their live health.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "ListOrganizationInstallations",
+      "input_type": "saas.accounts.v1.ListOrganizationInstallationsRequest",
+      "output_type": "saas.accounts.v1.ListOrganizationInstallationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/installations",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "List the caller's organization's active installations with health, installed target, authority root and the teams it is exposed to.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/NarrowInstallation",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "NarrowInstallation",
+      "input_type": "saas.accounts.v1.NarrowInstallationRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/installations/{installation_id}:narrow",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.installation.narrowed"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Narrow an installation's scope, bump its revision and cancel the organization's affected work.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "RevokeInstallationFromTeam",
+      "input_type": "saas.accounts.v1.RevokeInstallationFromTeamRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/installations/{installation_id}/teams/{team_id}:revoke",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.scope.revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "description": "Remove a team's grant at an installation's authority root, under the policy log.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5391,6 +6099,94 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ApproveExecutableArtifact",
+      "input_type": "saas.accounts.v1.ModuleExecutableArtifactRequest",
+      "output_type": "saas.accounts.v1.ModuleExecutableArtifactResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.executable_artifact_decision"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Record explicit current-admin consent for an exact executable identity within installed source and contract ceilings.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "AuthorizeExecutableArtifact",
+      "input_type": "saas.accounts.v1.ModuleExecutableArtifactRequest",
+      "output_type": "saas.accounts.v1.ModuleExecutableArtifactResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Authorize an exact previously approved executable identity using current authority and revocation.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
       "service": "ModuleCapabilitiesService",
       "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
@@ -5870,6 +6666,49 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "GetCurrentInstallation",
+      "input_type": "saas.accounts.v1.ModuleCurrentInstallationRequest",
+      "output_type": "saas.accounts.v1.ModuleCurrentInstallationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Read current active installation identity as a verified organization member through an authenticated module.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
       "service": "ModuleCapabilitiesService",
       "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
@@ -6087,51 +6926,6 @@
       }
     },
     {
-      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
-      "service": "ModuleCapabilitiesService",
-      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
-      "method": "MintModuleRegistration",
-      "input_type": "saas.accounts.v1.ModuleMintRegistrationRequest",
-      "output_type": "saas.accounts.v1.ModuleMintRegistrationResponse",
-      "client_streaming": false,
-      "server_streaming": false,
-      "deprecated": false,
-      "source_proto": "saas/accounts/v1/module_capabilities.proto",
-      "protocols": [
-        "PROTOCOL_GRPC",
-        "PROTOCOL_CONNECT"
-      ],
-      "http_bindings": [],
-      "policy": {
-        "exposure": "EXPOSURE_INTERNAL",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "saas.module.registration_minted"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
-        "request_sensitivity": "SENSITIVITY_SECRET",
-        "response_sensitivity": "SENSITIVITY_SECRET",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
-      },
-      "policy_tier": "internal",
-      "description": "Issue a composed module the signed credential it registers its gateway REST prefix with.",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      }
-    },
-    {
       "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
       "service": "ModuleCapabilitiesService",
       "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
@@ -6171,51 +6965,6 @@
       },
       "policy_tier": "internal",
       "description": "Issue a composed module the Work Context its service principal calls this surface with.",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      }
-    },
-    {
-      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
-      "service": "ModuleCapabilitiesService",
-      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
-      "method": "MintSolutionRegistration",
-      "input_type": "saas.accounts.v1.SolutionMintRegistrationRequest",
-      "output_type": "saas.accounts.v1.SolutionMintRegistrationResponse",
-      "client_streaming": false,
-      "server_streaming": false,
-      "deprecated": false,
-      "source_proto": "saas/accounts/v1/module_capabilities.proto",
-      "protocols": [
-        "PROTOCOL_GRPC",
-        "PROTOCOL_CONNECT"
-      ],
-      "http_bindings": [],
-      "policy": {
-        "exposure": "EXPOSURE_INTERNAL",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "saas.solution.registration_minted"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
-        "request_sensitivity": "SENSITIVITY_SECRET",
-        "response_sensitivity": "SENSITIVITY_SECRET",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
-      },
-      "policy_tier": "internal",
-      "description": "Issue a solution the signed credential it registers its gateway upstream and frontend remote with.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6564,6 +7313,51 @@
       },
       "policy_tier": "internal",
       "description": "Open a pending approval whose resume job the module claims.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "RevokeExecutableArtifact",
+      "input_type": "saas.accounts.v1.ModuleRevokeExecutableArtifactRequest",
+      "output_type": "saas.accounts.v1.ModuleExecutableArtifactResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.executable_artifact_decision"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Permanently revoke consent for an exact executable identity.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9000,6 +9794,57 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "GetModuleEnvelope",
+      "input_type": "saas.accounts.v1.GetModuleEnvelopeRequest",
+      "output_type": "saas.accounts.v1.GetModuleEnvelopeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/platform/module-envelope",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "platform_admin",
+      "description": "Read the current module envelope, the authority ceiling every module principal is derived inside.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
       "service": "PlatformAdminService",
       "full_service": "saas.accounts.v1.PlatformAdminService",
@@ -9602,6 +10447,59 @@
       },
       "policy_tier": "platform_admin",
       "description": "Override one entitlement limit for a single organization.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "PutModuleEnvelope",
+      "input_type": "saas.accounts.v1.PutModuleEnvelopeRequest",
+      "output_type": "saas.accounts.v1.PutModuleEnvelopeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "PUT",
+          "path": "/v1/platform/module-envelope",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
+        "audit": {
+          "events": [
+            "saas.platform.module_envelope_written"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "platform_admin",
+      "description": "Write the next revision of the module envelope; it takes effect at the next check.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -10658,12 +11556,55 @@
       }
     },
     {
-      "procedure": "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+      "procedure": "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements",
+      "service": "SolutionEntitlementService",
+      "full_service": "saas.accounts.v1.SolutionEntitlementService",
+      "method": "ListSolutionEntitlements",
+      "input_type": "saas.accounts.v1.ListSolutionEntitlementsRequest",
+      "output_type": "saas.accounts.v1.ListSolutionEntitlementsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_entitlements_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List the installed solutions a subject may use in one organization.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
       "service": "SolutionRegistryService",
       "full_service": "saas.accounts.v1.SolutionRegistryService",
-      "method": "DeleteSolutionRegistration",
-      "input_type": "saas.accounts.v1.DeleteSolutionRegistrationRequest",
-      "output_type": "saas.accounts.v1.SolutionRegistration",
+      "method": "ListSolutionHostBindings",
+      "input_type": "saas.accounts.v1.ListSolutionHostBindingsRequest",
+      "output_type": "saas.accounts.v1.ListSolutionHostBindingsResponse",
       "client_streaming": false,
       "server_streaming": false,
       "deprecated": false,
@@ -10681,10 +11622,8 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [
-            "saas.solution.registration_deleted"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
@@ -10696,7 +11635,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
-      "description": "Deregister a solution and leave a tombstone that blocks resurrection.",
+      "description": "Read the declared solution bindings: desired, applied and why they differ.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -10740,51 +11679,6 @@
       },
       "policy_tier": "internal",
       "description": "Read the solution registry snapshot a replica rebuilds its cache from.",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      }
-    },
-    {
-      "procedure": "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration",
-      "service": "SolutionRegistryService",
-      "full_service": "saas.accounts.v1.SolutionRegistryService",
-      "method": "PutSolutionRegistration",
-      "input_type": "saas.accounts.v1.PutSolutionRegistrationRequest",
-      "output_type": "saas.accounts.v1.SolutionRegistration",
-      "client_streaming": false,
-      "server_streaming": false,
-      "deprecated": false,
-      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
-      "protocols": [
-        "PROTOCOL_GRPC",
-        "PROTOCOL_CONNECT"
-      ],
-      "http_bindings": [],
-      "policy": {
-        "exposure": "EXPOSURE_INTERNAL",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "saas.solution.registration_updated"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
-        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
-      },
-      "policy_tier": "internal",
-      "description": "Write or renew one half of a solution's durable runtime registration.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -13430,6 +14324,26 @@
         "viewer"
       ],
       "api_key_scope": false
+    },
+    {
+      "permission": "datasource:invoke",
+      "resource": "datasource",
+      "action": "invoke",
+      "description": "Invoke declared operations on a source boundary.",
+      "built_in_roles": [
+        "admin (via *:*)"
+      ],
+      "api_key_scope": true
+    },
+    {
+      "permission": "datasource:read",
+      "resource": "datasource",
+      "action": "read",
+      "description": "Read declared operations on a source boundary.",
+      "built_in_roles": [
+        "admin (via *:*)"
+      ],
+      "api_key_scope": true
     },
     {
       "permission": "entitlements:read",

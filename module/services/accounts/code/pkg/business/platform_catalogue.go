@@ -110,7 +110,7 @@ func (s *Service) ListPlatformCatalogue(ctx context.Context, actorID string, inc
 		return nil, w.Wrapf(err, "cannot read the platform catalogue")
 	}
 	now := time.Now()
-	entries := projectPlatformCatalogue(s.modulePrincipals, registrations, installations, includeTombstoned, now)
+	entries := projectPlatformCatalogue(s.declaredModules(), registrations, installations, includeTombstoned, now)
 	enforceCatalogueVerdictEvidence(ctx, entries, now)
 	return &PlatformCatalogue{
 		Entries:          entries,
@@ -185,8 +185,30 @@ func projectPlatformCatalogue(
 		solutions[name] = &PlatformCatalogueEntry{Entry: entry}
 		return solutions[name]
 	}
+	// An installation names the immutable solution TARGET, never a solution id
+	// and never a route alias — `Installation.solution_identifier` is gone with
+	// the runtime registration writer. The declared presence record is the only
+	// thing that maps a target back to the solution that opened it
+	// (SolutionDeclaredBinding.TargetID), so the index is built from the
+	// registrations before any installation is placed.
+	//
+	// A target the registry cannot resolve is keyed by the TARGET ID rather than
+	// forced into some solution's row. That keeps the entry honest — it reads as
+	// an installation of something not recorded here, which is what it is — and
+	// it is why this loop cannot run before the index exists.
+	solutionOfTarget := make(map[string]string, len(registrations))
+	for _, registration := range registrations {
+		if declared := registration.Declared; declared != nil && declared.TargetID != "" {
+			solutionOfTarget[declared.TargetID] = registration.SolutionID
+		}
+	}
 	for _, installation := range installations {
-		row := solution(installation.Installation.GetSolutionIdentifier())
+		target := installation.Installation.GetTargetId()
+		name, resolved := solutionOfTarget[target]
+		if !resolved {
+			name = target
+		}
+		row := solution(name)
 		row.Entry.Installations = append(row.Entry.Installations, catalogueInstallation(installation))
 	}
 	for _, registration := range registrations {

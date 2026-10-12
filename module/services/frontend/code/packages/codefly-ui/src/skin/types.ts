@@ -4,7 +4,7 @@ import type {
 	FrontendBranding,
 	FrontendLogo,
 	FrontendSkinRules,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 
 /**
  * The application skin resolved for a request: validated appearance + branding

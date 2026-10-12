@@ -9,7 +9,7 @@ description: |
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.50
+    version: 0.1.54
     publisher: codefly.dev
 service-dependencies:
     - name: accounts
@@ -37,9 +37,9 @@ workspace-configuration-dependencies:
     - security
 endpoints:
     - name: grpc
-      visibility: module
+      visibility: internal
     - name: rest
-      visibility: module
+      visibility: internal
 spec:
     hot-reload: true
     protocol-output-dirs:

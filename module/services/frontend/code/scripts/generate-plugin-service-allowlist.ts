@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildFrontendServiceAllowlist } from "@codefly/saas-plugin-contract";
+import { buildFrontendServiceAllowlist } from "@codefly-dev/saas-plugin-contract";
 import frontendConfig, { serviceBindings } from "../frontend.config";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));

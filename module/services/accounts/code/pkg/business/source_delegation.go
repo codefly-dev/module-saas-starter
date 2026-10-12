@@ -279,7 +279,7 @@ func (r ModulePrincipalRegistry) SourceDelegationTargets() []SourceDelegationTar
 // role a later mint could re-check. The source then reads as having no
 // delegation until an administrator of the organization reconnects it.
 func (s *Service) recordSourceDelegationsTx(ctx context.Context, actorID, orgID, sourceID string) error {
-	targets := s.modulePrincipals.SourceDelegationTargets()
+	targets := s.declaredModules().SourceDelegationTargets()
 	if len(targets) == 0 {
 		return nil
 	}
@@ -386,6 +386,26 @@ func (s *Service) ListSourceDelegations(ctx context.Context, orgID, sourceID str
 // returns it as stored. Revoking one already revoked changes and records
 // nothing. A delegation that is not in the organization is
 // ErrSourceDelegationNotFound, whether or not it exists elsewhere.
+//
+// A NARROWING — the module binding stops holding the owner's authority over
+// that source — so it runs under the policy log: appended and receipted before
+// the row is marked, with the revocation and the receipt's commit in one
+// transaction, and a refusal rather than an unwitnessed revocation when the log
+// cannot be reached.
+//
+// That transaction is the policy log's control-plane one, because the receipt
+// relation is control-plane only and the two writes must be atomic. The
+// organisation's own scoping is not lost: both statements below carry orgID in
+// their filter — the revoke through SourceDelegationFilter, the fallback read
+// through GetSourceDelegation — so a delegation of another organisation is
+// still ErrSourceDelegationNotFound rather than revocable by id.
+//
+// Revoking an already-revoked delegation appends an entry and commits nothing
+// else, which is the correct trade and not an oversight: the alternative is
+// reading the row before the append to find out, and a read then cannot bind
+// what the transaction will find. An over-recorded entry replays to the same
+// answer (see newPolicyLogOperationID); a narrowing that skipped the log
+// because a pre-read said it would be a no-op would not.
 func (s *Service) RevokeSourceDelegation(ctx context.Context, actorID, orgID, id string) (*SourceDelegation, error) {
 	orgID = strings.TrimSpace(orgID)
 	id = strings.TrimSpace(id)
@@ -393,25 +413,27 @@ func (s *Service) RevokeSourceDelegation(ctx context.Context, actorID, orgID, id
 		return nil, errors.New("org id and delegation id are required")
 	}
 	var out *SourceDelegation
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		revoked, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{OrgID: orgID, ID: id}, SourceDelegationRevokedByAdmin, actorID)
-		if err != nil {
-			return err
-		}
-		if len(revoked) == 1 {
-			out = revoked[0]
-			return s.emitSourceDelegationRevokedTx(ctx, actorID, out, SourceDelegationRevokedByAdmin)
-		}
-		existing, err := s.store.GetSourceDelegation(ctx, orgID, id)
-		if err != nil {
-			return err
-		}
-		if existing == nil {
-			return ErrSourceDelegationNotFound
-		}
-		out = existing
-		return nil
-	}); err != nil {
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		revokeSourceDelegationPolicyLogEntry(actorID, orgID, id),
+		func(ctx context.Context) error {
+			revoked, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{OrgID: orgID, ID: id}, SourceDelegationRevokedByAdmin, actorID)
+			if err != nil {
+				return err
+			}
+			if len(revoked) == 1 {
+				out = revoked[0]
+				return s.emitSourceDelegationRevokedTx(ctx, actorID, out, SourceDelegationRevokedByAdmin)
+			}
+			existing, err := s.store.GetSourceDelegation(ctx, orgID, id)
+			if err != nil {
+				return err
+			}
+			if existing == nil {
+				return ErrSourceDelegationNotFound
+			}
+			out = existing
+			return nil
+		}); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -464,8 +486,10 @@ func (a SourceOperationContextAuthority) WireActorScopes() []*gen.WorkContextSco
 // AuthorizeSourceOperationContext resolves the context a composed module may be
 // issued from a source delegation, failing closed on every check:
 //
-//   - the module proves its identity exactly as for its own Work Context (the
-//     identity secret for its prefix) — otherwise ErrModuleRegistrationDenied;
+//   - the module proves its identity exactly as for its own Work Context (its
+//     pod's projected ServiceAccount token, bound to the running build) —
+//     otherwise ErrModuleIdentityDenied, or ErrExecutionUnbound when the host
+//     could not establish the execution;
 //   - the delegation exists and names this module — otherwise
 //     ErrSourceDelegationInvalid (by id) or
 //     ErrSourceDelegationMissing (by source, when it has no active delegation
@@ -477,18 +501,26 @@ func (a SourceOperationContextAuthority) WireActorScopes() []*gen.WorkContextSco
 //     revokes the row with the reason, records it, and is
 //     ErrSourceDelegationRevoked.
 //
-// The tenant is the delegation's organization; nothing in the request names it,
-// and the module's declared tenant and cross_tenant grant play no part.
-func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, secret string, ref SourceDelegationRef) (SourceOperationContextAuthority, error) {
-	identity, err := s.ModuleAuthorizeWorkContext(prefix, secret)
+// The tenant is the delegation's organization; the current envelope must offer
+// the module to it and that organization must have an active installation.
+func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, serviceAccountToken string, ref SourceDelegationRef) (SourceOperationContextAuthority, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	identity, _, err := s.authorizeModuleIdentity(ctx, snapshot, prefix, serviceAccountToken)
 	if err != nil {
 		return SourceOperationContextAuthority{}, err
 	}
-	grant, registered := s.modulePrincipals[identity.PrincipalID]
-	if !registered {
-		return SourceOperationContextAuthority{}, ErrModuleRegistrationDenied
+	authority, err := s.authorizeSourceDelegation(ctx, snapshot, identity.PrincipalID, ref)
+	if err != nil {
+		return SourceOperationContextAuthority{}, err
 	}
-	return s.authorizeSourceDelegation(ctx, identity.PrincipalID, grant, ref)
+	// The execution this mint was bound to travels with it, so its record
+	// names the pod and build that obtained the delegated capability.
+	authority.Execution = identity.Execution
+	authority.snapshot = snapshot
+	if err := s.FenceModuleMint(ctx, authority.ModuleWorkContextAuthority); err != nil {
+		return SourceOperationContextAuthority{}, err
+	}
+	return authority, nil
 }
 
 // AuthorizeDelegationReferenceExchange resolves the capability one call of
@@ -520,10 +552,21 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 func (s *Service) AuthorizeDelegationReferenceExchange(
 	ctx context.Context, caller ModuleCaller, delegationID, bindingID string, lookup bool,
 ) (SourceOperationContextAuthority, error) {
-	grant, err := s.moduleGrant(caller)
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return SourceOperationContextAuthority{}, fenceErr
+	}
+	defer releaseAuthority()
+
+	// ONE FENCED SNAPSHOT for both principals: the caller's grant and the
+	// delegator's are read from the same registry, so a registry installed
+	// while this decision is in flight can never pair one revision's caller
+	// with another revision's delegator.
+	callerAuthority, snapshot, err := s.authorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return SourceOperationContextAuthority{}, err
 	}
+	grant := callerAuthority.Grant
 	if delegationID == "" || bindingID == "" {
 		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
 	}
@@ -544,12 +587,16 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		if !delegation.Active() {
 			return ErrSourceDelegationRevoked
 		}
-		// The delegating module is the one the person granted to, which is not
-		// the caller: the caller is the module that grant authorizes calling.
-		delegating, declared := s.modulePrincipals[ModulePrincipalID(delegation.ModulePrefix)]
-		if !declared {
+		if delegation.OrgID != caller.BoundOrg {
 			return ErrSourceDelegationInvalid
 		}
+		// The delegating module is the one the person granted to, which is not
+		// the caller: the caller is the module that grant authorizes calling.
+		delegator, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: ModulePrincipalID(delegation.ModulePrefix), BoundOrg: delegation.OrgID})
+		if err != nil {
+			return err
+		}
+		delegating := delegator.Grant
 		granted, current := delegating.currentSourceDelegationBinding(delegation)
 		if !current {
 			revokeAs, stale = SourceDelegationBindingChanged, delegation
@@ -638,8 +685,15 @@ func (s *Service) revokeStaleDelegation(ctx context.Context, principalID string,
 }
 
 func (s *Service) authorizeSourceDelegation(
-	ctx context.Context, principalID string, grant ModulePrincipalGrant, ref SourceDelegationRef,
+	ctx context.Context, snapshot *installedModuleRegistry, principalID string, ref SourceDelegationRef,
 ) (SourceOperationContextAuthority, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return SourceOperationContextAuthority{}, fenceErr
+	}
+	defer releaseAuthority()
+
+	grant := snapshot.registry[principalID]
 	if (ref.DelegationID == "") == (ref.SourceID == "") {
 		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
 	}
@@ -672,6 +726,11 @@ func (s *Service) authorizeSourceDelegation(
 				return ErrSourceDelegationMissing
 			}
 		}
+		installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: principalID, BoundOrg: delegation.OrgID})
+		if err != nil {
+			return err
+		}
+		grant = installed.Grant
 		binding, current := grant.currentSourceDelegationBinding(delegation)
 		if !current {
 			revokeAs, stale = SourceDelegationBindingChanged, delegation
@@ -693,7 +752,7 @@ func (s *Service) authorizeSourceDelegation(
 			return ErrSourceDelegationInvalid
 		}
 		authority = SourceOperationContextAuthority{
-			ModuleWorkContextAuthority: ModuleWorkContextAuthority{PrincipalID: principalID, Tenant: delegation.OrgID},
+			ModuleWorkContextAuthority: ModuleWorkContextAuthority{PrincipalID: principalID, Tenant: delegation.OrgID, InstallationID: installed.InstallationID, InstallationRevision: installed.InstallationRevision, ProducerEpoch: installed.ProducerEpoch},
 			ModulePrefix:               grant.Prefix,
 			OwnerPrincipalID:           delegation.PrincipalID,
 			Delegation:                 *delegation,
@@ -733,6 +792,14 @@ func (s *Service) RecordSourceOperationContextMint(ctx context.Context, authorit
 		payload["audience"] = authority.Audience
 		payload["scopes"] = operationScopeGrants(authority.Scopes)
 		payload["lookup"] = authority.Lookup
+		// A mint names the execution it was bound to. The reference exchange
+		// records the same event with none: its caller authenticated with a
+		// module Work Context, so no execution was bound at that call.
+		if authority.Execution.PodUID != "" {
+			for key, value := range authority.Execution.auditFields() {
+				payload[key] = value
+			}
+		}
 		return s.emitTx(ctx, authority.PrincipalID, "system", EventSourceDelegationUsed, "datasource",
 			authority.Delegation.SourceID, authority.Delegation.OrgID, payload)
 	})
@@ -794,16 +861,34 @@ func (s *Service) confirmSourceDelegationTx(
 // source-delegation context when the owner is not a declared module principal
 // and some actor is; the module grant returned is that actor's. Every other
 // context is not one (ok false) and takes the checks it always took.
-func (s *Service) sourceDelegationShape(ownerPrincipalID string, actorPrincipalIDs []string) (ModulePrincipalGrant, bool) {
-	if _, ownerIsModule := s.modulePrincipals[ownerPrincipalID]; ownerIsModule {
-		return ModulePrincipalGrant{}, false
+//
+// The shape and the grant come from ONE registry snapshot, and a shape that is
+// a source-delegation context is fenced against the committed envelope like
+// every other module authority decision. The actor's installation in this
+// organization is intersected before any delegation binding is accepted.
+func (s *Service) sourceDelegationShape(
+	ctx context.Context, orgID, ownerPrincipalID string, actorPrincipalIDs []string,
+) (ModulePrincipalGrant, bool, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModulePrincipalGrant{}, false, fenceErr
+	}
+	defer releaseAuthority()
+
+	snapshot := s.moduleRegistrySnapshot()
+	if _, ownerIsModule := snapshot.registry[ownerPrincipalID]; ownerIsModule {
+		return ModulePrincipalGrant{}, false, nil
 	}
 	for _, actor := range actorPrincipalIDs {
-		if grant, isModule := s.modulePrincipals[actor]; isModule {
-			return grant, true
+		if _, isModule := snapshot.registry[actor]; isModule {
+			authority, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: actor, BoundOrg: orgID})
+			if err != nil {
+				return ModulePrincipalGrant{}, true, err
+			}
+			return authority.Grant, true, nil
 		}
 	}
-	return ModulePrincipalGrant{}, false
+	return ModulePrincipalGrant{}, false, nil
 }
 
 // CheckSourceDelegationContextRevision confirms a Work Context minted from a
@@ -815,16 +900,25 @@ func (s *Service) sourceDelegationShape(ownerPrincipalID string, actorPrincipalI
 // A handled context is confirmed only when exactly two subjects are presented,
 // the owner then one declared module principal, and some ACTIVE delegation from
 // the owner in orgID to that module passes confirmSourceDelegationTx. Anything
-// else is ErrSourceDelegationContextStale. The module's declared tenancy is not
-// consulted: the delegation is what authorizes orgID.
+// else is ErrSourceDelegationContextStale. The delegation and this organization's
+// live installation must both permit the module under the current envelope.
 func (s *Service) CheckSourceDelegationContextRevision(
 	ctx context.Context, orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
 ) (handled bool, err error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return false, fenceErr
+	}
+	defer releaseAuthority()
+
 	actors := make([]string, 0, len(subjects))
 	for _, subject := range subjects[min(1, len(subjects)):] {
 		actors = append(actors, subject.PrincipalID)
 	}
-	grant, ok := s.sourceDelegationShape(ownerPrincipalID, actors)
+	grant, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
+	if err != nil {
+		return true, err
+	}
 	if !ok {
 		return false, nil
 	}
@@ -882,11 +976,20 @@ func (s *Service) ConfirmSourceDelegationParent(
 	ctx context.Context, orgID, ownerPrincipalID string, revision uint64,
 	ownerScopes []ModuleOperationScope, hops []SourceDelegationHop,
 ) (handled bool, delegation *SourceDelegation, err error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return false, nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	actors := make([]string, 0, len(hops))
 	for _, hop := range hops {
 		actors = append(actors, hop.PrincipalID)
 	}
-	grant, ok := s.sourceDelegationShape(ownerPrincipalID, actors)
+	grant, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
+	if err != nil {
+		return true, nil, err
+	}
 	if !ok {
 		return false, nil, nil
 	}

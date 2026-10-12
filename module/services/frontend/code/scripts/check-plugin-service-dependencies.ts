@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { FrontendServiceAllowlist } from "@codefly/saas-plugin-contract";
+import type { FrontendServiceAllowlist } from "@codefly-dev/saas-plugin-contract";
 
 import { assertPluginServiceDependenciesCurrent } from "../server/plugin-service-dependency-policy";
 

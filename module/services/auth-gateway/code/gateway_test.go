@@ -25,6 +25,9 @@ type fakeUpstream struct {
 	lastBody    string
 	statusCode  int
 	body        string
+	// responseHeaders let a test give the upstream its own answer about
+	// cross-origin access, which is what accounts' generated CORS handler does.
+	responseHeaders http.Header
 }
 
 func (f *fakeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +36,11 @@ func (f *fakeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.lastMethod = r.Method
 	if body, err := io.ReadAll(r.Body); err == nil {
 		f.lastBody = string(body)
+	}
+	for key, values := range f.responseHeaders {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
 	}
 	code := f.statusCode
 	if code == 0 {
@@ -134,14 +142,20 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 		"frontend": frontendURL,
 	}
 
+	solutions := newFakeSolutionRegistry()
 	gateway := NewGateway(
 		authz,
 		matcher,
 		upstreams,
 		nil,
-		newFakeSolutionRegistry(),
+		solutions,
 		newFakeClientRegistry(),
 	)
+	// The solution proxy consults the entitlement authority before it forwards
+	// anything, so a harness with none would answer 503 to every solution test.
+	// This stands in for an organization that installed everything the registry
+	// holds; a test about admission substitutes a narrower one.
+	gateway.solutionEntitlements = &installedEverythingRegistered{registry: solutions}
 
 	return gateway, apiFake, frontendFake, priv
 }
@@ -249,7 +263,7 @@ func TestGateway_GitHubWebhooks_ForwardedUnauthenticatedWithSignature(t *testing
 func TestGateway_GitHubWebhook_BudgetIsolatedFromAnonymousTraffic(t *testing.T) {
 	gw, apiFake, _, _ := newGatewayHarness(t)
 	// effective anonymous budget = limit(1) + burst(max(1/5,1)=1) = 2 per minute.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 
 	// Spend the anonymous per-IP budget on an unrelated public route.
 	spent := false

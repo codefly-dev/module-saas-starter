@@ -1,15 +1,18 @@
 package main
 
 import (
+	"accounts/pkg/keyservice"
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/installationtest"
+	"accounts/pkg/business/moduleregistrytest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -45,6 +48,15 @@ func clearAuthProviderEnvironment(t *testing.T) {
 // ci run` the group is populated from this module's own local defaults —
 // including the placeholder AppRole credential in vault.secret.env. Proven by
 // running this package with every carrier set to garbage.
+// vaultSigningBinding is the key-service binding these cases exercise: the
+// signing key on Vault, which is the only backend that can hold it.
+func vaultSigningBinding() *keyservice.Binding {
+	return &keyservice.Binding{
+		Backend:        keyservice.BackendVault,
+		SigningBackend: keyservice.BackendVault,
+	}
+}
+
 func clearVaultBinding(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
@@ -54,6 +66,14 @@ func clearVaultBinding(t *testing.T) {
 		t.Setenv(key, "")
 		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__"+key, "")
 		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__VAULT__"+key, "")
+	}
+	for _, key := range []string{
+		"KEY_SERVICE_BACKEND", "KEY_SERVICE_PREVIOUS_BACKEND", "KEY_SERVICE_SIGNING_BACKEND",
+		"KEY_SERVICE_KMS_ENVELOPE_KEY", "KEY_SERVICE_KMS_MAC_KEY",
+		"KEY_SERVICE_KMS_SIGNING_WRAP_KEY", "KEY_SERVICE_SIGNING_KEY_WRAPPED",
+	} {
+		t.Setenv(key, "")
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__KEY_SERVICE__"+key, "")
 	}
 	t.Setenv("MESH_PROTECTED", "")
 	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__INTERNAL_TRANSPORT__MESH_PROTECTED", "")
@@ -385,14 +405,14 @@ func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 	clearVaultBinding(t)
 
-	_, err := loadSigningKey(context.Background(), false, true)
+	_, err := loadSigningKey(context.Background(), vaultSigningBinding(), false, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Vault")
 	require.Contains(t, err.Error(), "secret/data/jwt-signing-key")
 	require.Contains(t, err.Error(), "durable identity seed")
 	require.Contains(t, err.Error(), "KEY_ROTATION.md")
 
-	priv, err := loadSigningKey(context.Background(), true, true)
+	priv, err := loadSigningKey(context.Background(), vaultSigningBinding(), true, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, priv)
 }
@@ -415,15 +435,15 @@ func keyCustody(t *testing.T, value string) {
 func TestKeyCustodyIsRequiredOutsideLocal(t *testing.T) {
 	clearVaultBinding(t)
 	keyCustody(t, "")
-	err := requireKeyCustody(false)
+	err := requireKeyCustody(keyservice.BackendVault, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "VAULT_KEY_CUSTODY is required outside the local environment")
 	require.Contains(t, err.Error(), "secret/data/jwt-signing-key")
 
-	require.NoError(t, requireKeyCustody(true), "a local run has no cell and no seeding command")
+	require.NoError(t, requireKeyCustody(keyservice.BackendVault, true), "a local run has no cell and no seeding command")
 
 	keyCustody(t, "platform-cli seed-identity example-cell")
-	require.NoError(t, requireKeyCustody(false))
+	require.NoError(t, requireKeyCustody(keyservice.BackendVault, false))
 }
 
 // The cell's own seeding command reaches the operator through the `vault`
@@ -435,13 +455,13 @@ func TestSigningKeyRefusalQuotesTheCellsCustodyCommand(t *testing.T) {
 	clearVaultBinding(t)
 	keyCustody(t, "  platform-cli seed-identity\n  FORGED log line\t<coordinate>  ")
 
-	_, err := loadSigningKey(context.Background(), false, true)
+	_, err := loadSigningKey(context.Background(), vaultSigningBinding(), false, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "platform-cli seed-identity FORGED log line <coordinate>")
 	require.NotContains(t, err.Error(), "\n")
 
 	keyCustody(t, strings.Repeat("x", 500))
-	_, err = loadSigningKey(context.Background(), false, true)
+	_, err = loadSigningKey(context.Background(), vaultSigningBinding(), false, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), strings.Repeat("x", 200)+"…")
 	require.NotContains(t, err.Error(), strings.Repeat("x", 201))
@@ -455,7 +475,7 @@ func TestLoadSigningKeyNeverSelfMintsOutsideLocal(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 	clearVaultBinding(t)
 
-	_, err := loadSigningKey(context.Background(), true, false)
+	_, err := loadSigningKey(context.Background(), vaultSigningBinding(), true, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "durable identity seed")
 }
@@ -475,79 +495,97 @@ func TestRequireLocalForDevFixtureProvider(t *testing.T) {
 	}
 }
 
-type federationTestMinter struct{}
+// TestNoModuleSecretAuthenticatesAMint is the deletion, held behaviourally
+// (#1056). The three secret maps are set on every carrier a workspace value can
+// arrive by, to digests of a secret the test then presents — and the secret
+// mints nothing, because nothing reads them. Only the pod's projected token,
+// bound to its running build, does.
+func TestNoModuleSecretAuthenticatesAMint(t *testing.T) {
+	const tenant = "55555555-5555-4555-8555-555555555555"
+	declaration := fmt.Sprintf("documents:%x", sha256.Sum256([]byte("identity-secret")))
+	for _, key := range []string{"MODULE_IDENTITY_SECRETS", "MODULE_REGISTRATION_SECRETS", "SOLUTION_REGISTRATION_SECRETS"} {
+		t.Setenv(key, declaration)
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__FEDERATION__"+key, declaration)
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__FEDERATION__"+key, declaration)
+	}
+	service, err := business.NewService(nil)
+	require.NoError(t, err)
+	registry, err := moduleregistrytest.Parse(
+		`{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},"tenant":"` + tenant + `"}}`)
+	require.NoError(t, err)
+	principal := business.ModulePrincipalID("documents")
+	grant := registry[principal]
+	grant.PresenceBinding = "acme.test.documents"
+	registry[principal] = grant
+	scope := business.FullInstallationScope(grant)
+	installations := &installationtest.Store{}
+	_, err = installations.InstallSolution(context.Background(), &business.InstallSolutionParams{OrgID: tenant, RegistryPrincipalID: principal, RegistryBindingID: grant.PresenceBinding, Scope: &scope})
+	require.NoError(t, err)
+	service.SetModuleAuthorityReads(installations, nil)
+	service.SetModuleCapabilities(nil, nil, registry)
+	cluster := executiontest.New()
+	service.SetExecutionBinding(cluster, cluster)
+	cluster.Approve("documents", executiontest.Digest("documents-v1"), 3)
+	token := cluster.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "documents", Container: "app"},
+		executiontest.Image("documents-v1"))
 
-func (federationTestMinter) MintModuleRegistration(string) (string, time.Time, error) {
-	return "registration-token", time.Time{}, nil
+	_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", "identity-secret")
+	require.ErrorIs(t, err, business.ErrModuleIdentityDenied, "a secret is not a token, and nothing reads the secret maps")
+	require.ErrorIs(t, err, business.ErrExecutionTokenRejected)
+
+	authority, err := service.ModuleAuthorizeWorkContext(context.Background(), "documents", token)
+	require.NoError(t, err)
+	require.Equal(t, business.ModulePrincipalID("documents"), authority.PrincipalID)
+	require.Equal(t, tenant, authority.Tenant)
+	require.Equal(t, uint64(3), authority.Execution.Incarnation)
+	require.Equal(t, executiontest.Image("documents-v1"), string(authority.Execution.Running))
 }
 
-func TestConfigureModuleIdentity(t *testing.T) {
-	const tenant = "55555555-5555-4555-8555-555555555555"
-	const plainKey = "MODULE_IDENTITY_SECRETS"
-	const publicKey = "CODEFLY__WORKSPACE_CONFIGURATION__FEDERATION__MODULE_IDENTITY_SECRETS"
-	const secretKey = "CODEFLY__WORKSPACE_SECRET_CONFIGURATION__FEDERATION__MODULE_IDENTITY_SECRETS"
-	identityDigest := sha256.Sum256([]byte("identity-secret"))
-	declaration := fmt.Sprintf("documents:%x", identityDigest)
-	for name, test := range map[string]struct {
-		key        string
-		value      string
-		authorized bool
-		invalid    bool
-	}{
-		"public configuration": {publicKey, declaration, true, false},
-		"secret configuration": {secretKey, declaration, true, false},
-		"plain environment":    {plainKey, declaration, true, false},
-		"absent":               {},
-		"empty":                {publicKey, "", false, false},
-		"whitespace":           {publicKey, "  ", false, false},
-		"empty map":            {publicKey, ",", false, false},
-		"missing prefix":       {publicKey, fmt.Sprintf("billing:%x", identityDigest), false, false},
-		"malformed":            {publicKey, "documents:not-a-digest", false, true},
-		"duplicate":            {publicKey, declaration + "," + declaration, false, true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			for _, key := range []string{plainKey, publicKey, secretKey} {
-				t.Setenv(key, "")
-				require.NoError(t, os.Unsetenv(key))
-			}
-			if test.key != "" {
-				t.Setenv(test.key, test.value)
-			}
-			service, err := business.NewService(nil)
-			require.NoError(t, err)
-			service.SetModuleRegistrar(federationTestMinter{}, map[string][sha256.Size]byte{
-				"documents": sha256.Sum256([]byte("registration-secret")),
-			})
-			registry, err := business.ParseModulePrincipalRegistry(
-				`{"documents":{"tenant":"` + tenant + `"}}`)
-			require.NoError(t, err)
-			service.SetModuleCapabilities(nil, nil, registry)
+// keyServiceBackend selects the key-service backend on both carriers, for the
+// same reason keyCustody sets both: workspaceEnv prefers the group, and under
+// `codefly ci run` the group is populated from this module's own local defaults.
+func keyServiceBackend(t *testing.T, backend string) {
+	t.Helper()
+	t.Setenv("KEY_SERVICE_BACKEND", backend)
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__KEY_SERVICE__KEY_SERVICE_BACKEND", backend)
+}
 
-			err = configureModuleIdentity(service)
-			if test.invalid {
-				require.ErrorContains(t, err, "read module identity secrets")
-			} else {
-				require.NoError(t, err)
-			}
-			_, err = service.ModuleAuthorizeWorkContext("documents", "registration-secret")
-			require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
-			authority, err := service.ModuleAuthorizeWorkContext("documents", "identity-secret")
-			if !test.authorized {
-				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, business.ModulePrincipalID("documents"), authority.PrincipalID)
-			require.Equal(t, tenant, authority.Tenant)
+// A hosted boot that names no key service refuses by name. The two backends have
+// opposite custody models — one runs a stateful secrets store the cell unseals
+// and credentials, the other uses non-exportable cloud keys and the workload's
+// own identity — so inheriting either by default would mean reaching a key
+// service nobody chose. Driven through doWork, because a guard that only the
+// helper's test reaches is one a later edit can delete from startup silently.
+func TestStartupRefusesAHostedBootWithNoKeyServiceBackend(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
+	t.Setenv("CODEFLY__ENVIRONMENT", "hosted")
+	keyCustody(t, "platform-cli seed-identity example-cell")
 
-			t.Setenv(test.key, "")
-			require.NoError(t, configureModuleIdentity(service))
-			for _, secret := range []string{"identity-secret", "registration-secret"} {
-				_, err = service.ModuleAuthorizeWorkContext("documents", secret)
-				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
-			}
-		})
-	}
+	_, err := doWork(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "KEY_SERVICE_BACKEND is required outside the local environment")
+	require.Contains(t, err.Error(), "key-service")
+}
+
+// `kms` cannot hold the signing key, and the refusal says so by name rather than
+// leaving the Work Context authority to answer every RPC with a configuration
+// error and the delegation minter to fall back to its v1 HMAC.
+func TestStartupRefusesACloudKMSSigningBackend(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
+	t.Setenv("CODEFLY__ENVIRONMENT", "hosted")
+	keyCustody(t, "platform-cli seed-identity example-cell")
+	keyServiceBackend(t, "vault")
+	t.Setenv("KEY_SERVICE_SIGNING_BACKEND", "kms")
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__KEY_SERVICE__KEY_SERVICE_SIGNING_BACKEND", "kms")
+
+	_, err := doWork(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "KEY_SERVICE_SIGNING_BACKEND=kms is not supported yet")
+	require.Contains(t, err.Error(), "crypto.Signer")
+	require.Contains(t, err.Error(), "kms-wrapped",
+		"the refusal must name the shape that DOES run with no secrets store today")
 }
 
 // The call site, not just the helper. The helper's own test stays green when
@@ -562,6 +600,11 @@ func TestStartupRefusesAHostedBootWithNoCustodyCommand(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 	clearVaultBinding(t)
 	t.Setenv("CODEFLY__ENVIRONMENT", "hosted")
+	// A hosted boot with no key-service backend selected refuses on THAT first
+	// (TestStartupRefusesAHostedBootWithNoKeyServiceBackend covers it), so the
+	// backend is selected here: otherwise the earlier guard fires and this test
+	// passes without ever reaching the custody requirement it is about.
+	keyServiceBackend(t, "vault")
 
 	_, err := doWork(context.Background())
 	require.Error(t, err)

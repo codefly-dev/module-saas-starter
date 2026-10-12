@@ -2,65 +2,47 @@ syntax = "proto3";
 
 package saas.accounts.v1;
 
-import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-// ============================================================================
-// Durable solution registry (issue #534)
-//
-// A solution is an independently deployed component the host has no build-time
-// knowledge of. It self-registers two halves at runtime: a frontend half (the
-// Module-Federation manifest the host renders and navigates to) and a backend
-// half (the upstream the gateway proxies /solutions/<id>/* to). Both used to be
-// process-local maps, so a restart lost them, a registration behind a load
-// balancer reached one replica only, and one half could be live while the other
-// was missing.
-//
-// These messages live in their own file, with deliberately minimal imports, so
-// the auth-gateway can generate the same types from the same source proto and
-// call SolutionRegistryService (declared in solution_registry_service.proto)
-// over the internal listener. Sharing the generated definition rather than
-// restating the wire shape is what keeps the two sides from drifting.
-//
-// Two facts are deliberately distinct. Durable installation intent is the
-// record existing and not being tombstoned; ephemeral endpoint liveness is the
-// per-half lease, renewed by whoever registered that half. A lapsed lease
-// suspends routing without discarding the registration, and the derived status
-// says which of the two is at fault.
-// ============================================================================
+// Read-only projection of the host's declared solution presence. The gateway
+// shares these messages and reads the accounts internal listener.
 
-// SolutionRegistrationStatus is derived at read time from the stored record; it
-// is never a stored column. It is what lets an operator tell a registration
-// that was never completed from one whose publisher stopped renewing, and both
-// from one that was deliberately removed.
+// SolutionRegistrationStatus is derived from declared state and complete,
+// compatible frontend/backend observations, never from an expiring lease.
 enum SolutionRegistrationStatus {
   SOLUTION_REGISTRATION_STATUS_UNSPECIFIED = 0;
-  // Both halves are present, their leases are live, and their declared contract
+  // Both halves are present and their declared contract
   // versions agree. This is the only status either surface serves.
   SOLUTION_REGISTRATION_STATUS_ACTIVE = 1;
-  // A half has never registered. The record is durable but incomplete, so no
+  // A half has not been observed. The record is durable but incomplete, so no
   // page advertises it and the gateway has nothing to route to.
   SOLUTION_REGISTRATION_STATUS_PENDING = 2;
-  // Both halves registered, but at least one lease lapsed: the deployment that
-  // owns it stopped renewing. The intent survives; the endpoint is not live.
-  SOLUTION_REGISTRATION_STATUS_EXPIRED = 3;
+  // Was `SOLUTION_REGISTRATION_STATUS_EXPIRED`: both halves registered but a
+  // lease had lapsed. Presence is delivered, never heartbeat-asserted, so there
+  // is no lease to lapse and no status to derive from one. Reserved rather than
+  // reused: an old reader decoding 3 would read "expired" out of whatever
+  // meaning a later value gave the number.
+  reserved 3;
+  reserved "SOLUTION_REGISTRATION_STATUS_EXPIRED";
   // The two halves declare different contract versions, so activating them
   // together would serve a page against a backend it was not built for.
   SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE = 4;
-  // The registration was deregistered. The row survives as a tombstone so a
-  // delayed heartbeat from a retiring deployment cannot recreate it.
+  // An applied removal keeps the declaration as a tombstone.
   SOLUTION_REGISTRATION_STATUS_TOMBSTONED = 5;
 }
 
 // SolutionFrontendBinding is the stored frontend half. manifest is the document
-// the frontend validated before handing it over; this service persists it
-// verbatim and never reinterprets it, so the host keeps sole ownership of what
-// a manifest may contain.
+// the frontend validates while reading the projection; accounts stores it
+// verbatim and keeps presence authority separate from runtime compatibility.
 message SolutionFrontendBinding {
   int64 revision = 1;
   string manifest = 2;
   string contract_version = 3;
-  google.protobuf.Timestamp lease_expires_at = 4;
+  // Was `google.protobuf.Timestamp lease_expires_at`: the renewal path is
+  // deleted, so a column nothing renews was legacy. Reserved, not reused — a
+  // released number never takes another name or type.
+  reserved 4;
+  reserved "lease_expires_at";
 }
 
 // SolutionBackendBinding is the stored backend half: the upstream the gateway
@@ -70,7 +52,10 @@ message SolutionBackendBinding {
   string upstream = 2;
   string service_alias = 3;
   string contract_version = 4;
-  google.protobuf.Timestamp lease_expires_at = 5;
+  // Was `google.protobuf.Timestamp lease_expires_at`: see
+  // SolutionFrontendBinding above. Reserved, not reused.
+  reserved 5;
+  reserved "lease_expires_at";
 }
 
 // SolutionRegistration is the canonical record. revision is drawn from one
@@ -78,8 +63,7 @@ message SolutionBackendBinding {
 // consumer can order two snapshots without a wall clock.
 message SolutionRegistration {
   string solution_id = 1;
-  // Owner of record. First claim binds it; a registration naming a different
-  // publisher is refused rather than overwriting.
+  // Canonical publisher attribution of the declared record.
   string publisher = 2;
   int64 revision = 3;
   SolutionRegistrationStatus status = 4;
@@ -87,91 +71,20 @@ message SolutionRegistration {
   optional SolutionBackendBinding backend = 6;
   google.protobuf.Timestamp updated_at = 7;
   optional google.protobuf.Timestamp tombstoned_at = 8;
-  // The seed a solution's runtime boundary is derived from (issue #1015).
+  // Was `string runtime_boundary`: the opaque id every Work Context minted for
+  // this solution is sealed under. It is NOT a field a readable record carries
+  // — a boundary returned on a readable record is a capability leaking as a
+  // label — so it is deleted from the wire rather than renamed, and the host
+  // seals it into the capability instead.
   //
-  // ALWAYS EMPTY on the wire, on every response, deliberately. The seed is
-  // assigned by this service when the record is created and never again, and it
-  // is the only input to the per-organization boundary every Work Context
-  // minted for that solution is sealed under — so it is what stands between one
-  // solution's runs and another's. No registrant needs it: accounts derives and
-  // seals the boundary from the credential the solution already presents.
-  //
-  // The field is kept rather than removed so this promise is testable: a change
-  // that starts populating it fails a test instead of shipping.
-  string runtime_boundary = 9;
-}
-
-// SolutionFrontendRegistration is the caller-supplied frontend half. Revision
-// and lease are assigned by the server, never proposed by the registrant.
-message SolutionFrontendRegistration {
-  string manifest = 1 [(buf.validate.field).string = {
-    min_len: 2
-    max_len: 262144
-  }];
-  string contract_version = 2 [(buf.validate.field).string.max_len = 128];
-}
-
-// SolutionBackendRegistration is the caller-supplied backend half. The gateway
-// has already constrained the upstream to a permitted host before it gets here;
-// this service stores what it is told and does not re-derive routing policy.
-message SolutionBackendRegistration {
-  string upstream = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 2048
-    uri: true
-  }];
-  string service_alias = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 128
-  }];
-  string contract_version = 3 [(buf.validate.field).string.max_len = 128];
-}
-
-// PutSolutionRegistrationRequest writes exactly one half of one record.
-//
-// Writing a half whose content is byte-identical to what is stored is a lease
-// renewal: it refreshes liveness and deliberately does not advance the
-// revision, so a heartbeat never looks like a change to a consumer. Writing
-// different content to a half that already exists requires expected_revision,
-// which must equal the record's current revision — that is how a publisher
-// still holding an older view is stopped from overwriting newer state, and how
-// two concurrent updates serialize instead of racing.
-message PutSolutionRegistrationRequest {
-  string solution_id = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 128
-    pattern: "^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$"
-  }];
-  string publisher = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 256
-  }];
-  // Compare-and-swap guard against the record's current revision. Required to
-  // change an existing half, and the only way to re-register a tombstoned
-  // record: the caller must name the tombstone's own revision, which a delayed
-  // retry from a retired deployment does not hold.
-  optional int64 expected_revision = 3 [(buf.validate.field).int64.gt = 0];
-  // Requested liveness window for this half. The registrant renews within it.
-  uint32 lease_seconds = 4 [(buf.validate.field).uint32 = {
-    gte: 30
-    lte: 3600
-  }];
-  oneof half {
-    option (buf.validate.oneof).required = true;
-    SolutionFrontendRegistration frontend = 5;
-    SolutionBackendRegistration backend = 6;
-  }
-}
-
-// DeleteSolutionRegistrationRequest tombstones a record: both halves are
-// cleared in the same statement that marks it deleted, so a reader that somehow
-// ignored the tombstone still has no endpoint to route to.
-message DeleteSolutionRegistrationRequest {
-  string solution_id = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 128
-  }];
-  optional int64 expected_revision = 2 [(buf.validate.field).int64.gt = 0];
+  // Reserved rather than reused. A released field number never takes another
+  // name or type: a consumer still on the old schema reading 9 would decode a
+  // message where it expected a string. `declared` therefore took 10, which
+  // cost a digest move and is the price of not corrupting an old reader.
+  reserved 9;
+  reserved "runtime_boundary";
+  // The binding and immutable target that declared this record.
+  optional SolutionDeclaredBinding declared = 10;
 }
 
 // ListSolutionRegistrationsRequest reads the whole registry. There is one
@@ -188,4 +101,128 @@ message ListSolutionRegistrationsResponse {
   // Highest revision in the registry, tombstones included. Two consumers that
   // report the same registry_revision have converged on the same state.
   int64 registry_revision = 2;
+}
+
+// ============================================================================
+// Declared solution presence (issue #952)
+//
+// A SolutionHostBinding is the document delivery hands this host: which solution
+// runs here, at which generation. The host reconciles it into the registration
+// record above. These messages are the read surface, and they keep the three
+// facts apart on purpose — an operator's first question is which of them is
+// wrong.
+// ============================================================================
+
+// SolutionDeclaredKind is what a declaration declares the presence of.
+//
+// Core requires it on every presence document and refuses any other value, so
+// every admitted declaration has exactly one of the two. The host used to drop
+// it on reconcile, which left the registry unable to say whether a record was a
+// solution or a module — and the two are routed on different surfaces with
+// different admission, so a host that cannot tell them apart must either serve
+// both from one surface or serve neither.
+//
+// UNSPECIFIED is not a third kind and is never a default. It is what a reader
+// decodes from a writer that did not set the field, and both routing surfaces
+// refuse it by name rather than picking the kind that happens to be more
+// permissive.
+enum SolutionDeclaredKind {
+  SOLUTION_DECLARED_KIND_UNSPECIFIED = 0;
+  // A composed solution instance, routed at /solutions/<alias>/* with
+  // per-viewer installation admission.
+  SOLUTION_DECLARED_KIND_SOLUTION = 1;
+  // One module instance, routed at /v1/<alias>/* with the ordinary
+  // authenticated pipeline.
+  SOLUTION_DECLARED_KIND_MODULE = 2;
+}
+
+// SolutionDeclaredBinding identifies the applied declaration and target.
+message SolutionDeclaredBinding {
+  // Stable ID of the deployment instance that declared this record. It is not
+  // the solution id: a binding ID identifies one instance and may carry
+  // characters a path segment may not.
+  string binding_id = 1;
+  // The generation of that binding the host applied into this record.
+  uint64 generation = 2;
+  // publisher/name@version of the applied generation.
+  string release = 3;
+  // The immutable solution target this declaration opened — the identity an
+  // installation names. It is carried on the registration record so a consumer
+  // that was asked about a ROUTE ALIAS can resolve it to the target that
+  // currently serves it and compare identities.
+  //
+  // That resolution is the whole admission mechanism: a replacement binding
+  // which claimed a withdrawn alias resolves to its own target, which no
+  // installation of its predecessor names. A record with no declaration carries
+  // no target and is therefore admissible to nobody, which is the fail-closed
+  // answer and the direction of the cutover.
+  string target_id = 4;
+  // What the declaration declared the presence of. It decides which routing
+  // surface serves this record, so it is carried rather than inferred: a host
+  // that read the kind off the shape of a record — a publisher prefix, an alias
+  // convention — would be guessing at exactly the question that separates a
+  // surface with per-viewer admission from one without.
+  SolutionDeclaredKind kind = 5;
+}
+
+// SolutionHostBindingGeneration is one generation of one document. The document
+// is carried whole, canonically encoded, because "what is this host running" and
+// "what has it been asked to run" are both answers an operator needs in full.
+message SolutionHostBindingGeneration {
+  uint64 generation = 1;
+  // The canonical digest of the document, which is how a rewritten generation is
+  // told from a re-read of the applied one.
+  string digest = 2;
+  string document = 3;
+  google.protobuf.Timestamp at = 4;
+}
+
+// SolutionHostBindingAppliedGeneration is the generation this host reconciled,
+// and what it reconciled it into.
+message SolutionHostBindingAppliedGeneration {
+  SolutionHostBindingGeneration generation = 1;
+  // A tombstone generation: the binding is declared absent. It is not an
+  // absence — the generation stays on the record, so a late or replayed older
+  // generation is still refused after a removal.
+  bool removed = 2;
+  // The route aliases the applied generation holds. A tombstone holds none.
+  repeated string routes = 3;
+  // The registration record this generation reconciled into. A tombstone keeps
+  // the key it withdrew, which is the only way it knows what to withdraw.
+  string solution_id = 4;
+  string release = 5;
+}
+
+// SolutionHostBindingState is one binding's whole state: desired, applied, and
+// why they differ. Endpoint and manifest observations live on
+// SolutionRegistration, separate from the declaration that grants presence.
+message SolutionHostBindingState {
+  string binding_id = 1;
+  string host_coordinate = 2;
+  string host_component = 3;
+  // The newest generation delivery has shown this host, whether or not it
+  // passed.
+  optional SolutionHostBindingGeneration desired = 4;
+  // The generation this host applied. Absent means nothing has ever passed, so
+  // nothing about this binding is being served.
+  optional SolutionHostBindingAppliedGeneration applied = 5;
+  // The generation delivery is showing that this host has not applied, or 0 when
+  // desired and applied agree.
+  uint64 pending_generation = 6;
+  // Why the pending generation was not applied. Empty when nothing is pending.
+  string pending_reason = 7;
+  optional google.protobuf.Timestamp pending_since = 8;
+  // The registration record this binding declares, when it has applied one. It
+  // carries endpoint and manifest observations and their derived status.
+  optional SolutionRegistration registration = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// ListSolutionHostBindingsRequest reads every declared binding. There is one set
+// per deployment and it holds tens of bindings at most, so a consumer rebuilds
+// its view from a full snapshot.
+message ListSolutionHostBindingsRequest {}
+
+message ListSolutionHostBindingsResponse {
+  repeated SolutionHostBindingState bindings = 1;
 }

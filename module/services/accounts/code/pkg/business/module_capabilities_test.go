@@ -12,9 +12,12 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/jobs"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -26,11 +29,12 @@ import (
 // calls the module surface makes so the guard and delegation can be asserted
 // without a database.
 type fakeJobBackend struct {
-	enqueued   []*jobsv1.EnqueueJobRequest
-	claimQueue string
-	completed  []*jobsv1.CompleteJobRequest
-	retried    []*jobsv1.RetryJobRequest
-	deadLetter []*jobsv1.DeadLetterJobRequest
+	enqueued       []*jobsv1.EnqueueJobRequest
+	claimQueue     string
+	claimAuthority jobs.ModuleAuthority
+	completed      []*jobsv1.CompleteJobRequest
+	retried        []*jobsv1.RetryJobRequest
+	deadLetter     []*jobsv1.DeadLetterJobRequest
 }
 
 func (f *fakeJobBackend) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
@@ -38,8 +42,9 @@ func (f *fakeJobBackend) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJobReq
 	return &jobsv1.EnqueueJobResponse{JobId: "00000000-0000-0000-0000-000000000001", Disposition: jobsv1.JobEnqueueDisposition_JOB_ENQUEUE_DISPOSITION_INSERTED}, nil
 }
 
-func (f *fakeJobBackend) Claim(_ context.Context, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
+func (f *fakeJobBackend) Claim(ctx context.Context, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
 	f.claimQueue = req.GetQueue()
+	f.claimAuthority, _ = jobs.ModuleClaim(ctx)
 	return &jobsv1.ClaimJobsResponse{Jobs: []*jobsv1.JobEnvelope{{Id: "00000000-0000-0000-0000-000000000009"}}}, nil
 }
 
@@ -129,8 +134,9 @@ func newModuleService(t *testing.T, backend *fakeJobBackend) *business.Service {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, Queues: []string{"datasource", "documents"}},
 	})
 	return svc
 }
@@ -141,8 +147,9 @@ func newModuleServiceWithStore(t *testing.T, store business.Store, backend *fake
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
 	})
 	return svc
 }
@@ -187,6 +194,28 @@ func requireCode(t *testing.T, err error, want codes.Code) {
 	}
 }
 
+// requireRefusal asserts a refusal's code and the google.rpc.ErrorInfo reason a
+// consumer keys on, since it may not match the message text. A want of "" means
+// the refusal names no reason at all.
+func requireRefusal(t *testing.T, err error, want codes.Code, wantReason string) {
+	t.Helper()
+	requireCode(t, err, want)
+	var reason string
+	for _, detail := range status.Convert(err).Details() {
+		info, ok := detail.(*errdetails.ErrorInfo)
+		if !ok {
+			continue
+		}
+		reason = info.GetReason()
+		if domain := info.GetDomain(); domain != "saas.accounts.v1" {
+			t.Fatalf("reason %q carries domain %q", reason, domain)
+		}
+	}
+	if reason != wantReason {
+		t.Fatalf("refusal reason = %q, want %q (%v)", reason, wantReason, err)
+	}
+}
+
 func TestModuleEnqueueJob_UnknownPrincipalRejected(t *testing.T) {
 	svc := newModuleService(t, &fakeJobBackend{})
 	_, err := svc.ModuleEnqueueJob(context.Background(),
@@ -224,7 +253,7 @@ func TestModuleEnqueueJob_SubjectScopeRequiresMembership(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc := newModuleServiceWithStore(t, fakeTxStore{members: map[string]bool{}}, backend, false)
 	_, err := svc.ModuleEnqueueJob(context.Background(), moduleCaller(), moduleTenantA, subjectScopedJob(moduleUserA, "documents"))
-	requireCode(t, err, codes.PermissionDenied)
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
 	if len(backend.enqueued) != 0 {
 		t.Fatalf("no job should be enqueued for a non-member subject, got %d", len(backend.enqueued))
 	}
@@ -583,18 +612,18 @@ func TestModuleClaimJobs_DisallowedQueueRejected(t *testing.T) {
 	requireCode(t, err, codes.PermissionDenied)
 }
 
-// TestModuleClaimJobs_RequiresCrossTenant pins the fix for the claim isolation
-// leak: claiming a queue reads across tenants, so a principal without the cross-
-// tenant grant is denied even on a queue it is otherwise allowed to use.
-func TestModuleClaimJobs_RequiresCrossTenant(t *testing.T) {
+// Claims now carry explicit organization/installation predicates into the store,
+// so a tenant-bound module can lease its own work without cross-tenant authority.
+func TestModuleClaimJobs_BindsTheInstallationPredicate(t *testing.T) {
 	backend := &fakeJobBackend{}
 	svc := newModuleService(t, backend)
 	_, err := svc.ModuleClaimJobs(context.Background(), moduleCaller(), &jobsv1.ClaimJobsRequest{
-		Queue: "datasource", WorkerId: "w1", Limit: 1, LeaseDuration: durationpb.New(time.Minute),
-	})
-	requireCode(t, err, codes.PermissionDenied)
-	if backend.claimQueue != "" {
-		t.Fatalf("no claim should have reached the store, got queue %q", backend.claimQueue)
+		Queue: "datasource", WorkerId: "w1", Limit: 1, LeaseDuration: durationpb.New(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.claimAuthority.OrganizationID != moduleTenantA || backend.claimAuthority.InstallationID != "installation-current" {
+		t.Fatalf("claim lost installation attribution: %+v", backend.claimAuthority)
 	}
 }
 
@@ -771,6 +800,57 @@ func TestModuleNotifyUser_InvalidTypeRejectedBeforeAnyWrite(t *testing.T) {
 	}
 }
 
+// A module-supplied destination that a browser would resolve to another origin
+// never reaches an inbox: both notification capabilities refuse it as the
+// caller's error, before the membership read and before any row is written.
+func TestModuleNotify_OffOriginActionURLRejectedBeforeAnyWrite(t *testing.T) {
+	offOrigin := []string{
+		"https://evil.example/steal",
+		"//evil.example/steal",
+		"/\\evil.example/steal",
+		"/\t/evil.example/steal",
+		"/../../admin/billing",
+		"javascript:alert(document.cookie)",
+		// Encoded forms: harmless to a browser, but url.URL.Path hands a Go
+		// caller "///evil.example/steal" and "/\\evil.example", which are not.
+		"/%2F%2Fevil.example/steal",
+		"/%5Cevil.example",
+	}
+
+	store := &notifyRecordingStore{fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}}}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	for _, actionURL := range offOrigin {
+		// A mandatory category, so a missing guard reaches the recording store's
+		// write and fails this assertion, rather than the optional-category
+		// settings read the fake does not implement.
+		_, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+			Tenant: moduleTenantA, UserID: moduleUserA, Title: "Review this", Body: "Body",
+			Type: "info", Category: "security", ActionURL: actionURL,
+		})
+		requireCode(t, err, codes.InvalidArgument)
+
+		_, err = svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), business.ModuleNotifyOrgAdminsInput{
+			Tenant: moduleTenantA, Title: "Review this", Body: "Body",
+			Type: "info", Category: "security", ActionURL: actionURL,
+		})
+		requireCode(t, err, codes.InvalidArgument)
+	}
+	if store.created != 0 || store.membershipReads != 0 {
+		t.Fatalf("a refused destination read %d memberships and wrote %d notifications", store.membershipReads, store.created)
+	}
+
+	result, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+		Tenant: moduleTenantA, UserID: moduleUserA, Title: "Review this", Body: "Body",
+		Type: "info", Category: "security", ActionURL: "/documents/doc-7?comment=3",
+	})
+	if err != nil {
+		t.Fatalf("a same-origin path should be delivered: %v", err)
+	}
+	if !result.Delivered || store.created != 1 {
+		t.Fatalf("delivered = %v after %d writes, want one write", result.Delivered, store.created)
+	}
+}
+
 // notifyRecordingStore counts the membership reads and notification writes a
 // ModuleNotifyUser call makes.
 type notifyRecordingStore struct {
@@ -783,6 +863,15 @@ func (s *notifyRecordingStore) OrgMemberExists(ctx context.Context, orgID, userI
 	return s.fakeTxStore.OrgMemberExists(ctx, orgID, userID)
 }
 
+// NotifyOrgAdmins resolves its recipients through the listing rather than the
+// point check, so a refusal that runs before any recipient is read has to be
+// counted here too — fakeTxStore does not implement it, and without this a
+// missing guard surfaces as a nil dereference instead of a failed assertion.
+func (s *notifyRecordingStore) ListOrgMembers(context.Context, string) ([]*gen.OrgMembership, error) {
+	s.membershipReads++
+	return nil, nil
+}
+
 func (s *notifyRecordingStore) CreateNotification(context.Context, *business.Notification) error {
 	s.created++
 	return nil
@@ -790,13 +879,97 @@ func (s *notifyRecordingStore) CreateNotification(context.Context, *business.Not
 
 // TestModuleNotifyUser_NonMemberRejected pins the fix for cross-tenant
 // notification injection: notifying a user who is not a member of the tenant is
-// denied before any notification is created.
+// refused before any notification is created.
 func TestModuleNotifyUser_NonMemberRejected(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{members: map[string]bool{}}, &fakeJobBackend{}, false)
 	_, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
 		Tenant: moduleTenantA, UserID: moduleUserA, Title: "Reset your password", Body: "click", Type: "info", Category: "security",
 	})
-	requireCode(t, err, codes.PermissionDenied)
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
+}
+
+// A host that cannot re-read live module authority refuses every capability
+// before it reads any membership, and that refusal shares FailedPrecondition
+// with the one this surface documents as FINAL. Without a reason of its own a
+// consumer cannot tell "this operator's host is misconfigured, retain the work"
+// from "this person is gone, drop it" — so an outage would silently consume the
+// journal. The reason is what makes them separable.
+func TestModuleSurfaceUnconfiguredAuthorityNamesItsOwnReason(t *testing.T) {
+	svc, err := business.NewService(fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}})
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	// Deliberately no SetModuleAuthorityReads: this is the unconfigured host.
+	svc.SetModuleCapabilities(&fakeJobBackend{}, &fakeJobBackend{}, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
+	})
+
+	_, notify := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+		Tenant: moduleTenantA, UserID: moduleUserA, Title: "Title", Body: "Body", Type: "info", Category: "security",
+	})
+	requireRefusal(t, notify, codes.FailedPrecondition, business.ModuleLiveAuthorityUnavailableReason)
+
+	_, enqueue := svc.ModuleEnqueueJob(context.Background(), moduleCaller(), moduleTenantA,
+		subjectScopedJob(moduleUserA, "documents"))
+	requireRefusal(t, enqueue, codes.FailedPrecondition, business.ModuleLiveAuthorityUnavailableReason)
+
+	// The recipient here IS a member, so a reason naming membership would be
+	// wrong about the world as well as unhelpful.
+	if business.ModuleLiveAuthorityUnavailableReason == business.ModuleTenantMembershipMissingReason {
+		t.Fatal("the operator condition and the departed person must not share a reason")
+	}
+}
+
+// A module driving this surface from a journal with retries has to decide what a
+// refusal means. A recipient who is no longer a member is final for that
+// recipient and nothing a retry resolves; a composition this host does not
+// admit as a principal, or naming a tenant it was never bound to, is an
+// operator's to fix and its work is worth holding. So of the facts below only
+// the member one answers FailedPrecondition with a reason, and every refusal of
+// the caller's authority keeps PermissionDenied (or Unauthenticated) and names
+// none — a sentinel built on the reason matches the departed recipient alone.
+func TestModuleSurfaceSeparatesANonMemberFromAModuleSideRefusal(t *testing.T) {
+	noMembers := func() fakeTxStore { return fakeTxStore{members: map[string]bool{}} }
+	surfaces := map[string]func(*testing.T, fakeTxStore, business.ModuleCaller, string) error{
+		"NotifyUser": func(t *testing.T, store fakeTxStore, caller business.ModuleCaller, tenant string) error {
+			svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+			_, err := svc.ModuleNotifyUser(context.Background(), caller, business.ModuleNotifyUserInput{
+				Tenant: tenant, UserID: moduleUserA, Title: "Title", Body: "Body", Type: "info", Category: "product",
+			})
+			return err
+		},
+		"EnqueueJob": func(t *testing.T, store fakeTxStore, caller business.ModuleCaller, tenant string) error {
+			svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+			_, err := svc.ModuleEnqueueJob(context.Background(), caller, tenant, subjectScopedJob(moduleUserA, "documents"))
+			return err
+		},
+		"ListSubjectVisibility": func(t *testing.T, store fakeTxStore, caller business.ModuleCaller, tenant string) error {
+			visibility := &fakeVisibilityStore{fakeTxStore: store}
+			_, err := newVisibilityService(t, visibility, false).ModuleListSubjectVisibility(context.Background(), caller, tenant, moduleUserA)
+			return err
+		},
+	}
+	for name, call := range surfaces {
+		t.Run(name, func(t *testing.T) {
+			requireRefusal(t, call(t, noMembers(), moduleCaller(), moduleTenantA),
+				codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
+			// A tenant the principal is not bound to, refused before the
+			// membership read — which the codes now tell apart: the member fact
+			// could no longer answer PermissionDenied.
+			requireRefusal(t, call(t, noMembers(), moduleCaller(), moduleTenantB), codes.PermissionDenied, "")
+			requireRefusal(t, call(t, noMembers(), business.ModuleCaller{PrincipalID: "someone-else", BoundOrg: moduleTenantA}, moduleTenantA),
+				codes.PermissionDenied, "")
+			requireRefusal(t, call(t, noMembers(), business.ModuleCaller{BoundOrg: moduleTenantA}, moduleTenantA), codes.Unauthenticated, "")
+
+			// A membership read that FAILED proves nothing either way, so it
+			// stays Internal and names no reason. Collapsing it into the refusal
+			// above would turn a transient organization_members outage into a
+			// consumer dropping every notice for good, since the refusal is the
+			// one this surface documents as final.
+			unavailable := fakeTxStore{members: map[string]bool{}, membersErr: errors.New("organization_members unavailable")}
+			requireRefusal(t, call(t, unavailable, moduleCaller(), moduleTenantA), codes.Internal, "")
+		})
+	}
 }
 
 // TestApprovalResumeEnqueuedOnQuorum proves the primitive wiring the module
@@ -810,8 +983,9 @@ func TestApprovalResumeEnqueuedOnQuorum(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"documents"}},
+		modulePrincSvc: {Tenant: moduleTenantA, Queues: []string{"documents"}},
 	})
 	id, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
 		OrgID: moduleTenantA, Resource: "document_quarantine", Action: "release", RequestedBy: "requester-1",
@@ -863,8 +1037,9 @@ func TestApprovalResumeStampsCompletingDecider(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"documents"}},
+		modulePrincSvc: {Tenant: moduleTenantA, Queues: []string{"documents"}},
 	})
 	id, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
 		OrgID: moduleTenantA, Resource: "document_quarantine", Action: "release", RequestedBy: "requester-1",
@@ -944,9 +1119,9 @@ func TestModuleRequestApproval_ResumeQueueMustBeAllowed(t *testing.T) {
 // The registry is authored under the prefix a module already federates with, and
 // indexed by the principal id derived from it, so a deployment never hand-writes
 // an opaque id and every side computes the same one.
-func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
-	registry, err := business.ParseModulePrincipalRegistry(
-		`{"documents":{"queues":["datasource"],"namespaces":["document"],"tenant":"` + moduleTenantA + `"}}`)
+func TestModulePrincipalGrant_IndexesByDerivedPrincipal(t *testing.T) {
+	registry, err := moduleregistrytest.Parse(
+		`{"documents":{"queues":["datasource"],"namespaces":["document"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -964,9 +1139,9 @@ func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
 
 // A module's own content types are untouched by the reservation above: only the
 // two the host reads out of a sealed capability are refused.
-func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing.T) {
-	registry, err := business.ParseModulePrincipalRegistry(
-		`{"documents":{"resources":["documents.files","rolesets"],"tenant":"` + moduleTenantA + `"}}`)
+func TestModulePrincipalGrant_AcceptsOrdinaryContentResources(t *testing.T) {
+	registry, err := moduleregistrytest.Parse(
+		`{"documents":{"resources":["documents.files","rolesets"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -983,18 +1158,18 @@ func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing
 	}
 }
 
-func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) {
+func TestModulePrincipalGrant_RejectsUnusableDeclarations(t *testing.T) {
 	tests := map[string]string{
-		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"tenant":"` + moduleTenantA + `"}}`,
+		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 		// The tenant is sealed into a signed capability and compared against
 		// organization ids: a malformed one signs, then matches no tenant and drops
 		// the org from its own audit record, so it is rejected where it is read.
 		"no tenant":       `{"documents":{"queues":["datasource"]}}`,
-		"non-uuid tenant": `{"documents":{"queues":["datasource"],"tenant":"acme-org"}}`,
+		"non-uuid tenant": `{"documents":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"acme-org"}}`,
 		// A principal id is a valid prefix by pattern, so an entry keyed the way the
 		// registry used to be would otherwise parse into a principal no module can
 		// ever be, denying every call for a reason that names the caller.
-		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"tenant":"` + moduleTenantA + `"}}`,
+		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 		// `roles` and `audit` are read off a sealed capability by the host itself
 		// (the collection-metadata disclosure) rather than authorized per node, so
 		// the content-read branch's "every read is re-authorized per node"
@@ -1003,12 +1178,12 @@ func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) 
 		// who holds a grant on every readable collection, which only an
 		// organization-wide assignment could reach before. The registry is operator
 		// text this host cannot otherwise check, so it is refused at parse time.
-		"host-sealed scope resource roles": `{"documents":{"resources":["documents.files","roles"],"tenant":"` + moduleTenantA + `"}}`,
-		"host-sealed scope resource audit": `{"documents":{"resources":["audit"],"tenant":"` + moduleTenantA + `"}}`,
+		"host-sealed scope resource roles": `{"documents":{"resources":["documents.files","roles"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
+		"host-sealed scope resource audit": `{"documents":{"resources":["audit"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := business.ParseModulePrincipalRegistry(raw); err == nil {
+			if _, err := moduleregistrytest.Parse(raw); err == nil {
 				t.Fatal("expected an unusable module principal declaration to be rejected")
 			}
 		})
@@ -1050,8 +1225,9 @@ func newVisibilityService(t *testing.T, store business.Store, crossTenant bool) 
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Prefix: "content", CrossTenant: crossTenant},
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantA, CrossTenant: crossTenant},
 	})
 	return svc
 }
@@ -1070,14 +1246,16 @@ func TestModuleListSubjectVisibility_CrossTenantRejected(t *testing.T) {
 	requireCode(t, err, codes.PermissionDenied)
 }
 
-// A module bound to one tenant must not learn anything about a subject in
-// another: the tenant guard alone does not settle that, because a cross-tenant
-// principal may legitimately name tenant B while the viewer belongs to neither.
+// A module must not learn anything about a person who does not belong to the
+// tenant it names: the tenant guard alone does not settle that. It settles
+// which tenant the principal may act on, which is a fact about the module;
+// whether the person it names is a member of that tenant is a separate one,
+// and it is the one refused here — before the visibility read runs.
 func TestModuleListSubjectVisibility_ViewerOutsideTenantRejected(t *testing.T) {
 	store := &fakeVisibilityStore{fakeTxStore: fakeTxStore{members: map[string]bool{}}}
-	svc := newVisibilityService(t, store, true)
-	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantB, moduleUserA)
-	requireCode(t, err, codes.PermissionDenied)
+	svc := newVisibilityService(t, store, false)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
 	if store.gotViewer != "" {
 		t.Fatal("membership must be settled before the visibility read runs")
 	}
@@ -1145,7 +1323,10 @@ func TestModuleListSubjectVisibility_OversizedSetRefused(t *testing.T) {
 	}
 	svc := newVisibilityService(t, store, false)
 	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
-	requireCode(t, err, codes.FailedPrecondition)
+	// It shares FailedPrecondition with the non-member refusal, so the reason is
+	// the only thing that tells the two apart: a consumer reading this one as a
+	// departed viewer would stop replacing a live viewer's set for good.
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleSubjectVisibilitySetTooLargeReason)
 }
 
 // A set exactly at the cap is servable — the boundary is not off by one.
@@ -1435,7 +1616,8 @@ func TestModuleNotifyOrgAdmins_IdempotencyKeyIsPerRecipient(t *testing.T) {
 }
 
 // A different notification under a key already used is the caller's error,
-// FailedPrecondition, never Internal.
+// FailedPrecondition, never Internal — and it names its own reason, because it
+// shares the code with the non-member refusal a consumer treats as final.
 func TestModuleNotifyOrgAdmins_KeyReusedForDifferentContentIsFailedPrecondition(t *testing.T) {
 	svc, _, _ := newOrgAdminsFixture(t)
 	if _, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), adminNotice(moduleTenantA, "info", "key-1")); err != nil {
@@ -1444,7 +1626,53 @@ func TestModuleNotifyOrgAdmins_KeyReusedForDifferentContentIsFailedPrecondition(
 	changed := adminNotice(moduleTenantA, "info", "key-1")
 	changed.Body = "something else"
 	_, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), changed)
-	requireCode(t, err, codes.FailedPrecondition)
+	requireRefusal(t, err, codes.FailedPrecondition, business.ModuleNotificationIdempotencyConflictReason)
+}
+
+// notifyConflictStore refuses the second write under one key with different
+// content, the way the store's payload-equality guard does.
+type notifyConflictStore struct {
+	fakeTxStore
+	written []*business.Notification
+}
+
+func (s *notifyConflictStore) CreateNotification(_ context.Context, n *business.Notification) error {
+	for _, existing := range s.written {
+		if existing.ID == n.ID && existing.Body != n.Body {
+			return business.ErrNotificationIdempotencyConflict
+		}
+	}
+	s.written = append(s.written, n)
+	return nil
+}
+
+// The two facts NotifyUser answers FailedPrecondition to must be told apart by
+// something, and the code is not it. A consumer that keyed on the code would
+// read its own reused idempotency key as "the recipient is gone" and drop the
+// notice for good, which is the loss this surface's reasons exist to prevent.
+func TestModuleNotifyUser_SharedFailedPreconditionIsSeparatedByReason(t *testing.T) {
+	store := &notifyConflictStore{fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}}}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	notice := func(body string) business.ModuleNotifyUserInput {
+		return business.ModuleNotifyUserInput{
+			Tenant: moduleTenantA, UserID: moduleUserA, Title: "Title", Body: body,
+			// A mandatory category, so the write never consults user settings:
+			// this test is about which refusal comes back, not about policy.
+			Type: "info", Category: "security", IdempotencyKey: "notice-1",
+		}
+	}
+	if _, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), notice("first")); err != nil {
+		t.Fatalf("the first notice must be delivered: %v", err)
+	}
+	_, conflict := svc.ModuleNotifyUser(context.Background(), moduleCaller(), notice("different"))
+	requireRefusal(t, conflict, codes.FailedPrecondition, business.ModuleNotificationIdempotencyConflictReason)
+
+	// Same code, same RPC, different fact: a non-member recipient. Only the
+	// reason separates them, so these two assertions must not be able to pass
+	// with one reason for both.
+	absent := newModuleServiceWithStore(t, fakeTxStore{members: map[string]bool{}}, &fakeJobBackend{}, false)
+	_, departed := absent.ModuleNotifyUser(context.Background(), moduleCaller(), notice("first"))
+	requireRefusal(t, departed, codes.FailedPrecondition, business.ModuleTenantMembershipMissingReason)
 }
 
 // A module bound to one tenant cannot notify another's administrators, and an
@@ -1461,5 +1689,127 @@ func TestModuleNotifyOrgAdmins_RefusedBeforeAnyWrite(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 	if len(store.notified) != 0 {
 		t.Fatalf("a refused call wrote %d notifications", len(store.notified))
+	}
+}
+
+// A declaration with no workload FAILS THE BOOT, naming the entry.
+//
+// Config errors fail early here, and this is one: execution binding is
+// unconditional, so a principal whose workload is not declared can never be
+// authenticated — every call it makes is refused. Caught at parse, the operator
+// reads one line naming the entry; caught at the mint, they read "denied" and go
+// looking at the caller.
+//
+// All three parts, each on its own, because a partial workload is the
+// whole-or-absent trap: it would check the parts it has and silently skip the
+// rest, which reads as enforcement.
+func TestAModulePrincipalMustDeclareItsWorkload(t *testing.T) {
+	const tenant = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
+	for name, workload := range map[string]string{
+		"absent":             ``,
+		"empty":              `"workload":{},`,
+		"no service account": `"workload":{"namespace":"acme-prod","container":"app"},`,
+		"no namespace":       `"workload":{"service_account":"documents","container":"app"},`,
+		"no container":       `"workload":{"service_account":"documents","namespace":"acme-prod"},`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := moduleregistrytest.Parse(
+				`{"documents":{` + workload + `"tenant":"` + tenant + `"}}`)
+			if err == nil {
+				t.Fatal("a principal that can never be authenticated must not parse")
+			}
+			if !strings.Contains(err.Error(), "documents") || !strings.Contains(err.Error(), "workload") {
+				t.Fatalf("the refusal must name the entry and the workload, or an operator cannot find it: %v", err)
+			}
+		})
+	}
+
+	// NON-VACUITY: a fully declared workload parses, so the cases above fail for
+	// the workload rather than for something else in the fixture.
+	registry, err := moduleregistrytest.Parse(
+		`{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},` +
+			`"tenant":"` + tenant + `"}}`)
+	if err != nil {
+		t.Fatalf("a fully declared entry must parse: %v", err)
+	}
+	want := business.ModuleWorkload{ServiceAccount: "documents", Namespace: "acme-prod", Container: "app"}
+	if got := registry[business.ModulePrincipalID("documents")].Workload; got != want {
+		t.Fatalf("the parsed workload must be carried through verbatim, or it reads as undeclared later: got %+v want %+v", got, want)
+	}
+}
+
+// A workload whose three values are PRESENT but malformed is refused at parse,
+// naming the entry and the field.
+//
+// The test above covers absence. This covers the case that used to boot
+// cleanly: a value that cannot name a Kubernetes object parsed, and the failure
+// surfaced at the mint as ErrExecutionIdentityMismatch — "declared to run as
+// A/B, the presented token authenticates C/D" — which accuses the CALLER. A
+// trailing space in a declaration was reported as an impersonation attempt, so
+// the operator audited the module instead of reading the one line that was
+// wrong.
+//
+// Mutation-verified: removing the grant.Workload.validateForm(prefix) call from
+// the parse guard makes every row below fail (each fixture parses and the test
+// demands a refusal), and dropping the field-name assertion alone still leaves
+// the rows failing — so the rows test the refusal and the extra assertion tests
+// that the refusal is findable. Replacing the DNS-1123 check with a bare
+// non-emptiness test fails every row except the two whitespace ones, which is
+// what distinguishes this check from declared().
+func TestAMalformedModuleWorkloadIsRefusedAtParseNotAtTheMint(t *testing.T) {
+	const tenant = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
+	for name, fixture := range map[string]struct{ workload, field string }{
+		"trailing space in service account": {
+			`"workload":{"service_account":"documents ","namespace":"acme-prod","container":"app"},`, "service_account"},
+		"leading space in namespace": {
+			`"workload":{"service_account":"documents","namespace":" acme-prod","container":"app"},`, "namespace"},
+		"uppercase namespace is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents","namespace":"Acme-Prod","container":"app"},`, "namespace"},
+		"underscore is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents_api","namespace":"acme-prod","container":"app"},`, "service_account"},
+		"leading hyphen is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents","namespace":"-acme-prod","container":"app"},`, "namespace"},
+		"uppercase container": {
+			`"workload":{"service_account":"documents","namespace":"acme-prod","container":"App"},`, "container"},
+		"label longer than 63 characters": {
+			`"workload":{"service_account":"documents","namespace":"acme-prod","container":"` +
+				strings.Repeat("a", 64) + `"},`, "container"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := moduleregistrytest.Parse(
+				`{"documents":{` + fixture.workload + `"tenant":"` + tenant + `"}}`)
+			if err == nil {
+				t.Fatal("a workload that can never name a real object must not parse: " +
+					"every mint for it would be refused as an identity mismatch, accusing the caller")
+			}
+			if !strings.Contains(err.Error(), "documents") || !strings.Contains(err.Error(), fixture.field) {
+				t.Fatalf("the refusal must name the entry and the offending field %q, "+
+					"or the operator goes looking at the caller: %v", fixture.field, err)
+			}
+		})
+	}
+}
+
+// TestACredentialForThePrincipalsOldTenantIsRefused: the envelope moved the
+// principal to tenant B, and a credential sealed for tenant A is still valid.
+// The capability check compares the credential's tenant with the CURRENT
+// grant's, so it refuses — naming the reason — instead of acting in A under
+// B's grant.
+func TestACredentialForThePrincipalsOldTenantIsRefused(t *testing.T) {
+	backend := &fakeJobBackend{}
+	svc, err := business.NewService(fakeTxStore{})
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
+	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Prefix: "content", Tenant: moduleTenantB, Queues: []string{"documents"}},
+	})
+	_, err = svc.ModuleEnqueueJob(context.Background(), moduleCaller(), moduleTenantA, orgScopedJob(moduleTenantA, "documents"))
+	if !errors.Is(err, business.ErrModuleTenantNotCurrent) {
+		t.Fatalf("enqueue under the old tenant: got %v, want ErrModuleTenantNotCurrent", err)
+	}
+	if len(backend.enqueued) != 0 {
+		t.Fatalf("a refused credential enqueued %d jobs", len(backend.enqueued))
 	}
 }

@@ -143,6 +143,14 @@ func assembleDeploymentBindings(documents DeploymentDocuments) (deploymentBindin
 		},
 		Interface: module.Interface.Endpoints,
 	}
+	for i := range bindings.Interface {
+		exported := &bindings.Interface[i]
+		visibility, err := manifestCatalogVisibility(exported.Visibility, "", exported.AllowModules)
+		if err != nil {
+			return deploymentBindings{}, fmt.Errorf("interface %s/%s: %w", exported.Service, exported.Endpoint, err)
+		}
+		exported.Visibility, exported.AllowModules = visibility, nil
+	}
 	declared := make(map[string]bool, len(module.Services))
 	for _, reference := range module.Services {
 		if declared[reference.Name] {
@@ -217,9 +225,9 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 		if api == "" {
 			api = endpoint.Name
 		}
-		visibility := endpoint.Visibility
-		if visibility == "" {
-			visibility = "private"
+		visibility, err := manifestCatalogVisibility(endpoint.Visibility, endpoint.Location, endpoint.AllowModules)
+		if err != nil {
+			return deploymentServiceBinding{}, fmt.Errorf("service %q endpoint %q: %w", name, endpoint.Name, err)
 		}
 		port, declared := spec.EndpointPorts[endpoint.Name]
 		allocated := false
@@ -260,6 +268,51 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 		service.Dependencies = append(service.Dependencies, entry)
 	}
 	return service, nil
+}
+
+// manifestCatalogVisibility projects Codefly's independent visibility/location
+// axes into this catalog's categories. MODULE represents every module, so
+// narrower allow-lists refuse rather than silently widening the generated policy.
+//
+// `internal` WITH NO allow-list is the v0.14.0 spelling of what `internal` plus
+// `allow-modules: ["*"]` said, and maps to the same category. That is not a
+// loosening: core v0.14.0 refuses the key outright — "an allow-list is derived
+// from the consumers' declared service dependencies, never written by the module
+// it would grant" — so the wildcard was a module answering a question that was
+// never its to answer, and deleting it removes a redundant spelling rather than a
+// constraint. Which modules actually reach the endpoint is decided by their own
+// declared dependencies either way, which is exactly what MODULE means here.
+//
+// The wildcard is still ACCEPTED, because this generator walks every composed
+// module's manifests and the fleet has not finished moving; and a narrower
+// allow-list is still REFUSED, because it would need an allow-list-aware catalog
+// and core will not let one be authored anyway. So the only two reachable inputs
+// both mean "every module that declares the dependency", and nothing silently
+// widens.
+func manifestCatalogVisibility(visibility, location string, allowed []string) (string, error) {
+	if visibility == "" {
+		visibility = "private"
+	}
+	if location != "" {
+		if location != "external" || visibility != "private" || len(allowed) != 0 {
+			return "", fmt.Errorf("unsupported external endpoint policy")
+		}
+		return "external", nil
+	}
+	switch visibility {
+	case "private", "public":
+		if len(allowed) != 0 {
+			return "", fmt.Errorf("allow-modules requires internal visibility")
+		}
+		return visibility, nil
+	case "internal":
+		if len(allowed) != 0 && (len(allowed) != 1 || allowed[0] != "*") {
+			return "", fmt.Errorf("deployment catalog accepts internal visibility with no allow-modules, or the legacy [*]; a narrower export needs an allow-list-aware catalog")
+		}
+		return "module", nil
+	default:
+		return "", fmt.Errorf("unsupported authored endpoint visibility %q", visibility)
+	}
 }
 
 func decodeDeploymentSpec(service string, spec map[string]any) (deploymentSpec, error) {

@@ -80,7 +80,7 @@ the source named.
 | Person follows a resource | **Does not exist** anywhere in the repository | the follow relation and its RPCs |
 | Idempotent notification write | **Exists.** `pkg/business/notifications.go:95` derives the row id as `uuid.NewSHA1(uuid.NameSpaceURL, "saas-starter/notification/"+idempotency_key)`; `pkg/infra/postgres_notifications.go:11` upserts `ON CONFLICT (id)` with a full payload-equality guard, so an identical retry is a no-op and a same-key/different-payload call errors | a key derived from the right tuple |
 | Opt-out suppression | **Exists.** `CreateNotification` returns `nil, nil` when policy suppresses, surfacing as `ModuleNotifyUserResponse.delivered = false` while the call succeeds | nothing |
-| Recipient eligibility | **Partial.** `NotifyUser` checks only that the target is an org member (`requireTenantMember`, `module_capabilities.go:233`) | a resource-level check |
+| Recipient eligibility | **Partial.** `NotifyUser` checks only that the target is an org member (`requireTenantMember` in `pkg/business/module_capabilities.go`) | a resource-level check |
 | Visibility at read | **Missing.** `GetUnreadCount` is `COUNT(*) WHERE user_id = $1 AND read_at IS NULL` and `ListNotifications` returns the stored `title`/`body`; RLS on `notifications` keys on `user_id` alone (migration 34) and `org_id` is descriptive, not authoritative | the recheck in §Access rechecks |
 
 `saas.document.subscribed` and `saas.document.unsubscribed` exist in the audit
@@ -262,11 +262,14 @@ therefore rechecked at **three** points, all through host ports:
    list-objects companion built for exactly this ("pre-filter before loading
    content"), one paged call rather than N point checks. It is capped at 1000
    per page, which bounds the read.
-3. **Deep-link resolution**: the link is re-authorized when followed. Today
-   `action_url` is validated only for shape — `notificationActionUrl`
-   (`features/notifications/model/transforms.ts:7`) accepts only a same-origin
-   absolute path and the panel simply calls `router.push(actionUrl)`. Shape is
-   not authority.
+3. **Deep-link resolution**: the link is re-authorized when followed, by
+   `ResolveNotificationAction`. Shape is settled separately, and on both sides: a
+   module-supplied `action_url` is refused unless it is a same-origin relative
+   path (`ValidNotificationActionURL`, `pkg/business/notifications.go`) — at the
+   write, and again when the destination is followed, so a row stored before the
+   rule existed cannot be followed either — and the resolved answer is narrowed
+   to one more time before `router.push` (`notificationActionUrl`,
+   `features/notifications/model/transforms.ts`). Shape is not authority.
 
 A follow item's stored `title`/`body` must carry no resource-derived content
 beyond what the recheck re-authorizes, because those columns are a cache that

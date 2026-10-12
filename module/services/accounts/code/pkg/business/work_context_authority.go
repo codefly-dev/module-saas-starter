@@ -20,7 +20,7 @@ type WorkContextPermission struct {
 	Action       string
 	ResourceID   string
 	// ContentRead marks an unscoped `read` of a permission resource type a
-	// composed module declares its content under (MODULE_PRINCIPALS
+	// composed module declares its content under (the module principal registry
 	// `resources`). This host authorizes every read of such content per scope
 	// node, at the moment of the read: ListReadableSourceCollections and
 	// CheckWorkContextRecordAccess intersect each node with the grants, shares

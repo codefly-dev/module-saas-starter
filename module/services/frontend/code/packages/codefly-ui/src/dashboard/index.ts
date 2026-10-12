@@ -13,13 +13,14 @@ export {
 	LineChart,
 	StatChart,
 } from "./charts.js";
-export { Dashboard } from "./dashboard.js";
 export {
-	formatAxisKey,
-	formatAxisValue,
-	formatShare,
-	parseTimeKey,
-} from "./format.js";
+	Dashboard,
+	type DashboardSlots,
+	type DashboardTile,
+	DashboardWidget,
+	type DashboardWidgetProps,
+} from "./dashboard.js";
+export { formatAxisKey, formatAxisValue, parseTimeKey } from "./format.js";
 export {
 	linearScale,
 	niceTicks,
@@ -28,63 +29,49 @@ export {
 	scaleY,
 } from "./geometry.js";
 export {
+	AreaChart as MetricAreaChart,
+	BarChart as MetricBarChart,
+	chartSeriesColor,
+	LineChart as MetricLineChart,
+	type MetricChartProps,
+} from "./metric-chart.js";
+export {
+	axisPositions,
+	type ChartDatum,
+	type ChartSeries,
+	type Point,
+	type ResolvedSeries,
+	resolveSeries,
+	type StackedSeries,
+	stackedExtent,
+	stackSeries,
+	unionLabels,
+	valuesExtent,
+} from "./metric-geometry.js";
+export {
+	assertSampleModeAllowed,
+	MetricProvenance,
+	type MetricState,
+	MetricStateBadge,
+} from "./metric-state.js";
+export {
+	formatMetricValue,
+	KPIRow,
+	type Metric,
+	MetricCard,
+	type MetricFormat,
+	StatTile,
+} from "./metric-tiles.js";
+export { SortableGrid, type SortableGridProps } from "./sortable-grid.js";
+export { Sparkline } from "./sparkline.js";
+export { TrendLineChart } from "./trend-line-chart.js";
+export {
 	type DashboardLayoutKind,
 	type DashboardView,
 	type DashboardWidgetView,
 	fromDashboardData,
 	type SeriesPoint,
+	type WidgetReadFailure,
 	type WidgetSeries,
-	type WidgetValueFormat,
 	type WidgetVisualization,
 } from "./types.js";
-
-export {
-	AreaChart as MetricAreaChart,
-	LineChart as MetricLineChart,
-	BarChart as MetricBarChart,
-	chartSeriesColor,
-	type MetricChartProps,
-} from "./metric-chart.js";
-export {
-	type ChartDatum,
-	type ChartSeries,
-	type ResolvedSeries,
-	type Point,
-	unionLabels,
-	resolveSeries,
-	stackSeries,
-	stackedExtent,
-	type StackedSeries,
-	valuesExtent,
-	axisPositions,
-} from "./metric-geometry.js";
-
-export { Sparkline } from "./sparkline.js";
-export {
-	SortableBoard,
-	type SortableBoardProps,
-	SortableGrid,
-	type SortableGridProps,
-	type SortableGroup,
-	type SortableGroupHandle,
-} from "./sortable-grid.js";
-
-export {
-	MetricProvenance,
-	MetricStateBadge,
-	assertSampleModeAllowed,
-	type MetricState,
-} from "./metric-state.js";
-
-export {
-	MetricCard,
-	MetricFigure,
-	StatTile,
-	KPIRow,
-	formatMetricValue,
-	type Metric,
-	type MetricFormat,
-} from "./metric-tiles.js";
-
-export { TrendLineChart } from "./trend-line-chart.js";
-export { WidgetChart } from "./widget-chart.js";

@@ -251,6 +251,30 @@ func strs(name string) PayloadField {
 }
 func uid(name string) PayloadField     { return PayloadField{Name: name, Kind: FieldUUID} }
 func boolean(name string) PayloadField { return PayloadField{Name: name, Kind: FieldBool} }
+
+// optionalFields relaxes every field to optional, for a type whose emitters do
+// not all carry them.
+func optionalFields(fields []PayloadField) []PayloadField {
+	relaxed := slices.Clone(fields)
+	for i := range relaxed {
+		relaxed[i].Required = false
+	}
+	return relaxed
+}
+
+// mintExecutionFields is the execution a module mint record names (#1056),
+// declared once so the mints that carry it cannot drift apart.
+func mintExecutionFields() []PayloadField {
+	return []PayloadField{
+		{Name: "namespace", Kind: FieldString, Required: true},
+		{Name: "service_account", Kind: FieldString, Required: true},
+		{Name: "pod", Kind: FieldString, Required: true},
+		{Name: "pod_uid", Kind: FieldString, Required: true},
+		{Name: "container", Kind: FieldString, Required: true},
+		{Name: "running_digest", Kind: FieldString, Required: true},
+		{Name: "build_incarnation", Kind: FieldInt, Required: true},
+	}
+}
 func enum(name string, values ...string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldEnum, Enum: values}
 }
@@ -310,44 +334,46 @@ const (
 	EventConsentPrefs    EventType = "saas.consent.preferences_updated"
 
 	EventAPIKeyCreated              EventType = "saas.api_key.created"
-	EventModuleRegistrationMint     EventType = "saas.module.registration_minted"
 	EventModuleWorkContextMint      EventType = "saas.module.work_context_minted"
 	EventModuleOperationContextMint EventType = "saas.module.operation_context_minted"
+	EventExecutableArtifactDecision EventType = "saas.module.executable_artifact_decision"
 	EventDelegatedAudienceExchange  EventType = "saas.module.delegated_audience_exchange"
 	// A composed module declared audit event types of its own (DeclareAuditEventTypes).
 	EventModuleAuditTypesDeclared EventType = "saas.module.audit_types_declared"
 	// A composed module notified a tenant's administrators (NotifyOrgAdmins).
 	EventModuleOrgAdminsNotified     EventType = "saas.module.org_admins_notified"
-	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
-	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
-	EventAPIKeyRevoked               EventType = "saas.api_key.revoked"
-	EventRoleCreated                 EventType = "saas.role.created"
-	EventRoleUpdated                 EventType = "saas.role.updated"
-	EventRoleDeleted                 EventType = "saas.role.deleted"
-	EventRoleAssigned                EventType = "saas.role.assigned"
-	EventRoleRevoked                 EventType = "saas.role.revoked"
-	EventSessionRevoked              EventType = "saas.session.revoked"
-	EventInvitationCreated           EventType = "saas.invitation.created"
-	EventInvitationAccepted          EventType = "saas.invitation.accepted"
-	EventInvitationRevoked           EventType = "saas.invitation.revoked"
-	EventInvitationResent            EventType = "saas.invitation.resent"
-	EventInvitationLinkIssued        EventType = "saas.invitation.link_issued"
-	EventDelegationRequested         EventType = "saas.delegation.requested"
-	EventDelegationApproved          EventType = "saas.delegation.approved"
-	EventDelegationDenied            EventType = "saas.delegation.denied"
-	EventDelegationAutoApproved      EventType = "saas.delegation.auto_approved"
-	EventApprovalAsked               EventType = "saas.approval.asked"
-	EventApprovalApproved            EventType = "saas.approval.approved"
-	EventApprovalDenied              EventType = "saas.approval.denied"
-	EventApprovalTimeout             EventType = "saas.approval.timeout"
-	EventApprovalEscalated           EventType = "saas.approval.escalated"
-	EventApprovalCancelled           EventType = "saas.approval.cancelled"
-	EventApprovalDecisionRecorded    EventType = "saas.approval.decision_recorded"
-	EventPrincipalCreated            EventType = "saas.principal.created"
-	EventPrincipalRevoked            EventType = "saas.principal.revoked"
-	EventPrincipalDisabled           EventType = "saas.principal.disabled"
-	EventPrincipalEnabled            EventType = "saas.principal.enabled"
+	// EventSolutionHostBindingApplied records that this host reconciled a
+	// declared generation (issue #952). It is emitted by the reconcile pass, not
+	// by a request, so it is declared outside the RPC surface.
+	EventSolutionHostBindingApplied EventType = "saas.solution.host_binding_applied"
+	EventAPIKeyRevoked              EventType = "saas.api_key.revoked"
+	EventRoleCreated                EventType = "saas.role.created"
+	EventRoleUpdated                EventType = "saas.role.updated"
+	EventRoleDeleted                EventType = "saas.role.deleted"
+	EventRoleAssigned               EventType = "saas.role.assigned"
+	EventRoleRevoked                EventType = "saas.role.revoked"
+	EventSessionRevoked             EventType = "saas.session.revoked"
+	EventInvitationCreated          EventType = "saas.invitation.created"
+	EventInvitationAccepted         EventType = "saas.invitation.accepted"
+	EventInvitationRevoked          EventType = "saas.invitation.revoked"
+	EventInvitationResent           EventType = "saas.invitation.resent"
+	EventInvitationLinkIssued       EventType = "saas.invitation.link_issued"
+	EventDelegationRequested        EventType = "saas.delegation.requested"
+	EventDelegationApproved         EventType = "saas.delegation.approved"
+	EventDelegationDenied           EventType = "saas.delegation.denied"
+	EventDelegationAutoApproved     EventType = "saas.delegation.auto_approved"
+	EventApprovalAsked              EventType = "saas.approval.asked"
+	EventApprovalApproved           EventType = "saas.approval.approved"
+	EventApprovalDenied             EventType = "saas.approval.denied"
+	EventApprovalTimeout            EventType = "saas.approval.timeout"
+	EventApprovalEscalated          EventType = "saas.approval.escalated"
+	EventApprovalCancelled          EventType = "saas.approval.cancelled"
+	EventApprovalDecisionRecorded   EventType = "saas.approval.decision_recorded"
+	EventPrincipalCreated           EventType = "saas.principal.created"
+	EventPrincipalRevoked           EventType = "saas.principal.revoked"
+	EventPrincipalDisabled          EventType = "saas.principal.disabled"
+	EventPrincipalEnabled           EventType = "saas.principal.enabled"
 
 	EventScopeNodeRegistered EventType = "saas.scope.node_registered"
 	EventScopeGranted        EventType = "saas.scope.granted"
@@ -356,6 +382,7 @@ const (
 	EventRecordShareRevoked  EventType = "saas.record.share_revoked"
 
 	EventInstallationCreated              EventType = "saas.installation.created"
+	EventInstallationNarrowed             EventType = "saas.installation.narrowed"
 	EventInstallationRevoked              EventType = "saas.installation.revoked"
 	EventInstallationOwnershipTransferred EventType = "saas.installation.ownership_transferred"
 
@@ -384,6 +411,12 @@ const (
 	EventPlatformRoleRevoked        EventType = "saas.platform.role_revoked"
 	EventPlatformImpersonated       EventType = "saas.platform.user_impersonated"
 	EventPlatformImpersonationEnded EventType = "saas.platform.user_impersonation_ended"
+	// EventModuleEnvelopeWritten records that a platform super_admin wrote a
+	// new revision of the module envelope — the ceiling every module principal
+	// is derived inside. Widening and narrowing are both this one event: the
+	// revision names the whole ceiling at that point, and the row it points at
+	// is the record of what changed.
+	EventModuleEnvelopeWritten EventType = "saas.platform.module_envelope_written"
 
 	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
 	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
@@ -427,6 +460,9 @@ const (
 	EventWebhookSecretRotated EventType = "saas.webhook.secret_rotated"
 	EventJobReplayed          EventType = "saas.job.replayed"
 
+	EventDatasourceReceiptsPruned       EventType = "saas.datasource.receipts.pruned"
+	EventDatasourceOperationDeclared    EventType = "saas.datasource.operation.declared"
+	EventDatasourceOperationInvoked     EventType = "saas.datasource.operation.invoked"
 	EventDatasourceSourceAdded          EventType = "saas.datasource.source.added"
 	EventDatasourceSyncCompleted        EventType = "saas.datasource.sync.completed"
 	EventDatasourceCredentialUpdated    EventType = "saas.datasource.credential.updated"
@@ -538,16 +574,21 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventConsentPrefs, CategoryIdentity, "A user updated their consent preferences."),
 
 	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
-	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
 	observation(EventModuleOrgAdminsNotified, CategorySystem, "A composed module notified a tenant's administrators; the host resolved the recipients.",
 		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, str("category"), str("type"),
 		PayloadField{Name: "recipients", Kind: FieldInt, Required: true}, PayloadField{Name: "delivered", Kind: FieldInt, Required: true},
 		str("idempotency_key")),
 	mutation(EventModuleAuditTypesDeclared, CategorySystem, "A composed module declared audit event types of its own, or took a namespace over from the producer the operator unbound.",
 		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, strs("event_types"), strs("namespaces_taken_over")),
-	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
-	mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
-		str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")),
+	// v2 (#1056) names the execution the mint was bound to: the pod the
+	// projected ServiceAccount token named, its namespace and ServiceAccount,
+	// the authenticating container, the image it was RUNNING and the approved
+	// build's incarnation. A module mint is authenticated by that execution and
+	// nothing else, so the record of one says which execution it was.
+	revised(mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.",
+		append([]PayloadField{str("prefix"), str("tenant")}, mintExecutionFields()...)...), 2),
+	revised(mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
+		append([]PayloadField{str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")}, mintExecutionFields()...)...), 2),
 	// v2 adds `delegation_id` and stops requiring `owner_principal_id`.
 	//
 	// The exchange now has two arms. One presents a live parent capability, and
@@ -573,9 +614,12 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "lookup", Kind: FieldBool, Required: true},
 		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{DelegatedAudienceExchangeIssued, DelegatedAudienceExchangeRefused}},
 		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}), 2),
-	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
-	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over")),
+	mutation(EventExecutableArtifactDecision, CategoryAccess, "An administrator approved or revoked an exact executable artifact identity.", str("action"), uid("installation_id"), str("policy_id"), str("subject_digest"), str("module_principal_id")),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
+	mutation(EventSolutionHostBindingApplied, CategoryAccess,
+		"The host reconciled a declared SolutionHostBinding generation.",
+		str("binding_id"), str("solution_id"), PayloadField{Name: "generation", Kind: FieldInt},
+		str("digest"), str("release"), boolean("removed"), strs("routes")),
 	mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
 	mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
 	mutation(EventRoleUpdated, CategoryAccess, "A role's description and permission set were replaced.", str("name"), strs("permissions")),
@@ -607,9 +651,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
 	mutation(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
 	mutation(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
-		uid("agent_principal_id"), str("solution_identifier"), uid("role_id"), uid("owner_principal_id")),
-	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled: its agent principal and standing grant were revoked and its scope node soft-deleted.",
-		str("solution_identifier")),
+		uid("agent_principal_id"), uid("target_id"), uid("role_id"), uid("owner_principal_id"), str("allowed_audiences"), str("allowed_scopes")),
+	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled, or the presence it was installed from was withdrawn: its agent principal and standing grant were revoked and its scope node soft-deleted.",
+		uid("target_id"), str("binding_id"), str("generation"), str("revoked_reason")),
+	mutation(EventInstallationNarrowed, CategoryAccess, "An installation scope was narrowed and its affected work canceled.", str("scope"), str("revision"), str("binding_id")),
 	mutation(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
 		uid("owner_principal_id")),
 	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
@@ -637,6 +682,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventMFADeviceRevoked, CategorySecurity, "An MFA device was revoked."),
 	mutation(EventPlatformRoleGranted, CategorySecurity, "A platform role was granted."),
 	mutation(EventPlatformRoleRevoked, CategorySecurity, "A platform role was revoked."),
+	mutation(EventModuleEnvelopeWritten, CategorySecurity, "A platform super_admin wrote a new revision of the module envelope.",
+		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "principals", Kind: FieldInt, Required: true}),
 	// The operator's justification is part of the record, not an optional
 	// enrichment: who and whom are already implied by the actor/resource pair,
 	// and why is the only thing this event can carry that the pair cannot.
@@ -703,6 +752,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
 		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2),
 	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
+	mutation(EventDatasourceReceiptsPruned, CategorySystem, "Expired source receipt responses were pruned.", str("effect_id"), PayloadField{Name: "receipts", Kind: FieldInt}),
+	mutation(EventDatasourceOperationDeclared, CategorySystem, "A source operation set was declared.", strs("operations")),
+	observation(EventDatasourceOperationInvoked, CategorySystem, "A source operation was invoked.", str("operation"), enum("effect", "READ_ONLY", "MUTATION", "UNKNOWN"), enum("outcome", "committed", "refused", "unresolved", "rate_limited"), str("effect_id")),
 	observation(EventDatasourceAccountLinkStarted, CategorySystem, "A person started linking a provider account.", str("connector")),
 	mutation(EventDatasourceAccountLinked, CategorySystem, "A person linked a provider account they signed in as.",
 		str("connector"), str("provider_account_id")),
@@ -723,8 +775,13 @@ var auditEventCatalog = []AuditEventDefinition{
 	// capability narrowed to recovering a receipt carries strictly less than
 	// one that may produce the effect. A trail that cannot tell the two apart
 	// cannot answer what a module was actually let do.
+	//
+	// v3 (#1056) adds the execution a MINT was bound to — pod, ServiceAccount,
+	// running image, approved incarnation — optional because the reference
+	// exchange records this event too, and its caller authenticated with a
+	// module Work Context rather than a projected token.
 	revised(mutation(EventSourceDelegationUsed, CategoryAccess, "A module was issued an operation context from a person's source delegation.",
-		append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup"))...), 2),
+		append(append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup")), optionalFields(mintExecutionFields())...)...), 3),
 	mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
 		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),

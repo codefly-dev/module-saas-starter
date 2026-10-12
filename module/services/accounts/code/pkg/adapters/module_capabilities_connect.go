@@ -16,20 +16,12 @@ type moduleCapabilitiesConnectHandler struct {
 	inner *ModuleCapabilitiesServer
 }
 
-func (h *moduleCapabilitiesConnectHandler) MintModuleRegistration(ctx context.Context, req *connect.Request[gen.ModuleMintRegistrationRequest]) (*connect.Response[gen.ModuleMintRegistrationResponse], error) {
-	return unary(ctx, req, h.inner.MintModuleRegistration)
-}
-
 func (h *moduleCapabilitiesConnectHandler) MintModuleWorkContext(ctx context.Context, req *connect.Request[gen.ModuleMintWorkContextRequest]) (*connect.Response[gen.ModuleMintWorkContextResponse], error) {
 	return unary(ctx, req, h.inner.MintModuleWorkContext)
 }
 
 func (h *moduleCapabilitiesConnectHandler) MintModuleOperationContext(ctx context.Context, req *connect.Request[gen.ModuleMintOperationContextRequest]) (*connect.Response[gen.ModuleMintOperationContextResponse], error) {
 	return unary(ctx, req, h.inner.MintModuleOperationContext)
-}
-
-func (h *moduleCapabilitiesConnectHandler) MintSolutionRegistration(ctx context.Context, req *connect.Request[gen.SolutionMintRegistrationRequest]) (*connect.Response[gen.SolutionMintRegistrationResponse], error) {
-	return unary(ctx, req, h.inner.MintSolutionRegistration)
 }
 
 func (h *moduleCapabilitiesConnectHandler) EnqueueJob(ctx context.Context, req *connect.Request[gen.ModuleEnqueueJobRequest]) (*connect.Response[gen.ModuleEnqueueJobResponse], error) {

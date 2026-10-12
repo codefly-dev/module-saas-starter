@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:a80e92b319dc442c93eb9604129192c86aaf491e635cb549cd7bcca5681b45ee",
+      "digest": "sha256:045c67283ce0dbce7dc8ab3b21a9bb23b3e9d461fb51972853b6217128417869",
       "services": [
         {
           "name": "APIKeyService",
@@ -114,6 +114,7 @@
             "/saas.accounts.v1.DatasourceService/ClaimDatasourceDomain",
             "/saas.accounts.v1.DatasourceService/CompleteDatasourceAccountLink",
             "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup",
+            "/saas.accounts.v1.DatasourceService/DeclareSourceOperations",
             "/saas.accounts.v1.DatasourceService/DeleteDatasourceAccountLink",
             "/saas.accounts.v1.DatasourceService/DeleteDatasourceDomain",
             "/saas.accounts.v1.DatasourceService/DeleteSource",
@@ -121,10 +122,15 @@
             "/saas.accounts.v1.DatasourceService/GetDatasourceDirectory",
             "/saas.accounts.v1.DatasourceService/GetSource",
             "/saas.accounts.v1.DatasourceService/GetSourceSync",
+            "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
             "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks",
             "/saas.accounts.v1.DatasourceService/ListSourceDelegations",
+            "/saas.accounts.v1.DatasourceService/ListSourceOperations",
             "/saas.accounts.v1.DatasourceService/ListSources",
+            "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
+            "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",
             "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+            "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
             "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
             "/saas.accounts.v1.DatasourceService/SyncSource",
             "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
@@ -172,7 +178,13 @@
           "fullName": "saas.accounts.v1.InstallationService",
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
+            "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
             "/saas.accounts.v1.InstallationService/InstallSolution",
+            "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
+            "/saas.accounts.v1.InstallationService/ListInstallations",
+            "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
+            "/saas.accounts.v1.InstallationService/NarrowInstallation",
+            "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"
           ]
@@ -216,6 +228,8 @@
           "fullName": "saas.accounts.v1.ModuleCapabilitiesService",
           "procedures": [
             "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
+            "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
             "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
@@ -227,14 +241,13 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
-            "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
@@ -243,6 +256,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
             "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
           ]
@@ -319,6 +333,7 @@
             "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
             "/saas.accounts.v1.PlatformAdminService/GetJob",
             "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+            "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
             "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
             "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
@@ -331,6 +346,7 @@
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+            "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
             "/saas.accounts.v1.PlatformAdminService/RevokeSession",
@@ -372,12 +388,18 @@
           ]
         },
         {
+          "name": "SolutionEntitlementService",
+          "fullName": "saas.accounts.v1.SolutionEntitlementService",
+          "procedures": [
+            "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
+          ]
+        },
+        {
           "name": "SolutionRegistryService",
           "fullName": "saas.accounts.v1.SolutionRegistryService",
           "procedures": [
-            "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
-            "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
-            "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
+            "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
+            "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
           ]
         },
         {

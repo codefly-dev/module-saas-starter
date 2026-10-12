@@ -77,6 +77,19 @@ export interface SolutionBinding {
 	 * nothing".
 	 */
 	declaredSources?: DeclaredSource[];
+	/**
+	 * The viewer organization's active installation of this solution, as the
+	 * host resolved it from the VERIFIED viewer's entitlements for the solution
+	 * target this page is routed to. A remote acting in an installation (an
+	 * agent turn is bound to one) reads it here; it never asks a person for one
+	 * and never names one itself, because a page-chosen installation could be
+	 * another organization's.
+	 *
+	 * Optional, and undefined while the host is still resolving it, on an older
+	 * host, and when the viewer is not entitled: a remote must treat absence as
+	 * "no installation to act in", never fall back to a value of its own.
+	 */
+	installationId?: string;
 }
 
 /**

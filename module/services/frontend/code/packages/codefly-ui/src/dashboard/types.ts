@@ -8,14 +8,17 @@
 // own types here is what lets `@codefly-dev/ui` stay a pure component library with no
 // dependency on the SDK's transport stack.
 
-/** How a widget draws its series. */
-export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
+import type { MetricFormat } from "./metric-tiles.js";
 
 /**
- * How a widget writes its values, from its metric's declared format: `number`
- * as they are, `percent` a share from 0 to 1 as a percentage (0.4 → "40%").
+ * How a widget's read ended when it did not succeed. Presentational: a caller
+ * classifies its own transport (the host app maps its `ReadOutcome` onto this)
+ * and the renderer only decides what to draw.
  */
-export type WidgetValueFormat = "number" | "percent";
+export type WidgetReadFailure = "failed" | "refused";
+
+/** How a widget draws its series. */
+export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 
 /** How a dashboard arranges its widgets. */
 export type DashboardLayoutKind = "grid" | "stack";
@@ -38,11 +41,43 @@ export interface DashboardWidgetView {
 	id: string;
 	visualization: WidgetVisualization;
 	title?: string;
-	series: WidgetSeries;
-	/** How the widget writes its values; `number` when omitted. */
-	format?: WidgetValueFormat;
+	/**
+	 * The resolved series, or `null` while it is still being resolved. A
+	 * renderer draws a placeholder for `null` rather than an empty series,
+	 * because "not yet" and "nothing matched" are different answers and the
+	 * second one is a fact about the data.
+	 */
+	series: WidgetSeries | null;
+	/**
+	 * How the read ended, when it did not succeed. A caller that resolves each
+	 * widget separately sets it per widget, so one failure says so in its own
+	 * card instead of blanking its siblings.
+	 *
+	 * The two are not a severity ordering, they are different questions.
+	 * `"failed"` says the read did not complete and says nothing about
+	 * authority, so a series already in hand is still the best answer and is
+	 * drawn as stale. `"refused"` says this viewer is not allowed to see the
+	 * number, which makes a previously fetched one a WRONG answer rather than
+	 * an old one — so the renderer discards it, whatever the caller passed.
+	 * A boolean cannot express that difference, which is why this is not one.
+	 */
+	failure?: WidgetReadFailure;
 	/** Grid columns this widget spans (1–4); ignored in a stack. */
 	span?: 1 | 2 | 3 | 4;
+	/**
+	 * How a scalar widget's value is rendered. Defaults to a plain number.
+	 *
+	 * `"percent"` takes a value that is ALREADY a percentage: 45 renders "45%".
+	 * It does not take a share — 0.4 renders "0.4%", not "40%". A producer whose
+	 * own `percent` means a 0-to-1 share must scale it before it reaches here,
+	 * because this field is bound structurally (see `fromDashboardData`) and
+	 * nothing on the wire can tell the two conventions apart.
+	 */
+	format?: MetricFormat;
+	/** Suffix after a scalar widget's value, e.g. "req/s". */
+	unit?: string;
+	/** When false a rising value reads as bad (an error count). Defaults true. */
+	higherIsBetter?: boolean;
 }
 
 /** The fully-resolved dashboard the renderer paints. */
@@ -52,7 +87,7 @@ export interface DashboardView {
 	layout?: DashboardLayoutKind;
 	/** Grid column count (default 2); ignored in a stack. */
 	columns?: 1 | 2 | 3 | 4;
-	/** Optional accent (any CSS color) applied to charts via the primary token and a lone series' chart token. */
+	/** Optional accent (any CSS color) applied to charts via the primary token. */
 	accent?: string;
 	widgets: DashboardWidgetView[];
 }
@@ -65,7 +100,9 @@ interface ResolvedWidgetLike {
 	visualization: WidgetVisualization;
 	title?: string;
 	series: WidgetSeries;
-	format?: WidgetValueFormat;
+	format?: MetricFormat;
+	unit?: string;
+	higherIsBetter?: boolean;
 }
 interface DashboardDataLike {
 	title?: string;
@@ -94,6 +131,8 @@ export function fromDashboardData(
 			title: widget.title,
 			series: widget.series,
 			format: widget.format,
+			unit: widget.unit,
+			higherIsBetter: widget.higherIsBetter,
 		})),
 	};
 }

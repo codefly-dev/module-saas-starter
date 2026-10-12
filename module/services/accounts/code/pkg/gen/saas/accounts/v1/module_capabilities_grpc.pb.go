@@ -21,6 +21,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ModuleCapabilitiesService_GetCurrentInstallation_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation"
+	ModuleCapabilitiesService_ApproveExecutableArtifact_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact"
+	ModuleCapabilitiesService_AuthorizeExecutableArtifact_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact"
+	ModuleCapabilitiesService_RevokeExecutableArtifact_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact"
 	ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
 	ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"
 	ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
@@ -41,8 +45,6 @@ const (
 	ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
 	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
 	ModuleCapabilitiesService_FetchDatasourceFiles_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles"
-	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
-	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
 	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
 	ModuleCapabilitiesService_MintModuleOperationContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext"
 	ModuleCapabilitiesService_MintSourceOperationContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext"
@@ -57,6 +59,15 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ModuleCapabilitiesServiceClient interface {
+	// Organization-member metadata read, not executable consent or a durable
+	// liveness proof. Returns only a currently active, non-revoked installation.
+	GetCurrentInstallation(ctx context.Context, in *ModuleCurrentInstallationRequest, opts ...grpc.CallOption) (*ModuleCurrentInstallationResponse, error)
+	// Explicit current-admin consent, never inferred from an execution request.
+	ApproveExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error)
+	// Read existing exact approval; check live authority and revocation each time.
+	AuthorizeExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error)
+	// Terminal revocation of the exact approved identity.
+	RevokeExecutableArtifact(ctx context.Context, in *ModuleRevokeExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
@@ -76,7 +87,10 @@ type ModuleCapabilitiesServiceClient interface {
 	// access oracles can resolve it. Bounded by the resource types the caller
 	// principal's grant declares.
 	PlaceRecord(ctx context.Context, in *ModulePlaceRecordRequest, opts ...grpc.CallOption) (*ModulePlaceRecordResponse, error)
-	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+	// subject-scoped job whose subject is not a member of the tenant is
+	// FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+	// and key on the reason rather than the code.
 	EnqueueJob(ctx context.Context, in *ModuleEnqueueJobRequest, opts ...grpc.CallOption) (*ModuleEnqueueJobResponse, error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(ctx context.Context, in *ModuleClaimJobsRequest, opts ...grpc.CallOption) (*ModuleClaimJobsResponse, error)
@@ -86,10 +100,17 @@ type ModuleCapabilitiesServiceClient interface {
 	AckJob(ctx context.Context, in *ModuleAckJobRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// NackJob fails a leased job as retryable or permanent.
 	NackJob(ctx context.Context, in *ModuleNackJobRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// NotifyUser delivers a notification subject to category policy.
+	// NotifyUser delivers a notification subject to category policy. A recipient
+	// who is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+	// already used for different content, and a host that cannot re-read live
+	// authority, are FAILED_PRECONDITION too under their own reasons, so the
+	// reason — not the code — says which happened; see REFUSALS.
 	NotifyUser(ctx context.Context, in *ModuleNotifyUserRequest, opts ...grpc.CallOption) (*ModuleNotifyUserResponse, error)
 	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-	// see the request.
+	// see the request. It names no recipient, so it has no non-member refusal; an
+	// idempotency_key already used for different content is FAILED_PRECONDITION
+	// with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
 	NotifyOrgAdmins(ctx context.Context, in *ModuleNotifyOrgAdminsRequest, opts ...grpc.CallOption) (*ModuleNotifyOrgAdminsResponse, error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(ctx context.Context, in *ModuleRequestApprovalRequest, opts ...grpc.CallOption) (*ModuleRequestApprovalResponse, error)
@@ -103,7 +124,11 @@ type ModuleCapabilitiesServiceClient interface {
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(ctx context.Context, in *ModuleDeclareAuditEventTypesRequest, opts ...grpc.CallOption) (*ModuleDeclareAuditEventTypesResponse, error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-	// whole set of other subjects whose rows that viewer may read.
+	// whole set of other subjects whose rows that viewer may read. A viewer who
+	// is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+	// FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+	// the reason tells a consumer which it got.
 	ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error)
 	// Deprecated: Do not use.
 	// FetchDatasourceBlob streams one datasource file blob to the module that
@@ -120,24 +145,15 @@ type ModuleCapabilitiesServiceClient interface {
 	// metadata reset_at) and a RetryInfo; a batch past its limits is
 	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
 	FetchDatasourceFiles(ctx context.Context, in *FetchDatasourceFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceFilesFrame], error)
-	// MintModuleRegistration issues the signed, prefix-bound credential a composed
-	// module presents to the gateway to federate its REST surface. Authorized by
-	// the module's own registration secret, not the shared cluster token.
-	MintModuleRegistration(ctx context.Context, in *ModuleMintRegistrationRequest, opts ...grpc.CallOption) (*ModuleMintRegistrationResponse, error)
-	// MintSolutionRegistration issues the signed, solution-bound credential a
-	// solution presents to the gateway and to the frontend to register, update, or
-	// delete its upstream and its Module-Federation remote. Authorized by the
-	// solution's own registration secret, declared separately from the module
-	// secrets because a solution remote executes in the host origin.
-	MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error)
 	// MintModuleWorkContext issues the Work Context a composed module presents to
 	// this surface: owner and sole actor are the module service principal derived
-	// from its registration prefix. Authorized by the module's own registration
-	// secret, like the credential exchange above.
+	// from its prefix. Authorized by the pod's projected ServiceAccount token, held
+	// against the workload the principal declares and the build the authority
+	// document approves; a pod running anything else is issued nothing.
 	MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error)
 	// MintModuleOperationContext issues, with no person present, a Work Context
 	// addressed to one of the calling module's installed operation audiences.
-	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// Authorized by the pod's projected token like MintModuleWorkContext; owner
 	// and sole actor are the module service principal, the tenant is the one its
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
@@ -146,7 +162,7 @@ type ModuleCapabilitiesServiceClient interface {
 	// sync runs with: owned by the person who connected the source, actored by
 	// the calling module's service principal, in the source's organization, with
 	// exactly the source_delegation_scopes of the binding the person delegated
-	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// to. Authorized by the pod's projected token like MintModuleWorkContext;
 	// every mint re-checks that the delegation is active, the source exists, the
 	// person is still an owner or admin of the organization, and the binding is
 	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
@@ -171,6 +187,46 @@ type moduleCapabilitiesServiceClient struct {
 
 func NewModuleCapabilitiesServiceClient(cc grpc.ClientConnInterface) ModuleCapabilitiesServiceClient {
 	return &moduleCapabilitiesServiceClient{cc}
+}
+
+func (c *moduleCapabilitiesServiceClient) GetCurrentInstallation(ctx context.Context, in *ModuleCurrentInstallationRequest, opts ...grpc.CallOption) (*ModuleCurrentInstallationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleCurrentInstallationResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_GetCurrentInstallation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) ApproveExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleExecutableArtifactResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ApproveExecutableArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) AuthorizeExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleExecutableArtifactResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_AuthorizeExecutableArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) RevokeExecutableArtifact(ctx context.Context, in *ModuleRevokeExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleExecutableArtifactResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_RevokeExecutableArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
@@ -392,26 +448,6 @@ func (c *moduleCapabilitiesServiceClient) FetchDatasourceFiles(ctx context.Conte
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ModuleCapabilitiesService_FetchDatasourceFilesClient = grpc.ServerStreamingClient[FetchDatasourceFilesFrame]
 
-func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Context, in *ModuleMintRegistrationRequest, opts ...grpc.CallOption) (*ModuleMintRegistrationResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ModuleMintRegistrationResponse)
-	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintModuleRegistration_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SolutionMintRegistrationResponse)
-	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModuleMintWorkContextResponse)
@@ -496,6 +532,15 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
 type ModuleCapabilitiesServiceServer interface {
+	// Organization-member metadata read, not executable consent or a durable
+	// liveness proof. Returns only a currently active, non-revoked installation.
+	GetCurrentInstallation(context.Context, *ModuleCurrentInstallationRequest) (*ModuleCurrentInstallationResponse, error)
+	// Explicit current-admin consent, never inferred from an execution request.
+	ApproveExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error)
+	// Read existing exact approval; check live authority and revocation each time.
+	AuthorizeExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error)
+	// Terminal revocation of the exact approved identity.
+	RevokeExecutableArtifact(context.Context, *ModuleRevokeExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error)
@@ -515,7 +560,10 @@ type ModuleCapabilitiesServiceServer interface {
 	// access oracles can resolve it. Bounded by the resource types the caller
 	// principal's grant declares.
 	PlaceRecord(context.Context, *ModulePlaceRecordRequest) (*ModulePlaceRecordResponse, error)
-	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+	// subject-scoped job whose subject is not a member of the tenant is
+	// FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+	// and key on the reason rather than the code.
 	EnqueueJob(context.Context, *ModuleEnqueueJobRequest) (*ModuleEnqueueJobResponse, error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(context.Context, *ModuleClaimJobsRequest) (*ModuleClaimJobsResponse, error)
@@ -525,10 +573,17 @@ type ModuleCapabilitiesServiceServer interface {
 	AckJob(context.Context, *ModuleAckJobRequest) (*emptypb.Empty, error)
 	// NackJob fails a leased job as retryable or permanent.
 	NackJob(context.Context, *ModuleNackJobRequest) (*emptypb.Empty, error)
-	// NotifyUser delivers a notification subject to category policy.
+	// NotifyUser delivers a notification subject to category policy. A recipient
+	// who is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+	// already used for different content, and a host that cannot re-read live
+	// authority, are FAILED_PRECONDITION too under their own reasons, so the
+	// reason — not the code — says which happened; see REFUSALS.
 	NotifyUser(context.Context, *ModuleNotifyUserRequest) (*ModuleNotifyUserResponse, error)
 	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-	// see the request.
+	// see the request. It names no recipient, so it has no non-member refusal; an
+	// idempotency_key already used for different content is FAILED_PRECONDITION
+	// with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
 	NotifyOrgAdmins(context.Context, *ModuleNotifyOrgAdminsRequest) (*ModuleNotifyOrgAdminsResponse, error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *ModuleRequestApprovalRequest) (*ModuleRequestApprovalResponse, error)
@@ -542,7 +597,11 @@ type ModuleCapabilitiesServiceServer interface {
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(context.Context, *ModuleDeclareAuditEventTypesRequest) (*ModuleDeclareAuditEventTypesResponse, error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-	// whole set of other subjects whose rows that viewer may read.
+	// whole set of other subjects whose rows that viewer may read. A viewer who
+	// is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+	// FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+	// the reason tells a consumer which it got.
 	ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error)
 	// Deprecated: Do not use.
 	// FetchDatasourceBlob streams one datasource file blob to the module that
@@ -559,24 +618,15 @@ type ModuleCapabilitiesServiceServer interface {
 	// metadata reset_at) and a RetryInfo; a batch past its limits is
 	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
 	FetchDatasourceFiles(*FetchDatasourceFilesRequest, grpc.ServerStreamingServer[FetchDatasourceFilesFrame]) error
-	// MintModuleRegistration issues the signed, prefix-bound credential a composed
-	// module presents to the gateway to federate its REST surface. Authorized by
-	// the module's own registration secret, not the shared cluster token.
-	MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error)
-	// MintSolutionRegistration issues the signed, solution-bound credential a
-	// solution presents to the gateway and to the frontend to register, update, or
-	// delete its upstream and its Module-Federation remote. Authorized by the
-	// solution's own registration secret, declared separately from the module
-	// secrets because a solution remote executes in the host origin.
-	MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error)
 	// MintModuleWorkContext issues the Work Context a composed module presents to
 	// this surface: owner and sole actor are the module service principal derived
-	// from its registration prefix. Authorized by the module's own registration
-	// secret, like the credential exchange above.
+	// from its prefix. Authorized by the pod's projected ServiceAccount token, held
+	// against the workload the principal declares and the build the authority
+	// document approves; a pod running anything else is issued nothing.
 	MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error)
 	// MintModuleOperationContext issues, with no person present, a Work Context
 	// addressed to one of the calling module's installed operation audiences.
-	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// Authorized by the pod's projected token like MintModuleWorkContext; owner
 	// and sole actor are the module service principal, the tenant is the one its
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
@@ -585,7 +635,7 @@ type ModuleCapabilitiesServiceServer interface {
 	// sync runs with: owned by the person who connected the source, actored by
 	// the calling module's service principal, in the source's organization, with
 	// exactly the source_delegation_scopes of the binding the person delegated
-	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// to. Authorized by the pod's projected token like MintModuleWorkContext;
 	// every mint re-checks that the delegation is active, the source exists, the
 	// person is still an owner or admin of the organization, and the binding is
 	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
@@ -612,6 +662,18 @@ type ModuleCapabilitiesServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedModuleCapabilitiesServiceServer struct{}
 
+func (UnimplementedModuleCapabilitiesServiceServer) GetCurrentInstallation(context.Context, *ModuleCurrentInstallationRequest) (*ModuleCurrentInstallationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCurrentInstallation not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ApproveExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApproveExecutableArtifact not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) AuthorizeExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AuthorizeExecutableArtifact not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) RevokeExecutableArtifact(context.Context, *ModuleRevokeExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeExecutableArtifact not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExchangeDelegatedReadAudience not implemented")
 }
@@ -672,12 +734,6 @@ func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceBlob(*FetchDa
 func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceFiles(*FetchDatasourceFilesRequest, grpc.ServerStreamingServer[FetchDatasourceFilesFrame]) error {
 	return status.Error(codes.Unimplemented, "method FetchDatasourceFiles not implemented")
 }
-func (UnimplementedModuleCapabilitiesServiceServer) MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method MintModuleRegistration not implemented")
-}
-func (UnimplementedModuleCapabilitiesServiceServer) MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method MintSolutionRegistration not implemented")
-}
 func (UnimplementedModuleCapabilitiesServiceServer) MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintModuleWorkContext not implemented")
 }
@@ -722,6 +778,78 @@ func RegisterModuleCapabilitiesServiceServer(s grpc.ServiceRegistrar, srv Module
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ModuleCapabilitiesService_ServiceDesc, srv)
+}
+
+func _ModuleCapabilitiesService_GetCurrentInstallation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleCurrentInstallationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).GetCurrentInstallation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_GetCurrentInstallation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).GetCurrentInstallation(ctx, req.(*ModuleCurrentInstallationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_ApproveExecutableArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExecutableArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ApproveExecutableArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ApproveExecutableArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ApproveExecutableArtifact(ctx, req.(*ModuleExecutableArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_AuthorizeExecutableArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExecutableArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).AuthorizeExecutableArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_AuthorizeExecutableArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).AuthorizeExecutableArtifact(ctx, req.(*ModuleExecutableArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_RevokeExecutableArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleRevokeExecutableArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).RevokeExecutableArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_RevokeExecutableArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).RevokeExecutableArtifact(ctx, req.(*ModuleRevokeExecutableArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1070,42 +1198,6 @@ func _ModuleCapabilitiesService_FetchDatasourceFiles_Handler(srv interface{}, st
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ModuleCapabilitiesService_FetchDatasourceFilesServer = grpc.ServerStreamingServer[FetchDatasourceFilesFrame]
 
-func _ModuleCapabilitiesService_MintModuleRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ModuleMintRegistrationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ModuleCapabilitiesServiceServer).MintModuleRegistration(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ModuleCapabilitiesService_MintModuleRegistration_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ModuleCapabilitiesServiceServer).MintModuleRegistration(ctx, req.(*ModuleMintRegistrationRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ModuleCapabilitiesService_MintSolutionRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SolutionMintRegistrationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ModuleCapabilitiesServiceServer).MintSolutionRegistration(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ModuleCapabilitiesServiceServer).MintSolutionRegistration(ctx, req.(*SolutionMintRegistrationRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _ModuleCapabilitiesService_MintModuleWorkContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModuleMintWorkContextRequest)
 	if err := dec(in); err != nil {
@@ -1258,6 +1350,22 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ModuleCapabilitiesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "GetCurrentInstallation",
+			Handler:    _ModuleCapabilitiesService_GetCurrentInstallation_Handler,
+		},
+		{
+			MethodName: "ApproveExecutableArtifact",
+			Handler:    _ModuleCapabilitiesService_ApproveExecutableArtifact_Handler,
+		},
+		{
+			MethodName: "AuthorizeExecutableArtifact",
+			Handler:    _ModuleCapabilitiesService_AuthorizeExecutableArtifact_Handler,
+		},
+		{
+			MethodName: "RevokeExecutableArtifact",
+			Handler:    _ModuleCapabilitiesService_RevokeExecutableArtifact_Handler,
+		},
+		{
 			MethodName: "ExchangeDelegatedReadAudience",
 			Handler:    _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler,
 		},
@@ -1328,14 +1436,6 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSubjectVisibility",
 			Handler:    _ModuleCapabilitiesService_ListSubjectVisibility_Handler,
-		},
-		{
-			MethodName: "MintModuleRegistration",
-			Handler:    _ModuleCapabilitiesService_MintModuleRegistration_Handler,
-		},
-		{
-			MethodName: "MintSolutionRegistration",
-			Handler:    _ModuleCapabilitiesService_MintSolutionRegistration_Handler,
 		},
 		{
 			MethodName: "MintModuleWorkContext",

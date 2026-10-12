@@ -3,7 +3,7 @@ import type {
 	NavItem,
 	NavigationSurface,
 	PresentationRequirement,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import type {
 	FrontendReactConfig,
 	ReactPluginRoute,

@@ -2547,6 +2547,18 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/admin/solutions/page.tsx",
+      "imports": [
+        "@/features/solution-installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/admin/sso/page.tsx",
       "imports": [
         "@/features/sso-admin/ui/sso-admin-page"
@@ -2704,7 +2716,7 @@
     {
       "source": "src/components/admin-layout.tsx",
       "imports": [
-        "@codefly/saas-plugin-contract",
+        "@codefly-dev/saas-plugin-contract",
         "lucide-react",
         "next/link",
         "next/navigation",
@@ -4762,6 +4774,73 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/solution-installations/ui/grant-team-dialog.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "react",
+        "sonner",
+        "@/features/roles/service/queries",
+        "@/features/teams/service/queries",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/installations",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the solution-installations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/install-solution-dialog.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react-hook-form",
+        "sonner",
+        "@/features/roles/service/queries",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/installations",
+        "../model/schemas",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the solution-installations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/solution-installations-page.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/empty-state",
+        "@/components/org-selector",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/lib/auth",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../model/installations",
+        "../service/mutations",
+        "../service/queries",
+        "./grant-team-dialog",
+        "./install-solution-dialog"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the solution-installations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/sso-admin/ui/sso-admin-page.tsx",
       "imports": [
         "@tanstack/react-query",
@@ -4916,7 +4995,7 @@
     {
       "source": "src/features/user-settings/ui/general-settings-page.tsx",
       "imports": [
-        "@codefly/saas-plugin-contract",
+        "@codefly-dev/saas-plugin-contract",
         "@tanstack/react-query",
         "react",
         "sonner",
@@ -4943,7 +5022,7 @@
     {
       "source": "src/features/user-settings/ui/theme-preference-provider.tsx",
       "imports": [
-        "@codefly/saas-plugin-contract",
+        "@codefly-dev/saas-plugin-contract",
         "@tanstack/react-query",
         "react",
         "@/lib/auth",

@@ -21,7 +21,7 @@ the moment either side adds a field. Rather than fork, the starter manifest is a
 starter-only sections through a documented `extensions['x-codefly']` namespace.
 
 The `ui` block is not re-modeled here: it is exactly the frontend contract's
-presentation facts (`@codefly/saas-plugin-contract`) and is validated by that
+presentation facts (`@codefly-dev/saas-plugin-contract`) and is validated by that
 package, so the frontend plugin contract and the unified manifest cannot fork
 either.
 

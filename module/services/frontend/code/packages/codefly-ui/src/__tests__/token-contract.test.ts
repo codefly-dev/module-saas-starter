@@ -10,7 +10,7 @@ import {
 	FRONTEND_TYPE_ROLE_NAMES,
 	FRONTEND_TYPE_SCALE_STEPS,
 	FRONTEND_TYPE_SLOT_NAMES,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 
 // Ties TOKENS.md — the prose token contract — to the code that owns the

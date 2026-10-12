@@ -2,7 +2,7 @@ import type {
 	FrontendSkinRules,
 	FrontendSlotRule,
 	FrontendTypeSlotName,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 
 // The checker for layer 4. It reads rendered markup and never CSS, which is the
 // whole point of keeping rules out of `appearance`: a rule is a constraint, and

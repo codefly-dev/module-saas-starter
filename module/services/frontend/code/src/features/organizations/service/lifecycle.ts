@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
+import { signOutAndLeave } from "@/lib/sign-out-journey";
 import { fallbackOrganization } from "../model/leave-flow";
 import { orgMutations } from "./mutations";
 import { orgQueries } from "./queries";
@@ -39,7 +40,10 @@ function useDeparture() {
 		}
 		await action();
 		invalidateOrganization(queryClient, orgId);
-		if (stranded) await logout();
+		// Stranded: the person left their last organization, so there is nothing
+		// left to be signed in to. Through the shared journey, so an incomplete
+		// sign-out is not left looking like a finished one.
+		if (stranded) await signOutAndLeave(logout);
 	};
 }
 

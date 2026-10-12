@@ -126,6 +126,11 @@ services:
     handler: ssoAdminConnectHandler
     source:
       kind: business
+  SolutionEntitlementService:
+    handler: solutionEntitlementConnectHandler
+    source:
+      kind: singleton
+      name: SolutionEntitlementSingleton
   SolutionRegistryService:
     handler: solutionRegistryConnectHandler
     source:

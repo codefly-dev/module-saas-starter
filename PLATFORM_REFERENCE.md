@@ -136,7 +136,7 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
 | Connector management | 🟡 | SSO connector setup only (`/admin/sso`); no general third-party-connector/manifest framework. |
 | Per-tenant config | ✅ | `/admin/organizations/settings` (`org_settings`), `/admin/entitlements`. |
 | Background-agent ops / kill switch | 🟡 | `/admin/platform/jobs` gives payload-free queue/lifecycle + MFA-gated dead-letter replay; `RevokePrincipal` revokes an agent. No dedicated per-tenant agent kill switch — but note the audit's lesson: make any kill switch **per-tenant**, not deployment-global. |
-| Partner API keys | 🟡 | Org API keys `cfly_sk_…` (hashed via Vault transit HMAC, scoped, `/admin/api-keys`, `pkg/business/api_keys.go` + `pkg/infra/vault.go`); no separate partner tier and no 404-not-403 concealment of a staff-only surface yet. |
+| Partner API keys | 🟡 | Org API keys `cfly_sk_…` (keyed hash from the selected key service, scoped, `/admin/api-keys`, `pkg/business/api_keys.go` + `pkg/keyservice`); no separate partner tier and no 404-not-403 concealment of a staff-only surface yet. |
 | Audit viewer + compliance export | ✅ | `/admin/audit-log` (`QueryAuditLog`) + on-demand CSV/JSON download (`AuditService/ExportAuditLog`, `pkg/business/audit_export.go`). The former per-org S3 JSONL sink (`AuditExportService`) was removed with the object-storage service. |
 
 ### 1.6 Support access / impersonation — ✅ (with a role-model divergence)
@@ -203,12 +203,17 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   analog of the audit's `delegation_jti` + `caused_by` chain + ceiling-snapshot
   hash.
 - **Retention/redaction, 🟡:** `RunRetention` deletes per
-  `data_retention_policies`; export payloads are PII-redacted. The audit's named
-  two-tier (7-year content-free / 90-day full) split is not a distinct construct
-  yet — it is the compliance tier planned under
+  `data_retention_policies`, counted from the database's clock, and retires
+  audit events by dropping each monthly partition whose recorded range ends
+  before the window
+  ([DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md#audit-retention-drops-a-partition-by-its-recorded-range-under-lock));
+  a run that fails in any part is an error the alert pack watches
+  ([MEASUREMENT_RUNBOOKS.md](./module/MEASUREMENT_RUNBOOKS.md#retention));
+  export payloads are PII-redacted. The audit's named two-tier (7-year
+  content-free / 90-day full) split is not a distinct construct yet — it is the
+  compliance tier planned under
   [ADR 0006](./module/docs/adr/0006-audit-sink-and-retention-tiers.md) (tiered
-  retention + a swappable compliance sink; note today's `RunRetention` is a
-  no-op because it collides with the immutability trigger).
+  retention + a swappable compliance sink).
 - **Read auditing, ⬜:** bulk reads are RLS-scoped but not themselves logged as
   audit events. The audit's "audit the access set (IDs, capped, dedupe window)"
   pattern — and its 11k-rows-from-a-poller cautionary tale — is unbuilt.

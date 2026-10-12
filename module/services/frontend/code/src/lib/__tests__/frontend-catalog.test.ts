@@ -33,8 +33,22 @@ describe("generated frontend catalog", () => {
 	});
 
 	it("publishes the canonical permission and scope vocabulary", () => {
-		expect(Object.values(PERMISSIONS)).toHaveLength(24);
-		expect(API_KEY_SCOPES).toHaveLength(19);
+		// Cataloggen's fixture-equality test covers the complete vocabulary.
+		// Check callable-source permission and API-key scope membership here;
+		// totals alone cannot detect a missing or incorrectly named permission.
+		expect(PERMISSIONS).toMatchObject({
+			DATASOURCE_READ: "datasource:read",
+			DATASOURCE_INVOKE: "datasource:invoke",
+		});
+		expect(API_KEY_SCOPES).toEqual(
+			expect.arrayContaining([
+				PERMISSIONS.ROLES_WRITE,
+				PERMISSIONS.DATASOURCE_READ,
+				PERMISSIONS.DATASOURCE_INVOKE,
+			]),
+		);
+		expect(isPermission(PERMISSIONS.DATASOURCE_READ)).toBe(true);
+		expect(isPermission(PERMISSIONS.DATASOURCE_INVOKE)).toBe(true);
 		expect(isPermission(PERMISSIONS.ROLES_WRITE)).toBe(true);
 		expect(isPermission("roles:delete")).toBe(false);
 	});

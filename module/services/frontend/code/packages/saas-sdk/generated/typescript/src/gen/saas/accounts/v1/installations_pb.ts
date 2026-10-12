@@ -8,6 +8,8 @@ import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { EmptySchema, Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_empty, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { CollectionReadGrant, ScopeGrant } from "./authorization_pb";
+import { file_saas_accounts_v1_authorization } from "./authorization_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -15,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/installations.proto.
  */
 export const file_saas_accounts_v1_installations: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2luc3RhbGxhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEilwMKDEluc3RhbGxhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAIgASgJQgi6SAVyA7ABARIkChJhZ2VudF9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEhsKE3NvbHV0aW9uX2lkZW50aWZpZXIYBCABKAkSJAoSb3duZXJfcHJpbmNpcGFsX2lkGAUgASgJQgi6SAVyA7ABARIeChZjb19vd25lcl9wcmluY2lwYWxfaWRzGAYgAygJEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgHIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAggASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoKcmV2b2tlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAIgBAUINCgtfcmV2b2tlZF9hdCKmAwoWSW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiQKEGFnZW50X2lkZW50aWZpZXIYAiABKAlCCrpIB3IFEAEYgAQSJwoTc29sdXRpb25faWRlbnRpZmllchgDIAEoCUIKukgHcgUQARiABBIeCgxkaXNwbGF5X25hbWUYBCABKAlCCLpIBXIDGIAEEiIKEHJvb3Rfc2NvcGVfbGFiZWwYBiABKAlCCLpIBXIDGIAEEhkKB3JvbGVfaWQYByABKAlCCLpIBXIDsAEBEicKEm93bmVyX3ByaW5jaXBhbF9pZBgIIAEoCUILukgI2AEBcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgJIAMoCUIPukgMkgEJECAiBXIDsAEBEioKEWFsbG93ZWRfYXVkaWVuY2VzGAogAygJQg+6SAySAQkQQCIFcgMYgAQSJwoOYWxsb3dlZF9zY29wZXMYCyADKAlCD7pIDJIBCRBAIgVyAxiAAUoECAUQBlIPcm9vdF9zY29wZV9wYXRoIlcKGFVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQEivgEKJFRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESKAoWbmV3X293bmVyX3ByaW5jaXBhbF9pZBgDIAEoCUIIukgFcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgEIAMoCUIPukgMkgEJECAiBXIDsAEBIlUKFkdldEluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIoUBChdHZXRJbnN0YWxsYXRpb25SZXNwb25zZRI0CgxpbnN0YWxsYXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbhI0CgZoZWFsdGgYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbkhlYWx0aCp6ChJJbnN0YWxsYXRpb25TdGF0dXMSIwofSU5TVEFMTEFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGklOU1RBTExBVElPTl9TVEFUVVNfQUNUSVZFEAESHwobSU5TVEFMTEFUSU9OX1NUQVRVU19SRVZPS0VEEAIqhAIKEkluc3RhbGxhdGlvbkhlYWx0aBIjCh9JTlNUQUxMQVRJT05fSEVBTFRIX1VOU1BFQ0lGSUVEEAASHwobSU5TVEFMTEFUSU9OX0hFQUxUSF9IRUFMVEhZEAESKQolSU5TVEFMTEFUSU9OX0hFQUxUSF9OT19FTElHSUJMRV9PV05FUhACEiUKIUlOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfUkVWT0tFRBADEiYKIklOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfRElTQUJMRUQQBBIuCipJTlNUQUxMQVRJT05fSEVBTFRIX1NUQU5ESU5HX0dSQU5UX01JU1NJTkcQBTLvBgoTSW5zdGFsbGF0aW9uU2VydmljZRK6AQoPSW5zdGFsbFNvbHV0aW9uEiguc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsU29sdXRpb25SZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24iXcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlzYWFzLmluc3RhbGxhdGlvbi5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIWOgEqIhEvdjEvaW5zdGFsbGF0aW9ucxLSAQoRVW5pbnN0YWxsU29sdXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJ5wvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGXNhYXMuaW5zdGFsbGF0aW9uLnJldm9rZWQQAkABSARQA1gDYAGC0+STAjI6ASoiLS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9OnVuaW5zdGFsbBKJAgodVHJhbnNmZXJJbnN0YWxsYXRpb25Pd25lcnNoaXASNi5zYWFzLmFjY291bnRzLnYxLlRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uIo8BwvMYSwgCEAQqDAoGb3JnX2lkEAIYATABOisKJ3NhYXMuaW5zdGFsbGF0aW9uLm93bmVyc2hpcF90cmFuc2ZlcnJlZBACQAFIBFADWANgAYLT5JMCOjoBKiI1L3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06dHJhbnNmZXJPd25lcnNoaXASuQEKD0dldEluc3RhbGxhdGlvbhIoLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVzcG9uc2UiUcLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIlEiMvdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2luc3RhbGxhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEi1wMKDEluc3RhbGxhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAIgASgJQgi6SAVyA7ABARIkChJhZ2VudF9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEiQKEm93bmVyX3ByaW5jaXBhbF9pZBgFIAEoCUIIukgFcgOwAQESHgoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgGIAMoCRIkChJyb290X3Njb3BlX25vZGVfaWQYByABKAlCCLpIBXIDsAEBEjQKBnN0YXR1cxgIIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uU3RhdHVzEi4KCmNyZWF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKCnJldm9rZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSACIAQESHgoJdGFyZ2V0X2lkGAsgASgJQgu6SAjYAQFyA7ABARIgCg5yZXZva2VkX3JlYXNvbhgMIAEoCUIIukgFcgMYgARCDQoLX3Jldm9rZWRfYXRKBAgEEAVSE3NvbHV0aW9uX2lkZW50aWZpZXIi4AMKFkluc3RhbGxTb2x1dGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIkChBhZ2VudF9pZGVudGlmaWVyGAIgASgJQgq6SAdyBRABGIAEEh4KDGRpc3BsYXlfbmFtZRgEIAEoCUIIukgFcgMYgAQSIgoQcm9vdF9zY29wZV9sYWJlbBgGIAEoCUIIukgFcgMYgAQSGQoHcm9sZV9pZBgHIAEoCUIIukgFcgOwAQESJwoSb3duZXJfcHJpbmNpcGFsX2lkGAggASgJQgu6SAjYAQFyA7ABARIvChZjb19vd25lcl9wcmluY2lwYWxfaWRzGAkgAygJQg+6SAySAQkQICIFcgOwAQESKgoRYWxsb3dlZF9hdWRpZW5jZXMYCiADKAlCD7pIDJIBCRBAIgVyAxiABBInCg5hbGxvd2VkX3Njb3BlcxgLIAMoCUIPukgMkgEJEEAiBXIDGIABEhsKCXRhcmdldF9pZBgMIAEoCUIIukgFcgOwAQESHwoFc2NvcGUYDSABKAlCC7pICHIGEAIogIBASACIAQFCCAoGX3Njb3BlSgQIAxAESgQIBRAGUhNzb2x1dGlvbl9pZGVudGlmaWVyUg9yb290X3Njb3BlX3BhdGgidAoZTmFycm93SW5zdGFsbGF0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESGgoFc2NvcGUYAyABKAlCC7pICHIGEAIogIBAIlcKGFVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQEivgEKJFRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESKAoWbmV3X293bmVyX3ByaW5jaXBhbF9pZBgDIAEoCUIIukgFcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgEIAMoCUIPukgMkgEJECAiBXIDsAEBIlUKFkdldEluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIoUBChdHZXRJbnN0YWxsYXRpb25SZXNwb25zZRI0CgxpbnN0YWxsYXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbhI0CgZoZWFsdGgYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbkhlYWx0aCKdAQoYTGlzdEluc3RhbGxhdGlvbnNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkigQEKE0luc3RhbGxhdGlvblN1bW1hcnkSNAoMaW5zdGFsbGF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24SNAoGaGVhbHRoGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25IZWFsdGgicgoZTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZRI8Cg1pbnN0YWxsYXRpb25zGAEgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdW1tYXJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJzCiRMaXN0T3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIdCglwYWdlX3NpemUYAiABKAVCCrpIBxoFGPQDKAASEgoKcGFnZV90b2tlbhgDIAEoCSLSAgoYT3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uEjQKDGluc3RhbGxhdGlvbhgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uEjQKBmhlYWx0aBgCIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uSGVhbHRoEjMKBnRhcmdldBgDIAEoCzIjLnNhYXMuYWNjb3VudHMudjEuQXZhaWxhYmxlU29sdXRpb24SFwoPcm9vdF9zY29wZV9wYXRoGAQgASgJEjwKDWdyYW50ZWRfdGVhbXMYBSADKAsyJS5zYWFzLmFjY291bnRzLnYxLkNvbGxlY3Rpb25SZWFkR3JhbnQSPgoPaW5oZXJpdGVkX3RlYW1zGAYgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5Db2xsZWN0aW9uUmVhZEdyYW50IoMBCiVMaXN0T3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uc1Jlc3BvbnNlEkEKDWluc3RhbGxhdGlvbnMYASADKAsyKi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvbkluc3RhbGxhdGlvbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkikwEKHkdyYW50SW5zdGFsbGF0aW9uVG9UZWFtUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESGQoHdGVhbV9pZBgDIAEoCUIIukgFcgOwAQESGQoHcm9sZV9pZBgEIAEoCUIIukgFcgOwAQEiTgofR3JhbnRJbnN0YWxsYXRpb25Ub1RlYW1SZXNwb25zZRIrCgVncmFudBgBIAEoCzIcLnNhYXMuYWNjb3VudHMudjEuU2NvcGVHcmFudCKWAQohUmV2b2tlSW5zdGFsbGF0aW9uRnJvbVRlYW1SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESIQoPaW5zdGFsbGF0aW9uX2lkGAIgASgJQgi6SAVyA7ABARIZCgd0ZWFtX2lkGAMgASgJQgi6SAVyA7ABARIZCgdyb2xlX2lkGAQgASgJQgi6SAVyA7ABASLtAQoRQXZhaWxhYmxlU29sdXRpb24SGwoJdGFyZ2V0X2lkGAEgASgJQgi6SAVyA7ABARISCgpiaW5kaW5nX2lkGAIgASgJEhMKC3JvdXRlX2FsaWFzGAMgASgJEhkKEXJlbGVhc2VfcHVibGlzaGVyGAQgASgJEhQKDHJlbGVhc2VfbmFtZRgFIAEoCRIXCg9yZWxlYXNlX3ZlcnNpb24YBiABKAkSGQoRb3BlbmVkX2dlbmVyYXRpb24YByABKAQSGgoSYXBwbGllZF9nZW5lcmF0aW9uGAggASgEEhEKCWluc3RhbGxlZBgJIAEoCCJsCh1MaXN0QXZhaWxhYmxlU29sdXRpb25zUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEh0KCXBhZ2Vfc2l6ZRgCIAEoBUIKukgHGgUY9AMoABISCgpwYWdlX3Rva2VuGAMgASgJInEKHkxpc3RBdmFpbGFibGVTb2x1dGlvbnNSZXNwb25zZRI2Cglzb2x1dGlvbnMYASADKAsyIy5zYWFzLmFjY291bnRzLnYxLkF2YWlsYWJsZVNvbHV0aW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSp6ChJJbnN0YWxsYXRpb25TdGF0dXMSIwofSU5TVEFMTEFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGklOU1RBTExBVElPTl9TVEFUVVNfQUNUSVZFEAESHwobSU5TVEFMTEFUSU9OX1NUQVRVU19SRVZPS0VEEAIqhAIKEkluc3RhbGxhdGlvbkhlYWx0aBIjCh9JTlNUQUxMQVRJT05fSEVBTFRIX1VOU1BFQ0lGSUVEEAASHwobSU5TVEFMTEFUSU9OX0hFQUxUSF9IRUFMVEhZEAESKQolSU5TVEFMTEFUSU9OX0hFQUxUSF9OT19FTElHSUJMRV9PV05FUhACEiUKIUlOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfUkVWT0tFRBADEiYKIklOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfRElTQUJMRUQQBBIuCipJTlNUQUxMQVRJT05fSEVBTFRIX1NUQU5ESU5HX0dSQU5UX01JU1NJTkcQBTLREAoTSW5zdGFsbGF0aW9uU2VydmljZRK6AQoPSW5zdGFsbFNvbHV0aW9uEiguc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsU29sdXRpb25SZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24iXcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlzYWFzLmluc3RhbGxhdGlvbi5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIWOgEqIhEvdjEvaW5zdGFsbGF0aW9ucxLSAQoRVW5pbnN0YWxsU29sdXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJ5wvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGXNhYXMuaW5zdGFsbGF0aW9uLnJldm9rZWQQAkABSARQA1gDYAGC0+STAjI6ASoiLS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9OnVuaW5zdGFsbBLSAQoSTmFycm93SW5zdGFsbGF0aW9uEisuc2Fhcy5hY2NvdW50cy52MS5OYXJyb3dJbnN0YWxsYXRpb25SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5InfC8xg+CAIQBCoMCgZvcmdfaWQQAhgBMAE6Hgoac2Fhcy5pbnN0YWxsYXRpb24ubmFycm93ZWQQAkABSARQA1gDYAGC0+STAi86ASoiKi92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9Om5hcnJvdxKJAgodVHJhbnNmZXJJbnN0YWxsYXRpb25Pd25lcnNoaXASNi5zYWFzLmFjY291bnRzLnYxLlRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uIo8BwvMYSwgCEAQqDAoGb3JnX2lkEAIYATABOisKJ3NhYXMuaW5zdGFsbGF0aW9uLm93bmVyc2hpcF90cmFuc2ZlcnJlZBACQAFIBFADWANgAYLT5JMCOjoBKiI1L3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06dHJhbnNmZXJPd25lcnNoaXASuQEKD0dldEluc3RhbGxhdGlvbhIoLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVzcG9uc2UiUcLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIlEiMvdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfRKGAQoRTGlzdEluc3RhbGxhdGlvbnMSKi5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnN0YWxsYXRpb25zUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEsoBChZMaXN0QXZhaWxhYmxlU29sdXRpb25zEi8uc2Fhcy5hY2NvdW50cy52MS5MaXN0QXZhaWxhYmxlU29sdXRpb25zUmVxdWVzdBowLnNhYXMuYWNjb3VudHMudjEuTGlzdEF2YWlsYWJsZVNvbHV0aW9uc1Jlc3BvbnNlIk3C8xgiCAIQBCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCIRIfL3YxL2luc3RhbGxhdGlvbnM6bGlzdEF2YWlsYWJsZRLRAQodTGlzdE9yZ2FuaXphdGlvbkluc3RhbGxhdGlvbnMSNi5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdhbml6YXRpb25JbnN0YWxsYXRpb25zUmVxdWVzdBo3LnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ2FuaXphdGlvbkluc3RhbGxhdGlvbnNSZXNwb25zZSI/wvMYIggCEAQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhMSES92MS9pbnN0YWxsYXRpb25zEvABChdHcmFudEluc3RhbGxhdGlvblRvVGVhbRIwLnNhYXMuYWNjb3VudHMudjEuR3JhbnRJbnN0YWxsYXRpb25Ub1RlYW1SZXF1ZXN0GjEuc2Fhcy5hY2NvdW50cy52MS5HcmFudEluc3RhbGxhdGlvblRvVGVhbVJlc3BvbnNlInDC8xg4CAIQBCoMCgZvcmdfaWQQAhgBMAE6FgoSc2Fhcy5zY29wZS5ncmFudGVkEAJAAUgEUANYA2ABeAKC0+STAi46ASoiKS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9L3RlYW1zEu0BChpSZXZva2VJbnN0YWxsYXRpb25Gcm9tVGVhbRIzLnNhYXMuYWNjb3VudHMudjEuUmV2b2tlSW5zdGFsbGF0aW9uRnJvbVRlYW1SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IoEBwvMYOAgCEAQqDAoGb3JnX2lkEAIYATABOhYKEnNhYXMuc2NvcGUucmV2b2tlZBACQAFIBFADWANgAXgCgtPkkwI/OgEqIjovdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfS90ZWFtcy97dGVhbV9pZH06cmV2b2tlYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_authorization, file_saas_policy_v1_options]);
 
 /**
  * Installation is one solution's bound identity in an org. Server-assigned ids;
@@ -38,11 +40,6 @@ export type Installation = Message<"saas.accounts.v1.Installation"> & {
    * @generated from field: string agent_principal_id = 3;
    */
   agentPrincipalId: string;
-
-  /**
-   * @generated from field: string solution_identifier = 4;
-   */
-  solutionIdentifier: string;
 
   /**
    * @generated from field: string owner_principal_id = 5;
@@ -73,6 +70,36 @@ export type Installation = Message<"saas.accounts.v1.Installation"> & {
    * @generated from field: optional google.protobuf.Timestamp revoked_at = 10;
    */
   revokedAt?: Timestamp;
+
+  /**
+   * The immutable solution target this installation was consented to: one
+   * continuous period of one binding's presence on this host. It is never
+   * reused, so a replacement binding — even one claiming the same route alias —
+   * is a different target and inherits nothing.
+   *
+   * Deliberately NOT accompanied by the route alias. The alias is a property of
+   * the target that a later generation may move, and resolving it here would
+   * mean joining the host's presence state into a request-path listing — which
+   * would require granting request traffic read over every organisation's
+   * presence to answer about one. A consumer that needs the alias asks
+   * ListAvailableSolutions, which serves accepted applied state, and joins on
+   * this id.
+   *
+   * Empty only on a revoked historical row whose target could not be
+   * established at the cutover; an active installation always names one.
+   *
+   * @generated from field: string target_id = 11;
+   */
+  targetId: string;
+
+  /**
+   * Why a revoked installation was revoked, when it was not an administrator
+   * uninstalling: the installation-identity cutover, or a tenancy narrowing that
+   * withdrew this organisation. Empty on an active row.
+   *
+   * @generated from field: string revoked_reason = 12;
+   */
+  revokedReason: string;
 };
 
 /**
@@ -98,11 +125,6 @@ export type InstallSolutionRequest = Message<"saas.accounts.v1.InstallSolutionRe
    * @generated from field: string agent_identifier = 2;
    */
   agentIdentifier: string;
-
-  /**
-   * @generated from field: string solution_identifier = 3;
-   */
-  solutionIdentifier: string;
 
   /**
    * Human display name for the agent principal. Empty defaults to the identifier.
@@ -147,7 +169,16 @@ export type InstallSolutionRequest = Message<"saas.accounts.v1.InstallSolutionRe
   /**
    * The agent's delegated-execution ceiling (migration 108): the Work Context
    * audiences it may be minted for and the resource kinds it may ever touch.
-   * Empty = unrestricted.
+   *
+   * Empty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an
+   * administrator consented to when they installed it. It is NOT unrestricted
+   * for a mint made with a credential delivered to a THIRD PARTY on a person's
+   * behalf — an MCP client the person authorized for this one solution. There
+   * the installation is the only statement of what the solution may act for, so
+   * an empty list is read as nothing and such a mint is REFUSED by name
+   * (accounts' holdConfinedMintToItsConsumer). The two readings are opposite on
+   * purpose: one bounds a consumer an admin trusts, the other bounds a
+   * credential they never saw.
    *
    * @generated from field: repeated string allowed_audiences = 10;
    */
@@ -157,6 +188,30 @@ export type InstallSolutionRequest = Message<"saas.accounts.v1.InstallSolutionRe
    * @generated from field: repeated string allowed_scopes = 11;
    */
   allowedScopes: string[];
+
+  /**
+   * The solution target being installed, from ListAvailableSolutions. Required.
+   *
+   * An installer chooses an identity, never an address. The target must be LIVE
+   * and ACCEPTED when the install lands: installing a withdrawn target would
+   * record consent to a presence that already ended, and installing a target
+   * whose newest generation was refused would record consent to a release this
+   * host never admitted.
+   *
+   * @generated from field: string target_id = 12;
+   */
+  targetId: string;
+
+  /**
+   * Installed consent as JSON: capabilities, queues, namespaces,
+   * external_namespaces, resources, read_audiences, operation_audiences and
+   * artifact_policies, with the same shapes as the module envelope grant.
+   * Must be a subset of the current ceiling. Omitted selects that ceiling;
+   * an explicit {} grants nothing. Tenant and identity are never scope fields.
+   *
+   * @generated from field: optional string scope = 13;
+   */
+  scope?: string;
 };
 
 /**
@@ -165,6 +220,38 @@ export type InstallSolutionRequest = Message<"saas.accounts.v1.InstallSolutionRe
  */
 export const InstallSolutionRequestSchema: GenMessage<InstallSolutionRequest> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_installations, 1);
+
+/**
+ * An org administrator may only remove installed authority. The host reads
+ * the current revision and serializes the narrowing with other lifecycle acts.
+ *
+ * @generated from message saas.accounts.v1.NarrowInstallationRequest
+ */
+export type NarrowInstallationRequest = Message<"saas.accounts.v1.NarrowInstallationRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string installation_id = 2;
+   */
+  installationId: string;
+
+  /**
+   * Same JSON shape as InstallSolution.scope; {} removes all capability access.
+   *
+   * @generated from field: string scope = 3;
+   */
+  scope: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.NarrowInstallationRequest.
+ * Use `create(NarrowInstallationRequestSchema)` to create a new message.
+ */
+export const NarrowInstallationRequestSchema: GenMessage<NarrowInstallationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 2);
 
 /**
  * @generated from message saas.accounts.v1.UninstallSolutionRequest
@@ -186,7 +273,7 @@ export type UninstallSolutionRequest = Message<"saas.accounts.v1.UninstallSoluti
  * Use `create(UninstallSolutionRequestSchema)` to create a new message.
  */
 export const UninstallSolutionRequestSchema: GenMessage<UninstallSolutionRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 2);
+  messageDesc(file_saas_accounts_v1_installations, 3);
 
 /**
  * @generated from message saas.accounts.v1.TransferInstallationOwnershipRequest
@@ -222,7 +309,7 @@ export type TransferInstallationOwnershipRequest = Message<"saas.accounts.v1.Tra
  * Use `create(TransferInstallationOwnershipRequestSchema)` to create a new message.
  */
 export const TransferInstallationOwnershipRequestSchema: GenMessage<TransferInstallationOwnershipRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 3);
+  messageDesc(file_saas_accounts_v1_installations, 4);
 
 /**
  * @generated from message saas.accounts.v1.GetInstallationRequest
@@ -244,7 +331,7 @@ export type GetInstallationRequest = Message<"saas.accounts.v1.GetInstallationRe
  * Use `create(GetInstallationRequestSchema)` to create a new message.
  */
 export const GetInstallationRequestSchema: GenMessage<GetInstallationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 4);
+  messageDesc(file_saas_accounts_v1_installations, 5);
 
 /**
  * @generated from message saas.accounts.v1.GetInstallationResponse
@@ -268,7 +355,441 @@ export type GetInstallationResponse = Message<"saas.accounts.v1.GetInstallationR
  * Use `create(GetInstallationResponseSchema)` to create a new message.
  */
 export const GetInstallationResponseSchema: GenMessage<GetInstallationResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 5);
+  messageDesc(file_saas_accounts_v1_installations, 6);
+
+/**
+ * ListInstallationsRequest asks what one organization has installed. Every other
+ * RPC on this service names a single installation, so until this existed nothing
+ * could answer "what has this org installed?" — which is the authority read a
+ * per-organization solution projection is built on (issue #949).
+ *
+ * @generated from message saas.accounts.v1.ListInstallationsRequest
+ */
+export type ListInstallationsRequest = Message<"saas.accounts.v1.ListInstallationsRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * Restrict to one lifecycle status. UNSPECIFIED returns every status, so a
+   * caller that must see only live installs asks for ACTIVE explicitly rather
+   * than leaning on a default that would silently widen if the enum grew.
+   *
+   * @generated from field: saas.accounts.v1.InstallationStatus status = 2;
+   */
+  status: InstallationStatus;
+
+  /**
+   * Page bound. 0 -> server default; capped so an organization with many
+   * installations can never return an unbounded result in one call.
+   *
+   * @generated from field: int32 page_size = 3;
+   */
+  pageSize: number;
+
+  /**
+   * Opaque cursor from a previous response's next_page_token; empty for page one.
+   *
+   * @generated from field: string page_token = 4;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListInstallationsRequest.
+ * Use `create(ListInstallationsRequestSchema)` to create a new message.
+ */
+export const ListInstallationsRequestSchema: GenMessage<ListInstallationsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 7);
+
+/**
+ * InstallationSummary is one row of the listing: the installation, plus the health
+ * resolved live beside it exactly as GetInstallation resolves it for one. Health
+ * travels with the row because a consumer that renders an installed solution as
+ * unavailable would otherwise need one GetInstallation per installation.
+ *
+ * @generated from message saas.accounts.v1.InstallationSummary
+ */
+export type InstallationSummary = Message<"saas.accounts.v1.InstallationSummary"> & {
+  /**
+   * @generated from field: saas.accounts.v1.Installation installation = 1;
+   */
+  installation?: Installation;
+
+  /**
+   * @generated from field: saas.accounts.v1.InstallationHealth health = 2;
+   */
+  health: InstallationHealth;
+};
+
+/**
+ * Describes the message saas.accounts.v1.InstallationSummary.
+ * Use `create(InstallationSummarySchema)` to create a new message.
+ */
+export const InstallationSummarySchema: GenMessage<InstallationSummary> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 8);
+
+/**
+ * @generated from message saas.accounts.v1.ListInstallationsResponse
+ */
+export type ListInstallationsResponse = Message<"saas.accounts.v1.ListInstallationsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.InstallationSummary installations = 1;
+   */
+  installations: InstallationSummary[];
+
+  /**
+   * Set when more installations remain; pass it back as page_token. Empty on the
+   * last page.
+   *
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListInstallationsResponse.
+ * Use `create(ListInstallationsResponseSchema)` to create a new message.
+ */
+export const ListInstallationsResponseSchema: GenMessage<ListInstallationsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 9);
+
+/**
+ * @generated from message saas.accounts.v1.ListOrganizationInstallationsRequest
+ */
+export type ListOrganizationInstallationsRequest = Message<"saas.accounts.v1.ListOrganizationInstallationsRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * Page bound. 0 -> server default; capped as ListInstallations is.
+   *
+   * @generated from field: int32 page_size = 2;
+   */
+  pageSize: number;
+
+  /**
+   * Opaque cursor from a previous response's next_page_token; empty for page one.
+   *
+   * @generated from field: string page_token = 3;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListOrganizationInstallationsRequest.
+ * Use `create(ListOrganizationInstallationsRequestSchema)` to create a new message.
+ */
+export const ListOrganizationInstallationsRequestSchema: GenMessage<ListOrganizationInstallationsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 10);
+
+/**
+ * OrganizationInstallation is one active installation as its organisation's
+ * administrator manages it.
+ *
+ * @generated from message saas.accounts.v1.OrganizationInstallation
+ */
+export type OrganizationInstallation = Message<"saas.accounts.v1.OrganizationInstallation"> & {
+  /**
+   * @generated from field: saas.accounts.v1.Installation installation = 1;
+   */
+  installation?: Installation;
+
+  /**
+   * Resolved live, exactly as ListInstallations resolves it.
+   *
+   * @generated from field: saas.accounts.v1.InstallationHealth health = 2;
+   */
+  health: InstallationHealth;
+
+  /**
+   * The catalogue row of the installed target, from the same accepted applied
+   * state ListAvailableSolutions serves: its route alias, applied release and
+   * generations. Absent when this host no longer offers the target — the
+   * installation outlives the presence it was consented to, and an absent row
+   * says so rather than naming a release the host does not apply.
+   *
+   * @generated from field: saas.accounts.v1.AvailableSolution target = 3;
+   */
+  target?: AvailableSolution;
+
+  /**
+   * The scope path of the installation's authority-root node: where a grant
+   * that exposes it is written. Read from the node, never derived from its id.
+   *
+   * @generated from field: string root_scope_path = 4;
+   */
+  rootScopePath: string;
+
+  /**
+   * Teams an active grant reaches at this installation, in the two kinds the
+   * platform Catalogue keeps apart: granted at its authority root, and inherited
+   * from a grant above it. Only the first is exposure granted to this
+   * installation; RevokeInstallationFromTeam removes those.
+   *
+   * @generated from field: repeated saas.accounts.v1.CollectionReadGrant granted_teams = 5;
+   */
+  grantedTeams: CollectionReadGrant[];
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.CollectionReadGrant inherited_teams = 6;
+   */
+  inheritedTeams: CollectionReadGrant[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.OrganizationInstallation.
+ * Use `create(OrganizationInstallationSchema)` to create a new message.
+ */
+export const OrganizationInstallationSchema: GenMessage<OrganizationInstallation> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 11);
+
+/**
+ * @generated from message saas.accounts.v1.ListOrganizationInstallationsResponse
+ */
+export type ListOrganizationInstallationsResponse = Message<"saas.accounts.v1.ListOrganizationInstallationsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.OrganizationInstallation installations = 1;
+   */
+  installations: OrganizationInstallation[];
+
+  /**
+   * Set when more installations remain; pass it back as page_token.
+   *
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListOrganizationInstallationsResponse.
+ * Use `create(ListOrganizationInstallationsResponseSchema)` to create a new message.
+ */
+export const ListOrganizationInstallationsResponseSchema: GenMessage<ListOrganizationInstallationsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 12);
+
+/**
+ * @generated from message saas.accounts.v1.GrantInstallationToTeamRequest
+ */
+export type GrantInstallationToTeamRequest = Message<"saas.accounts.v1.GrantInstallationToTeamRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string installation_id = 2;
+   */
+  installationId: string;
+
+  /**
+   * @generated from field: string team_id = 3;
+   */
+  teamId: string;
+
+  /**
+   * The role the team holds at the installation's authority root. It must permit
+   * using a solution (or carry the wildcard); a role that does not would expose
+   * nothing, and is refused rather than written. Everything else the role
+   * permits is granted too, beneath that root.
+   *
+   * @generated from field: string role_id = 4;
+   */
+  roleId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GrantInstallationToTeamRequest.
+ * Use `create(GrantInstallationToTeamRequestSchema)` to create a new message.
+ */
+export const GrantInstallationToTeamRequestSchema: GenMessage<GrantInstallationToTeamRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 13);
+
+/**
+ * @generated from message saas.accounts.v1.GrantInstallationToTeamResponse
+ */
+export type GrantInstallationToTeamResponse = Message<"saas.accounts.v1.GrantInstallationToTeamResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ScopeGrant grant = 1;
+   */
+  grant?: ScopeGrant;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GrantInstallationToTeamResponse.
+ * Use `create(GrantInstallationToTeamResponseSchema)` to create a new message.
+ */
+export const GrantInstallationToTeamResponseSchema: GenMessage<GrantInstallationToTeamResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 14);
+
+/**
+ * @generated from message saas.accounts.v1.RevokeInstallationFromTeamRequest
+ */
+export type RevokeInstallationFromTeamRequest = Message<"saas.accounts.v1.RevokeInstallationFromTeamRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string installation_id = 2;
+   */
+  installationId: string;
+
+  /**
+   * @generated from field: string team_id = 3;
+   */
+  teamId: string;
+
+  /**
+   * The role of the grant being removed, as granted_teams reports it. A team may
+   * hold more than one role at the same node, and each is its own grant.
+   *
+   * @generated from field: string role_id = 4;
+   */
+  roleId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.RevokeInstallationFromTeamRequest.
+ * Use `create(RevokeInstallationFromTeamRequestSchema)` to create a new message.
+ */
+export const RevokeInstallationFromTeamRequestSchema: GenMessage<RevokeInstallationFromTeamRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 15);
+
+/**
+ * AvailableSolution is one installable solution target: its immutable identity,
+ * the release the host currently has applied for it, and where it is routed.
+ *
+ * @generated from message saas.accounts.v1.AvailableSolution
+ */
+export type AvailableSolution = Message<"saas.accounts.v1.AvailableSolution"> & {
+  /**
+   * The immutable target identity an install names. Never reused.
+   *
+   * @generated from field: string target_id = 1;
+   */
+  targetId: string;
+
+  /**
+   * The binding whose presence this target records. Carried so an operator can
+   * correlate a catalogue row with delivery; an installation does not join on it,
+   * because one binding may have several targets over time.
+   *
+   * @generated from field: string binding_id = 2;
+   */
+  bindingId: string;
+
+  /**
+   * The route alias the applied generation claims — `/solutions/<alias>/*`. A
+   * later generation may move it, so it is never an identity.
+   *
+   * @generated from field: string route_alias = 3;
+   */
+  routeAlias: string;
+
+  /**
+   * The applied release: publisher, name, version.
+   *
+   * @generated from field: string release_publisher = 4;
+   */
+  releasePublisher: string;
+
+  /**
+   * @generated from field: string release_name = 5;
+   */
+  releaseName: string;
+
+  /**
+   * @generated from field: string release_version = 6;
+   */
+  releaseVersion: string;
+
+  /**
+   * The generation that opened this target, and the newest applied generation.
+   * Equal until a later generation is applied for the same presence.
+   *
+   * @generated from field: uint64 opened_generation = 7;
+   */
+  openedGeneration: bigint;
+
+  /**
+   * @generated from field: uint64 applied_generation = 8;
+   */
+  appliedGeneration: bigint;
+
+  /**
+   * True when this organization already has an ACTIVE installation of this
+   * target. A catalogue shows it as installed rather than offering it twice; the
+   * unique index over (org_id, target_id) would refuse the second install anyway,
+   * and an administrator should not have to discover that by being refused.
+   *
+   * @generated from field: bool installed = 9;
+   */
+  installed: boolean;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AvailableSolution.
+ * Use `create(AvailableSolutionSchema)` to create a new message.
+ */
+export const AvailableSolutionSchema: GenMessage<AvailableSolution> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 16);
+
+/**
+ * @generated from message saas.accounts.v1.ListAvailableSolutionsRequest
+ */
+export type ListAvailableSolutionsRequest = Message<"saas.accounts.v1.ListAvailableSolutionsRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * Page bound. 0 -> server default; capped for the same reason the installation
+   * listing is capped.
+   *
+   * @generated from field: int32 page_size = 2;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 3;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListAvailableSolutionsRequest.
+ * Use `create(ListAvailableSolutionsRequestSchema)` to create a new message.
+ */
+export const ListAvailableSolutionsRequestSchema: GenMessage<ListAvailableSolutionsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 17);
+
+/**
+ * @generated from message saas.accounts.v1.ListAvailableSolutionsResponse
+ */
+export type ListAvailableSolutionsResponse = Message<"saas.accounts.v1.ListAvailableSolutionsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.AvailableSolution solutions = 1;
+   */
+  solutions: AvailableSolution[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListAvailableSolutionsResponse.
+ * Use `create(ListAvailableSolutionsResponseSchema)` to create a new message.
+ */
+export const ListAvailableSolutionsResponseSchema: GenMessage<ListAvailableSolutionsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 18);
 
 /**
  * InstallationStatus is the lifecycle of an installation row. An uninstall is a
@@ -383,6 +904,17 @@ export const InstallationService: GenService<{
     output: typeof EmptySchema;
   },
   /**
+   * Narrowing is witnessed in the policy log before commit, then atomically
+   * bumps the installation revision, cancels its org's work and records audit.
+   *
+   * @generated from rpc saas.accounts.v1.InstallationService.NarrowInstallation
+   */
+  narrowInstallation: {
+    methodKind: "unary";
+    input: typeof NarrowInstallationRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
    * TransferInstallationOwnership reassigns the owner of record and replaces the
    * co-owner succession set. This is how a "connection owner left the org"
    * failure is repaired: an admin transfers the installation to a current admin,
@@ -406,6 +938,106 @@ export const InstallationService: GenService<{
     methodKind: "unary";
     input: typeof GetInstallationRequestSchema;
     output: typeof GetInstallationResponseSchema;
+  },
+  /**
+   * ListInstallations enumerates one organization's installations with their live
+   * health. It is internal-tier on purpose: it takes the organization as a request
+   * field, so only a caller holding the cluster-internal credential may ask, and
+   * the tenant it asks about is the one the auth-gateway projected from a verified
+   * identity — never one a browser supplied. It sits beside
+   * PermissionService.ListAccessibleScopes for that reason: the two are read
+   * together to answer what a viewer's organization installed and what that viewer
+   * was granted.
+   *
+   * @generated from rpc saas.accounts.v1.InstallationService.ListInstallations
+   */
+  listInstallations: {
+    methodKind: "unary";
+    input: typeof ListInstallationsRequestSchema;
+    output: typeof ListInstallationsResponseSchema;
+  },
+  /**
+   * ListAvailableSolutions is the catalogue: the solution targets an
+   * administrator may install right now.
+   *
+   * It answers from ACCEPTED applied state — a live target whose binding's
+   * newest APPLIED generation is a present one — and deliberately not from the
+   * diagnostic ListSolutionHostBindings, which also reports desired generations
+   * that were refused. The distinction is the point: a refused generation is
+   * something an operator must see and something an administrator must not be
+   * able to consent to, because consenting to a release this host never admitted
+   * records authority over a presence that does not exist.
+   *
+   * It carries the route alias, which the installation record deliberately does
+   * not: here the alias is a display and routing fact read from the target in
+   * the same statement, not an identity anything joins on.
+   *
+   * @generated from rpc saas.accounts.v1.InstallationService.ListAvailableSolutions
+   */
+  listAvailableSolutions: {
+    methodKind: "unary";
+    input: typeof ListAvailableSolutionsRequestSchema;
+    output: typeof ListAvailableSolutionsResponseSchema;
+  },
+  /**
+   * ListOrganizationInstallations is an organisation administrator's view of
+   * what that organisation has installed: each active installation with its live
+   * health, the catalogue row of the target it installed, the scope path of its
+   * authority root, and the teams a grant reaches there.
+   *
+   * It is the org-admin companion to the internal ListInstallations, and it is a
+   * separate method rather than a relaxed policy on that one: ListInstallations
+   * is read by the gateway for an organisation it projected from a verified
+   * identity, and a bare tenant credential must never reach it. This one binds
+   * the organisation to the caller's own admin membership, exactly as
+   * ListAvailableSolutions does, so no organisation's administrator can read
+   * another's. The one exception is inherited, not added here: a platform
+   * super administrator (not impersonating) passes the organisation-admin check
+   * for every organisation, as on every other organisation-admin method, and so
+   * may list any organisation's installations.
+   *
+   * @generated from rpc saas.accounts.v1.InstallationService.ListOrganizationInstallations
+   */
+  listOrganizationInstallations: {
+    methodKind: "unary";
+    input: typeof ListOrganizationInstallationsRequestSchema;
+    output: typeof ListOrganizationInstallationsResponseSchema;
+  },
+  /**
+   * GrantInstallationToTeam exposes an installation to a team: a scope grant of
+   * the given role to the team at the installation's authority-root node. The
+   * host resolves that node from the installation, so a caller never names a
+   * scope path. The role must permit using a solution, or the grant would expose
+   * nothing; the team must belong to the organisation. Using a solution is the
+   * minimum the role must permit, not a ceiling: the team holds everything the
+   * role permits beneath the installation's authority root, exactly as a
+   * GrantScope of that role at that node would give it. Emits scope.granted, the
+   * same event and audit record as any other scope grant, because it is one.
+   * Organisation-admin, with the same platform super administrator exception
+   * ListOrganizationInstallations describes.
+   *
+   * @generated from rpc saas.accounts.v1.InstallationService.GrantInstallationToTeam
+   */
+  grantInstallationToTeam: {
+    methodKind: "unary";
+    input: typeof GrantInstallationToTeamRequestSchema;
+    output: typeof GrantInstallationToTeamResponseSchema;
+  },
+  /**
+   * RevokeInstallationFromTeam removes one team grant at an installation's
+   * authority-root node. It is a narrowing, so it runs under the policy log
+   * exactly as RevokeScope does: a host that cannot witness the narrowing refuses
+   * it, and says so, rather than revoking unwitnessed. It removes the one grant
+   * at the authority root that granted_teams reports; a team that also reaches
+   * the installation from a grant above keeps that reach. Organisation-admin,
+   * with the same platform super administrator exception.
+   *
+   * @generated from rpc saas.accounts.v1.InstallationService.RevokeInstallationFromTeam
+   */
+  revokeInstallationFromTeam: {
+    methodKind: "unary";
+    input: typeof RevokeInstallationFromTeamRequestSchema;
+    output: typeof EmptySchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_installations, 0);

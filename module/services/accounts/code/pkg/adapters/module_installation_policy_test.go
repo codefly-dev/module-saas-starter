@@ -11,8 +11,8 @@ import (
 )
 
 func installerPolicyFixture() (*business.InstallerPolicy, business.ModuleCaller, business.ModuleInstallationRequest) {
-	d := business.InstallerDelegation{Prefix: "example-installer", OrganizationID: "11111111-1111-4111-8111-111111111111", ModuleID: "acme.example/solution", AgentIdentifiers: []string{"acme.example/solution:1.0.0"}, SolutionIdentifier: "example-solution", RoleID: "22222222-2222-4222-8222-222222222222", RolePermissions: []string{"documents:read"}, AllowedAudiences: []string{"example.api"}, AllowedScopes: []string{"documents"}, OwnerPrincipalID: "33333333-3333-4333-8333-333333333333", ExpiresAt: time.Now().Add(time.Hour)}
-	return &business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{d}}, business.ModuleCaller{PrincipalID: business.ModulePrincipalID(d.Prefix), BoundOrg: d.OrganizationID}, business.ModuleInstallationRequest{ModuleID: d.ModuleID, OrganizationSlug: "example-org", AgentIdentifier: d.AgentIdentifiers[0], SolutionIdentifier: d.SolutionIdentifier, RoleID: d.RoleID, ExpectedRolePermissions: d.RolePermissions, AllowedAudiences: d.AllowedAudiences, AllowedScopes: d.AllowedScopes}
+	d := business.InstallerDelegation{Prefix: "example-installer", OrganizationID: "11111111-1111-4111-8111-111111111111", ModuleID: "acme.example/solution", AgentIdentifiers: []string{"acme.example/solution:1.0.0"}, TargetID: "44444444-4444-4444-8444-444444444444", RoleID: "22222222-2222-4222-8222-222222222222", RolePermissions: []string{"documents:read"}, AllowedAudiences: []string{"example.api"}, AllowedScopes: []string{"documents"}, OwnerPrincipalID: "33333333-3333-4333-8333-333333333333", ExpiresAt: time.Now().Add(time.Hour)}
+	return &business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{d}}, business.ModuleCaller{PrincipalID: business.ModulePrincipalID(d.Prefix), BoundOrg: d.OrganizationID}, business.ModuleInstallationRequest{ModuleID: d.ModuleID, OrganizationSlug: "example-org", AgentIdentifier: d.AgentIdentifiers[0], TargetID: d.TargetID, RoleID: d.RoleID, ExpectedRolePermissions: d.RolePermissions, AllowedAudiences: d.AllowedAudiences, AllowedScopes: d.AllowedScopes}
 }
 func TestInstallerDelegationScopes(t *testing.T) {
 	for _, tc := range []struct {
@@ -32,7 +32,7 @@ func TestInstallerDelegationScopes(t *testing.T) {
 			r.AgentIdentifier = "acme.example/solution:2.0.0"
 		}},
 		{"solution expansion", func(_ *business.InstallerPolicy, _ *business.ModuleCaller, r *business.ModuleInstallationRequest) {
-			r.SolutionIdentifier = "another"
+			r.TargetID = "55555555-5555-4555-8555-555555555555"
 		}},
 		{"role expansion", func(_ *business.InstallerPolicy, _ *business.ModuleCaller, r *business.ModuleInstallationRequest) {
 			r.RoleID = "another"

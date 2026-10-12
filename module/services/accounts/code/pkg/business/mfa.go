@@ -66,6 +66,12 @@ type SecretCipher interface {
 	DecryptSecret(ctx context.Context, purpose, envelope string) (string, error)
 }
 
+// MFATOTPPurpose binds a TOTP seed's envelope to that purpose. Declared rather
+// than written at each call site so the set of purposes is derivable from
+// source: the re-seal inventory must cover every one, and a purpose that exists
+// only as a literal is one such a check cannot see.
+const MFATOTPPurpose = "mfa-totp"
+
 const (
 	totpSecretBytes = 32
 	totpPeriod      = 30
@@ -121,7 +127,7 @@ func (s *Service) SetupTOTP(ctx context.Context, userID string) (secret string, 
 		return "", "", w.Wrapf(err, "cannot generate TOTP secret")
 	}
 	secretB32 := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
-	encryptedSecret, err := s.mfaCipher.EncryptSecret(ctx, "mfa-totp", secretB32)
+	encryptedSecret, err := s.mfaCipher.EncryptSecret(ctx, MFATOTPPurpose, secretB32)
 	if err != nil {
 		return "", "", w.Wrapf(err, "cannot encrypt TOTP secret")
 	}
@@ -186,7 +192,7 @@ func (s *Service) VerifyTOTP(ctx context.Context, userID, code string) error {
 			if device.DeviceType != "totp" || device.VerifiedAt != nil {
 				continue
 			}
-			secretB32, err := s.mfaCipher.DecryptSecret(ctx, "mfa-totp", device.SecretEncrypted)
+			secretB32, err := s.mfaCipher.DecryptSecret(ctx, MFATOTPPurpose, device.SecretEncrypted)
 			if err != nil {
 				w.Warn("failed to decrypt TOTP secret for device", wool.Field("device_id", device.ID), wool.ErrField(err))
 				continue
@@ -352,7 +358,7 @@ func validateMFACodeInTx(ctx context.Context, mfaStore MFAStore, cipher SecretCi
 		if device.DeviceType != "totp" || device.VerifiedAt == nil {
 			continue
 		}
-		secretB32, err := cipher.DecryptSecret(ctx, "mfa-totp", device.SecretEncrypted)
+		secretB32, err := cipher.DecryptSecret(ctx, MFATOTPPurpose, device.SecretEncrypted)
 		if err != nil {
 			return false, "", w.Wrapf(err, "cannot decrypt TOTP secret")
 		}

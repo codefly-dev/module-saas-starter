@@ -12,11 +12,12 @@ checks run before exchange and again before returning the child. Delegated
 parents require a configured durable journal. Actor ceilings and scope
 attenuation use the same signer and authority path as owner audience exchange.
 
-Installation declares an optional `read_audiences` map in the existing
-`module-capabilities/MODULE_PRINCIPALS` registry, for example:
+A platform super_admin declares an optional `read_audiences` map in the
+principal's `grant` in the module envelope (`PlatformAdminService/PutModuleEnvelope`),
+for example:
 
 ```json
-{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","read_audiences":{"proof":{"audience":"example-producer","scopes":[{"resource_kind":"results"}]}}}}
+{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","read_audiences":{"proof":{"audience":"example-producer","scopes":[{"resource_kind":"results"}]}}}
 ```
 
 Each installed scope may additionally restrict `resource_ids`. Actions are
@@ -87,6 +88,14 @@ fence — so a run whose delegation is revoked mid-flight closes partial.
 An operation binding declares canonical invoke scopes and a read-only lookup
 subset:
 
+A call may return to an earlier audience to read that owner's retained record.
+Only exchanging to the immediate parent's audience is refused. Every intervening
+binding must preserve the required read scope, including receipt-lookup paths;
+the return binding cannot recover authority removed by an earlier exchange.
+Use a separate read-only binding for that proof rather than a task-start or
+execution binding. The signed owner, tenant, task and session remain unchanged,
+and current revocation is checked again on the return exchange.
+
 ```json
 {"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"example-producer","invoke_scopes":[{"resource_kind":"results","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"results","actions":["read"]}]}}}}
 ```
@@ -137,39 +146,58 @@ person with no role assignment; a delegated agent actor never does. Owners and
 admins already hold every permission. See `AUTHZ.md` "Built-in role catalog
 import".
 
-The composition then declares the binding on the **calling** principal in
-`module-capabilities/MODULE_PRINCIPALS`:
+A platform super_admin then allows the binding for the **calling** principal in
+its `grant` in the module envelope, beside the whole authority units the host
+admits for it and the workload it may run as:
 
 ```json
 {
-  "example-consumer": {
-    "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661",
-    "operation_audiences": {
-      "run": {
-        "audience": "example-producer",
-        "invoke_scopes": [
-          {
-            "resource_kind": "example-producer.profiles",
-            "actions": ["invoke", "read"],
-            "resource_ids": ["standard"]
+  "revision": 4,
+  "approved_builds": ["sha256:<the consumer's approved build>"],
+  "principals": {
+    "example-consumer": {
+      "bindings": [
+        {"id": "<presence binding>:run:invoke", "revision": 1, "scope": "example-producer.profiles:invoke,example-producer.profiles:read"},
+        {"id": "<presence binding>:run:lookup", "revision": 1, "scope": "example-producer.profiles:read"}
+      ],
+      "workload_identities": [
+        {"spiffe_id": "spiffe://<trust domain>/ns/<namespace>/sa/<service account>", "container": "<container>"}
+      ],
+      "scope_ceilings": [],
+      "grant": {
+        "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661",
+        "operation_audiences": {
+          "run": {
+            "audience": "example-producer",
+            "invoke_scopes": [
+              {
+                "resource_kind": "example-producer.profiles",
+                "actions": ["invoke", "read"],
+                "resource_ids": ["standard"]
+              }
+            ],
+            "lookup_scopes": [
+              {
+                "resource_kind": "example-producer.profiles",
+                "actions": ["read"],
+                "resource_ids": ["standard"]
+              }
+            ]
           }
-        ],
-        "lookup_scopes": [
-          {
-            "resource_kind": "example-producer.profiles",
-            "actions": ["read"],
-            "resource_ids": ["standard"]
-          }
-        ]
+        }
       }
     }
-  },
-  "example-producer": {
-    "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661",
-    "resources": ["example-producer.profiles"]
   }
 }
 ```
+
+The producer's own principal lists `example-producer.profiles` under its
+grant's `resources`. The consumer's registry entry is this grant bounded by the
+authority document delivery signed for it: the `run` audience exists only while
+the document grants the `invoke` unit, each unit the document grants must be the
+admitted one field for field (a wider scope puts the whole document outside the
+envelope), and each operation keeps only the actions its unit grants —
+`resource_ids` stay the envelope's, because a unit cannot name one.
 
 `example-consumer` redeems it with `ExchangeDelegatedOperationAudience`,
 supplying its retained parent, the binding id `run`, and whether this is an
@@ -184,9 +212,10 @@ the caller's own prefix, so a binding cannot be a self-grant. `resource_ids`
 pins the exact resource; omitting it widens the child to every resource of that
 kind, and `"*"` is refused rather than treated as a wildcard. And because the
 binding is read on every call rather than captured into a child at exchange,
-deleting the `run` entry stops the exchange as soon as the deployment carrying
-that deletion is serving — including in the policy recheck that runs after
-signing — rather than when the last issued child expires.
+removing the `run` entry from the envelope stops the exchange as soon as the
+next reconcile pass installs the registry without it — including in the policy
+recheck that runs after signing — rather than when the last issued child
+expires.
 
 A resource id is an opaque string, and the producing module owns what its ids
 mean. The host neither derives nor checks them: the producer's contribution
@@ -196,16 +225,20 @@ reaches nothing until the producer refuses it. Beyond the sorting and wildcard
 rules above, the host requires each id to be non-empty, free of surrounding
 whitespace, and at most 512 characters — a bound a digest is always inside and a
 hand-written identity is not — and then compares it byte for byte. An id that
-breaks one of those is refused while the registry is parsed, which fails
-accounts' start-up rather than one call.
+breaks one of those is refused when the envelope is written, so the write is
+rejected with the reason rather than one call failing later.
 
 Name the resource by its **stable identity**, not by a digest of its current
-definition. `MODULE_PRINCIPALS` is parsed once, at accounts start-up, so
-re-issuing this entry is a deployment rather than an edit: a grant that has to
-be re-issued whenever the producer's definition moves leaves the consumer
-without access from the moment that definition moves until every accounts
-process is serving the new entry, and while an old and a new process both serve,
-the same context is confirmed by one and refused by the other. For a module that
+definition. The module principal registry is derived, each reconcile pass, from
+the delivered authority documents inside the module envelope, so re-issuing this
+entry is an envelope revision — and, because a delivered authority document is
+inside only the envelope revision it was rendered against, a redelivery of every
+module's authority at that revision. A grant that has to be re-issued whenever
+the producer's definition moves leaves the consumer without access from the
+moment that definition moves until the new revision and its deliveries are
+applied, and each accounts replica derives its own registry on its own pass, so
+for up to one pass the same context is confirmed by one replica and refused by
+another. For a module that
 also declares `headless_scopes`, the same re-issue revokes every operation
 context it has minted, across all of its bindings — the whole-entry revision
 under [Operation contexts with no person
@@ -219,6 +252,34 @@ what it has installed. The host makes no such check, so a producer that means a
 grant to cover one exact definition enforces that itself: the id here says which
 resource is meant, never which version of it.
 
+## The reserved module audience
+
+`module-capabilities` is the audience a composed module's own capability carries,
+and every peer that verifies it reads a context bearing it as "a module, with no
+person present". That premise is what lets the module-facing surface skip the
+questions it asks of a delegated actor.
+
+So the audience is mintable only from a module identity. **Every mint and
+exchange that takes its audience from a caller's request refuses it** — the task
+mint, the installation mint, a root or child session, the audience exchange and a
+renewal. The refusal is the structural half of `requireMintableAudience`, which
+needs no state and therefore holds through a registry outage.
+
+On the four mints a signed-in person reaches it runs before the caller's
+authority is resolved, so the spelling is unreachable rather than merely
+unreachable for this person. The other two reach it differently, and each for a
+reason that is the point: the installation mint demands an internal service
+credential first, so it is not a person-driven mint at all; and a renewal gates
+the audience it RESOLVES, after authenticating, because a renewal naming none
+inherits the parent's — gating the request field would let the reserved spelling
+travel one generation further while the request named nothing.
+
+The module mints are unaffected: they pass the audience themselves rather than
+reading it off a message, as does the internal delegated-read exchange, whose
+audience comes from a declaration. `TestPersonMintsRefuseTheModuleAudience` and
+`TestEveryRequestSuppliedAudienceRefusesTheReservedOne` hold this, the second so
+a mint added later cannot skip the refusal silently.
+
 ## Operation contexts with no person present
 
 Both exchanges above need a parent: somebody signed in, and the child is
@@ -228,20 +289,24 @@ acting for itself, not for a viewer. `ModuleCapabilitiesService.MintModuleOperat
 is that case, and it is deliberately a separate, narrower grant rather than a
 relaxation of the delegated exchange.
 
-The module authenticates exactly as for its own Work Context — the identity
-secret for its prefix, checked against `federation/MODULE_IDENTITY_SECRETS` —
-and names one of its installed operation bindings. Nothing else is requestable.
+The module authenticates exactly as for its own Work Context — its pod's
+projected ServiceAccount token (audience `accounts`), which `BindExecution` holds
+against the workload its principal declares and the build its authority document
+approves (#1056) — and names one of its installed operation bindings. What the
+binding requires (one principal per ServiceAccount, every container of the pod
+approved, a running regular container in a running pod, a token of at most 600
+seconds) and the replay it does NOT close are stated in
+[services/accounts/AGENTS.md](services/accounts/AGENTS.md#establishing-what-a-caller-is-running). Nothing else is requestable.
 The host mints a child Work Context with:
 
 - `aud` = the binding's `audience`;
 - authority scopes and the actor's granted scopes = **exactly** the binding's
   `headless_scopes`;
 - owner and sole actor = the module's own service principal (kind `service`);
-- tenant = the tenant `MODULE_PRINCIPALS` declares for that principal;
+- tenant = the tenant the module envelope's grant declares for that principal;
 - a 60-second lifetime and the idempotent replay policy;
-- an authorization revision that is a digest of the module's whole
-  `MODULE_PRINCIPALS` entry (`business.ModuleOperationContextRevision`, never
-  zero).
+- an authorization revision that is a digest of the module's whole derived
+  registry entry (`business.ModuleOperationContextRevision`, never zero).
 
 A consumer confirms such a context with `WorkContextService/CheckAuthorizationRevision`
 like any other. A module principal has no row-backed authority to resolve, so
@@ -251,7 +316,7 @@ module principal, the tenant its declared tenant, the revision the digest of its
 its sole actor hop), and every subject's scopes within one binding's
 `headless_scopes`. Any mismatch is `PermissionDenied` — a denial, never an
 outage a consumer should retry. Because the revision covers the whole entry, any
-change to it (once the deployment picks it up) revokes every outstanding
+change to it (once a reconcile pass installs it) revokes every outstanding
 operation context of that module. Contexts owned by a person or an installation
 take the row-backed check unchanged.
 
@@ -394,7 +459,8 @@ tenant) exactly; a read exchange always does.
 | Missing | `FAILED_PRECONDITION` | `DELEGATION_MISSING` | `412`, body `DELEGATION_MISSING` | The source has no active delegation to this module. A person must connect or reconnect it. |
 | Revoked | `PERMISSION_DENIED` | `DELEGATION_REVOKED` | `403`, body `DELEGATION_REVOKED` | The delegation was revoked, or was just found unsupported and revoked. |
 | Invalid | `PERMISSION_DENIED` | `DELEGATION_INVALID` | `403`, body `DELEGATION_INVALID` | No such delegation for this module — another module's is deliberately indistinguishable from one that does not exist. |
-| Unproven | `UNAUTHENTICATED` | — | `401` | The module's identity secret was not accepted. |
+| Unproven | `UNAUTHENTICATED` | — | `401` | The module's projected token was refused, belongs to another workload, or its pod runs an unapproved build. |
+| Unbound | `UNAVAILABLE` | — | `503` | The host could not establish what the module's pod is running; nothing was decided. |
 
 The gateway's refusal body is the plain-text reason, read from the
 `ErrorInfo` and never from the message, and it relays only the three reasons
@@ -421,3 +487,43 @@ The gateway exchange is `POST /modules/_source-operation-context`
 
 The transport all of this is carried on, and what a client library must and
 must not require of it, is [INTERNAL_TRANSPORT.md](./INTERNAL_TRANSPORT.md).
+
+## Callable-source declarations
+
+`datasource:read` and `datasource:invoke` are source-boundary role permissions.
+Reading declarations rechecks organization membership, the source boundary's
+`datasource:read` grant, and personal-source ownership. An administrator atomically
+replaces declarations; neither a declaration nor its digest grants authority.
+The generic authorization-code source remains personal even when another member
+holds an organization-wide wildcard role. OAuth token custody is independent of
+the host's inbound Work Context and delegated-audience exchange.
+
+
+Callable source operations use `saas-datasource`, the host's source-operation
+audience. `module-capabilities` remains the module identity audience and the mint
+explicitly refuses it as an operation audience; there was no existing host call
+audience to reuse. The new owner is included in the closed host audience set.
+The existing `operation_audiences` registration and
+`ExchangeDelegatedOperationAudience` perform issuance and attenuation; no second
+exchange is introduced. Source-delegation parents are rechecked through
+`ConfirmSourceDelegationParent`, including the current binding digest. Ordinary
+delegations use the existing chain journal and authorization revision recheck.
+
+The Runnable `source` slot requires invoke/read and read-only recovery. An
+installation supplies the `datasource.sources` kind and explicit source IDs for
+that slot. The host maps each source ID to its boundary node and checks
+`datasource:invoke` or `datasource:read` there; an unscoped source-kind grant is
+refused. Personal OAuth sources also require the owning person. Declarations
+and receipts cannot expand these scopes. Invoke rechecks again after waiting for
+the SDK effect lock, before a committed response can be replayed. Lookup reads
+retained receipt evidence under current source read authority even after the
+operation declaration is removed or replaced; the declaration is not evidence
+of whether an effect was attempted.
+
+Receipt retention uses the same selected source scope and audience through
+`PruneSourceOperationReceipts` / `LookupPruneSourceOperationReceipts`, with a
+current organization-admin check for shared sources; a personal source instead
+requires its owning member. These checks precede invocation and replay. A
+composition schedules the Connect Runnable; the host adds no timer or queue.
+Expired output never removes a mutation's last effect marker. See
+[Callable sources](CALLABLE_SOURCES.md#receipts-and-uncertain-outcomes).

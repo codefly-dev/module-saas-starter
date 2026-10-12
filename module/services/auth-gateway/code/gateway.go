@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/sdk-go/workcontext"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -50,7 +51,6 @@ type Gateway struct {
 	// clients is this replica's view of the registered-client registry: which
 	// browser origins each first-party client speaks from (track 0016).
 	clients *clientRegistryCache
-	modules *upstreamRegistry // runtime-registered composed-module REST upstreams
 	// registeredTransport re-validates a runtime-registered upstream's resolved
 	// address at dial time (SSRF / DNS-rebinding defense). Both federated module
 	// and solution routes use it: a solution upstream is durable now (#534) but
@@ -58,9 +58,12 @@ type Gateway struct {
 	// bearers. Catalog upstreams are static trusted config and keep the default
 	// transport.
 	registeredTransport http.RoundTripper
-	// registrationReplay makes each solution-registration credential single-use.
-	registrationReplay *registrationReplayGuard
-	workContext        *workContextVerifier
+	// solutionEntitlements answers what one viewer may use (#949). Set after
+	// construction, like workContext: a nil client fails the entitlement surface
+	// closed rather than answering an empty projection, which would retract every
+	// solution a viewer is currently using.
+	solutionEntitlements solutionEntitlementClient
+	workContext          *workContextVerifier
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -87,9 +90,7 @@ func NewGateway(
 		requiredUpstreams:   matcher.RequiredServices(),
 		solutions:           newSolutionRegistryCache(solutionRegistry),
 		clients:             newClientRegistryCache(clientRegistry),
-		modules:             newUpstreamRegistry(),
 		registeredTransport: newModuleUpstreamTransport(net.DefaultResolver),
-		registrationReplay:  newRegistrationReplayGuard(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -172,11 +173,27 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // Unlisted paths are rejected with 404. Every request must match an explicit
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// A presented Work Context is verified before any routing so a forged,
-	// expired, or unattenuated capability is rejected at the edge rather than
-	// forwarded to a callee. Absent header: nothing to verify, carry on.
-	if g.rejectInvalidWorkContext(w, r) {
-		return
+	// A presented Work Context is verified at the edge, but NOT here: it is
+	// verified against the audience of the route it was presented to, so the route
+	// has to be resolved first. Each routing destination below calls
+	// rejectInvalidWorkContext with the audience its own resolution produced, and a
+	// path that resolves to no route reaches the 404 with the verifier never
+	// called.
+	//
+	// This used to run before any routing with no audience expectation at all,
+	// which meant a capability minted for one solution verified cleanly on another
+	// solution's route and was forwarded there: the callee was the only thing that
+	// could notice, and it was the callee's own audience check that had to.
+
+	// The module credential exchanges and the CORS preflight run before routing by
+	// design (the internal-token header has not been stripped yet), so a capability
+	// presented to one of them is checked with NO audience expectation: their
+	// destination is accounts, one of this host's own services. The preflight
+	// carries no credential at all.
+	if strings.HasPrefix(r.URL.Path, modulePrefix) {
+		if g.rejectInvalidWorkContext(w, r, "") {
+			return
+		}
 	}
 
 	// A registered client's browser asks permission before it may call at all.
@@ -193,22 +210,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// pass consumes and strips. The proxy sub-path strips every caller identity
 	// header itself (stripAllIdentityHeaders + proxyTo), so nothing leaks.
 	if g.handleSolutionRequest(w, r) {
-		return
-	}
-
-	// Composed-module REST self-registration (/modules/_register): a privileged
-	// mutation authenticated on the X-Codefly-Internal-Token header, so it must
-	// run before withTrustedFrontendOrigin consumes and strips that header. It
-	// only stores a prefix→upstream mapping; every proxied module request below
-	// still runs the full auth pipeline.
-	if g.handleModuleRegister(w, r) {
-		return
-	}
-
-	// The credential exchange that precedes it (/modules/_registration-token):
-	// same listener, same reason to run before the header is stripped, and it
-	// brokers to accounts rather than deciding anything itself.
-	if g.handleModuleRegistrationToken(w, r) {
 		return
 	}
 
@@ -237,15 +238,25 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {
-		// The generated + explicit catalog is the authority and always wins:
-		// module federation is attempted ONLY once the catalog has no match, so
-		// a registered prefix can never shadow a catalog route. An unregistered
-		// /v1/<module>/* prefix falls through to the 404 below.
-		if g.handleFederatedModule(w, r) {
+		// The generated + explicit catalog is the authority and always wins: a
+		// declared module's /v1/<alias>/* surface is tried ONLY once the catalog
+		// has no match, so a declared alias can never shadow a catalog route. An
+		// alias nothing declared falls through to the 404 below, which is what
+		// keeps the surface from being a probe for which modules run here.
+		if g.handleDeclaredModule(w, r) {
 			return
 		}
+		// NO ROUTE RESOLVED, so the verifier was never called: a forged capability
+		// on a path this host does not expose is answered as the unexposed path it
+		// is, without a JWKS fetch or a signature check.
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
+		return
+	}
+	// A catalog route's destination is one of this host's own services, which has
+	// no audience of its own — the hop's name is never one — so the token is held
+	// to its signature and window and nothing more.
+	if g.rejectInvalidWorkContext(w, r, "") {
 		return
 	}
 	if labeler, ok := otelhttp.LabelerFromContext(r.Context()); ok {
@@ -258,15 +269,21 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Which registered solution is minting a Work Context, read BEFORE the
-	// strip below removes the credential it is proved from. A refused
-	// credential never becomes an ordinary mint (verifiedSolutionMint).
-	solution, solutionPublisher, solutionRefused := g.verifiedSolutionMint(r, entry)
-	if solutionRefused {
-		log.Printf("WARN: blocked request: method=%s path=%s reason=invalid_solution_registration_credential", r.Method, r.URL.Path)
-		httpError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
+	// THERE IS NO SOLUTION MINT AT THIS EDGE ANY MORE. This read a solution's
+	// signed, solution-bound REGISTRATION credential and asserted, to accounts,
+	// which registered solution was minting. That credential was issued by
+	// runtime self-registration, which this branch deletes, so the gateway has
+	// nothing left to prove the claim from — and an unprovable assertion of
+	// which solution is minting is worse than none, because accounts seals a
+	// runtime boundary from it.
+	//
+	// The gateway therefore asserts no solution identity. Both headers are
+	// still STRIPPED below — they are in `untrustedAuthHeaders`, under the
+	// `solutionIdentityHeader` / `solutionPublisherHeader` constants, which carry
+	// the exact spellings accounts reads — so a caller cannot supply what the
+	// gateway no longer stamps; they are simply never restamped. Accounts does
+	// not merely distrust them either: it REFUSES a request that carries one,
+	// because nothing on this host can prove the claim.
 
 	// Identity and trust credentials are never accepted from the public side
 	// of the gateway. ExtAuthz.Check only sees the caller's real credential
@@ -347,14 +364,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
-		// Stamped after the identity projection, so it joins the headers
-		// accounts reads beside the gateway credential rather than being
-		// replaced by it. Set, never Add: a second value of a forwarded
-		// identity field is refused by accounts as ambiguous.
-		if solution != "" {
-			r.Header.Set(solutionIdentityHeader, solution)
-			r.Header.Set(solutionPublisherHeader, solutionPublisher)
+		// A resource-confined credential reaches exactly one host route, and only
+		// for the consumer it was delivered to. Decided AFTER the projection,
+		// because the org and viewer it asks about are what that projection just
+		// established from the verified token — and refused before the limiter, so
+		// a refusal costs the organization nothing.
+		if !g.confineResourceMintToItsConsumer(w, r) {
+			return
 		}
+		// Stamped after the identity projection, so it joins the headers
 		g.rateLimitThenProxy(w, r, upstream, entry)
 
 	case "mfa_pending":
@@ -392,6 +410,22 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.
 func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
+	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.proxyTo(w, r, upstream, entry)
+	}))
+}
+
+// rateLimitThenServe meters a request against its route's budget and then runs
+// next.
+//
+// It exists so that work done BEFORE forwarding can also sit behind the budget.
+// The solution proxy needs that: its admission check is an authority call to
+// accounts, which costs a scope-tree read per entitlement page, and a request
+// that ends in 403 or 503 costs exactly the same as one that is forwarded. With
+// the limiter only in front of proxyTo, an authenticated caller could drive that
+// cost without limit by asking about solutions it is not entitled to — the
+// refusal was free, so there was nothing to exhaust.
+func (g *Gateway) rateLimitThenServe(w http.ResponseWriter, r *http.Request, entry *RouteEntry, next http.Handler) {
 	// Every forwarded request passes through here, whichever route matched it,
 	// so this is where a request is bound to the origins its client registered.
 	// Ahead of the limiter, not inside proxyTo: a refusal must not spend the
@@ -402,12 +436,10 @@ func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, ups
 		return
 	}
 	if g.rateLimiter != nil {
-		g.rateLimiter.Middleware(limiterFailureModeFor(entry), rateLimitClassFor(entry), entry.AuthenticationFactorAttempt, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			g.proxyTo(w, r, upstream, entry)
-		})).ServeHTTP(w, r)
+		g.rateLimiter.Middleware(limiterFailureModeFor(entry), rateLimitClassFor(entry), entry.AuthenticationFactorAttempt, next).ServeHTTP(w, r)
 		return
 	}
-	g.proxyTo(w, r, upstream, entry)
+	next.ServeHTTP(w, r)
 }
 
 // rateLimitClassFor reads the route's declared edge budget class. A nil entry
@@ -448,6 +480,27 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 			r.Header.Set("X-Codefly-Public-Origin", publicOrigin)
 		}
 	}
+	if isRuntimeRegisteredRoute(entry) {
+		// The cookie NEVER travels to a declared upstream, whatever the bearer
+		// does. Two independent decisions, because they were one and the broader
+		// one silently carried the narrower: a request on the tool path skipped
+		// the whole removal and forwarded `Cookie` with it.
+		//
+		// Nothing upstream can have a use for it. This perimeter refuses a cookie
+		// AS a credential by name (see ExtAuthz.Check), so a cookie reaching an
+		// upstream is a host session credential arriving somewhere that cannot
+		// present it back here — carrying the refresh credential's value to a
+		// third party for no purpose it could serve.
+		removeCallerCookie(r.Header)
+		// The bearer is a separate question, and SA-F-BEARER is recorded OPEN
+		// rather than closed here: see removePersonsSessionCredential and the PR
+		// body. What this route does enforce is confinement: ExtAuthz admits a
+		// resource-bound token at the solution its resource names, at the
+		// delegation mint, and at a declared module route only in the company of
+		// this person's verified capability for that module — three named places,
+		// so a credential an upstream receives cannot be replayed across the rest
+		// of this host.
+	}
 	if entry != nil && entry.UpstreamPath != "" {
 		r.URL.Path = entry.UpstreamPath
 		r.URL.RawPath = ""
@@ -464,6 +517,87 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// removePersonsSessionCredential strips the person's own session from a request
+// before it reaches a runtime-registered upstream — a composed module's federated
+// prefix, or a solution.
+//
+// NOTHING CALLS THIS ON THE PROXY PATH, and that is the recorded state of
+// SA-F-BEARER rather than an oversight. It is kept, with its tests, because the
+// finding is open and this is the shape of its fix.
+//
+// Why it is not enabled here: a declared upstream authenticates the request BY
+// the forwarded bearer today, so withholding it makes every composed solution
+// answer 401 — the runtime's HTTP wrapper and its passthrough handler both
+// require `Authorization`. The replacement is a host-minted capability bound to
+// that upstream's own audience, and it does not exist on either side: this host
+// does not mint one for a session, and no consumer verifies one. Landing the
+// withholding first would break a working wire contract to close a finding, and
+// the thing that would make it safe lives in another repository.
+//
+// What this PR does instead, and what it does not:
+//   - The cookie is withheld unconditionally (removeCallerCookie). No upstream
+//     can authenticate with it — this perimeter refuses a cookie as a credential
+//     by name — so there is no contract to break.
+//   - A resource-bound token is CONFINED to the solution its resource names, on
+//     every path (ExtAuthz.Check). That removes the replay the forwarding makes
+//     possible: an upstream holding a credential the host delivered to it cannot
+//     act with it at this host's API, at another module's routes, or at the Work
+//     Context surface.
+//   - The person's host-wide session still reaches a declared upstream. That
+//     exposure is unchanged and is recorded OPEN in the PR body, with the
+//     cross-repo work it waits on.
+//
+// The invariant (SP-GW-07): a module or solution upstream never receives the
+// person's session credential or cookie. The host access token carries a host-wide
+// audience and the person's full authority, so it is not a credential any single
+// upstream should hold; the Cookie goes with it because the gateway has already
+// resolved identity from it by this point, so an upstream reading it learns nothing
+// it is not told.
+//
+// An upstream receives the identity headers ext_authz stamped — the subject, the
+// tenant, the session, the credential kind, the scope ceiling — which name the
+// person without carrying their authority.
+//
+// The ONE exception, and it is the invariant rather than a hole in it: a solution's
+// MCP tool endpoint. ext_authz refuses a host-wide token there outright
+// (`resourceUnbound` is a 401), so a request that reaches this point on a tool path
+// carries a token whose audience names THAT SOLUTION'S resource and nothing else —
+// which is exactly the audience-bound credential SP-GW-07's positive half asks for,
+// already minted and already confined by `resourceAudienceAdmits`. Stripping it would
+// not withhold the person's authority; it would break the one surface that is doing
+// the right thing, and the merged resource-indicator work depends on forwarding it so
+// the runtime can mint the viewer's Work Context from it.
+//
+// The binding is read off the PATH, not re-derived from the token: admission has
+// already proved it, and a second JWT parse here would be a second verifier to keep in
+// agreement with the first.
+//
+// For every other upstream path the host-wide session is still removed, and an upstream
+// that needs to act on the person's behalf there still needs a host-minted capability
+// bound to its own audience. **That remains unbuilt: see the audience-bound context
+// note in services/auth-gateway/AGENTS.md.**
+//
+// Catalog routes are untouched: accounts is the host's own API, where the session
+// is the credential.
+func removePersonsSessionCredential(h http.Header) {
+	h.Del("Authorization")
+	h.Del("Cookie")
+	h.Del("Proxy-Authorization")
+}
+
+// removeCallerCookie strips the caller's cookies alone, which is the part of the
+// removal above that has no consumer contract to break.
+//
+// A declared upstream is reached through this gateway, and this gateway does not
+// accept a cookie as a credential — it answers 401 and says so. So a cookie
+// forwarded there can authenticate nothing; what it can do is hand a third-party
+// pod the refresh credential's value, which is the longest-lived thing a browser
+// holds. The gateway has also already resolved identity from it by this point, so
+// an upstream reading it learns nothing it is not told in a header.
+func removeCallerCookie(h http.Header) {
+	h.Del("Cookie")
 }
 
 // removeCallerConnectionOptions applies the caller's Connection header to the
@@ -535,27 +669,33 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	return r.WithContext(ctx)
 }
 
-// publicOriginFor is the browser origin accounts may treat as verified: the
-// WebAuthn relying party a credential is bound to, and the origin an OAuth
-// redirect is validated against.
+// publicOriginFor is THIS HOST's public origin, and only ever that: the WebAuthn
+// relying party a credential is bound to, the base of an emailed link, and the
+// origin the host's own /auth/callback is validated against.
 //
-// Two callers can establish one. The frontend proves it by presenting the
-// cluster-internal token alongside the origin it resolved server-side. A
-// registered client proves it by arriving from an origin its own registration
-// declares, which authorizeCrossOrigin has already checked — a stronger claim,
-// since it names the client rather than only the process that forwarded it.
+// One caller can establish it — the host's own frontend, which proves it by
+// presenting the cluster-internal token alongside the origin it resolved
+// server-side, and whose value accounts then honours only where it equals the
+// configured one.
+//
+// A REGISTERED CLIENT'S OWN ORIGIN IS NOT THIS VALUE, and used to be returned
+// here. A client's CORS origin and the host's public origin are different facts
+// about different parties: an add-in served from https://addin.example is
+// entitled to call this host from there, which authorizeCrossOrigin decides, and
+// that entitlement says nothing about which origin the host mints links at or
+// binds an authenticator to. Collapsing the two sent the client's origin to
+// accounts AS the host's, where pinning the host origin then refused the request
+// outright — so the two meanings were not merely conflated, they were in
+// contradiction the moment an operator configured the host origin at all.
+//
+// Nothing is lost by separating them. A registered client's redirect target is
+// authorized against the URIs its own registration declares
+// (RegisteredClient.AllowsRedirect), never against a public origin, and that
+// type's own comment is explicit that its redirects and its origins are
+// independent "and deriving one from the other would silently widen whichever
+// was not declared". This is that rule applied one hop further out.
 func publicOriginFor(r *http.Request) (string, bool) {
-	if origin, ok := trustedFrontendOrigin(r.Context()); ok {
-		return origin, true
-	}
-	if r.Header.Get(clientIDHeader) == "" {
-		return "", false
-	}
-	origin, err := canonicalPublicOrigin(r.Header.Get("Origin"))
-	if err != nil {
-		return "", false
-	}
-	return origin, true
+	return trustedFrontendOrigin(r.Context())
 }
 
 func trustedFrontendOrigin(ctx context.Context) (string, bool) {
@@ -610,21 +750,56 @@ func injectHeaders(r *http.Request, headers []*corev3.HeaderValueOption) {
 	}
 }
 
-// rejectInvalidWorkContext fails closed on a presented-but-invalid Work Context.
+// rejectInvalidWorkContext fails closed on a presented-but-invalid Work Context,
+// against the audience of the ROUTE it was presented to.
+//
 // It returns true when it has answered the request (401), which the caller must
 // treat as terminal. A request without the header, or with a header the edge is
 // not configured to verify, is left untouched for the normal routing path.
-func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Request) bool {
+//
+// THE ROUTE IS RESOLVED BEFORE THE TOKEN IS JUDGED, which is why `expected` is a
+// parameter rather than something this function works out. Every call site passes
+// the audience its own resolution produced:
+//
+//   - a solution route passes `solution:<binding-id>` of the binding the route
+//     resolved to, from the SAME carried resolution that chose the upstream;
+//   - a declared module route passes the module capability audience;
+//   - a catalog route passes EMPTY — its destination is one of this host's own
+//     services, and the hop's own name is never an audience;
+//   - a path that resolves to NO route never reaches here at all, so the verifier
+//     is never called for a request that was going to be a 404.
+//
+// A-for-B therefore refuses with the audience error rather than with a 404: the
+// route resolves, and the capability presented to it names another consumer.
+func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Request, expected ...string) bool {
+	_, rejected := g.verifiedWorkContext(w, r, expected...)
+	return rejected
+}
+
+// verifiedWorkContext is rejectInvalidWorkContext with the verified claims
+// handed back, for the one caller that holds the capability to more than its
+// audience.
+//
+// The claims are nil in three different situations, which is why the second
+// return value exists rather than a nil check standing in for it: this edge
+// verifies no capability at all (`g.workContext == nil`), the request presents
+// none, or one was presented and refused. The first two are "carry on", the
+// third is terminal — and a caller that read "no claims" as the first would
+// admit a request whose capability had just been refused.
+func (g *Gateway) verifiedWorkContext(
+	w http.ResponseWriter, r *http.Request, expected ...string,
+) (*basev0.WorkContextV1, bool) {
 	if g.workContext == nil {
-		return false
+		return nil, false
 	}
 	raw := r.Header.Get(workcontext.WorkContextHeaderName)
 	if raw == "" {
-		return false
+		return nil, false
 	}
 	token, err := workcontext.ParseWorkContextToken(raw)
+	var claims *basev0.WorkContextV1
 	if err == nil {
-		err = g.workContext.Verify(r.Context(), token)
+		claims, err = g.workContext.VerifyAny(r.Context(), token, expected...)
 	}
 	if err != nil {
 		// Log the cause (not the token) so a wall of 401s can be told apart:
@@ -632,9 +807,9 @@ func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Reques
 		// cannot reach, which the static 401 body deliberately does not reveal.
 		log.Printf("WARN: blocked request: method=%s path=%s reason=invalid_work_context err=%v", r.Method, r.URL.Path, err)
 		httpError(w, http.StatusUnauthorized, "invalid work context")
-		return true
+		return nil, true
 	}
-	return false
+	return claims, false
 }
 
 // stripAllIdentityHeaders removes every identity header from the request, in
@@ -671,15 +846,78 @@ var untrustedAuthHeaders = []string{
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
 	"x-codefly-module-secret", "x-codefly-solution-secret", "x-codefly-solution-registration",
-	// This gateway's assertion of which registered solution is minting a Work
-	// Context, and of its publisher. They select the runtime boundary accounts
-	// seals, so a caller that could set them would mint under another solution's
-	// boundary; both are stripped here and restamped only from a verified
-	// solution credential.
+	// The gateway's former assertion of which registered solution is minting a
+	// Work Context, and of its publisher. They select the runtime boundary
+	// accounts seals, so a caller that could set them would mint under another
+	// solution's boundary. THE GATEWAY NO LONGER STAMPS EITHER — the
+	// registration credential they were proved from is deleted — but they stay
+	// on this list, because stripping them is what stops a caller supplying
+	// them, and that matters more now than when something restamped them.
+	//
+	// Written as the CONSTANTS, never as literals. A literal here was wrong once:
+	// `"x-codefly-solution-identity"` was spelled for a header accounts does not
+	// read, so `x-codefly-solution-id` passed the strip untouched and a caller
+	// through this gateway could assert any solution's identity to accounts,
+	// which trusts the header beside a valid gateway token.
 	solutionIdentityHeader,
 	solutionPublisherHeader,
 	clientIDHeader,
+	// The resource a confined credential was issued for. Stamped by ext_authz on
+	// the paths that admit such a credential, and read by accounts as a
+	// ceiling on what the mint may issue — so a caller able to set it could lift
+	// its own confinement, or impose one on somebody else's request.
+	resourceConfinementHeader,
+	// WHICH INSTALLATION the authority admitted this request under. It selects
+	// the consent a confined mint is held to, and it is what a solution's
+	// runtime names on every mint it makes, so a caller able to set it would
+	// choose its own ceiling — or spend another organization's installation.
+	installationConfinementHeader,
 }
+
+// resourceConfinementHeader carries the RFC 8707 resource a credential is bound
+// to, from the ext_authz check to the Work Context mint. It is stamped on every
+// allow decision — empty for an ordinary session, the resource identifier for a
+// confined credential — so accounts reads a VALUE rather than inferring anything
+// from a header's absence, and a caller cannot assert one by supplying it.
+const resourceConfinementHeader = "x-codefly-resource"
+
+// installationConfinementHeader carries WHICH installation the entitlement
+// authority admitted a request under, from the hop that resolved the consent to
+// the services that need it.
+//
+// Two readers, one fact:
+//
+//   - accounts, at a resource-confined Work Context mint, where it is the
+//     ceiling: the mint may issue only for an audience this installation
+//     declares and within its agent's standing grants.
+//   - a solution's runtime, on a proxied request, where it is what the runtime
+//     must name on every mint of its own. It will not take one from a carried
+//     capability — inbound that carrier is caller-controlled — so this hop is
+//     the only party that can supply it.
+//
+// Stamped only where an admission actually named one, which is only where the
+// authority admitted the request. It is NOT stamped on an allow decision the way
+// resourceConfinementHeader is, because ext_authz does not consult the
+// entitlement authority and an empty value here would be a claim this process
+// cannot make.
+const installationConfinementHeader = "x-codefly-installation-id"
+
+// solutionIdentityHeader and solutionPublisherHeader are the headers accounts
+// reads to decide which registered solution a Work Context mint is for. This
+// gateway stamps NEITHER — the credential it proved them from is deleted — and
+// they exist here for exactly one purpose: to be stripped, under the spelling
+// accounts actually reads.
+//
+// They MUST stay byte-identical to accounts'
+// `connect_auth_interceptor.go` constants, lowercased. `http.Header.Del`
+// canonicalises its argument, so a near-miss spelling deletes a header nobody
+// sends and silently leaves the real one in place: the strip reports no error
+// and the hole is invisible. `TestSolutionIdentityHeadersAreStripped` is what
+// holds the spelling, by asserting on the value the upstream receives.
+const (
+	solutionIdentityHeader  = "x-codefly-solution-id"
+	solutionPublisherHeader = "x-codefly-solution-publisher"
+)
 
 // httpError writes a plain-text error response. Bodies are short,
 // machine-readable errors — no leaking of implementation details.

@@ -27,7 +27,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_FRONTEND_APPEARANCE } from "@codefly/saas-plugin-contract";
+import { DEFAULT_FRONTEND_APPEARANCE } from "@codefly-dev/saas-plugin-contract";
 
 import { appearanceStyleProperties } from "../dist/skin/appearance.js";
 

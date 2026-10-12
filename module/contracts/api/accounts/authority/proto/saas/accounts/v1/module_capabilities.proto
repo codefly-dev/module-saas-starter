@@ -30,6 +30,48 @@ import "saas/policy/v1/options.proto";
 // a principal explicitly granted cross-tenant authority may operate on other
 // tenants and enqueue global inbox work.
 //
+// REFUSALS. Every refusal of the CALLER'S AUTHORITY is Unauthenticated or
+// PermissionDenied — an identity it cannot prove, a principal this host does
+// not admit, a tenant it is not bound to, a queue or namespace its grant does
+// not cover — and so is the endpoint refusing a procedure it does not serve. A
+// malformed request is InvalidArgument instead, whatever the caller's authority
+// (an unknown notification category or type, a destination that is not a
+// same-origin path). A person this surface is asked to act on who is not a
+// member of the named tenant is FAILED_PRECONDITION, so a module driving this
+// surface from a journal with retries can drop the work for a departed person
+// without also dropping it for a composition this host does not admit as a
+// module principal, or whose workload it cannot bind to an approved build.
+//
+// FAILED_PRECONDITION ALONE IS NOT A DISCRIMINATOR. This surface answers it to
+// several unrelated facts, and only one of them is final — so a consumer keys
+// on the google.rpc.ErrorInfo reason, under domain saas.accounts.v1, and never
+// on the code alone or on the message text. On the notify and
+// subject-visibility methods the reasons are:
+//
+//   - TENANT_MEMBERSHIP_MISSING — the person named is not a member of the
+//     tenant. FINAL for that person: a retry cannot change it, and no operator
+//     is owed a repair.
+//   - NOTIFICATION_IDEMPOTENCY_CONFLICT — the idempotency key was used for
+//     different content. The caller's own defect; a retry of the same call
+//     never clears it.
+//   - SUBJECT_VISIBILITY_SET_TOO_LARGE — the viewer's set cannot be served
+//     whole. An administrator changes the hierarchy.
+//   - LIVE_AUTHORITY_UNAVAILABLE — this host cannot re-read live module
+//     authority, so it exercises no capability at all. An OPERATOR condition,
+//     refused before any membership read: RETAIN the work and retry once the
+//     host is repaired. Dropping it is how a misconfiguration consumes a
+//     journal silently.
+//
+// TREAT AN ABSENT OR UNRECOGNISED REASON AS RETAINABLE, never as final. This
+// list is what the surface answers today, not a promise about every future
+// refusal, and a consumer that reads "no reason I know" as "done" turns the
+// next refusal added here into silently discarded work. Only the reasons above
+// that say FINAL may end a unit of work.
+//
+// Note that the Mint* exchanges' own refusals carry reasons under a different
+// domain (accounts.saas.codefly.dev), so a reason is read together with the
+// domain the same call answered with.
+//
 // Jobs reuse the saas.jobs.v1 envelope, lease, and lifecycle verbatim. Because
 // the caller cannot join the saas transaction, the module producer contract is
 // at-least-once with idempotency keys (unlike the in-process producer, which
@@ -364,7 +406,7 @@ enum ModuleAuditEventVisibility {
   MODULE_AUDIT_EVENT_VISIBILITY_TENANT = 1;
   // May additionally be delivered to a tenant's outbound webhook endpoint.
   // Admitted only in a namespace the operator marked externally deliverable
-  // (`external_namespaces` of the declaring principal's MODULE_PRINCIPALS
+  // (`external_namespaces` of the declaring principal's module registry
   // entry): the producer decides which of its facts are customer-facing, and
   // the operator decides whether that producer may send anything out at all.
   MODULE_AUDIT_EVENT_VISIBILITY_EXTERNAL = 2;
@@ -375,7 +417,7 @@ enum ModuleAuditEventVisibility {
 message ModuleAuditEventTypeDeclaration {
   // <namespace>.<aggregate>.<event>, lowercase snake_case segments. The
   // namespace must be one the operator bound to this module (the `namespaces`
-  // of its MODULE_PRINCIPALS entry) and may not be the host's own.
+  // of its module registry entry) and may not be the host's own.
   string type = 1 [(buf.validate.field).string = {
     min_len: 1
     max_len: 128
@@ -710,9 +752,10 @@ message ModuleReplayEventsResponse {
 
 // ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
 // internal-tier and identifies its caller from the forwarded Work Context —
-// except MintModuleRegistration and MintSolutionRegistration, which a registrant
-// calls at startup, before any user request exists, and which authorize on the
-// registrant's own registration secret.
+// except the three mints, which are how a module obtains one: each presents the
+// module pod's projected ServiceAccount token, and accounts establishes what the
+// pod is running (TokenReview, the pod's running image, the approved build)
+// before it issues anything.
 // Non-secret, current-viewer source read projection.
 //
 // One row per feeding source, so a boundary fed by several sources is reported
@@ -918,7 +961,124 @@ message ModuleExchangeDelegatedOperationAudienceRequest {
  ];
 }
 
+// Exact dependency identity as asserted by the authenticated compiler owner.
+message ExecutableArtifactContract {
+ string kind = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 64];
+ string name = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 512];
+ string digest = 3 [(buf.validate.field).string.pattern = "^sha256:[0-9a-f]{64}$"];
+}
+message ExecutableArtifactIdentity {
+ string schema = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+ string source = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 512];
+ // Canonical bytes under schema: complete exported identity, not authored
+ // content. The host stores exact bytes and never recomputes a compiler hash.
+ bytes subject = 3 [(buf.validate.field).bytes.min_len = 1, (buf.validate.field).bytes.max_len = 65536];
+ repeated ExecutableArtifactContract contracts = 4 [(buf.validate.field).repeated.max_items = 256];
+ int64 expected_revision = 5 [(buf.validate.field).int64.gte = 0];
+}
+message ModuleExecutableArtifactRequest {
+ string parent_work_context_token = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ string installation_id = 2 [(buf.validate.field).string.uuid = true];
+ string policy_id = 3 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+ ExecutableArtifactIdentity identity = 4 [(buf.validate.field).required = true];
+}
+message ModuleRevokeExecutableArtifactRequest {
+ string parent_work_context_token = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ string installation_id = 2 [(buf.validate.field).string.uuid = true];
+ string approval_id = 3 [(buf.validate.field).string.uuid = true];
+}
+message ModuleExecutableArtifactResponse {
+ string schema_version = 1;
+ string qualified_name = 2;
+ string digest = 3;
+ int64 expected_revision = 4;
+}
+
+// A current observation under independently authenticated module and parent
+// authority. The caller supplies no tenant, owner, actor or source identity.
+message ModuleCurrentInstallationRequest {
+ string parent_work_context_token = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ string installation_id = 2 [(buf.validate.field).string.uuid = true];
+}
+message ModuleCurrentInstallationResponse {
+ string installation_id = 1;
+ string tenant_id = 2;
+ // Was `solution_identifier`: the route alias. The host cannot answer it on a
+ // request path — the alias lives on the host's presence state, and resolving
+ // it here would mean joining every organisation's presence to answer about
+ // one — and it is not an identity in any case, because a later binding may
+ // take the same route. Reserved rather than reused so no caller reads an
+ // identity out of a field that carried an alias.
+ reserved 3;
+ reserved "solution_identifier";
+ // The immutable target this installation was consented to: one continuous
+ // period of one binding's presence, never reused.
+ string target_id = 4 [(buf.validate.field).string.uuid = true];
+ // The delivered presence binding whose period that target records. This is
+ // what an authority decision keys on; the alias is display only.
+ string binding_id = 5;
+}
+
 service ModuleCapabilitiesService {
+ // Organization-member metadata read, not executable consent or a durable
+ // liveness proof. Returns only a currently active, non-revoked installation.
+ rpc GetCurrentInstallation(ModuleCurrentInstallationRequest) returns (ModuleCurrentInstallationResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { emission: AUDIT_EMISSION_NONE }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_CONFIDENTIAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
+ // Explicit current-admin consent, never inferred from an execution request.
+ rpc ApproveExecutableArtifact(ModuleExecutableArtifactRequest) returns (ModuleExecutableArtifactResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { events: "saas.module.executable_artifact_decision" emission: AUDIT_EMISSION_SUCCESS }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_INTERNAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+ // Read existing exact approval; check live authority and revocation each time.
+ rpc AuthorizeExecutableArtifact(ModuleExecutableArtifactRequest) returns (ModuleExecutableArtifactResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { emission: AUDIT_EMISSION_NONE }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_INTERNAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+ // Terminal revocation of the exact approved identity.
+ rpc RevokeExecutableArtifact(ModuleRevokeExecutableArtifactRequest) returns (ModuleExecutableArtifactResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { events: "saas.module.executable_artifact_decision" emission: AUDIT_EMISSION_SUCCESS }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_INTERNAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
  // ExchangeDelegatedReadAudience authenticates the module independently of a
  // current parent context and exchanges only its installed read-only binding.
  rpc ExchangeDelegatedReadAudience(ModuleExchangeDelegatedReadAudienceRequest) returns (IssuedWorkContext) {
@@ -1010,7 +1170,10 @@ service ModuleCapabilitiesService {
     };
   }
 
-  // EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+  // EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+  // subject-scoped job whose subject is not a member of the tenant is
+  // FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+  // and key on the reason rather than the code.
   rpc EnqueueJob(ModuleEnqueueJobRequest) returns (ModuleEnqueueJobResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1080,7 +1243,12 @@ service ModuleCapabilitiesService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
-  // NotifyUser delivers a notification subject to category policy.
+  // NotifyUser delivers a notification subject to category policy. A recipient
+  // who is not a member of the tenant is FAILED_PRECONDITION with reason
+  // TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+  // already used for different content, and a host that cannot re-read live
+  // authority, are FAILED_PRECONDITION too under their own reasons, so the
+  // reason — not the code — says which happened; see REFUSALS.
   rpc NotifyUser(ModuleNotifyUserRequest) returns (ModuleNotifyUserResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1095,7 +1263,9 @@ service ModuleCapabilitiesService {
     };
   }
   // NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-  // see the request.
+  // see the request. It names no recipient, so it has no non-member refusal; an
+  // idempotency_key already used for different content is FAILED_PRECONDITION
+  // with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
   rpc NotifyOrgAdmins(ModuleNotifyOrgAdminsRequest) returns (ModuleNotifyOrgAdminsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1187,7 +1357,11 @@ service ModuleCapabilitiesService {
     };
   }
   // ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-  // whole set of other subjects whose rows that viewer may read.
+  // whole set of other subjects whose rows that viewer may read. A viewer who
+  // is not a member of the tenant is FAILED_PRECONDITION with reason
+  // TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+  // FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+  // the reason tells a consumer which it got.
   rpc ListSubjectVisibility(ModuleListSubjectVisibilityRequest) returns (ModuleListSubjectVisibilityResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1240,50 +1414,11 @@ service ModuleCapabilitiesService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
-  // MintModuleRegistration issues the signed, prefix-bound credential a composed
-  // module presents to the gateway to federate its REST surface. Authorized by
-  // the module's own registration secret, not the shared cluster token.
-  rpc MintModuleRegistration(ModuleMintRegistrationRequest) returns (ModuleMintRegistrationResponse) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_INTERNAL
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {
-        events: "saas.module.registration_minted"
-        emission: AUDIT_EMISSION_SUCCESS
-      }
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_INTERNAL
-      request_sensitivity: SENSITIVITY_SECRET
-      response_sensitivity: SENSITIVITY_SECRET
-      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
-    };
-  }
-  // MintSolutionRegistration issues the signed, solution-bound credential a
-  // solution presents to the gateway and to the frontend to register, update, or
-  // delete its upstream and its Module-Federation remote. Authorized by the
-  // solution's own registration secret, declared separately from the module
-  // secrets because a solution remote executes in the host origin.
-  rpc MintSolutionRegistration(SolutionMintRegistrationRequest) returns (SolutionMintRegistrationResponse) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_INTERNAL
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {
-        events: "saas.solution.registration_minted"
-        emission: AUDIT_EMISSION_SUCCESS
-      }
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_INTERNAL
-      request_sensitivity: SENSITIVITY_SECRET
-      response_sensitivity: SENSITIVITY_SECRET
-      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
-    };
-  }
   // MintModuleWorkContext issues the Work Context a composed module presents to
   // this surface: owner and sole actor are the module service principal derived
-  // from its registration prefix. Authorized by the module's own registration
-  // secret, like the credential exchange above.
+  // from its prefix. Authorized by the pod's projected ServiceAccount token, held
+  // against the workload the principal declares and the build the authority
+  // document approves; a pod running anything else is issued nothing.
   rpc MintModuleWorkContext(ModuleMintWorkContextRequest) returns (ModuleMintWorkContextResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -1302,7 +1437,7 @@ service ModuleCapabilitiesService {
   }
   // MintModuleOperationContext issues, with no person present, a Work Context
   // addressed to one of the calling module's installed operation audiences.
-  // Authorized by the module's identity secret like MintModuleWorkContext; owner
+  // Authorized by the pod's projected token like MintModuleWorkContext; owner
   // and sole actor are the module service principal, the tenant is the one its
   // principal declares, and the scopes are exactly the binding's declared
   // headless scopes. A binding declaring none is refused.
@@ -1326,7 +1461,7 @@ service ModuleCapabilitiesService {
   // sync runs with: owned by the person who connected the source, actored by
   // the calling module's service principal, in the source's organization, with
   // exactly the source_delegation_scopes of the binding the person delegated
-  // to. Authorized by the module's identity secret like MintModuleWorkContext;
+  // to. Authorized by the pod's projected token like MintModuleWorkContext;
   // every mint re-checks that the delegation is active, the source exists, the
   // person is still an owner or admin of the organization, and the binding is
   // unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the

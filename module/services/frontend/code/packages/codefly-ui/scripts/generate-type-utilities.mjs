@@ -30,7 +30,7 @@ import {
 	FRONTEND_TYPE_SLOT_NAMES,
 	resolveTypeRole,
 	resolveTypeSlot,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Ships with the package (`src` is in `files`) and is exported as

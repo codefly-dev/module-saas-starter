@@ -267,6 +267,22 @@ export function contentSecurityPolicy(
 export function baselineSecurityHeaders() {
 	return [
 		{ key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+		// Pin the browser to HTTPS for this origin. The edge redirects plaintext to
+		// TLS, which protects the redirect and nothing before it: the FIRST request a
+		// browser makes to a host it has never pinned goes out in the clear, with
+		// whatever the address bar or a link gave it, and an attacker on the path
+		// answers it. One year is the conventional floor for a policy a browser is
+		// asked to remember.
+		//
+		// Deliberately WITHOUT includeSubDomains or preload. Both commit hosts this
+		// service does not own — a sibling subdomain served over plaintext breaks
+		// under the first, and the second is effectively irreversible — so they are
+		// the ingress operator's to add once they know the host tree. Browsers ignore
+		// the header on a plaintext origin, so local development is unaffected.
+		{
+			key: "Strict-Transport-Security",
+			value: "max-age=31536000",
+		},
 		{
 			key: "Permissions-Policy",
 			value: "camera=(), microphone=(), geolocation=()",

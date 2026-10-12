@@ -2,6 +2,13 @@ package infra
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"time"
 
 	"accounts/pkg/infra/internal/txbind"
 
@@ -125,4 +132,155 @@ func OpenScopedBoundaryWithWrites(ctx context.Context, readOnlyConnection, readW
 // supported way to do it.
 func BindControlPlaneTx(ctx context.Context, tx pgx.Tx) context.Context {
 	return txbind.BindControlPlane(ctx, tx)
+}
+
+// ExecAsControlPlane runs one statement inside a real control-plane
+// transaction, for test states no tenant write path produces directly (an
+// expiry that has already passed, a role demoted behind the API's back).
+//
+// It exists because the obvious shortcut is silently wrong. A test outside this
+// package cannot reach the transaction WithControlPlane opens — the binding key
+// is internal by design, so that only the code opening a transaction may say
+// what authority it carries. A test that pulled the transaction out of the
+// context with a plain string key (`ctx.Value("tx").(pgx.Tx)`) worked only for
+// as long as that was the binding, and when the binding moved it did not start
+// failing on a permission: it read nil and panicked, which is the better of the
+// two outcomes. The other, described on BindControlPlaneTx above, is a silent
+// fall back to the request pool.
+//
+// Routing through WithControlPlane keeps the role handling in exactly one
+// place, so a test cannot run as the control plane in a way production never
+// does.
+func (s *PostgresStore) ExecAsControlPlane(ctx context.Context, sql string, args ...any) error {
+	return s.WithControlPlane(ctx, func(ctx context.Context) error {
+		_, err := s.getQueryExecutor(ctx).Exec(ctx, sql, args...)
+		return err
+	})
+}
+
+// ScanAsControlPlane reads one row as the control plane, for a test asserting on
+// a column no store method returns.
+//
+// It goes through WithControlPlane like its Exec counterpart rather than fishing
+// the transaction out of the context: the context key is internal to pkg/infra
+// by design, so a plain-string lookup is not refused — it reads nil, and the
+// query silently falls back to the request pool where it would fail on a
+// permission it should never have lacked.
+func (s *PostgresStore) ScanAsControlPlane(
+	ctx context.Context, sql string, into []any, args ...any,
+) error {
+	return s.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.getQueryExecutor(ctx).QueryRow(ctx, sql, args...).Scan(into...)
+	})
+}
+
+// ReadSolutionHostKeyVerifier exposes file loading without making the production
+// anchor configurable. Only tests may supply a directory.
+var ReadSolutionHostKeyVerifier = readSolutionHostKeyVerifier
+var NewSolutionHostKeyVerifierFrom = newSolutionHostKeyVerifier
+
+// NewKubernetesClientForTest points the client at a test API server, using a
+// throwaway token file.
+//
+// Exported for tests so the TokenReview path is exercised over real HTTP against
+// a real handler: a fake CLIENT would let the AUDIENCE go unsent and untested
+// while looking identical, and the audience is the thing that stops a token
+// minted for another service authenticating here.
+func NewKubernetesClientForTest(t testingT, server *httptest.Server) *KubernetesClient {
+	t.Helper()
+	directory := t.TempDir()
+	path := filepath.Join(directory, "token")
+	if err := os.WriteFile(path, []byte("host-own-token"), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	return NewKubernetesClientForTestWithToken(t, server, path)
+}
+
+// NewKubernetesClientForTestWithToken is the same with a caller-owned token
+// file, so a test can rotate it mid-run.
+func NewKubernetesClientForTestWithToken(t testingT, server *httptest.Server, tokenPath string) *KubernetesClient {
+	t.Helper()
+	return &KubernetesClient{
+		endpoint:  server.URL,
+		tokenPath: tokenPath,
+		http:      server.Client(),
+	}
+}
+
+// NewKubernetesClientInCluster builds a client the way NewKubernetesClient
+// does — the same construction, roots and redirect refusal — for a pod whose
+// kubelet projected this CA bundle, this token and this namespace, with
+// KUBERNETES_SERVICE_HOST/PORT pointing at endpoint.
+func NewKubernetesClientInCluster(t testingT, endpoint string, authority []byte, token, namespace string) *KubernetesClient {
+	t.Helper()
+	directory := t.TempDir()
+	tokenPath := filepath.Join(directory, "token")
+	namespacePath := filepath.Join(directory, "namespace")
+	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	if err := os.WriteFile(namespacePath, []byte(namespace), 0o600); err != nil {
+		t.Fatalf("write namespace: %v", err)
+	}
+	client, err := kubernetesClientFrom(endpoint, authority, tokenPath, namespacePath)
+	if err != nil {
+		t.Fatalf("build client: %v", err)
+	}
+	return client
+}
+
+// WithProjectedAuthorityForTest replaces the CA bundle a client believes the
+// kubelet projected, so a test can hand it a bundle naming more than one
+// cluster, or none.
+func WithProjectedAuthorityForTest(client *KubernetesClient, bundle []byte) *KubernetesClient {
+	client.authority = bundle
+	return client
+}
+
+// WithInitialRootsForTest widens the roots a client was CONSTRUCTED with, so a
+// test can prove a local binding replaces them rather than relying on how the
+// client happened to be built.
+func WithInitialRootsForTest(client *KubernetesClient, roots []byte) *KubernetesClient {
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(roots)
+	client.http = newKubernetesHTTPClient(pool)
+	return client
+}
+
+// testingT is the sliver of *testing.T these helpers need, so export_test.go
+// does not import testing into the production package's namespace.
+type testingT interface {
+	Helper()
+	TempDir() string
+	Fatalf(string, ...any)
+}
+
+// EnvelopedColumn is one enveloped column as the re-seal inventory declares it.
+// Exposed so a database-backed test can hold the inventory against the live
+// schema: the crypto-shredding guard keys off OrgColumn, so an entry that omits
+// it on a table that HAS an org_id is swept for an organization that holds its
+// own key.
+type EnvelopedColumn struct {
+	Table, Column, OrgColumn string
+}
+
+// EnvelopedColumns is the re-seal inventory, for that test.
+func EnvelopedColumns() []EnvelopedColumn {
+	out := make([]EnvelopedColumn, 0, len(envelopedColumns))
+	for _, column := range envelopedColumns {
+		out = append(out, EnvelopedColumn{
+			Table: column.table, Column: column.column, OrgColumn: column.orgColumn,
+		})
+	}
+	return out
+}
+
+// ProjectedTokenForTest is a JWT-shaped projected ServiceAccount token valid
+// for lifetime. Its signature is whatever API server the test stands up to
+// judge; a module mint reads its iat and exp once that server authenticates it.
+func ProjectedTokenForTest(lifetime time.Duration) string {
+	now := time.Now().Unix()
+	claims, _ := json.Marshal(map[string]any{"iat": now, "exp": now + int64(lifetime/time.Second)})
+	encode := base64.RawURLEncoding.EncodeToString
+	return encode([]byte(`{"alg":"RS256"}`)) + "." + encode(claims) + "." + encode([]byte("signature"))
 }

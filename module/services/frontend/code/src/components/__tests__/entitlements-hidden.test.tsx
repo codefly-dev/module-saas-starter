@@ -4,7 +4,7 @@ import { UNCONFIGURED_PUBLIC_RUNTIME_CONFIG } from "@/lib/public-runtime-config"
 import EntitlementsRoute from "@/app/admin/entitlements/page";
 import PlatformPage from "@/app/admin/platform/page";
 import { selectNavigation } from "@/lib/plugins/presentation";
-import { defineFrontend } from "@codefly/saas-plugin-contract";
+import { defineFrontend } from "@codefly-dev/saas-plugin-contract";
 
 // The platform overview reads the deployment's switches per request; an
 // unconfigured deployment leaves every optional surface off.

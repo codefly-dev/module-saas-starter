@@ -1,4 +1,4 @@
-import { resolveFrontendAppearance } from "@codefly/saas-plugin-contract";
+import { resolveFrontendAppearance } from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 import {
 	appearanceStyleProperties,

@@ -1,5 +1,10 @@
 "use client";
 
+import * as PluginContract from "@codefly-dev/saas-plugin-contract";
+import * as PluginCapabilities from "@codefly-dev/saas-plugin-contract/capabilities";
+import * as PluginReact from "@codefly-dev/saas-plugin-react";
+import * as PluginRuntime from "@codefly-dev/saas-plugin-react/runtime";
+import * as PluginUi from "@codefly-dev/saas-plugin-react/ui";
 import * as SaasSdk from "@codefly-dev/saas-sdk";
 import * as SaasUi from "@codefly-dev/saas-ui";
 import * as SaasUiSolution from "@codefly-dev/saas-ui/solution";
@@ -26,6 +31,8 @@ import {
 	lazy,
 	type ReactNode,
 	Suspense,
+	useEffect,
+	useState,
 	useSyncExternalStore,
 } from "react";
 import * as ReactJSXRuntime from "react/jsx-runtime";
@@ -39,7 +46,12 @@ import {
 	refreshToken,
 	subscribeToken,
 } from "@/lib/connect/token-store";
-import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
+import {
+	CODEFLY_KIT_VERSION,
+	CODEFLY_SAAS_SDK_VERSION,
+	CODEFLY_PLUGIN_CONTRACT_VERSION,
+	CODEFLY_PLUGIN_REACT_VERSION,
+} from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
 // shadow or replace it: a solution remote renders against the one true instance
@@ -73,6 +85,31 @@ export { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION };
 // scope. This is the single source of truth the `kit-shared-version` test
 // asserts against directly, so a dropped `singleton` flag fails CI.
 export const CODEFLY_KIT_SHARED = {
+	"@codefly-dev/saas-plugin-contract": {
+		version: CODEFLY_PLUGIN_CONTRACT_VERSION,
+		lib: () => PluginContract,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-plugin-contract/capabilities": {
+		version: CODEFLY_PLUGIN_CONTRACT_VERSION,
+		lib: () => PluginCapabilities,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-plugin-react": {
+		version: CODEFLY_PLUGIN_REACT_VERSION,
+		lib: () => PluginReact,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-plugin-react/runtime": {
+		version: CODEFLY_PLUGIN_REACT_VERSION,
+		lib: () => PluginRuntime,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-plugin-react/ui": {
+		version: CODEFLY_PLUGIN_REACT_VERSION,
+		lib: () => PluginUi,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
 	"@codefly-dev/ui/layout": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => CodeflyLayout,
@@ -406,6 +443,34 @@ function useInBrowser(): boolean {
 
 const LOADING = <div className="p-6 text-sm opacity-70">Loading solution…</div>;
 
+/**
+ * The viewer organization's installation of this solution, read from the host's
+ * own projection route, which resolves it from the gateway-verified viewer's
+ * entitlements for the routed target. Undefined until it answers, and on any
+ * refusal: the remote then has no installation to act in, which is the honest
+ * state, rather than one this outlet guessed.
+ */
+function useSolutionInstallation(solutionId: string | null): string | undefined {
+	const [resolved, setResolved] = useState<{ solutionId: string; installationId: string } | null>(null);
+	useEffect(() => {
+		if (!solutionId) return;
+		let live = true;
+		authedFetch(`/api/solutions/${encodeURIComponent(solutionId)}/installation`, { cache: "no-store" })
+			.then(async (response) => {
+				if (!response.ok) return;
+				const body = (await response.json()) as { installationId?: unknown };
+				if (live && typeof body.installationId === "string" && body.installationId !== "") {
+					setResolved({ solutionId, installationId: body.installationId });
+				}
+			})
+			.catch(() => {});
+		return () => {
+			live = false;
+		};
+	}, [solutionId]);
+	return resolved && resolved.solutionId === solutionId ? resolved.installationId : undefined;
+}
+
 export function SolutionOutlet({
 	remote,
 	pageProps,
@@ -426,6 +491,7 @@ export function SolutionOutlet({
 }) {
 	const inBrowser = useInBrowser();
 	const Remote = inBrowser ? remoteComponent(remote) : null;
+	const installationId = useSolutionInstallation(inBrowser ? pageProps.solutionId : null);
 
 	return (
 		<SolutionErrorBoundary key={remote.id}>
@@ -438,6 +504,7 @@ export function SolutionOutlet({
 						subscribeToken={subscribeToken}
 						refreshAccessToken={refreshToken}
 						authedFetch={authedFetch}
+						installationId={installationId}
 						dashboardAuthoring={authoring}
 					/>
 				) : (

@@ -3,7 +3,10 @@ import { Axis, Svg } from "../atoms.js";
 import { AreaChart, BarList, LineChart, StatChart } from "../charts.js";
 import type { SeriesPoint } from "../types.js";
 
-type ElementLike = { type?: unknown; props?: { children?: unknown } & Record<string, unknown> };
+type ElementLike = {
+	type?: unknown;
+	props?: { children?: unknown } & Record<string, unknown>;
+};
 
 // Walk a React element tree (no DOM needed — a rendered component is a plain
 // object) collecting every <path>'s props, so a test can assert what color the
@@ -36,7 +39,9 @@ const pts: SeriesPoint[] = [
 // a text-color class (and the Dashboard accent behind `text-primary`) theme it.
 describe("chart color inherits via currentColor", () => {
 	it("LineChart strokes with currentColor", () => {
-		const strokes = pathProps(LineChart({ points: pts })).filter((p) => p.stroke && p.stroke !== "none");
+		const strokes = pathProps(LineChart({ points: pts })).filter(
+			(p) => p.stroke && p.stroke !== "none",
+		);
 		expect(strokes.length).toBeGreaterThan(0);
 		for (const p of strokes) expect(p.stroke).toBe("currentColor");
 	});
@@ -69,7 +74,9 @@ describe("axes gating", () => {
 		expect(tree.props.stretch).toBe(false);
 		expect(byType(tree, Axis)).toHaveLength(1);
 		// The data path still colors via currentColor, not a hardcoded hue.
-		const strokes = pathProps(tree).filter((p) => p.stroke && p.stroke !== "none");
+		const strokes = pathProps(tree).filter(
+			(p) => p.stroke && p.stroke !== "none",
+		);
 		expect(strokes.length).toBeGreaterThan(0);
 		for (const p of strokes) expect(p.stroke).toBe("currentColor");
 	});

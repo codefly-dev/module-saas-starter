@@ -242,6 +242,15 @@ connector credential, MFA secret and WebAuthn credential. A product must reach
 that Vault by name rather than inherit whichever one the composition happened to
 render.
 
+**A cell on a cloud key service needs this only for the signing key.** Selecting
+`KEY_SERVICE_BACKEND=kms` in the `key-service` group moves the envelope key and
+the keyed hash to the cell's cloud key-management service — non-exportable keys,
+reached with the workload's own cloud identity, with key names and no credential
+in the configuration. The signing key cannot move there yet, so a hosted cell
+still declares this kind for that one key; `module/KEY_ROTATION.md`, "Why `kms`
+cannot hold the signing key yet", says what has to change upstream first. When it
+does, a cell selecting `kms` for both families declares no `cell-vault` at all.
+
 ```yaml
 managed-services:
   vault:
@@ -454,3 +463,19 @@ descriptor) for a quick `--set`-free experiment via `.env*.local`,
 `FRONTEND_SKIN_DIR` (a directory of `<host>.json` / `default.json`) for a
 configuration group, and a mounted `frontend-skin` ConfigMap in a deployed
 environment.
+
+## Endpoint declaration compatibility
+
+Authored endpoints use Codefly’s separate visibility and location fields. The
+host’s cross-module exports declare `visibility: internal` and the explicit
+`allow-modules: ["*"]` ceiling they previously had; private listeners stay
+private. The store endpoint retains external location independently of its
+private module visibility. No endpoint address or application permission changes.
+
+The host deployment catalog keeps its existing `MODULE` and `EXTERNAL`
+categories. Both topology readers translate the declared policy into those
+categories, refusing retired input spellings and any narrower allow-list the
+catalog cannot represent. They never discard an allow-list and widen access.
+The canonical catalog generation leaves the effective policy artifacts unchanged.
+A composition must also select compatible manifests for every other module;
+this migration does not permit editing an immutable module cache.

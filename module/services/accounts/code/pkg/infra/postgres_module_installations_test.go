@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -26,13 +25,20 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 
 	"github.com/stretchr/testify/require"
 )
 
 func boundedInstallationFixture(t *testing.T) *business.InstallSolutionParams {
 	org, owner, role, _, _ := installFixture(t, "documents", "read")
-	return &business.InstallSolutionParams{OrgID: org, OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, AgentIdentifier: "acme.example/repeatable:1.0.0", SolutionIdentifier: "repeatable", AllowedAudiences: []string{"example.api"}, AllowedScopes: []string{"documents"}, InstallerPrincipalID: business.ModulePrincipalID("example-installer")}
+	// Its own declared presence: this is a SECOND installation in the same org,
+	// so it must be a different target from the fixture's.
+	alias := uniqueAlias("repeatable")
+	// `example.api` is a declared MODULE prefix: a ceiling may only name audiences
+	// this host serves (issue #952), and the installer's path validates it like
+	// every other write path. installerTestService declares it.
+	return &business.InstallSolutionParams{OrgID: org, OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, AgentIdentifier: "acme.example/repeatable:1.0.0", TargetID: declarePresence(t, "acme.test."+alias, alias), RouteAlias: alias, AllowedAudiences: []string{"example.api"}, AllowedScopes: []string{"documents"}, InstallerPrincipalID: business.ModulePrincipalID("example-installer")}
 }
 func boundedReconcile(p *business.InstallSolutionParams, apply bool) (out *business.ModuleInstallationResult, err error) {
 	err = testStore.WithOrgTx(testCtx, p.OrgID, func(ctx context.Context) error {
@@ -145,14 +151,32 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
 	require.NoError(t, err)
 	svc := auditedService(t, emitter)
-	svc.SetModuleIdentitySecrets(map[string][sha256.Size]byte{"example-installer": sha256.Sum256([]byte("local-fixture-secret"))})
-	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{p.InstallerPrincipalID: {Prefix: "example-installer", Tenant: p.OrgID}})
+	svc.SetModuleAuthorityReads(testStore, nil)
+	// The installer's own principal, plus the audiences its ceiling names: a
+	// ceiling may only name values this host's vocabulary holds, and the installer
+	// path validates it like every other write path (issue #952). Declaring
+	// `example.api` here is how a composition declares it.
+	installerWorkload := executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "installer", Container: "app"}
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		p.InstallerPrincipalID: {Prefix: "example-installer", Tenant: p.OrgID, Workload: business.ModuleWorkload{
+			Namespace: installerWorkload.Namespace, ServiceAccount: installerWorkload.ServiceAccount, Container: installerWorkload.Container,
+		}},
+		business.ModulePrincipalID("example.api"): {Prefix: "example.api"},
+	})
+	installCapabilityFixture(t, svc, p.OrgID, p.OwnerPrincipalID)
+	// The installer proves which module it is with its pod's projected token,
+	// bound to the build its authority approves (#1056).
+	cluster := executiontest.New()
+	svc.SetExecutionBinding(cluster, cluster)
+	cluster.Approve("example-installer", executiontest.Digest("installer-v1"), 1)
+	installerToken := cluster.Run(installerWorkload, executiontest.Image("installer-v1"))
+	unapprovedToken := cluster.Run(installerWorkload, executiontest.Image("installer-unreviewed"))
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	previousAuthority := *adapters.WorkContextSingleton()
 	t.Cleanup(func() { *adapters.WorkContextSingleton() = previousAuthority })
 	adapters.WorkContextSingleton().Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "installer-test", PrivateKey: private, Authority: testStore})
-	policy := business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{{Prefix: "example-installer", OrganizationID: p.OrgID, ModuleID: "acme.example/repeatable", AgentIdentifiers: []string{p.AgentIdentifier}, SolutionIdentifier: p.SolutionIdentifier, RoleID: p.RoleID, RolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes, OwnerPrincipalID: p.OwnerPrincipalID, ExpiresAt: time.Now().Add(time.Hour)}}}
+	policy := business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{{Prefix: "example-installer", OrganizationID: p.OrgID, ModuleID: "acme.example/repeatable", AgentIdentifiers: []string{p.AgentIdentifier}, TargetID: p.TargetID, RoleID: p.RoleID, RolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes, OwnerPrincipalID: p.OwnerPrincipalID, ExpiresAt: time.Now().Add(time.Hour)}}}
 	path := filepath.Join(t.TempDir(), "policy.json")
 	raw, err := json.Marshal(policy)
 	require.NoError(t, err)
@@ -173,14 +197,37 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 		}
 		response, err := server.Client().Do(req)
 		require.NoError(t, err)
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		raw, err = io.ReadAll(response.Body)
 		require.NoError(t, err)
 		require.Equal(t, want, response.StatusCode, string(raw))
 		return raw
 	}
-	post("token", map[string]string{"prefix": "example-installer", "secret": "wrong"}, "", 403)
-	raw = post("token", map[string]string{"prefix": "example-installer", "secret": "local-fixture-secret"}, "", 200)
+	mintInstaller := func(bearer string, body any, want int) []byte {
+		t.Helper()
+		raw, err := json.Marshal(body)
+		require.NoError(t, err)
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/module-installations/token", bytes.NewReader(raw))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		response, err := server.Client().Do(req)
+		require.NoError(t, err)
+		defer func() { _ = response.Body.Close() }()
+		raw, err = io.ReadAll(response.Body)
+		require.NoError(t, err)
+		require.Equal(t, want, response.StatusCode, string(raw))
+		return raw
+	}
+	installer := map[string]string{"prefix": "example-installer"}
+	mintInstaller("", installer, 401)
+	mintInstaller("local-fixture-secret", installer, 403)
+	mintInstaller(unapprovedToken, installer, 403)
+	// A body still naming a secret is refused as malformed: the field is gone.
+	mintInstaller(installerToken, map[string]string{"prefix": "example-installer", "secret": "local-fixture-secret"}, 400)
+	raw = mintInstaller(installerToken, installer, 200)
 	var issued struct {
 		Token     string
 		ExpiresAt time.Time
@@ -188,14 +235,67 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &issued))
 	require.NotEmpty(t, issued.Token)
 	require.WithinDuration(t, time.Now().Add(15*time.Minute), issued.ExpiresAt, 5*time.Second)
-	request := business.ModuleInstallationRequest{DisplayName: "Example Repeatable", RootScopeLabel: "Example Repeatable", ModuleID: "acme.example/repeatable", OrganizationSlug: "org-" + p.OrgID, AgentIdentifier: p.AgentIdentifier, SolutionIdentifier: p.SolutionIdentifier, RoleID: p.RoleID, ExpectedRolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes}
+	request := business.ModuleInstallationRequest{DisplayName: "Example Repeatable", RootScopeLabel: "Example Repeatable", ModuleID: "acme.example/repeatable", OrganizationSlug: "org-" + p.OrgID, AgentIdentifier: p.AgentIdentifier, TargetID: p.TargetID, RoleID: p.RoleID, ExpectedRolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes}
+
+	// A ceiling naming an audience this host does not serve is REFUSED AS A
+	// FORBIDDEN REQUEST, not as an unavailable host, and the refusal names the
+	// entry.
+	//
+	// This is the test the mapping needed. The write-time check (issue #952) is a
+	// plain error, and this handler's fall-through is 503 "installation
+	// prerequisite or persistence unavailable" — so without an explicit branch the
+	// refusal reached the installer as "the host is broken, retry", inviting a
+	// retry loop that can never succeed and reproducing, one layer out, exactly the
+	// misleading-cause failure the write-time check exists to end. 503 is also the
+	// wrong class: the request is what is wrong.
+	// The DELEGATION AND THE REQUEST AGREE on the unserved audience, which is the
+	// only shape that reaches this check. With them disagreeing, the delegation
+	// comparison refuses first with "installer delegation denied" — a 403 for an
+	// entirely different reason, and a test that accepted it would pass without
+	// ever exercising the vocabulary. It is also the real-world shape: f2's
+	// evidence was that `exactSet` CONFIRMS the ceiling against the delegation and
+	// the write then succeeds.
+	unserved := request
+	unserved.AllowedAudiences = []string{"example.api", "nothing-serves-this"}
+	unservedPolicy := policy
+	unservedPolicy.Delegations = []business.InstallerDelegation{policy.Delegations[0]}
+	unservedPolicy.Delegations[0].AllowedAudiences = unserved.AllowedAudiences
+	unservedPath := filepath.Join(t.TempDir(), "unserved-policy.json")
+	unservedRaw, err := json.Marshal(unservedPolicy)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(unservedPath, unservedRaw, 0600))
+	unservedHandler, err := adapters.NewModuleInstallationHTTPHandler(svc, unservedPath)
+	require.NoError(t, err)
+	unservedServer := httptest.NewTLSServer(unservedHandler)
+	defer unservedServer.Close()
+
+	// `inspect` is the dry run, and the check runs there too: the ceiling is
+	// validated before the transaction opens, so it refuses without writing.
+	unservedBody, err := json.Marshal(unserved)
+	require.NoError(t, err)
+	unservedReq, err := http.NewRequest(http.MethodPost, unservedServer.URL+"/v1/module-installations/inspect", bytes.NewReader(unservedBody))
+	require.NoError(t, err)
+	unservedReq.Header.Set("content-type", "application/json")
+	unservedReq.Header.Set("X-Codefly-Work-Context", issued.Token)
+	unservedResponse, err := unservedServer.Client().Do(unservedReq)
+	require.NoError(t, err)
+	defer func() { _ = unservedResponse.Body.Close() }()
+	refusal, err := io.ReadAll(unservedResponse.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusForbidden, unservedResponse.StatusCode, string(refusal))
+	require.Contains(t, string(refusal), "nothing-serves-this",
+		"the refusal must name the entry an installer has to fix")
+	require.NotContains(t, string(refusal), "persistence unavailable",
+		"a caller's wrong ceiling must never read as this host being unavailable")
+	require.NotContains(t, string(refusal), "delegation denied",
+		"an earlier guard firing would make this pass without exercising the vocabulary")
 
 	if script := os.Getenv("MODULE_INSTALLER_CLIENT_SCRIPT"); script != "" {
 		dir := t.TempDir()
 		caFile, credentialFile, scenarioFile := filepath.Join(dir, "ca.pem"), filepath.Join(dir, "credential"), filepath.Join(dir, "scenario.json")
 		require.NoError(t, os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600))
 		require.NoError(t, os.WriteFile(credentialFile, []byte("local-fixture-secret"), 0600))
-		scenario := map[string]any{"accounts_url": server.URL, "ca_file": caFile, "credential_file": credentialFile, "installer_prefix": "example-installer", "organization_slug": request.OrganizationSlug, "organization_id": p.OrgID, "role_id": p.RoleID, "expected_role_permissions": request.ExpectedRolePermissions, "module_id": request.ModuleID, "agent_identifier": request.AgentIdentifier, "solution_identifier": request.SolutionIdentifier, "allowed_audiences": request.AllowedAudiences, "allowed_scopes": request.AllowedScopes, "display_name": request.DisplayName, "root_scope_label": request.RootScopeLabel}
+		scenario := map[string]any{"accounts_url": server.URL, "ca_file": caFile, "credential_file": credentialFile, "installer_prefix": "example-installer", "organization_slug": request.OrganizationSlug, "organization_id": p.OrgID, "role_id": p.RoleID, "expected_role_permissions": request.ExpectedRolePermissions, "module_id": request.ModuleID, "agent_identifier": request.AgentIdentifier, "target_id": request.TargetID, "allowed_audiences": request.AllowedAudiences, "allowed_scopes": request.AllowedScopes, "display_name": request.DisplayName, "root_scope_label": request.RootScopeLabel}
 		raw, err := json.Marshal(scenario)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(scenarioFile, raw, 0600))
@@ -269,7 +369,9 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, raw, 0600))
 	post("apply", request, issued.Token, 403)
-	post("token", map[string]string{"prefix": "example-installer", "secret": "local-fixture-secret"}, "", 403)
+	// A proven installer on its approved build is still refused a replacement
+	// once no delegation names it: identity is not authority.
+	mintInstaller(installerToken, installer, 403)
 	require.NoError(t, os.Remove(path))
 	post("inspect", request, issued.Token, 503)
 }

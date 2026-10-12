@@ -37,19 +37,36 @@ var externalRelationAuthorities = map[string]externalRelationAuthority{}
 
 var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// Global catalogs and worker-owned job relations.
-	"identity_providers":            {selectRows: true},
-	"plans":                         {selectRows: true},
-	"plan_entitlements":             {selectRows: true},
-	"email_templates":               {selectRows: true},
-	"data_retention_policies":       {selectRows: true},
-	"bootstrap_state":               {selectRows: true}, // the bootstrap claim runs on the control plane
-	"feature_flags":                 {selectRows: true},
-	"audit_event_types":             {selectRows: true},
-	"platform_admins":               {selectRows: true}, // granting and revoking run on the control plane
-	"analytics_deliveries":          {},
-	"email_delivery_events":         {},
-	"event_subscriptions":           {}, // platform relation; request traffic has no direct access
-	"solution_registrations":        {}, // platform relation; request traffic has no direct access
+	"identity_providers":          {selectRows: true},
+	"plans":                       {selectRows: true},
+	"plan_entitlements":           {selectRows: true},
+	"email_templates":             {selectRows: true},
+	"data_retention_policies":     {selectRows: true},
+	"bootstrap_state":             {selectRows: true}, // the bootstrap claim runs on the control plane
+	"feature_flags":               {selectRows: true},
+	"audit_event_types":           {selectRows: true},
+	"platform_admins":             {selectRows: true}, // granting and revoking run on the control plane
+	"analytics_deliveries":        {},
+	"email_delivery_events":       {},
+	"event_subscriptions":         {}, // platform relation; request traffic has no direct access
+	"solution_registrations":      {}, // platform relation; request traffic has no direct access
+	"solution_host_bindings":      {}, // platform relation; only the reconcile pass writes it
+	"solution_targets":            {}, // platform relation; the identity an installation names
+	"solution_generation_history": {}, // platform relation; append-only decision trail
+	// The delivery inbox: every signed carrier this host was handed. Request
+	// traffic has no access, and the control plane holds SELECT and INSERT only
+	// — no UPDATE and no DELETE, because an inbox that can be edited is not a
+	// record of what was received.
+	"solution_delivery_documents": {},
+	// The module envelope: the authority ceiling a platform super_admin
+	// writes. Request traffic has no access; the control plane appends a
+	// revision and never edits one.
+	"module_envelopes": {},
+	// The policy log's local half. Request traffic has no access at all: a
+	// receipt is evidence about authority, and the request path neither reads
+	// nor writes it.
+	"policy_log_commits":            {},
+	"policy_log_cursor":             {},
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
 	"job_attempts":                  {},
 	"job_messages":                  {},
@@ -67,6 +84,10 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"dashboards":                           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"installations":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_sources":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_source_operations":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_operation_attempts":        {selectRows: true, insertRows: true, deleteRows: true},
+	"codefly_effect_receipts":              {selectRows: true, insertRows: true, deleteRows: true},
+	"datasource_oauth_consumed_states":     {selectRows: true, insertRows: true, deleteRows: true},
 	"datasource_account_links":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_group_bindings":            {selectRows: true, insertRows: true, deleteRows: true},
 	"datasource_domains":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
@@ -76,9 +97,11 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"source_delegations":                   {selectRows: true, insertRows: true, updateRows: true}, // revoked, never deleted
 	"domain_events":                        {selectRows: true},                                     // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
+	"executable_artifact_approvals":        {selectRows: true, insertRows: true}, // only revocation columns, no table-wide UPDATE
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
 	"membership_integrity_findings":        {}, // operator repair evidence; no request-traffic authority at all
 	"org_generic_settings":                 {selectRows: true, insertRows: true, updateRows: true},
+	"org_key_bindings":                     {selectRows: true}, // platform provisioning; a tenant reads its own binding and writes none
 	"org_identity_providers":               {selectRows: true, insertRows: true, updateRows: true},
 	"org_settings":                         {selectRows: true, insertRows: true, updateRows: true},
 	"organization_activations":             {selectRows: true, insertRows: true, updateRows: true},
@@ -344,6 +367,17 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if authority.Scope == relationcatalog.ScopeWorker || authority.Scope == relationcatalog.ScopeJob {
 				want = relationPrivileges{}
 			}
+			// Executable consent is written under the verified tenant/user only.
+			if relation == "executable_artifact_approvals" {
+				want = relationPrivileges{}
+			}
+			// Callable-source declarations, OAuth state, attempts and receipts
+			// are tenant-only. The control plane must not read or mutate them.
+			switch relation {
+			case "datasource_source_operations", "datasource_oauth_consumed_states",
+				"datasource_operation_attempts", "codefly_effect_receipts":
+				want = relationPrivileges{}
+			}
 			if relation == "feature_flags" {
 				want = relationPrivileges{selectRows: true}
 			}
@@ -370,6 +404,51 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// a monotonic cursor revision. The control plane reads, inserts,
 			// and updates both; organization deletion uses the FK cascade.
 			if relation == "approval_requests" || relation == "source_read_revisions" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// solution_generation_history is APPEND-ONLY: read and insert, never
+			// update or delete. A decision is a fact about the past, and a trail
+			// whose rows can be edited is not a trail.
+			if relation == "solution_generation_history" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// solution_delivery_documents is APPEND-ONLY, and more strictly so
+			// than the decision trail: read and insert, never update and never
+			// delete. It holds the signed carriers this host was handed, so an
+			// inbox whose rows can be edited is not a record of what was
+			// received — and the carrier is what a restore re-verifies against,
+			// which is only worth anything if nothing could have rewritten it.
+			// A correction is a new generation.
+			if relation == "solution_delivery_documents" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// module_envelopes is APPEND-ONLY for the same reason: each row is
+			// the whole ceiling at one revision, and a ceiling whose history can
+			// be rewritten cannot say who allowed what. A correction is a new
+			// revision.
+			if relation == "module_envelopes" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// policy_log_commits and policy_log_cursor are read, inserted and
+			// updated, never deleted. The commit row is completed by the commit
+			// and the cursor advances — but deleting either would make an
+			// unreconciled gap DISAPPEAR rather than be closed, which is the one
+			// way the fail-closed asymmetry could be defeated locally.
+			if relation == "policy_log_commits" || relation == "policy_log_cursor" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// solution_targets is never row-deleted either: a CLOSED target is the
+			// evidence that an installation's consent ended, and deleting it
+			// would make a reused alias indistinguishable from a continuous one.
+			if relation == "solution_targets" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// solution_host_bindings is never row-deleted: removal of a declared
+			// solution is a tombstone GENERATION on the row, so the binding ID and
+			// its applied generation survive and a late or replayed older
+			// generation still collides with them. The control plane reads,
+			// inserts and updates.
+			if relation == "solution_host_bindings" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// source_delegations are revoked, never deleted: the record of what a
@@ -480,6 +559,15 @@ func TestWebhookProjectionRoleHasProjectionOnlyAuthority(t *testing.T) {
 	expected := map[string]relationPrivileges{
 		"webhook_subscriptions": {selectRows: true},
 		"webhook_deliveries":    {selectRows: true},
+		// The projection reads a subscription's sealed signing secret, so it
+		// must also resolve which key opens it. A binding readable by fewer
+		// roles than the secret it unlocks fails at delivery time rather than at
+		// boot, and this role already reads the secret itself above.
+		//
+		// Still read-only, and still only these three relations: the role cannot
+		// write a binding, so it cannot point a subscription at another
+		// organization's key.
+		"org_key_bindings": {selectRows: true},
 	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := storetx.Tx(ctx)
@@ -832,4 +920,26 @@ func livePolicies(ctx context.Context, t *testing.T, tx pgx.Tx, relation string)
 	}
 	require.NoError(t, rows.Err(), relation)
 	return policies
+}
+
+// A column grant must not grow into permission to replace approved content.
+func TestExecutableArtifactApprovalColumnGrantsOnlyPermitRevocation(t *testing.T) {
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		rows, err := storetx.Tx(ctx).Query(ctx, `
+			SELECT attname, has_column_privilege('app_tenant', 'executable_artifact_approvals', attname, 'UPDATE')
+			FROM pg_attribute WHERE attrelid='public.executable_artifact_approvals'::regclass
+			  AND attnum > 0 AND NOT attisdropped`)
+		require.NoError(t, err)
+		defer rows.Close()
+		count := 0
+		for rows.Next() {
+			var column string
+			var canUpdate bool
+			require.NoError(t, rows.Scan(&column, &canUpdate))
+			require.Equal(t, column == "revoked_at" || column == "revoked_by", canUpdate, column)
+			count++
+		}
+		require.Equal(t, 11, count, "inspect every approved identity and revocation column")
+		return rows.Err()
+	}))
 }

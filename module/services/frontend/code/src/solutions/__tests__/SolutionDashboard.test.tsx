@@ -1,12 +1,10 @@
 import type { DataGraph } from "@codefly/saas-plugin-manifest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Code, ConnectError } from "@connectrpc/connect";
 import {
 	act,
 	cleanup,
 	fireEvent,
-	render,
 	screen,
-	waitFor,
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
@@ -123,15 +121,25 @@ function aggregateHandler(
 	);
 }
 
+// A rejected refetch reaches the component a tick after `refetchQueries`
+// resolves. Without this wait an assertion can run while the previous state is
+// still rendered, which makes the retention tests pass whatever the code does.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
 const DEFAULT_ORDER = ["Logins over time", "Top event types", "Total logins"];
 
-// The tile titles, in the order the dashboard shows them.
+// The tile titles, in the order the dashboard shows them. The kit's renderer
+// titles a series widget through its Card (`card-heading`) and a scalar one
+// through its StatTile (`metric-label`), so a tile is named by whichever of
+// the two it carries.
 function tileTitles(): string[] {
 	return screen
 		.getAllByRole("listitem")
 		.map(
 			(tile) =>
-				tile.querySelector('[data-slot="card-title"]')?.textContent ?? "",
+				tile.querySelector(
+					'[data-slot="card-heading"], [data-slot="metric-label"]',
+				)?.textContent ?? "",
 		);
 }
 
@@ -143,36 +151,8 @@ function tile(title: string): HTMLElement {
 	return found;
 }
 
-function renderDashboards(declared: DataGraph = graph) {
-	return renderInApp(
-		<SolutionDashboards graph={declared} solutionId="example" />,
-	);
-}
-
-// A mouse drag on the page, pressed on a tile and moved on the document, where
-// dnd-kit listens once a drag begins. Past the 5px a drag needs, it is in
-// flight; `moveTo` aims it (at a slot the drag brought up, too), `drop` ends it.
-function pickUp(element: HTMLElement) {
-	const { left, top } = element.getBoundingClientRect();
-	let at = { clientX: left + 50, clientY: top + 50 };
-	fireEvent.mouseDown(element, { ...at, button: 0 });
-	fireEvent.mouseMove(document, {
-		clientX: at.clientX + 10,
-		clientY: at.clientY + 10,
-	});
-	return {
-		moveTo(target: HTMLElement) {
-			const rect = target.getBoundingClientRect();
-			const to = { clientX: rect.left + 50, clientY: rect.top + 50 };
-			fireEvent.mouseMove(document, {
-				clientX: (at.clientX + to.clientX) / 2,
-				clientY: (at.clientY + to.clientY) / 2,
-			});
-			fireEvent.mouseMove(document, to);
-			at = to;
-		},
-		drop: () => fireEvent.mouseUp(document, at),
-	};
+function renderDashboards() {
+	return renderInApp(<SolutionDashboards graph={graph} solutionId="example" />);
 }
 
 describe("SolutionDashboards", () => {
@@ -192,16 +172,23 @@ describe("SolutionDashboards", () => {
 
 		renderInApp(<SolutionDashboards graph={graph} solutionId="example" />);
 
-		// Bar widget: each event_type bucket becomes a labelled bar.
-		expect(await screen.findByText("saas.auth.login")).toBeTruthy();
-		expect(screen.getByText("42")).toBeTruthy();
+		// Bar widget: each event_type bucket becomes a bar, and every exact
+		// value is reachable in the chart's accessible data table — which is
+		// what a reader who cannot see the geometry gets.
+		const bars = await screen.findByRole("table", { name: "Top event types" });
+		expect(
+			within(bars).getByRole("row", { name: /saas\.auth\.login/ }),
+		).toBeTruthy();
+		expect(within(bars).getByText("42")).toBeTruthy();
 		// Number widget: the total-logins stat sums the time buckets (3 + 5).
 		expect(screen.getByText("8")).toBeTruthy();
-		// Each widget's title is rendered from the declaration. A chart also names
-		// its hidden data table after it, so the tile's own title is asked for.
-		expect(tileTitles()).toEqual(
-			expect.arrayContaining(["Logins over time", "Total logins"]),
-		);
+		// Each widget's title is rendered from the declaration. A chart widget
+		// says it three times: once visibly as its card's heading, and twice in
+		// the accessible data table that is the chart's screen-reader
+		// representation — as the table's caption and as its one series' column
+		// header, there being no other name for the series than the widget's.
+		expect(screen.getAllByText("Logins over time")).toHaveLength(3);
+		expect(screen.getByText("Total logins")).toBeTruthy();
 	});
 
 	it("isolates a widget whose metric fails without blanking its siblings", async () => {
@@ -235,106 +222,447 @@ describe("SolutionDashboards", () => {
 		expect(await screen.findByText("Unable to load.")).toBeTruthy();
 	});
 
-	it("writes a metric declared as a percent as a percentage, and a plain ratio as a number", async () => {
-		const rates: DataGraph = {
-			events: [
-				{ name: "passed", type: "review.passed.v1" },
-				{ name: "completed", type: "review.completed.v1" },
-			],
-			metrics: [
-				{
-					id: "passed",
-					kind: "source",
-					filter: { event: "passed" },
-					groupBy: "category",
-					aggregation: "count",
-				},
-				{
-					id: "completed",
-					kind: "source",
-					filter: { event: "completed" },
-					groupBy: "category",
-					aggregation: "count",
-				},
-				{
-					id: "pass_rate",
-					kind: "derived",
-					operation: "ratio",
-					inputs: ["passed", "completed"],
-					format: "percent",
-				},
-				{
-					id: "completed_per_pass",
-					kind: "derived",
-					operation: "ratio",
-					inputs: ["completed", "passed"],
-				},
-			],
-			dashboards: [
-				{
-					id: "activity",
-					title: "Activity",
-					layout: "grid",
-					widgets: [
-						{
-							id: "w_rate",
-							metric: "pass_rate",
-							visualization: "number",
-							title: "Pass rate",
-						},
-						{
-							id: "w_per_pass",
-							metric: "completed_per_pass",
-							visualization: "number",
-							title: "Completed per pass",
-						},
-					],
-				},
-			],
-		};
+	// The sequence that matters: a read that SUCCEEDED, then one that did not.
+	// TanStack Query hands back the last successful data when a refetch
+	// rejects, so a cold failure cannot show this — there is nothing retained
+	// to leak.
+	describe.each([
+		[403, "permission_denied", Code.PermissionDenied],
+		[503, "unavailable", Code.Unavailable],
+	] as const)("a %d on a refetch", (status, code, expected) => {
+		const refused = status === 403;
+
+		it(`${refused ? "discards" : "keeps"} the values already on screen`, async () => {
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ code, message: "read rejected" }, { status }),
+				),
+			);
+			await act(async () => {
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+			});
+
+			const query = client
+				.getQueryCache()
+				.find({ queryKey: ["solution-widget"], exact: false });
+			expect(ConnectError.from(query?.state.error).code).toBe(expected);
+
+			if (refused) {
+				// A number this viewer is no longer allowed to read is a wrong
+				// answer, not a stale one.
+				expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+				expect(screen.queryByText("Stale")).toBeNull();
+			} else {
+				// A transient failure says nothing about authority, so the
+				// values stay and read as out of date.
+				expect(await screen.findAllByText("Stale")).not.toHaveLength(0);
+				expect(screen.getAllByText("37").length).toBeGreaterThan(0);
+			}
+		});
+	});
+
+	// The longer sequence, and the one that matters most: a refusal followed by
+	// an ordinary failure, with no authorized read in between. A snapshot that
+	// outlived the refusal would be eligible again at the next error, which
+	// hands those values straight back.
+	describe.each(["line", "area", "bar", "number", "table"] as const)(
+		"a refused %s widget",
+		(visualization) => {
+			const oneWidget: DataGraph = {
+				...graph,
+				dashboards: [
+					{
+						...graph.dashboards[0],
+						widgets: [{ ...graph.dashboards[0].widgets[0], visualization }],
+					},
+				],
+			};
+
+			it.each([
+				[
+					"a 503",
+					() => HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+				],
+				["a dropped connection", () => HttpResponse.error()],
+			])("does not resurrect its values on %s", async (_name, fail) => {
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({
+							buckets: [{ key: "2026-09-01", count: "37" }],
+						}),
+					),
+				);
+				const { client } = renderInApp(
+					<SolutionDashboards graph={oneWidget} solutionId="example" />,
+				);
+				expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+					),
+				);
+				await act(async () => {
+					await client.refetchQueries({ queryKey: ["solution-widget"] });
+					await settle();
+				});
+				expect(await screen.findByText("No access")).toBeTruthy();
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+
+				server.use(http.post(rpc("AuditService", "AggregateAuditLog"), fail));
+				await act(async () => {
+					await client.refetchQueries({ queryKey: ["solution-widget"] });
+					await settle();
+				});
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+			});
+		},
+	);
+
+	it("does not resurrect them once the caches have had time to expire", async () => {
+		// The shape this replaced marked the snapshot ineligible from a second
+		// cache entry, which had its own garbage-collection clock: five
+		// minutes later the mark was gone and the values were not, so a retry
+		// handed them back. Deleting the snapshot leaves nothing with a
+		// lifetime of its own to fall out of step.
 		server.use(
-			http.post(
-				rpc("AuditService", "AggregateAuditLog"),
-				async ({ request }) => {
-					const body = (await request.json()) as { eventType?: string };
-					const count = body.eventType === "review.passed.v1" ? "4" : "10";
-					return HttpResponse.json({
-						buckets: [{ key: "lifecycle", count }],
-					});
-				},
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
 			),
 		);
+		const { client } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
 
-		renderDashboards(rates);
-
-		// 4 passed of 10 completed.
-		expect(await within(tile("Pass rate")).findByText("40%")).toBeTruthy();
-		expect(
-			await within(tile("Completed per pass")).findByText(
-				(2.5).toLocaleString(),
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
 			),
-		).toBeTruthy();
-		expect(screen.queryByText("0.4")).toBeNull();
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		// Past the default five-minute gcTime, on the cache's own clock.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(300_001);
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
 	});
 
-	it("makes a chart or a bar list two rows tall, so two numbers stack beside it", () => {
-		renderDashboards();
+	it("does not resurrect them on a remount", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client, unmount } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
 
-		// A tile is its list item, the grid item the span applies to.
-		expect(tile("Logins over time").classList).toContain("row-span-2");
-		expect(tile("Top event types").classList).toContain("row-span-2");
-		expect(tile("Total logins").classList).not.toContain("row-span-2");
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		unmount();
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		renderInApp(
+			<SolutionDashboards graph={graph} solutionId="example" />,
+			client,
+		);
+		await act(async () => {
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
 	});
 
-	it("titles a number tile as the audit log labels its numbers, and a chart as a card", () => {
-		renderDashboards();
+	it("does not leave the same numbers behind under another graph revision", async () => {
+		// The graph is the last part of the query key, so a declaration that
+		// differs only in a dashboard title has its own cache entry holding
+		// the same numbers. A refusal has to reach every revision of them.
+		const renamed: DataGraph = {
+			...graph,
+			dashboards: [{ ...graph.dashboards[0], title: "Activity (renamed)" }],
+		};
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client, unmount } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+		unmount();
 
-		const title = (name: string) =>
-			tile(name).querySelector('[data-slot="card-title"]')?.classList;
-		// The size StatTile labels a headline number at, not muted.
-		expect(title("Total logins")).toContain("type-metric-label");
-		expect(title("Total logins")).not.toContain("text-muted-foreground");
-		expect(title("Logins over time")).not.toContain("type-metric-label");
+		// A second revision, cached under its own key.
+		const second = renderInApp(
+			<SolutionDashboards graph={renamed} solutionId="example" />,
+			client,
+		);
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+			await settle();
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+		second.unmount();
+
+		// Back to the first revision, whose refresh fails transiently.
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			),
+		);
+		renderInApp(
+			<SolutionDashboards graph={graph} solutionId="example" />,
+			client,
+		);
+		await act(async () => {
+			await settle();
+		});
+		expect(screen.queryAllByText("37")).toHaveLength(0);
+	});
+
+	it("lets a successful authorized read lift the refusal", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+			),
+		);
+		const { client } = renderDashboards();
+		expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+		});
+		expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+
+		// Authority restored: a read succeeds and the NEW values are drawn.
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "42" }] }),
+			),
+		);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["solution-widget"] });
+		});
+		expect(await screen.findAllByText("42")).not.toHaveLength(0);
+		expect(screen.queryByText("No access")).toBeNull();
+	});
+
+	// Everything above drives the refusal through a mounted component. These
+	// drive it where no mounted component can answer for it: the refusal is a
+	// property of the READ, and the read outlives whoever started it.
+	describe("a refusal with nobody watching it", () => {
+		// A handler that holds its request open until the test releases it, so a
+		// refusal can be in flight across an unmount or a change of dashboard.
+		function heldRefusal() {
+			let enter!: () => void;
+			let release!: () => void;
+			const entered = new Promise<void>((resolve) => {
+				enter = resolve;
+			});
+			const released = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), async () => {
+					enter();
+					await released;
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}),
+			);
+			return { entered, release };
+		}
+
+		it.each([
+			[
+				"a 503",
+				() => HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+			],
+			["a dropped connection", () => HttpResponse.error()],
+		])(
+			"deletes the values when it completes after the page is gone, then %s",
+			async (_name, fail) => {
+				server.use(
+					http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+						HttpResponse.json({
+							buckets: [{ key: "2026-09-01", count: "37" }],
+						}),
+					),
+				);
+				const { client, unmount } = renderDashboards();
+				expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+				const { entered, release } = heldRefusal();
+				const refusal = client.refetchQueries({
+					queryKey: ["solution-widget"],
+				});
+				await entered;
+				// The viewer leaves while the request is still open, so no effect
+				// of theirs is left to run when the answer comes back.
+				unmount();
+				release();
+				await refusal;
+
+				// A retry nobody is watching either. It must not hand the values
+				// back to the next mount.
+				server.use(http.post(rpc("AuditService", "AggregateAuditLog"), fail));
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+
+				renderInApp(
+					<SolutionDashboards graph={graph} solutionId="example" />,
+					client,
+				);
+				await act(async () => {
+					await settle();
+				});
+				expect(screen.queryAllByText("37")).toHaveLength(0);
+			},
+		);
+
+		it("deletes the revision on screen when it lands on the one the viewer left", async () => {
+			// The refusal is for the revision the viewer has navigated away from;
+			// the one mounted is another revision of the same widget, with its own
+			// cached values on screen. Both are this widget's source, and nothing
+			// in React connects the refused read to the component drawing them.
+			const renamed: DataGraph = {
+				...graph,
+				dashboards: [{ ...graph.dashboards[0], title: "Activity (renamed)" }],
+			};
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client, rerender } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			// The second revision reads its own values, under its own key.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "42" }] }),
+				),
+			);
+			rerender(<SolutionDashboards graph={renamed} solutionId="example" />);
+			expect(await screen.findAllByText("42")).not.toHaveLength(0);
+			rerender(<SolutionDashboards graph={graph} solutionId="example" />);
+			await act(async () => {
+				await settle();
+			});
+
+			const { entered, release } = heldRefusal();
+			const refusal = client.refetchQueries({
+				queryKey: ["solution-widget"],
+				type: "active",
+			});
+			await entered;
+
+			// Mid-refusal the viewer switches back, where the other revision's
+			// values are cached and its refresh fails transiently: 42, stale.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+				),
+			);
+			rerender(<SolutionDashboards graph={renamed} solutionId="example" />);
+			expect(await screen.findAllByText("Stale")).not.toHaveLength(0);
+			expect(screen.getAllByText("42").length).toBeGreaterThan(0);
+
+			await act(async () => {
+				release();
+				await refusal;
+				await settle();
+			});
+			expect(screen.queryAllByText("42")).toHaveLength(0);
+		});
+
+		it("asks once, rather than clearing its own error and asking again", async () => {
+			// Clearing the entry to drop its values restarts every active read of
+			// it, whose next answer is the same refusal: a standing 403 became an
+			// unbounded loop. Deleting the values touches neither the error nor
+			// the fetch, so the retry policy is the client's alone.
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [{ key: "2026-09-01", count: "37" }] }),
+				),
+			);
+			const { client } = renderDashboards();
+			expect(await screen.findAllByText("37")).not.toHaveLength(0);
+
+			let refusals = 0;
+			server.use(
+				http.post(rpc("AuditService", "AggregateAuditLog"), async () => {
+					refusals += 1;
+					// Answered a tick late, so the component sees the pending state
+					// in between — the window a self-restarting clear re-entered.
+					await new Promise((resolve) => setTimeout(resolve, 15));
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}),
+			);
+			await act(async () => {
+				await client.refetchQueries({ queryKey: ["solution-widget"] });
+			});
+			expect(await screen.findAllByText("No access")).not.toHaveLength(0);
+			for (let round = 0; round < 8; round += 1) {
+				await act(async () => {
+					await settle();
+				});
+			}
+			// Three widgets, one refresh, `retry: false` in tests.
+			expect(refusals).toBe(3);
+		});
 	});
 
 	it("reads as loading until the org context resolves, never as empty", () => {
@@ -522,31 +850,6 @@ describe("a viewer's layout", () => {
 		]);
 	});
 
-	it("reads the version-1 layout saved before sections, and saves version 2 on the next change", () => {
-		window.localStorage.setItem(
-			LAYOUT_KEY,
-			JSON.stringify({
-				version: 1,
-				tiles: ["w_stat", "w_line"],
-				seen: ["w_line", "w_bar", "w_stat"],
-			}),
-		);
-		renderDashboards();
-		// w_bar was removed then, and stays removed.
-		expect(tileTitles()).toEqual(["Total logins", "Logins over time"]);
-		fireEvent.click(
-			screen.getByRole("button", { name: "Remove Logins over time" }),
-		);
-		expect(
-			JSON.parse(window.localStorage.getItem(LAYOUT_KEY) ?? "null"),
-		).toEqual({
-			version: 2,
-			sections: [{ id: "", tiles: ["w_stat"] }],
-			seen: ["w_line", "w_bar", "w_stat"],
-			seenSections: [""],
-		});
-	});
-
 	it("ignores a stored tile the dashboard does not declare", () => {
 		window.localStorage.setItem(
 			LAYOUT_KEY,
@@ -654,24 +957,6 @@ describe("a viewer's layout", () => {
 			expect(tileTitles()).toEqual(DEFAULT_ORDER);
 			expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
 		});
-
-		it("draws a dashboard without sections as one untitled group, with one + and no slot", () => {
-			renderDashboards();
-			expect(screen.queryAllByRole("heading", { level: 3 })).toEqual([]);
-			expect(
-				screen.getAllByRole("button", { name: /^Add a widget back to / }),
-			).toEqual([
-				screen.getByRole("button", { name: "Add a widget back to Activity" }),
-			]);
-			const drop = drag("Logins over time", middle("Total logins"));
-			expect(screen.queryByText("Move here")).toBeNull();
-			drop();
-			expect(tileTitles()).toEqual([
-				"Total logins",
-				"Top event types",
-				"Logins over time",
-			]);
-		});
 	});
 
 	// happy-dom keeps focus on a node React moves, where a browser drops it, so
@@ -691,18 +976,6 @@ describe("a viewer's layout", () => {
 
 		fireEvent.keyDown(grip, { key: "ArrowUp" });
 		expect(tileTitles()).toEqual(DEFAULT_ORDER);
-	});
-
-	// A save pins the viewer to their own layout, so a key that moves nothing
-	// must not write one.
-	it("saves nothing when the arrow keys cannot move the tile", () => {
-		renderDashboards();
-		const grip = screen.getByRole("button", {
-			name: "Move Logins over time: drag the tile, or use the arrow keys",
-		});
-		fireEvent.keyDown(grip, { key: "ArrowUp" });
-		expect(tileTitles()).toEqual(DEFAULT_ORDER);
-		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
 	});
 
 	it("keeps each viewer's layout to themselves", () => {
@@ -737,914 +1010,5 @@ describe("a viewer's layout", () => {
 			screen.getByRole("button", { name: "Remove Logins over time" }),
 		);
 		expect(tileTitles()).toEqual(["Top event types", "Total logins"]);
-	});
-});
-
-describe("what a + menu says about a removed widget", () => {
-	type Buckets = Array<{ key: string; count: string }>;
-	const DAYS: Buckets = [
-		{ key: "2026-08-01", count: "3" },
-		{ key: "2026-08-02", count: "5" },
-	];
-
-	// Answers each widget's query with the rows `rows` gives for its request,
-	// or a 500 for "fail", and counts the queries by what they group by.
-	function auditTrail(
-		rows: (request: {
-			groupBy?: string;
-			eventType?: string;
-		}) => Buckets | "fail" | Promise<Buckets>,
-	) {
-		const asked: Record<string, number> = {};
-		server.use(
-			http.post(
-				rpc("AuditService", "AggregateAuditLog"),
-				async ({ request }) => {
-					const body = (await request.json()) as {
-						groupBy?: string;
-						eventType?: string;
-					};
-					const groupBy = body.groupBy ?? "";
-					asked[groupBy] = (asked[groupBy] ?? 0) + 1;
-					const buckets = await rows(body);
-					return buckets === "fail"
-						? new HttpResponse(null, { status: 500 })
-						: HttpResponse.json({ buckets });
-				},
-			),
-		);
-		return asked;
-	}
-
-	// A layout the viewer saved with only these tiles shown: the others were
-	// removed before this page drew them, so nothing has asked about them yet.
-	function showOnly(tiles: string[], dashboard = graph.dashboards[0]) {
-		window.localStorage.setItem(
-			LAYOUT_KEY,
-			JSON.stringify({
-				version: 2,
-				sections: [{ id: "", tiles }],
-				seen: dashboard.widgets.map((widget) => widget.id),
-				seenSections: [""],
-			}),
-		);
-	}
-
-	// The page, with the query client in reach, so a test can wait until
-	// every answer is in.
-	function renderWatched() {
-		const client = new QueryClient({
-			defaultOptions: { queries: { retry: false } },
-		});
-		render(
-			<QueryClientProvider client={client}>
-				<SolutionDashboards graph={graph} solutionId="example" />
-			</QueryClientProvider>,
-		);
-		return client;
-	}
-
-	const openMenu = () =>
-		fireEvent.click(
-			screen.getByRole("button", { name: "Add a widget back to Activity" }),
-		);
-
-	// An item that says nothing beside its title.
-	const expectBare = (item: HTMLElement, title: string) => {
-		expect(item.textContent).toBe(title);
-		expect(item.hasAttribute("aria-describedby")).toBe(false);
-	};
-
-	it("says No data yet. beside a removed widget whose metric returned no rows, and it can still be added", async () => {
-		auditTrail(({ groupBy }) => (groupBy === "event_type" ? [] : DAYS));
-		showOnly(["w_line", "w_stat"]);
-		renderDashboards();
-		openMenu();
-		const item = await screen.findByRole("menuitem", {
-			name: "Top event types",
-			description: "No data yet.",
-		});
-		expect(item.textContent).toBe("Top event typesNo data yet.");
-
-		// The tile it adds back draws at once, from the answer the menu got.
-		fireEvent.click(item);
-		const added = tile("Top event types");
-		expect(within(added).getByText("No data yet.")).toBeTruthy();
-		expect(added.querySelector('[data-slot="skeleton"]')).toBeNull();
-	});
-
-	it("says telemetry is incomplete beside a removed derived widget missing an input", async () => {
-		const derived: DataGraph = {
-			events: [
-				{ name: "login", type: "auth.login.v1" },
-				{ name: "logout", type: "auth.logout.v1" },
-			],
-			metrics: [
-				{
-					id: "logins",
-					kind: "source",
-					filter: { event: "login" },
-					groupBy: "time",
-					bucket: "day",
-					aggregation: "count",
-				},
-				{
-					id: "logouts",
-					kind: "source",
-					filter: { event: "logout" },
-					groupBy: "time",
-					bucket: "day",
-					aggregation: "count",
-				},
-				{
-					id: "net_logins",
-					kind: "derived",
-					operation: "difference",
-					inputs: ["logins", "logouts"],
-				},
-			],
-			dashboards: [
-				{
-					id: "activity",
-					title: "Activity",
-					layout: "grid",
-					widgets: [
-						{
-							id: "w_logins",
-							metric: "logins",
-							visualization: "line",
-							title: "Logins",
-						},
-						{
-							id: "w_net",
-							metric: "net_logins",
-							visualization: "number",
-							title: "Net logins",
-						},
-					],
-				},
-			],
-		};
-		// Logins were recorded and no logout ever was, so every day lacks one
-		// of the two inputs.
-		auditTrail(({ eventType }) => (eventType === "auth.logout.v1" ? [] : DAYS));
-		showOnly(["w_logins"], derived.dashboards[0]);
-		renderDashboards(derived);
-		openMenu();
-		const item = await screen.findByRole("menuitem", {
-			name: "Net logins",
-			description: "Telemetry incomplete.",
-		});
-
-		// The tile says the same, in its own words.
-		fireEvent.click(item);
-		expect(
-			within(tile("Net logins")).getByText(
-				"Telemetry unavailable or incomplete.",
-			),
-		).toBeTruthy();
-	});
-
-	it("says nothing beside a removed widget that has data", async () => {
-		auditTrail(({ groupBy }) =>
-			groupBy === "event_type" ? [{ key: "saas.auth.login", count: "42" }] : [],
-		);
-		showOnly(["w_stat"]);
-		const client = renderWatched();
-		openMenu();
-		// The removed widget with no rows says so: the menu has its answers.
-		await screen.findByRole("menuitem", {
-			name: "Logins over time",
-			description: "No data yet.",
-		});
-		await waitFor(() => expect(client.isFetching()).toBe(0));
-		expectBare(
-			screen.getByRole("menuitem", { name: "Top event types" }),
-			"Top event types",
-		);
-	});
-
-	it("says nothing while the answer is on its way, and draws no spinner", async () => {
-		let answer: (rows: Buckets) => void = () => {};
-		const pending = new Promise<Buckets>((resolve) => {
-			answer = resolve;
-		});
-		const asked = auditTrail(({ groupBy }) =>
-			groupBy === "event_type" ? pending : DAYS,
-		);
-		showOnly(["w_line", "w_stat"]);
-		renderDashboards();
-		openMenu();
-		await waitFor(() => expect(asked.event_type).toBe(1));
-		expectBare(
-			screen.getByRole("menuitem", { name: "Top event types" }),
-			"Top event types",
-		);
-		expect(
-			screen
-				.getByRole("menu")
-				.querySelector(
-					'[data-slot="skeleton"], [aria-busy], [role="progressbar"], [role="status"]',
-				),
-		).toBeNull();
-
-		// Once the answer is in, the item says what it is.
-		await act(async () => answer([]));
-		expect(
-			await screen.findByRole("menuitem", {
-				name: "Top event types",
-				description: "No data yet.",
-			}),
-		).toBeTruthy();
-	});
-
-	it("says nothing when a removed widget's query fails, rather than no data", async () => {
-		auditTrail(({ groupBy }) => (groupBy === "event_type" ? "fail" : []));
-		showOnly(["w_stat"]);
-		const client = renderWatched();
-		openMenu();
-		await screen.findByRole("menuitem", {
-			name: "Logins over time",
-			description: "No data yet.",
-		});
-		await waitFor(() => expect(client.isFetching()).toBe(0));
-		expect(
-			client
-				.getQueryCache()
-				.getAll()
-				.filter((query) => query.state.status === "error"),
-		).toHaveLength(1);
-		expectBare(
-			screen.getByRole("menuitem", { name: "Top event types" }),
-			"Top event types",
-		);
-	});
-
-	it("asks nothing about a removed widget until a menu opens", async () => {
-		const asked = auditTrail(({ groupBy }) =>
-			groupBy === "event_type"
-				? [{ key: "saas.auth.login", count: "42" }]
-				: DAYS,
-		);
-		showOnly(["w_line", "w_stat"]);
-		renderDashboards();
-		// Both drawn tiles have their answers; the removed one was not asked.
-		await screen.findByText("8");
-		await waitFor(() => expect(asked).toEqual({ time: 2 }));
-
-		openMenu();
-		await waitFor(() => expect(asked).toEqual({ time: 2, event_type: 1 }));
-	});
-});
-
-describe("a dashboard in sections", () => {
-	// The acceptance graph with its dashboard split into an overview band (the
-	// total) above a trends band (the two charts).
-	const sectioned: DataGraph = {
-		...graph,
-		dashboards: [
-			{
-				...graph.dashboards[0],
-				sections: [
-					{
-						id: "overview",
-						title: "Overview",
-						description:
-							"The headline read: how much the application was used.",
-					},
-					{ id: "trends", title: "Trends" },
-				],
-				widgets: graph.dashboards[0].widgets.map((widget) => ({
-					...widget,
-					section: widget.id === "w_stat" ? "overview" : "trends",
-				})),
-			},
-		],
-	};
-
-	beforeEach(() => {
-		server.use(
-			aggregateHandler(
-				[
-					{ key: "2026-08-01", count: "3" },
-					{ key: "2026-08-02", count: "5" },
-				],
-				[{ key: "saas.auth.login", count: "42" }],
-			),
-		);
-	});
-
-	// The heading of each section, in the order they are drawn.
-	const sectionTitles = () =>
-		screen
-			.queryAllByRole("heading", { level: 3 })
-			.map((heading) => heading.textContent);
-	const section = (title: string) => {
-		const found = screen
-			.getByRole("heading", { level: 3, name: title })
-			.closest<HTMLElement>("[data-sortable-group]");
-		if (!found) throw new Error(`no section titled ${title}`);
-		return found;
-	};
-	// The tile titles in one section, in order.
-	const tilesIn = (title: string) =>
-		[...section(title).querySelectorAll("[data-sortable-id]")].map(
-			(item) =>
-				item.querySelector('[data-slot="card-title"]')?.textContent ?? "",
-		);
-	const arrangement = () =>
-		Object.fromEntries(sectionTitles().map((title) => [title, tilesIn(title)]));
-	const saved = () =>
-		JSON.parse(window.localStorage.getItem(LAYOUT_KEY) ?? "null")?.sections;
-
-	it("draws each section in declared order, under its title and description", () => {
-		renderDashboards(sectioned);
-		expect(sectionTitles()).toEqual(["Overview", "Trends"]);
-		expect(
-			within(section("Overview")).getByText(
-				"The headline read: how much the application was used.",
-			),
-		).toBeTruthy();
-		expect(arrangement()).toEqual({
-			Overview: ["Total logins"],
-			Trends: ["Logins over time", "Top event types"],
-		});
-		// Each section has its own +; the dashboard's header has none.
-		expect(
-			screen
-				.getAllByRole("button", { name: /^Add a widget back to / })
-				.map((button) => button.getAttribute("aria-label")),
-		).toEqual(["Add a widget back to Overview", "Add a widget back to Trends"]);
-	});
-
-	it("puts a removed widget back from a section's + into that section, and offers no undrawn metric", async () => {
-		renderDashboards(sectioned);
-		fireEvent.click(
-			screen.getByRole("button", { name: "Remove Top event types" }),
-		);
-		fireEvent.click(
-			screen.getByRole("button", { name: "Add a widget back to Overview" }),
-		);
-		// "Logins by category" is declared in the graph but drawn by no widget:
-		// no section's + offers it (ADR 0007).
-		const items = await screen.findAllByRole("menuitem");
-		expect(items.map((item) => item.textContent)).toEqual(["Top event types"]);
-		fireEvent.click(screen.getByRole("menuitem", { name: "Top event types" }));
-		expect(arrangement()).toEqual({
-			Overview: ["Total logins", "Top event types"],
-			Trends: ["Logins over time"],
-		});
-		expect(saved()).toEqual([
-			{ id: "overview", tiles: ["w_stat", "w_bar"] },
-			{ id: "trends", tiles: ["w_line"] },
-		]);
-		// Every widget is back, so another section's + has nothing to offer.
-		fireEvent.click(
-			screen.getByRole("button", { name: "Add a widget back to Trends" }),
-		);
-		const none = await screen.findByRole("menuitem", {
-			name: "Every widget is on this dashboard",
-		});
-		expect(none.getAttribute("aria-disabled")).toBe("true");
-	});
-
-	it("says a section is empty, and moves a tile across sections with the arrow keys", () => {
-		renderDashboards(sectioned);
-		const grip = () =>
-			screen.getByRole("button", {
-				name: "Move Total logins: drag the tile, or use the arrow keys",
-			});
-		grip().focus();
-		// The only tile of the first section moves down into the next, first.
-		fireEvent.keyDown(grip(), { key: "ArrowDown" });
-		expect(arrangement()).toEqual({
-			Overview: [],
-			Trends: ["Total logins", "Logins over time", "Top event types"],
-		});
-		expect(
-			within(section("Overview")).getByText(/No widgets in this section/),
-		).toBeTruthy();
-		// The tile is drawn anew in its new section; its grip keeps the focus.
-		expect(document.activeElement).toBe(grip());
-
-		fireEvent.keyDown(grip(), { key: "ArrowUp" });
-		expect(arrangement()).toEqual({
-			Overview: ["Total logins"],
-			Trends: ["Logins over time", "Top event types"],
-		});
-		expect(document.activeElement).toBe(grip());
-	});
-
-	it("says where the arrow keys moved a tile into another section", () => {
-		renderDashboards(sectioned);
-		const grip = () =>
-			screen.getByRole("button", {
-				name: "Move Total logins: drag the tile, or use the arrow keys",
-			});
-		fireEvent.keyDown(grip(), { key: "ArrowDown" });
-		expect(
-			screen.getByText("Total logins moved to the start of Trends."),
-		).toBeTruthy();
-
-		fireEvent.keyDown(grip(), { key: "ArrowUp" });
-		expect(
-			screen.getByText("Total logins moved to the end of Overview."),
-		).toBeTruthy();
-	});
-
-	it("reads a layout saved before sections, each tile in its declared section", () => {
-		window.localStorage.setItem(
-			LAYOUT_KEY,
-			JSON.stringify({
-				version: 1,
-				tiles: ["w_bar", "w_stat", "metric:logins_by_category", "w_line"],
-				seen: ["w_line", "w_bar", "w_stat"],
-			}),
-		);
-		renderDashboards(sectioned);
-		// A tile the dashboard does not draw is dropped, whatever it was.
-		expect(arrangement()).toEqual({
-			Overview: ["Total logins"],
-			Trends: ["Top event types", "Logins over time"],
-		});
-	});
-
-	it("appends a widget the solution declared after the save to its section", () => {
-		window.localStorage.setItem(
-			LAYOUT_KEY,
-			JSON.stringify({
-				version: 2,
-				sections: [
-					{ id: "overview", tiles: ["w_stat"] },
-					{ id: "trends", tiles: ["w_line"] },
-				],
-				seen: ["w_line", "w_stat"],
-				seenSections: ["overview", "trends"],
-			}),
-		);
-		renderDashboards(sectioned);
-		expect(arrangement()).toEqual({
-			Overview: ["Total logins"],
-			Trends: ["Logins over time", "Top event types"],
-		});
-	});
-
-	describe("dragging", () => {
-		// happy-dom lays nothing out, so each tile (and each slot) gets a cell by
-		// its place in its section: two columns of 100×100 cells, 10px apart,
-		// each section a band 1000px below the one before.
-		const realRect = HTMLElement.prototype.getBoundingClientRect;
-		beforeEach(() => {
-			HTMLElement.prototype.getBoundingClientRect = function (
-				this: HTMLElement,
-			) {
-				const list = this.parentElement;
-				const group = list?.parentElement;
-				const placed =
-					this.tagName === "LI" && group?.dataset.sortableGroup !== undefined;
-				const index = placed ? [...(list?.children ?? [])].indexOf(this) : 0;
-				const band =
-					placed && group?.parentElement
-						? [...group.parentElement.children].indexOf(group)
-						: 0;
-				const left = (index % 2) * 110;
-				const top = Math.floor(index / 2) * 110 + band * 1000;
-				return {
-					x: left,
-					y: top,
-					left,
-					top,
-					right: left + 100,
-					bottom: top + 100,
-					width: 100,
-					height: 100,
-					toJSON: () => ({}),
-				} as DOMRect;
-			};
-		});
-		afterEach(async () => {
-			HTMLElement.prototype.getBoundingClientRect = realRect;
-			// dnd-kit keeps swallowing clicks for 50ms after a drag ends.
-			await new Promise((resolve) => setTimeout(resolve, 60));
-		});
-
-		it("swaps a tile dropped on a tile in another section, and saves both sections", () => {
-			const { unmount } = renderDashboards(sectioned);
-			const drag = pickUp(tile("Total logins"));
-			drag.moveTo(tile("Top event types"));
-			expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
-			drag.drop();
-			const swapped = {
-				Overview: ["Top event types"],
-				Trends: ["Logins over time", "Total logins"],
-			};
-			expect(arrangement()).toEqual(swapped);
-			expect(saved()).toEqual([
-				{ id: "overview", tiles: ["w_bar"] },
-				{ id: "trends", tiles: ["w_line", "w_stat"] },
-			]);
-
-			unmount();
-			renderDashboards(sectioned);
-			expect(arrangement()).toEqual(swapped);
-		});
-
-		it("moves a tile dropped on a section's slot to the end of that section, and saves it", () => {
-			const { unmount } = renderDashboards(sectioned);
-			expect(screen.queryByText("Move here")).toBeNull();
-			const drag = pickUp(tile("Logins over time"));
-			// Every section ends with a slot while the drag is in flight.
-			expect(within(section("Overview")).getByText("Move here")).toBeTruthy();
-			expect(within(section("Trends")).getByText("Move here")).toBeTruthy();
-			drag.moveTo(within(section("Overview")).getByText("Move here"));
-			drag.drop();
-			expect(screen.queryByText("Move here")).toBeNull();
-			const moved = {
-				Overview: ["Total logins", "Logins over time"],
-				Trends: ["Top event types"],
-			};
-			expect(arrangement()).toEqual(moved);
-			expect(saved()).toEqual([
-				{ id: "overview", tiles: ["w_stat", "w_line"] },
-				{ id: "trends", tiles: ["w_bar"] },
-			]);
-
-			unmount();
-			renderDashboards(sectioned);
-			expect(arrangement()).toEqual(moved);
-		});
-	});
-
-	describe("a viewer's own sections", () => {
-		const options = (title: string) =>
-			screen.getByRole("button", { name: `Section options for ${title}` });
-		const choose = async (title: string, item: string) => {
-			fireEvent.click(options(title));
-			fireEvent.click(await screen.findByRole("menuitem", { name: item }));
-		};
-		const titleField = () =>
-			screen.getByRole<HTMLInputElement>("textbox", { name: "Section title" });
-		const type = (value: string) =>
-			fireEvent.change(titleField(), { target: { value } });
-
-		it("renames a section from its options: Enter keeps the title, the description stays", async () => {
-			const { unmount } = renderDashboards(sectioned);
-			await choose("Overview", "Rename section");
-			// The field holds the title, focused and selected, and keeps the
-			// focus once the menu has closed and settled: a menu hands the focus
-			// back to its trigger a moment after it is gone.
-			await vi.waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-			await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-			const field = titleField();
-			expect(field.value).toBe("Overview");
-			expect(document.activeElement).toBe(field);
-			expect([field.selectionStart, field.selectionEnd]).toEqual([0, 8]);
-
-			type("  Headlines  ");
-			fireEvent.keyDown(titleField(), { key: "Enter" });
-			expect(sectionTitles()).toEqual(["Headlines", "Trends"]);
-			expect(
-				within(section("Headlines")).getByText(
-					"The headline read: how much the application was used.",
-				),
-			).toBeTruthy();
-			expect(screen.getByText("Renamed Overview to Headlines.")).toBeTruthy();
-			expect(document.activeElement).toBe(options("Headlines"));
-			expect(saved()[0]).toEqual({
-				id: "overview",
-				title: "Headlines",
-				tiles: ["w_stat"],
-			});
-
-			unmount();
-			renderDashboards(sectioned);
-			expect(sectionTitles()).toEqual(["Headlines", "Trends"]);
-		});
-
-		it("renames a section from its title, which starts no drag", () => {
-			renderDashboards(sectioned);
-			const title = screen.getByRole("button", {
-				name: "Rename section Trends",
-			});
-			// The heading is named by the title alone.
-			expect(title.closest("h3")).toBe(section("Trends").querySelector("h3"));
-			const { left, top } = title.getBoundingClientRect();
-			fireEvent.mouseDown(title, { clientX: left, clientY: top, button: 0 });
-			fireEvent.mouseMove(document, { clientX: left + 40, clientY: top + 40 });
-			fireEvent.mouseUp(document, { clientX: left + 40, clientY: top + 40 });
-			expect(section("Trends").dataset.dragging).toBeUndefined();
-
-			fireEvent.click(title);
-			const field = titleField();
-			expect(field.value).toBe("Trends");
-			expect(document.activeElement).toBe(field);
-			type("Changes");
-			fireEvent.keyDown(titleField(), { key: "Enter" });
-			expect(sectionTitles()).toEqual(["Overview", "Changes"]);
-			expect(document.activeElement).toBe(
-				screen.getByRole("button", { name: "Rename section Changes" }),
-			);
-		});
-
-		it("keeps the title on Escape, or when the field is left blank", async () => {
-			renderDashboards(sectioned);
-			await choose("Trends", "Rename section");
-			type("Changes");
-			fireEvent.keyDown(titleField(), { key: "Escape" });
-			expect(sectionTitles()).toEqual(["Overview", "Trends"]);
-			expect(document.activeElement).toBe(options("Trends"));
-
-			await choose("Trends", "Rename section");
-			type("   ");
-			fireEvent.keyDown(titleField(), { key: "Enter" });
-			expect(sectionTitles()).toEqual(["Overview", "Trends"]);
-			// Nothing changed, so nothing was saved.
-			expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
-		});
-
-		it("keeps what was typed when the viewer leaves the field", async () => {
-			renderDashboards(sectioned);
-			await choose("Trends", "Rename section");
-			type("Changes");
-			fireEvent.blur(titleField());
-			expect(sectionTitles()).toEqual(["Overview", "Changes"]);
-		});
-
-		it("adds a section after the last, straight into renaming it, and keeps it", async () => {
-			const { unmount } = renderDashboards(sectioned);
-			fireEvent.click(screen.getByRole("button", { name: "Add section" }));
-			expect(screen.getByText("Added a section at the end.")).toBeTruthy();
-			const field = titleField();
-			expect(field.value).toBe("New section");
-			expect(document.activeElement).toBe(field);
-			type("Watch list");
-			fireEvent.keyDown(titleField(), { key: "Enter" });
-
-			expect(arrangement()).toEqual({
-				Overview: ["Total logins"],
-				Trends: ["Logins over time", "Top event types"],
-				"Watch list": [],
-			});
-			// A section of the viewer's own says what it is for only when empty.
-			expect(
-				within(section("Watch list")).getByText(/No widgets in this section/),
-			).toBeTruthy();
-			expect(saved()[2]).toMatchObject({ title: "Watch list", tiles: [] });
-			expect(saved()[2].id).toMatch(/^custom:[0-9a-f]{16}$/);
-
-			// It adds nothing: its + offers only a widget the viewer removed.
-			fireEvent.click(
-				screen.getByRole("button", { name: "Remove Top event types" }),
-			);
-			fireEvent.click(
-				screen.getByRole("button", { name: "Add a widget back to Watch list" }),
-			);
-			const items = await screen.findAllByRole("menuitem");
-			expect(items.map((item) => item.textContent)).toEqual([
-				"Top event types",
-			]);
-			fireEvent.click(
-				screen.getByRole("menuitem", { name: "Top event types" }),
-			);
-			unmount();
-			renderDashboards(sectioned);
-			expect(arrangement()).toEqual({
-				Overview: ["Total logins"],
-				Trends: ["Logins over time"],
-				"Watch list": ["Top event types"],
-			});
-		});
-
-		it("removes a section, moving its tiles to the section beside it, and keeps it removed", async () => {
-			const { unmount } = renderDashboards(sectioned);
-			// The first section's tiles go to the start of the one below.
-			await choose("Overview", "Remove section");
-			expect(arrangement()).toEqual({
-				Trends: ["Total logins", "Logins over time", "Top event types"],
-			});
-			expect(
-				screen.getByText("Removed Overview; its widgets moved to Trends."),
-			).toBeTruthy();
-			await vi.waitFor(() =>
-				expect(document.activeElement).toBe(options("Trends")),
-			);
-
-			// The last section left cannot be removed.
-			fireEvent.click(options("Trends"));
-			const item = await screen.findByRole("menuitem", {
-				name: "Remove section",
-			});
-			expect(item.getAttribute("aria-disabled")).toBe("true");
-
-			unmount();
-			renderDashboards(sectioned);
-			expect(arrangement()).toEqual({
-				Trends: ["Total logins", "Logins over time", "Top event types"],
-			});
-		});
-
-		it("moves a section with the arrow keys on its grip, and keeps the order", () => {
-			const { unmount } = renderDashboards(sectioned);
-			const grip = () =>
-				screen.getByRole("button", {
-					name: "Move Trends: drag the section, or use the arrow keys",
-				});
-			grip().focus();
-			fireEvent.keyDown(grip(), { key: "ArrowUp" });
-			expect(sectionTitles()).toEqual(["Trends", "Overview"]);
-			expect(arrangement()).toEqual({
-				Trends: ["Logins over time", "Top event types"],
-				Overview: ["Total logins"],
-			});
-			expect(screen.getByText("Trends moved above Overview.")).toBeTruthy();
-			expect(document.activeElement).toBe(grip());
-			// Already first: it stays.
-			fireEvent.keyDown(grip(), { key: "ArrowUp" });
-			expect(sectionTitles()).toEqual(["Trends", "Overview"]);
-
-			unmount();
-			renderDashboards(sectioned);
-			expect(sectionTitles()).toEqual(["Trends", "Overview"]);
-			fireEvent.keyDown(grip(), { key: "ArrowDown" });
-			expect(sectionTitles()).toEqual(["Overview", "Trends"]);
-		});
-
-		it("adds sections after the untitled group of a dashboard without sections, which has no options", async () => {
-			renderDashboards();
-			expect(
-				screen.queryByRole("button", { name: /^Section options for / }),
-			).toBeNull();
-			fireEvent.click(screen.getByRole("button", { name: "Add section" }));
-			type("Mine");
-			fireEvent.keyDown(titleField(), { key: "Enter" });
-			// The untitled group keeps its tiles, above; the dashboard's own +
-			// still adds to it, and the new section has its own.
-			expect(sectionTitles()).toEqual(["Mine"]);
-			expect(tileTitles()).toEqual(DEFAULT_ORDER);
-			expect(
-				screen
-					.getAllByRole("button", { name: /^Add a widget back to / })
-					.map((button) => button.getAttribute("aria-label")),
-			).toEqual(["Add a widget back to Activity", "Add a widget back to Mine"]);
-			// Only the viewer's section can move or be renamed.
-			expect(
-				screen.getAllByRole("button", { name: /drag the section/ }),
-			).toHaveLength(1);
-
-			const grip = screen.getByRole("button", {
-				name: "Move Total logins: drag the tile, or use the arrow keys",
-			});
-			grip.focus();
-			fireEvent.keyDown(grip, { key: "ArrowDown" });
-			expect(tilesIn("Mine")).toEqual(["Total logins"]);
-			// Removed, its tiles go back up to the untitled group.
-			await choose("Mine", "Remove section");
-			expect(sectionTitles()).toEqual([]);
-			expect(tileTitles()).toEqual(DEFAULT_ORDER);
-		});
-
-		describe("dragging", () => {
-			// happy-dom lays nothing out, so the sections start TOP down the page,
-			// under the dashboard's own header; each is a band 1000px below the
-			// one before, 900px tall with a 60px header at its top, and its tiles
-			// (and slot) two columns of 100×100 cells under the header.
-			const TOP = 200;
-			const realRect = HTMLElement.prototype.getBoundingClientRect;
-			const bandOf = (element: Element | null | undefined) =>
-				element?.parentElement
-					? [...element.parentElement.children].indexOf(element)
-					: 0;
-			beforeEach(() => {
-				HTMLElement.prototype.getBoundingClientRect = function (
-					this: HTMLElement,
-				) {
-					let rect = { left: 0, top: 0, right: 100, bottom: 100 };
-					const list = this.parentElement;
-					if (this.dataset.sortableGroup !== undefined) {
-						const top = TOP + bandOf(this) * 1000;
-						rect = { left: 0, top, right: 400, bottom: top + 900 };
-					} else if (this.dataset.sortableGroupHeader !== undefined) {
-						const top = TOP + bandOf(this.parentElement) * 1000;
-						rect = { left: 0, top, right: 400, bottom: top + 60 };
-					} else if (
-						this.tagName === "LI" &&
-						list?.parentElement?.dataset.sortableGroup !== undefined
-					) {
-						const index = [...list.children].indexOf(this);
-						const left = (index % 2) * 110;
-						const top =
-							TOP +
-							bandOf(list.parentElement) * 1000 +
-							100 +
-							Math.floor(index / 2) * 110;
-						rect = { left, top, right: left + 100, bottom: top + 100 };
-					}
-					return {
-						...rect,
-						x: rect.left,
-						y: rect.top,
-						width: rect.right - rect.left,
-						height: rect.bottom - rect.top,
-						toJSON: () => ({}),
-					} as DOMRect;
-				};
-			});
-			afterEach(async () => {
-				HTMLElement.prototype.getBoundingClientRect = realRect;
-				// dnd-kit keeps swallowing clicks for 50ms after a drag ends.
-				await new Promise((resolve) => setTimeout(resolve, 60));
-			});
-
-			// A section picked up by its grip and aimed at a height from the top of
-			// the sections (negative is above them).
-			function pickUpSection(title: string) {
-				const grip = screen.getByRole("button", {
-					name: `Move ${title}: drag the section, or use the arrow keys`,
-				});
-				const band = bandOf(grip.closest("[data-sortable-group]"));
-				let at = { clientX: 20, clientY: TOP + band * 1000 + 20 };
-				fireEvent.mouseDown(grip, { ...at, button: 0 });
-				fireEvent.mouseMove(document, { ...at, clientY: at.clientY + 10 });
-				return {
-					moveTo(height: number) {
-						const clientY = TOP + height;
-						fireEvent.mouseMove(document, {
-							clientX: at.clientX,
-							clientY: (at.clientY + clientY) / 2,
-						});
-						at = { clientX: at.clientX, clientY };
-						fireEvent.mouseMove(document, at);
-					},
-					drop: () => fireEvent.mouseUp(document, at),
-				};
-			}
-
-			it("puts a section dropped on the top half of another above it, and keeps the order", () => {
-				const { unmount } = renderDashboards(sectioned);
-				const drag = pickUpSection("Trends");
-				// No slot while a section is dragged; nothing moves until the drop.
-				expect(screen.queryByText("Move here")).toBeNull();
-				drag.moveTo(200);
-				expect(sectionTitles()).toEqual(["Overview", "Trends"]);
-				expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
-				drag.drop();
-				const moved = {
-					Trends: ["Logins over time", "Top event types"],
-					Overview: ["Total logins"],
-				};
-				expect(arrangement()).toEqual(moved);
-				expect(saved().map((s: { id: string }) => s.id)).toEqual([
-					"trends",
-					"overview",
-				]);
-
-				unmount();
-				renderDashboards(sectioned);
-				expect(arrangement()).toEqual(moved);
-			});
-
-			it("puts a section dropped above the first one, over the dashboard's header, first", () => {
-				renderDashboards(sectioned);
-				const drag = pickUpSection("Trends");
-				drag.moveTo(-120);
-				drag.drop();
-				expect(sectionTitles()).toEqual(["Trends", "Overview"]);
-			});
-
-			it("puts a section dropped on the bottom half of another below it", () => {
-				renderDashboards(sectioned);
-				fireEvent.click(screen.getByRole("button", { name: "Add section" }));
-				fireEvent.keyDown(titleField(), { key: "Enter" });
-				expect(sectionTitles()).toEqual(["Overview", "Trends", "New section"]);
-				const drag = pickUpSection("Overview");
-				drag.moveTo(1000 + 700);
-				drag.drop();
-				expect(sectionTitles()).toEqual(["Trends", "Overview", "New section"]);
-			});
-
-			it("moves a tile dropped on a new section's slot into it, and still swaps tiles", () => {
-				renderDashboards(sectioned);
-				fireEvent.click(screen.getByRole("button", { name: "Add section" }));
-				type("Mine");
-				fireEvent.keyDown(titleField(), { key: "Enter" });
-				const drag = pickUp(tile("Top event types"));
-				drag.moveTo(within(section("Mine")).getByText("Move here"));
-				drag.drop();
-				expect(arrangement()).toEqual({
-					Overview: ["Total logins"],
-					Trends: ["Logins over time"],
-					Mine: ["Top event types"],
-				});
-
-				const swap = pickUp(tile("Total logins"));
-				swap.moveTo(tile("Top event types"));
-				swap.drop();
-				expect(arrangement()).toEqual({
-					Overview: ["Top event types"],
-					Trends: ["Logins over time"],
-					Mine: ["Total logins"],
-				});
-			});
-		});
 	});
 });

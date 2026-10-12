@@ -70,6 +70,13 @@ func (s *PrincipalServer) CreateAgentPrincipal(ctx context.Context, req *gen.Cre
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
+	// A principal is a credential-bearing actor, so minting one is a
+	// privilege-granting mutation (SP-IDENT-10). The factor check runs AFTER the
+	// authorization guard and BEFORE the mutation: a factor check the write has
+	// already passed is not a check.
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	p, err := service.CreateAgentPrincipal(ctx, business.CreateAgentRequest{
 		OrgID:           req.GetOrgId(),
 		AgentIdentifier: req.GetAgentIdentifier(),
@@ -134,22 +141,28 @@ func (s *PrincipalServer) RevokePrincipal(ctx context.Context, req *gen.RevokePr
 	}
 	// Humans (org_id NULL) only revocable by platform admin; agents
 	// + services revocable by their org's admins.
+	//
+	// actorID is resolved once, before the branch, so the factor check below cannot
+	// be reached on a path that did not establish an actor: it was declared inside
+	// each branch, which is how a gate comes to be added to one branch and not the
+	// other.
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if p.OrgID == "" {
-		actorID, authErr := requireAuth(ctx)
-		if authErr != nil {
-			return nil, authErr
-		}
 		if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
 			return nil, paErr
 		}
 	} else {
-		actorID, authErr := requireAuth(ctx)
-		if authErr != nil {
-			return nil, authErr
+		if orgErr := requireOrgAdmin(ctx, actorID, p.OrgID); orgErr != nil {
+			return nil, orgErr
 		}
-		if err := requireOrgAdmin(ctx, actorID, p.OrgID); err != nil {
-			return nil, err
-		}
+	}
+	// Revoking a principal is a platform-security mutation, and it is irreversible
+	// where Disable is not. Same placement rule: after the guard, before the write.
+	if mfaErr := requireMFA(ctx, actorID); mfaErr != nil {
+		return nil, mfaErr
 	}
 	if err := service.RevokePrincipal(ctx, req.GetId(), req.GetReason()); err != nil {
 		return nil, mapPrincipalError(err)
@@ -297,19 +310,6 @@ func (s *PermServer) Decide(ctx context.Context, req *gen.DecideRequest) (*gen.D
 
 // principalToProto converts the business Principal into the wire form.
 // Centralized so display-name / org_id encoding stays consistent.
-//
-// Not every principal this projects is a `principals` row, which the proto's own
-// comment on the message still describes as a 1:1 mirror. ListPrincipals also
-// names the composed modules declared in MODULE_PRINCIPALS: derived service
-// principals that act in the organization and are the actor of the audit rows
-// they record, with no row behind them. Such an entry has no creation time —
-// left unset below rather than reported as the year 1 — and GetPrincipal,
-// RevokePrincipal, DisableAgentPrincipal and EnableAgentPrincipal all resolve
-// through the store, so they answer NotFound for it. That is the fail-closed
-// answer and must stay that way: its authority comes from the deployment
-// declaration, not from a row, so a revoke that appeared to succeed would leave
-// the module holding every capability it had. Removing its authority means
-// changing MODULE_PRINCIPALS.
 func principalToProto(p *business.Principal) *gen.Principal {
 	if p == nil {
 		return nil
@@ -326,8 +326,7 @@ func principalToProto(p *business.Principal) *gen.Principal {
 		AllowedScopes:    p.AllowedScopes,
 		DisabledReason:   p.DisabledReason,
 	}
-	// A declared module principal has no row and so no creation time; leave the
-	// field unset rather than report the year 1.
+	// Do not serialize an absent timestamp as the year 1.
 	if !p.CreatedAt.IsZero() {
 		out.CreatedAt = timestamppb.New(p.CreatedAt)
 	}

@@ -23,12 +23,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
-	"github.com/google/uuid"
 )
 
 // PrincipalKind values mirror the SQL CHECK constraint and the
@@ -394,6 +392,14 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 		}
 	}
 
+	// The agent ceiling may only name audiences this host serves (issue #952), for
+	// the same reason an installation's may not: an audience nothing serves is a
+	// capability pointing at no consumer. Refused at write and narrowed at read —
+	// see Service.RequireHostAudiences.
+	if err := s.RequireHostAudiences(ctx, req.AllowedAudiences); err != nil {
+		return nil, NewStoreError(err, ErrTypeValidation)
+	}
+
 	// Generate ID server-side. We don't reuse user/api_key IDs for
 	// agents — agents are net-new principals.
 	p := &Principal{
@@ -437,6 +443,30 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 // Revoking a principal does not touch the matching `users` row: the two
 // lifecycles are still separate, which is a deliberate gap kept for code that
 // reads users directly.
+//
+// It is a NARROWING — the identity itself stops being able to act — so it runs
+// under the policy log: the entry is appended to the external record and
+// receipted BEFORE the row is revoked, and the revocation commits in the same
+// transaction as the receipt's commit. A host that cannot witness the append
+// refuses rather than revoking unwitnessed.
+//
+// WHAT CHANGED ABOUT THE TRANSACTION, and what did not. Before this, the write
+// and its audit event ran in the scope the principal's own row belongs to: a
+// tenant transaction for an org-scoped principal, the control plane for an
+// org-less human (withPrincipalScope says why the two are not interchangeable).
+// The receipt relation is control-plane only and the receipt has to commit with
+// the revocation, so both now run under the control plane. The org-less half is
+// unchanged; the org-scoped half loses the tenant policy, and what replaces it
+// is that every statement here names the principal by id — GetPrincipal and
+// RevokePrincipal are id point-writes, not scans — and the audit row carries
+// the organisation read back from the principal itself rather than one a caller
+// supplied.
+//
+// The scope lookup stays OUTSIDE the wrapper, deliberately: the entry has to
+// name the organisation before the append, and the append happens before any
+// transaction opens. Opening one inside the wrapper's transaction is not an
+// option either — WithPolicyLoggedNarrowing's apply already runs in a
+// control-plane transaction and tenant_tx.go forbids nesting a second.
 func (s *Service) RevokePrincipal(ctx context.Context, id, reason string) error {
 	w := wool.Get(ctx).In("RevokePrincipal",
 		wool.Field("principal_id", id))
@@ -448,30 +478,62 @@ func (s *Service) RevokePrincipal(ctx context.Context, id, reason string) error 
 		// readable reason being recorded.
 		return w.NewError("reason required (no silent revocations)")
 	}
-	// The write and its audit event share one transaction, in the scope this
-	// principal's row belongs to (see withPrincipalScope).
-	if err := s.withPrincipalScope(ctx, id, func(ctx context.Context, orgID string) error {
-		// Re-read inside that transaction so "did this call change anything" and
-		// the write itself are one read-modify-write, and an idempotent repeat
-		// emits no duplicate audit event.
-		p, e := s.principalStore().GetPrincipal(ctx, id)
-		if e != nil {
-			return e
-		}
-		alreadyRevoked := p.IsRevoked()
-		if err := s.principalStore().RevokePrincipal(ctx, id, reason); err != nil {
-			return err
-		}
-		if alreadyRevoked {
-			return nil
-		}
-		return s.emitTx(ctx, "system", "system", EventPrincipalRevoked, "principal", id, orgID,
-			map[string]any{"reason": reason})
-	}); err != nil {
+	orgID, err := s.principalOrgID(ctx, id)
+	if err != nil {
+		return w.Wrapf(err, "cannot resolve principal scope")
+	}
+	// The actor is "system" because this surface takes none: it is reached by
+	// operators and by internal incident paths, and it has always recorded its
+	// audit event as the system. The log refuses an entry with no actor, so the
+	// same attribution is stated rather than left empty.
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		revokePrincipalPolicyLogEntry("system", id, orgID, reason),
+		func(ctx context.Context) error {
+			// Re-read inside that transaction so "did this call change anything"
+			// and the write itself are one read-modify-write, and an idempotent
+			// repeat emits no duplicate audit event.
+			p, e := s.principalStore().GetPrincipal(ctx, id)
+			if e != nil {
+				return e
+			}
+			alreadyRevoked := p.IsRevoked()
+			if err := s.principalStore().RevokePrincipal(ctx, id, reason); err != nil {
+				return err
+			}
+			if alreadyRevoked {
+				return nil
+			}
+			return s.emitTx(ctx, "system", "system", EventPrincipalRevoked, "principal", id, orgID,
+				map[string]any{"reason": reason})
+		}); err != nil {
 		return w.Wrapf(err, "cannot revoke principal")
 	}
 	w.Info("principal revoked", wool.Field("reason", reason))
 	return nil
+}
+
+// principalOrgID reads the organisation a principal's row belongs to, "" for an
+// org-less human principal (principals_org_scope). It is the first half of what
+// withPrincipalScope does, split out for a caller that needs the organisation
+// BEFORE it opens the transaction it will write in — a policy-logged narrowing
+// has to name its subject's organisation in the entry it appends, and the append
+// happens before any transaction opens.
+//
+// The lookup spans tenants by necessity, as withPrincipalScope's does: the
+// caller has no organisation yet, and it reads nothing else.
+func (s *Service) principalOrgID(ctx context.Context, id string) (string, error) {
+	var orgID string
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		p, err := s.principalStore().GetPrincipal(ctx, id)
+		if err != nil {
+			return err
+		}
+		orgID = p.OrgID
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	return orgID, nil
 }
 
 // DisableAgentPrincipal reversibly suspends an agent principal. Idempotent:
@@ -561,19 +623,7 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 // service / agent. Other values return an error rather than a
 // silent empty list (helps debug typos).
 //
-// The composed modules that act in the org are listed too, as service
-// principals named by their prefix, ahead of the stored rows on the first page
-// (the one requested with no page token). A module principal is derived and
-// declared rather than stored, so without this it acts, holds grants and is
-// recorded as the actor of audit rows while every directory built from this
-// listing reports it as unknown. The first page is the one every directory walk
-// reads — a walk that stops after a bounded number of pages never reaches a
-// large org's last page — and module rows are not part of the stored rows' sort
-// key, so leading with them cannot disturb the cursor. They come out of that
-// page's own budget, so the page still honours pageSize and the token still
-// describes exactly the stored rows the store returned; only an org declaring
-// more modules than pageSize exceeds it, because a module left out of the
-// listing is an actor no consumer can name.
+// Only durable principal rows are listed; declared authority creates no directory entry.
 func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSize int32, pageToken string) ([]*Principal, string, error) {
 	w := wool.Get(ctx).In("ListPrincipals",
 		wool.Field("org_id", orgID),
@@ -593,43 +643,14 @@ func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSi
 	if pageSize > 200 {
 		pageSize = 200
 	}
-	var modules []*Principal
-	if pageToken == "" && (kind == "" || kind == PrincipalKindService) {
-		modules = s.modulePrincipalsActingIn(orgID)
-	}
-	storeSize := pageSize - int32(len(modules))
-	if storeSize < 1 {
-		storeSize = 1
-	}
 	var out []*Principal
 	var next string
 	if err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		var e error
-		out, next, e = s.principalStore().ListPrincipals(ctx, orgID, kind, storeSize, pageToken)
+		out, next, e = s.principalStore().ListPrincipals(ctx, orgID, kind, pageSize, pageToken)
 		return e
 	}); err != nil {
 		return nil, "", err
 	}
-	return append(modules, out...), next, nil
-}
-
-// modulePrincipalsActingIn projects the declared module principals that may act
-// in orgID — the ones bound to it and the cross-tenant ones — as service
-// principals, ordered by prefix so a listing is stable. A grant without a prefix
-// has no name to show and is left out. The org id is compared in its canonical
-// form, the form ParseModulePrincipalRegistry stores a grant's tenant in, so a
-// caller spelling it in uppercase still finds its own modules.
-func (s *Service) modulePrincipalsActingIn(orgID string) []*Principal {
-	if parsed, err := uuid.Parse(orgID); err == nil {
-		orgID = parsed.String()
-	}
-	var out []*Principal
-	for id, grant := range s.modulePrincipals {
-		if grant.Prefix == "" || (grant.Tenant != orgID && !grant.CrossTenant) {
-			continue
-		}
-		out = append(out, &Principal{ID: id, Kind: PrincipalKindService, DisplayName: grant.Prefix, OrgID: orgID})
-	}
-	slices.SortFunc(out, func(a, b *Principal) int { return strings.Compare(a.DisplayName, b.DisplayName) })
-	return out
+	return out, next, nil
 }

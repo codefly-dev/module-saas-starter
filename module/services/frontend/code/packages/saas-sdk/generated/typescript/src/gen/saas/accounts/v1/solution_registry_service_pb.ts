@@ -4,7 +4,7 @@
 
 import type { GenFile, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { DeleteSolutionRegistrationRequestSchema, ListSolutionRegistrationsRequestSchema, ListSolutionRegistrationsResponseSchema, PutSolutionRegistrationRequestSchema, SolutionRegistrationSchema } from "./solution_registry_pb";
+import type { ListSolutionHostBindingsRequestSchema, ListSolutionHostBindingsResponseSchema, ListSolutionRegistrationsRequestSchema, ListSolutionRegistrationsResponseSchema } from "./solution_registry_pb";
 import { file_saas_accounts_v1_solution_registry } from "./solution_registry_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 
@@ -12,37 +12,28 @@ import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
  * Describes the file saas/accounts/v1/solution_registry_service.proto.
  */
 export const file_saas_accounts_v1_solution_registry_service: GenFile = /*@__PURE__*/
-  fileDesc("CjBzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5X3NlcnZpY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEyqAQKF1NvbHV0aW9uUmVnaXN0cnlTZXJ2aWNlErEBChdQdXRTb2x1dGlvblJlZ2lzdHJhdGlvbhIwLnNhYXMuYWNjb3VudHMudjEuUHV0U29sdXRpb25SZWdpc3RyYXRpb25SZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbiI8wvMYOAgDEAEwATomCiJzYWFzLnNvbHV0aW9uLnJlZ2lzdHJhdGlvbl91cGRhdGVkEAJAAUgHUANYA2ABErcBChpEZWxldGVTb2x1dGlvblJlZ2lzdHJhdGlvbhIzLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU29sdXRpb25SZWdpc3RyYXRpb25SZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbiI8wvMYOAgDEAEwATomCiJzYWFzLnNvbHV0aW9uLnJlZ2lzdHJhdGlvbl9kZWxldGVkEAJAAUgHUANYA2ABEp4BChlMaXN0U29sdXRpb25SZWdpc3RyYXRpb25zEjIuc2Fhcy5hY2NvdW50cy52MS5MaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVxdWVzdBozLnNhYXMuYWNjb3VudHMudjEuTGlzdFNvbHV0aW9uUmVnaXN0cmF0aW9uc1Jlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAFiBnByb3RvMw", [file_saas_accounts_v1_solution_registry, file_saas_policy_v1_options]);
+  fileDesc("CjBzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5X3NlcnZpY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEy2AIKF1NvbHV0aW9uUmVnaXN0cnlTZXJ2aWNlEpsBChhMaXN0U29sdXRpb25Ib3N0QmluZGluZ3MSMS5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1JlcXVlc3QaMi5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1Jlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESngEKGUxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnMSMi5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnNSZXF1ZXN0GjMuc2Fhcy5hY2NvdW50cy52MS5MaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgAWIGcHJvdG8z", [file_saas_accounts_v1_solution_registry, file_saas_policy_v1_options]);
 
 /**
- * SolutionRegistryService is the durable authority behind both self-registration
- * surfaces. Every method is internal: the gateway is the only client, and it
- * brokers the frontend's half as well as its own.
+ * Internal read service for declared solution state. The gateway is the client
+ * and brokers the registry projection to the frontend.
  *
  * @generated from service saas.accounts.v1.SolutionRegistryService
  */
 export const SolutionRegistryService: GenService<{
   /**
-   * PutSolutionRegistration writes or renews one half of a solution's
-   * registration under compare-and-swap revision semantics.
+   * ListSolutionHostBindings returns the declared bindings: what delivery has
+   * shown this host, what the host applied, and why a desired generation is not
+   * the applied one (issue #952). It is the answer to "is this solution missing,
+   * or declared and unhealthy?", which neither the registry snapshot nor a health
+   * probe can give on its own.
    *
-   * @generated from rpc saas.accounts.v1.SolutionRegistryService.PutSolutionRegistration
+   * @generated from rpc saas.accounts.v1.SolutionRegistryService.ListSolutionHostBindings
    */
-  putSolutionRegistration: {
+  listSolutionHostBindings: {
     methodKind: "unary";
-    input: typeof PutSolutionRegistrationRequestSchema;
-    output: typeof SolutionRegistrationSchema;
-  },
-  /**
-   * DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
-   * a later heartbeat from the retired deployment cannot resurrect.
-   *
-   * @generated from rpc saas.accounts.v1.SolutionRegistryService.DeleteSolutionRegistration
-   */
-  deleteSolutionRegistration: {
-    methodKind: "unary";
-    input: typeof DeleteSolutionRegistrationRequestSchema;
-    output: typeof SolutionRegistrationSchema;
+    input: typeof ListSolutionHostBindingsRequestSchema;
+    output: typeof ListSolutionHostBindingsResponseSchema;
   },
   /**
    * ListSolutionRegistrations returns the whole registry so a restarted or

@@ -113,6 +113,21 @@ func continuityService(t *testing.T, store business.Store) *business.Service {
 	service, err := business.NewService(store)
 	require.NoError(t, err)
 	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store))
+	// A POLICY LOG, because RemoveOrgMember is now a witnessed narrowing.
+	//
+	// Without one it refuses outright — which is the fail-closed design working,
+	// and it moves this file's subject. These tests are about the
+	// ORGANISATION-SCOPED LOCK: that two concurrent removals serialise and the
+	// second is refused for emptying the organisation. On a host with no log
+	// both contenders refuse before reaching the lock, so "exactly one may
+	// commit" became zero and the lock was no longer being tested at all.
+	//
+	// The REAL postgres store is the local half, so the receipt still has to
+	// commit in the same transaction as the removal; only the external log is a
+	// double. That is the same wiring every other narrowing test in this
+	// package uses, and for the reason its comment gives — a service without a
+	// log is a configuration production is not meant to have.
+	wirePolicyLogForTests(service, testStore)
 	return service
 }
 

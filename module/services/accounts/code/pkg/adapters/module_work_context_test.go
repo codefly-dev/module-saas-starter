@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/sdk-go/workcontext"
@@ -19,7 +21,7 @@ import (
 
 const (
 	moduleWorkContextTenant = "55555555-5555-4555-8555-555555555555"
-	documentsPrincipals     = `{"documents":{"queues":["datasource"],"namespaces":["document"],"tenant":"` +
+	documentsPrincipals     = `{"documents":{"queues":["datasource"],"namespaces":["document"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` +
 		moduleWorkContextTenant + `"}}`
 )
 
@@ -90,20 +92,18 @@ func resetModuleWorkContextAuthority(t *testing.T) {
 	workContextSingleton.Configure(WorkContextAuthorityConfiguration{})
 }
 
-func installModuleWorkContextService(t *testing.T, declaredSecrets, declaredPrincipals string) *recordingModuleStore {
+func installModuleWorkContextService(t *testing.T, declaredPrincipals string) *recordingModuleStore {
 	t.Helper()
 	previous := service
 	t.Cleanup(func() { service = previous })
 	store := &recordingModuleStore{tenantExists: true}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	secrets, err := business.ParseRegistrationSecrets(declaredSecrets)
+	registry, err := moduleregistrytest.Parse(declaredPrincipals)
 	require.NoError(t, err)
-	svc.SetModuleRegistrar(&recordingRegistrationMinter{}, secrets)
-	svc.SetModuleIdentitySecrets(secrets)
-	registry, err := business.ParseModulePrincipalRegistry(declaredPrincipals)
-	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
+	bindModuleExecution(t, svc, registry)
 	WithService(svc)
 	return store
 }
@@ -121,19 +121,19 @@ func stampModuleWorkContext(t *testing.T, principalID, tenant string) context.Co
 		metadata.Pairs(workcontext.WorkContextHeaderName, token.Encoded()))
 }
 
-func mintModuleWorkContext(t *testing.T, prefix, secret string) (*gen.ModuleMintWorkContextResponse, error) {
+func mintModuleWorkContext(t *testing.T, prefix, token string) (*gen.ModuleMintWorkContextResponse, error) {
 	t.Helper()
 	return ModuleCapabilitiesSingleton().MintModuleWorkContext(context.Background(),
-		&gen.ModuleMintWorkContextRequest{Prefix: prefix, Secret: secret})
+		&gen.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: token})
 }
 
 // The identity a module receives must be the one the surface then authenticates
 // it as, so the mint and the verification are asserted as one round trip.
 func TestMintModuleWorkContextRoundTripsToTheCallerIdentity(t *testing.T) {
-	installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
+	installModuleWorkContextService(t, documentsPrincipals)
 	installModuleWorkContextAuthority(t)
 
-	resp, err := mintModuleWorkContext(t, "documents", "documents-secret")
+	resp, err := mintModuleWorkContext(t, "documents", moduleToken(t, "documents"))
 
 	require.NoError(t, err)
 	require.Equal(t, business.ModulePrincipalID("documents"), resp.GetPrincipalId())
@@ -145,64 +145,20 @@ func TestMintModuleWorkContextRoundTripsToTheCallerIdentity(t *testing.T) {
 	require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
 }
 
-func TestMintModuleWorkContextDeniesUnconfiguredIdentity(t *testing.T) {
-	installModuleRegistrar(t, "documents:"+registrationDigest("registration-secret"))
-	registry, err := business.ParseModulePrincipalRegistry(documentsPrincipals)
-	require.NoError(t, err)
-	service.SetModuleCapabilities(nil, nil, registry)
+// A host with no execution binding wired cannot establish what any caller is
+// running, so it mints nothing — and says so as Unavailable, never as a verdict
+// about the caller, and never as a capability minted unbound.
+func TestMintModuleWorkContextIsUnavailableWithoutExecutionBinding(t *testing.T) {
+	store := installModuleWorkContextService(t, documentsPrincipals)
+	token := moduleToken(t, "documents")
+	service.SetExecutionBinding(nil, nil)
 	installModuleWorkContextAuthority(t)
 
-	resp, err := mintModuleWorkContext(t, "documents", "registration-secret")
+	resp, err := mintModuleWorkContext(t, "documents", token)
 
-	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, codes.Unavailable, status.Code(err))
 	require.Nil(t, resp)
-}
-
-func TestModuleExchangesUseIndependentSecrets(t *testing.T) {
-	for name, identityDeclaration := range map[string]string{
-		"declared identity": "documents:" + registrationDigest("identity-secret"),
-		"missing prefix":    "billing:" + registrationDigest("identity-secret"),
-		"empty authority":   "",
-	} {
-		t.Run(name, func(t *testing.T) {
-			store := installModuleWorkContextService(t,
-				"documents:"+registrationDigest("registration-secret"), documentsPrincipals)
-			secrets, err := business.ParseRegistrationSecrets(identityDeclaration)
-			require.NoError(t, err)
-			service.SetModuleIdentitySecrets(secrets)
-			installModuleWorkContextAuthority(t)
-
-			resp, err := mintModuleWorkContext(t, "documents", "registration-secret")
-			require.Equal(t, codes.PermissionDenied, status.Code(err))
-			require.Nil(t, resp)
-			require.Zero(t, store.controlPlaneCalls)
-
-			_, err = ModuleCapabilitiesSingleton().MintModuleRegistration(context.Background(),
-				&gen.ModuleMintRegistrationRequest{Prefix: "documents", Secret: "identity-secret"})
-			require.Equal(t, codes.PermissionDenied, status.Code(err))
-			require.Zero(t, store.controlPlaneCalls)
-
-			registration, err := ModuleCapabilitiesSingleton().MintModuleRegistration(context.Background(),
-				&gen.ModuleMintRegistrationRequest{Prefix: "documents", Secret: "registration-secret"})
-			require.NoError(t, err)
-			require.NotEmpty(t, registration.GetToken())
-
-			resp, err = mintModuleWorkContext(t, "documents", "identity-secret")
-			if _, declared := secrets["documents"]; !declared {
-				require.Equal(t, codes.PermissionDenied, status.Code(err))
-				require.Nil(t, resp)
-				require.Equal(t, 1, store.controlPlaneCalls)
-				return
-			}
-			require.NoError(t, err)
-			caller, err := WorkContextSingleton().VerifyModuleWorkContext(resp.GetToken())
-			require.NoError(t, err)
-			require.Equal(t, business.ModulePrincipalID("documents"), caller.PrincipalID)
-			require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
-			require.Equal(t, 2, store.recordAttempts())
-			require.Equal(t, 1, store.tenantChecks)
-		})
-	}
+	require.Zero(t, store.controlPlaneCalls, "nothing may be checked, signed or recorded")
 }
 
 // The capability seals identity and tenant only. Sealing the grant as well would
@@ -232,10 +188,10 @@ func TestStartModuleTaskSealsIdentityWithoutSealingAuthority(t *testing.T) {
 // written after the capability exists, so a mint that fails to sign records
 // nothing.
 func TestMintModuleWorkContextRecordsNothingWhenSigningFails(t *testing.T) {
-	store := installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
+	store := installModuleWorkContextService(t, documentsPrincipals)
 	resetModuleWorkContextAuthority(t)
 
-	_, err := mintModuleWorkContext(t, "documents", "documents-secret")
+	_, err := mintModuleWorkContext(t, "documents", moduleToken(t, "documents"))
 
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	require.Zero(t, store.recordAttempts(), "a mint that never signed must not record an issuance")
@@ -243,11 +199,11 @@ func TestMintModuleWorkContextRecordsNothingWhenSigningFails(t *testing.T) {
 
 // The converse: a capability whose issuance cannot be recorded is withheld.
 func TestMintModuleWorkContextWithholdsTheCapabilityWhenTheRecordFails(t *testing.T) {
-	store := installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
+	store := installModuleWorkContextService(t, documentsPrincipals)
 	installModuleWorkContextAuthority(t)
 	store.controlPlaneErr = errors.New("audit store unavailable")
 
-	resp, err := mintModuleWorkContext(t, "documents", "documents-secret")
+	resp, err := mintModuleWorkContext(t, "documents", moduleToken(t, "documents"))
 
 	require.Error(t, err)
 	require.Nil(t, resp)
@@ -255,19 +211,19 @@ func TestMintModuleWorkContextWithholdsTheCapabilityWhenTheRecordFails(t *testin
 }
 
 // A declared tenant that names no organization must not mint. Everything
-// upstream validates the tenant's form only — ParseModulePrincipalRegistry runs
-// at boot with no database, ModuleAuthorizeWorkContext takes no ctx and copies
-// the value through, and authorizeTenant compares the sealed tenant against
+// upstream validates the tenant's form only — the registry checks a form,
+// ModuleAuthorizeWorkContext copies the value through, and authorizeTenant
+// compares the sealed tenant against
 // itself — so without this check a typo'd or wrong-environment uuid signs
 // cleanly and binds every later call to a tenant that is not there. It stays
 // silent too: audit_events.org_id and domain_events.tenant_id have no foreign
 // key to organizations, so the writes land without complaint.
 func TestMintModuleWorkContextRefusesATenantThatNamesNoOrganization(t *testing.T) {
-	store := installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
+	store := installModuleWorkContextService(t, documentsPrincipals)
 	installModuleWorkContextAuthority(t)
 	store.tenantExists = false
 
-	resp, err := mintModuleWorkContext(t, "documents", "documents-secret")
+	resp, err := mintModuleWorkContext(t, "documents", moduleToken(t, "documents"))
 
 	require.Error(t, err)
 	require.Nil(t, resp, "no capability may be handed out for a tenant that does not exist")
@@ -283,10 +239,10 @@ func TestMintModuleWorkContextRefusesATenantThatNamesNoOrganization(t *testing.T
 // names: a module cannot get itself admitted by asking for a tenant that does
 // exist.
 func TestMintModuleWorkContextChecksTheDeclaredTenantNotARequestedOne(t *testing.T) {
-	store := installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
+	store := installModuleWorkContextService(t, documentsPrincipals)
 	installModuleWorkContextAuthority(t)
 
-	_, err := mintModuleWorkContext(t, "documents", "documents-secret")
+	_, err := mintModuleWorkContext(t, "documents", moduleToken(t, "documents"))
 
 	require.NoError(t, err)
 	require.Equal(t, 1, store.tenantChecks)
@@ -296,52 +252,107 @@ func TestMintModuleWorkContextChecksTheDeclaredTenantNotARequestedOne(t *testing
 // A deployment that never wired the signing key is the operator's problem, not a
 // refusal of the caller's credential, and the two must stay distinguishable.
 func TestMintModuleWorkContextReportsAnUnconfiguredAuthority(t *testing.T) {
-	installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
+	installModuleWorkContextService(t, documentsPrincipals)
 	resetModuleWorkContextAuthority(t)
 
-	_, err := mintModuleWorkContext(t, "documents", "documents-secret")
+	_, err := mintModuleWorkContext(t, "documents", moduleToken(t, "documents"))
 
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
 
-// The per-module binding the registration secret already carries must hold for
-// this credential too: holding one module's secret yields no other's identity.
-func TestMintModuleWorkContextBindsSecretToPrefix(t *testing.T) {
-	installModuleWorkContextService(t,
-		"documents:"+registrationDigest("documents-secret")+",billing:"+registrationDigest("billing-secret"),
-		`{"documents":{"queues":["datasource"],"tenant":"`+moduleWorkContextTenant+`"},`+
-			`"billing":{"queues":["billing"],"tenant":"`+moduleWorkContextTenant+`"}}`)
+// One module's pod cannot mint as another prefix: its token authenticates its
+// own ServiceAccount, which identifies exactly one principal, and that is not
+// the one it asked for. (Two principals SHARING a ServiceAccount mint as
+// neither — TestAWorkloadSharedByTwoPrincipalsMintsAsNeither.)
+func TestMintModuleWorkContextBindsTheTokenToItsOwnPrefix(t *testing.T) {
+	store := installModuleWorkContextService(t,
+		`{"documents":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"`+moduleWorkContextTenant+`"},`+
+			`"billing":{"queues":["billing"],"workload":{"service_account":"billing","namespace":"acme-prod","container":"app"},"tenant":"`+moduleWorkContextTenant+`"}}`)
 	installModuleWorkContextAuthority(t)
 
-	_, err := mintModuleWorkContext(t, "billing", "documents-secret")
+	_, err := mintModuleWorkContext(t, "billing", moduleToken(t, "documents"))
 
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Zero(t, store.controlPlaneCalls)
 }
 
-func TestMintModuleWorkContextFailsClosed(t *testing.T) {
-	declaredSecrets := "documents:" + registrationDigest("documents-secret")
+// Every way a caller can fail to be the module it names, at the mint itself:
+// each mints nothing, records nothing, and answers a verdict — except an
+// unreachable API server, which is not one.
+func TestMintModuleWorkContextIsBoundToTheRunningBuild(t *testing.T) {
+	declared := executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "module", Container: "app"}
 	tests := map[string]struct {
-		secrets    string
-		principals string
-		secret     string
+		token func(cluster *executiontest.Cluster) string
+		want  codes.Code
 	}{
-		"wrong secret": {declaredSecrets, documentsPrincipals, "guessed"},
-		// A module may federate a REST prefix without being granted the capability
-		// surface; the registration secret alone must not confer an identity here.
-		"secret declared but principal is not": {declaredSecrets, "", "documents-secret"},
-		"nothing declared":                     {"", "", "documents-secret"},
+		"a pod on an unapproved build": {func(c *executiontest.Cluster) string {
+			return c.Run(declared, executiontest.Image("documents-unreviewed"))
+		}, codes.PermissionDenied},
+		"a moved tag: asked for the approved image, running another": {func(c *executiontest.Cluster) string {
+			token := c.Run(declared, executiontest.Image("documents"))
+			c.Retag(token, executiontest.Image("documents-unreviewed"))
+			return token
+		}, codes.PermissionDenied},
+		"a token for another ServiceAccount": {func(c *executiontest.Cluster) string {
+			return c.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "intruder", Container: "app"},
+				executiontest.Image("documents"))
+		}, codes.PermissionDenied},
+		"a token from another namespace": {func(c *executiontest.Cluster) string {
+			return c.Run(executiontest.Workload{Namespace: "other-tenant", ServiceAccount: "module", Container: "app"},
+				executiontest.Image("documents"))
+		}, codes.PermissionDenied},
+		"a token minted for another audience": {func(c *executiontest.Cluster) string {
+			return c.RunWithAudience(declared, executiontest.Image("documents"), "vault")
+		}, codes.PermissionDenied},
+		"a replacement pod at the token's pod name": {func(c *executiontest.Cluster) string {
+			token := c.Run(declared, executiontest.Image("documents"))
+			c.Replace(token)
+			return token
+		}, codes.PermissionDenied},
+		"something that is not a token": {func(*executiontest.Cluster) string {
+			return "documents-secret"
+		}, codes.PermissionDenied},
+		"the api server is unreachable": {func(c *executiontest.Cluster) string {
+			token := c.Run(declared, executiontest.Image("documents"))
+			c.Unreachable = true
+			return token
+		}, codes.Unavailable},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			store := installModuleWorkContextService(t, test.secrets, test.principals)
-			secrets, err := business.ParseRegistrationSecrets(test.secrets)
-			require.NoError(t, err)
-			service.SetModuleIdentitySecrets(secrets)
+			store := installModuleWorkContextService(t, documentsPrincipals)
 			installModuleWorkContextAuthority(t)
 
-			_, err = mintModuleWorkContext(t, "documents", test.secret)
+			resp, err := mintModuleWorkContext(t, "documents", test.token(moduleExecution.cluster))
 
-			require.Equal(t, codes.PermissionDenied, status.Code(err))
+			require.Equal(t, test.want, status.Code(err), "%v", err)
+			require.Nil(t, resp)
+			require.Zero(t, store.controlPlaneCalls, "a refused mint must not check, sign or record anything")
+		})
+	}
+}
+
+func TestMintModuleWorkContextFailsClosed(t *testing.T) {
+	tests := map[string]struct {
+		principals string
+		prefix     string
+	}{
+		// A prefix nothing declares names no workload, so no token can back it.
+		"principal not declared": {"", "documents"},
+		"malformed prefix":       {documentsPrincipals, "Documents/.."},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			store := installModuleWorkContextService(t, documentsPrincipals)
+			token := moduleToken(t, "documents")
+			registry, err := moduleregistrytest.Parse(test.principals)
+			require.NoError(t, err)
+			service.SetModuleCapabilities(nil, nil, registry)
+			installModuleWorkContextAuthority(t)
+
+			_, err = mintModuleWorkContext(t, test.prefix, token)
+
+			require.Contains(t, []codes.Code{codes.PermissionDenied, codes.InvalidArgument}, status.Code(err))
 			require.Zero(t, store.controlPlaneCalls, "a refused mint must not record an issuance")
 		})
 	}

@@ -1,0 +1,50 @@
+syntax = "proto3";
+package codefly.base.v0;
+
+import "buf/validate/validate.proto";
+
+// Agent identifies the plugin binary that owns a service, job, application, module, toolbox, provider, solution, or runnable lifecycle.
+message Agent {
+  // Kind enumerates supported kinds.
+  enum Kind {
+    // UNKNOWN is the default value when kind is not specified.
+    UNKNOWN = 0;
+    // SERVICE agents own runtime and builder lifecycle for deployable services.
+    SERVICE = 1;
+    // JOB agents own scheduled or one-shot job lifecycles.
+    JOB = 2;
+    // APPLICATION agents own end-user application generation and artifacts.
+    APPLICATION = 3;
+    // MODULE agents own module-level scaffolding or orchestration.
+    MODULE = 4;
+    // TOOLBOX is a narrow, capability-focused plugin (Code, Git, Docker,
+    // Nix, Bash, Web, gRPC). Distinct from SERVICE: services are
+    // user-deployable processes; toolboxes are codefly-platform utilities
+    // that agents call via MCP-shape Tool/Resource/Prompt RPCs. Each
+    // toolbox carries its own permission boundary (sandbox + canonical_for
+    // declarations in the manifest).
+    TOOLBOX = 5;
+    // PROVIDER agents reconcile environment-scoped external provider bindings.
+    // They are typed leaf plugins and never own a service workload lifecycle.
+    PROVIDER = 6;
+    // SOLUTION agents scaffold a solution, package it as an OCI artifact, and
+    // render its manifests into a gitops repository. Like providers they are
+    // dynamically installable and stay out of the application graph; the
+    // solution spec they operate on stays codefly-agnostic.
+    SOLUTION = 7;
+    // RUNNABLE agents are language agents for typed finite operations: they
+    // scaffold the handler, generate the harness and typed bindings, and emit
+    // the native package and image build recipe. The language is the agent
+    // name (runnable-python, runnable-go); the kind is uniform so consumers
+    // never switch on language.
+    RUNNABLE = 8;
+  }
+  // kind identifies which resource family this agent can manage.
+  Kind kind = 1;
+  // name is the agent plugin name.
+  string name = 2 [(buf.validate.field).string.min_len = 2, (buf.validate.field).string.max_len = 50];
+  // publisher is the namespace that published the agent or resource.
+  string publisher = 3 [(buf.validate.field).string.min_len = 3, (buf.validate.field).string.max_len = 50];
+  // version is the semantic or service-specific version for this resource.
+  string version = 4;
+}

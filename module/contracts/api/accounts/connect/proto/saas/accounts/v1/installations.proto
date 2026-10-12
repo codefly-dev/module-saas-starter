@@ -6,6 +6,7 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/authorization.proto";
 import "saas/policy/v1/options.proto";
 
 // ============================================================================
@@ -51,13 +52,42 @@ message Installation {
   string id = 1 [(buf.validate.field).string.uuid = true];
   string org_id = 2 [(buf.validate.field).string.uuid = true];
   string agent_principal_id = 3 [(buf.validate.field).string.uuid = true];
-  string solution_identifier = 4;
+  // Was `solution_identifier`: the free-text route alias. It was the join key
+  // every reader used, and because an alias is deliberately reusable by a later
+  // binding, an installation that named one inherited whatever took it next.
+  // Replaced by target_id below. Reserved rather than reused so no consumer can
+  // read an alias out of a field that now carries an identity.
+  reserved 4;
+  reserved "solution_identifier";
   string owner_principal_id = 5 [(buf.validate.field).string.uuid = true];
   repeated string co_owner_principal_ids = 6;
   string root_scope_node_id = 7 [(buf.validate.field).string.uuid = true];
   InstallationStatus status = 8;
   google.protobuf.Timestamp created_at = 9;
   optional google.protobuf.Timestamp revoked_at = 10;
+  // The immutable solution target this installation was consented to: one
+  // continuous period of one binding's presence on this host. It is never
+  // reused, so a replacement binding — even one claiming the same route alias —
+  // is a different target and inherits nothing.
+  //
+  // Deliberately NOT accompanied by the route alias. The alias is a property of
+  // the target that a later generation may move, and resolving it here would
+  // mean joining the host's presence state into a request-path listing — which
+  // would require granting request traffic read over every organisation's
+  // presence to answer about one. A consumer that needs the alias asks
+  // ListAvailableSolutions, which serves accepted applied state, and joins on
+  // this id.
+  //
+  // Empty only on a revoked historical row whose target could not be
+  // established at the cutover; an active installation always names one.
+  string target_id = 11 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Why a revoked installation was revoked, when it was not an administrator
+  // uninstalling: the installation-identity cutover, or a tenancy narrowing that
+  // withdrew this organisation. Empty on an active row.
+  string revoked_reason = 12 [(buf.validate.field).string.max_len = 512];
 }
 
 message InstallSolutionRequest {
@@ -68,10 +98,11 @@ message InstallSolutionRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
   ];
-  string solution_identifier = 3 [
-    (buf.validate.field).string.min_len = 1,
-    (buf.validate.field).string.max_len = 512
-  ];
+  // Was `solution_identifier`: the route alias the installer typed. An alias is
+  // reusable, so installing by alias is installing whatever holds it at the
+  // moment the write lands — and whatever takes it later. Replaced by target_id.
+  reserved 3;
+  reserved "solution_identifier";
   // Human display name for the agent principal. Empty defaults to the identifier.
   string display_name = 4 [(buf.validate.field).string.max_len = 512];
   // The authority-root scope path is derived server-side from the created node id
@@ -100,7 +131,16 @@ message InstallSolutionRequest {
   ];
   // The agent's delegated-execution ceiling (migration 108): the Work Context
   // audiences it may be minted for and the resource kinds it may ever touch.
-  // Empty = unrestricted.
+  //
+  // Empty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an
+  // administrator consented to when they installed it. It is NOT unrestricted
+  // for a mint made with a credential delivered to a THIRD PARTY on a person's
+  // behalf — an MCP client the person authorized for this one solution. There
+  // the installation is the only statement of what the solution may act for, so
+  // an empty list is read as nothing and such a mint is REFUSED by name
+  // (accounts' holdConfinedMintToItsConsumer). The two readings are opposite on
+  // purpose: one bounds a consumer an admin trusts, the other bounds a
+  // credential they never saw.
   repeated string allowed_audiences = 10 [
     (buf.validate.field).repeated.max_items = 64,
     (buf.validate.field).repeated.items.string.max_len = 512
@@ -109,6 +149,30 @@ message InstallSolutionRequest {
     (buf.validate.field).repeated.max_items = 64,
     (buf.validate.field).repeated.items.string.max_len = 128
   ];
+  // The solution target being installed, from ListAvailableSolutions. Required.
+  //
+  // An installer chooses an identity, never an address. The target must be LIVE
+  // and ACCEPTED when the install lands: installing a withdrawn target would
+  // record consent to a presence that already ended, and installing a target
+  // whose newest generation was refused would record consent to a release this
+  // host never admitted.
+  string target_id = 12 [(buf.validate.field).string.uuid = true];
+  // Installed consent as JSON: capabilities, queues, namespaces,
+  // external_namespaces, resources, read_audiences, operation_audiences and
+  // artifact_policies, with the same shapes as the module envelope grant.
+  // Must be a subset of the current ceiling. Omitted selects that ceiling;
+  // an explicit {} grants nothing. Tenant and identity are never scope fields.
+  optional string scope = 13 [(buf.validate.field).string = {min_len: 2 max_bytes: 1048576}];
+
+}
+
+// An org administrator may only remove installed authority. The host reads
+// the current revision and serializes the narrowing with other lifecycle acts.
+message NarrowInstallationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  // Same JSON shape as InstallSolution.scope; {} removes all capability access.
+  string scope = 3 [(buf.validate.field).string = {min_len: 2 max_bytes: 1048576}];
 }
 
 message UninstallSolutionRequest {
@@ -137,6 +201,42 @@ message GetInstallationResponse {
   Installation installation = 1;
   // Resolved live at read time from current authority facts.
   InstallationHealth health = 2;
+}
+
+// ListInstallationsRequest asks what one organization has installed. Every other
+// RPC on this service names a single installation, so until this existed nothing
+// could answer "what has this org installed?" — which is the authority read a
+// per-organization solution projection is built on (issue #949).
+message ListInstallationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Restrict to one lifecycle status. UNSPECIFIED returns every status, so a
+  // caller that must see only live installs asks for ACTIVE explicitly rather
+  // than leaning on a default that would silently widen if the enum grew.
+  InstallationStatus status = 2;
+  // Page bound. 0 -> server default; capped so an organization with many
+  // installations can never return an unbounded result in one call.
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 4;
+}
+
+// InstallationSummary is one row of the listing: the installation, plus the health
+// resolved live beside it exactly as GetInstallation resolves it for one. Health
+// travels with the row because a consumer that renders an installed solution as
+// unavailable would otherwise need one GetInstallation per installation.
+message InstallationSummary {
+  Installation installation = 1;
+  InstallationHealth health = 2;
+}
+
+message ListInstallationsResponse {
+  repeated InstallationSummary installations = 1;
+  // Set when more installations remain; pass it back as page_token. Empty on the
+  // last page.
+  string next_page_token = 2;
 }
 
 // InstallationService composes and administers installations. The headless mint
@@ -203,6 +303,34 @@ service InstallationService {
     };
   }
 
+  // Narrowing is witnessed in the policy log before commit, then atomically
+  // bumps the installation revision, cancels its org's work and records audit.
+  rpc NarrowInstallation(NarrowInstallationRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.installation.narrowed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}:narrow"
+      body: "*"
+    };
+  }
+
   // TransferInstallationOwnership reassigns the owner of record and replaces the
   // co-owner succession set. This is how a "connection owner left the org"
   // failure is repaired: an admin transfers the installation to a current admin,
@@ -255,4 +383,278 @@ service InstallationService {
     };
     option (google.api.http) = {get: "/v1/installations/{installation_id}"};
   }
+
+  // ListInstallations enumerates one organization's installations with their live
+  // health. It is internal-tier on purpose: it takes the organization as a request
+  // field, so only a caller holding the cluster-internal credential may ask, and
+  // the tenant it asks about is the one the auth-gateway projected from a verified
+  // identity — never one a browser supplied. It sits beside
+  // PermissionService.ListAccessibleScopes for that reason: the two are read
+  // together to answer what a viewer's organization installed and what that viewer
+  // was granted.
+  rpc ListInstallations(ListInstallationsRequest) returns (ListInstallationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // ListAvailableSolutions is the catalogue: the solution targets an
+  // administrator may install right now.
+  //
+  // It answers from ACCEPTED applied state — a live target whose binding's
+  // newest APPLIED generation is a present one — and deliberately not from the
+  // diagnostic ListSolutionHostBindings, which also reports desired generations
+  // that were refused. The distinction is the point: a refused generation is
+  // something an operator must see and something an administrator must not be
+  // able to consent to, because consenting to a release this host never admitted
+  // records authority over a presence that does not exist.
+  //
+  // It carries the route alias, which the installation record deliberately does
+  // not: here the alias is a display and routing fact read from the target in
+  // the same statement, not an identity anything joins on.
+  rpc ListAvailableSolutions(ListAvailableSolutionsRequest) returns (ListAvailableSolutionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    // Mounted under `/v1/installations`, a prefix the catalog already owns.
+    // A `/v1/solutions` route would have taken that prefix away from every
+    // composed module that may register one, which is a contract change with
+    // every downstream composer and not a side effect of adding a read.
+    option (google.api.http) = {get: "/v1/installations:listAvailable"};
+  }
+
+  // ListOrganizationInstallations is an organisation administrator's view of
+  // what that organisation has installed: each active installation with its live
+  // health, the catalogue row of the target it installed, the scope path of its
+  // authority root, and the teams a grant reaches there.
+  //
+  // It is the org-admin companion to the internal ListInstallations, and it is a
+  // separate method rather than a relaxed policy on that one: ListInstallations
+  // is read by the gateway for an organisation it projected from a verified
+  // identity, and a bare tenant credential must never reach it. This one binds
+  // the organisation to the caller's own admin membership, exactly as
+  // ListAvailableSolutions does, so no organisation's administrator can read
+  // another's. The one exception is inherited, not added here: a platform
+  // super administrator (not impersonating) passes the organisation-admin check
+  // for every organisation, as on every other organisation-admin method, and so
+  // may list any organisation's installations.
+  rpc ListOrganizationInstallations(ListOrganizationInstallationsRequest) returns (ListOrganizationInstallationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/installations"};
+  }
+
+  // GrantInstallationToTeam exposes an installation to a team: a scope grant of
+  // the given role to the team at the installation's authority-root node. The
+  // host resolves that node from the installation, so a caller never names a
+  // scope path. The role must permit using a solution, or the grant would expose
+  // nothing; the team must belong to the organisation. Using a solution is the
+  // minimum the role must permit, not a ceiling: the team holds everything the
+  // role permits beneath the installation's authority root, exactly as a
+  // GrantScope of that role at that node would give it. Emits scope.granted, the
+  // same event and audit record as any other scope grant, because it is one.
+  // Organisation-admin, with the same platform super administrator exception
+  // ListOrganizationInstallations describes.
+  rpc GrantInstallationToTeam(GrantInstallationToTeamRequest) returns (GrantInstallationToTeamResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.scope.granted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}/teams"
+      body: "*"
+    };
+  }
+
+  // RevokeInstallationFromTeam removes one team grant at an installation's
+  // authority-root node. It is a narrowing, so it runs under the policy log
+  // exactly as RevokeScope does: a host that cannot witness the narrowing refuses
+  // it, and says so, rather than revoking unwitnessed. It removes the one grant
+  // at the authority root that granted_teams reports; a team that also reaches
+  // the installation from a grant above keeps that reach. Organisation-admin,
+  // with the same platform super administrator exception.
+  rpc RevokeInstallationFromTeam(RevokeInstallationFromTeamRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.scope.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}/teams/{team_id}:revoke"
+      body: "*"
+    };
+  }
+}
+
+message ListOrganizationInstallationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Page bound. 0 -> server default; capped as ListInstallations is.
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 3;
+}
+
+// OrganizationInstallation is one active installation as its organisation's
+// administrator manages it.
+message OrganizationInstallation {
+  Installation installation = 1;
+  // Resolved live, exactly as ListInstallations resolves it.
+  InstallationHealth health = 2;
+  // The catalogue row of the installed target, from the same accepted applied
+  // state ListAvailableSolutions serves: its route alias, applied release and
+  // generations. Absent when this host no longer offers the target — the
+  // installation outlives the presence it was consented to, and an absent row
+  // says so rather than naming a release the host does not apply.
+  AvailableSolution target = 3;
+  // The scope path of the installation's authority-root node: where a grant
+  // that exposes it is written. Read from the node, never derived from its id.
+  string root_scope_path = 4;
+  // Teams an active grant reaches at this installation, in the two kinds the
+  // platform Catalogue keeps apart: granted at its authority root, and inherited
+  // from a grant above it. Only the first is exposure granted to this
+  // installation; RevokeInstallationFromTeam removes those.
+  repeated CollectionReadGrant granted_teams = 5;
+  repeated CollectionReadGrant inherited_teams = 6;
+}
+
+message ListOrganizationInstallationsResponse {
+  repeated OrganizationInstallation installations = 1;
+  // Set when more installations remain; pass it back as page_token.
+  string next_page_token = 2;
+}
+
+message GrantInstallationToTeamRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  string team_id = 3 [(buf.validate.field).string.uuid = true];
+  // The role the team holds at the installation's authority root. It must permit
+  // using a solution (or carry the wildcard); a role that does not would expose
+  // nothing, and is refused rather than written. Everything else the role
+  // permits is granted too, beneath that root.
+  string role_id = 4 [(buf.validate.field).string.uuid = true];
+}
+
+message GrantInstallationToTeamResponse {
+  ScopeGrant grant = 1;
+}
+
+message RevokeInstallationFromTeamRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  string team_id = 3 [(buf.validate.field).string.uuid = true];
+  // The role of the grant being removed, as granted_teams reports it. A team may
+  // hold more than one role at the same node, and each is its own grant.
+  string role_id = 4 [(buf.validate.field).string.uuid = true];
+}
+
+// AvailableSolution is one installable solution target: its immutable identity,
+// the release the host currently has applied for it, and where it is routed.
+message AvailableSolution {
+  // The immutable target identity an install names. Never reused.
+  string target_id = 1 [(buf.validate.field).string.uuid = true];
+  // The binding whose presence this target records. Carried so an operator can
+  // correlate a catalogue row with delivery; an installation does not join on it,
+  // because one binding may have several targets over time.
+  string binding_id = 2;
+  // The route alias the applied generation claims — `/solutions/<alias>/*`. A
+  // later generation may move it, so it is never an identity.
+  string route_alias = 3;
+  // The applied release: publisher, name, version.
+  string release_publisher = 4;
+  string release_name = 5;
+  string release_version = 6;
+  // The generation that opened this target, and the newest applied generation.
+  // Equal until a later generation is applied for the same presence.
+  uint64 opened_generation = 7;
+  uint64 applied_generation = 8;
+  // True when this organization already has an ACTIVE installation of this
+  // target. A catalogue shows it as installed rather than offering it twice; the
+  // unique index over (org_id, target_id) would refuse the second install anyway,
+  // and an administrator should not have to discover that by being refused.
+  bool installed = 9;
+}
+
+message ListAvailableSolutionsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Page bound. 0 -> server default; capped for the same reason the installation
+  // listing is capped.
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 3;
+}
+
+message ListAvailableSolutionsResponse {
+  repeated AvailableSolution solutions = 1;
+  string next_page_token = 2;
 }

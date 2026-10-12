@@ -4,7 +4,7 @@ import type {
 	NavItem,
 	PluginNavigation,
 	PluginRoute,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 
 import type { DataGraph } from "./data-graph.js";
 

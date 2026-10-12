@@ -20,6 +20,34 @@ type KeyHasher interface {
 	HashKey(ctx context.Context, plaintext string) (string, error)
 }
 
+// MultiKeyHasher is a KeyHasher whose key service is mid-cutover and can
+// therefore produce more than one hash a presented key may already be stored
+// under: the selected backend's, and the one the outgoing backend wrote.
+//
+// A keyed hash cannot be re-keyed — the plaintext is gone once the key is
+// issued — so the re-seal sweep that rewrites every enveloped column cannot
+// touch api_keys.key_hash. Because the lookup is BY hash, a key issued under
+// the outgoing backend is simply not found once the selected one changes, and
+// "not found" is indistinguishable from "revoked" to the caller. Trying each
+// candidate is what keeps existing keys authenticating across a cutover.
+type MultiKeyHasher interface {
+	KeyHasher
+	CandidateHashes(ctx context.Context, plaintext string) ([]string, error)
+}
+
+// candidateHashes is every hash a presented key could be stored under, most
+// likely first. A hasher that is not mid-cutover yields exactly one.
+func (s *Service) candidateHashes(ctx context.Context, plaintextKey string) ([]string, error) {
+	if multi, ok := s.hasher.(MultiKeyHasher); ok {
+		return multi.CandidateHashes(ctx, plaintextKey)
+	}
+	hash, err := s.hasher.HashKey(ctx, plaintextKey)
+	if err != nil {
+		return nil, err
+	}
+	return []string{hash}, nil
+}
+
 // CreateAPIKey generates a new API key, hashes it via vault, and stores the hash.
 func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.CreateAPIKeyRequest) (*gen.CreateAPIKeyResponse, error) {
 	w := wool.Get(ctx).In("CreateAPIKey")
@@ -103,14 +131,20 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 		return nil, w.NewError("key hasher not configured")
 	}
 
-	keyHash, err := s.hasher.HashKey(ctx, plaintextKey)
+	candidates, err := s.candidateHashes(ctx, plaintextKey)
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot hash key")
 	}
 
-	authentication, err := s.store.GetAPIKeyAuthentication(ctx, keyHash)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot look up key")
+	var authentication *APIKeyAuthentication
+	for _, keyHash := range candidates {
+		authentication, err = s.store.GetAPIKeyAuthentication(ctx, keyHash)
+		if err != nil {
+			return nil, w.Wrapf(err, "cannot look up key")
+		}
+		if authentication != nil && authentication.Key != nil {
+			break
+		}
 	}
 	if authentication == nil || authentication.Key == nil {
 		return &gen.ValidateAPIKeyResponse{Valid: false}, nil
@@ -235,16 +269,27 @@ func (s *Service) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) 
 // Phase 3 idea: thread orgID into the proto so the WithControlPlane step
 // goes away and org-admins can revoke their own keys without
 // platform-admin perms.
+// It is a NARROWING — a credential that authenticates stops authenticating —
+// so it runs under the policy log: the entry is appended to the external record
+// and receipted BEFORE the key is marked, and the revocation commits in the
+// same transaction as the receipt's commit. A host that cannot witness the
+// append refuses rather than revoking unwitnessed: a key revocation a restore
+// could silently undo is a live credential nobody knows is live.
 func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.RevokeAPIKeyRequest) error {
 	// Org-scoped revoke: the store statement pins id AND organization_id, so an
 	// org admin can never revoke another org's key by id (handler authorized
-	// the actor for req.OrganizationId; the WHERE enforces the binding).
-	if err := s.store.WithOrgTx(ctx, req.OrganizationId, func(ctx context.Context) error {
-		if err := s.store.RevokeAPIKey(ctx, req.Id, req.OrganizationId); err != nil {
-			return err
-		}
-		return s.emitTx(ctx, actorID, "user", EventAPIKeyRevoked, "api_key", req.Id, req.OrganizationId)
-	}); err != nil {
+	// the actor for req.OrganizationId; the WHERE enforces the binding). That
+	// WHERE is also what keeps the revoke confined now the transaction is the
+	// policy log's control-plane one — the receipt relation is control-plane
+	// only, and the receipt and the revocation have to be the same transaction.
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		revokeAPIKeyPolicyLogEntry(actorID, req.OrganizationId, req.Id),
+		func(ctx context.Context) error {
+			if err := s.store.RevokeAPIKey(ctx, req.Id, req.OrganizationId); err != nil {
+				return err
+			}
+			return s.emitTx(ctx, actorID, "user", EventAPIKeyRevoked, "api_key", req.Id, req.OrganizationId)
+		}); err != nil {
 		return err
 	}
 	return nil

@@ -46,9 +46,9 @@ const referencePackage = JSON.parse(
 	await readFile(referencePackagePath, "utf8"),
 );
 const localBuildPackage = structuredClone(referencePackage);
-localBuildPackage.dependencies["@codefly/saas-plugin-contract"] =
+localBuildPackage.dependencies["@codefly-dev/saas-plugin-contract"] =
 	`file:${contractArchive}`;
-localBuildPackage.dependencies["@codefly/saas-plugin-react"] =
+localBuildPackage.dependencies["@codefly-dev/saas-plugin-react"] =
 	`file:${reactArchive}`;
 await writeFile(
 	referencePackagePath,
@@ -76,7 +76,7 @@ await cp(
 );
 await writeFile(
 	join(consumerRoot, "src/index.ts"),
-	`import {buildFrontendServiceAllowlist} from "@codefly/saas-plugin-contract";
+	`import {buildFrontendServiceAllowlist} from "@codefly-dev/saas-plugin-contract";
 import {contributedPlugins, contributedServiceBindings} from "./frontend-contributions.js";
 
 const services = contributedPlugins.flatMap(({manifest}) =>
@@ -112,8 +112,8 @@ await writeFile(
 			type: "module",
 			dependencies: {
 				"@codefly-reference/frontend": `file:${referenceArchive}`,
-				"@codefly/saas-plugin-contract": `file:${contractArchive}`,
-				"@codefly/saas-plugin-react": `file:${reactArchive}`,
+				"@codefly-dev/saas-plugin-contract": `file:${contractArchive}`,
+				"@codefly-dev/saas-plugin-react": `file:${reactArchive}`,
 				react: "19.2.8",
 				typescript: "5.9.3",
 			},
@@ -127,16 +127,13 @@ await writeFile(
 npm(["install", "--ignore-scripts", "--no-audit", "--no-fund"], consumerRoot);
 const installedReferencePackage = JSON.parse(
 	await readFile(
-		join(
-			consumerRoot,
-			"node_modules/@codefly-reference/frontend/package.json",
-		),
+		join(consumerRoot, "node_modules/@codefly-reference/frontend/package.json"),
 		"utf8",
 	),
 );
 for (const dependency of [
-	"@codefly/saas-plugin-contract",
-	"@codefly/saas-plugin-react",
+	"@codefly-dev/saas-plugin-contract",
+	"@codefly-dev/saas-plugin-react",
 ]) {
 	if (
 		installedReferencePackage.dependencies?.[dependency] !==

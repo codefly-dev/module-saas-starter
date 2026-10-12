@@ -167,7 +167,10 @@ fail closed rather than fall back to another key when the set expires.
 
 ## The endpoint a composed module depends on: `accounts/authority`
 
-The module interface exports four endpoints at module visibility. Three do not
+The module interface exports four endpoints with `visibility: internal` and
+`allow-modules: ["*"]`. This explicitly preserves their reachability by every
+composed module; it grants neither public ingress nor application authority.
+The retired `module` spelling is refused by current Codefly. Three do not
 carry this tier: `accounts/connect` and `auth-gateway/grpc` are tenant surfaces
 whose tiering interceptor refuses internal methods, and `auth-gateway/rest`
 carries the brokered bootstrap routes (registration, Work Context mints) and the
@@ -228,7 +231,7 @@ listeners must sequence the consumers first. Before the upgrade:
    *What a client library must do* above. A pinned image that still serves the
    removed listeners is what is hiding an unconverted consumer.
 2. Every consumer that held a private custody client has moved to an installed
-   binding: a `MODULE_PRINCIPALS` `operation_audiences` entry, redeemed with
+   binding: a module registry `operation_audiences` entry, redeemed with
    `ModuleCapabilitiesService.ExchangeDelegatedOperationAudience`. The library
    that used to carry that authority is gone from this repository, and the
    store migration that drops its table refuses to run while grants are live.

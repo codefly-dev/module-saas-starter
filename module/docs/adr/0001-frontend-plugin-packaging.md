@@ -24,17 +24,17 @@ package root, `services/frontend/code/packages/`. Keeping the workspaces below
 `code/` preserves the copied starter's single `package-lock.json`, existing
 `npm ci` command, and Docker build context:
 
-- `@codefly/saas-plugin-contract` owns serializable metadata, compatibility,
+- `@codefly-dev/saas-plugin-contract` owns serializable metadata, compatibility,
   pure composition, `FrontendPlugin`, and the published protobuf backend
   capability handshake.
-- `@codefly/saas-plugin-react` owns exact lazy-component registration, public
+- `@codefly-dev/saas-plugin-react` owns exact lazy-component registration, public
   React adapters, host services, and extension outlets.
 - `@codefly/saas-plugin-testkit` owns conformance and render harnesses.
 
 Product packages remain product-owned and depend only on
 those published package entry points. They may not import starter-private
 `src/` paths. The contract and pure composition surface are extracted in
-`@codefly/saas-plugin-contract`. Host-local compatibility barrels are removed,
+`@codefly-dev/saas-plugin-contract`. Host-local compatibility barrels are removed,
 not a second public API. FP-012 moves component registrations to the React
 package and FP-012B activates the product-neutral service runtime and hooks.
 FP-047/FP-048 activate a narrow, styling-neutral error boundary and safe

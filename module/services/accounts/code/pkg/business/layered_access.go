@@ -19,6 +19,23 @@ const (
 	ScopeNodeKindCollection = "collection"
 )
 
+// The (resource_type, action) pair a solution-visibility question is asked in
+// (issue #949). A subject may see an installed solution when it holds an
+// accessible scope at that installation's authority-root node for this pair —
+// resolved through the same grant + share union CheckAccess resolves, so a
+// projection can never offer what an authority check would deny.
+//
+// Host-owned, exactly like the node kinds above: a solution install, its scope
+// node and its registry record are all the host's, so naming the permission that
+// governs *using* one names nothing above this module. A role that should reveal
+// a solution permits (solution, use) or carries the wildcard; a role that permits
+// only some product resource does not, which is what keeps a grant written for
+// another purpose from quietly revealing a menu entry.
+const (
+	ResourceTypeSolution = "solution"
+	ActionUseSolution    = "use"
+)
+
 // CheckAccess is the hierarchical + per-record authorization decision (#178),
 // the companion to CheckPermission. Always org-scoped — a record lives in
 // exactly one tenant — so it always runs under WithOrgTx. The store resolves the
@@ -106,6 +123,27 @@ func (s *Service) RegisterScopeNode(ctx context.Context, actorID string, req *ge
 // GrantScope grants a role to a principal/team at a registered scope node.
 func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.GrantScopeRequest) (*gen.GrantScopeResponse, error) {
 	w := wool.Get(ctx).In("GrantScope")
+	var grant *gen.ScopeGrant
+	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		var e error
+		grant, e = s.grantScopeTx(ctx, actorID, req)
+		return e
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot grant scope")
+	}
+	return &gen.GrantScopeResponse{Grant: grant}, nil
+}
+
+// grantScopeTx is one scope grant inside the caller's organization transaction:
+// the subject's tenancy (requireSubjectInOrgTx, under the membership lock a
+// removal takes), the row, the tenant-visible scope.granted event and the audit
+// record, all in that transaction. GrantScope runs it on its own;
+// GrantInstallationToTeam runs it in the transaction that locked the
+// installation, so the grant cannot land on an installation already uninstalled.
+func (s *Service) grantScopeTx(ctx context.Context, actorID string, req *gen.GrantScopeRequest) (*gen.ScopeGrant, error) {
+	if err := s.requireSubjectInOrgTx(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+		return nil, err
+	}
 	grant := &gen.ScopeGrant{
 		Id:          NewIDString(),
 		OrgId:       req.OrgId,
@@ -116,76 +154,108 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 		GrantedBy:   actorID,
 		ExpiresAt:   req.ExpiresAt,
 	}
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		if e := s.store.GrantScope(ctx, grant); e != nil {
-			return e
-		}
-		// scope.granted is tenant-visible so a solution can track the boundaries
-		// it holds; published in the grant's transaction (outbox). The boundary
-		// is the scope node path the grant targets.
-		if e := s.publishLifecycleEvent(ctx, EventScopeGranted, req.OrgId,
-			req.ScopePath, actorID, map[string]any{
-				"scope_grant_id": grant.Id,
-				"role_id":        req.RoleId,
-				"subject_id":     req.SubjectId,
-				"scope_path":     req.ScopePath,
-			}); e != nil {
-			return e
-		}
-		return s.emitTx(ctx, actorID, "user", EventScopeGranted, "scope_grant", grant.Id, req.OrgId,
-			map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId, "scope_path": req.ScopePath})
-	}); err != nil {
-		return nil, w.Wrapf(err, "cannot grant scope")
+	if e := s.store.GrantScope(ctx, grant); e != nil {
+		return nil, e
 	}
-	return &gen.GrantScopeResponse{Grant: grant}, nil
+	// scope.granted is tenant-visible so a solution can track the boundaries
+	// it holds; published in the grant's transaction (outbox). The boundary
+	// is the scope node path the grant targets.
+	if e := s.publishLifecycleEvent(ctx, EventScopeGranted, req.OrgId,
+		req.ScopePath, actorID, map[string]any{
+			"scope_grant_id": grant.Id,
+			"role_id":        req.RoleId,
+			"subject_id":     req.SubjectId,
+			"scope_path":     req.ScopePath,
+		}); e != nil {
+		return nil, e
+	}
+	if e := s.emitTx(ctx, actorID, "user", EventScopeGranted, "scope_grant", grant.Id, req.OrgId,
+		map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId, "scope_path": req.ScopePath}); e != nil {
+		return nil, e
+	}
+	return grant, nil
 }
 
 // RevokeScope removes a hierarchical scope grant.
+//
+// A NARROWING, so it runs under the policy log: appended and receipted before
+// the grant goes, and the delete commits in the same transaction as the
+// receipt's commit. A host that cannot witness the append refuses rather than
+// revoking unwitnessed — a revocation a restore could silently undo is worse
+// than a refusal the caller can see.
+//
+// The transaction is the policy log's control-plane one, because the receipt
+// relation is control-plane only and the two writes must be atomic. The
+// statement below names req.OrgId explicitly, so the delete stays confined to
+// the organisation the tenant policy would have confined it to.
 func (s *Service) RevokeScope(ctx context.Context, actorID string, req *gen.RevokeScopeRequest) error {
 	w := wool.Get(ctx).In("RevokeScope")
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		if e := s.store.RevokeScope(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ScopePath, req.RoleId); e != nil {
-			return e
-		}
-		// scope.revoked is tenant-visible: a solution learns a boundary it held
-		// went away (RFC-0004 open question 4). Published in the revoke's
-		// transaction (outbox); boundary is the scope node path.
-		if e := s.publishLifecycleEvent(ctx, EventScopeRevoked, req.OrgId,
-			req.ScopePath, actorID, map[string]any{
-				"role_id":    req.RoleId,
-				"subject_id": req.SubjectId,
-				"scope_path": req.ScopePath,
-			}); e != nil {
-			return e
-		}
-		return s.emitTx(ctx, actorID, "user", EventScopeRevoked, "scope_grant", req.RoleId, req.OrgId,
-			map[string]any{"subject_id": req.SubjectId, "scope_path": req.ScopePath})
+	if err := s.WithPolicyLoggedNarrowing(ctx, revokeScopePolicyLogEntry(
+		actorID, req.OrgId, req.SubjectId, req.SubjectKind.String(), req.ScopePath, req.RoleId,
+	), func(ctx context.Context) error {
+		return s.revokeScopeApply(ctx, actorID, req)
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke scope")
 	}
 	return nil
 }
 
+// revokeScopeApply is one scope revocation inside the policy log's narrowing
+// transaction: the delete, the tenant-visible scope.revoked event and the audit
+// record. RevokeScope and RevokeInstallationFromTeam both run it, under the same
+// entry builder, so a team removed from an installation is witnessed and
+// recorded exactly as any other scope revocation is.
+func (s *Service) revokeScopeApply(ctx context.Context, actorID string, req *gen.RevokeScopeRequest) error {
+	if e := s.store.RevokeScope(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ScopePath, req.RoleId); e != nil {
+		return e
+	}
+	// scope.revoked is tenant-visible: a solution learns a boundary it held
+	// went away (RFC-0004 open question 4). Published in the revoke's
+	// transaction (outbox); boundary is the scope node path.
+	if e := s.publishLifecycleEvent(ctx, EventScopeRevoked, req.OrgId,
+		req.ScopePath, actorID, map[string]any{
+			"role_id":    req.RoleId,
+			"subject_id": req.SubjectId,
+			"scope_path": req.ScopePath,
+		}); e != nil {
+		return e
+	}
+	return s.emitTx(ctx, actorID, "user", EventScopeRevoked, "scope_grant", req.RoleId, req.OrgId,
+		map[string]any{"subject_id": req.SubjectId, "scope_path": req.ScopePath})
+}
+
 // ShareRecord grants a principal/team a role on a specific record.
+//
+// The share names a subject of the share's organization: record_shares' RLS
+// policy checks only the share's organization and nothing ties subject_id to a
+// membership, so the subject is checked in the share's own transaction, under
+// the membership lock a removal takes (requireSubjectInOrgTx).
 func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.ShareRecordRequest) (*gen.ShareRecordResponse, error) {
+	orgID, subjectID, err := canonicalSubjectTenancyIDs(req.OrgId, req.SubjectId)
+	if err != nil {
+		return nil, err
+	}
 	w := wool.Get(ctx).In("ShareRecord")
 	share := &gen.RecordShare{
 		Id:           NewIDString(),
-		OrgId:        req.OrgId,
+		OrgId:        orgID,
 		ResourceType: req.ResourceType,
 		ResourceId:   req.ResourceId,
-		SubjectId:    req.SubjectId,
+		SubjectId:    subjectID,
 		SubjectKind:  req.SubjectKind,
 		RoleId:       req.RoleId,
 		GrantedBy:    actorID,
 		ExpiresAt:    req.ExpiresAt,
 	}
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := s.requireSubjectInOrgTx(ctx, orgID, subjectID, req.SubjectKind); err != nil {
+			return err
+		}
 		if err := s.store.ShareRecord(ctx, share); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventRecordShared, req.ResourceType, req.ResourceId, req.OrgId,
-			map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId})
+		return s.emitTx(ctx, actorID, "user", EventRecordShared, req.ResourceType, req.ResourceId, orgID,
+			map[string]any{"role_id": req.RoleId, "subject_id": subjectID})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot share record")
 	}
@@ -193,9 +263,22 @@ func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.Shar
 }
 
 // RevokeShare removes a per-record share.
+//
+// A NARROWING, so it runs under the policy log, exactly as RevokeScope above
+// does: appended and receipted before the share goes, with the delete and the
+// receipt's commit in one transaction, and a refusal rather than an unwitnessed
+// revocation when the log cannot be reached.
+//
+// That transaction is the policy log's control-plane one, because the receipt
+// relation is control-plane only and the two writes must be atomic. The delete
+// names req.OrgId in its WHERE, so it stays confined to the organisation the
+// tenant policy would have confined it to.
 func (s *Service) RevokeShare(ctx context.Context, actorID string, req *gen.RevokeShareRequest) error {
 	w := wool.Get(ctx).In("RevokeShare")
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+	if err := s.WithPolicyLoggedNarrowing(ctx, revokeSharePolicyLogEntry(
+		actorID, req.OrgId, req.ResourceType, req.ResourceId,
+		req.SubjectId, req.SubjectKind.String(), req.RoleId,
+	), func(ctx context.Context) error {
 		if err := s.store.RevokeShare(ctx, req.OrgId, req.ResourceType, req.ResourceId, req.SubjectId, req.SubjectKind, req.RoleId); err != nil {
 			return err
 		}
@@ -229,7 +312,7 @@ func (s *Service) ListCollectionAccess(ctx context.Context, req *gen.ListCollect
 	var collections []*gen.CollectionAccess
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
 		var err error
-		collections, err = s.store.ListCollectionAccess(ctx, req.OrgId, req.PageToken, size+1, s.modulePrincipals.ContentResources())
+		collections, err = s.store.ListCollectionAccess(ctx, req.OrgId, req.PageToken, size+1, s.declaredModules().ContentResources())
 		return err
 	}); err != nil {
 		return nil, err

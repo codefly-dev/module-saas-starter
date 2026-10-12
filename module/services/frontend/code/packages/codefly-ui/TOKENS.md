@@ -9,7 +9,7 @@ values behind the names in one place and everything above re-themes for free.
 The vocabulary is the shadcn semantic token set (`--muted-foreground`,
 `--destructive`, `--accent`, `--border`, …). The names and their light/dark
 default values are enumerated in
-[`@codefly/saas-plugin-contract`](../saas-plugin-contract) —
+[`@codefly-dev/saas-plugin-contract`](../saas-plugin-contract) —
 `FRONTEND_APPEARANCE_TOKEN_NAMES` and `DEFAULT_FRONTEND_APPEARANCE`. They live
 there, one layer down, because the compile-time appearance validator
 (`resolveFrontendAppearance`) consumes them and that contract package must not
@@ -25,7 +25,7 @@ package at all.
 
 The chain is one direction, top to bottom — a skin is *data*, never CSS:
 
-1. **Contract** — `DEFAULT_FRONTEND_APPEARANCE` in `@codefly/saas-plugin-contract`
+1. **Contract** — `DEFAULT_FRONTEND_APPEARANCE` in `@codefly-dev/saas-plugin-contract`
    holds the canonical names and the default (host) `light`/`dark` values.
 2. **Skin** — `resolveSkin` (`@codefly-dev/ui/skin`) overlays a validated skin
    descriptor onto that default. Only the tokens a skin declares are overridden;

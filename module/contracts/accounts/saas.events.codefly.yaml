@@ -199,6 +199,18 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.datasource.operation.declared
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.operation.invoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.receipts.pruned
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.datasource.snapshot_too_large
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -379,6 +391,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.installation.narrowed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.installation.ownership_transferred
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -451,15 +467,15 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.module.executable_artifact_decision
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.module.operation_context_minted
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
   - type: saas.module.org_admins_notified
-    schema: saas/events/v1/events.proto#EventEnvelope
-    visibility: external
-    retention: 30d
-  - type: saas.module.registration_minted
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
@@ -504,6 +520,10 @@ publishes:
     visibility: external
     retention: 30d
   - type: saas.org.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.platform.module_envelope_written
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
@@ -587,15 +607,11 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.solution.host_binding_applied
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.solution.registration_deleted
-    schema: saas/events/v1/events.proto#EventEnvelope
-    visibility: external
-    retention: 30d
-  - type: saas.solution.registration_minted
-    schema: saas/events/v1/events.proto#EventEnvelope
-    visibility: external
-    retention: 30d
-  - type: saas.solution.registration_updated
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d

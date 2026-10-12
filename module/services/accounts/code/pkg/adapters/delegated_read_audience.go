@@ -36,6 +36,12 @@ type delegatedAudienceRequest struct {
 }
 
 func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context, encodedParent string, request delegatedAudienceRequest, resolve delegatedAudienceResolver) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
@@ -145,7 +151,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
 	}
-	issued, err := authority.exchangeVerifiedParent(parentToken, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)})
+	issued, err := authority.exchangeVerifiedParent(ctx, parentToken, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)})
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
@@ -199,6 +205,12 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 // authenticates the caller rather than the parent — a reference is an
 // identifier, not a credential, and on its own it authorizes nothing.
 func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Context, delegationID string, request delegatedAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
@@ -281,7 +293,7 @@ func delegationReferenceError(err error) error {
 		return status.Error(codes.PermissionDenied, "source delegation no longer authorizes this work")
 	case errors.Is(err, business.ErrSourceDelegationLookupUnauthorized):
 		return status.Error(codes.PermissionDenied, "source delegation does not authorize receipt lookup for this binding")
-	case errors.Is(err, business.ErrModuleRegistrationDenied):
+	case errors.Is(err, business.ErrModuleIdentityDenied):
 		return status.Error(codes.Unauthenticated, "module source operation context denied")
 	case status.Code(err) != codes.Unknown:
 		return err
@@ -311,18 +323,30 @@ func delegatedAudienceRefusalCode(err error) string {
 }
 
 func (s *ModuleCapabilitiesServer) ExchangeDelegatedReadAudience(ctx context.Context, req *gen.ModuleExchangeDelegatedReadAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
 	// A source delegation authorizes operation bindings only; a read exchange
 	// keeps the caller's own tenant check whatever the parent carries.
 	return s.exchangeDelegatedAudience(ctx, req.GetParentWorkContextToken(), delegatedAudienceRequest{bindingID: req.GetBindingId(), kind: "read"}, func(caller business.ModuleCaller, tenant, parentAudience string, _ *business.SourceDelegation) (delegatedAudienceBinding, error) {
-		binding, err := service.ModuleReadAudience(caller, tenant, parentAudience, req.BindingId)
+		binding, err := service.ModuleReadAudience(ctx, caller, tenant, parentAudience, req.BindingId)
 		return delegatedAudienceBinding{audience: binding.Audience, scopes: binding.WireScopes(), policy: binding}, err
 	})
 }
 
 func (s *ModuleCapabilitiesServer) ExchangeDelegatedOperationAudience(ctx context.Context, req *gen.ModuleExchangeDelegatedOperationAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -339,9 +363,9 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedOperationAudience(ctx contex
 		var binding business.ModuleOperationAudience
 		var err error
 		if delegation != nil {
-			binding, err = service.ModuleOperationAudienceForDelegation(caller, delegation, parentAudience, req.BindingId)
+			binding, err = service.ModuleOperationAudienceForDelegation(ctx, caller, delegation, parentAudience, req.BindingId)
 		} else {
-			binding, err = service.ModuleOperationAudience(caller, tenant, parentAudience, req.BindingId)
+			binding, err = service.ModuleOperationAudience(ctx, caller, tenant, parentAudience, req.BindingId)
 		}
 		return delegatedAudienceBinding{audience: binding.Audience, scopes: binding.WireScopes(req.Lookup), policy: binding}, err
 	})

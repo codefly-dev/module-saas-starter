@@ -54,3 +54,36 @@ a committed path or version:
   what runs.
 - **Released** means tagged here, after which the composing workspace moves its
   `version` and re-renders. A dev deployment is a trial, never the fix.
+
+## `exposure` on a public endpoint, and why both values are decisions
+
+Core v0.14.0 requires `exposure` on any endpoint declaring `visibility: public`
+and refuses a manifest that omits it: *"a public endpoint never omits it, so a
+manifest written when public meant an address fails here instead of losing it"*.
+Two endpoints in this module are public — `frontend/http` and `marketing/http` —
+and both carry `exposure: public`.
+
+**It goes on the SERVICE manifest, never on an interface entry.**
+`InterfaceEndpoint` has no `Exposure` field and refuses an unknown key by presence,
+so writing it there is a hard load error. The rule v0.14.0 enforces is a *pairing*:
+an endpoint declaring `exposure: public` must be exported at `visibility: public`
+by its interface entry. That pairing already held here, so the interface needs no
+change.
+
+**Why `public` is the safe value and `none` is the risky one.** v0.13.0's
+`visibility == public` is precisely the condition v0.14.0 moves to `exposure`, and
+`frontend/http` has been `visibility: public` all along — so the current render
+already shows what the condition produces: a plain ClusterIP `Service`, a staging
+overlay of configmap/external-secret/kustomization only, and **zero** `Ingress`,
+`HTTPRoute`, `LoadBalancer` or `NodePort` objects anywhere under `deployments/`.
+Staging renders nothing outward because the staging environment declares no
+`ingress:` block; `local` declares two. `exposure: none` would be the change in
+behaviour — it could take the local ingress binding away.
+
+**One value, and no mechanism to condition it.** `exposure` lives in the module's
+`service.codefly.yaml`, read identically for every environment; a composition has
+no key with which to override a module's endpoint declaration per environment.
+
+The key is **dropped** by core v0.8.1 and v0.13.0, so it is inert on any CLI older
+than the v0.14.0 generation and mandatory on that one. See AGENTS.md, "Building,
+testing, and CI", for the CI pin that reads it.

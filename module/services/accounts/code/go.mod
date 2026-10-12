@@ -1,6 +1,6 @@
 module accounts
 
-go 1.27.0
+go 1.27.2
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
@@ -8,10 +8,10 @@ require (
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.5.11-0.20260926231217-d481a2d49683
+	github.com/codefly-dev/core v0.19.0
 	github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba
-	github.com/codefly-dev/sdk-go v0.2.1-0.20260926212413-b91ce91eb23e
-	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260926212413-b91ce91eb23e
+	github.com/codefly-dev/sdk-go v0.3.1
+	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260928181007-c1fc359f112f
 	github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211
 	github.com/codefly-dev/service-redis/cache v0.2.0
 	github.com/go-webauthn/webauthn v0.18.0
@@ -22,6 +22,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/rs/cors v1.11.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
 	github.com/svix/svix-webhooks v1.99.1
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.71.0
@@ -33,7 +34,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	go.opentelemetry.io/proto/otlp v1.11.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260831171406-18b4a7587f8a
@@ -108,7 +109,6 @@ require (
 	github.com/prometheus/common v0.71.0 // indirect
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shoenig/go-m1cpu v0.2.2 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
@@ -128,4 +128,5 @@ require (
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
+	sigs.k8s.io/yaml v1.6.0 // indirect
 )

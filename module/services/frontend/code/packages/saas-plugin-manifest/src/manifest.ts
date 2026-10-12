@@ -2,7 +2,7 @@ import {
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
 	type FrontendPlugin,
 	validateFrontendPlugins,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	type ApiConsume,
 	type ApiExpose,

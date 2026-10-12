@@ -348,7 +348,7 @@ func newDirectoryService(t *testing.T) (*business.Service, *directoryStore, *rec
 	store.roles[userJoe] = gen.OrgRole_ORG_ROLE_MEMBER
 	store.roles[userAdm] = gen.OrgRole_ORG_ROLE_ADMIN
 	svc, audit := newDatasourceService(store, &recordingProducer{}, nil)
-	svc.SetDatasourceTicketKey([]byte("internal-test-key"))
+	svc.SetDatasourceKeys([]byte("test-ticket-key"), []byte("test-link-key"))
 	svc.SetDatasourceAccountLinkers(map[string]business.DatasourceAccountLinker{
 		"github": fakeLinker{accounts: map[string][2]string{"code-jane": {"1001", "jane"}, "code-joe": {"1002", "joe"}}},
 	})

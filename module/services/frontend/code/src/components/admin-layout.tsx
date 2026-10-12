@@ -1,6 +1,9 @@
 "use client";
 
-import type { NavItem, PluginNavSection } from "@codefly/saas-plugin-contract";
+import type {
+	NavItem,
+	PluginNavSection,
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	Boxes,
 	ChevronRight,
@@ -44,6 +47,7 @@ import { NotificationBell } from "@/features/notifications/ui/notification-bell"
 import { OrgSwitcher } from "@/features/organizations/ui/org-switcher";
 import { useAppearance } from "@/lib/appearance-provider";
 import { useAuth } from "@/lib/auth";
+import { signOutAndLeave } from "@/lib/sign-out-journey";
 import { sessionDisplayLabel } from "@/lib/auth-session";
 import { getNavigationIcon } from "@/lib/navigation-icons";
 import { canPresent, selectNavigation } from "@/lib/plugins/presentation";
@@ -317,7 +321,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 										);
 									})}
 									<DropdownMenuSeparator />
-									<DropdownMenuItem onClick={logout}>
+									<DropdownMenuItem
+										onClick={() => {
+											// THE PRIMARY SIGN-OUT CONTROL: the account menu on
+											// every dashboard and admin page. `onClick={logout}`
+											// handed the promise to the menu, which discards it,
+											// so an incomplete sign-out looked finished and the
+											// route shell then sent the person to the sign-in
+											// page as if the session had ended.
+											void signOutAndLeave(logout);
+										}}
+									>
 										<LogOut className="mr-2 h-4 w-4" />
 										Sign out
 									</DropdownMenuItem>

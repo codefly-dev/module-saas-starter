@@ -30,6 +30,12 @@ type Store interface {
 	// deliberate.
 	WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error
 
+	// WithControlPlaneReadSnapshot is WithControlPlane as one REPEATABLE READ,
+	// read-only transaction: every read fn makes sees the same committed
+	// state. For a decision that derives several answers from several
+	// relations and must not see one of them change between reads.
+	WithControlPlaneReadSnapshot(ctx context.Context, fn func(ctx context.Context) error) error
+
 	// As returns a Store handle bound to an identity (see Scoped). It is the
 	// identity-first entry point the With* wrappers collapse into: As(id).Within
 	// sets the same RLS context, but the identity is explicit and carried by the
@@ -325,13 +331,22 @@ type Store interface {
 	// ArchiveOrganization marks a live organization archived and releases its
 	// slug. Migration 16's trigger then refuses any membership into it.
 	ArchiveOrganization(ctx context.Context, orgID, actorID string) error
-	// RemoveAllOrgMembers deletes every membership of an organization.
+	// LockAllOrgMembers takes the administration lock and every canonical
+	// membership lock in sorted order without deleting. Keep this transaction
+	// open through RemoveLockedOrgMembers and acquire these before any writes.
+	LockAllOrgMembers(ctx context.Context, orgID string) ([]string, error)
+	// RemoveLockedOrgMembers deletes only the roster locked above in the same
+	// transaction. Organization deletion must lock and uninstall its installation
+	// batch before this write's authorization/session triggers run.
+	RemoveLockedOrgMembers(ctx context.Context, orgID string, members []string) (int64, error)
+	// RemoveAllOrgMembers locks and deletes every membership in one call.
 	RemoveAllOrgMembers(ctx context.Context, orgID string) (int64, error)
 	// RevokeOrgAPIKeys revokes every live API key of an organization.
 	RevokeOrgAPIKeys(ctx context.Context, orgID string) (int64, error)
 	// RevokeOrgPendingInvitations revokes every pending invitation.
 	RevokeOrgPendingInvitations(ctx context.Context, orgID string) (int64, error)
-	// ActiveInstallationIDs lists an organization's unrevoked installations.
+	// ActiveInstallationIDs locks all unrevoked installations in ID order before
+	// returning their IDs; the caller's transaction must enclose the whole batch.
 	ActiveInstallationIDs(ctx context.Context, orgID string) ([]string, error)
 	// CountOrgMembers counts an organization's memberships.
 	CountOrgMembers(ctx context.Context, orgID string) (int, error)
@@ -543,6 +558,11 @@ type Store interface {
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
 	ListAuditEventTypes(ctx context.Context) ([]AuditEventTypeRow, error)
 	EnsureAuditPartitions(ctx context.Context, months int) error
+	// DropAuditPartitionsBefore drops the audit partitions whose recorded range
+	// ends by `before`, which must be no later than the audit_events retention
+	// policy allows by the database's clock. It runs on a transaction already on
+	// ctx, which must be READ COMMITTED, or else in a control-plane transaction
+	// of its own at READ COMMITTED.
 	DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// Invitations
@@ -676,6 +696,68 @@ type Store interface {
 	NextSolutionRegistryRevision(ctx context.Context) (int64, error)
 	SaveSolutionRegistration(ctx context.Context, record *SolutionRegistration) error
 	ListSolutionRegistrations(ctx context.Context, includeTombstoned bool) ([]*SolutionRegistration, int64, error)
+
+	// Declared solution presence (issue #952). solution_host_bindings is a
+	// control-plane relation holding one row per binding ID: the generation
+	// delivery is showing this host, the generation the host applied and the
+	// registry record it applied into, and why a desired generation is not the
+	// applied one.
+	//
+	//   - GetSolutionHostBindingForUpdate returns nil when the binding has never
+	//     been delivered, and row-locks the record otherwise. The lock is what
+	//     makes two replicas reconciling the same pass converge on one applied
+	//     generation instead of applying it twice.
+	//   - SaveSolutionHostBinding writes the whole record.
+	//   - ListSolutionHostBindings returns every record, ordered by binding ID.
+	// The identity an organisation installs (solution_targets.go). A target is
+	// one continuous period of one binding's presence, minted on the first
+	// present generation and closed by the tombstone that withdraws it, so a
+	// reused route alias can never carry an installation across to a different
+	// binding.
+	//
+	//   - GetLiveSolutionTargetForUpdate returns nil when the binding has no OPEN
+	//     target, which covers both "never present" and "withdrawn".
+	//   - OpenSolutionTarget mints one; the partial unique indexes make two
+	//     replicas racing one pass a unique violation rather than two identities.
+	//   - RetargetSolutionTarget moves the alias and never the identity.
+	//   - CloseSolutionTarget ends the period; the row is never deleted.
+	//   - GetSolutionTarget resolves one by its own id, open or closed, for an
+	//     authority decision that must name the BINDING a target recorded
+	//     rather than the route alias the target happens to carry.
+	GetSolutionTarget(ctx context.Context, targetID string) (*SolutionTarget, error)
+	GetLiveSolutionTargetForUpdate(ctx context.Context, bindingID string) (*SolutionTarget, error)
+	OpenSolutionTarget(ctx context.Context, bindingID, solutionID string, generation uint64, now time.Time) (*SolutionTarget, error)
+	RetargetSolutionTarget(ctx context.Context, targetID, solutionID string, now time.Time) error
+	CloseSolutionTarget(ctx context.Context, targetID string, generation uint64, now time.Time) error
+	ListSolutionTargets(ctx context.Context) ([]*SolutionTarget, error)
+	//   - RevokeInstallationsOfTarget ends the consent a withdrawn presence
+	//     held, in the transaction that closed the target, and returns the rows
+	//     it flipped so the caller emits one audit event per organisation. It is
+	//     control-plane: the withdrawal crosses every tenant that installed the
+	//     target, so it cannot run inside one tenant's transaction.
+	RevokeInstallationsOfTarget(ctx context.Context, targetID, reason string, now time.Time) ([]RevokedInstallation, error)
+	//   - ListAvailableSolutionTargets is the catalogue read: live targets whose
+	//     binding's newest APPLIED generation is a present one, with the alias
+	//     and release that generation carries, and whether the asking
+	//     organisation already holds an active installation.
+	ListAvailableSolutionTargets(ctx context.Context, query AvailableSolutionQuery) ([]*AvailableSolutionTarget, error)
+
+	// The generation history (migration 22), append-only: the control plane holds
+	// SELECT and INSERT and nothing else, because a decision is a fact about the
+	// past.
+	//
+	//   - RecordSolutionGenerationDecision appends one. It is idempotent on
+	//     (binding, generation, digest, decision), so a pass that re-reads an
+	//     unchanged document does not append a row per pass — a thirty-second
+	//     poll would otherwise reproduce the registration-event incident in a
+	//     different table.
+	//   - ListSolutionGenerationHistory returns the newest decisions first.
+	RecordSolutionGenerationDecision(ctx context.Context, decision *SolutionGenerationDecision) error
+	ListSolutionGenerationHistory(ctx context.Context, bindingID string, limit int) ([]*SolutionGenerationDecision, error)
+
+	GetSolutionHostBindingForUpdate(ctx context.Context, bindingID string) (*SolutionHostBindingRecord, error)
+	SaveSolutionHostBinding(ctx context.Context, record *SolutionHostBindingRecord) error
+	ListSolutionHostBindings(ctx context.Context) ([]*SolutionHostBindingRecord, error)
 
 	// Solution-declared audit event types (solution_audit_events.go). They are
 	// rows of audit_event_types owned by "solution:<id>" — the table
@@ -811,6 +893,9 @@ type Store interface {
 	// append-only trigger blocks that — but a partition drop; see
 	// DropAuditPartitionsBefore above.
 	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)
+	// DatabaseNow reads the database's clock. Retention counts every cutoff
+	// from it rather than from this process's clock, which may run ahead.
+	DatabaseNow(ctx context.Context) (time.Time, error)
 	DeleteOldSessions(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldNotifications(ctx context.Context, before time.Time) (int64, error)

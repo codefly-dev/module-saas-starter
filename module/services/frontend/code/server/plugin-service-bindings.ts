@@ -1,7 +1,7 @@
 import type {
 	FrontendServiceAllowlist,
 	FrontendServiceAllowlistEntry,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { getEndpoints, type ServiceEndpoint } from "codefly";
 
 import generatedAllowlist from "./plugin-service-allowlist.generated.json";

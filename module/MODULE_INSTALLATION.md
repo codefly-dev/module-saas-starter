@@ -19,11 +19,13 @@ cannot write this projection. This first implementation relies on the
 operator's reviewed policy-delivery process to establish the organization's
 approval; it does not implement an organization-admin policy publication API.
 
-The operator also provisions a dedicated, create-once module identity secret.
-Its digest goes into `federation.MODULE_IDENTITY_SECRETS`, and the protected
-plaintext goes only to the installation Job. Declare the identity in
-`module-capabilities.MODULE_PRINCIPALS`, bound to the approved organization.
-It needs no queues, event namespaces, cross-tenant grant or administrator role.
+The installation Job proves which module it is like every module does: with its
+pod's projected ServiceAccount token (audience `accounts`). There is no installer
+secret — `MODULE_IDENTITY_SECRETS` is deleted (#1056). Declare the identity as a
+module principal allowed by the platform super_admin's module envelope, bound
+to the approved organization, with the Job's workload (ServiceAccount, namespace,
+container); its authority document must approve the build the Job runs, or it
+mints nothing. It needs no queues, event namespaces, cross-tenant grant or administrator role.
 The existing `ModulePrincipalID(prefix)` derives its system identity. This is
 separate from the module's application agent, and needs no agent registration
 or human API key to bootstrap itself.
@@ -81,11 +83,19 @@ nor a cloud workload identity alone authorizes installation.
 
 `POST /v1/module-installations/token`:
 
+`Authorization: Bearer <the Job pod's projected ServiceAccount token>`, and:
+
 ```json
-{"prefix":"example-installer","secret":"<protected dedicated identity secret>"}
+{"prefix":"example-installer"}
 ```
 
-This calls the existing module identity authorization and Work Context signer,
+A body naming any other field — a `secret` included — is refused as malformed.
+A missing bearer is `401`; a token refused by the API server, another workload's
+token, or a pod on an unapproved build is `403`; a host that could not establish
+the Job's execution is `503`.
+
+This calls the existing module identity authorization (which binds the token to
+the pod's running build) and Work Context signer,
 checks that a live delegation exists for that identity and tenant, verifies the
 tenant exists, and durably records issuance before returning the capability.
 Response fields are `token`, `expiresAt` (RFC3339), `principalId`, and `tenant`.
@@ -94,10 +104,9 @@ issuer, `module-capabilities` audience and existing maximum 15-minute lifetime
 (with the existing verifier's clock-skew allowance). Re-exchange after expiry;
 do not commit tokens or copy them into long-lived configuration.
 
-The secret itself is a protected bootstrap identity credential, not a personal
-key. It remains stable across repeated installation. Rotate it explicitly by
-replacing the protected plaintext and digest and restarting Accounts to load
-the digest. To revoke outstanding capabilities immediately at the request
+There is no stored credential to rotate: the kubelet rotates the projected
+token, and the Job re-reads it before each mint. To revoke outstanding
+capabilities immediately at the request
 boundary, remove the delegation from the projected policy or expire it.
 Revocation takes effect on each replica when its projection is updated. An
 already authorized transaction may finish; deleting policy is not cancellation
@@ -169,9 +178,9 @@ keys and durable runs are retained. Changing a routing solution identifier merel
 to circumvent this conflict is not a supported upgrade procedure. A reviewed
 version transition and in-flight runtime qualification remain separate work.
 
-The solution registration secret/token, gateway upstream and frontend halves
-remain their existing owner-bound registration flow; the module Work Context
-is not a substitute for any of them.
+A solution's gateway upstream and frontend halves are delivered presence; there
+is no solution registration secret or credential any more (#1056), and the module
+Work Context is not a substitute for presence.
 
 ## Verification
 
@@ -244,8 +253,10 @@ current policy checks still happen through the existing runtime mechanisms.
 The versioned hash input is one JSON object with these exact keys:
 
 - `schema_version`, set to the requested supported version;
-- `module_id`, `agent_identifier`, `solution_identifier`,
-  from the authorized request;
+- `module_id`, `agent_identifier`, `target_id`,
+  from the authorized request. `target_id` is the immutable solution target the
+  installation is for; at `/v1` this was `solution_identifier`, a free-text route
+  alias, and replacing it is the field change the version step below records.
 - `organization_id`, `principal_id`, `installation_id`, `scope_node_id`, `grant_id`,
   from the verified persisted installation;
 - `owner_principal_id`, `role_id`, `role_permissions`, `allowed_audiences`,
@@ -260,6 +271,13 @@ escapes, and escaped U+2028/U+2029. The output is `sha256:` followed by the lowe
 hex digest. The golden test pins the encoded contract independently of the Go
 encoder. Consumers use the opaque server result; they do not each reimplement
 this calculation. A change to these fields or encoding requires a schema decision.
+
+The current version is **`accounts.module-installation-authority/v2`**. `v1`
+named `solution_identifier`; a route alias is reusable by a later binding, so an
+authority reference built on it did not identify one installation over time. `v2`
+names `target_id` instead. The version string and the field moved together, which
+is what the schema decision means here: a consumer that pinned `v1` is refused by
+name rather than handed a digest over different fields.
 
 Software versions, image references, full deployment approval digests, display
 labels, organization lookup spelling, installer credential material and delegation
@@ -279,3 +297,116 @@ receipts. New consumers require the supported authority response and refuse a
 missing or unknown version; old servers reject the new request field. Adopting
 this response does not itself migrate an existing consumer, validate software
 compatibility or qualify an installed rollout.
+
+## Exact executable artifact consent
+
+A consuming module can ask the internal `ModuleCapabilitiesService` to
+`ApproveExecutableArtifact`, `AuthorizeExecutableArtifact`, or
+`RevokeExecutableArtifact`. All three authenticate the module and independently
+verify a current signed parent Work Context addressed to that module. Approval
+and revocation require a person-present current organization administrator and
+the installed activation permission. A delegated actor may check a prior
+approval, but cannot turn the owner's identity into consent.
+
+A platform super_admin declares `artifact_policies[<id>]` in the module's
+grant in the module envelope:
+
+```json
+{
+  "schema": "example.artifact/v1",
+  "sources": {"acme.example": "acme/example"},
+  "activate": {"resource": "definitions", "action": "configure"},
+  "run": {"resource": "definitions", "action": "run"},
+  "contracts": [
+    {"kind": "engine", "name": "example/engine", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  ],
+  "required_kinds": ["engine"]
+}
+```
+
+These are exact ceilings, without wildcards. `sources` maps the exported source
+identity to the installation's actual solution identifier; an event namespace
+never establishes source ownership. Each requested contract must be one of the
+installed exact kind/name/digest triples, and every required kind must appear.
+The module's compiler owns completeness of its dependency list and its versioned
+subject encoding. The host owns approval and checks the declared ceilings; it
+does not interpret another module's configuration or attest to a compiler hash.
+
+The request names the installation and installed policy, then supplies
+`identity {schema, source, subject, contracts, expected_revision}`. `subject` is
+bounded to 65,536 bytes: the complete canonical exported identity under `schema`,
+including all transitive content references and execution identities, never
+prompts, executable bytes, bearer tokens, or service addresses. It is a protobuf
+`bytes` field, represented as base64 in JSON. The module must specify one
+canonical encoding, including empty arrays and declaration order. The host
+preserves those bytes exactly. `expected_revision` is an int64 in both request
+and response and is never decoded through a floating-point JSON value.
+
+The host hashes its own versioned envelope containing tenant, module principal,
+installation, policy ID and full policy, exact subject, ordered contracts and
+revision. The response `schema_version` is `host.executable-artifact/v1`;
+`qualified_name` names the immutable approval row and `digest` identifies that
+whole envelope. This is explicit administrative approval, not publisher
+attestation. The consuming module compares the returned revision, records the
+Ref, and owns its activation compare-and-swap. An approval left by a failed
+activation does not move any pointer or execute anything.
+
+`AuthorizeExecutableArtifact` never inserts. Every call checks current parent
+authority and permission, active healthy installation, exact source ownership,
+current policy/contract ceilings, the exact approved row and revocation.
+Approval is a durable tenant administrative decision, not an ongoing delegation
+from its approver: administrator turnover does not invalidate committed consent.
+The approver remains immutable audit attribution. A policy
+change therefore invalidates existing consent. Explicitly re-approving an
+already approved identity returns the same Ref after a lost response; replay
+never revives a revoked identity. Approving again requires a new exact identity
+(for example a new content version or activation revision), not replaying the
+revoked one. Approval records are tenant-scoped, immutable
+apart from terminal revocation, and survive independently of the consumer's DB.
+They confer no dispatch, credential, artifact-read or sandbox authority.
+
+Migration `19_executable_artifact_approvals` uses FORCE RLS with only tenant
+access, column-limited revocation writes, and no delete privilege. Its down
+migration refuses to erase retained approvals. Approval/revocation audit records
+commit in the same transaction as the change. Real database coverage, including
+concurrent retries, tenant isolation and terminal revocation, runs with:
+
+```sh
+python3 module/services/accounts/code/tools/test_module_installer.py --run '^TestExecutableArtifactPostgres'
+```
+
+Revocation takes `ModuleRevokeExecutableArtifactRequest` with
+`parent_work_context_token`, `installation_id` and `approval_id` (the UUID at the
+end of the returned qualified name). It looks up that retained row directly,
+checks its original activation permission against the current parent and current
+administrator, and revokes it even if its installation or policy is now disabled.
+It does not require the old content graph to remain executable.
+
+## Current installation identity for a module
+
+`ModuleCapabilitiesService/GetCurrentInstallation` is an internal authority-port
+read. Its only selector is `installation_id`; `parent_work_context_token` is
+proof, not a source or tenant selector. The module presents its own Work Context
+and the internal transport credential independently. The host verifies the
+parent signature, issuer, expiry, current owner/actor authority revision and
+live delegation revocation, then requires its audience to match the authenticated
+module's installed prefix and its tenant to fit that module's grant.
+
+This preserves `GetInstallation`'s organization-member metadata-read rule.
+It introduces no permission vocabulary, operation binding, scope alias or token
+mint. The owner must still be a current member. The tenant and owner come only
+from the verified parent. The tenant-scoped store must return the exact requested
+installation and tenant, ACTIVE with no revocation timestamp. Success contains
+only `installation_id`, `tenant_id` and the exact host `solution_identifier`.
+Absent, inactive, revoked or mismatched rows are refused. No requested source,
+configuration, graph, grant or model identity is accepted or returned.
+
+A success is a current observation, not a durable liveness proof or approval to
+execute anything. Consumers retain their own operation authorization and re-read
+on subsequent requests. This read neither consumes nor extends a parent replay
+witness and never substitutes a viewer bearer or remints missing authority.
+
+The TypeScript SDK includes this contract starting with package version
+`0.3.17`. Artifact decision events are also part of the declared module
+generator chain: regenerate the complete package projections when changing
+these authority contracts, including the event catalog and communication docs.

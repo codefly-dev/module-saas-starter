@@ -62,7 +62,8 @@ func CanTransition(from, to jobsv1.JobState) bool {
 	case jobsv1.JobState_JOB_STATE_PROCESSING:
 		return to == jobsv1.JobState_JOB_STATE_RETRYING ||
 			to == jobsv1.JobState_JOB_STATE_SUCCEEDED ||
-			to == jobsv1.JobState_JOB_STATE_DEAD_LETTER
+			to == jobsv1.JobState_JOB_STATE_DEAD_LETTER ||
+			to == jobsv1.JobState_JOB_STATE_CANCELED
 	case jobsv1.JobState_JOB_STATE_RETRYING:
 		return to == jobsv1.JobState_JOB_STATE_PROCESSING ||
 			to == jobsv1.JobState_JOB_STATE_CANCELED

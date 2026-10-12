@@ -80,6 +80,7 @@ func scanDatasourceSourceInto(row pgx.Row, label *string) (*business.DatasourceS
 				return nil, err
 			}
 			d.API = &api
+			d.PersonalOwnerUserID = api.PersonalOwnerUserID
 		case business.DatasourceProviderCrawler:
 			var c business.CrawlerDatasourceConfig
 			if err := json.Unmarshal(config, &c); err != nil {

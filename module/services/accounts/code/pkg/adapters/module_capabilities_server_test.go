@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/installationtest"
 	"accounts/pkg/datasource/github"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -224,6 +225,19 @@ func installBlobStreamService(t *testing.T, store business.Store, cipher busines
 	// fetch never leaves the process. Must come after the connector, which only
 	// seeds the factory when it is still nil.
 	svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return gh })
+	installations := &installationtest.Store{}
+	for principal, grant := range registry {
+		grant.PresenceBinding = "acme.test." + principal
+		registry[principal] = grant
+		scope := business.FullInstallationScope(grant)
+		for _, org := range []string{blobStreamOrgID, blobStreamRepoOrg} {
+			_, err := installations.InstallSolution(context.Background(), &business.InstallSolutionParams{OrgID: org, RegistryPrincipalID: principal, RegistryBindingID: grant.PresenceBinding, Scope: &scope})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	svc.SetModuleAuthorityReads(installations, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	service = svc
 	t.Cleanup(func() { service = previous })
@@ -260,7 +274,7 @@ func TestFetchDatasourceBlob_StreamsAuthorizedBlobEndToEnd(t *testing.T) {
 	blob := bytes.Repeat([]byte("codefly-blob-"), 40000)
 	source := &business.DatasourceSource{
 		ID:                  blobStreamSourceID,
-		OrgID:               blobStreamRepoOrg, // a different org than the caller's bound org: cross-tenant fetch
+		OrgID:               blobStreamRepoOrg, // the source organization must have its own installed credential
 		Provider:            business.DatasourceProviderGitHub,
 		Repo:                "acme/docs",
 		CredentialSecretRef: "enc-token",
@@ -273,10 +287,17 @@ func TestFetchDatasourceBlob_StreamsAuthorizedBlobEndToEnd(t *testing.T) {
 	installBlobStreamService(t, store, staticCipher{token: "gh-token"}, gh, registry)
 	installModuleWorkContextAuthority(t)
 
-	ctx := stampModuleWorkContext(t, blobStreamCallerID, blobStreamOrgID)
+	ctx := stampModuleWorkContext(t, blobStreamCallerID, blobStreamRepoOrg)
 	req := &gen.FetchDatasourceBlobRequest{SourceId: blobStreamSourceID, BlobSha: blobStreamBlobSHA}
 	stream := &recordingBlobStream{}
 
+	foreign := &recordingBlobStream{}
+	if err := streamDatasourceBlob(stampModuleWorkContext(t, blobStreamCallerID, blobStreamOrgID), req, foreign); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("foreign credential: %v", err)
+	}
+	if len(foreign.frames) != 0 {
+		t.Fatal("foreign credential streamed data")
+	}
 	if err := streamDatasourceBlob(ctx, req, stream); err != nil {
 		t.Fatalf("stream authorized blob: %v", err)
 	}

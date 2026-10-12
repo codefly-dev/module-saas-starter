@@ -22,6 +22,30 @@
       },
       "type": "object"
     },
+    "DatasourceServiceDeclareSourceOperationsBody": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DatasourceServiceInvokeSourceOperationBody": {
+      "description": "InvokeSourceOperationRequest carries exactly one JSON object in input_json.\neffect_id must match x-codefly-effect-id; either location may supply it.",
+      "properties": {
+        "effectId": {
+          "type": "string"
+        },
+        "inputJson": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "DelegationServiceDecideDelegationBody": {
       "properties": {
         "decision": {
@@ -33,6 +57,46 @@
         },
         "reason": {
           "description": "Reason: required when decision=denied; optional on approve.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceGrantInstallationToTeamBody": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "description": "The role the team holds at the installation's authority root. It must permit\nusing a solution (or carry the wildcard); a role that does not would expose\nnothing, and is refused rather than written. Everything else the role\npermits is granted too, beneath that root.",
+          "type": "string"
+        },
+        "teamId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceNarrowInstallationBody": {
+      "description": "An org administrator may only remove installed authority. The host reads\nthe current revision and serializes the narrowing with other lifecycle acts.",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "scope": {
+          "description": "Same JSON shape as InstallSolution.scope; {} removes all capability access.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceRevokeInstallationFromTeamBody": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "description": "The role of the grant being removed, as granted_teams reports it. A team may\nhold more than one role at the same node, and each is its own grant.",
           "type": "string"
         }
       },
@@ -209,6 +273,15 @@
         }
       },
       "type": "object"
+    },
+    "SourceOperationEffect": {
+      "default": "EFFECT_UNSPECIFIED",
+      "enum": [
+        "EFFECT_UNSPECIFIED",
+        "EFFECT_READ_ONLY",
+        "EFFECT_MUTATION"
+      ],
+      "type": "string"
     },
     "TeamServiceCreateTeamBody": {
       "properties": {
@@ -772,6 +845,47 @@
           "type": "string"
         },
         "redirectUri": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1AvailableSolution": {
+      "description": "AvailableSolution is one installable solution target: its immutable identity,\nthe release the host currently has applied for it, and where it is routed.",
+      "properties": {
+        "appliedGeneration": {
+          "format": "uint64",
+          "type": "string"
+        },
+        "bindingId": {
+          "description": "The binding whose presence this target records. Carried so an operator can\ncorrelate a catalogue row with delivery; an installation does not join on it,\nbecause one binding may have several targets over time.",
+          "type": "string"
+        },
+        "installed": {
+          "description": "True when this organization already has an ACTIVE installation of this\ntarget. A catalogue shows it as installed rather than offering it twice; the\nunique index over (org_id, target_id) would refuse the second install anyway,\nand an administrator should not have to discover that by being refused.",
+          "type": "boolean"
+        },
+        "openedGeneration": {
+          "description": "The generation that opened this target, and the newest applied generation.\nEqual until a later generation is applied for the same presence.",
+          "format": "uint64",
+          "type": "string"
+        },
+        "releaseName": {
+          "type": "string"
+        },
+        "releasePublisher": {
+          "description": "The applied release: publisher, name, version.",
+          "type": "string"
+        },
+        "releaseVersion": {
+          "type": "string"
+        },
+        "routeAlias": {
+          "description": "The route alias the applied generation claims — `/solutions/<alias>/*`. A\nlater generation may move it, so it is never an identity.",
+          "type": "string"
+        },
+        "targetId": {
+          "description": "The immutable target identity an install names. Never reused.",
           "type": "string"
         }
       },
@@ -1449,6 +1563,18 @@
       },
       "type": "object"
     },
+    "v1DeclareSourceOperationsResponse": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "v1DelegationEvent": {
       "description": "DelegationEvent is one streaming event delivered to a\nsubscriber. The agent SDK reads exactly one event (the\nterminal decision) and disconnects.",
       "properties": {
@@ -1992,6 +2118,15 @@
       },
       "type": "object"
     },
+    "v1GetModuleEnvelopeResponse": {
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope",
+          "description": "The current revision. Absent when no envelope has been written, which\ngrants no module anything."
+        }
+      },
+      "type": "object"
+    },
     "v1GetOrgEntitlementsResponse": {
       "properties": {
         "entitlements": {
@@ -2119,6 +2254,14 @@
       },
       "type": "object"
     },
+    "v1GrantInstallationToTeamResponse": {
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
+        }
+      },
+      "type": "object"
+    },
     "v1GrantPlatformRoleRequest": {
       "properties": {
         "platformRole": {
@@ -2207,7 +2350,7 @@
           "type": "string"
         },
         "allowedAudiences": {
-          "description": "The agent's delegated-execution ceiling (migration 108): the Work Context\naudiences it may be minted for and the resource kinds it may ever touch.\nEmpty = unrestricted.",
+          "description": "The agent's delegated-execution ceiling (migration 108): the Work Context\naudiences it may be minted for and the resource kinds it may ever touch.\n\nEmpty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an\nadministrator consented to when they installed it. It is NOT unrestricted\nfor a mint made with a credential delivered to a THIRD PARTY on a person's\nbehalf — an MCP client the person authorized for this one solution. There\nthe installation is the only statement of what the solution may act for, so\nan empty list is read as nothing and such a mint is REFUSED by name\n(accounts' holdConfinedMintToItsConsumer). The two readings are opposite on\npurpose: one bounds a consumer an admin trusts, the other bounds a\ncredential they never saw.",
           "items": {
             "type": "string"
           },
@@ -2245,7 +2388,12 @@
           "description": "Human-readable display label for the solution's authority-root scope node\n(kind='solution'). The node's ltree path is derived server-side, not this.",
           "type": "string"
         },
-        "solutionIdentifier": {
+        "scope": {
+          "description": "Installed consent as JSON: capabilities, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences and\nartifact_policies, with the same shapes as the module envelope grant.\nMust be a subset of the current ceiling. Omitted selects that ceiling;\nan explicit {} grants nothing. Tenant and identity are never scope fields.",
+          "type": "string"
+        },
+        "targetId": {
+          "description": "The solution target being installed, from ListAvailableSolutions. Required.\n\nAn installer chooses an identity, never an address. The target must be LIVE\nand ACCEPTED when the install lands: installing a withdrawn target would\nrecord consent to a presence that already ended, and installing a target\nwhose newest generation was refused would record consent to a release this\nhost never admitted.",
           "type": "string"
         }
       },
@@ -2280,14 +2428,19 @@
           "format": "date-time",
           "type": "string"
         },
-        "rootScopeNodeId": {
+        "revokedReason": {
+          "description": "Why a revoked installation was revoked, when it was not an administrator\nuninstalling: the installation-identity cutover, or a tenancy narrowing that\nwithdrew this organisation. Empty on an active row.",
           "type": "string"
         },
-        "solutionIdentifier": {
+        "rootScopeNodeId": {
           "type": "string"
         },
         "status": {
           "$ref": "#/definitions/v1InstallationStatus"
+        },
+        "targetId": {
+          "description": "The immutable solution target this installation was consented to: one\ncontinuous period of one binding's presence on this host. It is never\nreused, so a replacement binding — even one claiming the same route alias —\nis a different target and inherits nothing.\n\nDeliberately NOT accompanied by the route alias. The alias is a property of\nthe target that a later generation may move, and resolving it here would\nmean joining the host's presence state into a request-path listing — which\nwould require granting request traffic read over every organisation's\npresence to answer about one. A consumer that needs the alias asks\nListAvailableSolutions, which serves accepted applied state, and joins on\nthis id.\n\nEmpty only on a revoked historical row whose target could not be\nestablished at the cutover; an active installation always names one.",
+          "type": "string"
         }
       },
       "type": "object"
@@ -2452,6 +2605,18 @@
         "status": {
           "title": "paid | open | void | uncollectible | draft",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1InvokeSourceOperationResponse": {
+      "properties": {
+        "outputJson": {
+          "description": "Exactly one JSON object; {} when unknown.",
+          "type": "string"
+        },
+        "receipt": {
+          "$ref": "#/definitions/v1SourceOperationReceipt"
         }
       },
       "type": "object"
@@ -2961,6 +3126,21 @@
       },
       "type": "object"
     },
+    "v1ListAvailableSolutionsResponse": {
+      "properties": {
+        "nextPageToken": {
+          "type": "string"
+        },
+        "solutions": {
+          "items": {
+            "$ref": "#/definitions/v1AvailableSolution",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "v1ListCollectionAccessResponse": {
       "properties": {
         "collections": {
@@ -3075,6 +3255,22 @@
             "type": "object"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListOrganizationInstallationsResponse": {
+      "properties": {
+        "installations": {
+          "items": {
+            "$ref": "#/definitions/v1OrganizationInstallation",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "nextPageToken": {
+          "description": "Set when more installations remain; pass it back as page_token.",
+          "type": "string"
         }
       },
       "type": "object"
@@ -3207,6 +3403,18 @@
         "shares": {
           "items": {
             "$ref": "#/definitions/v1RecordShare",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListSourceOperationsResponse": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
             "type": "object"
           },
           "type": "array"
@@ -3373,6 +3581,29 @@
       "type": "string"
     },
     "v1MarkAllNotificationsReadRequest": {
+      "type": "object"
+    },
+    "v1ModuleEnvelope": {
+      "description": "ModuleEnvelope is one revision of the module envelope: the authority ceiling a\nplatform super_admin writes, which every module principal on this host is\nderived inside. Revisions are append-only; the current ceiling is the\nhighest.",
+      "properties": {
+        "document": {
+          "description": "The whole ceiling at this revision, as JSON: `revision`,\n`approved_builds`, and `principals` keyed by module prefix, each with the\nwhole authority units this host admits (`bindings`: id, revision, scope,\nqueue, namespace, binding_key, lookup_method), the workloads it may run as\n(`workload_identities`: spiffe_id, container), its `scope_ceilings` and its\n`grant` ceiling (tenant, cross_tenant, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences,\nartifact_policies).",
+          "type": "string"
+        },
+        "revision": {
+          "description": "The revision, from 1. A delivered authority document names the revision\nit was rendered against and is inside this one only.",
+          "format": "int64",
+          "type": "string"
+        },
+        "writtenAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "writtenBy": {
+          "description": "The platform administrator who wrote this revision.",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "v1Notification": {
@@ -3691,6 +3922,42 @@
       },
       "type": "object"
     },
+    "v1OrganizationInstallation": {
+      "description": "OrganizationInstallation is one active installation as its organisation's\nadministrator manages it.",
+      "properties": {
+        "grantedTeams": {
+          "description": "Teams an active grant reaches at this installation, in the two kinds the\nplatform Catalogue keeps apart: granted at its authority root, and inherited\nfrom a grant above it. Only the first is exposure granted to this\ninstallation; RevokeInstallationFromTeam removes those.",
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "health": {
+          "$ref": "#/definitions/v1InstallationHealth",
+          "description": "Resolved live, exactly as ListInstallations resolves it."
+        },
+        "inheritedTeams": {
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "installation": {
+          "$ref": "#/definitions/v1Installation"
+        },
+        "rootScopePath": {
+          "description": "The scope path of the installation's authority-root node: where a grant\nthat exposes it is written. Read from the node, never derived from its id.",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/definitions/v1AvailableSolution",
+          "description": "The catalogue row of the installed target, from the same accepted applied\nstate ListAvailableSolutions serves: its route alias, applied release and\ngenerations. Absent when this host no longer offers the target — the\ninstallation outlives the presence it was consented to, and an absent row\nsays so rather than naming a release the host does not apply."
+        }
+      },
+      "type": "object"
+    },
     "v1OrganizationServiceAddMemberBody": {
       "properties": {
         "role": {
@@ -3915,6 +4182,28 @@
         "withdrawnAt": {
           "format": "date-time",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1PutModuleEnvelopeRequest": {
+      "properties": {
+        "document": {
+          "description": "The whole ceiling, as JSON, carrying revision expected_revision + 1.",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "description": "The revision this write replaces: the one the caller read, 0 when none has\nbeen written. A write whose expected revision is not the current one is\nrefused with ABORTED, and nothing is written.",
+          "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1PutModuleEnvelopeResponse": {
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope"
         }
       },
       "type": "object"
@@ -4577,10 +4866,6 @@
         "contractVersion": {
           "type": "string"
         },
-        "leaseExpiresAt": {
-          "format": "date-time",
-          "type": "string"
-        },
         "revision": {
           "format": "int64",
           "type": "string"
@@ -4594,14 +4879,47 @@
       },
       "type": "object"
     },
-    "v1SolutionFrontendBinding": {
-      "description": "SolutionFrontendBinding is the stored frontend half. manifest is the document\nthe frontend validated before handing it over; this service persists it\nverbatim and never reinterprets it, so the host keeps sole ownership of what\na manifest may contain.",
+    "v1SolutionDeclaredBinding": {
+      "description": "SolutionDeclaredBinding identifies the applied declaration and target.",
       "properties": {
-        "contractVersion": {
+        "bindingId": {
+          "description": "Stable ID of the deployment instance that declared this record. It is not\nthe solution id: a binding ID identifies one instance and may carry\ncharacters a path segment may not.",
           "type": "string"
         },
-        "leaseExpiresAt": {
-          "format": "date-time",
+        "generation": {
+          "description": "The generation of that binding the host applied into this record.",
+          "format": "uint64",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/v1SolutionDeclaredKind",
+          "description": "What the declaration declared the presence of. It decides which routing\nsurface serves this record, so it is carried rather than inferred: a host\nthat read the kind off the shape of a record — a publisher prefix, an alias\nconvention — would be guessing at exactly the question that separates a\nsurface with per-viewer admission from one without."
+        },
+        "release": {
+          "description": "publisher/name@version of the applied generation.",
+          "type": "string"
+        },
+        "targetId": {
+          "description": "The immutable solution target this declaration opened — the identity an\ninstallation names. It is carried on the registration record so a consumer\nthat was asked about a ROUTE ALIAS can resolve it to the target that\ncurrently serves it and compare identities.\n\nThat resolution is the whole admission mechanism: a replacement binding\nwhich claimed a withdrawn alias resolves to its own target, which no\ninstallation of its predecessor names. A record with no declaration carries\nno target and is therefore admissible to nobody, which is the fail-closed\nanswer and the direction of the cutover.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1SolutionDeclaredKind": {
+      "default": "SOLUTION_DECLARED_KIND_UNSPECIFIED",
+      "description": "SolutionDeclaredKind is what a declaration declares the presence of.\n\nCore requires it on every presence document and refuses any other value, so\nevery admitted declaration has exactly one of the two. The host used to drop\nit on reconcile, which left the registry unable to say whether a record was a\nsolution or a module — and the two are routed on different surfaces with\ndifferent admission, so a host that cannot tell them apart must either serve\nboth from one surface or serve neither.\n\nUNSPECIFIED is not a third kind and is never a default. It is what a reader\ndecodes from a writer that did not set the field, and both routing surfaces\nrefuse it by name rather than picking the kind that happens to be more\npermissive.\n\n - SOLUTION_DECLARED_KIND_SOLUTION: A composed solution instance, routed at /solutions/<alias>/* with\nper-viewer installation admission.\n - SOLUTION_DECLARED_KIND_MODULE: One module instance, routed at /v1/<alias>/* with the ordinary\nauthenticated pipeline.",
+      "enum": [
+        "SOLUTION_DECLARED_KIND_UNSPECIFIED",
+        "SOLUTION_DECLARED_KIND_SOLUTION",
+        "SOLUTION_DECLARED_KIND_MODULE"
+      ],
+      "type": "string"
+    },
+    "v1SolutionFrontendBinding": {
+      "description": "SolutionFrontendBinding is the stored frontend half. manifest is the document\nthe frontend validates while reading the projection; accounts stores it\nverbatim and keeps presence authority separate from runtime compatibility.",
+      "properties": {
+        "contractVersion": {
           "type": "string"
         },
         "manifest": {
@@ -4620,19 +4938,19 @@
         "backend": {
           "$ref": "#/definitions/v1SolutionBackendBinding"
         },
+        "declared": {
+          "$ref": "#/definitions/v1SolutionDeclaredBinding",
+          "description": "The binding and immutable target that declared this record."
+        },
         "frontend": {
           "$ref": "#/definitions/v1SolutionFrontendBinding"
         },
         "publisher": {
-          "description": "Owner of record. First claim binds it; a registration naming a different\npublisher is refused rather than overwriting.",
+          "description": "Canonical publisher attribution of the declared record.",
           "type": "string"
         },
         "revision": {
           "format": "int64",
-          "type": "string"
-        },
-        "runtimeBoundary": {
-          "description": "The seed a solution's runtime boundary is derived from (issue #1015).\n\nALWAYS EMPTY on the wire, on every response, deliberately. The seed is\nassigned by this service when the record is created and never again, and it\nis the only input to the per-organization boundary every Work Context\nminted for that solution is sealed under — so it is what stands between one\nsolution's runs and another's. No registrant needs it: accounts derives and\nseals the boundary from the credential the solution already presents.\n\nThe field is kept rather than removed so this promise is testable: a change\nthat starts populating it fails a test instead of shipping.",
           "type": "string"
         },
         "solutionId": {
@@ -4654,16 +4972,80 @@
     },
     "v1SolutionRegistrationStatus": {
       "default": "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
-      "description": "SolutionRegistrationStatus is derived at read time from the stored record; it\nis never a stored column. It is what lets an operator tell a registration\nthat was never completed from one whose publisher stopped renewing, and both\nfrom one that was deliberately removed.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Both halves are present, their leases are live, and their declared contract\nversions agree. This is the only status either surface serves.\n - SOLUTION_REGISTRATION_STATUS_PENDING: A half has never registered. The record is durable but incomplete, so no\npage advertises it and the gateway has nothing to route to.\n - SOLUTION_REGISTRATION_STATUS_EXPIRED: Both halves registered, but at least one lease lapsed: the deployment that\nowns it stopped renewing. The intent survives; the endpoint is not live.\n - SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE: The two halves declare different contract versions, so activating them\ntogether would serve a page against a backend it was not built for.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: The registration was deregistered. The row survives as a tombstone so a\ndelayed heartbeat from a retiring deployment cannot recreate it.",
+      "description": "SolutionRegistrationStatus is derived from declared state and complete,\ncompatible frontend/backend observations, never from an expiring lease.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Both halves are present and their declared contract\nversions agree. This is the only status either surface serves.\n - SOLUTION_REGISTRATION_STATUS_PENDING: A half has not been observed. The record is durable but incomplete, so no\npage advertises it and the gateway has nothing to route to.\n - SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE: The two halves declare different contract versions, so activating them\ntogether would serve a page against a backend it was not built for.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: An applied removal keeps the declaration as a tombstone.",
       "enum": [
         "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
         "SOLUTION_REGISTRATION_STATUS_ACTIVE",
         "SOLUTION_REGISTRATION_STATUS_PENDING",
-        "SOLUTION_REGISTRATION_STATUS_EXPIRED",
         "SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE",
         "SOLUTION_REGISTRATION_STATUS_TOMBSTONED"
       ],
       "type": "string"
+    },
+    "v1SourceOperation": {
+      "description": "DatasourceService is the tenant-facing surface a solution drives (directly or\nthrough the generated SDK) to declare and operate connected datasources.\nSourceOperation is an admitted route and bounded JSON contract, never a credential.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "effect": {
+          "$ref": "#/definitions/SourceOperationEffect"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "maxOutputBytes": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "outputSchema": {
+          "type": "object"
+        },
+        "path": {
+          "type": "string"
+        },
+        "query": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1SourceOperationReceipt": {
+      "description": "SourceOperationReceipt contains only the committed result and safe metadata.",
+      "properties": {
+        "committedAt": {
+          "description": "UTC RFC3339Nano, empty for an unknown outcome.",
+          "type": "string"
+        },
+        "effectId": {
+          "type": "string"
+        },
+        "outputJson": {
+          "description": "Exactly one JSON object; {} when unknown.",
+          "type": "string"
+        },
+        "providerStatus": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "description": "committed or unknown; unknown never authorizes redispatch.",
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "v1StartChildSessionWorkContextRequest": {
       "properties": {
@@ -6739,6 +7121,37 @@
         ]
       }
     },
+    "/v1/datasource-operation-receipts/{effectId}": {
+      "get": {
+        "operationId": "DatasourceService_LookupInvokeSourceOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "effectId",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "LookupInvokeSourceOperation recovers a receipt without contacting the provider.\nNotFound \"source effect not found\" means there is no attempt marker; retrying\nthe same effect is safe. An unknown receipt never authorizes redispatch.\nOnce an attempt exists, retained receipt evidence survives declaration\nremoval or replacement. Current source read authority still applies.",
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
     "/v1/delegations": {
       "post": {
         "operationId": "DelegationService_RequestDelegation",
@@ -7126,6 +7539,51 @@
       }
     },
     "/v1/installations": {
+      "get": {
+        "description": "It is the org-admin companion to the internal ListInstallations, and it is a\nseparate method rather than a relaxed policy on that one: ListInstallations\nis read by the gateway for an organisation it projected from a verified\nidentity, and a bare tenant credential must never reach it. This one binds\nthe organisation to the caller's own admin membership, exactly as\nListAvailableSolutions does, so no organisation's administrator can read\nanother's. The one exception is inherited, not added here: a platform\nsuper administrator (not impersonating) passes the organisation-admin check\nfor every organisation, as on every other organisation-admin method, and so\nmay list any organisation's installations.",
+        "operationId": "InstallationService_ListOrganizationInstallations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "Page bound. 0 -> server default; capped as ListInstallations is.",
+            "format": "int32",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "description": "Opaque cursor from a previous response's next_page_token; empty for page one.",
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListOrganizationInstallationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListOrganizationInstallations is an organisation administrator's view of\nwhat that organisation has installed: each active installation with its live\nhealth, the catalogue row of the target it installed, the scope path of its\nauthority root, and the teams a grant reaches there.",
+        "tags": [
+          "InstallationService"
+        ]
+      },
       "post": {
         "operationId": "InstallationService_InstallSolution",
         "parameters": [
@@ -7190,6 +7648,131 @@
           }
         },
         "summary": "GetInstallation returns one installation plus its live health, so an admin UI\ncan see when an installation has gone unhealthy (owner offboarded, agent\ndisabled, grant expired) before the next headless task fails closed.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}/teams": {
+      "post": {
+        "operationId": "InstallationService_GrantInstallationToTeam",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceGrantInstallationToTeamBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GrantInstallationToTeamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "GrantInstallationToTeam exposes an installation to a team: a scope grant of\nthe given role to the team at the installation's authority-root node. The\nhost resolves that node from the installation, so a caller never names a\nscope path. The role must permit using a solution, or the grant would expose\nnothing; the team must belong to the organisation. Using a solution is the\nminimum the role must permit, not a ceiling: the team holds everything the\nrole permits beneath the installation's authority root, exactly as a\nGrantScope of that role at that node would give it. Emits scope.granted, the\nsame event and audit record as any other scope grant, because it is one.\nOrganisation-admin, with the same platform super administrator exception\nListOrganizationInstallations describes.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}/teams/{teamId}:revoke": {
+      "post": {
+        "operationId": "InstallationService_RevokeInstallationFromTeam",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "teamId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceRevokeInstallationFromTeamBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RevokeInstallationFromTeam removes one team grant at an installation's\nauthority-root node. It is a narrowing, so it runs under the policy log\nexactly as RevokeScope does: a host that cannot witness the narrowing refuses\nit, and says so, rather than revoking unwitnessed. It removes the one grant\nat the authority root that granted_teams reports; a team that also reaches\nthe installation from a grant above keeps that reach. Organisation-admin,\nwith the same platform super administrator exception.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:narrow": {
+      "post": {
+        "operationId": "InstallationService_NarrowInstallation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceNarrowInstallationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "Narrowing is witnessed in the policy log before commit, then atomically\nbumps the installation revision, cancels its org's work and records audit.",
         "tags": [
           "InstallationService"
         ]
@@ -7269,6 +7852,52 @@
           }
         },
         "summary": "UninstallSolution reverses an install: it revokes the agent principal, removes\nits standing grant, and marks the installation revoked. The solution scope node\nis left in place (inert without a grant or a live agent) so a reinstall reuses\nit. Idempotent on an already-revoked installation.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations:listAvailable": {
+      "get": {
+        "description": "It answers from ACCEPTED applied state — a live target whose binding's\nnewest APPLIED generation is a present one — and deliberately not from the\ndiagnostic ListSolutionHostBindings, which also reports desired generations\nthat were refused. The distinction is the point: a refused generation is\nsomething an operator must see and something an administrator must not be\nable to consent to, because consenting to a release this host never admitted\nrecords authority over a presence that does not exist.\n\nIt carries the route alias, which the installation record deliberately does\nnot: here the alias is a display and routing fact read from the target in\nthe same statement, not an identity anything joins on.",
+        "operationId": "InstallationService_ListAvailableSolutions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "Page bound. 0 -> server default; capped for the same reason the installation\nlisting is capped.",
+            "format": "int32",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAvailableSolutionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListAvailableSolutions is the catalogue: the solution targets an\nadministrator may install right now.",
         "tags": [
           "InstallationService"
         ]
@@ -7980,6 +8609,137 @@
         },
         "tags": [
           "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/datasources/{sourceId}/operations": {
+      "get": {
+        "operationId": "DatasourceService_ListSourceOperations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSourceOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListSourceOperations reads the currently admitted declarations under source authority.",
+        "tags": [
+          "DatasourceService"
+        ]
+      },
+      "post": {
+        "operationId": "DatasourceService_DeclareSourceOperations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceDeclareSourceOperationsBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeclareSourceOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "DeclareSourceOperations atomically replaces the source operation set, as an administrator.",
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/datasources/{sourceId}/operations/{operation}:invoke": {
+      "post": {
+        "operationId": "DatasourceService_InvokeSourceOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "operation",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceInvokeSourceOperationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "InvokeSourceOperation calls an admitted operation under current authority.\nFailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN\nmeans this effect will not be redispatched and its receipt stays unresolved.\nSOURCE_OPERATION_DECLARATION_REMOVED refuses a retained effect whose\ndeclaration was removed; ErrorInfo.metadata[\"receipt_status\"] is committed\nor unknown. Recover that same effect with Lookup; never choose a fresh ID.\nOther refusal reasons do not mean unknown. Provider refusals include the\ndecimal HTTP status in ErrorInfo.metadata[\"provider_status\"] when known.\nInvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.",
+        "tags": [
+          "DatasourceService"
         ]
       }
     },
@@ -8982,6 +9742,60 @@
             }
           }
         },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/module-envelope": {
+      "get": {
+        "operationId": "PlatformAdminService_GetModuleEnvelope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "GetModuleEnvelope reads the current module envelope: the authority ceiling\nevery module principal on this host is derived inside.",
+        "tags": [
+          "PlatformAdminService"
+        ]
+      },
+      "put": {
+        "operationId": "PlatformAdminService_PutModuleEnvelope",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "PutModuleEnvelope writes the next revision of the module envelope. It takes\neffect at the next check with no restart: the module registry is derived\nagain from it, so a narrowing removes what the new ceiling no longer allows.",
         "tags": [
           "PlatformAdminService"
         ]
@@ -11484,6 +12298,9 @@
     },
     {
       "name": "ResourceFollowService"
+    },
+    {
+      "name": "SolutionEntitlementService"
     },
     {
       "name": "SolutionRegistryService"

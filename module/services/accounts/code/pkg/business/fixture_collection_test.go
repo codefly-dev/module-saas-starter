@@ -58,6 +58,7 @@ collections:
 	// by; the host names none of its own, so without this the fixture's grants
 	// confer nothing and the read set is empty by design.
 	previous := testService.ModulePrincipals()
+	testService.SetModuleAuthorityReads(currentModuleAuthority{service: testService}, nil)
 	testService.SetModulePrincipals(business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("example"): {
 			Prefix:    "example",
@@ -65,7 +66,7 @@ collections:
 			Tenant:    orgID,
 		},
 	})
-	t.Cleanup(func() { testService.SetModulePrincipals(previous) })
+	t.Cleanup(func() { testService.SetModulePrincipals(previous); testService.SetModuleAuthorityReads(testStore, nil) })
 	for range 2 {
 		require.NoError(t, fixtures.Seed(testCtx, testService, "collection-demo"))
 	}

@@ -29,6 +29,29 @@ describe("frontend kit publish set", () => {
 		}
 	});
 
+	it("publishes every internal runtime dependency before its consumer", () => {
+		const byName = workspacesByName(process.cwd());
+		for (const name of PACKAGES) {
+			const manifest = byName.get(name);
+			for (const field of [
+				"dependencies",
+				"peerDependencies",
+				"optionalDependencies",
+			]) {
+				for (const dependency of Object.keys(manifest[field] ?? {})) {
+					if (!/^@codefly(?:-dev)?\//.test(dependency)) continue;
+					expect(PACKAGES, `${name} has unpublished ${dependency}`).toContain(
+						dependency,
+					);
+					expect(
+						PACKAGES.indexOf(dependency),
+						`${dependency} must publish before ${name}`,
+					).toBeLessThan(PACKAGES.indexOf(name));
+				}
+			}
+		}
+	});
+
 	it("only publishes packages that exist as workspaces", () => {
 		const byName = workspacesByName(process.cwd());
 		for (const name of PACKAGES) {
@@ -197,7 +220,8 @@ describe("the published SDK aliases its generated types", () => {
 				generated.test(subpath),
 				`${SDK} declares the export subpath ${subpath}; a consumer must import the SDK, never a stub package`,
 			).toBe(false);
-			const targets = typeof target === "string" ? [target] : Object.values(target ?? {});
+			const targets =
+				typeof target === "string" ? [target] : Object.values(target ?? {});
 			for (const value of targets) {
 				expect(
 					generated.test(String(value)),

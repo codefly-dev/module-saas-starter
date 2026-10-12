@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
 	buildFrontendServiceAllowlist,
 	type FrontendServiceBinding,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 import frontendConfig, { serviceBindings } from "../../../frontend.config";
 

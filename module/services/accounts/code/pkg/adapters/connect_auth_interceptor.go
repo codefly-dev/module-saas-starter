@@ -13,6 +13,7 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/codefly-dev/sdk-go/workcontext"
 )
 
 // forwardedIdentityHeaders are caller-controlled identity headers. Unless the
@@ -33,9 +34,50 @@ var forwardedIdentityHeaders = []string{
 	// the gateway token is valid, refused if either arrives twice.
 	"X-Codefly-Solution-Id",
 	"X-Codefly-Solution-Publisher",
+	// The resource a credential is confined to, and the installation the
+	// perimeter admitted the request under. Together they are the ceiling a
+	// resource-confined Work Context mint is held to (pkg/auth's
+	// resource_confinement.go carries the whole argument), so a caller able to
+	// set either would pick its own: a confinement naming a consumer whose
+	// installation grants more, or no confinement at all.
+	//
+	// They belong on this list for the same reason X-Org-Id does — stripped
+	// unless the gateway token is valid, refused if either arrives twice —
+	// which is also what forwards them across the REST transcoding hop.
+	resourceConfinementHeader,
+	installationHeader,
 }
 
 const publicOriginHeader = "X-Codefly-Public-Origin"
+
+// resourceConfinementHeader and installationHeader MUST stay byte-identical to
+// the gateway's own constants (`gateway.go`, lowercased). The strip
+// canonicalises its argument, so a near-miss spelling deletes a header nobody
+// sends and leaves the real one in place, reporting no error at all — the exact
+// shape of the `x-codefly-solution-identity` defect recorded beside those
+// constants. A contract test in module/tools holds the two spellings together.
+const (
+	resourceConfinementHeader = "X-Codefly-Resource"
+	installationHeader        = "X-Codefly-Installation-Id"
+)
+
+// errSolutionAttestationNotDelivered refuses a request that asserts a solution
+// identity. Nothing on this host can prove such a claim: the gateway stamps
+// neither header, and the attestation that would replace the deleted
+// registration credential is not delivered yet. Named rather than generic so a
+// composed solution's runtime reads why it cannot mint, instead of discovering
+// that it silently received a capability for something else.
+var errSolutionAttestationNotDelivered = errors.New(
+	"solution attestation is not delivered on this host: a solution-scoped Work Context requires the delivered workload-certificate attestation at the mint hop, which is blocked on the core workcontext cutover (the Seals/Revisions sources both entrypoints require, and the JSON-versus-deterministic-protobuf token encoding)",
+)
+
+// solutionIdentityAsserted reports whether a request claims a solution identity
+// at all. Either header alone is a claim: the publisher without the id still
+// asserts something this host cannot prove, and refusing only the pair would
+// make the refusal depend on how completely a caller lied.
+func solutionIdentityAsserted(headers http.Header) bool {
+	return headers.Get(solutionIdentityHeader) != "" || headers.Get(solutionPublisherHeader) != ""
+}
 
 // restIdentityHeaderMatcher forwards the caller's bearer credential and the
 // canonical identity headers across the REST transcoding hop into gRPC
@@ -60,6 +102,9 @@ const publicOriginHeader = "X-Codefly-Public-Origin"
 func restIdentityHeaderMatcher(header string) (string, bool) {
 	if hasGRPCMetadataPrefix(header) {
 		return "", false
+	}
+	if strings.EqualFold(header, workcontext.WorkContextHeaderName) || strings.EqualFold(header, "X-Codefly-Effect-Id") {
+		return strings.ToLower(header), true
 	}
 	if strings.EqualFold(header, "Authorization") {
 		return "authorization", true
@@ -149,8 +194,15 @@ func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.Una
 		if err := enforceCentralPolicy(ctx, req.Spec().Procedure); err != nil {
 			return nil, translateGRPCError(err)
 		}
+		// The policy log's serving gate. After authorization, so the
+		// refusal reaches only callers this host would have served.
+		if err := enforcePolicyLogServing(ctx); err != nil {
+			return nil, translateGRPCError(err)
+		}
 		shadowPolicyCoverage(ctx, req.Spec().Procedure)
-		return next(ctx, req)
+		// One committed module-envelope revision read per unary request,
+		// however many module authority decisions the handler makes.
+		return next(business.WithModuleEnvelopeRevisionMemo(ctx), req)
 	}
 }
 
@@ -173,6 +225,9 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 		if err := enforceCentralPolicy(ctx, conn.Spec().Procedure); err != nil {
 			return translateGRPCError(err)
 		}
+		if err := enforcePolicyLogServing(ctx); err != nil {
+			return translateGRPCError(err)
+		}
 		shadowPolicyCoverage(ctx, conn.Spec().Procedure)
 		return next(ctx, conn)
 	}
@@ -182,6 +237,18 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	trustedForwarded := singleValidGatewayToken(headers.Values("X-Codefly-Gateway-Token"))
 	if trustedForwarded && forwardedIdentityAmbiguous(headers.Values) {
 		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("forwarded identity is ambiguous"))
+	}
+	// Refused here, and not inside stampForwardedHTTPIdentity, for two reasons:
+	// that function's caller rewrites every error into "forwarded identity is
+	// malformed", which would bury the one thing a miswired runtime needs to
+	// read; and it only runs when X-User-Id is also present, while this claim
+	// must be refused however little else arrives with it.
+	//
+	// Scoped to a trusted forward because that is the only way it can arrive
+	// and be believed: without a valid gateway token these headers are deleted
+	// a few lines below, which is the right answer for an anonymous prober.
+	if trustedForwarded && solutionIdentityAsserted(headers) {
+		return ctx, connect.NewError(connect.CodePermissionDenied, errSolutionAttestationNotDelivered)
 	}
 	forwardedPublicOrigin := headers.Get(publicOriginHeader)
 	if !trustedForwarded {
@@ -210,6 +277,9 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("internal RPC is not exposed on the tenant listener"))
 	}
 
+	if sourceOperationProcedure(procedure) && len(headers.Values(workcontext.WorkContextHeaderName)) != 0 {
+		return authenticateSourceOperationContext(ctx, headers)
+	}
 	if trustedForwarded && headers.Get("X-User-Id") != "" {
 		forwarded, err := stampForwardedHTTPIdentity(ctx, headers)
 		if err != nil {
@@ -280,12 +350,8 @@ func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) (conte
 	if scopedRoles := headers.Get("X-Scoped-Roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
-	if solution := headers.Get(solutionIdentityHeader); solution != "" {
-		ctx, err = auth.WithVerifiedSolution(ctx, solution, headers.Get(solutionPublisherHeader))
-		if err != nil {
-			return ctx, err
-		}
-	}
+	ctx = auth.WithVerifiedResourceConfinement(ctx, headers.Get(resourceConfinementHeader))
+	ctx = auth.WithVerifiedInstallation(ctx, headers.Get(installationHeader))
 	return withScopedRolesTruncated(ctx, headers.Get("X-Scoped-Roles-Truncated") == "true"), nil
 }
 

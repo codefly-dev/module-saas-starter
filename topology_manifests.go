@@ -55,9 +55,11 @@ type serviceTopologyManifest struct {
 	WorkspaceConfigurationDependencies []string                             `yaml:"workspace-configuration-dependencies"`
 	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret-service-configurations"`
 	Endpoints                          []struct {
-		Name       string `yaml:"name"`
-		Visibility string `yaml:"visibility"`
-		API        string `yaml:"api"`
+		Name         string   `yaml:"name"`
+		Visibility   string   `yaml:"visibility"`
+		API          string   `yaml:"api"`
+		AllowModules []string `yaml:"allow-modules"`
+		Location     string   `yaml:"location"`
 	} `yaml:"endpoints"`
 	Spec map[string]any `yaml:"spec"`
 }
@@ -103,6 +105,14 @@ func assembleDeploymentTopology(moduleDir, moduleName string, services []service
 	}
 	if topology.Module.Name != moduleName {
 		return deploymentTopology{}, fmt.Errorf("%s declares module %q, expected %q", moduleYamlPath, topology.Module.Name, moduleName)
+	}
+	for i := range topology.Interface {
+		exported := &topology.Interface[i]
+		visibility, err := endpointVisibility(exported.Visibility, "", exported.AllowModules)
+		if err != nil {
+			return deploymentTopology{}, fmt.Errorf("interface %s/%s: %w", exported.Service, exported.Endpoint, err)
+		}
+		exported.Visibility, exported.AllowModules = visibility, nil
 	}
 	ordered := append([]serviceDefinition(nil), services...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].name < ordered[j].name })
@@ -161,8 +171,12 @@ func loadServiceTopology(moduleName string, service serviceDefinition) (topology
 	// declares none and takes the Service port.
 	coreEndpoints := make([]*basev0.Endpoint, 0, len(manifest.Endpoints))
 	for _, endpoint := range manifest.Endpoints {
+		visibility, err := endpointVisibility(endpoint.Visibility, endpoint.Location, endpoint.AllowModules)
+		if err != nil {
+			return topologyService{}, fmt.Errorf("service %q endpoint %q: %w", service.name, endpoint.Name, err)
+		}
 		coreEndpoints = append(coreEndpoints, &basev0.Endpoint{
-			Name: endpoint.Name, Api: endpointAPI(endpoint.Name, endpoint.API), Visibility: endpointVisibility(endpoint.Visibility),
+			Name: endpoint.Name, Api: endpointAPI(endpoint.Name, endpoint.API), Visibility: visibility,
 		})
 	}
 	deployed, err := network.DeployedEndpointPorts(context.Background(), moduleName, service.name, coreEndpoints)
@@ -172,7 +186,10 @@ func loadServiceTopology(moduleName string, service serviceDefinition) (topology
 	seen := make(map[string]bool, len(manifest.Endpoints))
 	for _, endpoint := range manifest.Endpoints {
 		api := endpointAPI(endpoint.Name, endpoint.API)
-		visibility := endpointVisibility(endpoint.Visibility)
+		visibility, err := endpointVisibility(endpoint.Visibility, endpoint.Location, endpoint.AllowModules)
+		if err != nil {
+			return topologyService{}, err
+		}
 		servicePort := uint32(deployed[endpoint.Name])
 		port, declared := spec.EndpointPorts[endpoint.Name]
 		if !declared {
@@ -214,11 +231,52 @@ func endpointAPI(name, api string) string {
 	return api
 }
 
-func endpointVisibility(visibility string) string {
+// endpointVisibility projects the authored Codefly axes into the host's
+// deployment catalog categories. Its MODULE category means all composed
+// modules, so a narrower allow-list cannot be represented and must refuse.
+//
+// THIS IS THE SECOND COPY OF THIS PROJECTION. The shipped generator holds the
+// other, as manifestCatalogVisibility in
+// module/services/accounts/code/pkg/cataloggen/deployment_model.go, and the two
+// are in separate Go modules so neither can import the other. They must agree,
+// and when they did not the symptom was a CI red nobody expected: this copy still
+// required `allow-modules: ["*"]` after the manifests stopped authoring it, so
+// TestShippedModuleAuthorityPortIsAllocatedNotDeclared failed on a module
+// manifest the other copy accepted. TestEndpointCatalogProjectionPreservesOrRefusesPolicy
+// and the accounts-side table are the pin; a change here needs the same change
+// there.
+//
+// `internal` with NO allow-list is the v0.14.0 spelling of what `internal` plus
+// the wildcard said, and maps to the same category: core refuses that key on an
+// export by name, so the two spellings mean one thing and which modules reach the
+// endpoint is decided by their own declared dependencies either way. The wildcard
+// stays accepted for older heads of this repository; a NARROWER list still
+// refuses, because this catalog cannot express "some modules" and admitting it
+// would silently widen the generated policy to every module.
+func endpointVisibility(visibility, location string, allowed []string) (string, error) {
 	if visibility == "" {
-		return "private"
+		visibility = "private"
 	}
-	return visibility
+	if location != "" {
+		if location != "external" || visibility != "private" || len(allowed) != 0 {
+			return "", fmt.Errorf("unsupported external endpoint policy")
+		}
+		return "external", nil
+	}
+	switch visibility {
+	case "private", "public":
+		if len(allowed) != 0 {
+			return "", fmt.Errorf("allow-modules requires internal visibility")
+		}
+		return visibility, nil
+	case "internal":
+		if len(allowed) != 0 && (len(allowed) != 1 || allowed[0] != "*") {
+			return "", fmt.Errorf("deployment catalog accepts internal visibility with no allow-modules, or the legacy [*]; a narrower export needs an allow-list-aware catalog")
+		}
+		return "module", nil
+	default:
+		return "", fmt.Errorf("unsupported authored endpoint visibility %q", visibility)
+	}
 }
 
 func decodeDeploymentSpecManifest(service string, spec map[string]any) (deploymentSpecManifest, error) {

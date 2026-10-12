@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { FRONTEND_APPEARANCE_TOKEN_NAMES } from "@codefly/saas-plugin-contract";
+import { FRONTEND_APPEARANCE_TOKEN_NAMES } from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 
 // The contract owns the token names; theme.css is where each becomes a variable

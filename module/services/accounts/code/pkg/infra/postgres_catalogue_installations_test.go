@@ -75,7 +75,12 @@ func TestListCatalogueInstallationsReadsTeamsReachingTheRoot(t *testing.T) {
 	record := catalogueInstallations(t)[installation.Id]
 	require.NotNil(t, record, "an active installation is listed")
 	require.Equal(t, orgID, record.Installation.GetOrgId())
-	require.Equal(t, "acme.example/solution", record.Installation.GetSolutionIdentifier())
+	// An installation names the immutable TARGET; `solution_identifier` went
+	// with the runtime registration writer, and the declared record is what
+	// maps a target back to its solution.
+	require.Equal(t, installation.GetTargetId(), record.Installation.GetTargetId())
+	require.NotEmpty(t, record.Installation.GetTargetId(),
+		"a listed installation must name the target it was installed against")
 	require.Equal(t, "Test Org", record.OrgName)
 	require.Equal(t, "acme.example/solution:1.0.0", record.AgentIdentifier)
 

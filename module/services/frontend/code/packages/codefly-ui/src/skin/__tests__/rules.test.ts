@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { resolveSkinRules } from "@codefly/saas-plugin-contract";
+import { resolveSkinRules } from "@codefly-dev/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 
 import { assertSkinRules, checkSkinRules } from "../rules.js";

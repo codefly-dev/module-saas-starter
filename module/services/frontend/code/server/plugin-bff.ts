@@ -1,5 +1,5 @@
 import { toJsonString } from "@bufbuild/protobuf";
-import type { FrontendServiceProtocol } from "@codefly/saas-plugin-contract";
+import type { FrontendServiceProtocol } from "@codefly-dev/saas-plugin-contract";
 import {
 	emptyFrontendPluginCapabilitiesRequest,
 	FRONTEND_PLUGIN_CAPABILITIES_BFF_PATH,
@@ -9,7 +9,7 @@ import {
 	GetFrontendPluginCapabilitiesRequestSchema,
 	parseFrontendPluginCapabilities,
 	supportsFrontendPluginContract,
-} from "@codefly/saas-plugin-contract/capabilities";
+} from "@codefly-dev/saas-plugin-contract/capabilities";
 
 import {
 	type PluginServiceResolution,
