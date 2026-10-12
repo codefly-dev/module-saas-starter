@@ -193,6 +193,7 @@ pkg/infra/postgres_solution_registry.go: (*PostgresStore).SolutionRuntimeBoundar
 pkg/infra/postgres_solution_registry.go: (*PostgresStore).SolutionRuntimeBoundarySeeds: WithControlPlane
 pkg/infra/postgres_webhook_relay.go: (*PostgresWebhookRelay).Deliver: txbind.BindWorker
 pkg/infra/postgres_webhook_secrets.go: (*PostgresStore).MigrateLegacyWebhookSecrets: WithControlPlane
+pkg/infra/postgres_work_context_seal.go: (*PostgresStore).sealRead: WithControlPlaneReadSnapshot
 pkg/infra/scoped.go: (*Scoped).Within: WithControlPlane
 pkg/infra/scoped.go: (*Scoped).Within: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithControlPlane: withControlPlaneTx

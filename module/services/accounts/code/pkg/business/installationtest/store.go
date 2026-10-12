@@ -29,7 +29,10 @@ func (s *Store) InstallSolution(_ context.Context, p *business.InstallSolutionPa
 	if s.rows[key] != nil {
 		return nil, fmt.Errorf("installation fixture already exists")
 	}
-	row := &business.LiveModuleAuthority{InstallationID: business.NewIDString(), RegistryBindingID: p.RegistryBindingID, InstallationRevision: 1, Scope: *p.Scope}
+	// Revision and producer epoch both start at 1, as the store's do: the
+	// installation's revision is CHECK (revision > 0), and installing a module
+	// advances its principal's authorization revision, which is its epoch.
+	row := &business.LiveModuleAuthority{InstallationID: business.NewIDString(), RegistryBindingID: p.RegistryBindingID, InstallationRevision: 1, ProducerEpoch: 1, Scope: *p.Scope}
 	s.rows[key] = row
 	return &gen.Installation{Id: row.InstallationID, OrgId: p.OrgID, Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE}, nil
 }

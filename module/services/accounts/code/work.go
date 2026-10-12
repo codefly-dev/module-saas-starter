@@ -561,6 +561,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// that cannot re-read cannot honour a narrowing, so it must not fall back to
 	// the declared ceiling alone.
 	service.SetModuleAuthorityReads(store, nil)
+	// The row-backed half of every Work Context's seal: a person's held
+	// installation, epoch and revision. Minting and verifying both read it, so
+	// a host without it mints and verifies nothing.
+	service.SetWorkContextSealStore(store)
 
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is

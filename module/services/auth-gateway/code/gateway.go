@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
+	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -776,11 +776,11 @@ func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Reques
 	return rejected
 }
 
-// verifiedWorkContext is rejectInvalidWorkContext with the verified claims
+// verifiedWorkContext is rejectInvalidWorkContext with what the hop inspected
 // handed back, for the one caller that holds the capability to more than its
 // audience.
 //
-// The claims are nil in three different situations, which is why the second
+// The result is nil in three different situations, which is why the second
 // return value exists rather than a nil check standing in for it: this edge
 // verifies no capability at all (`g.workContext == nil`), the request presents
 // none, or one was presented and refused. The first two are "carry on", the
@@ -788,19 +788,15 @@ func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Reques
 // admit a request whose capability had just been refused.
 func (g *Gateway) verifiedWorkContext(
 	w http.ResponseWriter, r *http.Request, expected ...string,
-) (*basev0.WorkContextV1, bool) {
+) (*workcontext.Inspected, bool) {
 	if g.workContext == nil {
 		return nil, false
 	}
-	raw := r.Header.Get(workcontext.WorkContextHeaderName)
+	raw := r.Header.Get(carrier.HeaderName)
 	if raw == "" {
 		return nil, false
 	}
-	token, err := workcontext.ParseWorkContextToken(raw)
-	var claims *basev0.WorkContextV1
-	if err == nil {
-		claims, err = g.workContext.VerifyAny(r.Context(), token, expected...)
-	}
+	inspected, err := g.workContext.Inspect(r.Context(), raw, expected...)
 	if err != nil {
 		// Log the cause (not the token) so a wall of 401s can be told apart:
 		// a bad/forged capability reads differently here from a JWKS the edge
@@ -809,7 +805,7 @@ func (g *Gateway) verifiedWorkContext(
 		httpError(w, http.StatusUnauthorized, "invalid work context")
 		return nil, true
 	}
-	return claims, false
+	return inspected, false
 }
 
 // stripAllIdentityHeaders removes every identity header from the request, in

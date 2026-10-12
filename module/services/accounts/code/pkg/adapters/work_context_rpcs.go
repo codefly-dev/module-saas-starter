@@ -16,7 +16,7 @@ import (
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/wool"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 
 	accountsauth "accounts/pkg/auth"
@@ -35,29 +35,40 @@ type WorkContextAuthorityConfiguration struct {
 	KeyID      string
 	PrivateKey []byte
 	Authority  business.WorkContextAuthorityStore
+	// Seals answers the live seal, epoch, execution and revision every
+	// capability is minted against and verified against. Required: core has no
+	// mode in which they are skipped, so a host without them issues nothing.
+	Seals workContextSealAnswers
 }
 
 // WorkContextAuthorityServer is the permissions-plugin-owned issuer. It never
 // owns consumer Task/Session rows: it binds current Accounts identity and RBAC
-// facts into a short-lived Codefly capability.
+// facts into a short-lived Codefly capability, minted and verified by
+// core/workcontext (work_context_core.go).
 type WorkContextAuthorityServer struct {
 	gen.UnimplementedWorkContextServiceServer
 
 	issuer       string
-	signer       *workcontext.WorkContextSigner
-	verifier     *workcontext.WorkContextVerifier
+	keyID        string
+	key          ed25519.PrivateKey
+	publicKey    ed25519.PublicKey
+	seals        workContextSealAnswers
 	authority    business.WorkContextAuthorityStore
 	consumer     business.WorkContextConsumerAuthorityStore
 	journal      business.ActorChainJournal
 	replay       business.WorkContextReplayStore
 	boundaries   business.SolutionRuntimeBoundarySeedStore
 	configureErr error
+	// now is the clock core mints and verifies on. Nil means the wall clock.
+	now func() time.Time
 }
 
 func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfiguration) {
 	s.issuer = strings.TrimSpace(config.Issuer)
-	s.signer = nil
-	s.verifier = nil
+	s.keyID = ""
+	s.key = nil
+	s.publicKey = nil
+	s.seals = nil
 	s.authority = nil
 	s.consumer = nil
 	s.journal = nil
@@ -77,30 +88,20 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 		s.configureErr = errors.New("accounts store does not implement WorkContextAuthorityStore")
 		return
 	}
-	privateKey := append(ed25519.PrivateKey(nil), config.PrivateKey...)
-	signer, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{
-		Issuer:     s.issuer,
-		KeyID:      config.KeyID,
-		PrivateKey: privateKey,
-	})
-	if err != nil {
-		s.configureErr = err
+	if config.Seals == nil {
+		s.configureErr = errors.New("no Work Context seal answers are wired, so no capability can be minted or verified")
 		return
 	}
+	privateKey := append(ed25519.PrivateKey(nil), config.PrivateKey...)
 	publicKey, ok := privateKey.Public().(ed25519.PublicKey)
 	if !ok {
 		s.configureErr = errors.New("work-context signing key has no Ed25519 public key")
 		return
 	}
-	verifier, err := workcontext.NewWorkContextVerifier(workcontext.WorkContextVerifierOptions{
-		PublicKeys: map[string]ed25519.PublicKey{config.KeyID: publicKey},
-	})
-	if err != nil {
-		s.configureErr = err
-		return
-	}
-	s.signer = signer
-	s.verifier = verifier
+	s.keyID = config.KeyID
+	s.key = privateKey
+	s.publicKey = publicKey
+	s.seals = config.Seals
 	s.authority = config.Authority
 	s.consumer, _ = config.Authority.(business.WorkContextConsumerAuthorityStore)
 	s.journal, _ = config.Authority.(business.ActorChainJournal)
@@ -480,7 +481,6 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
-	sessionID := callerSessionID(ctx, req.GetSessionId())
 	facts, err := s.resolveAuthority(
 		ctx, req.GetOrgId(), ownerID, req.GetActorPrincipalId(), permissions,
 	)
@@ -490,33 +490,43 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
+	installation, err := s.audienceInstallation(ctx, req.GetOrgId(), req.GetAudience())
+	if err != nil {
+		return nil, err
+	}
 
-	var actors []*basev0.WorkActorV1
+	request := mintRequest{
+		Start: workcontext.StartInput{
+			TenantID:           req.GetOrgId(),
+			OwnerPrincipalID:   ownerID,
+			OwnerPrincipalKind: business.PrincipalKindHuman,
+			OrganizationID:     req.GetOrgId(),
+			TaskID:             taskID,
+			Audience:           req.GetAudience(),
+			AuthorityScopes:    scopes,
+			AttributionTeamIDs: facts.AttributionTeamIDs,
+			WorkspaceID:        req.GetWorkspaceId(),
+			ProjectID:          req.GetProjectId(),
+			InstallationID:     installation,
+		},
+		// The capability opens the session the caller authenticated with, and
+		// never one the request named: see callerSession.
+		Session: callerSession(ctx, req.GetSessionId()),
+		Replay:  workContextReplayPolicy(req.GetReplayPolicy()),
+		TTL:     workContextTTL(req.GetTtlSeconds()),
+	}
 	if facts.Actor != nil {
-		actors = []*basev0.WorkActorV1{{
-			PrincipalId:   facts.Actor.ID,
+		request.Hops = []delegationHop{{
+			PrincipalID:   facts.Actor.ID,
 			PrincipalKind: facts.Actor.Kind,
+			AgentID:       facts.Actor.AgentIdentifier,
 			// The per-hop delegation id IS the durable journal row id: the
 			// ephemeral token and the persisted record share one identifier.
-			DelegationId:  uuid.NewString(),
+			DelegationID:  uuid.NewString(),
 			GrantedScopes: cloneWorkScopes(scopes),
 		}}
 	}
-	token, signed, err := s.signer.StartTask(workcontext.StartTaskInput{
-		Audience:              req.GetAudience(),
-		TenantID:              req.GetOrgId(),
-		OwnerPrincipalID:      ownerID,
-		TaskID:                taskID,
-		SessionID:             sessionID,
-		AuthorizationRevision: facts.EffectiveRevision(),
-		ReplayPolicy:          workContextReplayPolicy(req.GetReplayPolicy()),
-		AuthorityScopes:       scopes,
-		ActorChain:            actors,
-		AttributionTeamIDs:    facts.AttributionTeamIDs,
-		WorkspaceID:           req.GetWorkspaceId(),
-		ProjectID:             req.GetProjectId(),
-		TTL:                   workContextTTL(req.GetTtlSeconds()),
-	})
+	token, signed, err := s.mint(ctx, request)
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -524,6 +534,24 @@ func (s *WorkContextAuthorityServer) StartTask(
 		return nil, err
 	}
 	return issuedWorkContext(token, signed), nil
+}
+
+// audienceInstallation is the installation a capability for audience in orgID is
+// sealed to. Core seals every capability to one; an organization that never
+// installed the module or solution an audience names has none, and nothing to
+// mint the capability against.
+func (s *WorkContextAuthorityServer) audienceInstallation(ctx context.Context, orgID, audience string) (string, error) {
+	installation, err := s.seals.WorkContextAudienceInstallation(ctx, orgID, audience)
+	switch {
+	case errors.Is(err, business.ErrWorkContextNoAudienceInstallation):
+		return "", status.Errorf(codes.FailedPrecondition,
+			"audience %q is not installed in this organization, so there is no installation to seal the capability to", audience)
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return "", status.FromContextError(err).Err()
+	case err != nil:
+		return "", status.Error(codes.Unavailable, "cannot resolve the installation this audience names")
+	}
+	return installation, nil
 }
 
 // holdConfinedMintToItsConsumer bounds a mint made with a RESOURCE-CONFINED
@@ -697,7 +725,7 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
-	if s == nil || s.configureErr != nil || s.signer == nil || s.authority == nil {
+	if !s.configured() || s.authority == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
 	}
 	// A headless mint names its own Task like the ordinary one, so it is held to
@@ -728,26 +756,33 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
-	actors := []*basev0.WorkActorV1{{
-		PrincipalId:   facts.Actor.ID,
-		PrincipalKind: facts.Actor.Kind,
-		DelegationId:  uuid.NewString(),
-		GrantedScopes: cloneWorkScopes(scopes),
-	}}
-	token, signed, err := s.signer.StartTask(workcontext.StartTaskInput{
-		Audience:              req.GetAudience(),
-		TenantID:              req.GetOrgId(),
-		OwnerPrincipalID:      facts.OwnerPrincipalID,
-		TaskID:                req.GetTaskId(),
-		SessionID:             req.GetSessionId(),
-		AuthorizationRevision: facts.EffectiveRevision(),
-		ReplayPolicy:          workContextReplayPolicy(req.GetReplayPolicy()),
-		AuthorityScopes:       scopes,
-		ActorChain:            actors,
-		AttributionTeamIDs:    facts.AttributionTeamIDs,
-		WorkspaceID:           req.GetWorkspaceId(),
-		ProjectID:             req.GetProjectId(),
-		TTL:                   workContextTTL(req.GetTtlSeconds()),
+	// Sealed to the installation the authority is drawn from, owned by its owner
+	// of record and actored by its agent. The session is a fresh one: this
+	// caller holds a service credential, not a session, and a session id a
+	// caller names is never signed (see callerSession).
+	token, signed, err := s.mint(ctx, mintRequest{
+		Start: workcontext.StartInput{
+			TenantID:           req.GetOrgId(),
+			OwnerPrincipalID:   facts.OwnerPrincipalID,
+			OwnerPrincipalKind: business.PrincipalKindHuman,
+			OrganizationID:     req.GetOrgId(),
+			TaskID:             req.GetTaskId(),
+			Audience:           req.GetAudience(),
+			AuthorityScopes:    scopes,
+			AttributionTeamIDs: facts.AttributionTeamIDs,
+			WorkspaceID:        req.GetWorkspaceId(),
+			ProjectID:          req.GetProjectId(),
+			InstallationID:     req.GetInstallationId(),
+		},
+		Hops: []delegationHop{{
+			PrincipalID:   facts.Actor.ID,
+			PrincipalKind: facts.Actor.Kind,
+			AgentID:       facts.Actor.AgentIdentifier,
+			DelegationID:  uuid.NewString(),
+			GrantedScopes: cloneWorkScopes(scopes),
+		}},
+		Replay: workContextReplayPolicy(req.GetReplayPolicy()),
+		TTL:    workContextTTL(req.GetTtlSeconds()),
 	})
 	if err != nil {
 		return nil, mapWorkContextError(err)
@@ -840,122 +875,130 @@ func requireVocabularyAudience(ctx context.Context, audience string) error {
 // reach the caller as a failure to mint, but only one is the operator's to fix.
 var ErrWorkContextAuthorityUnconfigured = errors.New("Work Context authority is not configured")
 
+// moduleWorkContextTTL is the window of a module's own identity capability. A
+// module re-mints at expiry by presenting its projected token again, so this is
+// how long a superseded pod could hold one at most, not a session length.
+const moduleWorkContextTTL = 15 * time.Minute
+
+// attestedModuleExecution is the execution a module mint attests: the digest of
+// what BindExecution read off the requesting pod's container status, and the
+// approved build's incarnation. Core holds it against the approved build again
+// at the mint. A status naming no digest attests nothing, which core refuses for
+// a principal that bears an execution.
+func attestedModuleExecution(authority business.ModuleWorkContextAuthority) workcontext.Execution {
+	digest, ok := authority.Execution.AttestedDigest()
+	if !ok {
+		return workcontext.Execution{}
+	}
+	return workcontext.Execution{ImageDigest: digest, BuildIncarnation: authority.Execution.Incarnation}
+}
+
 // StartModuleTask mints the capability a composed module presents to the
-// module-facing surface, with the module's service principal as both owner and
-// sole actor.
+// module-facing surface, owned by the module's service principal and acting as
+// it directly.
 //
-// It seals identity and tenant. Every capability use re-reads and intersects
-// the live installation under an authority fence; no capabilities removed from
-// that consent can be exercised. Installation id/revision are resolved by the
-// business mint but are not encoded by this signer. Retained capabilities, and
-// scope explicitly consented by a later reinstall, can still be used by an
-// unexpired identity token. A mint-time ceiling and installation-identity
-// revocation require the separate Work Context signing-format cutover.
+// It is sealed to the installation the business mint resolved, the principal's
+// producer epoch, and the execution the requesting pod is running — so a
+// revoked installation, an advanced epoch or a superseded build refuses the
+// capability at its next use rather than at its expiry. Every use still re-reads
+// and intersects the live installation under an authority fence.
 //
 // This method only signs already-resolved authority. The business layer owns
 // execution binding, live consent, tenant validation and the issuance audit.
 func (s *WorkContextAuthorityServer) StartModuleTask(
-	authority business.ModuleWorkContextAuthority,
-) (workcontext.WorkContextToken, *basev0.WorkContextV1, error) {
-	if s == nil || s.configureErr != nil || s.signer == nil {
-		return workcontext.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
-	}
-	return s.signer.StartTask(workcontext.StartTaskInput{
-		Audience:         ModuleWorkContextAudience,
-		TenantID:         authority.Tenant,
-		OwnerPrincipalID: authority.PrincipalID,
-		TaskID:           uuid.NewString(),
-		SessionID:        uuid.NewString(),
-		ActorChain: []*basev0.WorkActorV1{{
-			PrincipalId:   authority.PrincipalID,
-			PrincipalKind: business.PrincipalKindService,
-			DelegationId:  uuid.NewString(),
-		}},
-		TTL: workcontext.WorkContextMaxTTL,
+	ctx context.Context, authority business.ModuleWorkContextAuthority,
+) (string, *basev0.WorkContextV1, error) {
+	return s.mint(ctx, mintRequest{
+		Start: workcontext.StartInput{
+			TenantID:           authority.Tenant,
+			OwnerPrincipalID:   authority.PrincipalID,
+			OwnerPrincipalKind: business.PrincipalKindService,
+			OrganizationID:     authority.Tenant,
+			TaskID:             uuid.NewString(),
+			Audience:           ModuleWorkContextAudience,
+			InstallationID:     authority.InstallationID,
+			Execution:          attestedModuleExecution(authority),
+		},
+		Replay: workcontext.ReplayIdempotent,
+		TTL:    moduleWorkContextTTL,
 	})
 }
 
 // StartModuleOperationTask mints the capability a composed module presents, with
 // no person present, to the service behind one of its installed operation
-// audiences. Owner and sole actor are the module's service principal, the tenant
-// is the one its principal declares, and the authority is exactly the binding's
-// headless scopes — sealed here, unlike StartModuleTask, because the audience is
-// another service that decides from the token alone. The lifetime is the short
-// operation-context ceiling rather than the Work Context maximum.
+// audiences. It is owned by the module's service principal acting directly, the
+// tenant is the one its principal declares, and the authority is exactly the
+// binding's headless scopes — sealed here, unlike StartModuleTask, because the
+// audience is another service that decides from the token alone. The lifetime is
+// the short operation-context ceiling rather than the Work Context maximum.
 //
-// As with StartModuleTask nothing is resolved from the database and no actor
-// hop is journaled: a module principal is declared by the deployment, not
-// registered, and the durable record is the issuance audit event.
+// As with StartModuleTask no actor hop is journaled: a module principal is
+// declared by the deployment, not registered, and the durable record is the
+// issuance audit event.
 func (s *WorkContextAuthorityServer) StartModuleOperationTask(
-	authority business.ModuleOperationContextAuthority,
-) (workcontext.WorkContextToken, *basev0.WorkContextV1, error) {
-	if s == nil || s.configureErr != nil || s.signer == nil {
-		return workcontext.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
-	}
+	ctx context.Context, authority business.ModuleOperationContextAuthority,
+) (string, *basev0.WorkContextV1, error) {
 	// The same rule every mint runs, stated once: an empty audience, and the
-	// capability surface's own, are both refused. These two sites were already
-	// fail-closed and are the precedent requireMintableAudience generalises —
-	// consolidated rather than reimplemented, so the rule cannot hold at five
-	// sites and lapse at the sixth. The error KIND stays this path's own
-	// (ErrWorkContextInvalid), because its callers map it.
+	// capability surface's own, are both refused. The error KIND stays this
+	// path's own (core's ErrInvalid), because its callers map it.
 	if requireMintableAudience(authority.Audience) != nil {
-		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: operation context audience", workcontext.ErrWorkContextInvalid)
+		return "", nil, fmt.Errorf("%w: operation context audience", workcontext.ErrInvalid)
 	}
 	if authority.Revision == 0 {
-		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: operation context revision", workcontext.ErrWorkContextInvalid)
+		return "", nil, fmt.Errorf("%w: operation context revision", workcontext.ErrInvalid)
 	}
 	_, scopes, err := workContextScopes(authority.WireScopes(), mintContentReads(authority.Audience))
 	if err != nil || len(scopes) == 0 {
-		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: operation context scopes", workcontext.ErrWorkContextInvalid)
+		return "", nil, fmt.Errorf("%w: operation context scopes", workcontext.ErrInvalid)
 	}
-	return s.signer.StartTask(workcontext.StartTaskInput{
-		Audience:         authority.Audience,
-		TenantID:         authority.Tenant,
-		OwnerPrincipalID: authority.PrincipalID,
-		TaskID:           uuid.NewString(),
-		SessionID:        uuid.NewString(),
-		// Sealed so a consumer's CheckAuthorizationRevision can confirm the
-		// context against the module's current declaration (see
-		// checkModuleOperationContextRevision); zero is not a revision.
-		AuthorizationRevision: authority.Revision,
-		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes:       scopes,
-		ActorChain: []*basev0.WorkActorV1{{
-			PrincipalId:   authority.PrincipalID,
-			PrincipalKind: business.PrincipalKindService,
-			DelegationId:  uuid.NewString(),
-			GrantedScopes: cloneWorkScopes(scopes),
-		}},
-		TTL: business.ModuleOperationContextTTL,
+	// The authorization revision is not an input: core reads it, from the same
+	// answer CheckAuthorizationRevision confirms a consumer's copy against
+	// (ModuleOperationContextRevision of the installed grant).
+	return s.mint(ctx, mintRequest{
+		Start: workcontext.StartInput{
+			TenantID:           authority.Tenant,
+			OwnerPrincipalID:   authority.PrincipalID,
+			OwnerPrincipalKind: business.PrincipalKindService,
+			OrganizationID:     authority.Tenant,
+			TaskID:             uuid.NewString(),
+			Audience:           authority.Audience,
+			AuthorityScopes:    scopes,
+			InstallationID:     authority.InstallationID,
+			Execution:          attestedModuleExecution(authority.ModuleWorkContextAuthority),
+		},
+		Replay: workcontext.ReplayIdempotent,
+		TTL:    business.ModuleOperationContextTTL,
 	})
 }
 
-// VerifyModuleWorkContext authenticates a module capability token and returns
-// the principal it names with the tenant it is bound to. The signature, issuer,
-// audience, and expiry are all checked; the actor chain names the acting
-// principal, which for a module mint is the module's own service principal.
-func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(encoded string) (business.ModuleCaller, error) {
-	if s == nil || s.configureErr != nil || s.verifier == nil {
+// VerifyModuleWorkContext authenticates a module's identity capability and
+// returns the principal exercising it, the tenant it is bound to, and what it
+// was sealed to — so every capability use compares the live installation against
+// the one the credential CLAIMS (ModuleCapabilityAuthority.checkAgainstSealed),
+// not only against itself.
+func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(ctx context.Context, encoded string) (business.ModuleCaller, error) {
+	if !s.configured() {
 		return business.ModuleCaller{}, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
 	}
-	token, err := workcontext.ParseWorkContextToken(encoded)
+	verified, err := s.verifyFor(ctx, encoded, ModuleWorkContextAudience)
 	if err != nil {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context is not a valid capability")
 	}
-	verified, err := s.verifier.Verify(token, workcontext.WorkContextExpectations{
-		Issuer:   s.issuer,
-		Audience: ModuleWorkContextAudience,
-	})
-	if err != nil {
-		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context is not a valid capability")
+	claims := verified.Context()
+	principal := claims.GetOwnerPrincipalId()
+	if actor := verified.Actor(); actor != nil {
+		principal = actor.GetPrincipalId()
 	}
-	actors := verified.GetActorChain()
-	if len(actors) == 0 {
-		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context names no actor")
-	}
+	seal := claims.GetSeal()
+	installation, revision, epoch := seal.GetInstallationId(), seal.GetInstallationRevision(), seal.GetPrincipalEpoch()
 	return business.ModuleCaller{
-		PrincipalID: actors[len(actors)-1].GetPrincipalId(),
-		BoundOrg:    verified.GetTenantId(),
+		PrincipalID: principal,
+		BoundOrg:    claims.GetTenantId(),
+		Sealed: &business.SealedModuleAuthority{
+			InstallationID:       &installation,
+			InstallationRevision: &revision,
+			ProducerEpoch:        &epoch,
+		},
 	}, nil
 }
 
@@ -982,18 +1025,15 @@ func (s *WorkContextAuthorityServer) resolveInstallationAuthority(
 }
 
 // StartRootSession issues another root Session under the same Task. The Session
-// id is generated here rather than taken from the request: a root Session keeps
-// no lineage — the signer clears parent_session_id — so a caller-chosen id is
-// free to name anything at all, including a Session that never existed or one
-// belonging to unrelated work. Generating it is what makes the new root Session
-// verifiably fresh. The issued response carries the id, which is what a caller
-// correlates on and what the product records its own Session row under.
+// id is assigned here rather than taken from the request: a root Session keeps
+// no lineage, so a caller-chosen id would be free to name anything at all —
+// including a Session that never existed or another credential's. The issued
+// response carries the id, which is what a caller correlates on and what the
+// product records its own Session row under.
 //
-// The Session is an execution scope, not the caller's authenticated session.
-// This issuer never owns consumer Task/Session rows, so deriving the caller's
-// auth session here would put an identifier the product has no row for into a
-// field the product owns, and would refuse every caller whose parent Task was
-// rooted in the same auth session.
+// The capability is minted afresh from its owner with the parent's chain of
+// hops re-derived against live state, which is how core expresses re-issuing a
+// capability (see remint).
 func (s *WorkContextAuthorityServer) StartRootSession(
 	ctx context.Context,
 	req *gen.StartRootSessionWorkContextRequest,
@@ -1008,21 +1048,16 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, _, actor, err := s.verifyParent(
-		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
-	)
+	parent, actor, err := s.verifyParent(ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken())
 	if err != nil {
 		return nil, err
 	}
 	if err := enforceActorAudience(ctx, actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
-	token, signed, err := s.signer.StartSession(parentToken, workcontext.StartRootSessionInput{
-		SessionID:    uuid.NewString(),
-		Audience:     req.GetAudience(),
-		ReplayPolicy: workContextReplayPolicy(req.GetReplayPolicy()),
-		TTL:          workContextTTL(req.GetTtlSeconds()),
-	})
+	token, signed, err := s.remint(ctx, parent.Context(), req.GetAudience(),
+		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
+		nil, workcontext.Execution{}, "")
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -1043,21 +1078,24 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, parent, actor, err := s.verifyParent(
-		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
-	)
+	parent, actor, err := s.verifyParent(ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken())
 	if err != nil {
 		return nil, err
 	}
-	return s.exchangeVerifiedParent(ctx, parentToken, parent, actor, req)
+	// The owner is exchanging their own capability, so it is re-issued in the
+	// session they authenticated with. A hop in the chain that bears an
+	// execution cannot be attested by an owner, so such a chain is exchanged by
+	// its module through the module capability surface instead.
+	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, workcontext.Execution{}, callerSession(ctx, ""))
 }
 
 // exchangeVerifiedParent runs AFTER the caller's authentication and
-// current-parent checks.
+// current-parent checks. lastExecution attests the chain's last hop when that
+// hop's principal bears an execution; session is the issuer-assigned session
+// the exchanged capability opens ("" for a fresh one).
 func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
-	ctx context.Context,
-	parentToken workcontext.WorkContextToken, parent *basev0.WorkContextV1,
-	actor *business.Principal, req *gen.ExchangeWorkContextAudienceRequest,
+	ctx context.Context, parent *basev0.WorkContextV1, actor *business.Principal,
+	req *gen.ExchangeWorkContextAudienceRequest, lastExecution workcontext.Execution, session string,
 ) (*gen.IssuedWorkContext, error) {
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
@@ -1068,26 +1106,46 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	}
 	// Enforce both dimensions of the actor ceiling: an exchange can name a new
 	// audience AND re-declare scopes, so the scope cap must apply here too, not
-	// only the audience. Relying on the signer's attenuation guarantee alone
-	// would leave the ceiling's scope dimension unenforced on this path.
+	// only the audience.
 	if err := enforceActorCeiling(ctx, actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
-	token, signed, err := s.signer.ExchangeWorkContextAudience(
-		parentToken,
-		workcontext.ExchangeWorkContextAudienceInput{
-			Audience:         req.GetAudience(),
-			ReplayPolicy:     workContextReplayPolicy(req.GetReplayPolicy()),
-			TTL:              workContextTTL(req.GetTtlSeconds()),
-			AttenuatedScopes: scopes,
-		},
-	)
+	attenuated, err := attenuateEffective(parent, scopes)
+	if err != nil {
+		return nil, err
+	}
+	token, signed, err := s.remint(ctx, parent, req.GetAudience(),
+		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
+		attenuated, lastExecution, session)
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
 	return issuedWorkContext(token, signed), nil
 }
 
+// attenuateEffective checks that requested scopes narrow the capability's
+// effective authority — the last hop's granted scopes, or the owner's when it
+// acts directly — and returns them, or nil when none were requested (the chain
+// is re-issued as it stands). Widening is refused here, before anything is
+// minted, rather than left for core's derivation to refuse with less to say.
+func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
+	if len(requested) == 0 {
+		return nil, nil
+	}
+	effective := parent.GetAuthorityScopes()
+	if chain := parent.GetActorChain(); len(chain) > 0 {
+		effective = chain[len(chain)-1].GetGrantedScopes()
+	}
+	if !workcontext.ScopesAttenuate(requested, effective) {
+		return nil, status.Error(codes.InvalidArgument, "audience exchange widens authority")
+	}
+	return requested, nil
+}
+
+// StartChildSession delegates one more hop from a verified parent. The child's
+// session is assigned by this issuer and returned in the response, never taken
+// from the request: a session a caller could name is a session it could name
+// after another credential's (see callerSession).
 func (s *WorkContextAuthorityServer) StartChildSession(
 	ctx context.Context,
 	req *gen.StartChildSessionWorkContextRequest,
@@ -1102,14 +1160,9 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, parent, _, err := s.verifyParent(
-		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
-	)
+	parent, _, err := s.verifyParent(ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken())
 	if err != nil {
 		return nil, err
-	}
-	if req.GetSessionId() == parent.GetSessionId() {
-		return nil, status.Error(codes.InvalidArgument, "child session_id must differ from parent session")
 	}
 	permissions, scopes, err := workContextScopes(req.GetGrantedScopes(), mintContentReads(req.GetAudience()))
 	if err != nil {
@@ -1121,26 +1174,24 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	if err != nil {
 		return nil, err
 	}
-	if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
-		return nil, status.Error(
-			codes.FailedPrecondition,
-			"parent Work Context authorization revision is stale",
-		)
-	}
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
-	token, signed, err := s.signer.StartChildSession(parentToken, workcontext.StartChildSessionInput{
-		SessionID: req.GetSessionId(),
-		Audience:  req.GetAudience(),
-		Actor: &basev0.WorkActorV1{
-			PrincipalId:   facts.Actor.ID,
-			PrincipalKind: facts.Actor.Kind,
-			DelegationId:  uuid.NewString(),
-			GrantedScopes: scopes,
-		},
-		ReplayPolicy: workContextReplayPolicy(req.GetReplayPolicy()),
-		TTL:          workContextTTL(req.GetTtlSeconds()),
+	ttl := workContextTTL(req.GetTtlSeconds())
+	if ttl == 0 {
+		ttl = workContextDefaultTTL
+	}
+	// Core's Child holds the parent against the live revision and seal before it
+	// derives, so a parent minted before an authorization change derives nothing.
+	token, signed, err := s.coreAuthority(req.GetOrgId(), ownerID).Child(ctx, parent, workcontext.ChildInput{
+		PrincipalID:   facts.Actor.ID,
+		PrincipalKind: facts.Actor.Kind,
+		AgentID:       facts.Actor.AgentIdentifier,
+		DelegationID:  uuid.NewString(),
+		GrantedScopes: scopes,
+		Audience:      req.GetAudience(),
+		ReplayPolicy:  workContextReplayPolicy(req.GetReplayPolicy()),
+		TTL:           ttl,
 	})
 	if err != nil {
 		return nil, mapWorkContextError(err)
@@ -1152,11 +1203,15 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 }
 
 // RenewWorkContext lets the current actor of a delegated context re-issue it
-// with a fresh TTL while the originating user is offline. It preserves the
-// Task, Session, owner, and delegation lineage and appends no new actor hop; it
-// only refreshes the lifetime and, optionally, the audience. Renewed authority
-// is bounded by the current actor's granted scopes and can only be attenuated,
-// so it can never widen the original grant.
+// with a fresh window while the originating user is offline. It keeps the Task,
+// the owner and every delegation hop, appends none, and opens a fresh Session;
+// it only refreshes the lifetime and, optionally, the audience. Renewed
+// authority is bounded by the current actor's granted scopes and can only be
+// attenuated, so it can never widen the original grant.
+//
+// Core never extends a capability's window, so a renewal is a re-mint from the
+// owner with every hop re-derived against live state (see remint), never a copy
+// of the parent with a later expiry.
 func (s *WorkContextAuthorityServer) RenewWorkContext(
 	ctx context.Context,
 	req *gen.RenewWorkContextRequest,
@@ -1164,7 +1219,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if s == nil || s.configureErr != nil || s.signer == nil || s.verifier == nil || s.authority == nil {
+	if !s.configured() || s.authority == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
 	}
 	actorID, err := requireAuth(ctx)
@@ -1174,12 +1229,11 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	if err := requireOrgMember(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
-	parentToken, parent, actor, err := s.verifyActorParent(
-		ctx, req.GetOrgId(), actorID, req.GetParentWorkContextToken(),
-	)
+	verified, actor, err := s.verifyActorParent(ctx, req.GetOrgId(), actorID, req.GetParentWorkContextToken())
 	if err != nil {
 		return nil, err
 	}
+	parent := verified.Context()
 	var scopes []*basev0.WorkScopeV1
 	if len(req.GetAttenuatedScopes()) > 0 {
 		// Only the validated wire scopes are wanted here: a renewal draws its
@@ -1207,6 +1261,10 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	if err := enforceActorCeiling(ctx, actor, audience, scopes); err != nil {
 		return nil, err
 	}
+	attenuated, err := attenuateEffective(parent, scopes)
+	if err != nil {
+		return nil, err
+	}
 	// A renewal must not silently loosen replay protection: an unspecified
 	// policy inherits the parent's, so a SINGLE_USE context stays SINGLE_USE
 	// rather than degrading to idempotent.
@@ -1214,15 +1272,8 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	if req.GetReplayPolicy() != gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED {
 		replayPolicy = workContextReplayPolicy(req.GetReplayPolicy())
 	}
-	token, signed, err := s.signer.ExchangeWorkContextAudience(
-		parentToken,
-		workcontext.ExchangeWorkContextAudienceInput{
-			Audience:         audience,
-			ReplayPolicy:     replayPolicy,
-			TTL:              workContextTTL(req.GetTtlSeconds()),
-			AttenuatedScopes: scopes,
-		},
-	)
+	token, signed, err := s.remint(ctx, parent, audience, replayPolicy, workContextTTL(req.GetTtlSeconds()),
+		attenuated, workcontext.Execution{}, "")
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -1320,7 +1371,7 @@ func actorChainScopes(scopes []*basev0.WorkScopeV1) []business.ActorChainScope {
 }
 
 func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID string) (string, error) {
-	if s == nil || s.configureErr != nil || s.signer == nil || s.verifier == nil || s.authority == nil {
+	if !s.configured() || s.authority == nil {
 		return "", status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
 	}
 	ownerID, err := requireAuth(ctx)
@@ -1333,64 +1384,57 @@ func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID s
 	return ownerID, nil
 }
 
-// callerSessionID roots a Task in the session the caller actually holds, so a
-// capability is never signed and journaled under a session that only ever
-// existed in the request that named it.
+// callerSession is the session a capability the caller opens is bound to: the
+// session the caller authenticated with, or "" — which core turns into a fresh
+// one — when it has none. It is NEVER the id a request named.
 //
-// A divergent id is ignored rather than refused. Refusing reads as the safer
-// choice, but the requested id is not authority — it is a correlation field the
-// derived value replaces — so refusing buys no binding that ignoring does not,
-// and it breaks every caller that roots its own Task and Session ids while
-// presenting a real session.
+// That is what makes a session id identify its owner. A party holding a
+// confined access token pairs a capability with it on the session alone (the
+// gateway's module routes do), and the pairing holds only while every session a
+// capability carries is either its caller's verified session or a fresh one. A
+// requested id signed as-is would let any caller mint a capability carrying
+// another credential's session.
 //
-// This binds attribution, not enforcement: nothing re-checks a minted capability
-// against session liveness today, so a revocation does not reach an outstanding
-// context before its TTL runs out. Deriving the id here is what makes the
-// journal name a session that can be revoked at all, and what that enforcement
-// would later hang from.
-//
-// A caller authenticated by a service credential or an API key has no session to
-// derive and keeps the requested id, as the headless installation mint does.
-func callerSessionID(ctx context.Context, requested string) string {
+// A divergent requested id is ignored rather than refused: it is a correlation
+// field the derived value replaces, not authority, and refusing it would break
+// every caller that roots its own Task and Session ids while presenting a real
+// session. The issued response carries the session actually bound, which is
+// what a caller correlates on. Neither id is logged — a session id identifies a
+// live session, and wool masks keys rather than values.
+func callerSession(ctx context.Context, requested string) string {
 	verified, ok := accountsauth.VerifiedSessionID(ctx)
-	if !ok {
-		return requested
+	if ok && requested != "" {
+		if parsed, _ := uuid.Parse(requested); parsed != verified {
+			wool.Get(ctx).In("StartTask").Warn(
+				"requested session_id is not the caller's verified session; binding to the verified session",
+			)
+		}
 	}
-	// Compare parsed ids: uuid.Parse accepts spellings the canonical form does
-	// not, so the caller's own session written another way is not a divergence.
-	// Neither id is logged — a session id identifies a live session, and wool
-	// masks keys rather than values.
-	if parsed, _ := uuid.Parse(requested); parsed != verified {
-		wool.Get(ctx).In("StartTask").Warn(
-			"requested session_id is not the caller's verified session; binding to the verified session",
-		)
-	}
-	return verified.String()
+	return issuedSession(verified, ok)
 }
 
+// verifyParent verifies a parent capability its OWNER presents to derive from:
+// this issuer's own capability (verifyIssued), bound to the organization and to
+// the caller as owner, and still backed by current authority.
 func (s *WorkContextAuthorityServer) verifyParent(
 	ctx context.Context,
 	orgID string,
 	ownerID string,
 	encoded string,
-) (workcontext.WorkContextToken, *basev0.WorkContextV1, *business.Principal, error) {
-	token, err := workcontext.ParseWorkContextToken(encoded)
+) (*workcontext.Verified, *business.Principal, error) {
+	parent, err := s.verifyIssued(ctx, encoded)
 	if err != nil {
-		return workcontext.WorkContextToken{}, nil, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
+		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
 	}
-	parent, err := s.verifier.Verify(token, workcontext.WorkContextExpectations{
-		Issuer:           s.issuer,
-		TenantID:         orgID,
-		OwnerPrincipalID: ownerID,
-	})
+	claims := parent.Context()
+	if claims.GetTenantId() != orgID || claims.GetOwnerPrincipalId() != ownerID {
+		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
+	}
+	actor, err := s.requireCurrentAuthority(ctx, orgID, claims)
 	if err != nil {
-		return workcontext.WorkContextToken{}, nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
+		return nil, nil, err
 	}
-	actor, err := s.requireCurrentAuthority(ctx, orgID, parent)
-	if err != nil {
-		return workcontext.WorkContextToken{}, nil, nil, err
-	}
-	return token, parent, actor, nil
+	return parent, actor, nil
 }
 
 // verifyActorParent is the actor-authorized counterpart of verifyParent. The
@@ -1403,36 +1447,30 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 	orgID string,
 	actorID string,
 	encoded string,
-) (workcontext.WorkContextToken, *basev0.WorkContextV1, *business.Principal, error) {
-	token, err := workcontext.ParseWorkContextToken(encoded)
-	if err != nil {
-		return workcontext.WorkContextToken{}, nil, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
+) (*workcontext.Verified, *business.Principal, error) {
+	parent, err := s.verifyIssued(ctx, encoded)
+	if err != nil || parent.Context().GetTenantId() != orgID {
+		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
 	}
-	parent, err := s.verifier.Verify(token, workcontext.WorkContextExpectations{
-		Issuer:   s.issuer,
-		TenantID: orgID,
-	})
-	if err != nil {
-		return workcontext.WorkContextToken{}, nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
-	}
-	actors := parent.GetActorChain()
+	claims := parent.Context()
+	actors := claims.GetActorChain()
 	if len(actors) == 0 {
-		return workcontext.WorkContextToken{}, nil, nil, status.Error(
+		return nil, nil, status.Error(
 			codes.PermissionDenied,
 			"only a delegated actor may renew a Work Context",
 		)
 	}
 	if actors[len(actors)-1].GetPrincipalId() != actorID {
-		return workcontext.WorkContextToken{}, nil, nil, status.Error(
+		return nil, nil, status.Error(
 			codes.PermissionDenied,
 			"caller is not the current actor of this Work Context",
 		)
 	}
-	actor, err := s.requireCurrentAuthority(ctx, orgID, parent)
+	actor, err := s.requireCurrentAuthority(ctx, orgID, claims)
 	if err != nil {
-		return workcontext.WorkContextToken{}, nil, nil, err
+		return nil, nil, err
 	}
-	return token, parent, actor, nil
+	return parent, actor, nil
 }
 
 // requireCurrentAuthority fails closed unless the parent's sealed authorization
@@ -1748,9 +1786,9 @@ func cloneWorkScopes(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {
 
 func workContextReplayPolicy(value gen.WorkContextReplayPolicy) string {
 	if value == gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE {
-		return workcontext.WorkContextReplaySingleUse
+		return workcontext.ReplaySingleUse
 	}
-	return workcontext.WorkContextReplayIdempotent
+	return workcontext.ReplayIdempotent
 }
 
 func workContextTTL(seconds int32) time.Duration {
@@ -1761,7 +1799,7 @@ func workContextTTL(seconds int32) time.Duration {
 }
 
 func issuedWorkContext(
-	token workcontext.WorkContextToken,
+	token string,
 	signed *basev0.WorkContextV1,
 ) *gen.IssuedWorkContext {
 	currentActor := signed.GetOwnerPrincipalId()
@@ -1769,7 +1807,7 @@ func issuedWorkContext(
 		currentActor = actors[len(actors)-1].GetPrincipalId()
 	}
 	response := &gen.IssuedWorkContext{
-		Token:                   token.Encoded(),
+		Token:                   token,
 		OrgId:                   signed.GetTenantId(),
 		OwnerPrincipalId:        signed.GetOwnerPrincipalId(),
 		TaskId:                  signed.GetTaskId(),
@@ -1793,9 +1831,20 @@ func issuedWorkContext(
 	return response
 }
 
+// mapWorkContextError maps a refusal from core's minter. ErrRevoked — the
+// parent or the authority moved underneath the mint — is a precondition the
+// caller can re-establish; ErrInvalid is a request core will never sign.
 func mapWorkContextError(err error) error {
-	if errors.Is(err, workcontext.ErrWorkContextInvalid) {
+	if _, isStatus := status.FromError(err); isStatus && status.Code(err) != codes.Unknown {
+		return err
+	}
+	switch {
+	case errors.Is(err, workcontext.ErrInvalid):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, ErrWorkContextAuthorityUnconfigured):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Error(codes.Internal, "cannot issue Work Context")
 }

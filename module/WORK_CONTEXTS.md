@@ -93,8 +93,10 @@ Only exchanging to the immediate parent's audience is refused. Every intervening
 binding must preserve the required read scope, including receipt-lookup paths;
 the return binding cannot recover authority removed by an earlier exchange.
 Use a separate read-only binding for that proof rather than a task-start or
-execution binding. The signed owner, tenant, task and session remain unchanged,
-and current revocation is checked again on the return exchange.
+execution binding. The signed owner, tenant and task remain unchanged, the
+returned capability opens a fresh session (a session a capability carries is its
+minter's verified session or new, never copied), and current revocation is
+checked again on the return exchange.
 
 ```json
 {"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"example-producer","invoke_scopes":[{"resource_kind":"results","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"results","actions":["read"]}]}}}}
@@ -251,6 +253,47 @@ Pinning a definition is the producer's own check, made on each request against
 what it has installed. The host makes no such check, so a producer that means a
 grant to cover one exact definition enforces that itself: the id here says which
 resource is meant, never which version of it.
+
+## The capability itself: core/workcontext
+
+Every Work Context this host issues is signed by `core/workcontext`'s
+`Authority` and every one it reads back is checked by core's `Verifier`; the
+gateway edge holds a presented one to core's `Inspector`. There is no second
+encoding: core refuses a token in any other format as `ErrNotACoreToken` before
+it reads a field. What the host owns is the live state core asks an issuer for,
+answered by one set of functions for minting and verifying alike
+(`pkg/business/work_context_seal.go`):
+
+- **Seal.** Every capability — a person's as much as a module's — is sealed to an
+  installation and its revision. A person's capability for a module or a solution
+  is sealed to the organization's installation of it, held while the person is an
+  active member; an organization that never installed the audience is minted
+  nothing. A module's is sealed to the installation its mint resolved.
+- **Epoch.** The owner's authorization revision in the organization. Membership
+  and role changes advance a person's; installing a module and every change to
+  its installation's revision advance a module principal's (migration 35).
+- **Execution.** A person and a registered agent bear none. A module principal
+  always bears one: its mint attests the digest `BindExecution` read off the
+  requesting pod, and core holds it against the approved build.
+- **Revision.** The greater of the organization's and the owner's revision for a
+  person; a module principal's is `ModuleOperationContextRevision` of its
+  installed grant. Core keys its revision source by tenant, so the host binds it
+  to the capability's owner as well.
+- **Session.** Every session a capability carries is the session its caller
+  authenticated with, or a fresh one — never one a request names. `StartTask`
+  binds the caller's verified session; `StartChildSession`,
+  `StartInstallationTask`, a root session and a renewal assign a fresh one and
+  return it in the response. The gateway pairs a resource-confined credential
+  with a capability on that session alone, which holds only because a caller can
+  never choose it.
+
+Core derives only by adding a hop and never extends a window, so re-issuing a
+capability — a root session, an audience exchange, a renewal — mints it afresh
+from its owner and re-derives each hop, with the same delegation ids, against
+live state. When this host reads back a capability it issued (a parent to derive
+from, a viewer's capability presented with a question), it verifies it at full
+strength for the audience the capability names; a single-use capability is
+consumed by that read, as it is by whichever consumer verifies it first.
 
 ## The reserved module audience
 

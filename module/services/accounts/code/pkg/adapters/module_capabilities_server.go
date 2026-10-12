@@ -10,7 +10,6 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -44,11 +43,11 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 	if !ok {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
-	values := md.Get(workcontext.WorkContextHeaderName)
+	values := md.Get(workContextHeader)
 	if len(values) == 0 || values[0] == "" {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
-	return WorkContextSingleton().VerifyModuleWorkContext(values[0])
+	return WorkContextSingleton().VerifyModuleWorkContext(ctx, values[0])
 }
 
 // moduleIdentityError maps a failure to prove a module's identity onto the
@@ -110,7 +109,7 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	// The signer lives on the Work Context authority, which owns this cluster's
 	// signing key; this RPC lives here so the gateway can broker it from the same
 	// minimal-import proto as the other module mints.
-	token, signed, err := WorkContextSingleton().StartModuleTask(authority)
+	token, signed, err := WorkContextSingleton().StartModuleTask(ctx, authority)
 	if err != nil {
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
@@ -126,7 +125,7 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 		return nil, err
 	}
 	return &gen.ModuleMintWorkContextResponse{
-		Token:       token.Encoded(),
+		Token:       token,
 		ExpiresAt:   timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
 		PrincipalId: authority.PrincipalID,
 		Tenant:      authority.Tenant,
@@ -174,7 +173,7 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 		}
 		return nil, err
 	}
-	token, signed, err := WorkContextSingleton().StartModuleOperationTask(authority)
+	token, signed, err := WorkContextSingleton().StartModuleOperationTask(ctx, authority)
 	if err != nil {
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
@@ -189,7 +188,7 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 		return nil, err
 	}
 	return &gen.ModuleMintOperationContextResponse{
-		Token:       token.Encoded(),
+		Token:       token,
 		ExpiresAt:   timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
 		PrincipalId: authority.PrincipalID,
 		Tenant:      authority.Tenant,

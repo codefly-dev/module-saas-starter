@@ -285,12 +285,16 @@ func (x *StartTaskWorkContextRequest) GetProjectId() string {
 // that node's own row and checks the agent holds a standing grant at an
 // ancestor-or-equal of it. This differs from CheckAccess, where resource_id is a
 // placed-record id; do not pass a record id here.
+//
+// The Session is assigned by the issuer and returned in IssuedWorkContext, never
+// named by the caller: a session a caller could name is one it could name after
+// another credential's, and a confined credential is paired with a capability on
+// the session alone.
 type StartInstallationTaskRequest struct {
 	state           protoimpl.MessageState  `protogen:"open.v1"`
 	OrgId           string                  `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	InstallationId  string                  `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
 	TaskId          string                  `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	SessionId       string                  `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	AuthorityScopes []*WorkContextScope     `protobuf:"bytes,5,rep,name=authority_scopes,json=authorityScopes,proto3" json:"authority_scopes,omitempty"`
 	Audience        string                  `protobuf:"bytes,6,opt,name=audience,proto3" json:"audience,omitempty"`
 	ReplayPolicy    WorkContextReplayPolicy `protobuf:"varint,7,opt,name=replay_policy,json=replayPolicy,proto3,enum=saas.accounts.v1.WorkContextReplayPolicy" json:"replay_policy,omitempty"`
@@ -348,13 +352,6 @@ func (x *StartInstallationTaskRequest) GetInstallationId() string {
 func (x *StartInstallationTaskRequest) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
-	}
-	return ""
-}
-
-func (x *StartInstallationTaskRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
 	}
 	return ""
 }
@@ -485,9 +482,10 @@ func (x *StartRootSessionWorkContextRequest) GetTtlSeconds() int32 {
 	return 0
 }
 
-// ExchangeWorkContextAudienceRequest reissues the same immutable Task,
-// Session, owner, and delegation lineage for another service boundary while
-// attenuating the effective authority to the requested scopes.
+// ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,
+// and delegation lineage for another service boundary while attenuating the
+// effective authority to the requested scopes. The reissued capability opens the
+// caller's own authenticated Session, assigned by the issuer.
 type ExchangeWorkContextAudienceRequest struct {
 	state                  protoimpl.MessageState  `protogen:"open.v1"`
 	OrgId                  string                  `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -572,11 +570,16 @@ func (x *ExchangeWorkContextAudienceRequest) GetTtlSeconds() int32 {
 	return 0
 }
 
+// StartChildSessionWorkContextRequest delegates one more hop from a verified
+// parent. The child Session is assigned by the issuer and returned in
+// IssuedWorkContext (with the parent's as parent_session_id), never named by the
+// caller: a session a caller could name is one it could name after another
+// credential's, and a confined credential is paired with a capability on the
+// session alone.
 type StartChildSessionWorkContextRequest struct {
 	state                  protoimpl.MessageState  `protogen:"open.v1"`
 	OrgId                  string                  `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	ParentWorkContextToken string                  `protobuf:"bytes,2,opt,name=parent_work_context_token,json=parentWorkContextToken,proto3" json:"parent_work_context_token,omitempty"`
-	SessionId              string                  `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	ActorPrincipalId       string                  `protobuf:"bytes,4,opt,name=actor_principal_id,json=actorPrincipalId,proto3" json:"actor_principal_id,omitempty"`
 	GrantedScopes          []*WorkContextScope     `protobuf:"bytes,5,rep,name=granted_scopes,json=grantedScopes,proto3" json:"granted_scopes,omitempty"`
 	Audience               string                  `protobuf:"bytes,6,opt,name=audience,proto3" json:"audience,omitempty"`
@@ -630,13 +633,6 @@ func (x *StartChildSessionWorkContextRequest) GetParentWorkContextToken() string
 	return ""
 }
 
-func (x *StartChildSessionWorkContextRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
 func (x *StartChildSessionWorkContextRequest) GetActorPrincipalId() string {
 	if x != nil {
 		return x.ActorPrincipalId
@@ -676,8 +672,8 @@ func (x *StartChildSessionWorkContextRequest) GetTtlSeconds() int32 {
 // signing TTL cap without the originating user present. The caller is the
 // current (outermost) actor of the parent context, not its owner, so a
 // long-running delegated task can keep itself alive. Renewal preserves the
-// Task, Session, owner, and delegation lineage; it may attenuate but can never
-// widen the current actor's authority.
+// Task, owner, and delegation lineage and opens a fresh Session assigned by the
+// issuer; it may attenuate but can never widen the current actor's authority.
 type RenewWorkContextRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	OrgId                  string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -1197,13 +1193,11 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	" \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x01R\tprojectId\x88\x01\x01B\x0f\n" +
 	"\r_workspace_idB\r\n" +
-	"\v_project_id\"\xc2\x04\n" +
+	"\v_project_id\"\xab\x04\n" +
 	"\x1cStartInstallationTaskRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +
-	"\atask_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06taskId\x12'\n" +
-	"\n" +
-	"session_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12Y\n" +
+	"\atask_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06taskId\x12Y\n" +
 	"\x10authority_scopes\x18\x05 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\n" +
 	"\xbaH\a\x92\x01\x04\b\x01\x10@R\x0fauthorityScopes\x12&\n" +
 	"\baudience\x18\x06 \x01(\tB\n" +
@@ -1219,7 +1213,8 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	" \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x01R\tprojectId\x88\x01\x01B\x0f\n" +
 	"\r_workspace_idB\r\n" +
-	"\v_project_id\"\xdb\x02\n" +
+	"\v_project_idJ\x04\b\x04\x10\x05R\n" +
+	"session_id\"\xdb\x02\n" +
 	"\"StartRootSessionWorkContextRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12F\n" +
 	"\x19parent_work_context_token\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\x12'\n" +
@@ -1241,12 +1236,10 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\rreplay_policy\x18\x05 \x01(\x0e2).saas.accounts.v1.WorkContextReplayPolicyR\freplayPolicy\x12+\n" +
 	"\vttl_seconds\x18\x06 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\x84\a(\x00R\n" +
-	"ttlSeconds\"\xeb\x03\n" +
+	"ttlSeconds\"\xd4\x03\n" +
 	"#StartChildSessionWorkContextRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12F\n" +
-	"\x19parent_work_context_token\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\x12'\n" +
-	"\n" +
-	"session_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x126\n" +
+	"\x19parent_work_context_token\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\x126\n" +
 	"\x12actor_principal_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x10actorPrincipalId\x12U\n" +
 	"\x0egranted_scopes\x18\x05 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\n" +
 	"\xbaH\a\x92\x01\x04\b\x01\x10@R\rgrantedScopes\x12&\n" +
@@ -1255,7 +1248,8 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\rreplay_policy\x18\a \x01(\x0e2).saas.accounts.v1.WorkContextReplayPolicyR\freplayPolicy\x12+\n" +
 	"\vttl_seconds\x18\b \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\x84\a(\x00R\n" +
-	"ttlSeconds\"\x94\x03\n" +
+	"ttlSecondsJ\x04\b\x03\x10\x04R\n" +
+	"session_id\"\x94\x03\n" +
 	"\x17RenewWorkContextRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12F\n" +
 	"\x19parent_work_context_token\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\x12+\n" +

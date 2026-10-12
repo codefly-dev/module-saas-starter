@@ -35,6 +35,7 @@ const (
 	otherModule           = "reports"
 	otherModuleToken      = "projected.reports"
 	runtimeModule         = "runtime"
+	runtimeModuleToken    = "projected.runtime"
 )
 
 // bindDelegationModules runs one pod per module that mints here, each on its
@@ -42,7 +43,7 @@ const (
 func bindDelegationModules(svc *business.Service, registry business.ModulePrincipalRegistry) {
 	cluster := executiontest.New()
 	svc.SetExecutionBinding(cluster, cluster)
-	for prefix, token := range map[string]string{delegationModule: delegationModuleToken, otherModule: otherModuleToken} {
+	for prefix, token := range map[string]string{delegationModule: delegationModuleToken, otherModule: otherModuleToken, runtimeModule: runtimeModuleToken} {
 		grant, declared := registry[business.ModulePrincipalID(prefix)]
 		if !declared {
 			continue
@@ -187,6 +188,7 @@ func (w *delegationWorld) service(t *testing.T, registry business.ModulePrincipa
 	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
 	wireNarrowingPolicyLog(svc)
 	svc.SetModuleAuthorityReads(testStore, nil)
+	svc.SetWorkContextSealStore(testStore)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	installCapabilityFixture(t, svc, w.org, w.admin)
 	installCapabilityFixture(t, svc, w.otherOrg, w.other)

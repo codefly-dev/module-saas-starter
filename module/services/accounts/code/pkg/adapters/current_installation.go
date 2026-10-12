@@ -6,7 +6,6 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -41,7 +40,7 @@ func (h *moduleCapabilitiesConnectHandler) GetCurrentInstallation(ctx context.Co
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.GetCurrentInstallation(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)

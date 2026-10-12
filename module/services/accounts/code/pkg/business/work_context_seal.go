@@ -1,0 +1,234 @@
+package business
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// The live values a Work Context is sealed to, answered for one organization.
+//
+// core/workcontext seals every capability — a person's as much as a module's —
+// to an installation and its revision, the owner's epoch, the execution of the
+// principal exercising it, and the issuer's authorization revision; and every
+// verifier compares each of them against the live value. These are the host's
+// answers. They are LIVE READS on every call, minting and verifying alike, and
+// one function answers each question for both: a mint that read one source and
+// a verifier that read another would agree only by coincidence.
+//
+// Two kinds of principal own a capability here, and each answer dispatches on
+// which one it is asked about:
+//
+//   - a DECLARED MODULE PRINCIPAL, which the deployment declares rather than
+//     registers per organization. Its installation, epoch and revision are the
+//     module authority's (LiveModuleAuthority, ModuleOperationContextRevision);
+//     its execution is the approved build, and it always bears one.
+//   - a person or a registered agent principal, which the organization's rows
+//     answer. A person runs no approved build, and neither does a registered
+//     agent — this host approves builds for module principals only — so both
+//     bear no execution.
+
+// ErrWorkContextSealUnheld reports that a principal does not hold the
+// installation a capability names: the installation is not active in the
+// organization, or the principal is not an active member of it.
+var ErrWorkContextSealUnheld = errors.New("the principal holds no such active installation")
+
+// ErrWorkContextPrincipalUnknown reports a principal this organization has no
+// authorization record for. It is never "bears no execution": answering that for
+// an identity the host has never heard of would mint a credential nothing can
+// revoke by replacing a build.
+var ErrWorkContextPrincipalUnknown = errors.New("the principal has no authorization record in this organization")
+
+// ErrWorkContextNoAudienceInstallation reports an audience that names no
+// installation active in the organization. A capability is sealed to one, so a
+// mint for an audience the organization never installed has nothing to be
+// bound to and is refused.
+var ErrWorkContextNoAudienceInstallation = errors.New("the audience names no installation active in this organization")
+
+// ErrBearsNoExecution is WorkContextApprovedBuild's answer for a principal that
+// bears no execution. The adapter translates it to core's own sentinel.
+var ErrBearsNoExecution = errors.New("the principal bears no execution")
+
+// WorkContextSealStore is the row-backed half: a person's or a registered
+// principal's seal, and the organization's installation of a solution.
+type WorkContextSealStore interface {
+	// WorkContextHeldInstallation answers the live revision of installationID
+	// when it is active in orgID and principalID is an active member there, and
+	// ErrWorkContextSealUnheld otherwise.
+	WorkContextHeldInstallation(ctx context.Context, orgID, principalID, installationID string) (uint64, error)
+	// WorkContextPrincipalEpoch answers principalID's authorization revision in
+	// orgID, which every change to its authority advances, and
+	// ErrWorkContextPrincipalUnknown when there is none.
+	WorkContextPrincipalEpoch(ctx context.Context, orgID, principalID string) (uint64, error)
+	// WorkContextOwnerRevision answers the authorization revision a capability
+	// owned by ownerID in orgID carries: the greater of the organization's and
+	// the owner's, for an active member.
+	WorkContextOwnerRevision(ctx context.Context, orgID, ownerID string) (uint64, error)
+	// WorkContextSolutionInstallation answers the active installation of the
+	// solution binding bindingID in orgID, and
+	// ErrWorkContextNoAudienceInstallation when there is none.
+	WorkContextSolutionInstallation(ctx context.Context, orgID, bindingID string) (string, error)
+}
+
+// SetWorkContextSealStore wires the row-backed seal reads.
+func (s *Service) SetWorkContextSealStore(store WorkContextSealStore) {
+	s.workContextSeals = store
+}
+
+func (s *Service) sealStore() (WorkContextSealStore, error) {
+	if s.workContextSeals == nil {
+		return nil, errors.New("no Work Context seal store is wired, so no seal can be answered")
+	}
+	return s.workContextSeals, nil
+}
+
+// isDeclaredModulePrincipal reports whether the current registry declares
+// principalID.
+func (s *Service) isDeclaredModulePrincipal(principalID string) bool {
+	snapshot := s.moduleRegistrySnapshot()
+	if snapshot == nil {
+		return false
+	}
+	_, declared := snapshot.registry[principalID]
+	return declared
+}
+
+func (s *Service) liveModuleAuthority(ctx context.Context, principalID, orgID, installationID string) (*LiveModuleAuthority, error) {
+	if s.moduleAuthority == nil {
+		return nil, errors.New("no live module authority read is wired")
+	}
+	return s.moduleAuthority.LiveModuleAuthority(ctx, principalID, orgID, installationID)
+}
+
+// WorkContextSeal answers the live installation a capability owned by
+// principalID is sealed to.
+func (s *Service) WorkContextSeal(ctx context.Context, orgID, principalID, installationID string) (string, uint64, error) {
+	if s.isDeclaredModulePrincipal(principalID) {
+		live, err := s.liveModuleAuthority(ctx, principalID, orgID, installationID)
+		if err != nil {
+			return "", 0, err
+		}
+		return live.InstallationID, live.InstallationRevision, nil
+	}
+	store, err := s.sealStore()
+	if err != nil {
+		return "", 0, err
+	}
+	revision, err := store.WorkContextHeldInstallation(ctx, orgID, principalID, installationID)
+	if err != nil {
+		return "", 0, err
+	}
+	return installationID, revision, nil
+}
+
+// WorkContextPrincipalEpoch answers principalID's live epoch.
+//
+// For a module principal it is the producer epoch the module authority already
+// reads and every deferred producer records, so the capability and the work it
+// enqueues are revoked by the same lever. Zero names nothing and is refused here
+// rather than handed to core as a value.
+func (s *Service) WorkContextPrincipalEpoch(ctx context.Context, orgID, principalID string) (uint64, error) {
+	if s.isDeclaredModulePrincipal(principalID) {
+		live, err := s.liveModuleAuthority(ctx, principalID, orgID, "")
+		if err != nil {
+			return 0, err
+		}
+		if live.ProducerEpoch == 0 {
+			return 0, fmt.Errorf("%w: module principal %s has no producer epoch in this organization", ErrWorkContextPrincipalUnknown, principalID)
+		}
+		return live.ProducerEpoch, nil
+	}
+	store, err := s.sealStore()
+	if err != nil {
+		return 0, err
+	}
+	return store.WorkContextPrincipalEpoch(ctx, orgID, principalID)
+}
+
+// WorkContextApprovedBuild answers the execution principalID exercises.
+//
+// A module principal ALWAYS bears one: a known module with no approved build is
+// refused, exactly as BindExecution refuses it, never answered as "bears none" —
+// that answer would let a module capability verify with no execution at all.
+// A person or registered agent known to the organization bears none, and an
+// unknown principal is refused.
+func (s *Service) WorkContextApprovedBuild(ctx context.Context, orgID, principalID string) (string, uint64, error) {
+	if snapshot := s.moduleRegistrySnapshot(); snapshot != nil {
+		if grant, declared := snapshot.registry[principalID]; declared {
+			if s.executionAuthority == nil {
+				return "", 0, ErrExecutionUnbound
+			}
+			// Keyed by the PREFIX, which is the name the authority document
+			// gives the principal — exactly as BindExecution asks — never by
+			// this host's registry UUID, which no document carries.
+			approved, incarnation, err := s.executionAuthority.ApprovedBuild(ctx, grant.Prefix)
+			if err != nil {
+				return "", 0, err
+			}
+			digest, ok := digestPortion(string(approved))
+			if !ok {
+				return "", 0, fmt.Errorf("%w: the approved build for %s names no digest", ErrExecutionNotApproved, grant.Prefix)
+			}
+			return digest, incarnation, nil
+		}
+	}
+	if _, err := s.WorkContextPrincipalEpoch(ctx, orgID, principalID); err != nil {
+		return "", 0, err
+	}
+	return "", 0, ErrBearsNoExecution
+}
+
+// WorkContextRevision answers the authorization revision a capability owned by
+// ownerID carries.
+//
+// A person's is the greater of the organization's revision and their own, which
+// every membership and role change advances. A module principal has no
+// row-backed counter; its revision is ModuleOperationContextRevision of its
+// grant as installed in this organization, so narrowing that grant or the
+// installation's scope revokes every capability it owns.
+func (s *Service) WorkContextRevision(ctx context.Context, orgID, ownerID string) (uint64, error) {
+	if s.isDeclaredModulePrincipal(ownerID) {
+		// A decision about current module authority, like every other, so it
+		// is judged from one snapshot fenced against the committed envelope.
+		ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+		if fenceErr != nil {
+			return 0, fenceErr
+		}
+		defer releaseAuthority()
+		installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, s.moduleRegistrySnapshot(),
+			ModuleCaller{PrincipalID: ownerID, BoundOrg: orgID})
+		if err != nil {
+			return 0, err
+		}
+		return ModuleOperationContextRevision(installed.Grant), nil
+	}
+	store, err := s.sealStore()
+	if err != nil {
+		return 0, err
+	}
+	return store.WorkContextOwnerRevision(ctx, orgID, ownerID)
+}
+
+// WorkContextAudienceInstallation answers the installation a capability for
+// audience in orgID is sealed to: the organization's installation of the module
+// or solution the audience names. The audience must already be in the host's
+// vocabulary; this resolves where it is installed, and an organization that
+// never installed it gets ErrWorkContextNoAudienceInstallation.
+func (s *Service) WorkContextAudienceInstallation(ctx context.Context, orgID, audience string) (string, error) {
+	if binding, isSolution := strings.CutPrefix(audience, SolutionAudiencePrefix); isSolution {
+		store, err := s.sealStore()
+		if err != nil {
+			return "", err
+		}
+		return store.WorkContextSolutionInstallation(ctx, orgID, binding)
+	}
+	live, err := s.liveModuleAuthority(ctx, ModulePrincipalID(audience), orgID, "")
+	if errors.Is(err, ErrModuleInstallationInactive) {
+		return "", fmt.Errorf("%w: %s", ErrWorkContextNoAudienceInstallation, audience)
+	}
+	if err != nil {
+		return "", err
+	}
+	return live.InstallationID, nil
+}

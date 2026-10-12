@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -15,11 +16,13 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
+	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // These tests run the real mint and audience exchange on the migrated schema.
@@ -29,13 +32,14 @@ import (
 const delegationExchangeInternalToken = "source-delegation-exchange-test"
 
 type delegationSigning struct {
-	signer   *workcontext.WorkContextSigner
-	verifier *workcontext.WorkContextVerifier
+	keyID     string
+	key       ed25519.PrivateKey
+	inspector *workcontext.Inspector
 }
 
 // installDelegationAuthority points the adapters at w's service and at a fresh
-// Work Context key, and returns a signer and verifier on the same key so a test
-// can forge a parent the host itself would accept the signature of.
+// Work Context key, and returns that key so a test can forge a parent the host
+// itself would accept the signature of.
 func installDelegationAuthority(t *testing.T, w *delegationWorld) delegationSigning {
 	t.Helper()
 	public, private, err := ed25519.GenerateKey(rand.Reader)
@@ -47,28 +51,53 @@ func installDelegationAuthority(t *testing.T, w *delegationWorld) delegationSign
 		adapters.SetInternalToken("")
 	})
 	adapters.WorkContextSingleton().Configure(adapters.WorkContextAuthorityConfiguration{
-		Issuer: "accounts.test", KeyID: "delegation-test", PrivateKey: private, Authority: testStore,
+		Issuer: "accounts.test", KeyID: "delegation-test", PrivateKey: private, Authority: testStore, Seals: w.svc,
 	})
 	adapters.WithService(w.svc)
 	adapters.SetInternalToken(delegationExchangeInternalToken)
-	signer, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{
-		Issuer: "accounts.test", KeyID: "delegation-test", PrivateKey: private,
-	})
-	require.NoError(t, err)
-	verifier, err := workcontext.NewWorkContextVerifier(workcontext.WorkContextVerifierOptions{
-		PublicKeys: map[string]ed25519.PublicKey{"delegation-test": public},
-	})
-	require.NoError(t, err)
-	return delegationSigning{signer: signer, verifier: verifier}
+	return delegationSigning{
+		keyID: "delegation-test", key: private,
+		inspector: &workcontext.Inspector{Issuer: "accounts.test", Keys: map[string]ed25519.PublicKey{"delegation-test": public}},
+	}
 }
 
+// verify reads a capability the host issued: its signature under the test key,
+// then its claims.
 func (d delegationSigning) verify(t *testing.T, token string) *basev0.WorkContextV1 {
 	t.Helper()
-	parsed, err := workcontext.ParseWorkContextToken(token)
+	decoded, err := workcontext.Decode(token)
 	require.NoError(t, err)
-	verified, err := d.verifier.Verify(parsed, workcontext.WorkContextExpectations{Issuer: "accounts.test"})
+	_, err = d.inspector.Inspect(token, decoded.Context().GetAudience())
 	require.NoError(t, err)
-	return verified
+	return decoded.Context()
+}
+
+// forge signs claims with the host's key exactly as core encodes them, so a
+// test can present a parent the minting API would refuse to produce and see
+// the HOST refuse it.
+func (d delegationSigning) forge(t *testing.T, claims *basev0.WorkContextV1) string {
+	t.Helper()
+	claims = proto.Clone(claims).(*basev0.WorkContextV1)
+	claims.KeyId, claims.Issuer = d.keyID, "accounts.test"
+	claims.Nonce = business.NewIDString()
+	for _, hop := range claims.ActorChain {
+		if hop.PrincipalEpoch == 0 {
+			hop.PrincipalEpoch = 1
+		}
+	}
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
+	require.NoError(t, err)
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(d.key, payload))
+}
+
+// moduleIdentity mints prefix's own identity capability through the real RPC,
+// with the projected token of its pod.
+func moduleIdentity(t *testing.T, prefix, token, tenant string) string {
+	t.Helper()
+	resp, err := adapters.ModuleCapabilitiesSingleton().MintModuleWorkContext(context.Background(),
+		&gen.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: token, OrganizationId: tenant})
+	require.NoError(t, err)
+	return resp.GetToken()
 }
 
 func internalContext() context.Context {
@@ -89,12 +118,9 @@ func mintSource(sourceID string) (*gen.ModuleMintSourceOperationContextResponse,
 // runtime module, holding a module identity bound to its declared tenant.
 func exchangeAsRuntime(t *testing.T, runtimeTenant, parent string) (*gen.IssuedWorkContext, error) {
 	t.Helper()
-	identity, _, err := adapters.WorkContextSingleton().StartModuleTask(business.ModuleWorkContextAuthority{
-		PrincipalID: business.ModulePrincipalID(runtimeModule), Tenant: runtimeTenant,
-	})
-	require.NoError(t, err)
+	identity := moduleIdentity(t, runtimeModule, runtimeModuleToken, runtimeTenant)
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-		workcontext.WorkContextHeaderName, identity.Encoded(),
+		carrier.HeaderName, identity,
 		"x-codefly-internal-token", delegationExchangeInternalToken,
 	))
 	return adapters.ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(ctx,
@@ -189,21 +215,17 @@ func TestSourceDelegation_ExchangeRefusesParentsTheDelegationDoesNotAuthorize(t 
 
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
 	forge := func(owner, delegationID string, revision uint64, actors bool) string {
-		input := workcontext.StartTaskInput{
-			Audience: runtimeModule, TenantID: w.org, OwnerPrincipalID: owner,
-			TaskID: business.NewIDString(), SessionID: business.NewIDString(),
-			AuthorizationRevision: revision, ReplayPolicy: workcontext.WorkContextReplayIdempotent,
-			AuthorityScopes: scopes,
-		}
+		claims := proto.Clone(genuine).(*basev0.WorkContextV1)
+		claims.OwnerPrincipalId, claims.AuthorizationRevision = owner, revision
+		claims.Audience, claims.AuthorityScopes = runtimeModule, scopes
+		claims.ActorChain = nil
 		if actors {
-			input.ActorChain = []*basev0.WorkActorV1{{
+			claims.ActorChain = []*basev0.WorkActorV1{{
 				PrincipalId: business.ModulePrincipalID(delegationModule), PrincipalKind: business.PrincipalKindService,
 				DelegationId: delegationID, GrantedScopes: scopes,
 			}}
 		}
-		token, _, err := signing.signer.StartTask(input)
-		require.NoError(t, err)
-		return token.Encoded()
+		return signing.forge(t, claims)
 	}
 
 	for name, parent := range map[string]string{
@@ -257,12 +279,9 @@ func TestSourceDelegation_CrossTenantAloneMintsNothing(t *testing.T) {
 // runtime module, which is the audience the delegation's binding names.
 func exchangeByReference(t *testing.T, runtimeTenant, delegationID, binding string, lookup bool) (*gen.IssuedWorkContext, error) {
 	t.Helper()
-	identity, _, err := adapters.WorkContextSingleton().StartModuleTask(business.ModuleWorkContextAuthority{
-		PrincipalID: business.ModulePrincipalID(runtimeModule), Tenant: runtimeTenant,
-	})
-	require.NoError(t, err)
+	identity := moduleIdentity(t, runtimeModule, runtimeModuleToken, runtimeTenant)
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-		workcontext.WorkContextHeaderName, identity.Encoded(),
+		carrier.HeaderName, identity,
 		"x-codefly-internal-token", delegationExchangeInternalToken,
 	))
 	return adapters.ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(ctx,
@@ -312,7 +331,7 @@ func TestSourceDelegation_ReferenceBackedExchangeOutlivesEveryCapability(t *test
 	// reference rather than a token.
 	lifetime := time.Duration(child.GetExpiresAtUnix()-child.GetIssuedAtUnix()) * time.Second
 	require.Equal(t, business.SourceOperationContextTTL, lifetime)
-	require.LessOrEqual(t, lifetime, workcontext.WorkContextMaxTTL)
+	require.LessOrEqual(t, lifetime, 15*time.Minute)
 
 	require.NoError(t, checkRevision(child), "a reference-backed capability is confirmed by the same revision check")
 
@@ -412,15 +431,12 @@ func TestSourceDelegation_ReferenceIsNotABearerCapability(t *testing.T) {
 
 	// The grantee itself is not the audience either: docstore holds the grant,
 	// and the grant authorizes calling the runtime — not calling docstore.
-	identity, _, err := adapters.WorkContextSingleton().StartModuleTask(business.ModuleWorkContextAuthority{
-		PrincipalID: business.ModulePrincipalID(delegationModule), Tenant: w.org,
-	})
-	require.NoError(t, err)
+	identity := moduleIdentity(t, delegationModule, delegationModuleToken, w.org)
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-		workcontext.WorkContextHeaderName, identity.Encoded(),
+		carrier.HeaderName, identity,
 		"x-codefly-internal-token", delegationExchangeInternalToken,
 	))
-	_, err = adapters.ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(ctx,
+	_, err := adapters.ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(ctx,
 		&gen.ModuleExchangeDelegatedOperationAudienceRequest{
 			BindingId:    delegationBinding,
 			DelegationId: toDocstore.ID,
@@ -460,12 +476,9 @@ func TestSourceDelegation_ExchangeRequiresExactlyOneAuthority(t *testing.T) {
 	minted, err := mintSource(sourceID)
 	require.NoError(t, err)
 
-	identity, _, err := adapters.WorkContextSingleton().StartModuleTask(business.ModuleWorkContextAuthority{
-		PrincipalID: business.ModulePrincipalID(runtimeModule), Tenant: w.org,
-	})
-	require.NoError(t, err)
+	identity := moduleIdentity(t, runtimeModule, runtimeModuleToken, w.org)
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-		workcontext.WorkContextHeaderName, identity.Encoded(),
+		carrier.HeaderName, identity,
 		"x-codefly-internal-token", delegationExchangeInternalToken,
 	))
 	for name, request := range map[string]*gen.ModuleExchangeDelegatedOperationAudienceRequest{
@@ -510,16 +523,12 @@ func TestSourceDelegation_MultiHopActorChainIsRefusedUnderADelegation(t *testing
 			DelegationId: delegation.ID, GrantedScopes: scopes,
 		}
 	}
-	deeper, deeperContext, err := signing.signer.StartTask(workcontext.StartTaskInput{
-		Audience: runtimeModule, TenantID: w.org, OwnerPrincipalID: w.admin,
-		TaskID: business.NewIDString(), SessionID: business.NewIDString(),
-		AuthorizationRevision: genuine.GetAuthorizationRevision(), ReplayPolicy: workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes: scopes,
-		ActorChain:      []*basev0.WorkActorV1{hop(delegationModule), hop(otherModule)},
-	})
-	require.NoError(t, err)
+	deeperContext := proto.Clone(genuine).(*basev0.WorkContextV1)
+	deeperContext.Audience, deeperContext.AuthorityScopes = runtimeModule, scopes
+	deeperContext.ActorChain = []*basev0.WorkActorV1{hop(delegationModule), hop(otherModule)}
+	deeper := signing.forge(t, deeperContext)
 
-	_, err = exchangeAsRuntime(t, w.org, deeper.Encoded())
+	_, err = exchangeAsRuntime(t, w.org, deeper)
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 
 	// And the revision check refuses it at every hop too, so a consumer that

@@ -13,7 +13,6 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/core/wool"
-	"github.com/codefly-dev/sdk-go/workcontext"
 )
 
 // forwardedIdentityHeaders are caller-controlled identity headers. Unless the
@@ -103,7 +102,7 @@ func restIdentityHeaderMatcher(header string) (string, bool) {
 	if hasGRPCMetadataPrefix(header) {
 		return "", false
 	}
-	if strings.EqualFold(header, workcontext.WorkContextHeaderName) || strings.EqualFold(header, "X-Codefly-Effect-Id") {
+	if strings.EqualFold(header, workContextHeader) || strings.EqualFold(header, "X-Codefly-Effect-Id") {
 		return strings.ToLower(header), true
 	}
 	if strings.EqualFold(header, "Authorization") {
@@ -277,7 +276,7 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("internal RPC is not exposed on the tenant listener"))
 	}
 
-	if sourceOperationProcedure(procedure) && len(headers.Values(workcontext.WorkContextHeaderName)) != 0 {
+	if sourceOperationProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
 		return authenticateSourceOperationContext(ctx, headers)
 	}
 	if trustedForwarded && headers.Get("X-User-Id") != "" {

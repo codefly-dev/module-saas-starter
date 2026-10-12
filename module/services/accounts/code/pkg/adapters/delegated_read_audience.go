@@ -12,7 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -46,11 +46,11 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		return nil, err
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get(workcontext.WorkContextHeaderName)) != 1 {
+	if len(md.Get(workContextHeader)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
 	}
 	authority := WorkContextSingleton()
-	if authority == nil || authority.verifier == nil || authority.configureErr != nil || authority.authority == nil {
+	if !authority.configured() || authority.authority == nil {
 		return nil, status.Error(codes.Unavailable, "work context authority unavailable")
 	}
 	caller, err := moduleCaller(ctx)
@@ -76,14 +76,11 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		}
 		return err
 	}
-	token, err := workcontext.ParseWorkContextToken(encodedParent)
-	if err != nil {
+	presented, err := authority.verifyIssued(ctx, encodedParent)
+	if err != nil || presented.Context().GetTenantId() == "" || presented.Context().GetOwnerPrincipalId() == "" {
 		return nil, refuseUnidentifiedParent()
 	}
-	verified, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
-	if err != nil || verified.TenantId == "" || verified.OwnerPrincipalId == "" {
-		return nil, refuseUnidentifiedParent()
-	}
+	verified := presented.Context()
 	// Identity is sealed in the verified parent and bounded by the authenticated
 	// module installation. No user-supplied owner/actor enters database context.
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, verified.OwnerPrincipalId, verified.TenantId)
@@ -123,22 +120,17 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, "", err)
 		return nil, err
 	}
-	var parentToken workcontext.WorkContextToken
-	if delegated {
-		parentToken = token
-	} else {
+	if !delegated {
 		if len(verified.ActorChain) > 0 && authority.journal == nil {
 			err = status.Error(codes.Unavailable, "delegation journal unavailable")
 			audit(business.DelegatedAudienceExchangeRefused, "", err)
 			return nil, err
 		}
-		var currentParent *basev0.WorkContextV1
-		parentToken, currentParent, actor, err = authority.verifyParent(ctx, verified.TenantId, verified.OwnerPrincipalId, encodedParent)
+		actor, err = authority.requireCurrentAuthority(ctx, verified.TenantId, verified)
 		if err != nil {
 			audit(business.DelegatedAudienceExchangeRefused, "", err)
 			return nil, err
 		}
-		parent = currentParent
 	}
 	binding, err := resolve(caller, parent.TenantId, parent.Audience, delegation)
 	if err != nil {
@@ -151,7 +143,10 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
 	}
-	issued, err := authority.exchangeVerifiedParent(ctx, parentToken, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)})
+	// Re-issued in a fresh session: the module exchanging it holds no session
+	// of its own to bind. A chain whose last hop bears an execution is attested
+	// by nobody here, so core refuses it.
+	issued, err := authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, workcontext.Execution{}, "")
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
@@ -215,11 +210,11 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 		return nil, err
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get(workcontext.WorkContextHeaderName)) != 1 {
+	if len(md.Get(workContextHeader)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
 	}
 	authority := WorkContextSingleton()
-	if authority == nil || authority.signer == nil || authority.configureErr != nil {
+	if !authority.configured() {
 		return nil, status.Error(codes.Unavailable, "work context authority unavailable")
 	}
 	caller, err := moduleCaller(ctx)
@@ -254,7 +249,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 		audit(business.DelegatedAudienceExchangeRefused, err)
 		return nil, err
 	}
-	token, signed, err := authority.StartSourceOperationTask(granted)
+	token, signed, err := authority.StartSourceOperationTask(ctx, granted)
 	if err != nil {
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			err = status.Error(codes.Unavailable, "work context authority unavailable")
@@ -374,7 +369,7 @@ func (h *moduleCapabilitiesConnectHandler) ExchangeDelegatedReadAudience(ctx con
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.ExchangeDelegatedReadAudience(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -386,7 +381,7 @@ func (h *moduleCapabilitiesConnectHandler) ExchangeDelegatedOperationAudience(ct
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.ExchangeDelegatedOperationAudience(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)

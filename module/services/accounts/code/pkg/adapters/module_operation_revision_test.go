@@ -99,9 +99,6 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 		"another revision": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.AuthorizationRevision++
 		},
-		"another actor": func(r *gen.CheckAuthorizationRevisionRequest) {
-			r.Subjects[1].PrincipalId = "019fec91-1000-7000-8000-000000000003"
-		},
 		"an extra actor": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.Subjects = append(r.Subjects, &gen.WorkContextRevisionSubject{PrincipalId: "019fec91-1000-7000-8000-000000000003"})
 		},
@@ -109,7 +106,7 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 			r.Subjects[0].Scopes[0].Actions = []string{"delete", "invoke"}
 		},
 		"a resource beyond headless": func(r *gen.CheckAuthorizationRevisionRequest) {
-			r.Subjects[1].Scopes[0].ResourceIds = []string{"other-profile"}
+			r.Subjects[0].Scopes[0].ResourceIds = []string{"other-profile"}
 		},
 		"kind-wide where headless pins a resource": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.Subjects[0].Scopes[0].ResourceIds = nil
@@ -137,7 +134,7 @@ func TestCheckAuthorizationRevisionAcceptsANarrowerModuleOperationSubject(t *tes
 	installModuleWorkContextAuthority(t)
 	ctx := revisionTestContext(t)
 	request := revisionRequestFromClaims(mintedOperationContextClaims(t))
-	request.Subjects[1].Scopes[0].Actions = []string{"invoke"}
+	request.Subjects[0].Scopes[0].Actions = []string{"invoke"}
 
 	_, err := WorkContextSingleton().CheckAuthorizationRevision(ctx, request)
 	require.NoError(t, err)
@@ -190,6 +187,7 @@ func TestCheckAuthorizationRevisionLeavesNonModuleOwnersToTheStore(t *testing.T)
 	server := &WorkContextAuthorityServer{}
 	server.Configure(WorkContextAuthorityConfiguration{
 		Issuer: "accounts.test", KeyID: "accounts-test-key", PrivateKey: privateKey, Authority: fake,
+		Seals: newSealAnswersFake(7),
 	})
 	require.NoError(t, server.configureErr)
 	ctx := revisionTestContext(t)

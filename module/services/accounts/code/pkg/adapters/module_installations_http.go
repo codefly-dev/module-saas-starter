@@ -12,7 +12,6 @@ import (
 
 	"accounts/pkg/business"
 
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -31,8 +30,8 @@ type moduleInstallationService interface {
 type ModuleInstallationHTTPHandler struct {
 	service moduleInstallationService
 	policy  func() (*business.InstallerPolicy, error)
-	verify  func(string) (business.ModuleCaller, error)
-	mint    func(business.ModuleWorkContextAuthority) (string, time.Time, error)
+	verify  func(context.Context, string) (business.ModuleCaller, error)
+	mint    func(context.Context, business.ModuleWorkContextAuthority) (string, time.Time, error)
 }
 
 // NewModuleInstallationHTTPHandler uses the existing module identity issuer and
@@ -52,15 +51,15 @@ func NewModuleInstallationHTTPHandler(service *business.Service, policyPath stri
 		return nil, err
 	}
 	return &ModuleInstallationHTTPHandler{service: service, policy: load,
-		verify: func(token string) (business.ModuleCaller, error) {
-			return WorkContextSingleton().VerifyModuleWorkContext(token)
+		verify: func(ctx context.Context, token string) (business.ModuleCaller, error) {
+			return WorkContextSingleton().VerifyModuleWorkContext(ctx, token)
 		},
-		mint: func(a business.ModuleWorkContextAuthority) (string, time.Time, error) {
-			token, claims, err := WorkContextSingleton().StartModuleTask(a)
+		mint: func(ctx context.Context, a business.ModuleWorkContextAuthority) (string, time.Time, error) {
+			token, claims, err := WorkContextSingleton().StartModuleTask(ctx, a)
 			if err != nil {
 				return "", time.Time{}, err
 			}
-			return token.Encoded(), time.Unix(claims.GetExpiresAtUnix(), 0).UTC(), nil
+			return token, time.Unix(claims.GetExpiresAtUnix(), 0).UTC(), nil
 		},
 	}, nil
 }
@@ -108,12 +107,12 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 		h.token(w, r, policy)
 		return
 	}
-	headers := r.Header.Values(workcontext.WorkContextHeaderName)
+	headers := r.Header.Values(workContextHeader)
 	if len(headers) != 1 || headers[0] == "" {
 		installerError(w, http.StatusUnauthorized, "module work context required")
 		return
 	}
-	caller, err := h.verify(headers[0])
+	caller, err := h.verify(r.Context(), headers[0])
 	if err != nil {
 		installerError(w, http.StatusUnauthorized, "invalid or expired module work context")
 		return
@@ -214,7 +213,7 @@ func (h *ModuleInstallationHTTPHandler) token(w http.ResponseWriter, r *http.Req
 		installerError(w, http.StatusServiceUnavailable, "installer organization prerequisite unavailable")
 		return
 	}
-	token, expires, err := h.mint(authority)
+	token, expires, err := h.mint(r.Context(), authority)
 	if err != nil {
 		installerError(w, http.StatusServiceUnavailable, "installer identity issuer unavailable")
 		return

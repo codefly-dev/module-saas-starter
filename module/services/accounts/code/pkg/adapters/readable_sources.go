@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -33,26 +32,23 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 		return nil, err
 	}
 	authority := WorkContextSingleton()
-	if authority == nil || authority.verifier == nil || authority.configureErr != nil {
+	if !authority.configured() {
 		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	values := md.Get(workcontext.WorkContextHeaderName)
+	values := md.Get(workContextHeader)
 	if len(values) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one viewer Work Context is required")
-	}
-	token, err := workcontext.ParseWorkContextToken(values[0])
-	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
 	// The audience is not compared against a literal: it names the composed
 	// module the capability was minted for, and that module's own declaration
 	// says which permission resource types its content is governed by. A host
 	// that spelled one here would answer "no access" for every other consumer.
-	claims, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
+	verified, err := authority.verifyIssued(ctx, values[0])
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
+	claims := verified.Context()
 	// Both refusals answer identically. Telling "that audience declares no content"
 	// apart from "your capability does not grant read on it" would report which
 	// modules a composition declared, which the registration surface takes
@@ -63,7 +59,7 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	}
 	var resources []string
 	for _, resource := range declared {
-		if workcontext.RequireWorkContextScope(claims, workcontext.WorkContextScopeRequirement{ResourceKind: resource, Action: "read"}) == nil {
+		if workContextGrants(claims, resource, "read", "") {
 			resources = append(resources, resource)
 		}
 	}
@@ -84,7 +80,7 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	// every one of them, so a revoked permission fails the whole call rather
 	// than quietly widening what the next page shows.
 	seals := func(resource, action string) bool {
-		return workcontext.RequireWorkContextScope(claims, workcontext.WorkContextScopeRequirement{ResourceKind: resource, Action: action}) == nil
+		return workContextGrants(claims, resource, action, "")
 	}
 	// Spelled through the reserved constants, not literals: these two are host
 	// permissions read straight off the claims rather than authorized per node,
@@ -103,7 +99,7 @@ func (h *moduleCapabilitiesConnectHandler) ListReadableSourceCollections(ctx con
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	response, err := h.inner.ListReadableSourceCollections(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)
