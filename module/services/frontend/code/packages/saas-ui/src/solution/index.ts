@@ -28,6 +28,16 @@ export {
 	solutionFetch,
 	solutionJson,
 } from "./request.js";
+export {
+	type BrowserTracing,
+	type BrowserTracingOptions,
+	injectTraceContext,
+	installBrowserTracing,
+	resolveTraceExportEndpoint,
+	TRACE_EXPORT_BUILD_ENV,
+	TRACE_EXPORT_DELAY_MS,
+	TRACE_EXPORT_META_NAME,
+} from "./tracing.js";
 export { solutionTransport } from "./transport.js";
 export {
 	type SolutionResource,

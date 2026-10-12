@@ -66,6 +66,19 @@ components:
   there (on solution-runtime-go, `/modules/<as>` is a consumed module's
   passthrough). The bearer is stamped, requests go through `authedFetch`, and a
   refused authority is reported.
+- `installBrowserTracing(options?)` — registers the page's tracer provider once
+  (the first caller on the page wins, across every bundled copy of this
+  package): W3C trace context as the only propagator, never baggage; a sampler
+  that always records a root; and, only when an export destination resolves, an
+  OTLP/HTTP exporter behind a 100 ms batch that flushes when the page is hidden
+  or unloaded. The destination is `options.endpoint`, else the page's
+  `<meta name="trace-export" content="…">`, else a build-time
+  `PUBLIC_TRACE_EXPORT_URL`; with none, spans propagate and nothing is
+  exported. `solutionTransport` then stamps `traceparent` from the active
+  context on same-origin requests that do not already carry one, and never on
+  a request to another origin. The OpenTelemetry packages are regular
+  dependencies, pinned exactly, because they are this installer's
+  implementation rather than a surface a consumer shares.
 - `useAccessibleScope(binding, orgId, resourceType, action)` — whether the
   viewer holds an action anywhere in the org (`loading | error | none | some`),
   from the host's accessible-scope API. It decides what a page offers; owners
