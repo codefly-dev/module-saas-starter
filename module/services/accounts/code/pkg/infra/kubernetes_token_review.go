@@ -52,21 +52,39 @@ const (
 )
 
 // InCluster reports whether this process carries any of what the kubelet puts
-// in every pod: the API server's address in KUBERNETES_SERVICE_HOST, or the
+// in a pod: the API server's address in KUBERNETES_SERVICE_HOST, or the
 // projected service-account token or CA bundle at their fixed paths. Any one of
-// them is enough to answer yes.
+// them is enough to answer yes, and a path that cannot be checked counts as
+// present.
 //
 // It is the host's answer to "is this a pod", read from the same facts
 // NewKubernetesClient builds its identity from, and it errs toward yes on
-// purpose: callers use it to REFUSE a local-only setting, so a deployment has
-// to remove every one of these — an injected variable AND two projected files,
-// which takes control of the pod spec, not of a configuration value — before a
-// local-only setting is even considered.
+// purpose: callers use it to REFUSE a local-only setting.
+//
+// What defeating it takes, precisely. The kubelet injects
+// KUBERNETES_SERVICE_HOST into every container, and no configuration value can
+// set or clear it: workspace values arrive under their own prefixed carriers.
+// The projected files are present only when the pod mounts a service-account
+// token, and a Codefly-rendered service pod does not by default
+// (automountServiceAccountToken: false). So in a default pod the variable is the
+// only fact, and an explicit container-env override in the pod spec clears it.
+// That takes control of the pod spec, not of a configuration value.
 func InCluster() bool {
-	if strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST")) != "" {
+	return inCluster(os.Getenv("KUBERNETES_SERVICE_HOST"), inClusterProjectedPaths...)
+}
+
+// inClusterProjectedPaths are the kubelet's fixed paths InCluster checks. A
+// variable only so a test can point it at files it controls; nothing assigns
+// it outside a test.
+var inClusterProjectedPaths = []string{inClusterTokenPath, inClusterCAPath}
+
+// inCluster is InCluster over facts it has already located, so a test drives
+// each branch through the same code rather than a lookalike.
+func inCluster(serviceHost string, projected ...string) bool {
+	if strings.TrimSpace(serviceHost) != "" {
 		return true
 	}
-	for _, path := range []string{inClusterTokenPath, inClusterCAPath} {
+	for _, path := range projected {
 		if _, err := os.Stat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
 			return true
 		}

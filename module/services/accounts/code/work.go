@@ -2683,15 +2683,23 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 //     identity.
 //
 // The environment alone is one variable, delivered by whatever renders the
-// deployment, so a deployment could name itself local. The pod facts are put
-// there by the kubelet, and removing them takes the pod spec, not a
-// configuration value. A local runtime started by `codefly run` has neither, so
-// the allowance works exactly where it is meant to: on a developer's machine.
-// A local Kubernetes cluster is refused too, by the same rule; it is not where
-// a stub provider runs "beside" the host.
+// deployment, so a deployment could name itself local. The pod fact is put
+// there by the kubelet, and no configuration value can set or clear it. A
+// Codefly-rendered pod mounts no service-account token by default, so there the
+// fact is KUBERNETES_SERVICE_HOST alone: defeating both checks takes the pod
+// spec — CODEFLY__ENVIRONMENT=local and an explicit override clearing that
+// variable — never a configuration value. A deployment that can name itself
+// local has already lifted the refusals of the dev identity provider and the
+// ephemeral signing key, both worse than this allowance. A local runtime started by
+// `codefly run` has neither fact, so the allowance works exactly where it is
+// meant to: on a developer's machine. A local Kubernetes cluster is refused
+// too, by the same rule; it is not where a stub provider runs "beside" the host.
 //
 // Even past both checks the allowance admits only explicit loopback ip:port
-// entries, so it never reaches beyond the host's own network namespace.
+// entries, so it never reaches beyond the host's own network namespace. In a
+// pod that namespace is shared with every container in the pod, sidecars
+// included (a mesh proxy's admin port is on loopback); on a developer's machine
+// it is every local listener, chosen by the developer who lists the port.
 func configureLocalEgress(isLocal, inCluster bool) error {
 	value := workspaceEnv("datasource-oauth", "local_egress")
 	err := apisource.ConfigureLocalEgress(value, isLocal && !inCluster)

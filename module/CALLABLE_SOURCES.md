@@ -182,17 +182,33 @@ The allowance holds to these rules:
   (`codefly.IsLocal`, which every other local-only exemption reads). Second, the
   process is not in a Kubernetes pod: it has no `KUBERNETES_SERVICE_HOST` and no
   projected service-account token or CA at their fixed paths. The pod check reads
-  the same facts as the solution host's in-cluster identity. The environment is
-  one variable, set by whatever renders the deployment. The pod facts are put
-  there by the kubelet, so removing them takes control of the pod spec, not of a
-  configuration value. A host started by `codefly run` has none of them. A local
-  Kubernetes cluster is refused too.
+  the same facts as the solution host's in-cluster identity. A host started by
+  `codefly run` has none of them. A local Kubernetes cluster is refused too.
+
+  What defeating both checks takes:
+  - **The environment** is one variable, set by whatever renders the deployment.
+  - **The pod facts** come from the kubelet, and no configuration value can set
+    or clear them. A Codefly-rendered service pod mounts no service-account token
+    by default (`automountServiceAccountToken: false`), so in such a pod the only
+    pod fact is `KUBERNETES_SERVICE_HOST`.
+  - So a deployment passes both checks only with control of the pod spec:
+    `CODEFLY__ENVIRONMENT=local` plus an explicit container-env override that
+    clears `KUBERNETES_SERVICE_HOST`. It cannot pass them through a
+    configuration value.
+  - A deployment that can name itself `local` has already lifted the refusals
+    of the dev identity provider and the ephemeral signing key, which are worse
+    than this allowance.
 - **Explicit loopback `ip:port` entries only.** Each entry is one loopback IP
   literal and one port, written canonically. A hostname, range, CIDR, wildcard,
   zone, IPv4-mapped spelling, port 0 or non-loopback address refuses the whole
   value. Loopback never leaves the host's own network namespace. Even a host that
   got past the runtime check could reach only that namespace: never a metadata
-  service, the cluster network or another tenant.
+  service, the cluster network or another tenant. Within that namespace,
+  loopback reaches everything listening there:
+  - on a developer's machine, every local listener, so the developer picks the
+    port;
+  - in a pod, every container in the pod, sidecars included. A mesh proxy's
+    admin port is on loopback.
 - **Never widens the public-address guard.** The allowance is checked at dial
   time against the resolved address and port, ahead of the guard. Any address it
   does not list is judged by the guard exactly as before. The allowance lives in

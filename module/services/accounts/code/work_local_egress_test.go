@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -31,6 +32,28 @@ func TestStartupRefusesLocalEgressOutsideTheLocalEnvironment(t *testing.T) {
 	// The environment fact on its own, independent of whether the machine
 	// running this test is itself a pod.
 	require.ErrorIs(t, configureLocalEgress(false, false), apisource.ErrLocalEgressOutsideLocal)
+}
+
+// The refusal through doWork itself, the function main runs, and FIRST: a hosted
+// boot with no key-service backend refuses on that too, so if the allowance's
+// check stopped running before every other startup check, the key-service
+// refusal would answer here instead and this test would fail. Nothing is
+// running, so reaching a dependency would fail too.
+func TestDoWorkRefusesLocalEgressBeforeAnyOtherStartupCheck(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
+	localEgressValue(t, "127.0.0.1:18080")
+
+	t.Setenv("CODEFLY__ENVIRONMENT", "hosted")
+	_, err := doWork(context.Background())
+	require.ErrorIs(t, err, apisource.ErrLocalEgressOutsideLocal)
+	require.Contains(t, err.Error(), "datasource-oauth/local_egress")
+
+	// A pod that names itself local is refused by the same boot path.
+	t.Setenv("CODEFLY__ENVIRONMENT", "local")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.96.0.1")
+	_, err = doWork(context.Background())
+	require.ErrorIs(t, err, apisource.ErrLocalEgressOutsideLocal)
 }
 
 // A local Codefly environment is not enough on its own: the environment is one
