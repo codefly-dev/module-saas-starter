@@ -49,6 +49,10 @@ const (
 	DatasourceService_DeleteDatasourceDomain_FullMethodName             = "/saas.accounts.v1.DatasourceService/DeleteDatasourceDomain"
 	DatasourceService_ListSourceDelegations_FullMethodName              = "/saas.accounts.v1.DatasourceService/ListSourceDelegations"
 	DatasourceService_RevokeSourceDelegation_FullMethodName             = "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation"
+	DatasourceService_DelegateSourceTriggers_FullMethodName             = "/saas.accounts.v1.DatasourceService/DelegateSourceTriggers"
+	DatasourceService_GetSourceTriggerDeclaration_FullMethodName        = "/saas.accounts.v1.DatasourceService/GetSourceTriggerDeclaration"
+	DatasourceService_ReconcileSource_FullMethodName                    = "/saas.accounts.v1.DatasourceService/ReconcileSource"
+	DatasourceService_LookupReconcileSource_FullMethodName              = "/saas.accounts.v1.DatasourceService/LookupReconcileSource"
 )
 
 // DatasourceServiceClient is the client API for DatasourceService service.
@@ -161,6 +165,43 @@ type DatasourceServiceClient interface {
 	// only once a person reconnects it. Revoking one already revoked changes
 	// nothing.
 	RevokeSourceDelegation(ctx context.Context, in *RevokeSourceDelegationRequest, opts ...grpc.CallOption) (*RevokeSourceDelegationResponse, error)
+	// DelegateSourceTriggers records the delegation a declared release's
+	// triggers run under, for one already-connected source, without reconnecting
+	// it. It is the one act of binding that was otherwise only available at
+	// connect: a release installed after a source was connected finds no
+	// delegation to name, and nothing backfills one.
+	//
+	// It records nothing new about who may do what. For every module whose one
+	// operation binding declares source_delegation_scopes it revokes any active
+	// delegation of the source to that module as `replaced` and records a fresh
+	// one under the calling administrator — exactly what a reconnect does, and in
+	// one transaction, so a source never ends with two delegations or none.
+	DelegateSourceTriggers(ctx context.Context, in *DelegateSourceTriggersRequest, opts ...grpc.CallOption) (*DelegateSourceTriggersResponse, error)
+	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
+	// for one source — the trigger a declared release carries — together with
+	// the identity its occurrences would run under and the children already
+	// minted against that identity. This host fires nothing on this schedule; the
+	// declaration is what an executing module admits occurrences from.
+	GetSourceTriggerDeclaration(ctx context.Context, in *GetSourceTriggerDeclarationRequest, opts ...grpc.CallOption) (*GetSourceTriggerDeclarationResponse, error)
+	// ReconcileSource performs one reconcile pass over a source: the host
+	// operation the declared schedule's occurrences admit, and the same work a
+	// person asks for by hand. It resolves nothing with the provider itself —
+	// GitHub gets a conditional reconcile that snapshots only if its head moved,
+	// and a pull provider the full sync its connector has — so an occurrence is
+	// never slowed by one unreachable source.
+	//
+	// It is an operation, not a sweep: it names exactly one source, it carries
+	// the effect identity its caller chose, and its receipt is read back through
+	// LookupReconcileSource. Nothing in this host decides when it runs.
+	// The floor is organization membership and the rule is stricter than the
+	// floor, as on the sibling operations: a shared source is an organization
+	// administrator's to reconcile, a personal one only its owner's, which no
+	// single tenant requirement spells. ReconcileSourceAuthority enforces it,
+	// before the receipt guard and again after its serialization hold.
+	ReconcileSource(ctx context.Context, in *ReconcileSourceRequest, opts ...grpc.CallOption) (*ReconcileSourceResponse, error)
+	// LookupReconcileSource reads back the receipt of one reconcile effect. It
+	// never starts a pass: recovery reads what committed and nothing else.
+	LookupReconcileSource(ctx context.Context, in *LookupReconcileSourceRequest, opts ...grpc.CallOption) (*ReconcileSourceResponse, error)
 }
 
 type datasourceServiceClient struct {
@@ -461,6 +502,46 @@ func (c *datasourceServiceClient) RevokeSourceDelegation(ctx context.Context, in
 	return out, nil
 }
 
+func (c *datasourceServiceClient) DelegateSourceTriggers(ctx context.Context, in *DelegateSourceTriggersRequest, opts ...grpc.CallOption) (*DelegateSourceTriggersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DelegateSourceTriggersResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_DelegateSourceTriggers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) GetSourceTriggerDeclaration(ctx context.Context, in *GetSourceTriggerDeclarationRequest, opts ...grpc.CallOption) (*GetSourceTriggerDeclarationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSourceTriggerDeclarationResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_GetSourceTriggerDeclaration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) ReconcileSource(ctx context.Context, in *ReconcileSourceRequest, opts ...grpc.CallOption) (*ReconcileSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReconcileSourceResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_ReconcileSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) LookupReconcileSource(ctx context.Context, in *LookupReconcileSourceRequest, opts ...grpc.CallOption) (*ReconcileSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReconcileSourceResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_LookupReconcileSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DatasourceServiceServer is the server API for DatasourceService service.
 // All implementations must embed UnimplementedDatasourceServiceServer
 // for forward compatibility.
@@ -571,6 +652,43 @@ type DatasourceServiceServer interface {
 	// only once a person reconnects it. Revoking one already revoked changes
 	// nothing.
 	RevokeSourceDelegation(context.Context, *RevokeSourceDelegationRequest) (*RevokeSourceDelegationResponse, error)
+	// DelegateSourceTriggers records the delegation a declared release's
+	// triggers run under, for one already-connected source, without reconnecting
+	// it. It is the one act of binding that was otherwise only available at
+	// connect: a release installed after a source was connected finds no
+	// delegation to name, and nothing backfills one.
+	//
+	// It records nothing new about who may do what. For every module whose one
+	// operation binding declares source_delegation_scopes it revokes any active
+	// delegation of the source to that module as `replaced` and records a fresh
+	// one under the calling administrator — exactly what a reconnect does, and in
+	// one transaction, so a source never ends with two delegations or none.
+	DelegateSourceTriggers(context.Context, *DelegateSourceTriggersRequest) (*DelegateSourceTriggersResponse, error)
+	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
+	// for one source — the trigger a declared release carries — together with
+	// the identity its occurrences would run under and the children already
+	// minted against that identity. This host fires nothing on this schedule; the
+	// declaration is what an executing module admits occurrences from.
+	GetSourceTriggerDeclaration(context.Context, *GetSourceTriggerDeclarationRequest) (*GetSourceTriggerDeclarationResponse, error)
+	// ReconcileSource performs one reconcile pass over a source: the host
+	// operation the declared schedule's occurrences admit, and the same work a
+	// person asks for by hand. It resolves nothing with the provider itself —
+	// GitHub gets a conditional reconcile that snapshots only if its head moved,
+	// and a pull provider the full sync its connector has — so an occurrence is
+	// never slowed by one unreachable source.
+	//
+	// It is an operation, not a sweep: it names exactly one source, it carries
+	// the effect identity its caller chose, and its receipt is read back through
+	// LookupReconcileSource. Nothing in this host decides when it runs.
+	// The floor is organization membership and the rule is stricter than the
+	// floor, as on the sibling operations: a shared source is an organization
+	// administrator's to reconcile, a personal one only its owner's, which no
+	// single tenant requirement spells. ReconcileSourceAuthority enforces it,
+	// before the receipt guard and again after its serialization hold.
+	ReconcileSource(context.Context, *ReconcileSourceRequest) (*ReconcileSourceResponse, error)
+	// LookupReconcileSource reads back the receipt of one reconcile effect. It
+	// never starts a pass: recovery reads what committed and nothing else.
+	LookupReconcileSource(context.Context, *LookupReconcileSourceRequest) (*ReconcileSourceResponse, error)
 	mustEmbedUnimplementedDatasourceServiceServer()
 }
 
@@ -667,6 +785,18 @@ func (UnimplementedDatasourceServiceServer) ListSourceDelegations(context.Contex
 }
 func (UnimplementedDatasourceServiceServer) RevokeSourceDelegation(context.Context, *RevokeSourceDelegationRequest) (*RevokeSourceDelegationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeSourceDelegation not implemented")
+}
+func (UnimplementedDatasourceServiceServer) DelegateSourceTriggers(context.Context, *DelegateSourceTriggersRequest) (*DelegateSourceTriggersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DelegateSourceTriggers not implemented")
+}
+func (UnimplementedDatasourceServiceServer) GetSourceTriggerDeclaration(context.Context, *GetSourceTriggerDeclarationRequest) (*GetSourceTriggerDeclarationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSourceTriggerDeclaration not implemented")
+}
+func (UnimplementedDatasourceServiceServer) ReconcileSource(context.Context, *ReconcileSourceRequest) (*ReconcileSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReconcileSource not implemented")
+}
+func (UnimplementedDatasourceServiceServer) LookupReconcileSource(context.Context, *LookupReconcileSourceRequest) (*ReconcileSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method LookupReconcileSource not implemented")
 }
 func (UnimplementedDatasourceServiceServer) mustEmbedUnimplementedDatasourceServiceServer() {}
 func (UnimplementedDatasourceServiceServer) testEmbeddedByValue()                           {}
@@ -1211,6 +1341,78 @@ func _DatasourceService_RevokeSourceDelegation_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatasourceService_DelegateSourceTriggers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DelegateSourceTriggersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).DelegateSourceTriggers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_DelegateSourceTriggers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).DelegateSourceTriggers(ctx, req.(*DelegateSourceTriggersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_GetSourceTriggerDeclaration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSourceTriggerDeclarationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).GetSourceTriggerDeclaration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_GetSourceTriggerDeclaration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).GetSourceTriggerDeclaration(ctx, req.(*GetSourceTriggerDeclarationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_ReconcileSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReconcileSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).ReconcileSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_ReconcileSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).ReconcileSource(ctx, req.(*ReconcileSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_LookupReconcileSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LookupReconcileSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).LookupReconcileSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_LookupReconcileSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).LookupReconcileSource(ctx, req.(*LookupReconcileSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DatasourceService_ServiceDesc is the grpc.ServiceDesc for DatasourceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1333,6 +1535,22 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeSourceDelegation",
 			Handler:    _DatasourceService_RevokeSourceDelegation_Handler,
+		},
+		{
+			MethodName: "DelegateSourceTriggers",
+			Handler:    _DatasourceService_DelegateSourceTriggers_Handler,
+		},
+		{
+			MethodName: "GetSourceTriggerDeclaration",
+			Handler:    _DatasourceService_GetSourceTriggerDeclaration_Handler,
+		},
+		{
+			MethodName: "ReconcileSource",
+			Handler:    _DatasourceService_ReconcileSource_Handler,
+		},
+		{
+			MethodName: "LookupReconcileSource",
+			Handler:    _DatasourceService_LookupReconcileSource_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

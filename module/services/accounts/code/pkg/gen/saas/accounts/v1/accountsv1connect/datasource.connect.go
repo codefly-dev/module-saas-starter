@@ -121,6 +121,18 @@ const (
 	// DatasourceServiceRevokeSourceDelegationProcedure is the fully-qualified name of the
 	// DatasourceService's RevokeSourceDelegation RPC.
 	DatasourceServiceRevokeSourceDelegationProcedure = "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation"
+	// DatasourceServiceDelegateSourceTriggersProcedure is the fully-qualified name of the
+	// DatasourceService's DelegateSourceTriggers RPC.
+	DatasourceServiceDelegateSourceTriggersProcedure = "/saas.accounts.v1.DatasourceService/DelegateSourceTriggers"
+	// DatasourceServiceGetSourceTriggerDeclarationProcedure is the fully-qualified name of the
+	// DatasourceService's GetSourceTriggerDeclaration RPC.
+	DatasourceServiceGetSourceTriggerDeclarationProcedure = "/saas.accounts.v1.DatasourceService/GetSourceTriggerDeclaration"
+	// DatasourceServiceReconcileSourceProcedure is the fully-qualified name of the DatasourceService's
+	// ReconcileSource RPC.
+	DatasourceServiceReconcileSourceProcedure = "/saas.accounts.v1.DatasourceService/ReconcileSource"
+	// DatasourceServiceLookupReconcileSourceProcedure is the fully-qualified name of the
+	// DatasourceService's LookupReconcileSource RPC.
+	DatasourceServiceLookupReconcileSourceProcedure = "/saas.accounts.v1.DatasourceService/LookupReconcileSource"
 )
 
 // DatasourceServiceClient is a client for the saas.accounts.v1.DatasourceService service.
@@ -231,6 +243,43 @@ type DatasourceServiceClient interface {
 	// only once a person reconnects it. Revoking one already revoked changes
 	// nothing.
 	RevokeSourceDelegation(context.Context, *connect.Request[v1.RevokeSourceDelegationRequest]) (*connect.Response[v1.RevokeSourceDelegationResponse], error)
+	// DelegateSourceTriggers records the delegation a declared release's
+	// triggers run under, for one already-connected source, without reconnecting
+	// it. It is the one act of binding that was otherwise only available at
+	// connect: a release installed after a source was connected finds no
+	// delegation to name, and nothing backfills one.
+	//
+	// It records nothing new about who may do what. For every module whose one
+	// operation binding declares source_delegation_scopes it revokes any active
+	// delegation of the source to that module as `replaced` and records a fresh
+	// one under the calling administrator — exactly what a reconnect does, and in
+	// one transaction, so a source never ends with two delegations or none.
+	DelegateSourceTriggers(context.Context, *connect.Request[v1.DelegateSourceTriggersRequest]) (*connect.Response[v1.DelegateSourceTriggersResponse], error)
+	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
+	// for one source — the trigger a declared release carries — together with
+	// the identity its occurrences would run under and the children already
+	// minted against that identity. This host fires nothing on this schedule; the
+	// declaration is what an executing module admits occurrences from.
+	GetSourceTriggerDeclaration(context.Context, *connect.Request[v1.GetSourceTriggerDeclarationRequest]) (*connect.Response[v1.GetSourceTriggerDeclarationResponse], error)
+	// ReconcileSource performs one reconcile pass over a source: the host
+	// operation the declared schedule's occurrences admit, and the same work a
+	// person asks for by hand. It resolves nothing with the provider itself —
+	// GitHub gets a conditional reconcile that snapshots only if its head moved,
+	// and a pull provider the full sync its connector has — so an occurrence is
+	// never slowed by one unreachable source.
+	//
+	// It is an operation, not a sweep: it names exactly one source, it carries
+	// the effect identity its caller chose, and its receipt is read back through
+	// LookupReconcileSource. Nothing in this host decides when it runs.
+	// The floor is organization membership and the rule is stricter than the
+	// floor, as on the sibling operations: a shared source is an organization
+	// administrator's to reconcile, a personal one only its owner's, which no
+	// single tenant requirement spells. ReconcileSourceAuthority enforces it,
+	// before the receipt guard and again after its serialization hold.
+	ReconcileSource(context.Context, *connect.Request[v1.ReconcileSourceRequest]) (*connect.Response[v1.ReconcileSourceResponse], error)
+	// LookupReconcileSource reads back the receipt of one reconcile effect. It
+	// never starts a pass: recovery reads what committed and nothing else.
+	LookupReconcileSource(context.Context, *connect.Request[v1.LookupReconcileSourceRequest]) (*connect.Response[v1.ReconcileSourceResponse], error)
 }
 
 // NewDatasourceServiceClient constructs a client for the saas.accounts.v1.DatasourceService
@@ -418,6 +467,30 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(datasourceServiceMethods.ByName("RevokeSourceDelegation")),
 			connect.WithClientOptions(opts...),
 		),
+		delegateSourceTriggers: connect.NewClient[v1.DelegateSourceTriggersRequest, v1.DelegateSourceTriggersResponse](
+			httpClient,
+			baseURL+DatasourceServiceDelegateSourceTriggersProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("DelegateSourceTriggers")),
+			connect.WithClientOptions(opts...),
+		),
+		getSourceTriggerDeclaration: connect.NewClient[v1.GetSourceTriggerDeclarationRequest, v1.GetSourceTriggerDeclarationResponse](
+			httpClient,
+			baseURL+DatasourceServiceGetSourceTriggerDeclarationProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("GetSourceTriggerDeclaration")),
+			connect.WithClientOptions(opts...),
+		),
+		reconcileSource: connect.NewClient[v1.ReconcileSourceRequest, v1.ReconcileSourceResponse](
+			httpClient,
+			baseURL+DatasourceServiceReconcileSourceProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("ReconcileSource")),
+			connect.WithClientOptions(opts...),
+		),
+		lookupReconcileSource: connect.NewClient[v1.LookupReconcileSourceRequest, v1.ReconcileSourceResponse](
+			httpClient,
+			baseURL+DatasourceServiceLookupReconcileSourceProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("LookupReconcileSource")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -452,6 +525,10 @@ type datasourceServiceClient struct {
 	deleteDatasourceDomain             *connect.Client[v1.DeleteDatasourceDomainRequest, v1.DeleteDatasourceDomainResponse]
 	listSourceDelegations              *connect.Client[v1.ListSourceDelegationsRequest, v1.ListSourceDelegationsResponse]
 	revokeSourceDelegation             *connect.Client[v1.RevokeSourceDelegationRequest, v1.RevokeSourceDelegationResponse]
+	delegateSourceTriggers             *connect.Client[v1.DelegateSourceTriggersRequest, v1.DelegateSourceTriggersResponse]
+	getSourceTriggerDeclaration        *connect.Client[v1.GetSourceTriggerDeclarationRequest, v1.GetSourceTriggerDeclarationResponse]
+	reconcileSource                    *connect.Client[v1.ReconcileSourceRequest, v1.ReconcileSourceResponse]
+	lookupReconcileSource              *connect.Client[v1.LookupReconcileSourceRequest, v1.ReconcileSourceResponse]
 }
 
 // PruneSourceOperationReceipts calls
@@ -603,6 +680,26 @@ func (c *datasourceServiceClient) RevokeSourceDelegation(ctx context.Context, re
 	return c.revokeSourceDelegation.CallUnary(ctx, req)
 }
 
+// DelegateSourceTriggers calls saas.accounts.v1.DatasourceService.DelegateSourceTriggers.
+func (c *datasourceServiceClient) DelegateSourceTriggers(ctx context.Context, req *connect.Request[v1.DelegateSourceTriggersRequest]) (*connect.Response[v1.DelegateSourceTriggersResponse], error) {
+	return c.delegateSourceTriggers.CallUnary(ctx, req)
+}
+
+// GetSourceTriggerDeclaration calls saas.accounts.v1.DatasourceService.GetSourceTriggerDeclaration.
+func (c *datasourceServiceClient) GetSourceTriggerDeclaration(ctx context.Context, req *connect.Request[v1.GetSourceTriggerDeclarationRequest]) (*connect.Response[v1.GetSourceTriggerDeclarationResponse], error) {
+	return c.getSourceTriggerDeclaration.CallUnary(ctx, req)
+}
+
+// ReconcileSource calls saas.accounts.v1.DatasourceService.ReconcileSource.
+func (c *datasourceServiceClient) ReconcileSource(ctx context.Context, req *connect.Request[v1.ReconcileSourceRequest]) (*connect.Response[v1.ReconcileSourceResponse], error) {
+	return c.reconcileSource.CallUnary(ctx, req)
+}
+
+// LookupReconcileSource calls saas.accounts.v1.DatasourceService.LookupReconcileSource.
+func (c *datasourceServiceClient) LookupReconcileSource(ctx context.Context, req *connect.Request[v1.LookupReconcileSourceRequest]) (*connect.Response[v1.ReconcileSourceResponse], error) {
+	return c.lookupReconcileSource.CallUnary(ctx, req)
+}
+
 // DatasourceServiceHandler is an implementation of the saas.accounts.v1.DatasourceService service.
 type DatasourceServiceHandler interface {
 	// PruneSourceOperationReceipts expires response bodies after Invoke's declared
@@ -711,6 +808,43 @@ type DatasourceServiceHandler interface {
 	// only once a person reconnects it. Revoking one already revoked changes
 	// nothing.
 	RevokeSourceDelegation(context.Context, *connect.Request[v1.RevokeSourceDelegationRequest]) (*connect.Response[v1.RevokeSourceDelegationResponse], error)
+	// DelegateSourceTriggers records the delegation a declared release's
+	// triggers run under, for one already-connected source, without reconnecting
+	// it. It is the one act of binding that was otherwise only available at
+	// connect: a release installed after a source was connected finds no
+	// delegation to name, and nothing backfills one.
+	//
+	// It records nothing new about who may do what. For every module whose one
+	// operation binding declares source_delegation_scopes it revokes any active
+	// delegation of the source to that module as `replaced` and records a fresh
+	// one under the calling administrator — exactly what a reconnect does, and in
+	// one transaction, so a source never ends with two delegations or none.
+	DelegateSourceTriggers(context.Context, *connect.Request[v1.DelegateSourceTriggersRequest]) (*connect.Response[v1.DelegateSourceTriggersResponse], error)
+	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
+	// for one source — the trigger a declared release carries — together with
+	// the identity its occurrences would run under and the children already
+	// minted against that identity. This host fires nothing on this schedule; the
+	// declaration is what an executing module admits occurrences from.
+	GetSourceTriggerDeclaration(context.Context, *connect.Request[v1.GetSourceTriggerDeclarationRequest]) (*connect.Response[v1.GetSourceTriggerDeclarationResponse], error)
+	// ReconcileSource performs one reconcile pass over a source: the host
+	// operation the declared schedule's occurrences admit, and the same work a
+	// person asks for by hand. It resolves nothing with the provider itself —
+	// GitHub gets a conditional reconcile that snapshots only if its head moved,
+	// and a pull provider the full sync its connector has — so an occurrence is
+	// never slowed by one unreachable source.
+	//
+	// It is an operation, not a sweep: it names exactly one source, it carries
+	// the effect identity its caller chose, and its receipt is read back through
+	// LookupReconcileSource. Nothing in this host decides when it runs.
+	// The floor is organization membership and the rule is stricter than the
+	// floor, as on the sibling operations: a shared source is an organization
+	// administrator's to reconcile, a personal one only its owner's, which no
+	// single tenant requirement spells. ReconcileSourceAuthority enforces it,
+	// before the receipt guard and again after its serialization hold.
+	ReconcileSource(context.Context, *connect.Request[v1.ReconcileSourceRequest]) (*connect.Response[v1.ReconcileSourceResponse], error)
+	// LookupReconcileSource reads back the receipt of one reconcile effect. It
+	// never starts a pass: recovery reads what committed and nothing else.
+	LookupReconcileSource(context.Context, *connect.Request[v1.LookupReconcileSourceRequest]) (*connect.Response[v1.ReconcileSourceResponse], error)
 }
 
 // NewDatasourceServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -894,6 +1028,30 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		connect.WithSchema(datasourceServiceMethods.ByName("RevokeSourceDelegation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	datasourceServiceDelegateSourceTriggersHandler := connect.NewUnaryHandler(
+		DatasourceServiceDelegateSourceTriggersProcedure,
+		svc.DelegateSourceTriggers,
+		connect.WithSchema(datasourceServiceMethods.ByName("DelegateSourceTriggers")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceGetSourceTriggerDeclarationHandler := connect.NewUnaryHandler(
+		DatasourceServiceGetSourceTriggerDeclarationProcedure,
+		svc.GetSourceTriggerDeclaration,
+		connect.WithSchema(datasourceServiceMethods.ByName("GetSourceTriggerDeclaration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceReconcileSourceHandler := connect.NewUnaryHandler(
+		DatasourceServiceReconcileSourceProcedure,
+		svc.ReconcileSource,
+		connect.WithSchema(datasourceServiceMethods.ByName("ReconcileSource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceLookupReconcileSourceHandler := connect.NewUnaryHandler(
+		DatasourceServiceLookupReconcileSourceProcedure,
+		svc.LookupReconcileSource,
+		connect.WithSchema(datasourceServiceMethods.ByName("LookupReconcileSource")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.DatasourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DatasourceServicePruneSourceOperationReceiptsProcedure:
@@ -954,6 +1112,14 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 			datasourceServiceListSourceDelegationsHandler.ServeHTTP(w, r)
 		case DatasourceServiceRevokeSourceDelegationProcedure:
 			datasourceServiceRevokeSourceDelegationHandler.ServeHTTP(w, r)
+		case DatasourceServiceDelegateSourceTriggersProcedure:
+			datasourceServiceDelegateSourceTriggersHandler.ServeHTTP(w, r)
+		case DatasourceServiceGetSourceTriggerDeclarationProcedure:
+			datasourceServiceGetSourceTriggerDeclarationHandler.ServeHTTP(w, r)
+		case DatasourceServiceReconcileSourceProcedure:
+			datasourceServiceReconcileSourceHandler.ServeHTTP(w, r)
+		case DatasourceServiceLookupReconcileSourceProcedure:
+			datasourceServiceLookupReconcileSourceHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1077,4 +1243,20 @@ func (UnimplementedDatasourceServiceHandler) ListSourceDelegations(context.Conte
 
 func (UnimplementedDatasourceServiceHandler) RevokeSourceDelegation(context.Context, *connect.Request[v1.RevokeSourceDelegationRequest]) (*connect.Response[v1.RevokeSourceDelegationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.RevokeSourceDelegation is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) DelegateSourceTriggers(context.Context, *connect.Request[v1.DelegateSourceTriggersRequest]) (*connect.Response[v1.DelegateSourceTriggersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.DelegateSourceTriggers is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) GetSourceTriggerDeclaration(context.Context, *connect.Request[v1.GetSourceTriggerDeclarationRequest]) (*connect.Response[v1.GetSourceTriggerDeclarationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.GetSourceTriggerDeclaration is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) ReconcileSource(context.Context, *connect.Request[v1.ReconcileSourceRequest]) (*connect.Response[v1.ReconcileSourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.ReconcileSource is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) LookupReconcileSource(context.Context, *connect.Request[v1.LookupReconcileSourceRequest]) (*connect.Response[v1.ReconcileSourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.LookupReconcileSource is not implemented"))
 }

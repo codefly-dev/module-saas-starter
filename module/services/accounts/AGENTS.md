@@ -787,6 +787,58 @@ that authority (`pkg/business/source_delegation.go`):
 The worked example is in
 [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md#operation-contexts-from-a-source-delegation).
 
+## Unattended work: whose authority an occurrence runs under
+
+Every admission carries a signed Work Context, and work no person started has
+nobody to sign one from. The answer is not a platform identity: a release
+declares WHOSE authority its occurrences borrow, in one of two arms, and this
+host re-derives that authority from current facts on every single occurrence.
+The field names are the executing module's — this host answers that shape and
+never re-spells it (`business.DeclaredTriggerIdentity`,
+`TestTriggerDeclarationMatchesTheContractFieldNames`).
+
+- **`source_delegation` is the grant reference, and the contract.** It names a
+  connected source, and the host resolves the live delegation from it on every
+  mint (`MintSourceOperationContext` by source). An identifier rather than a
+  credential, re-checked against current facts each time — which is what lets an
+  occurrence's run outlive the capability that admitted it, and makes a
+  revocation land on the NEXT occurrence rather than behind something held from
+  the one before.
+- **`installation_binding` is the installation-principal arm, and the first
+  proof.** It names one of the release's bindings and mints from that binding's
+  `headless_scopes` under the module's own principal
+  (`MintModuleOperationContext`). An ordinary token admission, so the run is
+  bounded by the capability's own short lifetime — which is exactly why it is the
+  proof and not the contract.
+- **A composition must declare one of them or neither arm can mint.** The
+  binding needs `source_delegation_scopes` for the reference arm,
+  `headless_scopes` for the principal arm, and the `audience` the executing
+  module admits under. A composition that declares neither leaves both arms with
+  nowhere to mint, and the host refuses rather than running the work as itself.
+- **A binding may name its own module as its audience, and ONLY for unattended
+  work.** `validateOperationAudiences` refused `audience == prefix` outright
+  before #1081, because every other operation binding describes calling another
+  service. Unattended work inverts that: an occurrence's capability is admitted
+  by the module that executes the release — itself, verified against its own
+  declared name as the audience. `selfAdmittingBinding` narrows the guard to a
+  binding declaring headless or delegation scopes; it does not touch the one
+  that matters for identity, since a capability addressed to
+  `module-capabilities` is still refused at signing whatever a binding declares.
+- **Binding a reference without reconnecting.** A delegation is recorded when a
+  person connects or reconnects a source, so a release installed afterwards, or
+  a module that declared its binding afterwards, finds no reference to name and
+  nothing backfills one. `DatasourceService/DelegateSourceTriggers`
+  (`TENANT_REQUIREMENT_ORG_ADMIN`) records it under the calling administrator —
+  exactly what a reconnect does, in one transaction, through the same
+  `recordSourceDelegationsTx`. It grants nothing new: the scopes are the
+  binding's declared ones and every fact is re-checked on every mint.
+- **What a reader sees.** `DatasourceService/GetSourceTriggerDeclaration` answers
+  the declaration, the references an operator may bind to it, and the children
+  minted against them. The children come from `saas.datasource.delegation.used`,
+  which is the only record of one: a capability lives about a minute and nothing
+  caches it, so a revoked reference shows up as the next occurrence having no
+  child at all. The playground is `/admin/platform/unattended-work`.
+
 ## Subject visibility is a projection, not a module's own vocabulary
 
 A module that enforces row visibility by owner — one row belongs to one subject,
@@ -890,30 +942,57 @@ person pressing "Sync now", and by the **periodic reconcile**. Only the last of
 the three is guaranteed to exist, so it is what makes "we sync on push" honest:
 without it, a missed webhook is permanent and nothing ever notices.
 
-- **The sweep is the whole schedule, not GitHub's.** `RunDatasourceReconcile`
-  runs on a one-minute ticker in `work.go`, selects every active source whose
-  `next_reconcile_at` has elapsed, and routes each to the engine its provider
-  syncs on: GitHub to a conditional reconcile on the delivery queue (the job
-  resolves the head and snapshots only if it moved), everything else to the same
-  sync request "Sync now" produces. It used to select GitHub alone, and a pull
-  source was never given a `next_reconcile_at` either — so an api, crawler or
-  object-storage source synced when a person pressed the button and at no other
-  time. None of the three has a webhook receiver, so there was no push path to
-  miss.
-- **The interval is per provider.** 30 minutes for GitHub; a day for the pull
-  providers, whose connectors re-send their whole content on every sync (the gap
-  registered against each in `datasource_connectors.go`, detailed per clause in
+- **The schedule is DECLARED here and FIRED somewhere else** (issue #1081).
+  `business.DeclareSourceTrigger` turns a source's interval into a trigger an
+  declared release carries — a five-field cron in UTC, `MISSED_RUN_POLICY_SKIP`,
+  `OVERLAP_POLICY_SKIP`, a deadline, the input every occurrence is admitted with,
+  and the identity occurrences run under. This host fires nothing on it:
+  `TestNoHostTimerFiresTheReconcileSchedule` walks the AST of every non-test file
+  in the service and fails on the names the sweep used, because a host that also
+  fired this would be two schedules for one source with the undeclared one
+  winning. What left with the sweep: `RunDatasourceReconcile`, its one-minute
+  ticker in `work.go`, `enqueueScheduledReconcile`, `enqueueScheduledPullSync`,
+  `scheduledReconcileKey` and the due query they read
+  (`ListDatasourceSourcesDueForReconcile`).
+- **One occurrence admits one host operation.** `DatasourceService/ReconcileSource`
+  (marked `codefly.runnable.v0.operation`, idempotency required, paired with
+  `LookupReconcileSource`) is what the declared trigger names, and it is the same
+  work a person asks for by hand. It routes each provider to the engine that
+  provider syncs on: GitHub to a conditional reconcile on the delivery queue (the
+  job resolves the head and snapshots only if it moved), everything else to the
+  same sync request "Sync now" produces. The enqueue is keyed by the occurrence's
+  effect identity, so two attempts of one occurrence are one job — which is what
+  the schedule-derived key had to stand in for while two replicas could both
+  sweep one due row.
+- **The interval is per provider, and it is the source's own configuration.** 30
+  minutes for GitHub; a day for the pull providers, whose connectors re-send
+  their whole content on every sync (the gap registered against each in
+  `datasource_connectors.go`, detailed per clause in
   [pkg/datasource/connector/CONFORMANCE.md](./code/pkg/datasource/connector/CONFORMANCE.md)).
-  `datasourceReconcileInterval` is the one function that answers it, and
-  migration `14_datasource_pull_reconcile_schedule` backfilled the rows written
-  before there was a schedule to write.
-- **The sweep holds no lease and runs in every replica.** What makes that safe is
-  the job's idempotency key, which is the source paired with the schedule instant
-  it is due on (`scheduledReconcileKey`), so two replicas over one due row
-  enqueue the work once. Pull syncs also carry a per-source FIFO ordering key, so
-  a scheduled full re-send cannot run beside a manual one.
+  `datasourceReconcileInterval` is the one function that answers it; editing it
+  re-declares the trigger, because the declaration is derived from it and from
+  nothing else, and the declaration digest moves with it.
+- **Only intervals a cron can name are declarable, and the rest are refused by
+  name.** Minutes dividing an hour, hours dividing a day, and exactly a day;
+  anything else (25 minutes, 90 seconds, 5 hours, 2 days) reads back as
+  `TriggerUndeclarableInterval` rather than being rounded to a schedule nobody
+  asked for. The minute — and, for a daily interval, the hour — is derived from
+  the source id, so every source of one provider does not come due in the same
+  second.
+- **A parked source declares no trigger.** Enablement is the stored
+  `next_reconcile_at`'s PRESENCE, never its value: the park, restore and cursor
+  paths maintain it, and one reconcile pass moves it so it cannot drift
+  arbitrarily into the past. The declaration's own next occurrence is computed
+  from the cron it declares; the authoritative cursor belongs to the module that
+  fires the trigger, and this host holds none.
 - **Every provider syncs at connect**, not a whole interval later
   (`startFirstSync`).
+- **What is not proven.** No live occurrence exists. Nothing in this repository
+  composes a module that executes declared work, so the declaration is
+  built, held to the contract's field names by test, and never yet admitted by
+  anything. The identity's two arms are qualified at the routes an executing
+  module calls (`pkg/adapters/datasource_trigger_identity_test.go`); the walk
+  that has not been run is a schedule coming due in a composed environment.
 
 ### Whether live delivery exists at all is a deployment fact, and the host reports it
 

@@ -156,6 +156,50 @@ which runtime behavior is rolled out. A flag may disable entitled behavior but
 must never grant an entitlement, raise a quota, or replace authorization. Each
 product path checks its entitlement independently from its flag evaluation.
 
+## Unattended work runs under a declared identity, and schedules leave this host
+
+Every admission here carries a signed Work Context, and work no person started
+has nobody to sign one from. This host does not answer that with an identity of
+its own. A release declares **whose** authority its occurrences borrow, and the
+host re-derives that authority from current facts on every single occurrence.
+
+Two arms, and they are not alternatives of equal standing
+(`module/services/accounts/code/pkg/business/datasource_trigger.go`):
+
+| Declared identity | What it is |
+|---|---|
+| `source_delegation` | The grant reference, and the contract. It names a connected data source; the host resolves the live delegation from it on every mint, re-checking the source, the person's membership and role, and the binding. An identifier rather than a credential — which is what lets an occurrence's run outlive the capability that admitted it, and makes a revocation land on the next occurrence. |
+| `installation_binding` | The installation-principal arm, and the first proof. It names one of the release's bindings and mints from that binding's headless scopes under the module's own principal. An ordinary token admission, bounded by the capability's own short lifetime. |
+
+A composition must declare the grant for whichever arm it uses
+(`source_delegation_scopes`, `headless_scopes`) and the audience its executing
+module admits under; with neither declared, both arms have nowhere to mint and
+the host refuses rather than running the work as itself.
+`DatasourceService/DelegateSourceTriggers` binds a reference to an
+already-connected source without making an administrator reconnect it, which is
+otherwise the only way one is recorded.
+
+**The host's own schedule left with it.** Every connected source has a reconcile
+interval — the safety net for a lost webhook, and the only path to a new version
+of a source whose provider has no webhook receiver at all. That interval is now
+the source's *configuration*, and what it produces is a **declaration**: a cron
+in UTC, the missed-run and overlap policies, a deadline, the input every
+occurrence is admitted with, and the identity above. This host fires nothing on
+it, and a test walks the service's AST to keep that true. One occurrence admits
+`DatasourceService/ReconcileSource`, the same host operation a person's manual
+pass takes.
+
+**What is not proven:** no live occurrence exists. Nothing in this repository
+composes a module that executes declared work, so the declaration is built
+and held to the contract's field names by test, and the walk that has not been
+run is a schedule coming due in a composed environment. The identity's two arms
+are qualified at the routes an executing module calls.
+
+The depth is in
+[services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md#unattended-work-whose-authority-an-occurrence-runs-under)
+and [WORK_CONTEXTS.md](./module/WORK_CONTEXTS.md#triggers-for-work-no-person-started);
+the playground is `/admin/platform/unattended-work`.
+
 ## The host as an OAuth 2.1 authorization server
 
 The host signs people in for its own public clients — an add-in, a CLI, a mobile
@@ -554,6 +598,7 @@ Every page lives under `frontend/code/src/app/admin/`:
 | `/admin/billing` | `OpenBillingPortal`, `ListInvoices` |
 | `/admin/platform/admins` | platform role grant/revoke |
 | `/admin/platform/organizations` | `ListAllOrganizations`, `GetOrganizationRoster`, `CreateOrganization` (with `owner_user_id`), `UpdateOrganization`, `AddMember`, `RemoveMember`, `DeleteOrganization` |
+| `/admin/platform/unattended-work` | `ListSources`, `GetSourceTriggerDeclaration`, `DelegateSourceTriggers`, `RevokeSourceDelegation`, `ReconcileSource` — the playground for whose authority work no person started runs under |
 
 Client-side gating uses `<RoleGate>` (`src/components/auth/role-gate.tsx`) — display-only; backend remains authoritative.
 

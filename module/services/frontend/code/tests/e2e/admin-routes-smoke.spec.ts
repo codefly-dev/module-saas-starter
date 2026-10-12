@@ -52,6 +52,11 @@ const ROUTES: AdminRoute[] = [
 		heading: /Job operations/i,
 		platformGated: true,
 	},
+	{
+		path: "/admin/platform/unattended-work",
+		heading: /Unattended work/,
+		platformGated: true,
+	},
 ];
 
 test.describe("admin route smoke", () => {

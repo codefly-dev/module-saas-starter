@@ -32,8 +32,14 @@ func (s *Service) ConfigureSourceOperationReceipts(store receipts.Store) error {
 	if err != nil {
 		return err
 	}
-	if !guard.IsOperation(SourceOperationMethod) || !guard.IsOperation(SourceReceiptRetentionMethod) {
-		return errors.New("source operation marking unavailable")
+	for _, method := range []string{SourceOperationMethod, SourceReceiptRetentionMethod, ReconcileSourceMethod} {
+		if !guard.IsOperation(method) {
+			// Checked at configuration rather than on the first call: an
+			// operation whose marking is missing is a method the SDK will not
+			// serialize, and finding that out per request means one effect
+			// running twice before anyone notices.
+			return errors.New("source operation marking unavailable")
+		}
 	}
 	s.sourceReceiptStore, s.sourceReceiptGuard = store, guard
 	return nil
