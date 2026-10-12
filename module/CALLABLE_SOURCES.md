@@ -138,8 +138,12 @@ Refresh and client-credentials resolution reuse the credential row lock.
 Transport uses the resolved-IP egress guard and same-origin redirect policy.
 The guard runs at connect time, on the address DNS returned, for the operation
 call and every OAuth token exchange alike, and admits only an address on the
-public internet. That judgement is `auth.IsPublicDestination`, the host's one
-classifier, which also guards Client ID Metadata Document fetches. It reads the
+public internet. That judgement is `auth.IsPublicDestination`, the one
+classifier for every tenant-directed egress in this host: callable sources
+(operation calls and OAuth token exchanges), the documentation crawler, the
+object-store connector, outbound webhooks and the Slack notifier that shares
+their client, and Client ID Metadata Document fetches. Each of those guards is
+tested against the same vectors, `pkg/auth/egresstest`. It reads the
 IANA IPv4 and IPv6 special-purpose registries rather than Go's `net.IP`
 predicates, which call carrier NAT (`100.64.0.0/10`), benchmarking, reserved
 and the IPv6 transition prefixes "global unicast", and it bounds IPv6 to

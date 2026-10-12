@@ -252,8 +252,9 @@ Two client sources, which cannot collide — a registry slug can never spell
   fetched (bounded size and time, **no redirect at all** per CIMD draft-02 §5.1,
   and guarded at the dial against every non-public destination — the IANA
   special-purpose registries for both families, not just loopback and RFC 1918,
-  with IPv6 bounded to the `2000::/3` global unicast allocation; callable
-  sources dial through the same classifier),
+  with IPv6 bounded to the `2000::/3` global unicast allocation; every other
+  tenant-directed egress uses the same classifier, listed in
+  [CALLABLE_SOURCES.md](./module/CALLABLE_SOURCES.md#oauth-and-disclosure)),
   validated, and used as a public client for that one flow. Failures and invalid
   documents are **not** cached (§5.2), so a publisher who fixes one is not made
   to wait out a window; the abuse a negative cache would have bounded is bounded

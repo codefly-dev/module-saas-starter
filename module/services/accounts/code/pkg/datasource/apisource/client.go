@@ -9,8 +9,9 @@
 // that resolves to any address that is not on the public internet is refused,
 // on the initial request and on any redirect, checked against the exact IP
 // being connected to (not the hostname) so DNS rebinding cannot slip past the
-// check. "Not on the public internet" is auth.IsPublicDestination, the host's
-// one classifier for it, read from the IANA special-purpose registries.
+// check. "Not on the public internet" is auth.IsPublicDestination, read from
+// the IANA special-purpose registries: the one classifier every tenant-directed
+// egress in this host answers through.
 package apisource
 
 import (
@@ -101,7 +102,7 @@ func guardedClient() *http.Client {
 		DisableKeepAlives: true,
 		DialContext: (&net.Dialer{
 			Timeout: 10 * time.Second,
-			Control: guardDial,
+			Control: dialControl,
 		}).DialContext,
 	}
 	return &http.Client{
@@ -445,6 +446,12 @@ func refreshPermanentlyRejected(statusCode int, body []byte) bool {
 		return false
 	}
 }
+
+// dialControl is the Control hook of every dial this package makes. It is
+// always guardDial in production; it is a variable only so a test can wrap
+// guardDial in a recorder that never lets a connection proceed, and so prove
+// each outbound path runs the guard without sending traffic anywhere.
+var dialControl = guardDial
 
 // guardDial refuses to open a connection to an address that is not on the
 // public internet. It runs after DNS resolution with the concrete IP:port being

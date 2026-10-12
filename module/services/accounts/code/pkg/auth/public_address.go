@@ -10,7 +10,11 @@ import (
 // The invariant: a destination this host may be asked to fetch from reaches
 // only the public internet. This classifier is the single authority for that
 // question, and it enumerates the IANA special-purpose address registries for
-// both families.
+// both families. Every guard on a tenant-directed egress path answers through
+// it: callable sources (datasource/apisource), the crawler and object-store
+// connectors, outbound webhooks and the Slack notifier that shares their client
+// (business.WebhookEndpointPolicy), and Client ID Metadata Document fetches.
+// Each of those guards' tests holds the vectors in auth/egresstest.
 //
 // It does not compose Go's net.IP predicates, because they answer a different
 // question. net.IP.IsGlobalUnicast is not a public-routability test — it
