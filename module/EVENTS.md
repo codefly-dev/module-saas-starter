@@ -103,7 +103,10 @@ Rules:
 - `type` is immutable once published. A breaking change is a new `type` or a new
   major in `dataschema`; it is never a re-typed field under the same name.
 - `tenant_id` is required except for platform-scope events published by a
-  platform principal.
+  platform principal. In this document **platform principal** means a module
+  principal whose grant is `cross_tenant` (the `cross_tenant` key of the module
+  envelope's grant ceiling): the same test that admits a system-scoped
+  `ModuleEmitAuditEvent`, and the only one that reads across tenants.
 - `partition_key` is the only ordering knob a producer sets; it is the contract
   form of `JobOrderingKey`. Absent, the event is unordered.
 - `data` is capped at 960 KiB — below the 1 MiB `job_messages.payload` cap
@@ -276,6 +279,25 @@ type Transport interface {
   lease expiry, permanent nack to dead-letter, replay, tenant isolation (a
   subscriber in tenant A never sees tenant B), and zero-subscriber publish. A
   consumer written against `FakeTransport` runs unchanged against Postgres.
+
+## The audit journal type
+
+`saas.audit.recorded.v1` is the journal record of the warehouse audit backend
+([ADR 0009](./docs/adr/0009-audit-store-swap.md)). Under that backend every audit
+entry, including one with no organization (`tenant_id` empty), is published as
+this type in the writer's own transaction, and its `data` is the whole entry
+(`id`, `event_type`, `schema_version`, actor, resource, `organization_id`,
+`payload`, client, impersonation and occurrence time). Its envelope `id` is
+derived from the audit entry id, because the entry id is already the id of the
+organization's webhook event, and an `id` is unique in the journal.
+
+It is code-owned (in the audit events contribution, not an audit registry type),
+`visibility: internal` and declares no partition. It is therefore never fanned
+out, relayed or replayed to a subscriber, and no subscription pattern may match
+it; the `saas` namespace stays unsubscribable by a module. The only reader is a
+platform principal (a `cross_tenant` grant), through a cross-tenant journal read
+that is specified separately and not yet part of this module. The `data` limit
+below applies: an entry too large for it is refused, not truncated.
 
 ## Authority
 
