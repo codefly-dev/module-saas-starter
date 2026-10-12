@@ -66,19 +66,42 @@ components:
   there (on solution-runtime-go, `/modules/<as>` is a consumed module's
   passthrough). The bearer is stamped, requests go through `authedFetch`, and a
   refused authority is reported.
-- `installBrowserTracing(options?)` — registers the page's tracer provider once
-  (the first caller on the page wins, across every bundled copy of this
-  package): W3C trace context as the only propagator, never baggage; a sampler
-  that always records a root; and, only when an export destination resolves, an
-  OTLP/HTTP exporter behind a 100 ms batch that flushes when the page is hidden
-  or unloaded. The destination is `options.endpoint`, else the page's
-  `<meta name="trace-export" content="…">`, else a build-time
-  `PUBLIC_TRACE_EXPORT_URL`; with none, spans propagate and nothing is
-  exported. `solutionTransport` then stamps `traceparent` from the active
-  context on same-origin requests that do not already carry one, and never on
-  a request to another origin. The OpenTelemetry packages are regular
-  dependencies, pinned exactly, because they are this installer's
-  implementation rather than a surface a consumer shares.
+- `installBrowserTracing({ allowedAttributeKeys, allowedSpanNames?, allowedEndpointOrigins?, endpoint?, serviceName?, resourceAttributes? })`
+  — registers the page's tracer provider once (the first caller on the page
+  wins, across every bundled copy of this package): W3C trace context as the
+  only propagator, never baggage; a sampler that always records a root; and,
+  only when an export destination resolves, an OTLP/HTTP exporter behind a
+  100 ms batch that flushes when the page is hidden or unloaded. The
+  destination is `options.endpoint`, else a `<meta name="trace-export"
+  content="…">` that is a direct child of `<head>` **and** names the page's own
+  origin or one in `allowedEndpointOrigins` (or the build-time
+  `PUBLIC_TRACE_EXPORT_ALLOWED_ORIGINS`), else a build-time
+  `PUBLIC_TRACE_EXPORT_URL`. A meta outside `<head>` or naming another origin
+  is ignored with one `console.warn`, and the browser only propagates.
+  - **Every span is sanitized before it is serialized.** Only the keys in
+    `allowedAttributeKeys`, plus the transport set (`http.request.method`,
+    `http.response.status_code`, `url.path` with its query cut,
+    `url.scheme`, `server.address`, `server.port`), are exported; full URLs,
+    queries, user agent, client and peer addresses, exception messages and
+    stack traces, request/response bodies, and any value over 256 characters
+    never are, even if listed. Status descriptions are emptied, exception
+    events keep only `exception.type`, and the resource is rebuilt to
+    `service.name`, `service.version`, `deployment.environment.name` and
+    `telemetry.sdk.*`. When `allowedSpanNames` is given, any other span name
+    that is not a bare HTTP method exports as `span`.
+  - The returned handle's `status` is `registered`, `reused` (a compatible
+    provider was already registered and is used as is), or `incompatible`
+    (the page's `@opentelemetry/api` is another version — the API refuses to
+    register across even a patch difference). `incompatible` warns once and
+    is not cached, so a later call retries. **Every bundle on a page must
+    resolve `@opentelemetry/api` to exactly `1.9.1`** (`OTEL_API_VERSION`).
+
+  `solutionTransport` then stamps `traceparent` from the active context on
+  same-origin requests that do not already carry one, and never on a request
+  to another origin. The OpenTelemetry packages are regular dependencies,
+  pinned exactly, because they are this installer's implementation rather than
+  a surface a consumer shares — except that the API version must match across
+  bundles, as above.
 - `useAccessibleScope(binding, orgId, resourceType, action)` — whether the
   viewer holds an action anywhere in the org (`loading | error | none | some`),
   from the host's accessible-scope API. It decides what a page offers; owners

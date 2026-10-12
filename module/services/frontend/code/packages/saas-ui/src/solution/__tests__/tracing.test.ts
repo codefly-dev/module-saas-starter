@@ -12,6 +12,7 @@ import {
 	TRACE_EXPORT_META_NAME,
 } from "../tracing.js";
 
+const NO_KEYS = { allowedAttributeKeys: [] };
 const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-0[01]$/;
 const CALLER_TRACEPARENT =
 	"00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
@@ -48,17 +49,19 @@ afterEach(() => {
 
 describe("installBrowserTracing", () => {
 	it("is idempotent: the first caller wins and later options are ignored", () => {
-		const first = installBrowserTracing({ endpoint: null });
+		const first = installBrowserTracing({ ...NO_KEYS, endpoint: null });
 		const second = installBrowserTracing({
+			...NO_KEYS,
 			endpoint: "https://collector.example.com/v1/traces",
 		});
 		expect(second).toBe(first);
 		expect(first.registered).toBe(true);
+		expect(first.status).toBe("registered");
 		expect(second.endpoint).toBeNull();
 	});
 
 	it("registers W3C trace context only, never baggage", () => {
-		installBrowserTracing({ endpoint: null });
+		installBrowserTracing({ ...NO_KEYS, endpoint: null });
 		expect(propagation.fields().sort()).toEqual(["traceparent", "tracestate"]);
 	});
 
@@ -69,7 +72,7 @@ describe("installBrowserTracing", () => {
 			value: beacon,
 			configurable: true,
 		});
-		const tracing = installBrowserTracing();
+		const tracing = installBrowserTracing(NO_KEYS);
 		expect(tracing.endpoint).toBeNull();
 
 		const span = trace.getTracer("test").startSpan("root");
@@ -93,6 +96,7 @@ describe("installBrowserTracing", () => {
 			server.listen(0, "127.0.0.1", () => {
 				const { port } = server.address() as AddressInfo;
 				const tracing = installBrowserTracing({
+					...NO_KEYS,
 					endpoint: `http://127.0.0.1:${port}/v1/traces`,
 				});
 				trace.getTracer("test").startSpan("root").end();
@@ -108,11 +112,9 @@ describe("resolveTraceExportEndpoint", () => {
 		expect(resolveTraceExportEndpoint()).toBeNull();
 		const meta = document.createElement("meta");
 		meta.name = TRACE_EXPORT_META_NAME;
-		meta.content = " https://collector.example.com/v1/traces ";
+		meta.content = ` ${location.origin}/v1/traces `;
 		document.head.append(meta);
-		expect(resolveTraceExportEndpoint()).toBe(
-			"https://collector.example.com/v1/traces",
-		);
+		expect(resolveTraceExportEndpoint()).toBe(`${location.origin}/v1/traces`);
 		expect(resolveTraceExportEndpoint(null)).toBeNull();
 		expect(resolveTraceExportEndpoint("https://other.example.com/t")).toBe(
 			"https://other.example.com/t",
@@ -122,7 +124,7 @@ describe("resolveTraceExportEndpoint", () => {
 
 describe("solutionTransport trace context", () => {
 	it("injects the active span's traceparent on a same-origin call that has none", async () => {
-		installBrowserTracing({ endpoint: null });
+		installBrowserTracing({ ...NO_KEYS, endpoint: null });
 		const authedFetch = scopesFetch();
 		const { span, result } = underSpan(() =>
 			client("/api/solutions/s/proxy", authedFetch).listMyAccessibleScopes(
@@ -138,7 +140,7 @@ describe("solutionTransport trace context", () => {
 	});
 
 	it("leaves a traceparent the caller already set untouched", async () => {
-		installBrowserTracing({ endpoint: null });
+		installBrowserTracing({ ...NO_KEYS, endpoint: null });
 		const authedFetch = scopesFetch();
 		const { result } = underSpan(() =>
 			client("/api", authedFetch).listMyAccessibleScopes(request, {
@@ -152,7 +154,7 @@ describe("solutionTransport trace context", () => {
 	});
 
 	it("never sends trace context to another origin", async () => {
-		installBrowserTracing({ endpoint: null });
+		installBrowserTracing({ ...NO_KEYS, endpoint: null });
 		const authedFetch = scopesFetch();
 		const { result } = underSpan(() =>
 			client(
@@ -177,7 +179,7 @@ describe("solutionTransport trace context", () => {
 	});
 
 	it("never sets baggage, even when the active context carries some", async () => {
-		installBrowserTracing({ endpoint: null });
+		installBrowserTracing({ ...NO_KEYS, endpoint: null });
 		const authedFetch = scopesFetch();
 		const span = trace.getTracer("test").startSpan("interaction");
 		const withBaggage = propagation.setBaggage(
