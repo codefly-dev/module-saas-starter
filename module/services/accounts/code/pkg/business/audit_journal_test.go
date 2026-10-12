@@ -13,6 +13,8 @@ import (
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // journalTransport records every envelope published, with the transaction
@@ -336,5 +338,29 @@ func TestAuditRecordedEventTypeIsInternal(t *testing.T) {
 func TestAuditRecordedEventTypeIsNotAnAuditEventType(t *testing.T) {
 	if _, registered := LookupAuditEvent(EventType(AuditRecordedEventType)); registered {
 		t.Fatalf("%s must not be an audit event type", AuditRecordedEventType)
+	}
+}
+
+// A storage that cannot compute the percentile metric refuses it, and the
+// service answers that as the caller's invalid request, on both read paths.
+func TestWarehouseBackendAnswersARefusedPercentileAsInvalidArgument(t *testing.T) {
+	service, _, _, warehouse := newWarehouseAuditService(t)
+	warehouse.refusePercentile = true
+	spec := AuditAggregationSpec{Metrics: []AuditMetric{{Op: "percentile", Field: "payload:duration_ms", Percentile: 0.5}}}
+
+	_, err := service.Aggregate(t.Context(), AuditQuery{OrgID: auditServiceOrg}, spec)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("Aggregate = %v, want InvalidArgument", err)
+	}
+	q := AuditQuery{OrgID: auditServiceOrg, Resource: "datasource", ResourceID: "s-1", EventType: "t"}
+	_, err = service.AggregateAuthorized(t.Context(), q, spec, func(context.Context) error { return nil })
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("AggregateAuthorized = %v, want InvalidArgument", err)
+	}
+	if _, err := service.Aggregate(t.Context(), AuditQuery{OrgID: auditServiceOrg}, AuditAggregationSpec{}); err != nil {
+		t.Fatalf("every other metric is served: %v", err)
+	}
+	if !spec.HasPercentile() || (AuditAggregationSpec{}).HasPercentile() {
+		t.Fatal("HasPercentile")
 	}
 }

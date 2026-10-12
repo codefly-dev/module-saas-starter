@@ -143,6 +143,15 @@ func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 		var count int64
 		var removeErr error
 		switch {
+		case p.ResourceType == "audit_events" && s.auditReads != nil && s.auditReads.Backend() == AuditBackendWarehouse:
+			// Under the warehouse backend audit_events is no longer the store of
+			// record and nothing writes it, so this policy has nothing to retire
+			// there. How long the warehouse keeps an entry is the warehouse's own
+			// expiry, set where its table is provisioned, not a partition drop
+			// here. Rows written before the switch are left where they are.
+			w.Info("retention: audit_events policy skipped: the audit backend is warehouse, whose expiry governs retention; audit_events is not written and is left as it is",
+				wool.Field("retention_days", p.RetentionDays))
+			continue
 		case !anyOlder:
 			// Nothing is older than the cutoff.
 		case p.ResourceType == "audit_events":

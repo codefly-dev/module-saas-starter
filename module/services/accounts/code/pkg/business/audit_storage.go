@@ -41,6 +41,11 @@ import (
 //   - A read names its scope (AuditRead.Scope). An implementation refuses a read
 //     with no scope (ErrAuditReadUnscoped), and one whose query reaches past it,
 //     instead of treating a missing scope as "everything".
+//   - An implementation that cannot compute the percentile metric refuses it
+//     with ErrAuditPercentileUnsupported before it reads anything. The
+//     warehouse implementation is one: a percentile over a deduplicated,
+//     at-least-once store is not an answer it can give exactly. Every other
+//     metric and dimension is served by every implementation.
 type AuditStorage interface {
 	Append(ctx context.Context, entry AuditEntry) error
 	List(ctx context.Context, read AuditRead) ([]AuditEntry, string, error)
@@ -49,6 +54,22 @@ type AuditStorage interface {
 
 // ErrAuditReadUnscoped is the refusal of a read that names no scope.
 var ErrAuditReadUnscoped = errors.New("audit read: no scope; a read names its organization, or is explicitly a platform read")
+
+// ErrAuditPercentileUnsupported is the refusal of an aggregation that asks for
+// the percentile metric from a storage that cannot compute it. AuditService
+// answers it as invalid-argument: the request, not the service, is what cannot
+// be served.
+var ErrAuditPercentileUnsupported = errors.New("audit aggregate: the percentile metric is not supported by this audit storage")
+
+// HasPercentile reports whether the spec asks for a percentile metric.
+func (s AuditAggregationSpec) HasPercentile() bool {
+	for _, metric := range s.Metrics {
+		if metric.Op == "percentile" {
+			return true
+		}
+	}
+	return false
+}
 
 // AuditReadScope is whose entries a read may return. It is either one
 // organization's entries, or — explicitly — the platform's view, which spans

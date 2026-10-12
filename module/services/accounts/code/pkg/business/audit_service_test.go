@@ -17,6 +17,9 @@ type recordingStorage struct {
 	aggregates []AuditRead
 	page       []AuditEntry
 	appendErr  error
+	// refusePercentile makes Aggregate refuse the percentile metric, as the
+	// warehouse storage does.
+	refusePercentile bool
 }
 
 func (r *recordingStorage) Append(_ context.Context, entry AuditEntry) error {
@@ -29,7 +32,10 @@ func (r *recordingStorage) List(_ context.Context, read AuditRead) ([]AuditEntry
 	return r.page, "", nil
 }
 
-func (r *recordingStorage) Aggregate(_ context.Context, read AuditRead, _ AuditAggregationSpec) ([]AuditAggregateBucket, error) {
+func (r *recordingStorage) Aggregate(_ context.Context, read AuditRead, spec AuditAggregationSpec) ([]AuditAggregateBucket, error) {
+	if r.refusePercentile && spec.HasPercentile() {
+		return nil, ErrAuditPercentileUnsupported
+	}
 	r.aggregates = append(r.aggregates, read)
 	return []AuditAggregateBucket{{Key: "k", Count: 1}}, nil
 }

@@ -5,6 +5,7 @@ import (
 	"accounts/pkg/abuse"
 	"accounts/pkg/adapters"
 	"accounts/pkg/analytics"
+	"accounts/pkg/auditstorage"
 	"accounts/pkg/auth"
 	devvalidator "accounts/pkg/auth/dev"
 	ed25519minter "accounts/pkg/auth/ed25519"
@@ -714,12 +715,25 @@ func doWork(ctx context.Context) (Clean, error) {
 	// Every org-scoped audit record publishes its external domain event in the
 	// same transaction; that event is what the relay fans out to the endpoints
 	// subscribed to its type.
+	//
+	// Where the trail is kept is chosen here, once, from the `audit-storage`
+	// group: Postgres (audit_events, written in the caller's transaction) or the
+	// warehouse (journaled in the caller's transaction and appended afterwards).
+	auditStorageConfig, err := auditstorage.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	auditBackend, warehouseAuditStorage, err := selectAuditStorage(auditStorageConfig, auditSinkMode, buildWarehouseAuditStorage)
+	if err != nil {
+		return nil, err
+	}
 	auditService, err := business.NewAuditService(business.AuditServiceConfig{
-		Backend:     business.AuditBackendPostgres,
+		Backend:     auditBackend,
 		Store:       store,
 		Producer:    store,
 		Transport:   eventTransport,
 		ExternalTee: auditSinkMode == auditSinkBoth,
+		Warehouse:   warehouseAuditStorage,
 	})
 	if err != nil {
 		return nil, err

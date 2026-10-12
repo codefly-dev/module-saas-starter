@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"accounts/pkg/events"
 	"accounts/pkg/jobs"
@@ -28,6 +29,18 @@ const (
 	// store of record: a swap, not a tee.
 	AuditBackendWarehouse AuditBackend = "warehouse"
 )
+
+// ParseAuditBackend reads the audit-storage backend. Empty is the default.
+func ParseAuditBackend(raw string) (AuditBackend, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(AuditBackendPostgres):
+		return AuditBackendPostgres, nil
+	case string(AuditBackendWarehouse):
+		return AuditBackendWarehouse, nil
+	default:
+		return "", fmt.Errorf("audit storage backend must be %s or %s", AuditBackendPostgres, AuditBackendWarehouse)
+	}
+}
 
 // AuditServiceConfig is what AuditService is built from, once, at startup.
 type AuditServiceConfig struct {
@@ -174,7 +187,18 @@ func (a *AuditService) Aggregate(ctx context.Context, q AuditQuery, spec AuditAg
 	if err != nil {
 		return nil, err
 	}
-	return a.storage.Aggregate(ctx, read, spec)
+	out, err := a.storage.Aggregate(ctx, read, spec)
+	return out, refusalOfUnsupportedMetric(err)
+}
+
+// refusalOfUnsupportedMetric answers a storage's refusal of the percentile
+// metric as what it is: the request asked for something this deployment's audit
+// storage cannot compute, not a fault in the service.
+func refusalOfUnsupportedMetric(err error) error {
+	if errors.Is(err, ErrAuditPercentileUnsupported) {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	return err
 }
 
 // AggregateAuthorized aggregates after authorize has passed inside the
@@ -205,7 +229,8 @@ func (a *AuditService) AggregateAuthorized(ctx context.Context, q AuditQuery, sp
 	if err := a.store.WithOrgTx(ctx, read.Scope.OrgID(), authorize); err != nil {
 		return nil, err
 	}
-	return a.storage.Aggregate(ctx, read, spec)
+	out, err := a.storage.Aggregate(ctx, read, spec)
+	return out, refusalOfUnsupportedMetric(err)
 }
 
 // read is the read of q in its scope. A storage outside Postgres also gets the

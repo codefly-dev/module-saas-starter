@@ -38,6 +38,10 @@ type Subject struct {
 	// redelivery. The suite then appends two entries a second time, and every
 	// answer must be unchanged: a read returns each entry once, by id.
 	AtLeastOnce bool
+	// NoPercentile says the storage refuses the percentile metric. The suite then
+	// requires an aggregation that asks for one to fail with
+	// business.ErrAuditPercentileUnsupported, and every other one to succeed.
+	NoPercentile bool
 	// Reference, when set, is a second storage the answers are compared with,
 	// and AppendReference writes the same fixture into it. It is how a
 	// warehouse storage is held to the Postgres one. Leave both nil when the
@@ -257,6 +261,10 @@ func Run(t *testing.T, h Harness) {
 		for queryName, q := range queries {
 			for specName, spec := range aggregationSpecs() {
 				got, err := subject.Storage.Aggregate(ctx, read(q), spec)
+				if subject.NoPercentile && spec.HasPercentile() {
+					require.ErrorIs(t, err, business.ErrAuditPercentileUnsupported, "%s / %s", queryName, specName)
+					continue
+				}
 				require.NoError(t, err, "%s / %s", queryName, specName)
 				if queryName == "organization" {
 					require.NotEmpty(t, got, specName)
