@@ -12,7 +12,6 @@
  */
 
 import {
-	BarList,
 	type ChartSeries,
 	KPIRow,
 	type Metric,
@@ -160,6 +159,28 @@ function CardWidget({
 	);
 }
 
+function Bars({ items }: { items: BarsWidget["items"] }) {
+	const max = items.reduce((m, item) => Math.max(m, item.value), 0) || 1;
+	return (
+		<div className="space-y-2">
+			{items.map((item, i) => (
+				<div key={`${i}-${item.label}`} className="space-y-1">
+					<div className="flex items-center justify-between text-xs">
+						<span className="text-muted-foreground">{item.label}</span>
+						<span className="font-mono">{item.value}</span>
+					</div>
+					<div className="h-2 rounded-full bg-muted">
+						<div
+							className="h-2 rounded-full bg-primary/70"
+							style={{ width: `${(item.value / max) * 100}%` }}
+						/>
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
 function Widget({ widget }: { widget: DashboardWidget }) {
 	switch (widget.kind) {
 		case "sparkline":
@@ -171,12 +192,7 @@ function Widget({ widget }: { widget: DashboardWidget }) {
 		case "bars":
 			return (
 				<CardWidget widget={widget} isEmpty={widget.items.length === 0}>
-					<BarList
-						points={widget.items.map((item) => ({
-							key: item.label,
-							value: item.value,
-						}))}
-					/>
+					<Bars items={widget.items} />
 				</CardWidget>
 			);
 		case "metrics":
