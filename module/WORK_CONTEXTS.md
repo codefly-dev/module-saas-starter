@@ -293,7 +293,11 @@ answered by one set of functions for minting and verifying alike
 Core derives only by adding a hop and never extends a window, so re-issuing a
 capability — a root session, an audience exchange, a renewal — mints it afresh
 from its owner and re-derives each hop, with the same delegation ids, against
-live state. When this host reads back a capability it issued (a parent to derive
+live state. The seal is re-resolved too, never copied from the parent: a
+person's capability is sealed to the organization's installation of the
+audience it now addresses (an exchange into an audience the organization never
+installed is refused), and a module or installation principal's to its own
+installation. When this host reads back a capability it issued (a parent to derive
 from, a viewer's capability presented with a question), it verifies it at full
 strength for the audience the capability names; a single-use capability is
 consumed by that read, as it is by whichever consumer verifies it first.

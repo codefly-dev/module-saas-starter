@@ -339,6 +339,21 @@ func (s *WorkContextAuthorityServer) remint(
 	ctx context.Context, parent *basev0.WorkContextV1, audience, replay string, ttl time.Duration,
 	attenuated []*basev0.WorkScopeV1, lastExecution workcontext.Execution, session string,
 ) (string, *basev0.WorkContextV1, error) {
+	// The seal follows the owner. A person's capability is sealed to the
+	// organization's installation of the audience it addresses — what an
+	// uninstall revokes — so a capability re-derived for an audience, renewed
+	// included, is sealed to that audience's installation as it stands now and
+	// is refused when the organization has none. Never the parent's: that names
+	// another audience's installation, or one since replaced. A module or
+	// installation principal is sealed to its own installation, which the
+	// audience does not change.
+	installation := parent.GetSeal().GetInstallationId()
+	if parent.GetOwnerPrincipalKind() == business.PrincipalKindHuman {
+		var err error
+		if installation, err = s.audienceInstallation(ctx, parent.GetTenantId(), audience); err != nil {
+			return "", nil, err
+		}
+	}
 	start := workcontext.StartInput{
 		TenantID:           parent.GetTenantId(),
 		OwnerPrincipalID:   parent.GetOwnerPrincipalId(),
@@ -351,7 +366,7 @@ func (s *WorkContextAuthorityServer) remint(
 		AttributionTeamIDs: append([]string(nil), parent.GetAttributionTeamIds()...),
 		WorkspaceID:        parent.GetWorkspaceId(),
 		ProjectID:          parent.GetProjectId(),
-		InstallationID:     parent.GetSeal().GetInstallationId(),
+		InstallationID:     installation,
 	}
 	chain := parent.GetActorChain()
 	if len(chain) == 0 {
