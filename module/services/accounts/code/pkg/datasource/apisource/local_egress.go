@@ -83,7 +83,7 @@ func parseLocalEgress(value string) (map[netip.AddrPort]struct{}, error) {
 		target, err := netip.ParseAddrPort(entry)
 		switch {
 		case err != nil:
-			return nil, fmt.Errorf("%w %q: write exactly one IP literal and port, such as 127.0.0.1:18080 or [::1]:18080", ErrInvalidLocalEgress, entry)
+			return nil, fmt.Errorf("%w %q: write exactly one loopback IP literal and a port, as ip:port with an IPv6 literal in brackets", ErrInvalidLocalEgress, entry)
 		case target.String() != entry:
 			// A non-canonical spelling (a leading-zero port, an uncompressed
 			// IPv6 literal) is refused rather than normalised, so the entry an
