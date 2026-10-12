@@ -45,6 +45,13 @@ export function assertAuditScopeContract(
 // A derived metric tells them apart from a returned bucket by this mark.
 const noEvents = new WeakSet<MetricPoint>();
 
+// The complete time series whose aggregation is 0 over no events: every bucket
+// the RPC returned was read, so a time bucket such a series lacks is one it had
+// no events in. A derived metric reads that bucket as a 0 (see combineDerived),
+// which is what lets a rate whose numerator starts later than its denominator,
+// or never happens at all, read 0 on those days instead of missing telemetry.
+const fillable = new WeakSet<MetricSeries>();
+
 function toSeries(
 	metricId: string,
 	points: MetricPoint[],
@@ -123,26 +130,39 @@ function nextBucket(date: Date, bucket: MetricBucket): Date {
 /**
  * The audit RPC returns no bucket for a time bucket with no events, and a
  * chart spaces its points evenly, so a day with none vanished and the line ran
- * straight over it. This puts a 0 at every bucket between the first and the
- * last one the RPC returned that it did not return. A bucket it did return,
- * whose value was dropped as unknown, stays out: that is not a bucket with no
- * events. A key that does not read as a date, or one off the bucket's step
- * from the first, leaves the points as they are.
+ * straight over it. This puts a 0 at every bucket from the first one the RPC
+ * returned through the last one, or through the bucket holding `through` (the
+ * end of the range asked about) when that is later, that it did not return —
+ * so the days since the last event read 0 too, and the latest point is the
+ * latest bucket rather than the last day anything happened.
+ *
+ * A bucket it did return, whose value was dropped as unknown, stays out: that
+ * is not a bucket with no events. A key that does not read as a date, or one
+ * off the bucket's step from the first, leaves the points as they are. So do
+ * returned keys that disagree about what follows the date: the RPC keys UTC
+ * buckets ("…T00:00:00+00"), so a filled key copies that suffix, and keys
+ * carrying different offsets would leave a filled bucket with no offset this
+ * function could know.
  */
 export function fillEmptyBuckets(
 	points: readonly MetricPoint[],
 	returnedKeys: readonly string[],
 	bucket: MetricBucket,
+	through?: Date,
 ): MetricPoint[] {
 	const unchanged = [...points];
 	const returned = returnedKeys.map(bucketDate);
 	if (returned.length === 0 || returned.includes(null)) return unchanged;
 	const parsed = returned as { date: Date; rest: string }[];
+	if (parsed.some(({ rest }) => rest !== parsed[0].rest)) return unchanged;
 	const day = (date: Date) => date.toISOString().slice(0, 10);
 	const seen = new Set(parsed.map(({ date }) => day(date)));
 	const times = parsed.map(({ date }) => date.getTime());
 	const first = parsed[times.indexOf(Math.min(...times))];
-	const last = Math.max(...times);
+	const last = Math.max(
+		...times,
+		through && !Number.isNaN(through.getTime()) ? through.getTime() : 0,
+	);
 
 	const grid: string[] = [];
 	for (let at = first.date; at.getTime() <= last; at = nextBucket(at, bucket)) {
@@ -206,14 +226,17 @@ export async function runMetric(
 			partial = true;
 		points.push({ key: bucket.key, value });
 	}
-	return toSeries(
-		metric.id,
+	const zeroFilled =
 		metric.groupBy === "time" &&
-			ZERO_OVER_NO_EVENTS.includes(metric.aggregation)
+		ZERO_OVER_NO_EVENTS.includes(metric.aggregation);
+	const series = toSeries(
+		metric.id,
+		zeroFilled
 			? fillEmptyBuckets(
 					points,
 					response.buckets.map((bucket) => bucket.key),
 					metric.bucket ?? "day",
+					rangeEnd(context),
 				)
 			: points,
 		metric.groupBy,
@@ -221,6 +244,14 @@ export async function runMetric(
 		metric.aggregation === "count" || metric.aggregation === "sum",
 		partial,
 	);
+	if (zeroFilled && !partial) fillable.add(series);
+	return series;
+}
+
+// The last instant the query covers: just before an explicit exclusive `to`,
+// otherwise now, because an open-ended query runs through today.
+function rangeEnd(context: MetricContext): Date {
+	return context.to ? new Date(context.to.getTime() - 1) : new Date();
 }
 
 // Combine the resolved series of a derived metric's inputs. Inputs are aligned
@@ -271,12 +302,36 @@ function combineDerived(
 			}
 		}
 	}
+	// A fillable input's missing time bucket is a 0 (see `fillable`), so keys
+	// from every input are combined; time keys then go in time order, because
+	// first-seen order would put a later input's earlier days at the end.
+	if (dimension.groupBy === "time" && keys.every((key) => bucketDate(key))) {
+		const at = (key: string) => (bucketDate(key) as { date: Date }).date;
+		keys.sort((a, b) => at(a).getTime() - at(b).getTime());
+		// When every input reads a missing bucket as no events, a bucket
+		// between one input's range and another's is no events for all of
+		// them, so the combination covers it too.
+		if (inputs.every((input) => fillable.has(input))) {
+			const grid = fillEmptyBuckets(
+				keys.map((key) => ({ key, value: 0 })),
+				keys,
+				dimension.bucket ?? "day",
+			).map((point) => point.key);
+			keys.splice(0, keys.length, ...grid);
+		}
+	}
 	const pointAt = (input: MetricSeries, key: string): MetricPoint | undefined =>
 		input.points.find((point) => point.key === key);
 	let partial = inputs.some((input) => input.coverage === "partial");
 	const points: MetricPoint[] = [];
 	for (const key of keys) {
-		const operands = inputs.map((input) => pointAt(input, key));
+		const operands = inputs.map((input) => {
+			const found = pointAt(input, key);
+			if (found || !fillable.has(input) || !bucketDate(key)) return found;
+			const zero = { key, value: 0 };
+			noEvents.add(zero);
+			return zero;
+		});
 		const empty = operands.every(
 			(point) => point === undefined || noEvents.has(point),
 		);
@@ -315,7 +370,7 @@ function combineDerived(
 		points.push(point);
 	}
 
-	return toSeries(
+	const series = toSeries(
 		metric.id,
 		points,
 		dimension.groupBy,
@@ -323,6 +378,16 @@ function combineDerived(
 		additive,
 		partial,
 	);
+	// A sum or difference of buckets with no events is 0 in turn, so it can
+	// feed another derived metric the same way; a ratio of them has no value.
+	if (
+		metric.operation !== "ratio" &&
+		!partial &&
+		inputs.every((input) => fillable.has(input))
+	) {
+		fillable.add(series);
+	}
+	return series;
 }
 
 function indexMetrics(metrics: readonly Metric[]): Map<string, Metric> {

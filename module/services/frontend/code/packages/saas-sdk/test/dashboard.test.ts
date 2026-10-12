@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineDataGraph, runDashboard } from "../src/datagraph/dashboard.js";
 import { fakeAuditClient } from "./support.js";
 
@@ -41,8 +41,13 @@ const graph = defineDataGraph({
 	],
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe("runDashboard", () => {
 	it("produces render-ready widget data bound to each metric", async () => {
+		// Today is the last day returned, so the series is exactly those days.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-01-02T12:00:00Z"));
 		const { client } = fakeAuditClient((request) =>
 			request.groupBy === "time"
 				? [
@@ -180,6 +185,55 @@ describe("runDashboard", () => {
 		expect(data.byMetric.win_rate.total).toBe(0.4);
 		expect(plain.format).toBeUndefined();
 		expect(plain.series.total).toBe(0.4);
+	});
+
+	it("scales a shared percent metric once per widget, never twice", async () => {
+		const shared = defineDataGraph({
+			events: [{ name: "signed_in", type: "user.signed_in.v1" }],
+			metrics: [
+				{
+					id: "won",
+					kind: "source",
+					filter: { event: "signed_in", actor: "won" },
+					groupBy: "event_type",
+					aggregation: "count",
+				},
+				{
+					id: "all",
+					kind: "source",
+					filter: { event: "signed_in", actor: "all" },
+					groupBy: "event_type",
+					aggregation: "count",
+				},
+				{
+					id: "rate",
+					kind: "derived",
+					operation: "ratio",
+					inputs: ["won", "all"],
+					format: "percent",
+				},
+			],
+			dashboards: [
+				{
+					id: "d",
+					layout: "grid",
+					widgets: [
+						{ id: "a", metric: "rate", visualization: "number" },
+						{ id: "b", metric: "rate", visualization: "table" },
+					],
+				},
+			],
+		});
+		const { client } = fakeAuditClient((request) => [
+			{ key: "all", count: request.actorId === "won" ? 2 : 5 },
+		]);
+		const data = await runDashboard(client, shared, "d", context);
+		expect(data.widgets.map((widget) => widget.series.total)).toEqual([40, 40]);
+		expect(data.widgets.map((widget) => widget.format)).toEqual([
+			"percent",
+			"percent",
+		]);
+		expect(data.byMetric.rate.total).toBeCloseTo(0.4);
 	});
 
 	it("carries the dashboard's sections and each widget's section", async () => {
