@@ -29,23 +29,26 @@ import (
 )
 
 type Service struct {
-	sourceReceiptStore        receipts.Store
-	sourceReceiptGuard        *receipts.Interceptor
-	store                     Store
-	hasher                    KeyHasher
-	validator                 auth.TokenValidator // production: validates provider tokens after OAuth code exchange
-	headerJWTValidator        auth.TokenValidator // header-jwt mode only: validates the gateway-injected identity assertion
-	exchanger                 CodeExchanger       // production: exchanges OAuth codes for provider tokens
-	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
-	resolver                  auth.IdentityResolver
-	minter                    auth.JWTMinter
-	emailOutbox               *email.Outbox    // optional durable email producer; transport is worker-only
-	billing                   BillingClient    // optional: Stripe client for checkout/portal
-	billingURLs               BillingRedirects // server-owned Stripe return destinations
-	appBaseURL                string           // public URL of the frontend, used in email bodies
-	orgCreationPolicy         OrganizationCreationPolicy
-	audit                     AuditEmitter
-	auditTx                   TxAuditEmitter // set when audit also writes on the caller's tx; required in production
+	sourceReceiptStore receipts.Store
+	sourceReceiptGuard *receipts.Interceptor
+	store              Store
+	hasher             KeyHasher
+	validator          auth.TokenValidator // production: validates provider tokens after OAuth code exchange
+	headerJWTValidator auth.TokenValidator // header-jwt mode only: validates the gateway-injected identity assertion
+	exchanger          CodeExchanger       // production: exchanges OAuth codes for provider tokens
+	devValidator       auth.TokenValidator // development only: allowlists explicit fixture identities
+	resolver           auth.IdentityResolver
+	minter             auth.JWTMinter
+	emailOutbox        *email.Outbox    // optional durable email producer; transport is worker-only
+	billing            BillingClient    // optional: Stripe client for checkout/portal
+	billingURLs        BillingRedirects // server-owned Stripe return destinations
+	appBaseURL         string           // public URL of the frontend, used in email bodies
+	orgCreationPolicy  OrganizationCreationPolicy
+	audit              AuditEmitter
+	auditTx            TxAuditEmitter // set when audit also writes on the caller's tx; required in production
+	// auditReads serves the activity list, aggregation and export. It reads
+	// audit_events until SetAuditService gives it the AuditService startup built.
+	auditReads                *AuditService
 	entitlements              EntitlementChecker
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
@@ -460,7 +463,14 @@ func NewService(store Store) (*Service, error) {
 		return nil, err
 	}
 	authority, _ := store.(ModuleAuthorityStore)
+	var auditReads *AuditService
+	if store != nil {
+		if auditReads, err = newAuditReads(store); err != nil {
+			return nil, err
+		}
+	}
 	return &Service{
+		auditReads:                auditReads,
 		store:                     store,
 		moduleAuthority:           authority,
 		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
@@ -677,6 +687,15 @@ func (s *Service) publicBaseURL(ctx context.Context) string {
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
 	s.audit = a
 	s.auditTx, _ = a.(TxAuditEmitter)
+}
+
+// SetAuditService wires the AuditService startup built: the emitter every audited
+// write goes through and the storage every audit read comes from. It replaces
+// SetAuditEmitter for the process, so the write and the read can never name two
+// different stores.
+func (s *Service) SetAuditService(a *AuditService) {
+	s.SetAuditEmitter(a)
+	s.auditReads = a
 }
 
 // VerifyAuditWiring fails startup when the wired audit emitter cannot write on

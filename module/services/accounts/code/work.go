@@ -711,19 +711,20 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
-	var auditEmitterOpts []business.DurableAuditEmitterOption
-	if auditSinkMode == auditSinkBoth {
-		auditEmitterOpts = append(auditEmitterOpts, business.WithExternalTee())
-	}
 	// Every org-scoped audit record publishes its external domain event in the
 	// same transaction; that event is what the relay fans out to the endpoints
 	// subscribed to its type.
-	auditEmitterOpts = append(auditEmitterOpts, business.WithDomainEventTransport(eventTransport))
-	auditEmitter, err := business.NewDurableAuditEmitter(store, store, auditEmitterOpts...)
+	auditService, err := business.NewAuditService(business.AuditServiceConfig{
+		Backend:     business.AuditBackendPostgres,
+		Store:       store,
+		Producer:    store,
+		Transport:   eventTransport,
+		ExternalTee: auditSinkMode == auditSinkBoth,
+	})
 	if err != nil {
 		return nil, err
 	}
-	service.SetAuditEmitter(auditEmitter)
+	service.SetAuditService(auditService)
 	// Refuse to serve behind an emitter that cannot write on the caller's
 	// transaction: every security mutation commits its audit row and webhook
 	// fan-out inside its own transaction, and an emitter without EmitTx would let
@@ -1433,7 +1434,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("stopping retention goroutine")
 		retentionCancel()
 		sw.Info("closing audit emitter")
-		auditEmitter.Close()
+		auditService.Close()
 		sw.Info("audit emitter closed")
 		if closeCache != nil {
 			sw.Info("closing redis cache")
