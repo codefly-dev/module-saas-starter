@@ -2,9 +2,9 @@ package business
 
 import (
 	"context"
-	"github.com/codefly-dev/core/solutionhost"
 	"testing"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
