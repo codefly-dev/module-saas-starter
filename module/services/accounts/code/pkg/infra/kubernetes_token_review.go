@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"strings"
@@ -49,6 +50,29 @@ const (
 	inClusterCAPath        = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 	inClusterNamespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 )
+
+// InCluster reports whether this process carries any of what the kubelet puts
+// in every pod: the API server's address in KUBERNETES_SERVICE_HOST, or the
+// projected service-account token or CA bundle at their fixed paths. Any one of
+// them is enough to answer yes.
+//
+// It is the host's answer to "is this a pod", read from the same facts
+// NewKubernetesClient builds its identity from, and it errs toward yes on
+// purpose: callers use it to REFUSE a local-only setting, so a deployment has
+// to remove every one of these — an injected variable AND two projected files,
+// which takes control of the pod spec, not of a configuration value — before a
+// local-only setting is even considered.
+func InCluster() bool {
+	if strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST")) != "" {
+		return true
+	}
+	for _, path := range []string{inClusterTokenPath, inClusterCAPath} {
+		if _, err := os.Stat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
+			return true
+		}
+	}
+	return false
+}
 
 // KubernetesClient is the host's read-only window onto the API server.
 type KubernetesClient struct {

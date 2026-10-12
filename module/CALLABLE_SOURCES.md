@@ -152,11 +152,58 @@ Teredo are refused outright rather than decoded, because a network-specific
 NAT64 prefix cannot be recognised and a decoded public address is still reached
 through a translator on the host's own network. A v4-mapped `::ffff:a.b.c.d` is
 judged as `a.b.c.d`. A zoned address, or one the guard cannot parse, is refused.
+The one exception is a local runtime's explicit list of loopback addresses,
+described in [Local egress](#local-egress); every address it does not list is
+still judged by the guard.
 Named refusal/receipt/audit constructors discard provider error bodies and raw
 transport errors. Credential reflection in a successful provider body is refused.
 Audit records actor, source, operation, effect, effect ID and the closed outcome
 vocabulary (`committed`, `refused`, `unresolved`, `rate_limited`), never input,
 output, tokens or URLs. Failed operation resolution uses an `UNKNOWN` effect.
+
+## Local egress
+
+A composition booted locally can prove an OAuth REST source end to end against a
+stub provider and API running beside the host. It lists the stub's exact
+addresses in `datasource-oauth/local_egress`, a configuration value
+([configuration groups](configurations/README.md#datasource-oauth)):
+
+```
+local_egress=127.0.0.1:18080,[::1]:18081
+```
+
+The allowance holds to these rules:
+
+- **Empty by default.** The shipped value is empty, and an empty value changes
+  nothing anywhere.
+- **Refused outside a local runtime.** A non-empty value refuses startup, naming
+  the key, before any other startup check runs. A local runtime has to satisfy two
+  facts the host already reads. First, the Codefly environment is `local`
+  (`codefly.IsLocal`, which every other local-only exemption reads). Second, the
+  process is not in a Kubernetes pod: it has no `KUBERNETES_SERVICE_HOST` and no
+  projected service-account token or CA at their fixed paths. The pod check reads
+  the same facts as the solution host's in-cluster identity. The environment is
+  one variable, set by whatever renders the deployment. The pod facts are put
+  there by the kubelet, so removing them takes control of the pod spec, not of a
+  configuration value. A host started by `codefly run` has none of them. A local
+  Kubernetes cluster is refused too.
+- **Explicit loopback `ip:port` entries only.** Each entry is one loopback IP
+  literal and one port, written canonically. A hostname, range, CIDR, wildcard,
+  zone, IPv4-mapped spelling, port 0 or non-loopback address refuses the whole
+  value. Loopback never leaves the host's own network namespace. Even a host that
+  got past the runtime check could reach only that namespace: never a metadata
+  service, the cluster network or another tenant.
+- **Never widens the public-address guard.** The allowance is checked at dial
+  time against the resolved address and port, ahead of the guard. Any address it
+  does not list is judged by the guard exactly as before. The allowance lives in
+  its own file (`apisource/local_egress.go`) beside the guard, so each can be
+  reviewed separately.
+- **A value, never a file.** Codefly delivers it like every other group value.
+
+It applies to the token exchange (refresh, `client_credentials`,
+authorization-code) and the operation call alike. A Docker-runtime local run
+reaches a stub through a private address and is not covered. Run the host
+natively, which is the `codefly run` default.
 
 ## Generation and qualification
 
