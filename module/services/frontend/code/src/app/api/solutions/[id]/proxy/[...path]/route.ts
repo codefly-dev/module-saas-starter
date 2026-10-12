@@ -5,7 +5,7 @@ import {
 	resolveVerifiedPublicOrigin,
 } from "@/lib/codefly-gateway-context";
 import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
-
+import { forwardTraceContext } from "@/lib/trace-context";
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -156,6 +156,26 @@ async function handler(
 	headers.set("accept", request.headers.get("accept") ?? "application/json");
 
 	if (resume !== null) headers.set("last-event-id", resume);
+	// Continue the caller's W3C trace so the solution's spans join it. Only a
+	// strictly valid traceparent (and the tracestate riding with it) travels,
+	// re-serialized rather than copied; baggage is never forwarded.
+	//
+	// The sampled flag is an instruction to the upstream's sampler, not inert
+	// metadata: OpenTelemetry's default ParentBased sampler records whatever an
+	// incoming traceparent declares sampled. This route admits a request that
+	// carries neither Origin nor Sec-Fetch-Site, and it serves a solution's
+	// `.well-known` anonymously (MODULE.md), on a request it has already
+	// stamped with the internal trust token — so honouring that bit for a
+	// caller who presented no credential at all would let a stranger force 100%
+	// recording and export on the gateway and on every solution behind it.
+	//
+	// A caller that did present one keeps the decision: the gateway verifies the
+	// credential, so a forged one costs a single rejected request rather than an
+	// open lever. The trace still links either way; only the instruction is
+	// withheld.
+	forwardTraceContext(request.headers, headers, {
+		honorSampledFlag: authorization !== null || cookie !== null,
+	});
 
 	// Preserve the browser connection lifetime and avoid cached observations or
 	// forwarding its credentials through a gateway redirect. Never retry here.
