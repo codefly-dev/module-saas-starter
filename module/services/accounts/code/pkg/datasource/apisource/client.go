@@ -6,10 +6,11 @@
 // credential and hands it in per fetch.
 //
 // The base URL is tenant-supplied, so every dial is guarded against SSRF: a URL
-// that resolves to a private, loopback, link-local, or otherwise non-public
-// address is refused, on the initial request and on any redirect, checked
-// against the exact IP being connected to (not the hostname) so DNS rebinding
-// cannot slip past the check.
+// that resolves to any address that is not on the public internet is refused,
+// on the initial request and on any redirect, checked against the exact IP
+// being connected to (not the hostname) so DNS rebinding cannot slip past the
+// check. "Not on the public internet" is auth.IsPublicDestination, the host's
+// one classifier for it, read from the IANA special-purpose registries.
 package apisource
 
 import (
@@ -25,6 +26,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"accounts/pkg/auth"
 )
 
 // Credential kinds. They mirror saas.accounts.v1.ApiCredentialKind and select
@@ -443,18 +446,15 @@ func refreshPermanentlyRejected(statusCode int, body []byte) bool {
 	}
 }
 
-// guardDial refuses to open a connection to a non-public address. It runs after
-// DNS resolution with the concrete IP:port being dialed, so it blocks the exact
-// address the connection would reach — closing the DNS-rebinding gap a
-// hostname-only check leaves open.
+// guardDial refuses to open a connection to an address that is not on the
+// public internet. It runs after DNS resolution with the concrete IP:port being
+// dialed, so it blocks the exact address the connection would reach — closing
+// the DNS-rebinding gap a hostname-only check leaves open. The judgement is
+// auth.IsPublicDestinationDialAddress, never Go's net.IP predicates: those call
+// carrier NAT, NAT64, 6to4, Teredo, benchmarking and reserved space "global
+// unicast". An address it cannot parse is refused.
 func guardDial(_, address string, _ syscall.RawConn) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return ErrBlockedAddress
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() ||
-		ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+	if !auth.IsPublicDestinationDialAddress(address) {
 		return ErrBlockedAddress
 	}
 	return nil
