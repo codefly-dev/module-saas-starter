@@ -221,6 +221,15 @@ function TriggerIdentityPanel({
 								label="Overlap"
 								value={declaration?.schedule?.overlap ?? "—"}
 							/>
+							<Fact
+								label="Occurrence deadline"
+								value={nanosecondsAsDuration(declaration?.schedule?.deadline)}
+							/>
+							<Fact
+								label="Occurrence input"
+								value={declaration?.schedule?.inputJson || "—"}
+								mono
+							/>
 							<Fact label="Identity" value={declaredIdentity(declaration)} />
 							<Fact
 								label="Declaration"
@@ -413,6 +422,20 @@ function TriggerIdentityPanel({
 			</Card>
 		</div>
 	);
+}
+
+/**
+ * One occurrence's deadline, read for a person. The declaration carries
+ * nanoseconds because that is what the installation decode accepts; nobody
+ * reads nanoseconds.
+ */
+function nanosecondsAsDuration(nanos?: bigint): string {
+	// BigInt literals need ES2020 and this project targets lower, so the
+	// divisor is built rather than written as 1_000_000_000n.
+	if (nanos === undefined || nanos === BigInt(0)) return "—";
+	const seconds = Number(nanos / BigInt(1_000_000_000));
+	if (seconds % 60 === 0) return `${seconds / 60}m`;
+	return `${seconds}s`;
 }
 
 function Fact({

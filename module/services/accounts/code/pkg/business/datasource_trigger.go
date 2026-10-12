@@ -60,7 +60,15 @@ const (
 	DatasourceTriggerTimezone = "UTC"
 
 	// DatasourceTriggerMissedRun and DatasourceTriggerOverlap are the policies
-	// this host declares, in the executing module's vocabulary.
+	// this host declares, spelled as the INSTALLATION DOCUMENT admits them.
+	//
+	// They are "skip", not "MISSED_RUN_POLICY_SKIP". The module that fires
+	// triggers reports these two facts to an operator's read as the enum
+	// spelling and decodes an installation with the lowercase one, and only
+	// the second has to parse for a release to install. Declaring the enum
+	// spelling would be a release refused at install — a failure no test of
+	// this host alone can see, which is why the conformance test pins the
+	// values and not only the field names.
 	//
 	// SKIP for both, and each for its own reason. A reconcile is a snapshot of
 	// the source as it is NOW: catching up four missed occurrences would take
@@ -68,8 +76,8 @@ const (
 	// missed occurrence is worth admitting. And a pull provider re-sends its
 	// whole content on every sync, so a second occurrence beside a running one
 	// is a second full re-send of a source that is already being read.
-	DatasourceTriggerMissedRun = "MISSED_RUN_POLICY_SKIP"
-	DatasourceTriggerOverlap   = "OVERLAP_POLICY_SKIP"
+	DatasourceTriggerMissedRun = "skip"
+	DatasourceTriggerOverlap   = "skip"
 
 	// DatasourceTriggerDeadline bounds one occurrence's run. It is the pull
 	// sync's own job ceiling: an occurrence hands the work to the source's sync
@@ -104,37 +112,49 @@ const (
 // installation document — so a rename here is a release that will not install
 // rather than a schedule that quietly stops.
 type DeclaredTriggerSchedule struct {
-	Cron           string `json:"cron"`
-	Timezone       string `json:"timezone"`
-	MissedRun      string `json:"missed_run"`
-	Overlap        string `json:"overlap"`
-	DeadlineMillis int64  `json:"deadline_millis"`
-	Input          []byte `json:"input"`
+	Cron      string `json:"cron"`
+	Timezone  string `json:"timezone"`
+	MissedRun string `json:"missed_run"`
+	Overlap   string `json:"overlap"`
+	// Deadline is an integer count of NANOSECONDS, because the document is
+	// decoded by plain encoding/json into a Go time.Duration: a duration
+	// string such as "10m" fails the whole document rather than the field.
+	Deadline time.Duration `json:"deadline"`
+	// Input is the JSON value every occurrence is admitted with, carried
+	// verbatim. json.RawMessage rather than []byte because the document holds
+	// a JSON value here and []byte marshals as base64 — which would decode to
+	// nothing the release's own admission schema accepts.
+	Input json.RawMessage `json:"input"`
 }
 
 // DeclaredTriggerIdentity is the identity a declared trigger's occurrences run
 // under. Exactly one field is set. Two fields rather than a discriminated
-// union because that is the shape the executing module reads, and a host that
-// re-spelled it would be answering a contract nobody declared.
+// union because that is the shape the document carries.
+//
+// THE NAMES ARE THE INSTALLATION DOCUMENT'S. The module that fires triggers
+// answers an operator's READ with `source_delegation` and
+// `installation_binding`, and decodes an INSTALLATION with `source` and
+// `binding`. Only the second has to parse for a release to install at all, so
+// it is the one this host speaks — and it speaks it everywhere, so there is
+// one vocabulary here rather than two that can drift.
 type DeclaredTriggerIdentity struct {
-	// SourceDelegation is the grant reference: a connected source whose
-	// delegation this host owns and re-checks on every mint.
-	SourceDelegation string `json:"source_delegation,omitempty"`
-	// InstallationBinding is one of the release's installed operation
-	// bindings, minted from its headless scopes under the installation's own
-	// principal.
-	InstallationBinding string `json:"installation_binding,omitempty"`
+	// Source is the grant reference: a connected source whose delegation this
+	// host owns and re-checks on every mint.
+	Source string `json:"source,omitempty"`
+	// Binding is one of the release's declared operation bindings, minted from
+	// its headless scopes under the installation's own principal.
+	Binding string `json:"binding,omitempty"`
 }
 
 // Declared reports whether exactly one arm is named. A trigger that names no
 // identity is refused at install, and one that names both is a declaration
 // with two answers.
 func (i DeclaredTriggerIdentity) Declared() bool {
-	return (i.SourceDelegation == "") != (i.InstallationBinding == "")
+	return (i.Source == "") != (i.Binding == "")
 }
 
 // Reference reports whether the grant-reference arm is the one named.
-func (i DeclaredTriggerIdentity) Reference() bool { return i.SourceDelegation != "" }
+func (i DeclaredTriggerIdentity) Reference() bool { return i.Source != "" }
 
 // SourceTriggerDeclaration is the reconcile schedule this host declares for
 // one source, read back whole.
@@ -338,12 +358,12 @@ func DeclareSourceTrigger(source *DatasourceSource, references []TriggerDelegati
 		Timezone:       DatasourceTriggerTimezone,
 		MissedRun:      DatasourceTriggerMissedRun,
 		Overlap:        DatasourceTriggerOverlap,
-		DeadlineMillis: DatasourceTriggerDeadline.Milliseconds(),
+		Deadline:       DatasourceTriggerDeadline,
 		Input:          datasourceTriggerInput(source.OrgID, source.ID),
 	}
 	for _, reference := range references {
 		if reference.Active && reference.Reference != "" {
-			declaration.Identity = DeclaredTriggerIdentity{SourceDelegation: reference.Reference}
+			declaration.Identity = DeclaredTriggerIdentity{Source: reference.Reference}
 			break
 		}
 	}

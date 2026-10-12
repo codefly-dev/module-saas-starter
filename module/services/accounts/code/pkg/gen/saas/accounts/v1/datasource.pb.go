@@ -5490,26 +5490,30 @@ func (x *RevokeSourceDelegationResponse) GetDelegation() *SourceDelegation {
 // EXACTLY ONE field is set, and the two are not alternatives of equal
 // standing:
 //
-//   - source_delegation names a connected source whose delegation this host
-//     owns. It is the grant reference: an opaque identifier rather than a
-//     credential, re-checked against current facts on every mint, so an
-//     occurrence's run may outlive the capability that admitted it and
-//     revoking the delegation refuses the next occurrence.
-//   - installation_binding names one of the release's declared operation
-//     bindings, and an occurrence runs under the installation's own principal
-//     from that binding's headless scopes. That is an ordinary token
-//     admission, bounded by the capability's own short lifetime — which is
-//     why it is the first proof and not the contract.
+//   - source names a connected source whose delegation this host owns. It is
+//     the grant reference: an opaque identifier rather than a credential,
+//     re-checked against current facts on every mint, so an occurrence's run
+//     may outlive the capability that admitted it and revoking the delegation
+//     refuses the next occurrence.
+//   - binding names one of the release's declared operation bindings, and an
+//     occurrence runs under the installation's own principal from that
+//     binding's headless scopes. That is an ordinary token admission, bounded
+//     by the capability's own short lifetime — which is why it is the first
+//     proof and not the contract.
 //
-// The field names and numbers are the executing module's, not this host's:
-// they are the shape a release declares its trigger identity in. This host
-// answers that shape and never re-spells it.
+// THE NAMES ARE THE INSTALLATION DOCUMENT'S, not this host's and not the
+// executing module's read API's. That distinction is load-bearing: the module
+// that fires triggers answers an operator's READ with `source_delegation` and
+// `installation_binding`, and decodes an INSTALLATION with `source` and
+// `binding`. Only the second has to parse for a release to install at all, so
+// it is the one this host speaks — everywhere, so there is one vocabulary
+// here rather than two that can drift apart.
 type TriggerIdentity struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	SourceDelegation    string                 `protobuf:"bytes,1,opt,name=source_delegation,json=sourceDelegation,proto3" json:"source_delegation,omitempty"`
-	InstallationBinding string                 `protobuf:"bytes,2,opt,name=installation_binding,json=installationBinding,proto3" json:"installation_binding,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	Binding       string                 `protobuf:"bytes,2,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TriggerIdentity) Reset() {
@@ -5542,16 +5546,16 @@ func (*TriggerIdentity) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{65}
 }
 
-func (x *TriggerIdentity) GetSourceDelegation() string {
+func (x *TriggerIdentity) GetSource() string {
 	if x != nil {
-		return x.SourceDelegation
+		return x.Source
 	}
 	return ""
 }
 
-func (x *TriggerIdentity) GetInstallationBinding() string {
+func (x *TriggerIdentity) GetBinding() string {
 	if x != nil {
-		return x.InstallationBinding
+		return x.Binding
 	}
 	return ""
 }
@@ -5568,15 +5572,25 @@ type DeclaredTriggerSchedule struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Cron     string                 `protobuf:"bytes,1,opt,name=cron,proto3" json:"cron,omitempty"`
 	Timezone string                 `protobuf:"bytes,2,opt,name=timezone,proto3" json:"timezone,omitempty"`
-	// missed_run is MISSED_RUN_POLICY_SKIP or MISSED_RUN_POLICY_CATCH_UP.
+	// missed_run is "skip" or "catch_up", and overlap is "skip", "queue" or
+	// "cancel_previous" — the values the installation decode admits. The read
+	// API of the module that fires triggers reports the same two facts as
+	// MISSED_RUN_POLICY_* and OVERLAP_POLICY_*; those are a projection, and a
+	// declaration carrying them would be refused.
 	MissedRun string `protobuf:"bytes,3,opt,name=missed_run,json=missedRun,proto3" json:"missed_run,omitempty"`
-	// overlap is OVERLAP_POLICY_SKIP, OVERLAP_POLICY_QUEUE or
-	// OVERLAP_POLICY_CANCEL_PREVIOUS.
-	Overlap        string `protobuf:"bytes,4,opt,name=overlap,proto3" json:"overlap,omitempty"`
-	DeadlineMillis int64  `protobuf:"varint,5,opt,name=deadline_millis,json=deadlineMillis,proto3" json:"deadline_millis,omitempty"`
-	Input          []byte `protobuf:"bytes,6,opt,name=input,proto3" json:"input,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	Overlap   string `protobuf:"bytes,4,opt,name=overlap,proto3" json:"overlap,omitempty"`
+	// deadline is how long one occurrence's run may take, as an integer count of
+	// NANOSECONDS — the installation document decodes durations with plain
+	// encoding/json, so a duration string such as "10m" fails the whole document
+	// rather than the field.
+	Deadline int64 `protobuf:"varint,5,opt,name=deadline,proto3" json:"deadline,omitempty"`
+	// input_json is the input every occurrence is admitted with, as the JSON text
+	// the document carries verbatim. It is a string rather than bytes because
+	// that is what it is: a JSON value a composition pastes into an installation,
+	// and base64 would make it unreadable for the one reader who needs it.
+	InputJson     string `protobuf:"bytes,6,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeclaredTriggerSchedule) Reset() {
@@ -5637,18 +5651,18 @@ func (x *DeclaredTriggerSchedule) GetOverlap() string {
 	return ""
 }
 
-func (x *DeclaredTriggerSchedule) GetDeadlineMillis() int64 {
+func (x *DeclaredTriggerSchedule) GetDeadline() int64 {
 	if x != nil {
-		return x.DeadlineMillis
+		return x.Deadline
 	}
 	return 0
 }
 
-func (x *DeclaredTriggerSchedule) GetInput() []byte {
+func (x *DeclaredTriggerSchedule) GetInputJson() string {
 	if x != nil {
-		return x.Input
+		return x.InputJson
 	}
-	return nil
+	return ""
 }
 
 // TriggerDelegationReference is one delegation reference as an operator binds
@@ -7517,18 +7531,19 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x1eRevokeSourceDelegationResponse\x12B\n" +
 	"\n" +
 	"delegation\x18\x01 \x01(\v2\".saas.accounts.v1.SourceDelegationR\n" +
-	"delegation\"q\n" +
-	"\x0fTriggerIdentity\x12+\n" +
-	"\x11source_delegation\x18\x01 \x01(\tR\x10sourceDelegation\x121\n" +
-	"\x14installation_binding\x18\x02 \x01(\tR\x13installationBinding\"\xc1\x01\n" +
+	"delegation\"C\n" +
+	"\x0fTriggerIdentity\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x18\n" +
+	"\abinding\x18\x02 \x01(\tR\abinding\"\xbd\x01\n" +
 	"\x17DeclaredTriggerSchedule\x12\x12\n" +
 	"\x04cron\x18\x01 \x01(\tR\x04cron\x12\x1a\n" +
 	"\btimezone\x18\x02 \x01(\tR\btimezone\x12\x1d\n" +
 	"\n" +
 	"missed_run\x18\x03 \x01(\tR\tmissedRun\x12\x18\n" +
-	"\aoverlap\x18\x04 \x01(\tR\aoverlap\x12'\n" +
-	"\x0fdeadline_millis\x18\x05 \x01(\x03R\x0edeadlineMillis\x12\x14\n" +
-	"\x05input\x18\x06 \x01(\fR\x05input\"\xe7\x03\n" +
+	"\aoverlap\x18\x04 \x01(\tR\aoverlap\x12\x1a\n" +
+	"\bdeadline\x18\x05 \x01(\x03R\bdeadline\x12\x1d\n" +
+	"\n" +
+	"input_json\x18\x06 \x01(\tR\tinputJson\"\xe7\x03\n" +
 	"\x1aTriggerDelegationReference\x12\x1c\n" +
 	"\treference\x18\x01 \x01(\tR\treference\x12#\n" +
 	"\rdelegation_id\x18\x02 \x01(\tR\fdelegationId\x12\x16\n" +

@@ -793,18 +793,23 @@ Every admission carries a signed Work Context, and work no person started has
 nobody to sign one from. The answer is not a platform identity: a release
 declares WHOSE authority its occurrences borrow, in one of two arms, and this
 host re-derives that authority from current facts on every single occurrence.
-The field names are the executing module's — this host answers that shape and
-never re-spells it (`business.DeclaredTriggerIdentity`,
-`TestTriggerDeclarationMatchesTheContractFieldNames`).
+The field names and values are the INSTALLATION DOCUMENT's, not the read API
+the same module answers an operator with: it decodes `source` / `binding` and
+`"skip"` while reporting `source_delegation` / `installation_binding` and
+`MISSED_RUN_POLICY_SKIP`, and only the first parses at install. This host
+speaks the document's spelling everywhere, so there is one vocabulary here
+rather than two that drift (`business.DeclaredTriggerIdentity`, and
+`TestTriggerDeclarationMatchesTheContractFieldNames`, which pins the names AND
+the values and records the other column beside them).
 
-- **`source_delegation` is the grant reference, and the contract.** It names a
+- **`source` is the grant reference, and the contract.** It names a
   connected source, and the host resolves the live delegation from it on every
   mint (`MintSourceOperationContext` by source). An identifier rather than a
   credential, re-checked against current facts each time — which is what lets an
   occurrence's run outlive the capability that admitted it, and makes a
   revocation land on the NEXT occurrence rather than behind something held from
   the one before.
-- **`installation_binding` is the installation-principal arm, and the first
+- **`binding` is the installation-principal arm, and the first
   proof.** It names one of the release's bindings and mints from that binding's
   `headless_scopes` under the module's own principal
   (`MintModuleOperationContext`). An ordinary token admission, so the run is
@@ -944,8 +949,8 @@ without it, a missed webhook is permanent and nothing ever notices.
 
 - **The schedule is DECLARED here and FIRED somewhere else** (issue #1081).
   `business.DeclareSourceTrigger` turns a source's interval into a trigger an
-  declared release carries — a five-field cron in UTC, `MISSED_RUN_POLICY_SKIP`,
-  `OVERLAP_POLICY_SKIP`, a deadline, the input every occurrence is admitted with,
+  declared release carries — a five-field cron in UTC, `"skip"` for both missed
+  occurrences and overlap, a deadline in nanoseconds, the input every occurrence is admitted with,
   and the identity occurrences run under. This host fires nothing on it:
   `TestNoHostTimerFiresTheReconcileSchedule` walks the AST of every non-test file
   in the service and fails on the names the sweep used, because a host that also

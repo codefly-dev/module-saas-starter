@@ -44,14 +44,18 @@ const sources = {
 const declared = {
 	release: "saas_datasource_reconcile",
 	operation: "/saas.accounts.v1.DatasourceService/ReconcileSource",
+	// The declaration, spelled as an installation document carries it: the
+	// lowercase policy values the decode admits, a deadline in nanoseconds,
+	// and `source` rather than the read API's `source_delegation`.
 	schedule: {
 		cron: "*/30 * * * *",
 		timezone: "UTC",
-		missedRun: "MISSED_RUN_POLICY_SKIP",
-		overlap: "OVERLAP_POLICY_SKIP",
-		deadlineMillis: "600000",
+		missedRun: "skip",
+		overlap: "skip",
+		deadline: "600000000000",
+		inputJson: '{"org_id":"org-1","source_id":"' + SOURCE + '"}',
 	},
-	identity: { sourceDelegation: SOURCE },
+	identity: { source: SOURCE },
 	digest: "4f1c",
 	nextOccurrenceAt: "2026-10-12T18:30:00Z",
 };
@@ -132,7 +136,10 @@ describe("UnattendedWorkPlayground", () => {
 		// The declaration, as an executing module would install it.
 		expect(await screen.findByText("saas_datasource_reconcile")).toBeTruthy();
 		expect(screen.getByText("*/30 * * * *")).toBeTruthy();
-		expect(screen.getByText("MISSED_RUN_POLICY_SKIP")).toBeTruthy();
+		// The policy values are the document's, not the read API's enum
+		// spelling: what the page shows is what a composition pastes in.
+		expect(screen.getAllByText("skip").length).toBe(2);
+		expect(screen.getByText("10m")).toBeTruthy();
 		// Which arm it names, said in words: a declaration that named neither
 		// would have its occurrences refused, and the page says so rather than
 		// leaving the field blank.

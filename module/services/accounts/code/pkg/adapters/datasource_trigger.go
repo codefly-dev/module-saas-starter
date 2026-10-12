@@ -212,17 +212,20 @@ func triggerDeclarationToProto(declaration business.SourceTriggerDeclaration) *g
 	if !declaration.Declarable() {
 		return out
 	}
+	// The projection is name-for-name with the declaration, which is the point:
+	// what a reader sees is what a composition pastes into an installation, so
+	// there is nothing to translate and nothing to get wrong between them.
 	out.Schedule = &gen.DeclaredTriggerSchedule{
-		Cron:           declaration.Schedule.Cron,
-		Timezone:       declaration.Schedule.Timezone,
-		MissedRun:      declaration.Schedule.MissedRun,
-		Overlap:        declaration.Schedule.Overlap,
-		DeadlineMillis: declaration.Schedule.DeadlineMillis,
-		Input:          declaration.Schedule.Input,
+		Cron:      declaration.Schedule.Cron,
+		Timezone:  declaration.Schedule.Timezone,
+		MissedRun: declaration.Schedule.MissedRun,
+		Overlap:   declaration.Schedule.Overlap,
+		Deadline:  int64(declaration.Schedule.Deadline),
+		InputJson: string(declaration.Schedule.Input),
 	}
 	out.Identity = &gen.TriggerIdentity{
-		SourceDelegation:    declaration.Identity.SourceDelegation,
-		InstallationBinding: declaration.Identity.InstallationBinding,
+		Source:  declaration.Identity.Source,
+		Binding: declaration.Identity.Binding,
 	}
 	return out
 }

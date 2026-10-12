@@ -163,13 +163,16 @@ has nobody to sign one from. This host does not answer that with an identity of
 its own. A release declares **whose** authority its occurrences borrow, and the
 host re-derives that authority from current facts on every single occurrence.
 
-Two arms, and they are not alternatives of equal standing
+Two arms, and they are not alternatives of equal standing. The names below are
+the **installation document's** — the module that fires triggers spells the same
+facts differently in the read API it answers an operator with, and only the
+document's spelling parses at install
 (`module/services/accounts/code/pkg/business/datasource_trigger.go`):
 
 | Declared identity | What it is |
 |---|---|
-| `source_delegation` | The grant reference, and the contract. It names a connected data source; the host resolves the live delegation from it on every mint, re-checking the source, the person's membership and role, and the binding. An identifier rather than a credential — which is what lets an occurrence's run outlive the capability that admitted it, and makes a revocation land on the next occurrence. |
-| `installation_binding` | The installation-principal arm, and the first proof. It names one of the release's bindings and mints from that binding's headless scopes under the module's own principal. An ordinary token admission, bounded by the capability's own short lifetime. |
+| `source` | The grant reference, and the contract. It names a connected data source; the host resolves the live delegation from it on every mint, re-checking the source, the person's membership and role, and the binding. An identifier rather than a credential — which is what lets an occurrence's run outlive the capability that admitted it, and makes a revocation land on the next occurrence. |
+| `binding` | The installation-principal arm, and the first proof. It names one of the release's bindings and mints from that binding's headless scopes under the module's own principal. An ordinary token admission, bounded by the capability's own short lifetime. |
 
 A composition must declare the grant for whichever arm it uses
 (`source_delegation_scopes`, `headless_scopes`) and the audience its executing

@@ -1028,23 +1028,27 @@ message RevokeSourceDelegationResponse {
 // EXACTLY ONE field is set, and the two are not alternatives of equal
 // standing:
 //
-//   - source_delegation names a connected source whose delegation this host
-//     owns. It is the grant reference: an opaque identifier rather than a
-//     credential, re-checked against current facts on every mint, so an
-//     occurrence's run may outlive the capability that admitted it and
-//     revoking the delegation refuses the next occurrence.
-//   - installation_binding names one of the release's declared operation
-//     bindings, and an occurrence runs under the installation's own principal
-//     from that binding's headless scopes. That is an ordinary token
-//     admission, bounded by the capability's own short lifetime — which is
-//     why it is the first proof and not the contract.
+//   - source names a connected source whose delegation this host owns. It is
+//     the grant reference: an opaque identifier rather than a credential,
+//     re-checked against current facts on every mint, so an occurrence's run
+//     may outlive the capability that admitted it and revoking the delegation
+//     refuses the next occurrence.
+//   - binding names one of the release's declared operation bindings, and an
+//     occurrence runs under the installation's own principal from that
+//     binding's headless scopes. That is an ordinary token admission, bounded
+//     by the capability's own short lifetime — which is why it is the first
+//     proof and not the contract.
 //
-// The field names and numbers are the executing module's, not this host's:
-// they are the shape a release declares its trigger identity in. This host
-// answers that shape and never re-spells it.
+// THE NAMES ARE THE INSTALLATION DOCUMENT'S, not this host's and not the
+// executing module's read API's. That distinction is load-bearing: the module
+// that fires triggers answers an operator's READ with `source_delegation` and
+// `installation_binding`, and decodes an INSTALLATION with `source` and
+// `binding`. Only the second has to parse for a release to install at all, so
+// it is the one this host speaks — everywhere, so there is one vocabulary
+// here rather than two that can drift apart.
 message TriggerIdentity {
-  string source_delegation = 1;
-  string installation_binding = 2;
+  string source = 1;
+  string binding = 2;
 }
 
 // DeclaredTriggerSchedule is the clock a release declares, in the vocabulary
@@ -1058,13 +1062,23 @@ message TriggerIdentity {
 message DeclaredTriggerSchedule {
   string cron = 1;
   string timezone = 2;
-  // missed_run is MISSED_RUN_POLICY_SKIP or MISSED_RUN_POLICY_CATCH_UP.
+  // missed_run is "skip" or "catch_up", and overlap is "skip", "queue" or
+  // "cancel_previous" — the values the installation decode admits. The read
+  // API of the module that fires triggers reports the same two facts as
+  // MISSED_RUN_POLICY_* and OVERLAP_POLICY_*; those are a projection, and a
+  // declaration carrying them would be refused.
   string missed_run = 3;
-  // overlap is OVERLAP_POLICY_SKIP, OVERLAP_POLICY_QUEUE or
-  // OVERLAP_POLICY_CANCEL_PREVIOUS.
   string overlap = 4;
-  int64 deadline_millis = 5;
-  bytes input = 6;
+  // deadline is how long one occurrence's run may take, as an integer count of
+  // NANOSECONDS — the installation document decodes durations with plain
+  // encoding/json, so a duration string such as "10m" fails the whole document
+  // rather than the field.
+  int64 deadline = 5;
+  // input_json is the input every occurrence is admitted with, as the JSON text
+  // the document carries verbatim. It is a string rather than bytes because
+  // that is what it is: a JSON value a composition pastes into an installation,
+  // and base64 would make it unreadable for the one reader who needs it.
+  string input_json = 6;
 }
 
 // TriggerDelegationReference is one delegation reference as an operator binds

@@ -173,11 +173,11 @@ function SourceTriggerRow({
  * so it is said plainly instead of being left blank.
  */
 export function declaredIdentity(declaration?: {
-	identity?: { sourceDelegation: string; installationBinding: string };
+	identity?: { source: string; binding: string };
 }): string {
 	const identity = declaration?.identity;
-	if (identity?.sourceDelegation) return "A delegation reference";
-	if (identity?.installationBinding) return "An installation binding";
+	if (identity?.source) return "A delegation reference";
+	if (identity?.binding) return "An installation binding";
 	return "None — occurrences would be refused";
 }
 

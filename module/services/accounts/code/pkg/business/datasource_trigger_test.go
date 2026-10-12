@@ -22,42 +22,71 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// triggerContractFields are the field names an declared release's trigger
-// declaration carries, as the module that validates it spells them.
+// triggerContractFields are the field names and values an INSTALLATION
+// DOCUMENT carries, as the module that fires triggers decodes one.
 //
-// They are PINNED here, by name, because this host cannot verify them: the
-// declaration leaves as JSON a composition folds into an installation
-// document, and a rename on either side is a release that will not install
-// rather than a schedule that visibly breaks. A test that only checked this
-// host's own round-trip would pass through any rename at all.
+// They are PINNED here, by name and by value, because this host cannot verify
+// them: the declaration leaves as JSON a composition folds into an
+// installation document, and anything the decode does not accept is a release
+// that will not install at all — not a schedule that visibly breaks.
+//
+// THE DISTINCTION THIS FILE EXISTS FOR. That module spells the same facts two
+// different ways, and only one of them parses:
+//
+//	                 installation document     operator's read API
+//	identity arms    source / binding          source_delegation / installation_binding
+//	missed-run       "skip" / "catch_up"       MISSED_RUN_POLICY_SKIP / …_CATCH_UP
+//	overlap          "skip" / "queue" / …      OVERLAP_POLICY_SKIP / …
+//	deadline         deadline, nanoseconds     deadline_millis
+//	arrival          event                     arrival
+//
+// A first version of this test pinned the right-hand column — the read API's
+// names, which are the ones its proto publishes and therefore the ones a
+// reader of that proto reaches for first. Every assertion passed, and the
+// declaration it was guarding would have been refused at install on every
+// field. So what is pinned here is the left-hand column, and the right-hand
+// one is recorded above precisely so the next reader does not make the same
+// substitution.
 var triggerContractFields = struct {
-	schedule []string
-	identity []string
+	schedule   []string
+	identity   []string
+	missedRuns []string
+	overlaps   []string
 }{
-	schedule: []string{"cron", "timezone", "missed_run", "overlap", "deadline_millis", "input"},
-	identity: []string{"source_delegation", "installation_binding"},
+	schedule:   []string{"cron", "timezone", "missed_run", "overlap", "deadline", "input"},
+	identity:   []string{"source", "binding"},
+	missedRuns: []string{"skip", "catch_up"},
+	overlaps:   []string{"skip", "queue", "cancel_previous"},
 }
 
-// The declared schedule and identity serialize to exactly the contract's field
+// The declared schedule and identity serialize to exactly the document's field
 // names — no more, no fewer, and none renamed.
 func TestTriggerDeclarationMatchesTheContractFieldNames(t *testing.T) {
 	schedule, err := json.Marshal(business.DeclaredTriggerSchedule{
 		Cron: "*/30 * * * *", Timezone: "UTC",
 		MissedRun: business.DatasourceTriggerMissedRun, Overlap: business.DatasourceTriggerOverlap,
-		DeadlineMillis: 1, Input: []byte(`{}`),
+		Deadline: time.Minute, Input: json.RawMessage(`{}`),
 	})
 	require.NoError(t, err)
 	var scheduleFields map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(schedule, &scheduleFields))
 	require.ElementsMatch(t, triggerContractFields.schedule, keysOf(scheduleFields),
-		"the schedule a release declares is validated by the module that fires it, field by field")
+		"the schedule a release declares is decoded field by field by the module that fires it")
+
+	// The deadline is an integer count of nanoseconds, not a duration string
+	// and not milliseconds: the document is decoded by plain encoding/json
+	// into a Go time.Duration, so "1m0s" fails the whole document and 60000
+	// silently means sixty microseconds.
+	require.JSONEq(t, "60000000000", string(scheduleFields["deadline"]))
+	// And the input is the JSON value itself, not base64 of its bytes.
+	require.JSONEq(t, "{}", string(scheduleFields["input"]))
 
 	// Both arms are optional on the wire and exactly one is ever set, so each
 	// is serialized on its own: a shape carrying both would be a declaration
 	// with two answers, and one carrying neither is refused at install.
 	for _, identity := range []business.DeclaredTriggerIdentity{
-		{SourceDelegation: "source"},
-		{InstallationBinding: "binding"},
+		{Source: "source"},
+		{Binding: "binding"},
 	} {
 		encoded, err := json.Marshal(identity)
 		require.NoError(t, err)
@@ -68,10 +97,10 @@ func TestTriggerDeclarationMatchesTheContractFieldNames(t *testing.T) {
 		require.True(t, identity.Declared())
 	}
 	require.False(t, business.DeclaredTriggerIdentity{}.Declared(), "a trigger naming no identity is refused at install")
-	require.False(t, business.DeclaredTriggerIdentity{SourceDelegation: "s", InstallationBinding: "b"}.Declared(),
+	require.False(t, business.DeclaredTriggerIdentity{Source: "s", Binding: "b"}.Declared(),
 		"naming both arms is a declaration with two answers")
-	require.True(t, business.DeclaredTriggerIdentity{SourceDelegation: "s"}.Reference())
-	require.False(t, business.DeclaredTriggerIdentity{InstallationBinding: "b"}.Reference())
+	require.True(t, business.DeclaredTriggerIdentity{Source: "s"}.Reference())
+	require.False(t, business.DeclaredTriggerIdentity{Binding: "b"}.Reference())
 }
 
 func keysOf(fields map[string]json.RawMessage) []string {
@@ -86,10 +115,12 @@ func keysOf(fields map[string]json.RawMessage) []string {
 // any other way is refused by the module that validates it, and a host that
 // declared one would publish a release nobody can install.
 func TestTriggerDeclarationUsesDeclaredPolicyValues(t *testing.T) {
-	require.Contains(t, []string{"MISSED_RUN_POLICY_SKIP", "MISSED_RUN_POLICY_CATCH_UP"}, business.DatasourceTriggerMissedRun)
-	require.Contains(t,
-		[]string{"OVERLAP_POLICY_SKIP", "OVERLAP_POLICY_QUEUE", "OVERLAP_POLICY_CANCEL_PREVIOUS"},
-		business.DatasourceTriggerOverlap)
+	require.Contains(t, triggerContractFields.missedRuns, business.DatasourceTriggerMissedRun)
+	require.Contains(t, triggerContractFields.overlaps, business.DatasourceTriggerOverlap)
+	// Not the enum spelling an operator's read reports. A declaration carrying
+	// it decodes to no policy at all.
+	require.NotContains(t, business.DatasourceTriggerMissedRun, "MISSED_RUN_POLICY")
+	require.NotContains(t, business.DatasourceTriggerOverlap, "OVERLAP_POLICY")
 	require.Equal(t, "UTC", business.DatasourceTriggerTimezone)
 }
 
@@ -152,7 +183,7 @@ func TestTriggerDeclarationPrefersTheReferenceArmAndFingerprintsItself(t *testin
 	revoked := []business.TriggerDelegationReference{{Reference: source.ID, DelegationID: "d1", Active: false}}
 
 	referenced := business.DeclareSourceTrigger(source, live, nil)
-	require.Equal(t, source.ID, referenced.Identity.SourceDelegation)
+	require.Equal(t, source.ID, referenced.Identity.Source)
 	require.True(t, referenced.Identity.Reference())
 
 	// A revoked reference is not one: the declaration names no identity, which

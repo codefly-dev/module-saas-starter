@@ -546,18 +546,33 @@ is a release that will not install rather than a schedule that quietly stops:
   "schedule": {
     "cron": "*/30 * * * *",
     "timezone": "UTC",
-    "missed_run": "MISSED_RUN_POLICY_SKIP",
-    "overlap": "OVERLAP_POLICY_SKIP",
-    "deadline_millis": 600000,
+    "missed_run": "skip",
+    "overlap": "skip",
+    "deadline": 600000000000,
     "input": {"org_id": "...", "source_id": "..."}
   },
-  "identity": {"source_delegation": "<source id>"}
+  "identity": {"source": "<source id>"}
 }
 ```
 
+**The names above are the INSTALLATION DOCUMENT's, and that distinction is
+load-bearing.** The module that fires triggers spells the same facts two ways:
+it decodes an installation with `source` / `binding`, `"skip"` / `"catch_up"`,
+`"skip"` / `"queue"` / `"cancel_previous"`, a `deadline` in **nanoseconds** and
+`event` for an arrival — and answers an operator's READ with
+`source_delegation` / `installation_binding`, `MISSED_RUN_POLICY_*`,
+`OVERLAP_POLICY_*`, `deadline_millis` and `arrival`. Only the first has to parse
+for a release to install at all, so it is the one this host speaks, in its Go
+types, in its own read surface and on its page: what a reader sees is what a
+composition pastes in. A declaration carrying the read API's spelling is
+refused at install on every field, which is a failure nothing in this host can
+observe — hence `TestTriggerDeclarationMatchesTheContractFieldNames`, which
+pins the document's names *and values* and records the other column beside
+them.
+
 **Exactly one identity, and the two are not alternatives of equal standing.**
 
-- `source_delegation` — **the grant reference, and the contract.** It names a
+- `source` — **the grant reference, and the contract.** It names a
   connected datasource source. On every occurrence the host resolves that
   source's active delegation (`MintSourceOperationContext` by `source_id`) and
   re-checks all of it: the delegation is live, the binding is still declared and
@@ -568,7 +583,7 @@ is a release that will not install rather than a schedule that quietly stops:
   recognises as a grant reference, which is what lets an occurrence's run
   outlive the capability that admitted it. Nothing is cached: a revocation lands
   on the next occurrence, not behind something held from the last one.
-- `installation_binding` — **the installation-principal arm, and the first
+- `binding` — **the installation-principal arm, and the first
   proof.** It names one of the release's declared bindings and mints from that
   binding's `headless_scopes` under the module's own principal
   (`MintModuleOperationContext`). Owner and sole actor are that principal, so
