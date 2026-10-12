@@ -229,6 +229,67 @@ describe("generic frontend plugin BFF", () => {
 		}
 	});
 
+	// Both boundaries that forward trace context — this BFF and the solution
+	// proxy — now share src/lib/trace-context.ts, so the same header can never
+	// get two answers depending on which one a caller happens to reach. The
+	// inline check this replaced lowercased the value first, which forwarded an
+	// uppercase-hex traceparent the solution proxy dropped; the W3C value is
+	// lowercase hex, so the strict reading is the correct one.
+	it("drops an uppercase-hex traceparent, as the solution proxy does", async () => {
+		const fetchMock = vi.fn(
+			async (target: RequestInfo | URL, init?: RequestInit) => {
+				void target;
+				void init;
+				return new Response("{}");
+			},
+		);
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/traffic", {
+				headers: {
+					traceparent:
+						"00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01",
+				},
+			}),
+			params,
+			dependencies({ fetch: fetchMock as unknown as typeof fetch }),
+		);
+		expect(response.status).toBe(200);
+		expect(
+			new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("traceparent"),
+		).toBeNull();
+	});
+
+	// The frozen v1 contract forwards traceparent and nothing else of the trace
+	// context: tracestate, baggage and vendor trace headers stay behind, which
+	// is why this boundary calls parse/serialize rather than forwardTraceContext.
+	it("forwards traceparent without tracestate or baggage", async () => {
+		const fetchMock = vi.fn(
+			async (target: RequestInfo | URL, init?: RequestInit) => {
+				void target;
+				void init;
+				return new Response("{}");
+			},
+		);
+		const traceparent =
+			"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/traffic", {
+				headers: {
+					traceparent,
+					tracestate: "vendor=abc",
+					baggage: "userId=alice",
+				},
+			}),
+			params,
+			dependencies({ fetch: fetchMock as unknown as typeof fetch }),
+		);
+		expect(response.status).toBe(200);
+		const forwarded = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+		expect(forwarded.get("traceparent")).toBe(traceparent);
+		expect(forwarded.has("tracestate")).toBe(false);
+		expect(forwarded.has("baggage")).toBe(false);
+	});
+
 	it("requires a well-formed bearer without trusting the presence cookie", async () => {
 		for (const authorization of [
 			null,

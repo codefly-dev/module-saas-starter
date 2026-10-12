@@ -11,6 +11,8 @@ import {
 	supportsFrontendPluginContract,
 } from "@codefly-dev/saas-plugin-contract/capabilities";
 
+import { parseTraceparent, serializeTraceparent } from "@/lib/trace-context";
+
 import {
 	type PluginServiceResolution,
 	resolvePluginService,
@@ -22,7 +24,6 @@ const CAPABILITY_RESPONSE_LIMIT = 16 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]+$/;
 const BEARER = /^Bearer [A-Za-z0-9._~-]{16,8192}$/;
-const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
 const REST_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const CONNECT_METHODS = new Set(["POST"]);
 const REQUEST_HEADERS = [
@@ -214,10 +215,21 @@ function proxyRequestHeaders(request: Request, requestID: string): Headers {
 	}
 	headers.set("authorization", request.headers.get("authorization") ?? "");
 	headers.set("x-request-id", requestID);
-	const traceparent = request.headers.get("traceparent")?.toLowerCase();
-	const trace = traceparent ? TRACEPARENT.exec(traceparent) : null;
-	if (trace && !/^0+$/.test(trace[1]) && !/^0+$/.test(trace[2])) {
-		headers.set("traceparent", traceparent ?? "");
+	// One parser for every boundary in this service (src/lib/trace-context.ts),
+	// so the solution proxy and this BFF never answer the same header two ways.
+	// It is stricter than the inline check it replaces: the W3C value is
+	// lowercase hex, so an uppercase one is not "structurally valid" and is now
+	// dropped rather than lowercased into validity.
+	//
+	// handlePluginBffRequest rejects anything without a syntactically valid
+	// Bearer before it reaches here, so this caller has presented a credential
+	// the backend will verify and may set the sampling decision.
+	const trace = parseTraceparent(request.headers.get("traceparent"));
+	if (trace) {
+		headers.set(
+			"traceparent",
+			serializeTraceparent(trace, { honorSampledFlag: true }),
+		);
 	}
 	return headers;
 }

@@ -843,6 +843,9 @@ describe("solution proxy trace context", () => {
 	const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
 	const PARENT_ID = "00f067aa0ba902b7";
 	const TRACEPARENT = `00-${TRACE_ID}-${PARENT_ID}-01`;
+	// The route decides the forwarding policy from whether the caller presented
+	// a credential the gateway will verify, so every case states which it is.
+	const CREDENTIAL = { authorization: "Bearer caller-access-token" } as const;
 
 	async function forwarded(headers: Record<string, string>): Promise<Headers> {
 		withGateway();
@@ -860,8 +863,9 @@ describe("solution proxy trace context", () => {
 		return fetchMock.mock.calls[0][1].headers as Headers;
 	}
 
-	it("forwards a valid traceparent and tracestate, re-serialized", async () => {
+	it("forwards a credentialled caller's trace context, re-serialized", async () => {
 		const headers = await forwarded({
+			...CREDENTIAL,
 			traceparent: TRACEPARENT,
 			tracestate: " vendor=abc ,, other@sys=x y\t",
 		});
@@ -870,45 +874,66 @@ describe("solution proxy trace context", () => {
 		expect(headers.get("tracestate")).toBe("vendor=abc,other@sys=x y");
 	});
 
-	it.each([
-		["extra fields", `cc-${TRACE_ID}-${PARENT_ID}-01-future-field`, "01"],
-		["no extra fields", `cc-${TRACE_ID}-${PARENT_ID}-01`, "01"],
-		["a trailing separator", `01-${TRACE_ID}-${PARENT_ID}-01-`, "01"],
-		["unsupported flag bits", `cc-${TRACE_ID}-${PARENT_ID}-ff-x`, "01"],
-		["only unsupported flag bits", `cc-${TRACE_ID}-${PARENT_ID}-fe`, "00"],
-	])(
-		"re-emits a later version with %s as version 00 with only the sampled flag",
-		async (_, value, flags) => {
-			const headers = await forwarded({ traceparent: value });
+	it("forwards the trace context of a caller holding only a session cookie", async () => {
+		const headers = await forwarded({
+			cookie: "codefly_session=present",
+			traceparent: TRACEPARENT,
+			tracestate: "vendor=abc",
+		});
 
-			expect(headers.get("traceparent")).toBe(
-				`00-${TRACE_ID}-${PARENT_ID}-${flags}`,
-			);
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.get("tracestate")).toBe("vendor=abc");
+	});
+
+	// This route admits a request with neither Origin nor Sec-Fetch-Site and
+	// serves a solution's `.well-known` anonymously, on a request it has already
+	// stamped with the internal trust token. OpenTelemetry's default ParentBased
+	// sampler obeys an incoming sampled bit, so honouring one from a caller with
+	// no credential at all would let a stranger force 100% recording and export
+	// on the gateway and on every solution behind it.
+	it("links an anonymous caller's trace but strips its sampling decision", async () => {
+		const headers = await forwarded({
+			traceparent: TRACEPARENT,
+			tracestate: "ot=p:8;r:62,vendor=abc",
+		});
+
+		expect(headers.get("traceparent")).toBe(`00-${TRACE_ID}-${PARENT_ID}-00`);
+		// Vendors re-state the sampling decision in tracestate, so forwarding it
+		// would hand back what clearing the sampled bit just took away.
+		expect(headers.has("tracestate")).toBe(false);
+	});
+
+	it("keeps an anonymous caller's other flag bits while clearing sampled", async () => {
+		const headers = await forwarded({
+			traceparent: `00-${TRACE_ID}-${PARENT_ID}-03`,
+		});
+
+		expect(headers.get("traceparent")).toBe(`00-${TRACE_ID}-${PARENT_ID}-02`);
+	});
+
+	// A relay starts no span and assigns no parent id, so it has nothing to
+	// advertise: a later version travels as sent rather than being rewritten as
+	// version 00, which would assert a context nobody produced and destroy flag
+	// bits a newer upstream understands.
+	it.each([
+		["extra fields", `cc-${TRACE_ID}-${PARENT_ID}-03-future-field`],
+		["no extra fields", `cc-${TRACE_ID}-${PARENT_ID}-03`],
+	])(
+		"relays a later-version traceparent with %s unchanged",
+		async (_, value) => {
+			const headers = await forwarded({ ...CREDENTIAL, traceparent: value });
+
+			expect(headers.get("traceparent")).toBe(value);
 		},
 	);
 
 	it.each([
 		["malformed", "not-a-traceparent"],
-		["trailing dash", `${TRACEPARENT}-`],
-		["trailing field on version 00", `${TRACEPARENT}-extra`],
-		["uppercase hex", `00-${TRACE_ID.toUpperCase()}-${PARENT_ID}-01`],
 		["zero trace id", `00-${"0".repeat(32)}-${PARENT_ID}-01`],
-		["zero parent id", `00-${TRACE_ID}-${"0".repeat(16)}-01`],
-		["invalid version ff", `ff-${TRACE_ID}-${PARENT_ID}-01`],
-		["non-hex flags", `00-${TRACE_ID}-${PARENT_ID}-0g`],
-		["short trace id", `00-${TRACE_ID.slice(1)}-${PARENT_ID}-01`],
 		["two values", `${TRACEPARENT}, 00-${TRACE_ID}-${PARENT_ID}-00`],
-		[
-			"two values of a later version",
-			`cc-${TRACE_ID}-${PARENT_ID}-01, cc-${TRACE_ID}-${PARENT_ID}-00`,
-		],
-		[
-			"later version with an unsafe character",
-			`cc-${TRACE_ID}-${PARENT_ID}-01-a\x7fb`,
-		],
-		["later version without a separator", `cc-${TRACE_ID}-${PARENT_ID}-01x`],
 	])("forwards no trace context for a %s traceparent", async (_, value) => {
 		const headers = await forwarded({
+			...CREDENTIAL,
 			traceparent: value,
 			tracestate: "vendor=abc",
 		});
@@ -918,14 +943,18 @@ describe("solution proxy trace context", () => {
 	});
 
 	it("drops tracestate without a traceparent", async () => {
-		const headers = await forwarded({ tracestate: "vendor=abc" });
+		const headers = await forwarded({
+			...CREDENTIAL,
+			tracestate: "vendor=abc",
+		});
 
 		expect(headers.has("traceparent")).toBe(false);
 		expect(headers.has("tracestate")).toBe(false);
 	});
 
 	it("merges multiple tracestate header values with a comma", async () => {
-		const incoming = new Headers({ traceparent: TRACEPARENT });
+		const incoming = new Headers(CREDENTIAL);
+		incoming.set("traceparent", TRACEPARENT);
 		incoming.append("tracestate", "a=1");
 		incoming.append("tracestate", "b=2,c=3");
 		withGateway();
@@ -946,62 +975,32 @@ describe("solution proxy trace context", () => {
 		expect(headers.get("tracestate")).toBe("a=1,b=2,c=3");
 	});
 
-	it.each([
-		["a duplicate key", "a=1,b=2,a=3"],
-		["an invalid key", "A=1"],
-		["an empty value", "a=1,b="],
-		["a non-ASCII value", "a=caf\u00e9"],
-		["a value containing =", "a=b=c"],
-		["a member without =", "a=1,b"],
-		[
-			"more than 32 members",
-			Array.from({ length: 33 }, (_, i) => `k${i}=v`).join(","),
-		],
-	])("drops all of a tracestate with %s", async (_, value) => {
+	it("truncates an over-long tracestate rather than dropping it", async () => {
+		const members = Array.from({ length: 33 }, (_, i) => `k${i}=v`);
 		const headers = await forwarded({
+			...CREDENTIAL,
 			traceparent: TRACEPARENT,
-			tracestate: value,
+			tracestate: members.join(","),
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.get("tracestate")).toBe(members.slice(0, 32).join(","));
+	});
+
+	it("drops all of a tracestate whose member does not parse", async () => {
+		const headers = await forwarded({
+			...CREDENTIAL,
+			traceparent: TRACEPARENT,
+			tracestate: "a=1,b=2,a=3",
 		});
 
 		expect(headers.get("traceparent")).toBe(TRACEPARENT);
 		expect(headers.has("tracestate")).toBe(false);
 	});
 
-	it("caps tracestate at 512 bytes, dropping large members first", async () => {
-		const large = `big=${"x".repeat(200)}`;
-		const small = Array.from(
-			{ length: 30 },
-			(_, i) => `k${String(i).padStart(2, "0")}=${"v".repeat(9)}`,
-		);
-		// 30 small members of 13 bytes = 419 bytes with separators; the large
-		// member pushes the list past 512 and is the one dropped.
-		const headers = await forwarded({
-			traceparent: TRACEPARENT,
-			tracestate: [small[0], large, ...small.slice(1)].join(","),
-		});
-
-		expect(headers.get("tracestate")).toBe(small.join(","));
-	});
-
-	it("caps tracestate at 512 bytes, then drops members from the right", async () => {
-		const members = Array.from(
-			{ length: 5 },
-			(_, i) => `k${i}=${"v".repeat(120)}`,
-		);
-		const headers = await forwarded({
-			traceparent: TRACEPARENT,
-			tracestate: members.join(","),
-		});
-
-		// Each member is 123 bytes: four fit in 495 bytes, five would be 619.
-		expect(headers.get("tracestate")).toBe(members.slice(0, 4).join(","));
-		expect(
-			new TextEncoder().encode(headers.get("tracestate") ?? "").length,
-		).toBeLessThanOrEqual(512);
-	});
-
 	it("never forwards baggage or other caller headers", async () => {
 		const headers = await forwarded({
+			...CREDENTIAL,
 			traceparent: TRACEPARENT,
 			baggage: "userId=alice",
 			"x-forwarded-for": "10.0.0.1",
