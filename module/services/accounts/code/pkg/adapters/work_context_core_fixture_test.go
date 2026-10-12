@@ -46,6 +46,9 @@ type sealAnswersFake struct {
 	// the business service, so a module capability carries the revision a
 	// consumer's CheckAuthorizationRevision confirms it against.
 	moduleRevision func(ctx context.Context, orgID, ownerID string) (uint64, bool, error)
+	// revisionFrom, when set, answers every person's revision live — for a
+	// fixture whose authority facts a test replaces after the server is built.
+	revisionFrom func() uint64
 }
 
 func newSealAnswersFake(revision uint64) *sealAnswersFake {
@@ -106,6 +109,9 @@ func (f *sealAnswersFake) WorkContextRevision(ctx context.Context, orgID, ownerI
 	defer f.mu.Unlock()
 	if revision, ok := f.revisions[ownerID]; ok {
 		return revision, nil
+	}
+	if f.revisionFrom != nil {
+		return f.revisionFrom(), nil
 	}
 	return f.revision, nil
 }

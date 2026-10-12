@@ -199,7 +199,7 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	require.NoError(t, err)
 	workContextSingleton = &WorkContextAuthorityServer{}
 	workContextSingleton.Configure(WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "test-key", PrivateKey: key, Authority: sourceReadIdentityAuthority{facts},
-		Seals: newSealAnswersFake(facts.facts.EffectiveRevision())})
+		Seals: sourceReadSeals(facts)})
 	workContextSingleton.replay = &memoryReplay{}
 	SetInternalToken("source-read-test-perimeter")
 	internal := grpc.NewServer(grpc.UnaryInterceptor(grpcAuthInterceptor(nil, rpcExposureInternal)))
@@ -514,4 +514,13 @@ func TestSourceReadNeverDisclosesMetadataForAnInaccessibleCollection(t *testing.
 			require.NotEqual(t, "Example Outsider", grant.SubjectLabel)
 		}
 	}
+}
+
+// sourceReadSeals answers the revision of the fixture's CURRENT facts, which a
+// test replaces to revoke or widen: a mint reads the revision live, as the host's
+// does, rather than one frozen when the server was built.
+func sourceReadSeals(facts *workContextAuthorityFake) *sealAnswersFake {
+	seals := newSealAnswersFake(0)
+	seals.revisionFrom = func() uint64 { return facts.facts.EffectiveRevision() }
+	return seals
 }

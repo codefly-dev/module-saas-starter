@@ -77,10 +77,42 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		return err
 	}
 	presented, err := authority.verifyIssued(ctx, encodedParent)
-	if err != nil || presented.Context().GetTenantId() == "" || presented.Context().GetOwnerPrincipalId() == "" {
+	var verified *basev0.WorkContextV1
+	switch {
+	case err == nil:
+		verified = presented.Context()
+	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal):
+		// Refused for live state that moved since the mint. Core reaches those
+		// checks only after the signature, issuer, window and audience held, so
+		// the claims are the issuer's own and the refusal is attributed to the
+		// owner they name — it is not a probe.
+		decoded, decodeErr := workcontext.Decode(encodedParent)
+		if decodeErr != nil {
+			return nil, refuseUnidentifiedParent()
+		}
+		stale := decoded.Context()
+		staleErr := refusedReadBack(err, nil)
+		if service != nil {
+			service.ObserveDelegatedAudienceExchange(auth.WithVerifiedDatabaseIdentity(ctx, stale.OwnerPrincipalId, stale.TenantId),
+				business.DelegatedAudienceExchangeObservation{
+					Caller:      caller,
+					OwnerID:     stale.OwnerPrincipalId,
+					ActorID:     delegatedAudienceActorID(stale),
+					Tenant:      stale.TenantId,
+					BindingKind: request.kind,
+					BindingID:   request.bindingID,
+					Lookup:      request.lookup,
+					Outcome:     business.DelegatedAudienceExchangeRefused,
+					RefusalCode: delegatedAudienceRefusalCode(staleErr),
+				})
+		}
+		return nil, staleErr
+	default:
 		return nil, refuseUnidentifiedParent()
 	}
-	verified := presented.Context()
+	if verified.GetTenantId() == "" || verified.GetOwnerPrincipalId() == "" {
+		return nil, refuseUnidentifiedParent()
+	}
 	// Identity is sealed in the verified parent and bounded by the authenticated
 	// module installation. No user-supplied owner/actor enters database context.
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, verified.OwnerPrincipalId, verified.TenantId)

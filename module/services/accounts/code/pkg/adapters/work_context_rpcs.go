@@ -1424,7 +1424,7 @@ func (s *WorkContextAuthorityServer) verifyParent(
 ) (*workcontext.Verified, *business.Principal, error) {
 	parent, err := s.verifyIssued(ctx, encoded)
 	if err != nil {
-		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
+		return nil, nil, refusedReadBack(err, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller"))
 	}
 	claims := parent.Context()
 	if claims.GetTenantId() != orgID || claims.GetOwnerPrincipalId() != ownerID {
@@ -1449,7 +1449,10 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 	encoded string,
 ) (*workcontext.Verified, *business.Principal, error) {
 	parent, err := s.verifyIssued(ctx, encoded)
-	if err != nil || parent.Context().GetTenantId() != orgID {
+	if err != nil {
+		return nil, nil, refusedReadBack(err, status.Error(codes.PermissionDenied, "parent Work Context is not valid"))
+	}
+	if parent.Context().GetTenantId() != orgID {
 		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
 	}
 	claims := parent.Context()

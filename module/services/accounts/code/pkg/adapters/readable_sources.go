@@ -46,7 +46,7 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	// that spelled one here would answer "no access" for every other consumer.
 	verified, err := authority.verifyIssued(ctx, values[0])
 	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
+		return nil, refusedReadBack(err, status.Error(codes.Unauthenticated, "invalid viewer Work Context"))
 	}
 	claims := verified.Context()
 	// Both refusals answer identically. Telling "that audience declares no content"

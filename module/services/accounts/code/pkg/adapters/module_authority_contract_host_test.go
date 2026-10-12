@@ -238,7 +238,9 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 	require.NoError(t, err)
 	workContextSingleton.Configure(WorkContextAuthorityConfiguration{
 		Issuer: "accounts.contract", KeyID: "contract-key", PrivateKey: key, Authority: &workContextAuthorityFake{},
+		Seals: moduleSealAnswers(12),
 	})
+	workContextSingleton.replay = &memoryReplay{}
 	require.NoError(t, workContextSingleton.configureErr)
 	SetInternalToken(input.InternalToken)
 	return tokens

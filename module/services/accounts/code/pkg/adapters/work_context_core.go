@@ -12,6 +12,8 @@ import (
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
 )
@@ -391,4 +393,16 @@ func workContextGrants(claims *basev0.WorkContextV1, resourceKind, action, resou
 		}
 	}
 	return false
+}
+
+// refusedReadBack maps a refusal from verifying a capability this host issued.
+// A capability the issuer's live state has moved past — a superseded revision, a
+// moved seal or epoch — answers FailedPrecondition, the code the host's own
+// recheck has always answered a stale capability with and the one a consumer
+// re-mints on. Anything else answers invalid, with the site's own wording.
+func refusedReadBack(err error, invalid error) error {
+	if errors.Is(err, workcontext.ErrRevoked) || errors.Is(err, workcontext.ErrNoSeal) {
+		return status.Error(codes.FailedPrecondition, "Work Context authorization revision is stale: its authority changed since it was minted")
+	}
+	return invalid
 }

@@ -36,7 +36,7 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	}
 	verified, err := authority.verifyIssued(ctx, values[0])
 	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
+		return nil, refusedReadBack(err, status.Error(codes.Unauthenticated, "invalid viewer Work Context"))
 	}
 	claims := verified.Context()
 	declared, err := service.ModuleContentResources(claims.GetAudience())
