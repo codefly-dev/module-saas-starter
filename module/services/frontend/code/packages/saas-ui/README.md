@@ -170,9 +170,10 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues
-  (webhook delivery, periodic reconcile, or a tenant's "Sync now" forced
-  reconcile) — it never sets `last_synced_at`, so "Never" is dropped rather than
-  shown above live provenance. Loading/error/empty are first-class. Connect,
+  (a webhook delivery, or a reconcile pass — a declared schedule's occurrence or
+  a tenant's "Sync now", which are the same admission) — it never sets
+  `last_synced_at`, so "Never" is dropped rather than shown above live
+  provenance. Loading/error/empty are first-class. Connect,
   Sync, Reconnect, Use GitHub App and Delete are offered only to a viewer who
   may use them (`canManage`; with a `gateway`, read from the viewer's
   credential): anyone else keeps a row's History and is told who connects
@@ -258,7 +259,11 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
     offers so the consumer can show the ingesting module's progress.
   - **Error** — `DEGRADED` or `PAUSED`: the host's `status_reason` verbatim,
     and Reconnect, which asks for the credential again (a replacement PAT, or
-    nothing on the App and public paths) and enqueues a sync.
+    nothing on the App and public paths) and enqueues a sync. Reconnect needs
+    the client's `reconnectSource`: a reconnect rebinds whose authority the
+    source's syncs run under, which is not a reconcile and has no idempotent
+    form, so a client without it is told who reconnects rather than offered a
+    control that would do something else.
   There is no fourth state. A source whose status an **older host does not
   report** (the field decodes to its proto default, which the gateway maps to
   `unknown` rather than guessing) reads as **Connected** and says its state is
@@ -291,6 +296,26 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   Do not mount this and `<DatasourcesPanel>` on the same page: both redeem the
   GitHub App's single-use return state, and the loser reports a rejection for an
   installation that in fact succeeded.
+- **"Sync now" is an admission, not a request.** It runs
+  `DatasourceService/ReconcileSource` — the host operation a source's *declared*
+  reconcile schedule admits one occurrence of — under an **effect identity the
+  kit mints**, so a person's pass and a scheduled pass are one admission of one
+  shape and are indistinguishable in the host's receipts. `useReconcileSource`
+  owns the protocol: it presents an identity from a `ReconcilePassLedger` it
+  holds for the mounted surface (`createReconcilePassLedger`), and a
+  press that **repeats** the pass still being reported reads the original
+  receipt back through `LookupReconcileSource` and surfaces *that* — one receipt
+  and one job for two presses, rather than two full re-sends of the source. The
+  press after a repeat is a new pass (the ledger retires the identity); a press
+  after a *failure* re-presents the same identity, which makes a retry a
+  recovery. A lookup answering `"unknown"` is **inconclusive**, never "it did
+  not happen". The panel and `<DeclaredSourceCard>` render the outcome the
+  operation returned — the identity, the status and the job.
+  `onSourceReconcileAdmitted((pass) => …)` hears each one, which is how a host
+  surface shows a person's pass beside the declared schedule's occurrences.
+  There is **no `syncSource`**: it reached the same engines carrying no effect
+  identity, so two presses were two passes, and it is deleted rather than
+  deprecated.
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
@@ -298,7 +323,7 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   sync as typed phases (queued, fetching, compiled, handed off, done, failed) with a
   timestamp for each, the compiled change set, and a typed failure.
 - `onSourceSyncRequested((sourceId) => …)` — hears every sync the kit's client enqueues
-  (Sync now, a reconnect, the first sync a connect starts), so a view rendering a source's
+  (a reconcile pass, a reconnect, the first sync a connect starts), so a view rendering a source's
   progress in the panel's per-source slot can watch closely at once. It returns the
   unsubscribe. The registry lives on `globalThis`, so a remote's own copy of the kit hears
   the host panel.

@@ -6,6 +6,7 @@ import {
 	KeyRound,
 	Layers,
 	ListChecks,
+	Plug,
 	ShieldCheck,
 	Workflow,
 } from "lucide-react";
@@ -72,6 +73,13 @@ const sections = [
 			"Bind the identity work no person started runs under, and read the trigger each source declares.",
 		href: "/admin/platform/unattended-work",
 		icon: KeyRound,
+	},
+	{
+		title: "Plugin Transport",
+		description:
+			"Send each shape a module's bindings produce through the host's plugin transport, and read the answer.",
+		href: "/admin/platform/plugin-transport",
+		icon: Plug,
 	},
 ];
 

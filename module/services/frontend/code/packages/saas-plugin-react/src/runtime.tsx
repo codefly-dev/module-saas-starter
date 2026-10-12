@@ -1,14 +1,18 @@
 "use client";
 
 import {
+	encodeFrontendServicePath,
+	isFrontendServicePath,
+} from "@codefly-dev/saas-plugin-contract";
+import {
 	FRONTEND_PLUGIN_CAPABILITIES_BFF_PATH,
-	parseFrontendPluginCapabilities,
 	type GetFrontendPluginCapabilitiesResponse,
+	parseFrontendPluginCapabilities,
 } from "@codefly-dev/saas-plugin-contract/capabilities";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import {
-	pluginErrorFromResponse,
 	PluginAvailabilityError,
+	pluginErrorFromResponse,
 } from "./availability.js";
 
 export type {
@@ -18,13 +22,12 @@ export type {
 	PluginFailureState,
 } from "./availability.js";
 export {
-	pluginErrorFromResponse,
 	PluginAvailabilityError,
+	pluginErrorFromResponse,
 	toPluginFailure,
 } from "./availability.js";
 
 const LOGICAL_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
-const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]+$/;
 
 export type PluginTransportConfigurationErrorCode =
 	| "forbidden_header"
@@ -86,20 +89,14 @@ function assertLogicalID(value: string, kind: "alias" | "plugin"): void {
 
 function pathSegments(path: PluginServicePath): string[] {
 	const segments = typeof path === "string" ? path.split("/") : [...path];
-	if (
-		segments.length === 0 ||
-		segments.some(
-			(segment) =>
-				segment === "." ||
-				segment === ".." ||
-				segment.length === 0 ||
-				segment.length > 256 ||
-				!SAFE_PATH_SEGMENT.test(segment),
-		)
-	) {
+	// The rule is the host's, read from the contract package rather than
+	// restated: safe relative segments, the last of which may carry a custom
+	// verb (`records:recover`). A client that refused one the host forwards would
+	// put a declared binding out of reach with no server ever answering.
+	if (!isFrontendServicePath(segments)) {
 		throw new PluginTransportConfigurationError(
 			"invalid_path",
-			"Plugin service paths must contain only safe relative segments",
+			"Plugin service paths must contain only safe relative segments, with an optional custom verb on the last one",
 		);
 	}
 	return segments;
@@ -170,7 +167,7 @@ function createServiceTransport(
 		if (token) headers.set("authorization", `Bearer ${token}`);
 
 		return runtimeFetch(
-			`${basePath}/${segments.map(encodeURIComponent).join("/")}${queryString(query)}`,
+			`${basePath}/${encodeFrontendServicePath(segments)}${queryString(query)}`,
 			{
 				...requestInit,
 				headers,

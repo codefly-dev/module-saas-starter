@@ -192,6 +192,22 @@ it, and a test walks the service's AST to keep that true. One occurrence admits
 `DatasourceService/ReconcileSource`, the same host operation a person's manual
 pass takes.
 
+**"Sync now" is that admission, not a request beside it** (issue #1094). The
+published kit points the button at `ReconcileSource` under an **effect identity
+the kit mints**, so a person's pass and a scheduled occurrence are one admission
+of one shape and the receipts cannot tell them apart. A press that repeats the
+pass still being reported reads the original receipt back through
+`LookupReconcileSource` and surfaces *that* — one receipt and one job for two
+presses, rather than two full re-sends of the source — and the press after that
+is a new pass. `syncSource`, which reached the same sync engines carrying no
+effect identity, is **deleted** from the kit rather than deprecated, and a
+TypeScript AST walk over this repository fails on any remaining caller
+(`src/features/datasources/__tests__/reconcile-is-the-only-manual-pass.test.ts`).
+The reconcile-schedules panel lists a person's pass in the **same table** as the
+declared schedule's last and next occurrence, with its effect identity beside
+them; the passes it can list are the ones this browser admitted, because a
+receipt is recovered by identity and never enumerated.
+
 **What is not proven:** no live occurrence exists. Nothing in this repository
 composes a module that executes declared work, so the declaration is built
 and held to the contract's field names by test, and the walk that has not been
@@ -299,8 +315,9 @@ Two client sources, which cannot collide — a registry slug can never spell
   fetched (bounded size and time, **no redirect at all** per CIMD draft-02 §5.1,
   and guarded at the dial against every non-public destination — the IANA
   special-purpose registries for both families, not just loopback and RFC 1918,
-  with IPv6 bounded to the `2000::/3` global unicast allocation; every other
-  tenant-directed egress uses the same classifier, listed in
+  with IPv6 bounded to the `2000::/3` global unicast allocation; the other
+  guarded egress paths use the same classifier, and the paths it covers and the
+  OIDC clients it does not are listed in
   [CALLABLE_SOURCES.md](./module/CALLABLE_SOURCES.md#oauth-and-disclosure)),
   validated, and used as a public client for that one flow. Failures and invalid
   documents are **not** cached (§5.2), so a publisher who fixes one is not made
@@ -693,6 +710,19 @@ missing base files for a service you DID compose are a real failure.
 For the frontend product-plugin overlay specifically — package layout,
 generated projections, and gates — see
 [docs/frontend-plugin-installation.md](./module/docs/frontend-plugin-installation.md).
+
+A contributed page reaches its own module's backend only through this host's
+plugin transport, at `/api/plugins/{plugin}/{alias}/{relative-path}`, under the
+viewer's forwarded credential. It carries what that module's bindings declare,
+in both shapes: safe path segments with a Google custom verb allowed on the
+**last** one, its colon forwarded literal (`records:recover`,
+`interactions/{id}:respond`), and Connect procedures, for a requirement that
+declares `/` as its route prefix — the origin root, where the Connect protocol
+and this contract's own capability handshake already put a procedure. A page is
+not restricted to REST bindings, and it never chooses a prefix: a route outside
+the alias its requirement declared is refused. The policy is
+[docs/frontend-plugin-bff-contract.md](./module/docs/frontend-plugin-bff-contract.md);
+the playground that drives every shape is `/admin/platform/plugin-transport`.
 
 ## How to extend the module
 

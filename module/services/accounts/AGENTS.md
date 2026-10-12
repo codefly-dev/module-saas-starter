@@ -966,6 +966,10 @@ person pressing "Sync now", and by the **periodic reconcile**. Only the last of
 the three is guaranteed to exist, so it is what makes "we sync on push" honest:
 without it, a missed webhook is permanent and nothing ever notices.
 
+Two of those three are now the **same admission**: a person's "Sync now" and one
+occurrence of the declared schedule both admit `ReconcileSource` under an effect
+identity their caller minted (issue #1094).
+
 - **The schedule is DECLARED here and FIRED somewhere else** (issue #1081).
   `business.DeclareSourceTrigger` turns a source's interval into a trigger an
   declared release carries — a five-field cron in UTC, `"skip"` for both missed
@@ -978,16 +982,24 @@ without it, a missed webhook is permanent and nothing ever notices.
   ticker in `work.go`, `enqueueScheduledReconcile`, `enqueueScheduledPullSync`,
   `scheduledReconcileKey` and the due query they read
   (`ListDatasourceSourcesDueForReconcile`).
-- **One occurrence admits one host operation.** `DatasourceService/ReconcileSource`
-  (marked `codefly.runnable.v0.operation`, idempotency required, paired with
-  `LookupReconcileSource`) is what the declared trigger names, and it is the same
-  work a person asks for by hand. It routes each provider to the engine that
+- **One occurrence admits one host operation, and so does a person's press.**
+  `DatasourceService/ReconcileSource` (marked `codefly.runnable.v0.operation`,
+  idempotency required, paired with `LookupReconcileSource`) is what the declared
+  trigger names, and since #1094 it is literally what "Sync now" calls as well —
+  the published kit's `syncSource`, which reached these engines carrying no
+  effect identity, is deleted. It routes each provider to the engine that
   provider syncs on: GitHub to a conditional reconcile on the delivery queue (the
   job resolves the head and snapshots only if it moved), everything else to the
-  same sync request "Sync now" produces. The enqueue is keyed by the occurrence's
+  pull its connector has. The enqueue is keyed by the occurrence's
   effect identity, so two attempts of one occurrence are one job — which is what
   the schedule-derived key had to stand in for while two replicas could both
-  sweep one due row.
+  sweep one due row, and which is now also what makes a person's double press
+  one pass. **The host has no notion of an identity being spent**: it returns the
+  same receipt for the same identity forever, so "when is my intent new" is the
+  CLIENT's question, and the kit answers it from presses rather than from a
+  clock. There is no enumerable list of past passes either — a receipt is read
+  back by identity, never listed — so a surface claiming to show every pass a
+  source ever took would be inventing one.
 - **The interval is per provider, and it is the source's own configuration.** 30
   minutes for GitHub; a day for the pull providers, whose connectors re-send
   their whole content on every sync (the gap registered against each in
