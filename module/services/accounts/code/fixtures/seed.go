@@ -18,7 +18,7 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/core/wool"
-	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/codefly-dev/sdk-go/fixture"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
@@ -182,7 +182,7 @@ func writeEmbeddedFixtures() (string, error) {
 // which one the runtime selected. Consumers add YAML only; Starter never reads
 // Codefly runtime environment variables or hard-codes product fixture names.
 func SelectedName() (string, error) {
-	selected := strings.TrimSpace(string(codefly.Fixture()))
+	selected := strings.TrimSpace(string(fixture.Selected()))
 	if selected == "" {
 		return "", nil
 	}
