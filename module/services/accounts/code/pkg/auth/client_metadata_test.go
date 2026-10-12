@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"syscall"
 	"testing"
@@ -488,6 +489,10 @@ func TestNonPublicDestinationsAreRefusedAcrossEverySpecialUseRange(t *testing.T)
 		require.False(t, auth.IsPublicDestinationDialAddress(address),
 			"should refuse %q", address)
 	}
+	// The zero Addr is no address. The dial-address form never produces one,
+	// so only a direct caller can hand it over, and it is refused rather than
+	// read as matching no registry entry.
+	require.False(t, auth.IsPublicDestination(netip.Addr{}), "should refuse the zero Addr")
 	for _, address := range []string{
 		"93.184.216.34:443", "1.1.1.1:443", "[2606:4700::1111]:443",
 		// Global unicast just outside the blocks above, so the additions do not

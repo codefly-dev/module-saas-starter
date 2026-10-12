@@ -135,7 +135,19 @@ copying a new secret into every source. This generic link identifies a source au
 subject or email; it is not a provider-directory ACL mapping.
 
 Refresh and client-credentials resolution reuse the credential row lock.
-Transport uses the existing resolved-IP guard and same-origin redirect policy.
+Transport uses the resolved-IP egress guard and same-origin redirect policy.
+The guard runs at connect time, on the address DNS returned, for the operation
+call and every OAuth token exchange alike, and admits only an address on the
+public internet. That judgement is `auth.IsPublicDestination`, the host's one
+classifier, which also guards Client ID Metadata Document fetches. It reads the
+IANA IPv4 and IPv6 special-purpose registries rather than Go's `net.IP`
+predicates, which call carrier NAT (`100.64.0.0/10`), benchmarking, reserved
+and the IPv6 transition prefixes "global unicast", and it bounds IPv6 to
+`2000::/3`, the only block IANA allocates for global unicast. NAT64, 6to4 and
+Teredo are refused outright rather than decoded, because a network-specific
+NAT64 prefix cannot be recognised and a decoded public address is still reached
+through a translator on the host's own network. A v4-mapped `::ffff:a.b.c.d` is
+judged as `a.b.c.d`. A zoned address, or one the guard cannot parse, is refused.
 Named refusal/receipt/audit constructors discard provider error bodies and raw
 transport errors. Credential reflection in a successful provider body is refused.
 Audit records actor, source, operation, effect, effect ID and the closed outcome
