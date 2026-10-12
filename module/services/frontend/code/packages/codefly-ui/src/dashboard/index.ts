@@ -21,6 +21,7 @@ export {
 	type DashboardTile,
 	DashboardWidget,
 	type DashboardWidgetProps,
+	type WidgetHeading,
 } from "./dashboard.js";
 export { formatAxisKey, formatAxisValue, parseTimeKey } from "./format.js";
 export {

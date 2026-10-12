@@ -75,6 +75,26 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   a menu. It commits nothing: a move is reported and the consumer confirms,
   writes or refuses it. See *A board commits no move*.
 
+### Dashboard changes a remote will see in 0.12.7
+
+- **A widget's `format` now reaches every mark, not only a scalar.** A line,
+  area or bar chart writes its axis, crosshair readout and data table in it, and
+  a table writes its values in it. A remote that declared `compact` or
+  `currency` on a chart or table widget, which only scalars honoured before,
+  now reads "1.2K" or "$1.2K" there. `percent` there is percentage points, as
+  it always was for a scalar.
+- **Sections.** `DashboardView.sections` and `DashboardWidgetView.section`
+  group widgets under `DashboardSectionHeader`. A widget inside a section is
+  titled `<h4>`, one level under the section's `<h3>`, and stays `<h3>` above
+  every section; a view without sections draws as before.
+- **`renderWidget` gets a second argument**, `{ heading }`: the level the
+  widget's title takes where the dashboard draws it. Pass it on to
+  `DashboardWidget`'s new `heading` prop. A slot that ignores it keeps `<h3>`.
+- `Card` takes `titleAs` (`"h3"` by default, or `"h4"`), and `StatTile`'s
+  `labelAs` also accepts `"h4"`.
+- `SortableBoard` (several groups, tiles moved between them) is exported beside
+  `SortableGrid`, which is now a one-group board with unchanged props.
+
 ### Status, card headers, lists and empty states
 
 A solution page is built from kit components, never from hand-laid utilities:

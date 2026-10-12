@@ -831,6 +831,39 @@ describe("sections", () => {
 		).toBeTruthy();
 	});
 
+	// Heading navigation reads a section's widgets as its children: the
+	// section's title is the <h3> under the dashboard's <h2>, so its widgets'
+	// titles are <h4>. A widget drawn above every section stays an <h3>.
+	it("puts a section's widget headings one level under the section's heading", () => {
+		render(
+			<Dashboard data={{ title: "Activity", sections, widgets: sectioned }} />,
+		);
+		expect(screen.getByRole("heading", { name: "Totals" }).tagName).toBe("H3");
+		expect(screen.getByRole("heading", { name: "Sign-ins" }).tagName).toBe(
+			"H4",
+		);
+		expect(
+			screen.getByRole("heading", { name: "Sign-ins per day" }).tagName,
+		).toBe("H4");
+		expect(screen.getByRole("heading", { name: "Loose" }).tagName).toBe("H3");
+	});
+
+	it("tells a renderWidget slot the heading level its widget takes", () => {
+		const levels: Record<string, string> = {};
+		render(
+			<Dashboard
+				data={{ sections, widgets: sectioned }}
+				slots={{
+					renderWidget: (widget, { heading }) => {
+						levels[widget.id] = heading;
+						return null;
+					},
+				}}
+			/>,
+		);
+		expect(levels).toEqual({ trend: "h4", total: "h4", loose: "h3" });
+	});
+
 	it("keeps a declared section no widget names, and says it is empty", () => {
 		render(<Dashboard data={{ sections, widgets: sectioned }} />);
 		expect(screen.getByText("No widgets in this section.")).toBeTruthy();

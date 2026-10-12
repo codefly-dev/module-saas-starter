@@ -270,6 +270,14 @@
         {
           "file": "packages/codefly-ui/stories/composites.stories.tsx",
           "export": "EmptyDashboard"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "DashboardSections"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "SectionHeader"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",

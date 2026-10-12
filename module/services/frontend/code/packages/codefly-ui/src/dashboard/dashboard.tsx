@@ -290,8 +290,17 @@ export interface DashboardWidgetProps {
 	 * passes none.
 	 */
 	actions?: ReactNode;
+	/**
+	 * The widget title's heading level: `"h3"` under the dashboard's own
+	 * `<h2>`, `"h4"` inside a section, whose own title is the `<h3>`. A
+	 * `renderWidget` slot is told which (see {@link DashboardSlots}).
+	 */
+	heading?: WidgetHeading;
 	className?: string;
 }
+
+/** The heading element a widget's title is drawn as. */
+export type WidgetHeading = "h3" | "h4";
 
 /**
  * One widget of a dashboard, drawn with the metric tier: a scalar as a
@@ -309,6 +318,7 @@ export interface DashboardWidgetProps {
 export function DashboardWidget({
 	widget,
 	actions,
+	heading = "h3",
 	className,
 }: DashboardWidgetProps) {
 	const title = widgetTitle(widget);
@@ -350,7 +360,7 @@ export function DashboardWidget({
 			<StatTile
 				metric={metric}
 				actions={actions}
-				labelAs={widget.title != null ? "h3" : "span"}
+				labelAs={widget.title != null ? heading : "span"}
 				trend="accent"
 				className={className}
 			/>
@@ -373,6 +383,7 @@ export function DashboardWidget({
 			title={title}
 			description={state ? <MetricStateBadge state={state} /> : undefined}
 			actions={actions}
+			titleAs={heading}
 			className={className}
 		>
 			{refused ? (
@@ -414,9 +425,14 @@ export interface DashboardSlots {
 	/**
 	 * Draws one widget in place of {@link DashboardWidget}. For a host that
 	 * resolves each widget in its own query: return a component that resolves
-	 * the series and then mounts `DashboardWidget` with it.
+	 * the series and then mounts `DashboardWidget` with it, passing on
+	 * `heading` — the level this widget's title takes where the dashboard
+	 * draws it (`"h4"` inside a section).
 	 */
-	renderWidget?: (widget: DashboardWidgetView) => ReactNode;
+	renderWidget?: (
+		widget: DashboardWidgetView,
+		context: { heading: WidgetHeading },
+	) => ReactNode;
 	/**
 	 * Lays the tiles out in place of the default grid or stack — for a grid
 	 * whose tiles the viewer can reorder. Tiles arrive in the view's order,
@@ -689,16 +705,24 @@ export function Dashboard({
 		: undefined;
 	const isGrid = (data.layout ?? "grid") === "grid";
 	const sections = data.sections ?? [];
+	const sectionIds = new Set(sections.map((section) => section.id));
+	// A widget in a section is titled one level under the section's <h3>; a
+	// widget drawn above every section stays under the dashboard's <h2>.
+	const headingOf = (widget: DashboardWidgetView): WidgetHeading =>
+		widget.section !== undefined && sectionIds.has(widget.section)
+			? "h4"
+			: "h3";
 
 	const tiles: DashboardTile[] = data.widgets.map((widget) => ({
 		id: widget.id,
 		widget,
-		node: slots?.renderWidget?.(widget) ?? (
+		node: slots?.renderWidget?.(widget, { heading: headingOf(widget) }) ?? (
 			// A span is a request for grid width, so it applies to anything the
 			// grid lays out. A scalar that declares one is kept out of the KPI
 			// row for exactly that reason — see `inKpiRow`.
 			<DashboardWidget
 				widget={widget}
+				heading={headingOf(widget)}
 				className={
 					isGrid && widget.span
 						? COL_SPAN[Math.min(widget.span, columns) as 1 | 2 | 3 | 4]
