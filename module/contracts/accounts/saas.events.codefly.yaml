@@ -207,6 +207,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.datasource.protection_changed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.datasource.receipts.pruned
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -267,6 +271,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.document.confirmed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.document.dead_letter_redriven
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -276,6 +284,10 @@ publishes:
     visibility: external
     retention: 30d
   - type: saas.document.effect.committed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.extractor_revised
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
@@ -319,6 +331,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.document.read_unscoped
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.document.renamed
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -327,11 +343,19 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.document.search_unscoped
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.document.snapshot.committed
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
   - type: saas.document.snapshot.skipped_stale
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.source_verified
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d

@@ -559,6 +559,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.datasource.protection_changed": {
+      "address": "saas.datasource.protection_changed",
+      "title": "saas.datasource.protection_changed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.protection_changed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.datasource.receipts.pruned": {
       "address": "saas.datasource.receipts.pruned",
       "title": "saas.datasource.receipts.pruned",
@@ -724,6 +735,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.confirmed": {
+      "address": "saas.document.confirmed",
+      "title": "saas.document.confirmed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.confirmed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.dead_letter_redriven": {
       "address": "saas.document.dead_letter_redriven",
       "title": "saas.document.dead_letter_redriven",
@@ -752,6 +774,17 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.effect.committed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.extractor_revised": {
+      "address": "saas.document.extractor_revised",
+      "title": "saas.document.extractor_revised",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.extractor_revised"
         }
       },
       "x-visibility": "external",
@@ -867,6 +900,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.read_unscoped": {
+      "address": "saas.document.read_unscoped",
+      "title": "saas.document.read_unscoped",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.read_unscoped"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.renamed": {
       "address": "saas.document.renamed",
       "title": "saas.document.renamed",
@@ -889,6 +933,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.search_unscoped": {
+      "address": "saas.document.search_unscoped",
+      "title": "saas.document.search_unscoped",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.search_unscoped"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.snapshot.committed": {
       "address": "saas.document.snapshot.committed",
       "title": "saas.document.snapshot.committed",
@@ -906,6 +961,17 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.snapshot.skipped_stale"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.source_verified": {
+      "address": "saas.document.source_verified",
+      "title": "saas.document.source_verified",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.source_verified"
         }
       },
       "x-visibility": "external",
@@ -2406,6 +2472,13 @@
       },
       "title": "saas publishes saas.datasource.operation.invoked"
     },
+    "send:saas.datasource.protection_changed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.protection_changed"
+      },
+      "title": "saas publishes saas.datasource.protection_changed"
+    },
     "send:saas.datasource.receipts.pruned": {
       "action": "send",
       "channel": {
@@ -2511,6 +2584,13 @@
       },
       "title": "saas publishes saas.document.archived"
     },
+    "send:saas.document.confirmed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.confirmed"
+      },
+      "title": "saas publishes saas.document.confirmed"
+    },
     "send:saas.document.dead_letter_redriven": {
       "action": "send",
       "channel": {
@@ -2531,6 +2611,13 @@
         "$ref": "#/channels/saas.document.effect.committed"
       },
       "title": "saas publishes saas.document.effect.committed"
+    },
+    "send:saas.document.extractor_revised": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.extractor_revised"
+      },
+      "title": "saas publishes saas.document.extractor_revised"
     },
     "send:saas.document.frozen": {
       "action": "send",
@@ -2602,6 +2689,13 @@
       },
       "title": "saas publishes saas.document.read"
     },
+    "send:saas.document.read_unscoped": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.read_unscoped"
+      },
+      "title": "saas publishes saas.document.read_unscoped"
+    },
     "send:saas.document.renamed": {
       "action": "send",
       "channel": {
@@ -2616,6 +2710,13 @@
       },
       "title": "saas publishes saas.document.search"
     },
+    "send:saas.document.search_unscoped": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.search_unscoped"
+      },
+      "title": "saas publishes saas.document.search_unscoped"
+    },
     "send:saas.document.snapshot.committed": {
       "action": "send",
       "channel": {
@@ -2629,6 +2730,13 @@
         "$ref": "#/channels/saas.document.snapshot.skipped_stale"
       },
       "title": "saas publishes saas.document.snapshot.skipped_stale"
+    },
+    "send:saas.document.source_verified": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.source_verified"
+      },
+      "title": "saas publishes saas.document.source_verified"
     },
     "send:saas.document.subscribed": {
       "action": "send",
@@ -3704,6 +3812,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.datasource.protection_changed": {
+        "name": "saas.datasource.protection_changed",
+        "title": "saas.datasource.protection_changed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.datasource.receipts.pruned": {
         "name": "saas.datasource.receipts.pruned",
         "title": "saas.datasource.receipts.pruned",
@@ -3809,6 +3924,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.document.confirmed": {
+        "name": "saas.document.confirmed",
+        "title": "saas.document.confirmed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.document.dead_letter_redriven": {
         "name": "saas.document.dead_letter_redriven",
         "title": "saas.document.dead_letter_redriven",
@@ -3826,6 +3948,13 @@
       "saas.document.effect.committed": {
         "name": "saas.document.effect.committed",
         "title": "saas.document.effect.committed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.extractor_revised": {
+        "name": "saas.document.extractor_revised",
+        "title": "saas.document.extractor_revised",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
@@ -3900,6 +4029,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.document.read_unscoped": {
+        "name": "saas.document.read_unscoped",
+        "title": "saas.document.read_unscoped",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.document.renamed": {
         "name": "saas.document.renamed",
         "title": "saas.document.renamed",
@@ -3914,6 +4050,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.document.search_unscoped": {
+        "name": "saas.document.search_unscoped",
+        "title": "saas.document.search_unscoped",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.document.snapshot.committed": {
         "name": "saas.document.snapshot.committed",
         "title": "saas.document.snapshot.committed",
@@ -3924,6 +4067,13 @@
       "saas.document.snapshot.skipped_stale": {
         "name": "saas.document.snapshot.skipped_stale",
         "title": "saas.document.snapshot.skipped_stale",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.source_verified": {
+        "name": "saas.document.source_verified",
+        "title": "saas.document.source_verified",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

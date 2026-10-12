@@ -227,6 +227,108 @@ func TestValidatePayload_DocumentDeadLetterRedriven(t *testing.T) {
 	require.NoError(t, ValidatePayload(EventDocumentDeadLetterRedriven, atBound))
 }
 
+// The document module's reserved types: each is registered with exactly the
+// payload its emitter sends, because declared types only grow.
+func TestValidatePayload_DocumentModuleReservedTypes(t *testing.T) {
+	t.Run("confirmed", func(t *testing.T) {
+		complete := func() map[string]any {
+			return map[string]any{
+				"solution": "documents", "version": "v1", "initiator": "RecordConfirmation",
+				"extractor": "x", "extractor_version": "1", "field": "f", "format": "xlsx", "address": "Sheet1!A1",
+			}
+		}
+		require.NoError(t, ValidatePayload(EventDocumentConfirmed, complete()))
+		for _, field := range []string{"version", "extractor", "extractor_version", "field", "format", "address"} {
+			p := complete()
+			delete(p, field)
+			require.Errorf(t, ValidatePayload(EventDocumentConfirmed, p), "%s is required", field)
+		}
+		p := complete()
+		p["value"] = "42"
+		require.Error(t, ValidatePayload(EventDocumentConfirmed, p), "the confirmed value is never on the spine")
+		p = complete()
+		p["address"] = strings.Repeat("a", 1025)
+		require.Error(t, ValidatePayload(EventDocumentConfirmed, p), "address is bounded at 1024 bytes")
+		p["address"] = strings.Repeat("a", 1024)
+		require.NoError(t, ValidatePayload(EventDocumentConfirmed, p))
+		require.True(t, AuditEventRequiresEntry(EventDocumentConfirmed))
+		require.True(t, AuditEventRequiresIdempotencyKey(EventDocumentConfirmed))
+	})
+	t.Run("extractor_revised", func(t *testing.T) {
+		complete := func() map[string]any {
+			return map[string]any{
+				"version": "v1", "extractor_key": "k", "revision": 2, "digest": "d", "parent_digest": "p",
+				"retired": false, "request_type": "t", "proposal_kind": "human", "proposal_source": "a note",
+			}
+		}
+		require.NoError(t, ValidatePayload(EventDocumentExtractorRevised, complete()))
+		p := complete()
+		delete(p, "parent_digest")
+		delete(p, "proposal_source")
+		require.NoError(t, ValidatePayload(EventDocumentExtractorRevised, p), "a first attachment has no parent and may name no source")
+		for _, field := range []string{"version", "extractor_key", "revision", "digest", "retired", "request_type", "proposal_kind"} {
+			p := complete()
+			delete(p, field)
+			require.Errorf(t, ValidatePayload(EventDocumentExtractorRevised, p), "%s is required", field)
+		}
+		p = complete()
+		p["proposal_source"] = strings.Repeat("s", 513)
+		require.Error(t, ValidatePayload(EventDocumentExtractorRevised, p), "proposal_source is bounded at 512 bytes")
+		require.True(t, AuditEventRequiresEntry(EventDocumentExtractorRevised))
+		require.True(t, AuditEventRequiresIdempotencyKey(EventDocumentExtractorRevised))
+		def, ok := LookupAuditEvent(EventDocumentExtractorRevised)
+		require.True(t, ok)
+		for _, f := range def.Fields {
+			require.Equalf(t, f.Name == "proposal_source", f.PII, "PII mark of %s", f.Name)
+		}
+	})
+	t.Run("unscoped reads", func(t *testing.T) {
+		for _, event := range []EventType{EventDocumentReadUnscoped, EventDocumentSearchUnscoped} {
+			complete := func() map[string]any {
+				return map[string]any{"solution": "documents", "correlation_id": "c1", "outcome": "empty", "duration_ms": 3}
+			}
+			require.NoError(t, ValidatePayload(event, complete()))
+			for _, outcome := range []string{"empty", "denied", "failed"} {
+				p := complete()
+				p["outcome"] = outcome
+				require.NoErrorf(t, ValidatePayload(event, p), "outcome %q", outcome)
+			}
+			p := complete()
+			p["outcome"] = "returned"
+			require.Errorf(t, ValidatePayload(event, p), "%s: returned belongs on the scoped type", event)
+			p = complete()
+			p["boundary"] = "b"
+			require.Errorf(t, ValidatePayload(event, p), "%s: no collection, no boundary", event)
+			p = complete()
+			delete(p, "correlation_id")
+			require.Errorf(t, ValidatePayload(event, p), "%s: correlation_id is required", event)
+		}
+	})
+	t.Run("source_verified and protection_changed", func(t *testing.T) {
+		verified := map[string]any{"solution": "documents", "version_id": "v", "source_id": "s", "receipt_job_id": "j",
+			"policy_revision": "r", "binding_sha256": "b", "effect_sha256": "e", "owner": "o"}
+		require.NoError(t, ValidatePayload(EventDocumentSourceVerified, verified))
+		for field := range verified {
+			if field == "solution" {
+				continue
+			}
+			p := maps.Clone(verified)
+			delete(p, field)
+			require.Errorf(t, ValidatePayload(EventDocumentSourceVerified, p), "source_verified %s is required", field)
+		}
+		changed := map[string]any{"solution": "documents", "policy_revision": "r", "retired": true, "owner": "o", "binding_sha256": "b"}
+		require.NoError(t, ValidatePayload(EventDatasourceProtectionChanged, changed))
+		for field := range changed {
+			if field == "solution" {
+				continue
+			}
+			p := maps.Clone(changed)
+			delete(p, field)
+			require.Errorf(t, ValidatePayload(EventDatasourceProtectionChanged, p), "protection_changed %s is required", field)
+		}
+	})
+}
+
 // The nonempty rule belongs to the declaration, not to a list of the event types
 // somebody remembered to add: a required string-valued field on ANY registered
 // type refuses a blank, and a required bool or int still records false and 0.

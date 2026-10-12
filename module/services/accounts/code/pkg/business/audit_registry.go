@@ -486,6 +486,8 @@ const (
 	EventDatasourceDomainClaimed        EventType = "saas.datasource.domain_claimed"
 	EventDatasourceDomainVerified       EventType = "saas.datasource.domain_verified"
 	EventDatasourceDomainRemoved        EventType = "saas.datasource.domain_removed"
+	// A deployment installed or retired a protected upload source policy.
+	EventDatasourceProtectionChanged EventType = "saas.datasource.protection_changed"
 
 	EventDatasourceGitHubAppSetupStarted   EventType = "saas.datasource.github_app.setup_started"
 	EventDatasourceGitHubAppSetupCompleted EventType = "saas.datasource.github_app.setup_completed"
@@ -554,6 +556,26 @@ const (
 	// is who-did-what-to-which-resource (the entry is re-derived on an operator's
 	// say-so), not pipeline bookkeeping, so it has a type of its own.
 	EventDocumentDeadLetterRedriven EventType = "saas.document.dead_letter_redriven"
+
+	// A document module's own facts, reported through the module-facing
+	// EmitAuditEvent. The `saas` namespace is the host's, so a module cannot
+	// declare a type here through DeclareAuditEventTypes: the host registers
+	// each one, with the shape the emitting module sends.
+	//
+	// A verified source provenance was attached to an immutable version.
+	EventDocumentSourceVerified EventType = "saas.document.source_verified"
+	// A read or search that involved no collection: the caller could read none,
+	// or its request resolved to none. saas.document.read / search each record
+	// one collection and require its boundary, so without these the refusal and
+	// the empty answer reached only the producer's own log.
+	EventDocumentReadUnscoped   EventType = "saas.document.read_unscoped"
+	EventDocumentSearchUnscoped EventType = "saas.document.search_unscoped"
+	// A person confirmed the value a reference reads at one version of a
+	// document: an append-only fact about that reference.
+	EventDocumentConfirmed EventType = "saas.document.confirmed"
+	// An extractor attached to a document was revised: attached, corrected or
+	// retired.
+	EventDocumentExtractorRevised EventType = "saas.document.extractor_revised"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -905,6 +927,78 @@ var auditEventCatalog = []AuditEventDefinition{
 			PayloadField{Name: "producer", Kind: FieldString, Required: true, MaxLen: 128},
 			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true,
 				Enum: []string{"permanent", "exhausted", "cancelled", "unknown"}})...))),
+	mutation(EventDatasourceProtectionChanged, CategorySystem, "Deployment installed or retired a protected upload source policy.",
+		str("solution"),
+		PayloadField{Name: "policy_revision", Kind: FieldString, Required: true},
+		PayloadField{Name: "retired", Kind: FieldBool, Required: true},
+		PayloadField{Name: "owner", Kind: FieldString, Required: true},
+		PayloadField{Name: "binding_sha256", Kind: FieldString, Required: true}),
+	mutation(EventDocumentSourceVerified, CategorySystem, "An immutable document version received verified source provenance.",
+		str("solution"),
+		PayloadField{Name: "version_id", Kind: FieldString, Required: true},
+		PayloadField{Name: "source_id", Kind: FieldString, Required: true},
+		PayloadField{Name: "receipt_job_id", Kind: FieldString, Required: true},
+		PayloadField{Name: "policy_revision", Kind: FieldString, Required: true},
+		PayloadField{Name: "binding_sha256", Kind: FieldString, Required: true},
+		PayloadField{Name: "effect_sha256", Kind: FieldString, Required: true},
+		PayloadField{Name: "owner", Kind: FieldString, Required: true}),
+	observation(EventDocumentReadUnscoped, CategoryAccess, "A document read that involved no collection ended with an explicit outcome: it was denied, found nothing the caller may read, or failed before any collection was resolved.", documentUnscopedReadFields...),
+	observation(EventDocumentSearchUnscoped, CategoryAccess, "A search that involved no collection ended with an explicit outcome: it was denied, the caller may read no collection it names, or it failed before any collection was resolved.", documentUnscopedReadFields...),
+	// A confirmation is recorded only when it commits: the module appends the
+	// event in the same transaction as its append-only confirmation row, and a
+	// refused confirmation writes nothing, so the type carries no `outcome`. The
+	// entry is the resource and the confirmation id is the idempotency key, so a
+	// retried emission collapses. The confirmed value is deliberately not a
+	// field: the spine records that a reference was confirmed, where, and by
+	// whom, never what it read. The version and every reference field are
+	// required: a confirmation that cannot say which version and which reference
+	// it confirmed is not one. `address` is the reference's position in its
+	// format's own notation, bounded in bytes like the module's request.
+	requiresIdempotencyKey(requiresEntry(mutation(EventDocumentConfirmed, CategoryLifecycle,
+		"A person confirmed the value a reference read at one version of a document.",
+		append(required(documentFields, "version"),
+			PayloadField{Name: "extractor", Kind: FieldString, Required: true},
+			PayloadField{Name: "extractor_version", Kind: FieldString, Required: true},
+			PayloadField{Name: "field", Kind: FieldString, Required: true},
+			PayloadField{Name: "format", Kind: FieldString, Required: true},
+			PayloadField{Name: "address", Kind: FieldString, Required: true, MaxLen: 1024})...))),
+	// The native extractor itself stays off the trail; its digest names it.
+	// Everything a revision always names is required: the version it was
+	// derived from, the key and revision, its digest, whether it retires the
+	// key, the native request type and what proposed it. `proposal_source` is
+	// free text a person or a tool supplied, so it is PII.
+	requiresIdempotencyKey(requiresEntry(mutation(EventDocumentExtractorRevised, CategoryLifecycle,
+		"An extractor attached to a document was revised: attached, corrected or retired.",
+		append(required(documentFields, "version"),
+			PayloadField{Name: "extractor_key", Kind: FieldString, Required: true, MaxLen: 128},
+			PayloadField{Name: "revision", Kind: FieldInt, Required: true},
+			PayloadField{Name: "digest", Kind: FieldString, Required: true, MaxLen: 64},
+			PayloadField{Name: "parent_digest", Kind: FieldString, MaxLen: 64},
+			PayloadField{Name: "retired", Kind: FieldBool, Required: true},
+			PayloadField{Name: "request_type", Kind: FieldString, Required: true, MaxLen: 128},
+			PayloadField{Name: "proposal_kind", Kind: FieldString, Required: true, MaxLen: 16},
+			pii(PayloadField{Name: "proposal_source", Kind: FieldString, MaxLen: 512}))...))),
+}
+
+// documentUnscopedReadFields is the shape of a read or search that involved no
+// collection. It is a type of its own, not saas.document.read with an optional
+// boundary, because the registry declares each field's requirement on its own:
+// "boundary is required unless the outcome is denied, empty or failed" is a
+// conditional the registry and its JSON Schema projection cannot state, so it
+// would be enforced nowhere. Here the rule is mechanical: `boundary` is not a
+// field, so a payload naming a collection is refused as an unregistered field;
+// `returned` is not an outcome, because evidence is always returned from some
+// collection and belongs on the scoped type; and `result_count` is absent,
+// because with no collection there is no result to count. A refusal is the
+// outcome `denied`, never a type of its own.
+var documentUnscopedReadFields = []PayloadField{
+	str("solution"),
+	uid("actor_principal_id"),
+	uid("owner_principal_id"),
+	str("initiator"),
+	{Name: "correlation_id", Kind: FieldString, Required: true},
+	{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{"empty", "denied", "failed"}},
+	{Name: "duration_ms", Kind: FieldInt},
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
