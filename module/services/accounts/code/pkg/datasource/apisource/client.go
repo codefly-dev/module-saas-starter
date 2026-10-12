@@ -10,8 +10,8 @@
 // on the initial request and on any redirect, checked against the exact IP
 // being connected to (not the hostname) so DNS rebinding cannot slip past the
 // check. "Not on the public internet" is auth.IsPublicDestination, read from
-// the IANA special-purpose registries: the one classifier every tenant-directed
-// egress in this host answers through.
+// the IANA special-purpose registries: the classifier the host's guarded egress
+// paths share (auth/public_address.go lists them).
 // The one exception is a local runtime's explicit list of loopback addresses
 // (local_egress.go), refused at boot anywhere else.
 package apisource

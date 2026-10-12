@@ -155,8 +155,9 @@ func isAmbiguousNumericHost(host string) bool {
 }
 
 // resolvePublic resolves host and requires every answer to be on the public
-// internet, as auth.IsPublicDestination judges it: the one classifier every
-// tenant-directed egress in this host shares. An address literal is judged as
+// internet, as auth.IsPublicDestination judges it: the classifier the host's
+// guarded egress paths share (auth/public_address.go lists them, and the OIDC
+// clients that have no guard). An address literal is judged as
 // written, zone included, and only unmapped once it has been admitted.
 func (p *WebhookEndpointPolicy) resolvePublic(ctx context.Context, host string) ([]netip.Addr, error) {
 	if addr, err := netip.ParseAddr(host); err == nil {
