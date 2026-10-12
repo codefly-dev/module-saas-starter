@@ -66,8 +66,8 @@ github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba h1:6nFaDYsLyA5x3WiGAk6pMI3c0naqxiPeaTHMqRPvbVs=
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba/go.mod h1:OQDNwz4rpEGfq7VC/FjvmQGlo9H8gH8fIDcZhKIe8iQ=
-github.com/codefly-dev/sdk-go v0.3.2 h1:H1Tstn5f2HWO/Hp813RFxxDPAlWZEIN6gKtxpzai1CY=
-github.com/codefly-dev/sdk-go v0.3.2/go.mod h1:B7ULHzZo29FCvE8pfCa90aPVUlL2PlHNUXrIBXuKQ4g=
+github.com/codefly-dev/sdk-go v0.4.0 h1:3Jm0bP+UsLI4iZYp3wqVa42bcXBumMIIF/aeweKOAhY=
+github.com/codefly-dev/sdk-go v0.4.0/go.mod h1:vExvoK8jqWNiUjmphgaK/ir1+Tz717mNS6bc4FAHVks=
 github.com/codefly-dev/sdk-go/workcontext v0.1.0 h1:oFU/Lg1xnlibRPqyKR0KGdgGttwH8EdZIuErqBaRZxo=
 github.com/codefly-dev/sdk-go/workcontext v0.1.0/go.mod h1:FeKytaeqEXRigN5UflAjVeoMoV2gEN2oJLgBBgpr0Jg=
 github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211 h1:4KAPx8haCA/h4Kx5mB7D0rMriwLLKiOW9G9mMWuiQDw=
