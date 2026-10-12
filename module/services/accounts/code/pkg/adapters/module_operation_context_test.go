@@ -12,7 +12,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -80,14 +80,9 @@ func mintModuleOperationContext(prefix, token, binding string) (*gen.ModuleMintO
 
 func verifyOperationContext(t *testing.T, token string) *basev0.WorkContextV1 {
 	t.Helper()
-	parsed, err := workcontext.ParseWorkContextToken(token)
+	verified, err := WorkContextSingleton().verifyFor(context.Background(), token, "modelservice")
 	require.NoError(t, err)
-	verified, err := WorkContextSingleton().verifier.Verify(parsed, workcontext.WorkContextExpectations{
-		Issuer:   WorkContextSingleton().issuer,
-		Audience: "modelservice",
-	})
-	require.NoError(t, err)
-	return verified
+	return verified.Context()
 }
 
 // The minted capability carries exactly the binding's headless grant — not its
@@ -111,18 +106,18 @@ func TestMintModuleOperationContextSealsExactlyTheHeadlessScopes(t *testing.T) {
 	require.Equal(t, "modelservice", signed.GetAudience())
 	require.Equal(t, moduleWorkContextTenant, signed.GetTenantId())
 	require.Equal(t, principalID, signed.GetOwnerPrincipalId())
-	require.Equal(t, workcontext.WorkContextReplayIdempotent, signed.GetReplayPolicy())
+	require.Equal(t, workcontext.ReplayIdempotent, signed.GetReplayPolicy())
 	require.LessOrEqual(t, signed.GetExpiresAtUnix()-signed.GetIssuedAtUnix(), int64(business.ModuleOperationContextTTL/time.Second))
 	want := []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}, ResourceIds: []string{"profile-digest"}}}
 	requireScopes(t, want, signed.GetAuthorityScopes())
-	require.Len(t, signed.GetActorChain(), 1)
-	actor := signed.GetActorChain()[0]
-	require.Equal(t, principalID, actor.GetPrincipalId())
-	require.Equal(t, business.PrincipalKindService, actor.GetPrincipalKind())
-	requireScopes(t, want, actor.GetGrantedScopes())
+	// The module acts as itself: owned by its service principal, no actor hop,
+	// and sealed to the build its requesting pod runs.
+	require.Empty(t, signed.GetActorChain())
+	require.Equal(t, business.PrincipalKindService, signed.GetOwnerPrincipalKind())
+	require.Equal(t, executiontest.Digest("documents"), signed.GetSeal().GetImageDigest())
 
 	// It is not a module identity: the capability surface refuses it.
-	_, err = WorkContextSingleton().VerifyModuleWorkContext(resp.GetToken())
+	_, err = WorkContextSingleton().VerifyModuleWorkContext(context.Background(), resp.GetToken())
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 
 	entries := audit.of(business.EventModuleOperationContextMint)
@@ -268,11 +263,11 @@ func TestStartModuleOperationTaskRefusesTheCapabilitySurfaceAudience(t *testing.
 		Scopes:    []business.ModuleOperationScope{{ResourceKind: "jobs", Actions: []string{"enqueue"}}},
 	}
 
-	_, _, err := WorkContextSingleton().StartModuleOperationTask(authority)
-	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+	_, _, err := WorkContextSingleton().StartModuleOperationTask(context.Background(), authority)
+	require.ErrorIs(t, err, workcontext.ErrInvalid)
 
 	authority.Audience = "modelservice"
 	authority.Scopes = nil
-	_, _, err = WorkContextSingleton().StartModuleOperationTask(authority)
-	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid, "a capability with no scopes is never minted")
+	_, _, err = WorkContextSingleton().StartModuleOperationTask(context.Background(), authority)
+	require.ErrorIs(t, err, workcontext.ErrInvalid, "a capability with no scopes is never minted")
 }

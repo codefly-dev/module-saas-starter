@@ -175,7 +175,8 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NoError(t, err)
 	previousAuthority := *adapters.WorkContextSingleton()
 	t.Cleanup(func() { *adapters.WorkContextSingleton() = previousAuthority })
-	adapters.WorkContextSingleton().Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "installer-test", PrivateKey: private, Authority: testStore})
+	svc.SetWorkContextSealStore(testStore)
+	adapters.WorkContextSingleton().Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "installer-test", PrivateKey: private, Authority: testStore, Seals: svc})
 	policy := business.InstallerPolicy{Version: "accounts.module-installation-policy/v1", Delegations: []business.InstallerDelegation{{Prefix: "example-installer", OrganizationID: p.OrgID, ModuleID: "acme.example/repeatable", AgentIdentifiers: []string{p.AgentIdentifier}, TargetID: p.TargetID, RoleID: p.RoleID, RolePermissions: []string{"documents:read"}, AllowedAudiences: p.AllowedAudiences, AllowedScopes: p.AllowedScopes, OwnerPrincipalID: p.OwnerPrincipalID, ExpiresAt: time.Now().Add(time.Hour)}}}
 	path := filepath.Join(t.TempDir(), "policy.json")
 	raw, err := json.Marshal(policy)

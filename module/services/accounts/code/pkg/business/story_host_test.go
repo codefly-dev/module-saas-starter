@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"testing"
 
 	"accounts/pkg/adapters"
@@ -15,7 +17,7 @@ import (
 	"accounts/pkg/infra"
 
 	"github.com/codefly-dev/core/wool"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -45,30 +47,30 @@ func TestStory_HOST_ID_001(t *testing.T) {
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	verifier, err := workcontext.NewWorkContextVerifier(workcontext.WorkContextVerifierOptions{
-		PublicKeys: map[string]ed25519.PublicKey{storyWorkContextKeyID: publicKey},
-	})
-	require.NoError(t, err)
 
 	// The issuer under test is the host's own, resolving authority from the
-	// tenant's rows. Minting with a bare SDK signer here would leave every
+	// tenant's rows. Minting with a bare signer here would leave every
 	// admission guard on this path — authentication, membership, the actor
 	// ceiling — unexercised.
 	adapters.WithService(testService)
 	// The audience this story mints for is a declared MODULE prefix, and the mint
-	// now holds every audience to the host's derived vocabulary (issue #952). A
+	// holds every audience to the host's derived vocabulary (issue #952). A
 	// deployment declares it through the principal registry; so does the story.
+	// A capability is sealed to the installation it is exercised through, so the
+	// organization installs the module too, through the production store API.
 	previousPrincipals := testService.ModulePrincipals()
 	testService.SetModulePrincipals(business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {Prefix: "documents"},
 	})
 	t.Cleanup(func() { testService.SetModulePrincipals(previousPrincipals) })
+	installCapabilityFixture(t, testService, tenantA, personID)
 	issuer := &adapters.WorkContextAuthorityServer{}
 	issuer.Configure(adapters.WorkContextAuthorityConfiguration{
 		Issuer:     storyWorkContextIssuer,
 		KeyID:      storyWorkContextKeyID,
 		PrivateKey: privateKey,
 		Authority:  testStore,
+		Seals:      testService,
 	})
 
 	// When they call a module through the gateway.
@@ -78,32 +80,38 @@ func TestStory_HOST_ID_001(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Then the module receives a signed Work Context naming the person and tenant A.
-	token, err := workcontext.ParseWorkContextToken(issued.GetToken())
+	// Then the module receives a signed Work Context naming the person and tenant
+	// A — verified the way a consuming module verifies one: core's full Verifier,
+	// against the host's live answers for that tenant.
+	verify := func(audience, tenant string) (*workcontext.Verified, error) {
+		decoded, err := workcontext.Decode(issued.GetToken())
+		if err != nil {
+			return nil, err
+		}
+		return (&workcontext.Verifier{
+			Issuer:    storyWorkContextIssuer,
+			Audience:  audience,
+			Keys:      map[string]ed25519.PublicKey{storyWorkContextKeyID: publicKey},
+			Revisions: storyRevisions{owner: decoded.Context().GetOwnerPrincipalId()},
+			Replay:    workcontext.NewMemoryReplayStore(),
+			Grants:    storyNoGrants{},
+			Seals:     storySeals{tenant: tenant},
+		}).Verify(ctx, issued.GetToken())
+	}
+	verified, err := verify("documents", tenantA)
 	require.NoError(t, err)
-	claims, err := verifier.Verify(token, workcontext.WorkContextExpectations{
-		Issuer:   storyWorkContextIssuer,
-		Audience: "documents",
-		TenantID: tenantA,
-	})
-	require.NoError(t, err)
-	require.Equal(t, tenantA, claims.GetTenantId())
-	require.Equal(t, personID, claims.GetOwnerPrincipalId())
+	require.Equal(t, tenantA, verified.Context().GetTenantId())
+	require.Equal(t, personID, verified.Context().GetOwnerPrincipalId())
+	require.NotEmpty(t, verified.Context().GetSeal().GetInstallationId(),
+		"sealed to the organization's installation of the module")
+	require.Empty(t, verified.Context().GetSeal().GetImageDigest(), "a person bears no execution")
 
 	// And a Work Context minted for another audience is refused.
-	_, err = verifier.Verify(token, workcontext.WorkContextExpectations{
-		Issuer:   storyWorkContextIssuer,
-		Audience: "billing",
-		TenantID: tenantA,
-	})
+	_, err = verify("billing", tenantA)
 	require.Error(t, err, "a context minted for one module may not be presented to another")
 
-	// The same holds for another tenant's expectation of the same token.
-	_, err = verifier.Verify(token, workcontext.WorkContextExpectations{
-		Issuer:   storyWorkContextIssuer,
-		Audience: "documents",
-		TenantID: uuid.NewString(),
-	})
+	// The same holds against another tenant's live state.
+	_, err = verify("documents", uuid.NewString())
 	require.Error(t, err)
 
 	// The host never mints one on a claim it has not checked: a caller who is
@@ -308,4 +316,44 @@ func TestStory_HOST_CLIENT_003(t *testing.T) {
 	require.Len(t, viaClientOnly, 1)
 	require.Equal(t, viaClient.ID, viaClientOnly[0].ID)
 	require.Equal(t, storyClientID, viaClientOnly[0].ClientID)
+}
+
+// storySeals is a consuming module's SealSource over the host's live answers
+// for one tenant, mapped onto core's sentinels the way the host's own is.
+type storySeals struct{ tenant string }
+
+func (s storySeals) Seal(ctx context.Context, principalID, installationID string) (workcontext.Seal, error) {
+	id, revision, err := testService.WorkContextSeal(ctx, s.tenant, principalID, installationID)
+	if err != nil {
+		return workcontext.Seal{}, fmt.Errorf("%w: %w", workcontext.ErrNoSeal, err)
+	}
+	return workcontext.Seal{InstallationID: id, InstallationRevision: revision}, nil
+}
+
+func (s storySeals) PrincipalEpoch(ctx context.Context, principalID string) (uint64, error) {
+	return testService.WorkContextPrincipalEpoch(ctx, s.tenant, principalID)
+}
+
+func (s storySeals) ApprovedBuild(ctx context.Context, principalID string) (string, uint64, error) {
+	digest, incarnation, err := testService.WorkContextApprovedBuild(ctx, s.tenant, principalID)
+	if errors.Is(err, business.ErrBearsNoExecution) {
+		return "", 0, workcontext.ErrNoApprovedBuild
+	}
+	return digest, incarnation, err
+}
+
+func (storySeals) OperationBinding(context.Context, string) (workcontext.OperationBinding, error) {
+	return workcontext.OperationBinding{}, workcontext.ErrNoBinding
+}
+
+type storyRevisions struct{ owner string }
+
+func (r storyRevisions) AuthorizationRevision(ctx context.Context, tenantID string) (uint64, error) {
+	return testService.WorkContextRevision(ctx, tenantID, r.owner)
+}
+
+type storyNoGrants struct{}
+
+func (storyNoGrants) Grant(context.Context, string) (*workcontext.Grant, error) {
+	return nil, errors.New("no approval grants in this story")
 }

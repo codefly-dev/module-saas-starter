@@ -10,7 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 )
 
 type sourceOperationContextKey struct{}
@@ -34,26 +34,24 @@ func sourceOperationProcedure(method string) bool {
 // The module-capabilities identity token has no source scope and is never a call.
 func authenticateSourceOperationContext(ctx context.Context, headers http.Header) (context.Context, error) {
 	authority := WorkContextSingleton()
-	if authority == nil || authority.verifier == nil || authority.configureErr != nil {
+	if !authority.configured() {
 		return ctx, connect.NewError(connect.CodeUnavailable, errors.New("source authority unavailable"))
 	}
-	values := headers.Values(workcontext.WorkContextHeaderName)
+	values := headers.Values(workContextHeader)
 	if len(values) != 1 {
 		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("one source Work Context required"))
 	}
-	token, err := workcontext.ParseWorkContextToken(values[0])
-	if err != nil {
+	// Presented TO the source operation surface, so verified as its audience.
+	verified, err := authority.verifyFor(ctx, values[0], business.SourceOperationAudience)
+	if err != nil || verified.Context().GetTenantId() == "" || verified.Context().GetOwnerPrincipalId() == "" {
 		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid source Work Context"))
 	}
-	claims, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer, Audience: business.SourceOperationAudience})
-	if err != nil || claims.GetTenantId() == "" || claims.GetOwnerPrincipalId() == "" {
-		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid source Work Context"))
-	}
-	if claims.GetReplayPolicy() != workcontext.WorkContextReplayIdempotent {
+	claims := verified.Context()
+	if claims.GetReplayPolicy() != workcontext.ReplayIdempotent {
 		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("idempotent source Work Context required"))
 	}
 	ctx = stampRequestIdentity(ctx, auth.OrdinaryRequestIdentity(claims.GetOwnerPrincipalId(), claims.GetTenantId()), auth.Assurance{})
-	delegated, _, err := service.ConfirmSourceDelegationParent(ctx, claims.TenantId, claims.OwnerPrincipalId, claims.AuthorizationRevision, operationScopesFromCore(claims.AuthorityScopes), sourceDelegationHops(claims.ActorChain))
+	delegated, _, err := service.ConfirmSourceDelegationParent(ctx, claims.TenantId, claims.OwnerPrincipalId, claims.AuthorizationRevision, operationScopesFromCore(claims.AuthorityScopes), sourceDelegationHops(claims.ActorChain), claims.GetOperationBinding().GetBindingId())
 	if err != nil {
 		return ctx, translateGRPCError(sourceDelegationParentError(err))
 	}
@@ -76,7 +74,7 @@ func requireSourceOperationScope(ctx context.Context, org, source, action string
 	if claims.GetTenantId() != org {
 		return connect.NewError(connect.CodePermissionDenied, errors.New("source tenant mismatch"))
 	}
-	if err := workcontext.RequireWorkContextScope(claims, workcontext.WorkContextScopeRequirement{ResourceKind: "datasource.sources", Action: action, ResourceID: source}); err != nil {
+	if !workContextGrants(claims, "datasource.sources", action, source) {
 		return connect.NewError(connect.CodePermissionDenied, errors.New("source scope required"))
 	}
 	// An unconstrained kind is not an installation-selected source slot.

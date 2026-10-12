@@ -75,9 +75,9 @@ func TestPersonMintsRefuseTheModuleAudience(t *testing.T) {
 		{"StartChildSession", func() error {
 			_, err := server.StartChildSession(ctx, &gen.StartChildSessionWorkContextRequest{
 				OrgId: uuidForReservedAudienceTest, ParentWorkContextToken: "parent.token",
-				SessionId: uuidForReservedAudienceTest, ActorPrincipalId: uuidForReservedAudienceTest,
-				GrantedScopes: scopesForReservedAudienceTest(),
-				Audience:      ModuleWorkContextAudience,
+				ActorPrincipalId: uuidForReservedAudienceTest,
+				GrantedScopes:    scopesForReservedAudienceTest(),
+				Audience:         ModuleWorkContextAudience,
 			})
 			return err
 		}},
@@ -197,7 +197,7 @@ func TestR1019RenewInheritedAudience(t *testing.T) {
 	effective := located[0]
 	require.Less(t, inherit, effective, "the check must follow the inheritance")
 
-	sign := strings.Index(body, "s.signer.")
+	sign := strings.Index(body, "s.remint(")
 	require.NotEqual(t, -1, sign)
 	require.Less(t, effective, sign, "the check must precede signing")
 }

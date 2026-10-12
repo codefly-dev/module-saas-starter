@@ -41,7 +41,7 @@ func revisionScopes(scopes []*basev0.WorkScopeV1) []*gen.WorkContextScope {
 
 // revisionRequestFromClaims builds the request exactly as a consumer's SDK does:
 // the owner with the authority scopes, then every actor with its granted
-// scopes, and the revision the token carries.
+// scopes, the revision the token carries, and the operation binding it sealed.
 func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthorizationRevisionRequest {
 	subjects := []*gen.WorkContextRevisionSubject{{
 		PrincipalId: signed.GetOwnerPrincipalId(),
@@ -53,12 +53,16 @@ func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthoriza
 			Scopes:      revisionScopes(actor.GetGrantedScopes()),
 		})
 	}
-	return &gen.CheckAuthorizationRevisionRequest{
+	request := &gen.CheckAuthorizationRevisionRequest{
 		OrgId:                 signed.GetTenantId(),
 		OwnerPrincipalId:      signed.GetOwnerPrincipalId(),
 		AuthorizationRevision: signed.GetAuthorizationRevision(),
 		Subjects:              subjects,
 	}
+	if binding := signed.GetOperationBinding().GetBindingId(); binding != "" {
+		request.OperationBindingId = &binding
+	}
+	return request
 }
 
 func mintedOperationContextClaims(t *testing.T) *basev0.WorkContextV1 {
@@ -99,9 +103,6 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 		"another revision": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.AuthorizationRevision++
 		},
-		"another actor": func(r *gen.CheckAuthorizationRevisionRequest) {
-			r.Subjects[1].PrincipalId = "019fec91-1000-7000-8000-000000000003"
-		},
 		"an extra actor": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.Subjects = append(r.Subjects, &gen.WorkContextRevisionSubject{PrincipalId: "019fec91-1000-7000-8000-000000000003"})
 		},
@@ -109,7 +110,7 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 			r.Subjects[0].Scopes[0].Actions = []string{"delete", "invoke"}
 		},
 		"a resource beyond headless": func(r *gen.CheckAuthorizationRevisionRequest) {
-			r.Subjects[1].Scopes[0].ResourceIds = []string{"other-profile"}
+			r.Subjects[0].Scopes[0].ResourceIds = []string{"other-profile"}
 		},
 		"kind-wide where headless pins a resource": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.Subjects[0].Scopes[0].ResourceIds = nil
@@ -137,7 +138,7 @@ func TestCheckAuthorizationRevisionAcceptsANarrowerModuleOperationSubject(t *tes
 	installModuleWorkContextAuthority(t)
 	ctx := revisionTestContext(t)
 	request := revisionRequestFromClaims(mintedOperationContextClaims(t))
-	request.Subjects[1].Scopes[0].Actions = []string{"invoke"}
+	request.Subjects[0].Scopes[0].Actions = []string{"invoke"}
 
 	_, err := WorkContextSingleton().CheckAuthorizationRevision(ctx, request)
 	require.NoError(t, err)
@@ -190,6 +191,7 @@ func TestCheckAuthorizationRevisionLeavesNonModuleOwnersToTheStore(t *testing.T)
 	server := &WorkContextAuthorityServer{}
 	server.Configure(WorkContextAuthorityConfiguration{
 		Issuer: "accounts.test", KeyID: "accounts-test-key", PrivateKey: privateKey, Authority: fake,
+		Seals: newSealAnswersFake(7),
 	})
 	require.NoError(t, server.configureErr)
 	ctx := revisionTestContext(t)

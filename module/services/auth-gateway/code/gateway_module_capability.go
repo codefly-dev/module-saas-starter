@@ -22,26 +22,28 @@ package main
 // which is the confinement deleted rather than relocated.
 //
 // THE RULE: a resource-confined bearer is admitted at a declared module route
-// only TOGETHER WITH a verified capability for that module, owned by the
-// bearer's own subject, in the bearer's own organization, minted in the
-// bearer's own session. The capability is what carries the ceiling — accounts
-// holds a confined mint to the installed consumer's declared audiences and its
-// installation's standing grants (see confineResourceMintToItsConsumer and
-// accounts' StartTask) — and the three bindings below are what stop a
-// capability minted by anybody else, for anybody else, standing in for it.
+// only TOGETHER WITH an inspected capability for that module, in the bearer's
+// own organization, minted in the bearer's own SESSION. The capability is what
+// carries the ceiling — accounts holds a confined mint to the installed
+// consumer's declared audiences and its installation's standing grants (see
+// confineResourceMintToItsConsumer and accounts' StartTask) — and the bindings
+// below are what stop a capability minted by anybody else standing in for it.
 //
 // The session binding is the one that makes "minted under that ceiling" a fact
-// rather than an inference. A capability for this module could otherwise have
-// been minted by an UNCONFINED credential of the same person — their browser
-// session — where no consumer ceiling applies; pairing on the session the
-// bearer itself names leaves only capabilities minted by this very credential,
-// and every one of those passed the confined mint.
+// rather than an inference, and it is sufficient on its own to name the owner:
+// accounts signs into a capability only its caller's VERIFIED session or a
+// fresh one, never a session a request names (callerSession in accounts), and a
+// session belongs to one person. So a capability carrying the bearer's session
+// was minted by this very credential — never by the same person's unconfined
+// browser session, whose session id is its own, and never by anyone else. The
+// owner is therefore not compared here, which keeps this hop to what core's
+// Inspector exposes: a hop routes, it never reads the principal it would act as.
 
 import (
 	"context"
 	"fmt"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/workcontext"
 )
 
 // moduleCapabilityPairingKey carries the verified capability from the declared
@@ -55,7 +57,7 @@ import (
 // is unreachable from the request.
 type moduleCapabilityPairingKey struct{}
 
-// moduleCapabilityPairing is the verified capability a declared module route
+// moduleCapabilityPairing is the inspected capability a declared module route
 // presented, reduced to the facts a confined credential is paired against.
 type moduleCapabilityPairing struct {
 	// audience is the capability's own audience, as signed.
@@ -64,7 +66,6 @@ type moduleCapabilityPairing struct {
 	// route carries — the module's own, which accounts derives from the declared
 	// module principal and the runtime names as its consumption target.
 	viewerAudience string
-	owner          string
 	tenant         string
 	session        string
 }
@@ -73,17 +74,16 @@ type moduleCapabilityPairing struct {
 // about to be judged. A nil claims set records nothing, so "no capability was
 // presented" and "one was presented and verified" stay distinguishable.
 func withPresentedModuleCapability(
-	ctx context.Context, claims *basev0.WorkContextV1, viewerAudience string,
+	ctx context.Context, inspected *workcontext.Inspected, viewerAudience string,
 ) context.Context {
-	if claims == nil {
+	if inspected == nil {
 		return ctx
 	}
 	return context.WithValue(ctx, moduleCapabilityPairingKey{}, &moduleCapabilityPairing{
-		audience:       claims.GetAudience(),
+		audience:       inspected.Audience(),
 		viewerAudience: viewerAudience,
-		owner:          claims.GetOwnerPrincipalId(),
-		tenant:         claims.GetTenantId(),
-		session:        claims.GetSessionId(),
+		tenant:         inspected.TenantID(),
+		session:        inspected.SessionID(),
 	})
 }
 
@@ -96,7 +96,7 @@ func presentedModuleCapability(ctx context.Context) *moduleCapabilityPairing {
 // confinement a resource-bound credential carries.
 //
 // Every comparison refuses an EMPTY value on either side before comparing. Two
-// absent subjects, tenants or sessions are equal, and an equality that holds
+// absent tenants or sessions are equal, and an equality that holds
 // because neither side said anything is the whole failure mode: a capability
 // signed without a session would otherwise pair with a credential that names
 // none, and the binding would be satisfied by the absence of the thing it binds.
@@ -116,7 +116,6 @@ func (p *moduleCapabilityPairing) admitsConfinedCredential(claims *accessClaims)
 		name            string
 		capability, jwt string
 	}{
-		{"subject", p.owner, claims.Subject},
 		{"organization", p.tenant, claims.OrgID},
 		{"session", p.session, claims.SessionID},
 	} {

@@ -79,7 +79,7 @@ func TestCeilingHeaders_TheConsumersTwoHopsThroughTheRealGateway(t *testing.T) {
 		accounts.lastHeaders.Get("X-User-Id"), accounts.lastHeaders.Get("X-Org-Id"), accounts.lastHeaders.Get("X-Session-Id"))
 
 	read := httptest.NewRecorder()
-	gw.ServeHTTP(read, moduleRequest(caller, capability.Encoded()))
+	gw.ServeHTTP(read, moduleRequest(caller, capability))
 
 	require.Equal(t, http.StatusOK, read.Code, read.Body.String())
 	require.NotNil(t, module.lastHeaders)

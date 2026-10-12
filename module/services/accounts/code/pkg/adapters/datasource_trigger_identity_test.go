@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -8,7 +9,6 @@ import (
 	"accounts/pkg/business/moduleregistrytest"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -111,13 +111,11 @@ func TestTriggerOccurrenceMintsFromTheInstallationBinding(t *testing.T) {
 	signed := verifyExecutionContext(t, minted.GetToken())
 	module := business.ModulePrincipalID("runtime")
 	require.Equal(t, module, signed.GetOwnerPrincipalId(), "no person is present, so the module's own principal owns it — which is exactly the limit of this arm")
-	require.Len(t, signed.GetActorChain(), 1)
-	require.Equal(t, module, signed.GetActorChain()[0].GetPrincipalId())
+	require.Empty(t, signed.GetActorChain(), "the module acts as the owner it is, with no hop delegating to itself")
 	// Exactly the headless grant, never the invoke scopes the same binding
 	// carries for work a person asked for.
 	want := []*basev0.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"read"}}}
 	requireScopes(t, want, signed.GetAuthorityScopes())
-	requireScopes(t, want, signed.GetActorChain()[0].GetGrantedScopes())
 	require.Len(t, audit.of(business.EventModuleOperationContextMint), 1)
 
 	// A binding with no headless grant cannot be minted this way at all: the
@@ -155,12 +153,7 @@ func TestTriggerIdentityWithoutADeclarationRefusesBothArms(t *testing.T) {
 // verify is not one an occurrence may be admitted with.
 func verifyExecutionContext(t *testing.T, token string) *basev0.WorkContextV1 {
 	t.Helper()
-	parsed, err := workcontext.ParseWorkContextToken(token)
+	verified, err := WorkContextSingleton().verifyFor(context.Background(), token, "runtime")
 	require.NoError(t, err)
-	verified, err := WorkContextSingleton().verifier.Verify(parsed, workcontext.WorkContextExpectations{
-		Issuer:   WorkContextSingleton().issuer,
-		Audience: "runtime",
-	})
-	require.NoError(t, err)
-	return verified
+	return verified.Context()
 }

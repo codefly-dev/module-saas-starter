@@ -200,6 +200,11 @@ type Service struct {
 	executionReviewer  ExecutionReviewer
 	executionAuthority ExecutionAuthority
 
+	// workContextSeals answers the row-backed half of a Work Context's seal
+	// (work_context_seal.go). Unset answers no seal, so no capability is
+	// minted or verified rather than one sealed to nothing.
+	workContextSeals WorkContextSealStore
+
 	// moduleEnvelopes persists the module envelope, the ceiling a platform
 	// super_admin writes (module_envelope.go). Nil answers no question about
 	// the ceiling: the RPCs refuse and the reconcilers derive nothing.

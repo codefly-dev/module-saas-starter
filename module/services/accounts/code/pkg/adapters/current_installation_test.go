@@ -10,7 +10,6 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -93,13 +92,13 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 			r.Header().Del("x-codefly-internal-token")
 		}},
 		{"no module", func(r *connect.Request[gen.ModuleCurrentInstallationRequest]) {
-			r.Header().Del(workcontext.WorkContextHeaderName)
+			r.Header().Del(workContextHeader)
 		}},
 		{"viewer parent is not module", func(r *connect.Request[gen.ModuleCurrentInstallationRequest]) {
-			r.Header().Set(workcontext.WorkContextHeaderName, parent)
+			r.Header().Set(workContextHeader, parent)
 		}},
 		{"duplicate module", func(r *connect.Request[gen.ModuleCurrentInstallationRequest]) {
-			r.Header().Add(workcontext.WorkContextHeaderName, r.Header().Get(workcontext.WorkContextHeaderName))
+			r.Header().Add(workContextHeader, r.Header().Get(workContextHeader))
 		}},
 		{"forged parent", func(r *connect.Request[gen.ModuleCurrentInstallationRequest]) {
 			r.Msg.ParentWorkContextToken = "forged"
@@ -171,12 +170,11 @@ func TestCurrentInstallationDelegationCurrentChecks(t *testing.T) {
 	journal := &readExchangeJournal{}
 	workContextSingleton.journal = journal
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "definitions", Actions: []string{"read"}}}
-	actors := []*basev0.WorkActorV1{{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes}}
-	token, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes, ActorChain: actors})
-	require.NoError(t, err)
+	actors := []delegationHop{agentHop("actor-1", "hop-1", scopes...)}
+	token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner, Task: "task", Session: "session", Scopes: scopes, Actors: actors})
 	invoke := func() error {
-		req := connect.NewRequest(&gen.ModuleCurrentInstallationRequest{InstallationId: id, ParentWorkContextToken: token.Encoded()})
-		for k, v := range readExchangeRequest(t, token.Encoded()).Header() {
+		req := connect.NewRequest(&gen.ModuleCurrentInstallationRequest{InstallationId: id, ParentWorkContextToken: token})
+		for k, v := range readExchangeRequest(t, token).Header() {
 			req.Header()[k] = v
 		}
 		_, e := client.GetCurrentInstallation(context.Background(), req)

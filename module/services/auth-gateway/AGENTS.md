@@ -160,11 +160,22 @@ later: the tool minted and was then refused at the module.
 **Admitting the bearer at module routes on its own would have been the confinement
 deleted, not relocated** — a one-solution credential with the person's whole
 authority at every declared module. So the pairing is the admission:
-`gateway_module_capability.go` requires a capability for THAT module, owned by the
-bearer's own subject, in its own organization, minted in its own session. The session
-binding is what makes "minted under the consumer's ceiling" a fact rather than an
-inference: a capability for the same module could otherwise have come from the same
-person's ordinary browser session, where no consumer ceiling applies.
+`gateway_module_capability.go` requires a capability for THAT module, in the
+bearer's own organization, minted in its own session. The session binding is what
+makes "minted under the consumer's ceiling" a fact rather than an inference: a
+capability for the same module could otherwise have come from the same person's
+ordinary browser session, where no consumer ceiling applies. It is also sufficient
+to name the owner, because accounts signs into a capability only its caller's
+verified session or a fresh one — never a session a request names — and a session
+belongs to one person; so the owner is not read here, which keeps the edge to what
+core's `Inspector` exposes to a forwarding hop.
+
+**The edge check is core's `Inspector`** (`work_context.go`): encoding, issuer,
+the signature under the key the capability names, window, shape, and the audience
+of the route this hop resolved. It reads no live state and consumes nothing; the
+callee verifies at full strength. A catalog route resolves no audience of its own,
+so there the audience is left to the callee — exactly the strength that route had
+before — and the code says so rather than hiding it behind an empty sentinel.
 
 **The ceiling itself is accounts', not this gateway's.** `ext_authz` stamps
 `x-codefly-resource`; the gateway resolves the solution that resource names, requires

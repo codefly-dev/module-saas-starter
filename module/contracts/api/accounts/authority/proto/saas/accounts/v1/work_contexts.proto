@@ -98,11 +98,17 @@ message StartTaskWorkContextRequest {
 // that node's own row and checks the agent holds a standing grant at an
 // ancestor-or-equal of it. This differs from CheckAccess, where resource_id is a
 // placed-record id; do not pass a record id here.
+//
+// The Session is assigned by the issuer and returned in IssuedWorkContext, never
+// named by the caller: a session a caller could name is one it could name after
+// another credential's, and a confined credential is paired with a capability on
+// the session alone.
 message StartInstallationTaskRequest {
+  reserved 4;
+  reserved "session_id";
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string installation_id = 2 [(buf.validate.field).string.uuid = true];
   string task_id = 3 [(buf.validate.field).string.uuid = true];
-  string session_id = 4 [(buf.validate.field).string.uuid = true];
   repeated WorkContextScope authority_scopes = 5 [
     (buf.validate.field).repeated.min_items = 1,
     (buf.validate.field).repeated.max_items = 64
@@ -144,9 +150,10 @@ message StartRootSessionWorkContextRequest {
   ];
 }
 
-// ExchangeWorkContextAudienceRequest reissues the same immutable Task,
-// Session, owner, and delegation lineage for another service boundary while
-// attenuating the effective authority to the requested scopes.
+// ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,
+// and delegation lineage for another service boundary while attenuating the
+// effective authority to the requested scopes. The reissued capability opens the
+// caller's own authenticated Session, assigned by the issuer.
 message ExchangeWorkContextAudienceRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string parent_work_context_token = 2 [
@@ -168,13 +175,20 @@ message ExchangeWorkContextAudienceRequest {
   ];
 }
 
+// StartChildSessionWorkContextRequest delegates one more hop from a verified
+// parent. The child Session is assigned by the issuer and returned in
+// IssuedWorkContext (with the parent's as parent_session_id), never named by the
+// caller: a session a caller could name is one it could name after another
+// credential's, and a confined credential is paired with a capability on the
+// session alone.
 message StartChildSessionWorkContextRequest {
+  reserved 3;
+  reserved "session_id";
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string parent_work_context_token = 2 [
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 32768
   ];
-  string session_id = 3 [(buf.validate.field).string.uuid = true];
   string actor_principal_id = 4 [(buf.validate.field).string.uuid = true];
   repeated WorkContextScope granted_scopes = 5 [
     (buf.validate.field).repeated.min_items = 1,
@@ -195,8 +209,8 @@ message StartChildSessionWorkContextRequest {
 // signing TTL cap without the originating user present. The caller is the
 // current (outermost) actor of the parent context, not its owner, so a
 // long-running delegated task can keep itself alive. Renewal preserves the
-// Task, Session, owner, and delegation lineage; it may attenuate but can never
-// widen the current actor's authority.
+// Task, owner, and delegation lineage and opens a fresh Session assigned by the
+// issuer; it may attenuate but can never widen the current actor's authority.
 message RenewWorkContextRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string parent_work_context_token = 2 [
@@ -257,6 +271,15 @@ message CheckAuthorizationRevisionRequest {
   repeated WorkContextRevisionSubject subjects = 4 [
     (buf.validate.field).repeated.min_items = 1,
     (buf.validate.field).repeated.max_items = 17
+  ];
+  // operation_binding_id is the operation binding the context sealed, copied
+  // from its operation_binding.binding_id. A context minted from a source
+  // delegation exercises one (the delegation, used by its actor), and is
+  // confirmed only against that binding, re-read live; such a context checked
+  // without it is not confirmed. Empty for a context that seals none.
+  optional string operation_binding_id = 5 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
   ];
 }
 

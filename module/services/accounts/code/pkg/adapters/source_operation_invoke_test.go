@@ -2,8 +2,6 @@ package adapters
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -26,7 +24,6 @@ import (
 	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/runnable"
 	"github.com/codefly-dev/sdk-go/receipts"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -275,12 +272,9 @@ func TestSourceOperationJSONEnvelopeBoundAndScope(t *testing.T) {
 	require.NoError(t, err)
 	request := &gen.InvokeSourceOperationRequest{InputJson: strings.Repeat("\x01", 12000)}
 	require.False(t, sourceWireFits(request, sourceInputEnvelopeBytes))
-	_, key, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-	signer, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{Issuer: "example.test", KeyID: "test-key", PrivateKey: key})
-	require.NoError(t, err)
-	_, claims, err := signer.StartTask(workcontext.StartTaskInput{Audience: business.SourceOperationAudience, TenantID: "org", OwnerPrincipalID: "owner", TaskID: "task", SessionID: "session", AuthorizationRevision: 1, ReplayPolicy: workcontext.WorkContextReplayIdempotent, AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{"source"}}}})
-	require.NoError(t, err)
+	server := newCoreTestServer(t, &workContextAuthorityFake{}, newSealAnswersFake(1))
+	_, claims := mintTestCapability(t, server, testCapability{Audience: business.SourceOperationAudience, Tenant: "org", Owner: "owner", Task: "task",
+		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{"source"}}}})
 	ctx := context.WithValue(t.Context(), sourceOperationContextKey{}, claims)
 	require.NoError(t, requireSourceOperationScope(ctx, "org", "source", "invoke"))
 	require.Error(t, requireSourceOperationScope(ctx, "org", "other", "invoke"))

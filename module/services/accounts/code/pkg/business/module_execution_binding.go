@@ -594,6 +594,14 @@ func authenticatingContainer(pod *PodExecution, name string, reviewed *ReviewedE
 //
 // A value with no digest at all never matches, because an approval is only ever
 // a statement about immutable content — a tag is not one.
+// AttestedDigest is the image-manifest digest the caller is running: the
+// `sha256:<hex>` portion of the container status BindExecution read, which is
+// the value a Work Context mint attests and core holds against the approved
+// build. Reports false when the status names no digest at all.
+func (e ExecutionIdentity) AttestedDigest() (string, bool) {
+	return digestPortion(string(e.Running))
+}
+
 func digestsEqual(approved, imageID string) bool {
 	left, leftOK := digestPortion(approved)
 	right, rightOK := digestPortion(imageID)

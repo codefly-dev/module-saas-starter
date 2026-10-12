@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"connectrpc.com/connect"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -27,22 +26,19 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 		return nil, err
 	}
 	authority := WorkContextSingleton()
-	if authority == nil || authority.verifier == nil || authority.configureErr != nil {
+	if !authority.configured() {
 		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	values := md.Get(workcontext.WorkContextHeaderName)
+	values := md.Get(workContextHeader)
 	if len(values) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one viewer Work Context is required")
 	}
-	token, err := workcontext.ParseWorkContextToken(values[0])
+	verified, err := authority.verifyIssued(ctx, values[0])
 	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
+		return nil, refusedReadBack(err, status.Error(codes.Unauthenticated, "invalid viewer Work Context"))
 	}
-	claims, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
-	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
-	}
+	claims := verified.Context()
 	declared, err := service.ModuleContentResources(claims.GetAudience())
 	if err != nil || !slices.Contains(declared, req.ResourceType) {
 		return nil, status.Error(codes.PermissionDenied, "declared resource scope required")
@@ -50,7 +46,7 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	if claims.GetTenantId() == "" || claims.GetOwnerPrincipalId() == "" {
 		return nil, status.Error(codes.PermissionDenied, "tenant viewer required")
 	}
-	if err = workcontext.RequireWorkContextScope(claims, workcontext.WorkContextScopeRequirement{ResourceKind: req.ResourceType, Action: req.Action, ResourceID: req.ResourceId}); err != nil {
+	if !workContextGrants(claims, req.ResourceType, req.Action, req.ResourceId) {
 		return nil, status.Error(codes.PermissionDenied, "record scope required")
 	}
 	if len(claims.GetActorChain()) > 0 && authority.journal == nil {
@@ -82,7 +78,7 @@ func (h *moduleCapabilitiesConnectHandler) CheckWorkContextRecordAccess(ctx cont
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.CheckWorkContextRecordAccess(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)

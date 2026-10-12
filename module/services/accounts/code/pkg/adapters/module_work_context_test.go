@@ -12,7 +12,7 @@ import (
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -78,6 +78,7 @@ func installModuleWorkContextAuthority(t *testing.T) {
 		KeyID:      "accounts-test-key",
 		PrivateKey: privateKey,
 		Authority:  &workContextAuthorityFake{},
+		Seals:      moduleSealAnswers(12),
 	})
 	require.NoError(t, workContextSingleton.configureErr)
 }
@@ -112,13 +113,8 @@ func installModuleWorkContextService(t *testing.T, declaredPrincipals string) *r
 // a composed module forwards it.
 func stampModuleWorkContext(t *testing.T, principalID, tenant string) context.Context {
 	t.Helper()
-	token, _, err := WorkContextSingleton().StartModuleTask(business.ModuleWorkContextAuthority{
-		PrincipalID: principalID,
-		Tenant:      tenant,
-	})
-	require.NoError(t, err)
 	return metadata.NewIncomingContext(context.Background(),
-		metadata.Pairs(workcontext.WorkContextHeaderName, token.Encoded()))
+		metadata.Pairs(workContextHeader, mintModuleIdentity(t, principalID, tenant)))
 }
 
 func mintModuleWorkContext(t *testing.T, prefix, token string) (*gen.ModuleMintWorkContextResponse, error) {
@@ -139,7 +135,7 @@ func TestMintModuleWorkContextRoundTripsToTheCallerIdentity(t *testing.T) {
 	require.Equal(t, business.ModulePrincipalID("documents"), resp.GetPrincipalId())
 	require.Equal(t, moduleWorkContextTenant, resp.GetTenant())
 
-	caller, err := WorkContextSingleton().VerifyModuleWorkContext(resp.GetToken())
+	caller, err := WorkContextSingleton().VerifyModuleWorkContext(context.Background(), resp.GetToken())
 	require.NoError(t, err)
 	require.Equal(t, resp.GetPrincipalId(), caller.PrincipalID)
 	require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
@@ -161,27 +157,54 @@ func TestMintModuleWorkContextIsUnavailableWithoutExecutionBinding(t *testing.T)
 	require.Zero(t, store.controlPlaneCalls, "nothing may be checked, signed or recorded")
 }
 
-// The capability seals identity and tenant only. Sealing the grant as well would
-// put the same authority in two places that disagree for a token lifetime, and
-// an empty scope set denies at any consumer that reads one.
+// The capability seals identity, tenant, installation and execution — never the
+// grant. Sealing the grant as well would put the same authority in two places
+// that disagree for a token lifetime, and an empty scope set denies at any
+// consumer that reads one. The module acts as itself: core carries no actor hop
+// for an owner acting directly.
 func TestStartModuleTaskSealsIdentityWithoutSealingAuthority(t *testing.T) {
 	installModuleWorkContextAuthority(t)
 	principalID := business.ModulePrincipalID("documents")
+	build := testBuildFor(principalID)
+	workContextSingleton.seals.(*sealAnswersFake).approve(principalID, build)
 
-	_, signed, err := WorkContextSingleton().StartModuleTask(business.ModuleWorkContextAuthority{
-		PrincipalID: principalID,
-		Tenant:      moduleWorkContextTenant,
+	_, signed, err := WorkContextSingleton().StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{
+		PrincipalID:    principalID,
+		Tenant:         moduleWorkContextTenant,
+		InstallationID: "installation-documents",
+		Execution:      business.ExecutionIdentity{Running: business.RunningDigest(build.ImageDigest), Incarnation: build.BuildIncarnation},
 	})
 
 	require.NoError(t, err)
 	require.Equal(t, ModuleWorkContextAudience, signed.GetAudience())
 	require.Equal(t, moduleWorkContextTenant, signed.GetTenantId())
 	require.Equal(t, principalID, signed.GetOwnerPrincipalId())
+	require.Equal(t, business.PrincipalKindService, signed.GetOwnerPrincipalKind())
 	require.Empty(t, signed.GetAuthorityScopes())
-	require.Len(t, signed.GetActorChain(), 1)
-	require.Equal(t, principalID, signed.GetActorChain()[0].GetPrincipalId())
-	require.Equal(t, business.PrincipalKindService, signed.GetActorChain()[0].GetPrincipalKind())
-	require.Empty(t, signed.GetActorChain()[0].GetGrantedScopes())
+	require.Empty(t, signed.GetActorChain())
+	require.Equal(t, "installation-documents", signed.GetSeal().GetInstallationId())
+	require.Equal(t, build.ImageDigest, signed.GetSeal().GetImageDigest())
+	require.Equal(t, build.BuildIncarnation, signed.GetSeal().GetBuildIncarnation())
+}
+
+// A module that attests a build other than the one approved for it is minted
+// nothing: core compares the attested execution against the issuer's approved
+// build at the mint, so a superseded pod cannot obtain a capability sealed to the
+// current one.
+func TestStartModuleTaskRefusesASupersededBuild(t *testing.T) {
+	installModuleWorkContextAuthority(t)
+	principalID := business.ModulePrincipalID("documents")
+	workContextSingleton.seals.(*sealAnswersFake).approve(principalID, testBuildFor(principalID))
+	stale := testBuildFor("a superseded generation")
+
+	_, _, err := WorkContextSingleton().StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{
+		PrincipalID:    principalID,
+		Tenant:         moduleWorkContextTenant,
+		InstallationID: "installation-documents",
+		Execution:      business.ExecutionIdentity{Running: business.RunningDigest(stale.ImageDigest), Incarnation: 1},
+	})
+
+	require.ErrorIs(t, err, workcontext.ErrRevoked)
 }
 
 // The audit spine must never carry an issuance that did not happen: the record is
@@ -365,9 +388,9 @@ func TestModuleCallerRequiresAVerifiableWorkContext(t *testing.T) {
 	tests := map[string]context.Context{
 		"no metadata":  context.Background(),
 		"no header":    metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-id", "someone")),
-		"empty header": metadata.NewIncomingContext(context.Background(), metadata.Pairs(workcontext.WorkContextHeaderName, "")),
+		"empty header": metadata.NewIncomingContext(context.Background(), metadata.Pairs(workContextHeader, "")),
 		"not a token": metadata.NewIncomingContext(context.Background(),
-			metadata.Pairs(workcontext.WorkContextHeaderName, "not-a-capability")),
+			metadata.Pairs(workContextHeader, "not-a-capability")),
 	}
 	for name, ctx := range tests {
 		t.Run(name, func(t *testing.T) {
