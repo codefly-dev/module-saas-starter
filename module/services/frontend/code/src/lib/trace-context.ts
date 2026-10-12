@@ -15,6 +15,9 @@ const INVALID_VERSION = "ff";
 const CURRENT_VERSION = "00";
 const ZERO_TRACE_ID = "0".repeat(32);
 const ZERO_PARENT_ID = "0".repeat(16);
+const FUTURE_VERSION_TAIL = /^-[\x21-\x2b\x2d-\x7e]*$/;
+const SAMPLED_FLAG = 0x01;
+const FLAGS_HEX_LENGTH = 2;
 
 const TRACESTATE_MAX_MEMBERS = 32;
 const TRACESTATE_MAX_BYTES = 512;
@@ -30,9 +33,12 @@ const TRACESTATE_VALUE =
  * Parse one `traceparent` header value and return its canonical form, or null.
  *
  * Version 00 must be exactly the 55-character prefix. A later version (other
- * than the reserved ff) may append fields after a "-"; only the 00-shaped
- * prefix is understood, so only that prefix is forwarded. Two header values —
- * which a Headers object reports joined by ", " — never parse.
+ * than the reserved ff) is parsed forward-compatibly: after the flags comes
+ * either the end of the value or a "-" followed by fields that are not
+ * interpreted. Only the 00-shaped prefix is understood, so a later version is
+ * re-emitted as version 00 carrying just the sampled flag, never advertising a
+ * version or flag bits this parser does not implement. Two header values,
+ * which a Headers object reports joined by ", ", never parse.
  */
 export function parseTraceparent(raw: string | null): string | null {
 	if (raw === null || raw.length < TRACEPARENT_PREFIX_LENGTH) return null;
@@ -44,13 +50,14 @@ export function parseTraceparent(raw: string | null): string | null {
 	if (traceId === ZERO_TRACE_ID || parentId === ZERO_PARENT_ID) return null;
 	const rest = raw.slice(TRACEPARENT_PREFIX_LENGTH);
 	if (version === CURRENT_VERSION) {
-		if (rest !== "") return null;
-	} else if (rest !== "" && !/^-[\x21-\x2b\x2d-\x7e]+$/.test(rest)) {
-		// A future version's extra fields start with "-" and are visible ASCII;
-		// a "," would mean a second header value rode along.
-		return null;
+		return rest === "" ? `${version}-${traceId}-${parentId}-${flags}` : null;
 	}
-	return `${version}-${traceId}-${parentId}-${flags}`;
+	// A future version's extra fields start with "-" and are visible ASCII;
+	// a "," would mean a second header value rode along.
+	if (rest !== "" && !FUTURE_VERSION_TAIL.test(rest)) return null;
+	const sampled = Number.parseInt(flags, 16) & SAMPLED_FLAG;
+	const canonicalFlags = sampled.toString(16).padStart(FLAGS_HEX_LENGTH, "0");
+	return `${CURRENT_VERSION}-${traceId}-${parentId}-${canonicalFlags}`;
 }
 
 /**

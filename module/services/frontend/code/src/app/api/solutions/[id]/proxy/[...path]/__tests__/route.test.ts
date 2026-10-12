@@ -870,13 +870,22 @@ describe("solution proxy trace context", () => {
 		expect(headers.get("tracestate")).toBe("vendor=abc,other@sys=x y");
 	});
 
-	it("forwards only the 00-shaped prefix of a later version", async () => {
-		const headers = await forwarded({
-			traceparent: `cc-${TRACE_ID}-${PARENT_ID}-01-future-field`,
-		});
+	it.each([
+		["extra fields", `cc-${TRACE_ID}-${PARENT_ID}-01-future-field`, "01"],
+		["no extra fields", `cc-${TRACE_ID}-${PARENT_ID}-01`, "01"],
+		["a trailing separator", `01-${TRACE_ID}-${PARENT_ID}-01-`, "01"],
+		["unsupported flag bits", `cc-${TRACE_ID}-${PARENT_ID}-ff-x`, "01"],
+		["only unsupported flag bits", `cc-${TRACE_ID}-${PARENT_ID}-fe`, "00"],
+	])(
+		"re-emits a later version with %s as version 00 with only the sampled flag",
+		async (_, value, flags) => {
+			const headers = await forwarded({ traceparent: value });
 
-		expect(headers.get("traceparent")).toBe(`cc-${TRACE_ID}-${PARENT_ID}-01`);
-	});
+			expect(headers.get("traceparent")).toBe(
+				`00-${TRACE_ID}-${PARENT_ID}-${flags}`,
+			);
+		},
+	);
 
 	it.each([
 		["malformed", "not-a-traceparent"],
@@ -893,6 +902,11 @@ describe("solution proxy trace context", () => {
 			"two values of a later version",
 			`cc-${TRACE_ID}-${PARENT_ID}-01, cc-${TRACE_ID}-${PARENT_ID}-00`,
 		],
+		[
+			"later version with an unsafe character",
+			`cc-${TRACE_ID}-${PARENT_ID}-01-a\x7fb`,
+		],
+		["later version without a separator", `cc-${TRACE_ID}-${PARENT_ID}-01x`],
 	])("forwards no trace context for a %s traceparent", async (_, value) => {
 		const headers = await forwarded({
 			traceparent: value,
