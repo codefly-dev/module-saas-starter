@@ -17,7 +17,7 @@ import (
 // guard cannot classify. A case is named after its range, so a change that
 // re-admits one range fails a test that says which.
 var guardRefuses = []struct{ name, address string }{
-	// Admitted at v0.0.94: Go's predicates call each of these global unicast.
+	// Ranges Go's net.IP predicates call global unicast.
 	{"shared address space 100.64.0.0/10, low end", "100.64.0.1:443"},
 	{"shared address space 100.64.0.0/10, cloud metadata 100.100.100.200", "100.100.100.200:80"},
 	{"shared address space 100.64.0.0/10, high end", "100.127.255.255:443"},
@@ -34,7 +34,7 @@ var guardRefuses = []struct{ name, address string }{
 	{"reserved 240.0.0.0/4, low end", "240.0.0.1:443"},
 	{"reserved 240.0.0.0/4, high end", "255.255.255.254:443"},
 
-	// Refused before v0.0.94, and still refused.
+	// Loopback, private, link-local, unspecified and link-local multicast.
 	{"loopback 127.0.0.0/8", "127.0.0.1:80"},
 	{"loopback 127.0.0.0/8, high end", "127.255.255.254:80"},
 	{"loopback ::1", "[::1]:443"},
@@ -145,9 +145,10 @@ func TestGuardDial_AdmitsPublicAddresses(t *testing.T) {
 }
 
 // Every outbound path a callable source has — the declared operation call and
-// each OAuth token exchange — dials through the guard. Each target is a literal
-// the v0.0.94 guard admitted: without the guard on that path the dial is
-// attempted and fails as a network error or a timeout, never ErrBlockedAddress.
+// each OAuth token exchange — dials through the guard. Each target is an
+// address Go's net.IP predicates call global unicast. Without the guard on that
+// path the dial is attempted and fails as a network error or a timeout, never
+// ErrBlockedAddress.
 // The loopback target is a live listener, so a path that skipped the guard
 // would reach it and the counter would say so.
 func TestEveryOutboundDialIsGuarded(t *testing.T) {
