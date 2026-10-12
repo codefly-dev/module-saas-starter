@@ -801,7 +801,7 @@ describe("stale and invalid stored layouts", () => {
 			const none: Dashboard = {
 				...two,
 				sections: undefined,
-				widgets: two.widgets.map(({ section: _, ...x }) => x),
+				widgets: two.widgets.map((x) => ({ ...x, section: undefined })),
 			};
 			expect(parseLayout(raw, none)).toEqual([
 				{ id: "", tiles: ["w1", "w3"] },
