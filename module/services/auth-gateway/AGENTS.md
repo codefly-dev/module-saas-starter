@@ -172,21 +172,25 @@ the organization to have installed it and the viewer to hold a grant reaching it
 the same question, through the same authority, as every proxied request to that
 solution — and states WHICH installation admitted the request as
 `x-codefly-installation-id`. Accounts then refuses a mint for another organization,
-for an audience that installation does not declare, or for scopes outside its
-agent's standing grants. An authority that cannot be asked answers 503; a capability
+for an audience the consumer does not declare it consumes, or for scopes outside
+what it declares there. An authority that cannot be asked answers 503; a capability
 is not issued on an unanswered question.
 
-**An installation that declares NO audiences is refused here, and is unrestricted
-everywhere else.** `allowed_audiences` and `allowed_scopes` are optional and empty
-means unrestricted — the right reading for the installation's own headless work,
-which an administrator consented to — and the install form leaves both empty, so
-that is the ordinary state. For a confined mint the same emptiness would say the
-person's whole authority is available, at every module the organization installed,
-to a third party nobody installed. So accounts refuses and names the field. This is
-the installation's ceiling and NOT the consumer's own declaration: the delivered
-presence document carries module pins (module, package, version), a capability's
-audience is the consumed module's route alias, and no record on this host joins the
-two — deriving one would be a guess at the question the check exists to answer.
+**The ceiling is what the consumer declares it consumes, not a list an
+administrator keeps.** A consumer's published contract (`module.contract.codefly.yaml`)
+names every module it calls on a person's behalf — the audience a capability for that
+module is addressed to — and the scope ceiling of each invoke binding. The render
+derives the authority document from it, delivery signs it, and accounts derives its
+registry from the signed document, the applied presence and the envelope; the
+organization's installation scope narrows that. Accounts reads the invoke bindings of
+that grant for the installation this gateway stated
+(`business.ConsumerInvokeCeiling`): the audience must be one the consumer declares,
+and the scopes must fit one binding it declares there. The installation's
+`allowed_audiences` and `allowed_scopes` then narrow when they name something and add
+no bound when empty — they are never a source of authority, so an installation whose
+lists are empty or wider than the declaration admits nothing the declaration does
+not. An installation that records no delivered authority (one made before
+installations did) declares nothing, and a confined mint under it is refused by name.
 
 Both stamps are on `untrustedAuthHeaders`, so a caller can assert neither and cannot
 pick its own ceiling. The consumer check and the installation stamp run on the HTTP
