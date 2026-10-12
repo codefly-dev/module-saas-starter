@@ -354,12 +354,12 @@ func DeclareSourceTrigger(source *DatasourceSource, references []TriggerDelegati
 		return declaration
 	}
 	declaration.Schedule = DeclaredTriggerSchedule{
-		Cron:           cron,
-		Timezone:       DatasourceTriggerTimezone,
-		MissedRun:      DatasourceTriggerMissedRun,
-		Overlap:        DatasourceTriggerOverlap,
-		Deadline:       DatasourceTriggerDeadline,
-		Input:          datasourceTriggerInput(source.OrgID, source.ID),
+		Cron:      cron,
+		Timezone:  DatasourceTriggerTimezone,
+		MissedRun: DatasourceTriggerMissedRun,
+		Overlap:   DatasourceTriggerOverlap,
+		Deadline:  DatasourceTriggerDeadline,
+		Input:     datasourceTriggerInput(source.OrgID, source.ID),
 	}
 	for _, reference := range references {
 		if reference.Active && reference.Reference != "" {
