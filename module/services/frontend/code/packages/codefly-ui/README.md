@@ -43,8 +43,15 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   renderer for one widget, exported for a consumer that resolves each widget in
   its own query; `slots` take header actions, a layout, a per-widget renderer
   and an empty state, so a consumer composes its own features around the
-  renderer rather than beside it. What each widget and each coverage state
-  draws is tabulated in the module's `AUDIT_METRICS.md`.
+  renderer rather than beside it. A view's `sections` group its widgets under
+  titled headings in the order listed (a widget's `section` names its own);
+  `DashboardSectionHeader` is that heading, exported for a layout of the
+  consumer's own — `SortableBoard`, say, which lets a viewer drag tiles between
+  sections. A widget's `format` reaches its tile, its chart's axis, readout and
+  data table, and its table alike; `percent` there is already a percentage, and
+  `runDashboard` is where a data graph's share is scaled to one. What each
+  widget and each coverage state draws is tabulated in the module's
+  `AUDIT_METRICS.md`.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
   `@codefly-dev/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
   component stays pure, the same split as `runDashboard` → `<Dashboard>`.
@@ -115,7 +122,7 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/plugin-host/ui`  | Client UI adapters (`PluginErrorBoundary`)          |
 | `@codefly-dev/ui/skin`            | `resolveSkin`, skin types                           |
 | `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
-| `@codefly-dev/ui/dashboard`       | `Dashboard`, `DashboardWidget`, metric tiles + charts, `fromDashboardData` (React-only) |
+| `@codefly-dev/ui/dashboard`       | `Dashboard`, `DashboardWidget`, `DashboardSectionHeader`, metric tiles + charts, `SortableGrid`/`SortableBoard`, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
 | `@codefly-dev/ui/board`           | `Board` (React-only)                                |

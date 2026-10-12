@@ -65,13 +65,23 @@ export interface DashboardWidgetView {
 	/** Grid columns this widget spans (1–4); ignored in a stack. */
 	span?: 1 | 2 | 3 | 4;
 	/**
-	 * How a scalar widget's value is rendered. Defaults to a plain number.
+	 * The id of the {@link DashboardSectionView} this widget is drawn in. A
+	 * widget that names none, or a section the view does not hold, is drawn
+	 * above every section, untitled.
+	 */
+	section?: string;
+	/**
+	 * How the widget's values are written — a scalar's number, a chart's axis,
+	 * readout and data table, a table's values. Defaults to a plain number.
 	 *
 	 * `"percent"` takes a value that is ALREADY a percentage: 45 renders "45%".
 	 * It does not take a share — 0.4 renders "0.4%", not "40%". A producer whose
 	 * own `percent` means a 0-to-1 share must scale it before it reaches here,
 	 * because this field is bound structurally (see `fromDashboardData`) and
 	 * nothing on the wire can tell the two conventions apart.
+	 * `@codefly-dev/saas-sdk`'s `runDashboard` is such a producer and does that
+	 * scaling itself, once: a data graph declares `percent` on a metric whose
+	 * value is a share, and the widget it resolves carries percentage points.
 	 */
 	format?: MetricFormat;
 	/** Suffix after a scalar widget's value, e.g. "req/s". */
@@ -80,11 +90,27 @@ export interface DashboardWidgetView {
 	higherIsBetter?: boolean;
 }
 
+/**
+ * A titled group of a dashboard's widgets. Sections are drawn in the order the
+ * view lists them, each with the widgets that name it, and a section no widget
+ * names is still drawn, empty.
+ */
+export interface DashboardSectionView {
+	id: string;
+	title: string;
+	description?: string;
+}
+
 /** The fully-resolved dashboard the renderer paints. */
 export interface DashboardView {
 	title?: string;
 	description?: string;
 	layout?: DashboardLayoutKind;
+	/**
+	 * The sections the widgets are grouped into, in the order they are drawn.
+	 * A view without sections draws its widgets as one untitled group.
+	 */
+	sections?: DashboardSectionView[];
 	/** Grid column count (default 2); ignored in a stack. */
 	columns?: 1 | 2 | 3 | 4;
 	/** Optional accent (any CSS color) applied to charts via the primary token. */
@@ -100,6 +126,7 @@ interface ResolvedWidgetLike {
 	visualization: WidgetVisualization;
 	title?: string;
 	series: WidgetSeries;
+	section?: string;
 	format?: MetricFormat;
 	unit?: string;
 	higherIsBetter?: boolean;
@@ -107,6 +134,7 @@ interface ResolvedWidgetLike {
 interface DashboardDataLike {
 	title?: string;
 	layout?: DashboardLayoutKind;
+	sections?: readonly DashboardSectionView[];
 	widgets: ResolvedWidgetLike[];
 }
 
@@ -125,11 +153,13 @@ export function fromDashboardData(
 		layout: data.layout ?? "grid",
 		columns: extra?.columns,
 		accent: extra?.accent,
+		sections: data.sections?.map((section) => ({ ...section })),
 		widgets: data.widgets.map((widget) => ({
 			id: widget.id,
 			visualization: widget.visualization,
 			title: widget.title,
 			series: widget.series,
+			section: widget.section,
 			format: widget.format,
 			unit: widget.unit,
 			higherIsBetter: widget.higherIsBetter,

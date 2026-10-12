@@ -542,6 +542,10 @@
     bottom: calc(var(--appearance-spacing) * 4);
   }
 
+  .left-0 {
+    left: 0;
+  }
+
   .left-1\/2 {
     left: 50%;
   }
@@ -1078,6 +1082,10 @@
     width: calc(var(--appearance-spacing) * 8);
   }
 
+  .w-10 {
+    width: calc(var(--appearance-spacing) * 10);
+  }
+
   .w-12 {
     width: calc(var(--appearance-spacing) * 12);
   }
@@ -1088,6 +1096,10 @@
 
   .w-24 {
     width: calc(var(--appearance-spacing) * 24);
+  }
+
+  .w-32 {
+    width: calc(var(--appearance-spacing) * 32);
   }
 
   .w-72 {
@@ -1427,6 +1439,12 @@
     --tw-space-y-reverse: 0;
     margin-block-start: calc(var(--appearance-spacing) * var(--tw-space-y-reverse));
     margin-block-end: calc(var(--appearance-spacing) * calc(1 - var(--tw-space-y-reverse)));
+  }
+
+  :where(.space-y-3 > :not(:last-child)) {
+    --tw-space-y-reverse: 0;
+    margin-block-start: calc(calc(var(--appearance-spacing) * 3) * var(--tw-space-y-reverse));
+    margin-block-end: calc(calc(var(--appearance-spacing) * 3) * calc(1 - var(--tw-space-y-reverse)));
   }
 
   :where(.space-y-4 > :not(:last-child)) {
@@ -2888,10 +2906,6 @@
 
   .opacity-50 {
     opacity: .5;
-  }
-
-  .opacity-70 {
-    opacity: .7;
   }
 
   .opacity-75 {

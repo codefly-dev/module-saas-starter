@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { Dashboard } from "../dashboard.js";
+import { Dashboard, DashboardSectionHeader } from "../dashboard.js";
 import type {
 	DashboardView,
 	DashboardWidgetView,
@@ -715,5 +715,210 @@ describe("slots", () => {
 		);
 		expect(screen.getByText("Add one back with +.")).toBeTruthy();
 		expect(screen.queryByText("No widgets.")).toBeNull();
+	});
+});
+
+// A widget's `format` is written by every mark it is drawn with, through the
+// same function a scalar's tile writes its number with. The values here are
+// already percentage points: `runDashboard` is where a declared share is
+// scaled, once (its own test pins 0.4 → 40).
+describe("a percent widget", () => {
+	const rates: WidgetSeries = {
+		points: [
+			{ key: "won", value: 40 },
+			{ key: "lost", value: 60 },
+		],
+		total: 100,
+	};
+
+	it.each(["line", "area", "bar"] as const)(
+		"writes a %s chart's values as percentages in its data table",
+		(visualization) => {
+			show({
+				id: "w",
+				title: "Outcomes",
+				visualization,
+				series: rates,
+				format: "percent",
+			});
+			const table = screen.getByRole("table", { name: "Outcomes" });
+			expect(within(table).getByText("40%")).toBeTruthy();
+			expect(within(table).getByText("60%")).toBeTruthy();
+		},
+	);
+
+	it("writes a table's values as percentages", () => {
+		show({
+			id: "w",
+			title: "Outcomes",
+			visualization: "table",
+			series: rates,
+			format: "percent",
+		});
+		const table = screen.getByRole("table", { name: "Outcomes" });
+		expect(within(table).getByText("40%")).toBeTruthy();
+		expect(within(table).queryByText("40")).toBeNull();
+	});
+
+	it("leaves a plain number's chart and table as numbers", () => {
+		show(
+			{ id: "c", title: "Chart", visualization: "bar", series: rates },
+			{ id: "t", title: "Table", visualization: "table", series: rates },
+		);
+		for (const name of ["Chart", "Table"]) {
+			const table = screen.getByRole("table", { name });
+			expect(within(table).getByText("40")).toBeTruthy();
+			expect(within(table).queryByText("40%")).toBeNull();
+		}
+	});
+});
+
+describe("sections", () => {
+	const sections = [
+		{ id: "totals", title: "Totals", description: "All time" },
+		{ id: "trends", title: "Trends" },
+		{ id: "later", title: "Later" },
+	];
+	const sectioned: DashboardWidgetView[] = [
+		{
+			id: "trend",
+			title: "Sign-ins per day",
+			visualization: "line",
+			series: daily,
+			section: "trends",
+		},
+		{
+			id: "total",
+			title: "Sign-ins",
+			visualization: "number",
+			series: daily,
+			section: "totals",
+		},
+		{ id: "loose", title: "Loose", visualization: "number", series: daily },
+	];
+
+	it("draws each section under its own heading, in the view's order, with its widgets", () => {
+		const { container } = render(
+			<Dashboard data={{ title: "Activity", sections, widgets: sectioned }} />,
+		);
+		expect(
+			screen
+				.getAllByRole("heading", { level: 3 })
+				.filter((heading) => heading.dataset.slot === "dashboard-section-title")
+				.map((heading) => heading.textContent),
+		).toEqual(["Totals", "Trends", "Later"]);
+		expect(screen.getByText("All time")).toBeTruthy();
+		const drawn = [
+			...container.querySelectorAll('[data-slot="dashboard-section"]'),
+		] as HTMLElement[];
+		expect(within(drawn[0]).getByText("Sign-ins")).toBeTruthy();
+		expect(
+			within(drawn[1]).getByRole("table", { name: "Sign-ins per day" }),
+		).toBeTruthy();
+	});
+
+	it("draws a widget that names no section above every section, untitled", () => {
+		const { container } = render(
+			<Dashboard data={{ sections, widgets: sectioned }} />,
+		);
+		const loose = screen.getByText("Loose");
+		const first = container.querySelector(
+			'[data-slot="dashboard-section"]',
+		) as HTMLElement;
+		expect(within(first).queryByText("Loose")).toBeNull();
+		expect(
+			loose.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+
+	it("keeps a declared section no widget names, and says it is empty", () => {
+		render(<Dashboard data={{ sections, widgets: sectioned }} />);
+		expect(screen.getByText("No widgets in this section.")).toBeTruthy();
+	});
+
+	it("draws its sections, not the empty state, when no widget is shown", () => {
+		render(<Dashboard data={{ sections, widgets: [] }} />);
+		expect(screen.queryByText("No widgets.")).toBeNull();
+		expect(screen.getAllByText("No widgets in this section.")).toHaveLength(3);
+	});
+
+	it("hands a layout of the host's own each tile's section, and calls it with no tiles when there are sections", () => {
+		const seen: (string | undefined)[][] = [];
+		const layout = (tiles: { widget: DashboardWidgetView }[]) => {
+			seen.push(tiles.map((tile) => tile.widget.section));
+			return <p>host layout</p>;
+		};
+		const { rerender } = render(
+			<Dashboard data={{ sections, widgets: sectioned }} slots={{ layout }} />,
+		);
+		rerender(<Dashboard data={{ sections, widgets: [] }} slots={{ layout }} />);
+		expect(seen).toEqual([["trends", "totals", undefined], []]);
+	});
+
+	it("draws a view without sections as before", () => {
+		const { container } = render(
+			<Dashboard
+				data={{
+					widgets: sectioned.map((widget) => ({
+						...widget,
+						section: undefined,
+					})),
+				}}
+			/>,
+		);
+		expect(
+			container.querySelector('[data-slot="dashboard-section"]'),
+		).toBeNull();
+		expect(screen.getByText("Loose")).toBeTruthy();
+	});
+});
+
+describe("DashboardSectionHeader", () => {
+	it("draws what is being edited in place of the heading", () => {
+		render(
+			<DashboardSectionHeader
+				title="Totals"
+				editing={<input aria-label="Section title" />}
+			/>,
+		);
+		expect(screen.queryByRole("heading", { name: "Totals" })).toBeNull();
+		expect(screen.getByRole("textbox", { name: "Section title" })).toBeTruthy();
+	});
+
+	it("puts a leading handle and actions beside the title", () => {
+		render(
+			<DashboardSectionHeader
+				title="Totals"
+				leading={<button type="button">Move</button>}
+				actions={<button type="button">Add</button>}
+			>
+				<p>Empty.</p>
+			</DashboardSectionHeader>,
+		);
+		expect(
+			screen.getByRole("heading", { name: "Totals", level: 3 }),
+		).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Move" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
+		expect(screen.getByText("Empty.")).toBeTruthy();
+	});
+
+	it("names a section heading by its label when its title is a control", () => {
+		render(
+			<DashboardSectionHeader
+				label="Totals"
+				title={
+					<button type="button" aria-label="Rename section Totals">
+						Totals
+					</button>
+				}
+			/>,
+		);
+		expect(
+			screen.getByRole("heading", { name: "Totals", level: 3 }),
+		).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: "Rename section Totals" }),
+		).toBeTruthy();
 	});
 });

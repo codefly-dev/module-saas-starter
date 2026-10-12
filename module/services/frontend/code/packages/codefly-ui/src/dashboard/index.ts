@@ -15,6 +15,8 @@ export {
 } from "./charts.js";
 export {
 	Dashboard,
+	DashboardSectionHeader,
+	type DashboardSectionHeaderProps,
 	type DashboardSlots,
 	type DashboardTile,
 	DashboardWidget,
@@ -62,11 +64,19 @@ export {
 	type MetricFormat,
 	StatTile,
 } from "./metric-tiles.js";
-export { SortableGrid, type SortableGridProps } from "./sortable-grid.js";
+export {
+	SortableBoard,
+	type SortableBoardProps,
+	SortableGrid,
+	type SortableGridProps,
+	type SortableGroup,
+	type SortableGroupHandle,
+} from "./sortable-grid.js";
 export { Sparkline } from "./sparkline.js";
 export { TrendLineChart } from "./trend-line-chart.js";
 export {
 	type DashboardLayoutKind,
+	type DashboardSectionView,
 	type DashboardView,
 	type DashboardWidgetView,
 	fromDashboardData,
