@@ -1,8 +1,12 @@
 "use client";
 
 import { type Timestamp, timestampDate } from "@bufbuild/protobuf/wkt";
+import {
+	type AdmittedReconcilePass,
+	onSourceReconcileAdmitted,
+} from "@codefly-dev/saas-ui";
 import { CalendarClock } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import {
 	mayKeepRetainedRows,
@@ -43,9 +47,21 @@ import {
  * "Next" is computed from the declared cron and is what the declaration SAYS;
  * the authoritative cursor belongs to the module that fires the trigger, and
  * this host does not hold one.
+ *
+ * A person's "Sync now" is listed in the SAME table as those occurrences, and
+ * that is the panel's claim rather than a convenience: both admit
+ * `DatasourceService/ReconcileSource`, both carry an effect identity, and the
+ * host's receipts cannot tell them apart. A manual pass that read a prior
+ * receipt back is marked as such — it is one admission reported twice, not two.
+ *
+ * The manual rows are the passes THIS BROWSER admitted, heard from the kit's
+ * client, and the panel says so. The host keeps no enumerable list of past
+ * passes: a receipt is read back by identity (`LookupReconcileSource`), never
+ * listed, so a panel that claimed to show every pass would be inventing one.
  */
 export function SourceTriggerSchedules({ orgId }: { orgId: string }) {
 	const sources = useTriggerSources(orgId);
+	const passes = useAdmittedPasses();
 	// The outcome is read BEFORE the row count, because a refused refetch keeps
 	// the previous answer: a panel that tested emptiness first would leave rows
 	// on screen that the reader is no longer authorized to see.
@@ -63,7 +79,10 @@ export function SourceTriggerSchedules({ orgId }: { orgId: string }) {
 				<CardTitle>Reconcile schedules</CardTitle>
 				<CardDescription>
 					Each connected source declares its reconcile schedule as a trigger an
-					executing module fires. This host fires nothing on it.
+					executing module fires. This host fires nothing on it. A person&apos;s
+					&ldquo;Sync now&rdquo; admits the same operation with an effect
+					identity of its own, so it is listed beside the occurrences rather
+					than apart from them.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
@@ -102,6 +121,7 @@ export function SourceTriggerSchedules({ orgId }: { orgId: string }) {
 							orgId={orgId}
 							sourceId={source.id}
 							label={sourceLabel(source)}
+							passes={passes.filter((pass) => pass.sourceId === source.id)}
 						/>
 					))
 				)}
@@ -114,15 +134,27 @@ function SourceTriggerRow({
 	orgId,
 	sourceId,
 	label,
+	passes,
 }: {
 	orgId: string;
 	sourceId: string;
 	label: string;
+	/** The manual passes this browser admitted for this source, newest first. */
+	passes: AdmittedReconcilePass[];
 }) {
 	const read = useSourceTriggerDeclaration(orgId, sourceId);
 	const declaration = read.data?.declaration;
 	const identity = useMemo(() => declaredIdentity(declaration), [declaration]);
+	// The operation is read off the declaration so the manual rows name the
+	// same string the scheduled ones do. A literal here would be this page's
+	// own opinion of what "the same admission" means, and would keep reading
+	// true after the declaration named something else.
+	const operation = declaration?.operation ?? RECONCILE_OPERATION;
 
+	// A source that declares no trigger still takes a manual pass: the
+	// declaration is refused for the interval it carries, not for the
+	// operation, and a person's pass does not go through a schedule at all. So
+	// the undeclarable reason replaces the SCHEDULE's rows, never the table.
 	return (
 		<div className="rounded-lg border p-4" data-slot="source-trigger">
 			<div className="flex items-center justify-between gap-2">
@@ -133,38 +165,146 @@ function SourceTriggerRow({
 					<Badge tone="success">{declaration?.schedule?.cron ?? "—"}</Badge>
 				)}
 			</div>
-			{declaration?.undeclarableReason ? (
+			<dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+				<Fact label="Release" value={declaration?.release ?? "—"} mono />
+				<Fact label="Operation" value={operation} mono />
+				<Fact label="Declared identity" value={identity} />
+			</dl>
+			{declaration?.undeclarableReason && (
 				<p className="mt-2 text-sm text-muted-foreground">
 					{declaration.undeclarableReason}
 				</p>
-			) : (
-				<Table className="mt-3">
-					<TableHeader>
-						<TableRow>
-							<TableHead>Release</TableHead>
-							<TableHead>Identity</TableHead>
-							<TableHead>Last occurrence</TableHead>
-							<TableHead>Next occurrence</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						<TableRow>
-							<TableCell className="font-mono text-xs">
-								{declaration?.release ?? "—"}
-							</TableCell>
-							<TableCell className="text-sm">{identity}</TableCell>
+			)}
+			<Table className="mt-3" data-slot="admissions">
+				<TableHeader>
+					<TableRow>
+						<TableHead>Admission</TableHead>
+						<TableHead>Effect identity</TableHead>
+						<TableHead>When</TableHead>
+						<TableHead>Job</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{!declaration?.undeclarableReason && (
+						<>
+							<TableRow data-slot="scheduled-occurrence">
+								<TableCell className="text-sm">
+									Scheduled · last occurrence
+								</TableCell>
+								<TableCell className="text-sm text-muted-foreground">
+									{MINTED_BY_THE_FIRING_MODULE}
+								</TableCell>
+								<TableCell className="text-sm">
+									{instant(declaration?.lastOccurrenceAt)}
+								</TableCell>
+								<TableCell className="text-sm">—</TableCell>
+							</TableRow>
+							<TableRow data-slot="scheduled-occurrence">
+								<TableCell className="text-sm">
+									Scheduled · next occurrence
+								</TableCell>
+								<TableCell className="text-sm text-muted-foreground">
+									{MINTED_BY_THE_FIRING_MODULE}
+								</TableCell>
+								<TableCell className="text-sm" data-slot="next-occurrence">
+									{instant(declaration?.nextOccurrenceAt)}
+								</TableCell>
+								<TableCell className="text-sm">—</TableCell>
+							</TableRow>
+						</>
+					)}
+					{passes.map((pass) => (
+						<TableRow key={pass.effectId} data-slot="manual-pass">
 							<TableCell className="text-sm">
-								{instant(declaration?.lastOccurrenceAt)}
+								{pass.repeat
+									? "Manual · receipt read back"
+									: "Manual · “Sync now”"}
 							</TableCell>
-							<TableCell className="text-sm" data-slot="next-occurrence">
-								{instant(declaration?.nextOccurrenceAt)}
+							<TableCell className="font-mono text-xs break-all">
+								{pass.effectId}
+							</TableCell>
+							<TableCell className="text-sm">
+								{new Date(pass.at).toLocaleString()}
+							</TableCell>
+							<TableCell className="font-mono text-xs break-all">
+								{pass.jobId || "—"}
 							</TableCell>
 						</TableRow>
-					</TableBody>
-				</Table>
+					))}
+				</TableBody>
+			</Table>
+			{passes.length === 0 && (
+				<p className="mt-2 text-xs text-muted-foreground">
+					No manual pass has been admitted from this browser. A pass is
+					recovered by its identity, never listed, so the ones taken elsewhere
+					cannot be shown here.
+				</p>
 			)}
 		</div>
 	);
+}
+
+/**
+ * The operation a reconcile admission names, used only when a declaration
+ * carries none to read it from — a source that declares no trigger still takes
+ * a manual pass of exactly this operation.
+ */
+const RECONCILE_OPERATION =
+	"/saas.accounts.v1.DatasourceService/ReconcileSource";
+
+/**
+ * Said rather than left blank: an occurrence's effect identity is minted by the
+ * module that fires the trigger, so this host never sees one and has nothing to
+ * print. A dash would read as "it has none", which would make the admission
+ * look unlike the manual pass beside it.
+ */
+const MINTED_BY_THE_FIRING_MODULE = "Minted by the firing module";
+
+/**
+ * One labelled fact. Exported because the playground renders the same
+ * declaration facts in its own card, and two copies of this would be two
+ * places for the declaration to start reading differently.
+ */
+export function Fact({
+	label,
+	value,
+	mono,
+}: {
+	label: string;
+	value: string;
+	mono?: boolean;
+}) {
+	return (
+		<div>
+			<dt className="text-xs text-muted-foreground">{label}</dt>
+			<dd className={mono ? "font-mono text-xs break-all" : "text-sm"}>
+				{value}
+			</dd>
+		</div>
+	);
+}
+
+/**
+ * The reconcile passes this browser admitted, newest first.
+ *
+ * A repeat press carries the SAME effect identity as the press it recovers, so
+ * it replaces that row rather than adding one: the identity is the pass's name,
+ * and two rows under one name would report one admission as two — which is the
+ * exact confusion this panel exists to remove.
+ */
+function useAdmittedPasses(): AdmittedReconcilePass[] {
+	const [passes, setPasses] = useState<AdmittedReconcilePass[]>([]);
+	useEffect(
+		() =>
+			onSourceReconcileAdmitted((pass) =>
+				setPasses((prior) => [
+					pass,
+					...prior.filter((held) => held.effectId !== pass.effectId),
+				]),
+			),
+		[],
+	);
+	return passes;
 }
 
 /**

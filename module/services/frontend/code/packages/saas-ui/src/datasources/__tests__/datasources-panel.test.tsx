@@ -16,6 +16,7 @@ import type {
 	AccessibleScopeView,
 	DatasourceClient,
 	DatasourceView,
+	SourceReconcileReceipt,
 } from "../types.js";
 
 afterEach(cleanup);
@@ -35,7 +36,13 @@ function fakeClient(
 	return {
 		listSources: vi.fn(async () => [] as DatasourceView[]),
 		addGitHubSource: vi.fn(async () => {}),
-		syncSource: vi.fn(async () => "job-1"),
+		reconcileSource: vi.fn(async (_orgId, _id, effectId: string) => ({
+			effectId,
+			status: "committed" as const,
+			jobId: "job-1",
+		})),
+		lookupReconcileSource: vi.fn(async () => undefined),
+		reconnectSource: vi.fn(async () => "job-reconnect"),
 		deleteSource: vi.fn(async () => {}),
 		...overrides,
 	};
@@ -484,7 +491,7 @@ describe("DatasourcesPanel", () => {
 	it("surfaces a sync failure in the panel instead of swallowing it", async () => {
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource]),
-			syncSource: vi.fn(async () => {
+			reconcileSource: vi.fn(async () => {
 				throw new Error("gateway timeout");
 			}),
 		});
@@ -504,11 +511,11 @@ describe("DatasourcesPanel", () => {
 	it("tracks sync state per row and blocks a double-enqueue", async () => {
 		// A sync that never settles keeps its row pending, exposing whether a
 		// second row's state leaks onto the first (the shared-mutation bug).
-		const pending = new Promise<string>(() => {});
-		const syncSource = vi.fn(() => pending);
+		const pending = new Promise<SourceReconcileReceipt>(() => {});
+		const reconcileSource = vi.fn(() => pending);
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource, secondSource]),
-			syncSource,
+			reconcileSource,
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
@@ -528,7 +535,7 @@ describe("DatasourcesPanel", () => {
 
 		// Clicking row 1 again is a no-op: its button is disabled, so no second job.
 		fireEvent.click(screen.getByRole("button", { name: /^Syncing…$/ }));
-		expect(syncSource).toHaveBeenCalledTimes(1);
+		expect(reconcileSource).toHaveBeenCalledTimes(1);
 
 		fireEvent.click(stillIdle);
 		await waitFor(() =>
@@ -536,7 +543,7 @@ describe("DatasourcesPanel", () => {
 				screen.getAllByRole("button", { name: /^Syncing…$/ }),
 			).toHaveLength(2),
 		);
-		expect(syncSource).toHaveBeenCalledTimes(2);
+		expect(reconcileSource).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -819,7 +826,7 @@ it("acknowledges queued sync without claiming ingestion completed", async () => 
 it("shows a rejected credential as an actionable message", async () => {
 	const client = fakeClient({
 		listSources: vi.fn(async () => [sampleSource]),
-		syncSource: vi.fn(async () => {
+		reconcileSource: vi.fn(async () => {
 			throw new ConnectError(
 				"rpc error: code = FailedPrecondition desc = GitHub rejected the access token (401). Reconnect the source.",
 				Code.FailedPrecondition,
@@ -838,17 +845,19 @@ it.each(["first", "second"])(
 	"settles concurrent syncs when %s finishes first",
 	async (finishFirst) => {
 		let rejectFirst!: (error: Error) => void;
-		let resolveSecond!: (id: string) => void;
-		const first = new Promise<string>((_, reject) => {
+		let resolveSecond!: (receipt: SourceReconcileReceipt) => void;
+		const first = new Promise<SourceReconcileReceipt>((_, reject) => {
 			rejectFirst = reject;
 		});
-		const second = new Promise<string>((resolve) => {
+		const second = new Promise<SourceReconcileReceipt>((resolve) => {
 			resolveSecond = resolve;
 		});
 		const onSyncEnqueued = vi.fn();
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource, secondSource]),
-			syncSource: vi.fn((_, id) => (id === sampleSource.id ? first : second)),
+			reconcileSource: vi.fn((_org: string, id: string) =>
+				id === sampleSource.id ? first : second,
+			),
 		});
 		renderWithClient(
 			<DatasourcesPanel
@@ -868,7 +877,12 @@ it.each(["first", "second"])(
 					Code.FailedPrecondition,
 				),
 			);
-		const resolve = () => resolveSecond("job-2");
+		const resolve = () =>
+			resolveSecond({
+				effectId: "effect-2",
+				status: "committed",
+				jobId: "job-2",
+			});
 		await act(async () => {
 			(finishFirst === "first" ? reject : resolve)();
 		});
@@ -915,12 +929,12 @@ it("reconnects the same source without creating or deleting a source", async () 
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 	await openRowActions();
 	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
-	const token = screen.getByLabelText("New GitHub PAT");
+	const token = screen.getByLabelText("New GitHub PAT (optional)");
 	expect(token.getAttribute("type")).toBe("password");
 	fireEvent.change(token, { target: { value: "replacement-test-token" } });
 	fireEvent.click(screen.getByRole("button", { name: "Reconnect and sync" }));
 	await waitFor(() =>
-		expect(client.syncSource).toHaveBeenCalledWith(
+		expect(client.reconnectSource).toHaveBeenCalledWith(
 			"org-1",
 			"ds-1",
 			"replacement-test-token",
@@ -934,11 +948,7 @@ it("reconnects the same source without creating or deleting a source", async () 
 });
 
 it("reconnects a public source without a credential when the client can", async () => {
-	const reconnectSource = vi.fn(async () => "job-reconnect");
-	const client = fakeClient({
-		listSources: vi.fn(async () => [sampleSource]),
-		reconnectSource,
-	});
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 	await openRowActions();
 	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
@@ -946,20 +956,35 @@ it("reconnects a public source without a credential when the client can", async 
 	expect(token.hasAttribute("required")).toBe(false);
 	fireEvent.click(screen.getByRole("button", { name: "Reconnect and sync" }));
 	await waitFor(() =>
-		expect(reconnectSource).toHaveBeenCalledWith("org-1", "ds-1", undefined),
+		expect(client.reconnectSource).toHaveBeenCalledWith(
+			"org-1",
+			"ds-1",
+			undefined,
+		),
 	);
-	expect(client.syncSource).not.toHaveBeenCalled();
+	// A reconnect is not a reconcile: it rebinds whose authority the source's
+	// syncs run under, so it must not travel as a pass under an effect identity.
+	expect(client.reconcileSource).not.toHaveBeenCalled();
 	expect((await screen.findByRole("status")).textContent).toContain(
 		"Reconnected. Sync queued",
 	);
 });
 
+// The fallback that went with `syncSource`: a plain sync carrying a replacement
+// credential, which the host reads as a reconnect. A client that cannot
+// reconnect is now offered no Reconnect at all, rather than a control that
+// quietly does a different operation.
+it("offers no Reconnect to a client that cannot reconnect", async () => {
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+	delete client.reconnectSource;
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	await openRowActions();
+	await screen.findByRole("menuitem", { name: "Delete" });
+	expect(screen.queryByRole("menuitem", { name: "Reconnect" })).toBeNull();
+});
+
 it("reconnects with a replacement PAT through the reconnect call when the client has one", async () => {
-	const reconnectSource = vi.fn(async () => "job-reconnect");
-	const client = fakeClient({
-		listSources: vi.fn(async () => [sampleSource]),
-		reconnectSource,
-	});
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 	await openRowActions();
 	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
@@ -968,7 +993,7 @@ it("reconnects with a replacement PAT through the reconnect call when the client
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Reconnect and sync" }));
 	await waitFor(() =>
-		expect(reconnectSource).toHaveBeenCalledWith(
+		expect(client.reconnectSource).toHaveBeenCalledWith(
 			"org-1",
 			"ds-1",
 			"replacement-test-token",

@@ -154,7 +154,8 @@ describe("createDatasourceClient", () => {
 				client.completeGitHubAppSetup!("org-1", "state-1", "42", "oauth-1"),
 			migrateGitHubSourceToApp: () =>
 				client.migrateGitHubSourceToApp!("org-1", "ds-1"),
-			syncSource: () => client.syncSource("org-1", "ds-1"),
+			reconcileSource: () => client.reconcileSource("org-1", "ds-1", "effect-1"),
+			lookupReconcileSource: () => client.lookupReconcileSource("effect-1"),
 			reconnectSource: () => client.reconnectSource!("org-1", "ds-1"),
 			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
@@ -194,7 +195,7 @@ describe("createDatasourceClient", () => {
 		const failing = onSourceSyncRequested(() => {
 			throw new Error("a listener's failure is its own");
 		});
-		await client.syncSource("org-1", "ds-1");
+		await client.reconcileSource("org-1", "ds-1", "effect-1");
 		await client.addGitHubSource({
 			orgId: "org-1",
 			repo: "acme/example",
@@ -205,7 +206,7 @@ describe("createDatasourceClient", () => {
 		});
 		stop();
 		failing();
-		await client.syncSource("org-1", "ds-1").catch(() => {});
+		await client.reconcileSource("org-1", "ds-1", "effect-2").catch(() => {});
 		expect(heard).toEqual(["ds-1", "ds-new"]);
 	});
 
@@ -632,6 +633,10 @@ it("reads source-specific typed audit history", async () => {
 	expect(events[0].fields).toEqual({ processed: 45, job_id: "j1" });
 });
 
+// A replacement credential now reaches `SyncSource` on ONE path, the reconnect,
+// and that is the point of the method surviving the removal of "Sync now"'s use
+// of it: a reconnect rebinds whose authority a source's syncs run under, which
+// is not a reconcile and nothing makes idempotent.
 it("serializes a replacement credential only for reconnect on the existing source", async () => {
 	const { calls } = stubFetch({ jobId: "job-1" });
 	const client = createDatasourceClient({
@@ -639,18 +644,17 @@ it("serializes a replacement credential only for reconnect on the existing sourc
 		getAccessToken: () => "viewer",
 	});
 	await expect(
-		client.syncSource("org-1", "source-1", "test-only-replacement"),
+		client.reconnectSource!("org-1", "source-1", "test-only-replacement"),
 	).resolves.toBe("job-1");
-	await client.syncSource("org-1", "source-1");
 	expect(calls[0].url).toContain(
 		"saas.accounts.v1.DatasourceService/SyncSource",
 	);
 	expect(calls[0].body).toEqual({
 		orgId: "org-1",
 		id: "source-1",
+		reconnect: true,
 		accessToken: "test-only-replacement",
 	});
-	expect(calls[1].body).toEqual({ orgId: "org-1", id: "source-1" });
 });
 
 it("asks for a reconnect, with or without a replacement credential", async () => {

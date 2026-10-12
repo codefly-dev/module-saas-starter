@@ -83,5 +83,52 @@ test.describe("unattended work", () => {
 		await expect(
 			page.getByText("This host fires nothing on it."),
 		).toBeVisible();
+		// And it says that a person's "Sync now" is the same admission, which is
+		// why the two sit in one table rather than in two lists.
+		await expect(
+			page.getByText(/admits the same operation with an effect identity/),
+		).toBeVisible();
+	});
+
+	test("a person's pass is listed beside the scheduled occurrences, with its effect identity", async ({
+		page,
+	}) => {
+		await page.goto("/admin/datasources");
+		await page.waitForURL((url) => url.pathname === "/admin/datasources", {
+			timeout: 15000,
+		});
+		await expect(
+			page.getByRole("heading", { name: "Reconcile schedules" }),
+		).toBeVisible({ timeout: 20000 });
+
+		// Either this organization has a connected source or it does not; both
+		// are real answers and the panel gives one of them.
+		const row = page.locator('[data-slot="source-trigger"]').first();
+		const empty = page.getByText("No connected source declares a schedule");
+		await expect(row.or(empty).first()).toBeVisible({ timeout: 20000 });
+		if (await empty.isVisible()) return;
+
+		// The admissions table, with the declared schedule's two occurrences in
+		// it before anything is pressed.
+		const admissions = row.locator('[data-slot="admissions"]');
+		await expect(admissions).toBeVisible();
+		await expect(
+			admissions.locator('[data-slot="scheduled-occurrence"]'),
+		).toHaveCount(2);
+		await expect(
+			admissions.locator('[data-slot="manual-pass"]'),
+		).toHaveCount(0);
+
+		// "Sync now" is the kit panel's control, above this one. Pressing it
+		// admits the host's reconcile operation, and the pass lands in THIS
+		// table — the same table as the occurrences, which is the whole claim.
+		const sync = page.getByRole("button", { name: /^Sync$/ }).first();
+		if ((await sync.count()) === 0) return;
+		await sync.click();
+		const manual = admissions.locator('[data-slot="manual-pass"]').first();
+		await expect(manual).toBeVisible({ timeout: 20000 });
+		// Not blank: the effect identity is what makes it the same object a
+		// scheduled occurrence is, so the row would be meaningless without it.
+		await expect(manual).toContainText(/[0-9a-f-]{8,}/);
 	});
 });
