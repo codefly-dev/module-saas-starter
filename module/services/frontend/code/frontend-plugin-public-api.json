@@ -4,7 +4,7 @@
 	"packages": {
 		"@codefly-dev/saas-plugin-contract": {
 			"status": "active",
-			"packageVersion": "2.4.2",
+			"packageVersion": "2.4.3",
 			"entrypoints": [".", "./capabilities"],
 			"entrypointExports": {
 				".": [
@@ -85,6 +85,10 @@
 					"buildFrontendServiceAllowlist",
 					"defineFrontend",
 					"definePlugin",
+					"encodeFrontendServicePath",
+					"frontendServiceTargetPath",
+					"isConnectProcedurePath",
+					"isFrontendServicePath",
 					"resolveFrontendAppearance",
 					"resolveSkinRules",
 					"resolveTypeRole",
@@ -113,7 +117,7 @@
 		},
 		"@codefly-dev/saas-plugin-react": {
 			"status": "active",
-			"packageVersion": "0.4.3",
+			"packageVersion": "0.4.4",
 			"entrypoints": [".", "./runtime", "./ui"],
 			"entrypointExports": {
 				".": [

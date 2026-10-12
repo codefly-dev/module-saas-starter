@@ -711,6 +711,19 @@ For the frontend product-plugin overlay specifically — package layout,
 generated projections, and gates — see
 [docs/frontend-plugin-installation.md](./module/docs/frontend-plugin-installation.md).
 
+A contributed page reaches its own module's backend only through this host's
+plugin transport, at `/api/plugins/{plugin}/{alias}/{relative-path}`, under the
+viewer's forwarded credential. It carries what that module's bindings declare,
+in both shapes: safe path segments with a Google custom verb allowed on the
+**last** one, its colon forwarded literal (`records:recover`,
+`interactions/{id}:respond`), and Connect procedures, for a requirement that
+declares `/` as its route prefix — the origin root, where the Connect protocol
+and this contract's own capability handshake already put a procedure. A page is
+not restricted to REST bindings, and it never chooses a prefix: a route outside
+the alias its requirement declared is refused. The policy is
+[docs/frontend-plugin-bff-contract.md](./module/docs/frontend-plugin-bff-contract.md);
+the playground that drives every shape is `/admin/platform/plugin-transport`.
+
 ## How to extend the module
 
 ### Adding a new per-tenant table

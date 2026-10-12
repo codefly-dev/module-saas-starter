@@ -83,6 +83,13 @@ silently falls back to sample data.
   Docker, base integrity, and build gates verify their convergence.
 - The injected runtime exposes service lookup, not the host token accessor or a
   configurable destination; it refreshes the bearer privately on every call.
+- The relative path a product may pass is one rule, stated once in the contract
+  package and read by both the browser transport and the BFF: safe segments,
+  with a Google custom verb allowed on the last one and its colon forwarded
+  literal, and a Connect procedure for a requirement that declares the origin
+  root as its prefix. Both REST and Connect bindings are therefore reachable
+  from a contributed page, and neither side can admit a shape the other
+  refuses.
 - Failed BFF responses map to a safe public descriptor with only state, stable
   code, optional validated request ID, and optional bounded retry delay.
 - The protobuf-defined capability handshake is the only backend runtime
