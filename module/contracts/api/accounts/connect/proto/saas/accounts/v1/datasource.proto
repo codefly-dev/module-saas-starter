@@ -1014,6 +1014,212 @@ message RevokeSourceDelegationResponse {
   SourceDelegation delegation = 1;
 }
 
+// ---------------------------------------------------------------------------
+// Unattended work: the identity a declared trigger runs under, and the
+// reconcile schedule this host declares rather than fires.
+//
+// Every admission carries a signed Work Context, and with no person present
+// there is nothing to sign one from. The answer is not a platform identity: a
+// release declares WHOSE authority its occurrences run under, and this host
+// re-derives that authority from current facts on every single occurrence.
+// ---------------------------------------------------------------------------
+
+// TriggerIdentity is the identity a declared trigger's occurrences run under.
+// EXACTLY ONE field is set, and the two are not alternatives of equal
+// standing:
+//
+//   - source names a connected source whose delegation this host owns. It is
+//     the grant reference: an opaque identifier rather than a credential,
+//     re-checked against current facts on every mint, so an occurrence's run
+//     may outlive the capability that admitted it and revoking the delegation
+//     refuses the next occurrence.
+//   - binding names one of the release's declared operation bindings, and an
+//     occurrence runs under the installation's own principal from that
+//     binding's headless scopes. That is an ordinary token admission, bounded
+//     by the capability's own short lifetime — which is why it is the first
+//     proof and not the contract.
+//
+// THE NAMES ARE THE INSTALLATION DOCUMENT'S, not this host's and not the
+// executing module's read API's. That distinction is load-bearing: the module
+// that fires triggers answers an operator's READ with `source_delegation` and
+// `installation_binding`, and decodes an INSTALLATION with `source` and
+// `binding`. Only the second has to parse for a release to install at all, so
+// it is the one this host speaks — everywhere, so there is one vocabulary
+// here rather than two that can drift apart.
+message TriggerIdentity {
+  string source = 1;
+  string binding = 2;
+}
+
+// DeclaredTriggerSchedule is the clock a release declares, in the vocabulary
+// the executing module validates: a five-field cron expression in a named IANA
+// location, what becomes of occurrences that came due while nothing was
+// running them, what becomes of one that comes due while the previous still
+// runs, how long one occurrence's run may take, and the input every
+// occurrence is admitted with. A schedule has no arrival to take an input
+// from and no runtime may invent one that satisfies a release's own schema, so
+// the declaration carries it.
+message DeclaredTriggerSchedule {
+  string cron = 1;
+  string timezone = 2;
+  // missed_run is "skip" or "catch_up", and overlap is "skip", "queue" or
+  // "cancel_previous" — the values the installation decode admits. The read
+  // API of the module that fires triggers reports the same two facts as
+  // MISSED_RUN_POLICY_* and OVERLAP_POLICY_*; those are a projection, and a
+  // declaration carrying them would be refused.
+  string missed_run = 3;
+  string overlap = 4;
+  // deadline is how long one occurrence's run may take, as an integer count of
+  // NANOSECONDS — the installation document decodes durations with plain
+  // encoding/json, so a duration string such as "10m" fails the whole document
+  // rather than the field.
+  int64 deadline = 5;
+  // input_json is the input every occurrence is admitted with, as the JSON text
+  // the document carries verbatim. It is a string rather than bytes because
+  // that is what it is: a JSON value a composition pastes into an installation,
+  // and base64 would make it unreadable for the one reader who needs it.
+  string input_json = 6;
+}
+
+// TriggerDelegationReference is one delegation reference as an operator binds
+// it to a declared release's triggers: the value to write in the release's
+// trigger identity, which module and binding it confers, whose authority it
+// carries, what it allows, and whether it is still live.
+message TriggerDelegationReference {
+  // reference is what a release's trigger names as its source_delegation. It
+  // is the connected source's id, because the host resolves the active
+  // delegation from it on every mint — so a reference never names a revoked
+  // row and a reconnect does not invalidate what an operator installed.
+  string reference = 1;
+  // delegation_id is the row the reference resolved to at read time. It is
+  // deliberately not the reference: a reconnect replaces the row.
+  string delegation_id = 2;
+  // module is the consuming module's registration prefix and binding the key
+  // of its operation_audiences entry whose source_delegation_scopes this
+  // delegation confers.
+  string module = 3;
+  string binding = 4;
+  string audience = 5;
+  // tenant is the organization an occurrence acts in and owner_principal_id
+  // the person whose authority it carries. Neither is a caller's to choose:
+  // both are read off the delegation.
+  string tenant = 6;
+  string owner_principal_id = 7;
+  // scopes is what occurrences may do, as `kind:action[:resource]` — exactly
+  // the binding's declared delegation scopes, and never the module's own
+  // authority.
+  repeated string scopes = 8;
+  bool active = 9;
+  google.protobuf.Timestamp created_at = 10;
+  // revoked_at is unset while the delegation is active.
+  google.protobuf.Timestamp revoked_at = 11;
+  SourceDelegationRevocation revocation = 12;
+}
+
+// TriggerChildContext is one child Work Context this host minted against a
+// reference: one occurrence's identity, as the audit trail recorded it. The
+// host keeps no other record — a capability lives about a minute and nothing
+// caches one.
+message TriggerChildContext {
+  string delegation_id = 1;
+  string module = 2;
+  string binding = 3;
+  string audience = 4;
+  repeated string scopes = 5;
+  // lookup says the capability could only recover an effect's receipt rather
+  // than produce the effect.
+  bool lookup = 6;
+  google.protobuf.Timestamp minted_at = 7;
+  // record is the trail row this child was read from. A child has no identity
+  // of its own — nothing stores a capability — so the record of the mint is
+  // what one is identified by.
+  string record = 8;
+}
+
+// SourceTriggerDeclaration is the reconcile schedule this host declares for
+// one source, as the trigger a declared release carries. The host fires
+// nothing on it: the source's reconcile_interval is the configuration that
+// re-declares the trigger, and an executing module owns the clock, the
+// occurrences and their cursor.
+message SourceTriggerDeclaration {
+  // release is the kind-of-work name the declaration installs under, and
+  // operation the host operation an occurrence admits, by its method path.
+  string release = 1;
+  string operation = 2;
+  // schedule and identity are unset when undeclarable_reason is set.
+  DeclaredTriggerSchedule schedule = 3;
+  TriggerIdentity identity = 4;
+  // digest fingerprints the declaration, so an interval edit is visibly a
+  // different declaration rather than the same one with different contents.
+  string digest = 5;
+  // last_occurrence_at is the most recent reconcile this host recorded for the
+  // source, whatever admitted it, and next_occurrence_at the next instant the
+  // declared cron comes due. The authoritative cursor belongs to the module
+  // that fires the trigger; this is what the declaration says, read back.
+  google.protobuf.Timestamp last_occurrence_at = 6;
+  google.protobuf.Timestamp next_occurrence_at = 7;
+  // undeclarable_reason says why this source declares no trigger at all: its
+  // schedule is disabled, or its interval is not one a five-field cron can
+  // express. Empty means the declaration above is complete.
+  string undeclarable_reason = 8;
+}
+
+message DelegateSourceTriggersRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string source_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message DelegateSourceTriggersResponse {
+  // One reference per module binding that accepts delegations, by module
+  // prefix. Empty means no composed module declares one, so no release's
+  // triggers can name a reference here at all.
+  repeated TriggerDelegationReference delegations = 1;
+}
+
+message GetSourceTriggerDeclarationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string source_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message GetSourceTriggerDeclarationResponse {
+  SourceTriggerDeclaration declaration = 1;
+  // delegations are the references an operator may bind to this source's
+  // triggers, revoked ones included, newest first.
+  repeated TriggerDelegationReference delegations = 2;
+  // children are the child Work Contexts minted against those references,
+  // newest first and bounded to a recent window.
+  repeated TriggerChildContext children = 3;
+}
+
+message ReconcileSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string source_id = 2 [(buf.validate.field).string.uuid = true];
+  // effect_id is the effect identity this pass commits under, also accepted in
+  // the effect-id header. Two passes under one identity are one pass.
+  string effect_id = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+}
+
+message ReconcileSourceResponse {
+  string effect_id = 1;
+  // status is "committed" when this pass is recorded, "unknown" when a
+  // recovery found no receipt for the effect.
+  string status = 2;
+  // job_id traces the work this pass handed to the source's own sync engine.
+  // Empty when the pass committed nothing to trace — a recovered receipt with
+  // no job, or a source whose schedule is disabled.
+  string job_id = 3;
+}
+
+message LookupReconcileSourceRequest {
+  string effect_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+}
+
 // DatasourceService is the tenant-facing surface a solution drives (directly or
 // through the generated SDK) to declare and operate connected datasources.
 // SourceOperation is an admitted route and bounded JSON contract, never a credential.
@@ -1819,6 +2025,146 @@ service DatasourceService {
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
       request_sensitivity: SENSITIVITY_INTERNAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // DelegateSourceTriggers records the delegation a declared release's
+  // triggers run under, for one already-connected source, without reconnecting
+  // it. It is the one act of binding that was otherwise only available at
+  // connect: a release installed after a source was connected finds no
+  // delegation to name, and nothing backfills one.
+  //
+  // It records nothing new about who may do what. For every module whose one
+  // operation binding declares source_delegation_scopes it revokes any active
+  // delegation of the source to that module as `replaced` and records a fresh
+  // one under the calling administrator — exactly what a reconnect does, and in
+  // one transaction, so a source never ends with two delegations or none.
+  rpc DelegateSourceTriggers(DelegateSourceTriggersRequest) returns (DelegateSourceTriggersResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.delegation.created"
+        events: "saas.datasource.delegation.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetSourceTriggerDeclaration reads the reconcile schedule this host declares
+  // for one source — the trigger a declared release carries — together with
+  // the identity its occurrences would run under and the children already
+  // minted against that identity. This host fires nothing on this schedule; the
+  // declaration is what an executing module admits occurrences from.
+  rpc GetSourceTriggerDeclaration(GetSourceTriggerDeclarationRequest) returns (GetSourceTriggerDeclarationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ReconcileSource performs one reconcile pass over a source: the host
+  // operation the declared schedule's occurrences admit, and the same work a
+  // person asks for by hand. It resolves nothing with the provider itself —
+  // GitHub gets a conditional reconcile that snapshots only if its head moved,
+  // and a pull provider the full sync its connector has — so an occurrence is
+  // never slowed by one unreachable source.
+  //
+  // It is an operation, not a sweep: it names exactly one source, it carries
+  // the effect identity its caller chose, and its receipt is read back through
+  // LookupReconcileSource. Nothing in this host decides when it runs.
+  // The floor is organization membership and the rule is stricter than the
+  // floor, as on the sibling operations: a shared source is an organization
+  // administrator's to reconcile, a personal one only its owner's, which no
+  // single tenant requirement spells. ReconcileSourceAuthority enforces it,
+  // before the receipt guard and again after its serialization hold.
+  rpc ReconcileSource(ReconcileSourceRequest) returns (ReconcileSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "datasource:invoke"
+      scopes: "datasource:invoke"
+      resource_bindings: {
+        request_field: "source_id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.source.synced"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (codefly.runnable.v0.operation) = {
+      attempt_timeout: {seconds: 60}
+      total_timeout: {seconds: 600}
+      max_attempts: 5
+      backoff: {seconds: 2}
+      retryable_codes: [
+        "UNAVAILABLE",
+        "RESOURCE_EXHAUSTED",
+        "ABORTED"
+      ]
+      audience: "saas-datasource"
+      required_scope_slots: {
+        name: "source"
+        required_actions: [
+          "invoke",
+          "read"
+        ]
+        lookup: true
+      }
+      lookup_method: "/saas.accounts.v1.DatasourceService/LookupReconcileSource"
+      max_input_bytes: 4096
+      max_output_bytes: 4096
+      completion: COMPLETION_CALL
+    };
+  }
+  // LookupReconcileSource reads back the receipt of one reconcile effect. It
+  // never starts a pass: recovery reads what committed and nothing else.
+  rpc LookupReconcileSource(LookupReconcileSourceRequest) returns (ReconcileSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "datasource:read"
+      scopes: "datasource:read"
+      resource_bindings: {
+        request_field: "effect_id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }

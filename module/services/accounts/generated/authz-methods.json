@@ -1930,6 +1930,52 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/DelegateSourceTriggers",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "DelegateSourceTriggers",
+      "input_type": "saas.accounts.v1.DelegateSourceTriggersRequest",
+      "output_type": "saas.accounts.v1.DelegateSourceTriggersResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.delegation.created",
+            "saas.datasource.delegation.revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "5d59727d6f87ea2ffb5f909a32f56cfb853187bbe1e09f1c47b866168180ee96",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/DeleteDatasourceAccountLink",
       "full_service": "saas.accounts.v1.DatasourceService",
       "method": "DeleteDatasourceAccountLink",
@@ -2193,6 +2239,49 @@
       "method": "GetSourceSync",
       "input_type": "saas.accounts.v1.GetSourceSyncRequest",
       "output_type": "saas.accounts.v1.GetSourceSyncResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "aeffaabe591b3a428e00bfa5b64b19d6982cadaa0e96b0e8948252e37aa2958b",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/GetSourceTriggerDeclaration",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "GetSourceTriggerDeclaration",
+      "input_type": "saas.accounts.v1.GetSourceTriggerDeclarationRequest",
+      "output_type": "saas.accounts.v1.GetSourceTriggerDeclarationResponse",
       "client_streaming": false,
       "server_streaming": false,
       "policy": {
@@ -2550,6 +2639,53 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/LookupReconcileSource",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "LookupReconcileSource",
+      "input_type": "saas.accounts.v1.LookupReconcileSourceRequest",
+      "output_type": "saas.accounts.v1.ReconcileSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:read"
+        ],
+        "scopes": [
+          "datasource:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "effect_id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "40c55bad9ea016cb024fe164e04d5534d59889ffb98b04883d32bea16347756f",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
       "full_service": "saas.accounts.v1.DatasourceService",
       "method": "MigrateGitHubSourceToApp",
@@ -2641,6 +2777,55 @@
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
       "policy_sha256": "f00903d36b2112b599075df9cde97795730a4052d028158db896c855495aba15",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/ReconcileSource",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "ReconcileSource",
+      "input_type": "saas.accounts.v1.ReconcileSourceRequest",
+      "output_type": "saas.accounts.v1.ReconcileSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:invoke"
+        ],
+        "scopes": [
+          "datasource:invoke"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "source_id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.source.synced"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_REQUIRED",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "0ce39b1f563b9c5abb03dc2c6cbe43c8952e0c42b50973d99a12e1ccd4142e22",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

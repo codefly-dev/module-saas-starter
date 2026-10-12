@@ -527,3 +527,111 @@ requires its owning member. These checks precede invocation and replay. A
 composition schedules the Connect Runnable; the host adds no timer or queue.
 Expired output never removes a mutation's last effect marker. See
 [Callable sources](CALLABLE_SOURCES.md#receipts-and-uncertain-outcomes).
+
+## Triggers: for work no person started
+
+A release may declare what admits work against it besides a person — a schedule
+or an arrival — and the declaration is **refused without an identity**. That is
+the whole of the problem this section answers: an occurrence has nobody signed
+in, and the host has no identity of its own to lend it.
+
+**The declaration, as the executing module validates it.** The host builds it in
+`business.DeclaredTriggerSchedule` and `business.DeclaredTriggerIdentity`, whose
+JSON field names are the contract and are pinned by test
+(`TestTriggerDeclarationMatchesTheContractFieldNames`) — a rename on either side
+is a release that will not install rather than a schedule that quietly stops:
+
+```json
+{
+  "schedule": {
+    "cron": "*/30 * * * *",
+    "timezone": "UTC",
+    "missed_run": "skip",
+    "overlap": "skip",
+    "deadline": 600000000000,
+    "input": {"org_id": "...", "source_id": "..."}
+  },
+  "identity": {"source": "<source id>"}
+}
+```
+
+**The names above are the INSTALLATION DOCUMENT's, and that distinction is
+load-bearing.** The module that fires triggers spells the same facts two ways:
+it decodes an installation with `source` / `binding`, `"skip"` / `"catch_up"`,
+`"skip"` / `"queue"` / `"cancel_previous"`, a `deadline` in **nanoseconds** and
+`event` for an arrival — and answers an operator's READ with
+`source_delegation` / `installation_binding`, `MISSED_RUN_POLICY_*`,
+`OVERLAP_POLICY_*`, `deadline_millis` and `arrival`. Only the first has to parse
+for a release to install at all, so it is the one this host speaks, in its Go
+types, in its own read surface and on its page: what a reader sees is what a
+composition pastes in. A declaration carrying the read API's spelling is
+refused at install on every field, which is a failure nothing in this host can
+observe — hence `TestTriggerDeclarationMatchesTheContractFieldNames`, which
+pins the document's names *and values* and records the other column beside
+them.
+
+**Exactly one identity, and the two are not alternatives of equal standing.**
+
+- `source` — **the grant reference, and the contract.** It names a
+  connected datasource source. On every occurrence the host resolves that
+  source's active delegation (`MintSourceOperationContext` by `source_id`) and
+  re-checks all of it: the delegation is live, the binding is still declared and
+  unchanged in audience and delegation scopes, the source exists, the person is
+  still an active member holding the connect role. The capability it answers
+  with is owned by that person and actored by exactly one module service
+  principal whose hop carries the delegation id — the shape a consuming module
+  recognises as a grant reference, which is what lets an occurrence's run
+  outlive the capability that admitted it. Nothing is cached: a revocation lands
+  on the next occurrence, not behind something held from the last one.
+- `binding` — **the installation-principal arm, and the first
+  proof.** It names one of the release's declared bindings and mints from that
+  binding's `headless_scopes` under the module's own principal
+  (`MintModuleOperationContext`). Owner and sole actor are that principal, so
+  there is no delegation to revoke and no authority to outlive the token: the
+  run is bounded by the capability's own short lifetime. That is why it is the
+  proof and not the contract.
+
+**What a composition must declare for either arm to mint at all.** The grant is
+the opt-in, exactly as for every other operation context: `source_delegation_scopes`
+for the reference arm, `headless_scopes` for the principal arm, each a subset of
+the binding's `invoke_scopes`. Beside them the binding names the `audience` the
+executing module admits under, which for this one case may be the module's own
+declared prefix:
+
+```json
+{"runtime":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"occurrences":{"audience":"runtime","invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],"headless_scopes":[{"resource_kind":"collections","actions":["read"]}],"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}}}
+```
+
+**Why a self-audience is allowed here and nowhere else.** Every other operation
+binding describes calling *another* service, so a module naming itself as its
+own audience was refused outright (`validateOperationAudiences`). Unattended
+work inverts the direction: an occurrence's capability is admitted by the module
+that executes the release — itself — which attaches it as its own incoming
+execution context and verifies it against its own declared name. A composition
+that could not name its own prefix would have to make its executing module admit
+a second audience it does not accept. `selfAdmittingBinding` therefore narrows
+that one guard to bindings declaring headless or delegation scopes, and leaves
+the guard that protects identity untouched: a capability addressed to
+`module-capabilities` is still refused at signing, whatever a binding declares.
+
+**Binding a reference to a source that is already connected.** A delegation is
+recorded only when a person connects or reconnects a source, so a release
+installed afterwards finds no reference to name and nothing backfills one.
+`DatasourceService/DelegateSourceTriggers` records it under the calling
+organization administrator — exactly what a reconnect does, in one transaction —
+and answers with the reference to write into the release's trigger. It grants
+nothing new: the scopes are the binding's declared ones and every fact is
+re-checked on every mint.
+
+**Reading it back.** `DatasourceService/GetSourceTriggerDeclaration` answers the
+declaration, the references an operator may bind to it, and the children minted
+against them. The children are read from `saas.datasource.delegation.used`,
+because that trail is the only record of one — a capability lives about a minute
+and nothing caches it — so a revoked reference shows up as the next occurrence
+having no child at all. The playground that drives the whole walk is
+`/admin/platform/unattended-work`.
+
+**What is not proven.** No live occurrence exists anywhere. Nothing in this
+repository composes a module that executes declared work, so both arms are
+qualified at the routes such a module calls and neither has been exercised
+against a live declared trigger.
