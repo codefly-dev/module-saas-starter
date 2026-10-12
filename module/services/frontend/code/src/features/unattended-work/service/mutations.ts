@@ -1,3 +1,4 @@
+import { notifySourceReconcileAdmitted } from "@codefly-dev/saas-ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDatasourceService } from "@/lib/hooks/use-api-client";
 import { unattendedWorkKeys } from "./queries";
@@ -49,17 +50,35 @@ export function useRevokeTriggerDelegation(orgId: string) {
  * The identity is generated here and not by the server, because that is what
  * makes the pass idempotent: two presses that reach the host under one
  * identity are one pass, and a fresh identity per press is one new pass each.
+ * This page mints one PER PRESS deliberately — unlike the kit's "Sync now",
+ * which holds one so a slip costs nothing: here a press is the walk being
+ * driven, and every press is meant to be a new occurrence.
+ *
+ * The admitted pass is announced on the kit's registry, so the
+ * reconcile-schedules panel lists it beside the declared schedule's
+ * occurrences as the same admission.
  */
 export function useReconcileSource(orgId: string) {
 	const service = useDatasourceService();
 	const client = useQueryClient();
 	return useMutation({
-		mutationFn: (sourceId: string) =>
-			service.reconcileSource({
+		mutationFn: async (sourceId: string) => {
+			const effectId = crypto.randomUUID();
+			const result = await service.reconcileSource({
 				orgId,
 				sourceId,
-				effectId: crypto.randomUUID(),
-			}),
+				effectId,
+			});
+			notifySourceReconcileAdmitted({
+				sourceId,
+				effectId: result.effectId || effectId,
+				jobId: result.jobId,
+				status: result.status === "committed" ? "committed" : "unknown",
+				repeat: false,
+				at: new Date().toISOString(),
+			});
+			return result;
+		},
 		onSuccess: (_result, sourceId) =>
 			client.invalidateQueries({
 				queryKey: unattendedWorkKeys.declaration(orgId, sourceId),

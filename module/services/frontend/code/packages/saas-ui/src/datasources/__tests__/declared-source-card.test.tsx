@@ -33,7 +33,16 @@ function fakeClient(
 	return {
 		listSources: vi.fn(async () => [] as DatasourceView[]),
 		addGitHubSource: vi.fn(async () => {}),
-		syncSource: vi.fn(async () => "job-1"),
+		reconcileSource: vi.fn(async (_orgId, _id, effectId: string) => ({
+			effectId,
+			status: "committed" as const,
+			jobId: "job-1",
+		})),
+		lookupReconcileSource: vi.fn(async () => undefined),
+		// The only reconnect path left: a plain sync carrying a replacement
+		// credential went with `syncSource`, so a fake without this exercises
+		// "no Reconnect offered" rather than a fallback.
+		reconnectSource: vi.fn(async () => "job-reconnect"),
 		deleteSource: vi.fn(async () => {}),
 		...overrides,
 	};
@@ -205,9 +214,16 @@ describe("DeclaredSourceCard", () => {
 		// Connected is not a state that asks for a credential again.
 		expect(screen.queryByLabelText("Authentication")).toBeNull();
 
+		// "Sync now" admits the host's reconcile OPERATION under an effect
+		// identity the card minted, so the card asks for one pass rather than
+		// sending a request that carries no identity at all.
 		fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
 		await waitFor(() =>
-			expect(client.syncSource).toHaveBeenCalledWith("org-1", "ds-1"),
+			expect(client.reconcileSource).toHaveBeenCalledWith(
+				"org-1",
+				"ds-1",
+				expect.any(String),
+			),
 		);
 		expect(onSyncEnqueued).toHaveBeenCalledWith("job-1");
 	});

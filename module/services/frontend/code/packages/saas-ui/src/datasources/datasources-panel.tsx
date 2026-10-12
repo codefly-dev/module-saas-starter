@@ -47,8 +47,9 @@ import {
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
-	useSyncSource,
+	useReconcileSource,
 } from "./queries.js";
+import type { AdmittedReconcilePass } from "./reconcile-passes.js";
 import type { ConnectGitHubValues } from "./schema.js";
 import { SourceSyncProgress, useSourceSync } from "./sync-progress.js";
 import type {
@@ -273,7 +274,7 @@ function DatasourcesPanelView({
 	);
 	// Row action errors have no other surface (no toast dependency, no global
 	// mutation handler), so they would vanish silently without this.
-	const [syncNotice, setSyncNotice] = useState<string | null>(null);
+	const [syncNotice, setSyncNotice] = useState<SyncNotice | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
@@ -322,7 +323,7 @@ function DatasourcesPanelView({
 				)
 			: undefined;
 	const addMutation = useAddGitHubSource(client);
-	const syncMutation = useSyncSource(client);
+	const reconcileMutation = useReconcileSource(client);
 	const deleteMutation = useDeleteSource(client);
 
 	const handleConnect = (values: ConnectGitHubValues) => {
@@ -452,9 +453,10 @@ function DatasourcesPanelView({
 		setMigratingIds((prev) => new Set(prev).add(source.id));
 		try {
 			await migrateToApp(orgId, source.id);
-			setSyncNotice(
-				`${source.repo} now authenticates through the GitHub App. Its stored token is no longer used.`,
-			);
+			setSyncNotice({
+				title: "Sync queued",
+				body: `${source.repo} now authenticates through the GitHub App. Its stored token is no longer used.`,
+			});
 			await list.refetch();
 		} catch (error) {
 			setActionError(
@@ -465,6 +467,11 @@ function DatasourcesPanelView({
 		}
 	};
 
+	// "Sync now" is an admission, not a sweep: it runs the same host operation a
+	// declared reconcile schedule's occurrence does, under an effect identity
+	// the press minted. The notice therefore reports the OUTCOME the operation
+	// returned — the identity and the job — rather than announcing that a
+	// request was sent.
 	const handleSync = async (source: DatasourceView) => {
 		setSyncNotice(null);
 		setActionError(null);
@@ -472,11 +479,12 @@ function DatasourcesPanelView({
 		// Per-call callbacks on a shared mutation only observe the latest call.
 		// Await each request so every row reports its result and clears pending.
 		try {
-			const jobId = await syncMutation.mutateAsync({ orgId, id: source.id });
-			setSyncNotice(
-				`Sync queued for ${source.repo}. Ingestion runs in the background; content will appear in the collection when ready.`,
-			);
-			onSyncEnqueued?.(jobId);
+			const pass = await reconcileMutation.mutateAsync({
+				orgId,
+				id: source.id,
+			});
+			setSyncNotice(describePass(source.repo, pass));
+			if (pass.jobId) onSyncEnqueued?.(pass.jobId);
 		} catch (error) {
 			setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`);
 		} finally {
@@ -597,11 +605,11 @@ function DatasourcesPanelView({
 				{syncNotice && (
 					<Banner
 						tone="info"
-						title="Sync queued"
+						title={syncNotice.title}
 						onDismiss={() => setSyncNotice(null)}
 						dismissLabel="Dismiss the sync notice"
 					>
-						{syncNotice}
+						{syncNotice.body}
 					</Banner>
 				)}
 				{actionError && (
@@ -684,10 +692,14 @@ function DatasourcesPanelView({
 						canManage={canManage}
 						onActivity={client.listActivity ? setActivitySource : undefined}
 						onExecution={renderSourceExecution ? setExecutionSource : undefined}
-						onReconnect={(source) => {
-							setReconnectError(undefined);
-							setReconnecting(source);
-						}}
+						onReconnect={
+							reconnectSource
+								? (source) => {
+										setReconnectError(undefined);
+										setReconnecting(source);
+									}
+								: undefined
+						}
 						sources={sources}
 						boundaries={boundaries}
 						onMigrateToApp={migrateToApp ? handleMigrateToApp : undefined}
@@ -807,10 +819,9 @@ function DatasourcesPanelView({
 				</p>
 			)}
 
-			{canManage && reconnecting && (
+			{canManage && reconnecting && reconnectSource && (
 				<ReconnectSource
 					source={reconnecting}
-					credentialOptional={reconnectSource !== undefined}
 					pending={reconnectPending}
 					error={reconnectError}
 					onCancel={() => {
@@ -820,18 +831,17 @@ function DatasourcesPanelView({
 						setReconnectPending(true);
 						setReconnectError(undefined);
 						try {
-							const jobId = reconnectSource
-								? await reconnectSource(
-										orgId,
-										reconnecting.id,
-										token || undefined,
-									)
-								: await client.syncSource(orgId, reconnecting.id, token);
-							setSyncNotice(
-								token
+							const jobId = await reconnectSource(
+								orgId,
+								reconnecting.id,
+								token || undefined,
+							);
+							setSyncNotice({
+								title: "Sync queued",
+								body: token
 									? `Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`
 									: `Reconnected. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`,
-							);
+							});
 							setReconnecting(null);
 							onSyncEnqueued?.(jobId);
 							await list.refetch();
@@ -1065,7 +1075,14 @@ function SourcesTable({
 	onActivity?: (source: DatasourceView) => void;
 	/** Present only when a consumer handed the panel an execution view. */
 	onExecution?: (source: DatasourceView) => void;
-	onReconnect: (source: DatasourceView) => void;
+	/**
+	 * Present only when the client can reconnect. A reconnect rebinds whose
+	 * authority the source's syncs run under, which is not a reconcile and has
+	 * no idempotent form here; the plain sync that used to stand in for it went
+	 * with `syncSource`, so a client without `reconnectSource` is offered no
+	 * Reconnect rather than a path that does something else.
+	 */
+	onReconnect?: (source: DatasourceView) => void;
 	onMigrateToApp?: (source: DatasourceView) => void;
 	renderSourceDetail?: (source: DatasourceView) => ReactNode;
 }) {
@@ -1203,7 +1220,7 @@ function SourcesTable({
 													align="end"
 													className="w-auto min-w-44"
 												>
-													{source.provider === "github" && (
+													{onReconnect && source.provider === "github" && (
 														<DropdownMenuItem
 															onClick={() => onReconnect(source)}
 														>
@@ -1529,17 +1546,57 @@ function SourceHistory({
 	);
 }
 
+/** What the panel says about one action, with the heading it says it under. */
+interface SyncNotice {
+	title: string;
+	body: string;
+}
+
+/**
+ * The outcome one reconcile pass returned, as the panel reports it.
+ *
+ * Three readings, and the differences between them are the point of running
+ * this as an operation at all:
+ *
+ * - a pass this press admitted — the job is new work;
+ * - a pass this press REPEATED — the receipt was read back, no second re-send
+ *   of the source happened, and the job named is the first press's;
+ * - a pass the host did not report as committed, which is INCONCLUSIVE rather
+ *   than refused, so the person is told to press again to recover it rather
+ *   than left to read silence as failure.
+ *
+ * The effect identity is in every one of them. It is what makes the pass the
+ * same object a declared schedule's occurrence is, and it is the handle a
+ * person quotes when asking an operator what happened.
+ */
+function describePass(repo: string, pass: AdmittedReconcilePass): SyncNotice {
+	const job = pass.jobId
+		? `, job ${pass.jobId}`
+		: "; the host traced no job for it";
+	if (pass.repeat)
+		return {
+			title: "That pass is already recorded",
+			body: `${repo} is already being reconciled under pass ${pass.effectId}${job}. Nothing was sent a second time. Press Sync again for a new pass.`,
+		};
+	if (pass.status !== "committed")
+		return {
+			title: "This pass is unconfirmed",
+			body: `The host did not report pass ${pass.effectId} for ${repo} as committed, which is inconclusive rather than refused. Press Sync again to recover the same pass rather than starting another.`,
+		};
+	return {
+		title: "Sync queued",
+		body: `Reconcile admitted for ${repo} under pass ${pass.effectId}${job}. Ingestion runs in the background; content will appear in the collection when ready.`,
+	};
+}
+
 function ReconnectSource({
 	source,
-	credentialOptional,
 	pending,
 	error,
 	onSubmit,
 	onCancel,
 }: {
 	source: DatasourceView;
-	/** The client reconnects a source that holds no credential without one. */
-	credentialOptional: boolean;
 	pending: boolean;
 	error?: string;
 	onSubmit: (token: string) => Promise<void>;
@@ -1552,7 +1609,7 @@ function ReconnectSource({
 			className="space-y-3 rounded-lg border p-4"
 			onSubmit={(event) => {
 				event.preventDefault();
-				if (!pending && (credentialOptional || token.trim())) {
+				if (!pending) {
 					const replacement = token.trim();
 					setToken("");
 					void onSubmit(replacement);
@@ -1560,17 +1617,21 @@ function ReconnectSource({
 			}}
 		>
 			<h3 className="font-medium">Reconnect {source.repo}</h3>
+			{/* The credential is optional in one direction only: a source that
+			    holds one is refused a credential-less reconnect by the host, which
+			    is the only place that knows whether it holds one. Saying so here
+			    would be a second opinion. */}
 			<p className="text-sm text-muted-foreground">
-				{credentialOptional
-					? "Its syncs will run on your behalf from now on. Enter a new PAT to replace the saved one, or leave it empty for a public repository. A sync starts right away; your source, collection, content, and history are preserved."
-					: "Replace the saved PAT and start a sync. Your source, collection, content, and history are preserved."}
+				Its syncs will run on your behalf from now on. Enter a new PAT to
+				replace the saved one, or leave it empty for a public repository. A sync
+				starts right away; your source, collection, content, and history are
+				preserved.
 			</p>
 			<Label className="block text-sm">
-				{credentialOptional ? "New GitHub PAT (optional)" : "New GitHub PAT"}
+				New GitHub PAT (optional)
 				<Input
 					type="password"
 					autoComplete="new-password"
-					required={!credentialOptional}
 					maxLength={4096}
 					value={token}
 					disabled={pending}
@@ -1579,10 +1640,7 @@ function ReconnectSource({
 			</Label>
 			{error && <p role="alert">{error}</p>}
 			<div className="flex gap-2">
-				<Button
-					type="submit"
-					disabled={pending || (!credentialOptional && !token.trim())}
-				>
+				<Button type="submit" disabled={pending}>
 					{pending ? "Validating and reconnecting…" : "Reconnect and sync"}
 				</Button>
 				<Button

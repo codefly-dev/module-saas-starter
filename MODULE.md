@@ -192,6 +192,22 @@ it, and a test walks the service's AST to keep that true. One occurrence admits
 `DatasourceService/ReconcileSource`, the same host operation a person's manual
 pass takes.
 
+**"Sync now" is that admission, not a request beside it** (issue #1094). The
+published kit points the button at `ReconcileSource` under an **effect identity
+the kit mints**, so a person's pass and a scheduled occurrence are one admission
+of one shape and the receipts cannot tell them apart. A press that repeats the
+pass still being reported reads the original receipt back through
+`LookupReconcileSource` and surfaces *that* — one receipt and one job for two
+presses, rather than two full re-sends of the source — and the press after that
+is a new pass. `syncSource`, which reached the same sync engines carrying no
+effect identity, is **deleted** from the kit rather than deprecated, and a
+TypeScript AST walk over this repository fails on any remaining caller
+(`src/features/datasources/__tests__/reconcile-is-the-only-manual-pass.test.ts`).
+The reconcile-schedules panel lists a person's pass in the **same table** as the
+declared schedule's last and next occurrence, with its effect identity beside
+them; the passes it can list are the ones this browser admitted, because a
+receipt is recovered by identity and never enumerated.
+
 **What is not proven:** no live occurrence exists. Nothing in this repository
 composes a module that executes declared work, so the declaration is built
 and held to the contract's field names by test, and the walk that has not been

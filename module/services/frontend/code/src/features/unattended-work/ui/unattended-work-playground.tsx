@@ -43,7 +43,7 @@ import {
 	useSourceTriggerDeclaration,
 	useTriggerSources,
 } from "../service/queries";
-import { declaredIdentity, instant } from "./source-trigger-schedules";
+import { declaredIdentity, Fact, instant } from "./source-trigger-schedules";
 
 /**
  * The unattended-work playground: the whole of this module's answer to "whose
@@ -436,23 +436,4 @@ function nanosecondsAsDuration(nanos?: bigint): string {
 	const seconds = Number(nanos / BigInt(1_000_000_000));
 	if (seconds % 60 === 0) return `${seconds / 60}m`;
 	return `${seconds}s`;
-}
-
-function Fact({
-	label,
-	value,
-	mono,
-}: {
-	label: string;
-	value: string;
-	mono?: boolean;
-}) {
-	return (
-		<div>
-			<dt className="text-xs text-muted-foreground">{label}</dt>
-			<dd className={mono ? "font-mono text-xs break-all" : "text-sm"}>
-				{value}
-			</dd>
-		</div>
-	);
 }
