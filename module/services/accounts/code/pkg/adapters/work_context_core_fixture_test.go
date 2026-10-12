@@ -323,3 +323,13 @@ func mintModuleIdentity(t *testing.T, principalID, tenant string) string {
 	require.NoError(t, err)
 	return token
 }
+
+// WorkContextOperationBinding answers from the business service the test wired,
+// which owns the delegation records a binding is read from; with none, no
+// binding exists.
+func (f *sealAnswersFake) WorkContextOperationBinding(ctx context.Context, orgID, bindingID string) (business.WorkContextOperationBinding, error) {
+	if service == nil {
+		return business.WorkContextOperationBinding{}, business.ErrNoOperationBinding
+	}
+	return service.WorkContextOperationBinding(ctx, orgID, bindingID)
+}

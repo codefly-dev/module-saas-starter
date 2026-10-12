@@ -77,9 +77,10 @@ invoke scopes — or its read-only lookup subset — intersected with what the
 person actually delegated. A lookup the delegation does not cover is refused
 rather than issued empty. The capability is otherwise indistinguishable from
 what the parent-token arm produces: owned by the person, one actor hop carrying
-the delegating module's principal and the delegation id, sealed to the same
-revision, so `CheckAuthorizationRevision` confirms it and a revoke stops
-confirming it at the next hop.
+the **caller's** principal — the module that uses the capability, whose running
+build core attests — and the delegation id, with the delegation sealed as its
+operation binding (below), so every verifier reads the same live binding and a
+revoke refuses it at the next hop.
 
 A revocation takes effect on the **next call**. Work already in flight is not
 recalled — this is a live re-check before each mint, not an atomic cross-service
@@ -439,13 +440,22 @@ role connecting a source requires), and their account is active. The child is:
 - `aud` = the binding's `audience`, never `module-capabilities`;
 - tenant = the source's organization;
 - owner = the person; sole actor = the module's service principal (kind
-  `service`), whose hop carries the delegation's id;
+  `service`), whose hop carries the delegation's id and the build its pod is
+  running, attested by core;
 - authority scopes and the actor's granted scopes = **exactly** the binding's
   `source_delegation_scopes`;
 - a 60-second lifetime and the idempotent replay policy;
-- an authorization revision that binds the delegation row, the binding digest
-  and the person's authorization revision in the organization
-  (`business.SourceDelegationContextRevision`, never zero).
+- the person's authorization revision in the organization, as for any
+  capability they own;
+- the delegation sealed as the capability's **core operation binding**,
+  `source-delegation/<delegation id>/<module prefix>`
+  (`business.SourceDelegationBindingID`), naming the module that exercises it.
+  Every verifier reads that binding live (`WorkContextOperationBinding`): it is
+  granted to that module's principal at its installation in the organization,
+  it is revoked the moment the delegation is, and it exists only for the
+  delegating module or the module its binding names as audience. A delegation
+  whose binding has since changed, or whose person no longer holds the source,
+  answers no binding at all.
 
 **Revocation.** A delegation ends when an organization administrator revokes it
 (`DatasourceService/RevokeSourceDelegation`), when the source is reconnected, when
@@ -459,14 +469,18 @@ deleted; `DatasourceService/ListSourceDelegations` shows administrators who
 delegated what to which module binding, and when and why it ended.
 
 **Revision check.** `WorkContextService/CheckAuthorizationRevision` recognises a
-context owned by a person and actored by a declared module principal, and
-confirms it only while the module holds an active delegation from that owner in
-that organization whose binding is unchanged, whose source exists and whose
-person still holds the connect role, whose revision recomputes to the sealed one
-at the person's current authorization revision, and whose delegation scopes
-cover both subjects. Revoking or replacing the delegation, a membership or role
-change, or a binding change therefore invalidates outstanding contexts at the
-next hop. Every refusal is `PermissionDenied`.
+context owned by a person and actored by a declared module principal. The
+caller passes the operation binding the context sealed (`operation_binding_id`),
+and the check confirms it only while that binding names the actor, the live
+binding read above holds, the delegation is active and from that owner, its
+binding is unchanged, its source exists and its person still holds the connect
+role, the sealed revision is the person's current one, and its delegation
+scopes cover both subjects. Revoking or replacing the delegation, a membership
+or role change, or a binding change therefore invalidates outstanding contexts
+at the next hop. Every refusal is `PermissionDenied`. A verifier that reads the
+binding itself — core's `Verifier`, and the host when it verifies a parent it
+issued — refuses a withdrawn delegation as a stale capability
+(`FAILED_PRECONDITION`), before any of these checks runs.
 
 **The delegation authorizes the organization; `cross_tenant` is never
 consulted.** Neither the recording, the mint, the revision check nor the
@@ -489,8 +503,10 @@ tenant, admits the parent's tenant; the id in the token is only a pointer. The
 rest is unchanged: the parent must be addressed to the caller's prefix, the
 binding must be one the caller declares, and the child is attenuated to that
 binding's scopes, which must lie within the parent's. The child keeps the
-parent's owner, actor hop and revision, so the revision check confirms it the
-same way and stops the moment the delegation ends. A parent with no module
+parent's owner, delegation and revision; its actor hop is the **caller** — the
+module that now uses the capability, whose build core attests — and its
+operation binding names the caller, so the revision check confirms it the same
+way and stops the moment the delegation ends. A parent with no module
 actor hop keeps today's tenant check (`cross_tenant` or the caller's own
 tenant) exactly; a read exchange always does.
 

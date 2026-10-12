@@ -43,6 +43,7 @@ type workContextSealAnswers interface {
 	WorkContextApprovedBuild(ctx context.Context, orgID, principalID string) (string, uint64, error)
 	WorkContextRevision(ctx context.Context, orgID, ownerID string) (uint64, error)
 	WorkContextAudienceInstallation(ctx context.Context, orgID, audience string) (string, error)
+	WorkContextOperationBinding(ctx context.Context, orgID, bindingID string) (business.WorkContextOperationBinding, error)
 }
 
 // hostSealSource is core's SealSource for one organization.
@@ -87,11 +88,25 @@ func (s hostSealSource) ApprovedBuild(ctx context.Context, principalID string) (
 	return digest, incarnation, err
 }
 
-// OperationBinding answers that no binding exists, for every id. This host seals
-// no operation binding into any capability it mints, so a capability naming one
-// was not minted under this host's rules and is refused.
-func (hostSealSource) OperationBinding(context.Context, string) (workcontext.OperationBinding, error) {
-	return workcontext.OperationBinding{}, workcontext.ErrNoBinding
+// OperationBinding resolves one operation binding by its id, exactly: today the
+// only kind is a source delegation used by one module
+// (business.SourceDelegationBindingID). The binding's principal and installation
+// come from the issuer's records, never from the capability, and core refuses a
+// capability whose exercising principal or sealed installation is not the
+// binding's — so a delegation presented by a module it does not entitle verifies
+// nowhere.
+func (s hostSealSource) OperationBinding(ctx context.Context, bindingID string) (workcontext.OperationBinding, error) {
+	live, err := s.answers.WorkContextOperationBinding(ctx, s.tenant, bindingID)
+	switch {
+	case errors.Is(err, business.ErrNoOperationBinding):
+		return workcontext.OperationBinding{}, fmt.Errorf("%w: %w", workcontext.ErrNoBinding, err)
+	case err != nil:
+		return workcontext.OperationBinding{}, err
+	}
+	return workcontext.OperationBinding{
+		ID: live.ID, PrincipalID: live.PrincipalID, InstallationID: live.InstallationID,
+		Revision: live.Revision, Incarnation: live.Incarnation, Revoked: live.Revoked,
+	}, nil
 }
 
 var _ workcontext.SealSource = hostSealSource{}
@@ -227,6 +242,9 @@ type delegationHop struct {
 	// execution — a module principal, attested from its authenticated workload.
 	// Empty for a person or a registered agent, which bear none.
 	Execution workcontext.Execution
+	// OperationBindingID is the unit of authority this hop exercises, when it
+	// exercises one; its revision and incarnation are read live by core.
+	OperationBindingID string
 }
 
 // mintRequest is one capability to issue: the owner's first session, and the
@@ -291,6 +309,9 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 			ReplayPolicy:  workcontext.ReplayIdempotent,
 			TTL:           ttl,
 			Execution:     hop.Execution,
+			// A hop naming none carries its parent's, which for the owner's
+			// session is none.
+			OperationBindingID: hop.OperationBindingID,
 		}
 		if i == len(request.Hops)-1 {
 			child.SessionID = request.Session
@@ -355,6 +376,7 @@ func (s *WorkContextAuthorityServer) remint(
 		last.GrantedScopes = attenuated
 	}
 	last.Execution = lastExecution
+	last.OperationBindingID = parent.GetOperationBinding().GetBindingId()
 	return s.mint(ctx, mintRequest{Start: start, Hops: hops, Session: session, Replay: replay, TTL: ttl})
 }
 

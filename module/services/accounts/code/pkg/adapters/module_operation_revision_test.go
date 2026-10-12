@@ -41,7 +41,7 @@ func revisionScopes(scopes []*basev0.WorkScopeV1) []*gen.WorkContextScope {
 
 // revisionRequestFromClaims builds the request exactly as a consumer's SDK does:
 // the owner with the authority scopes, then every actor with its granted
-// scopes, and the revision the token carries.
+// scopes, the revision the token carries, and the operation binding it sealed.
 func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthorizationRevisionRequest {
 	subjects := []*gen.WorkContextRevisionSubject{{
 		PrincipalId: signed.GetOwnerPrincipalId(),
@@ -53,12 +53,16 @@ func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthoriza
 			Scopes:      revisionScopes(actor.GetGrantedScopes()),
 		})
 	}
-	return &gen.CheckAuthorizationRevisionRequest{
+	request := &gen.CheckAuthorizationRevisionRequest{
 		OrgId:                 signed.GetTenantId(),
 		OwnerPrincipalId:      signed.GetOwnerPrincipalId(),
 		AuthorizationRevision: signed.GetAuthorizationRevision(),
 		Subjects:              subjects,
 	}
+	if binding := signed.GetOperationBinding().GetBindingId(); binding != "" {
+		request.OperationBindingId = &binding
+	}
+	return request
 }
 
 func mintedOperationContextClaims(t *testing.T) *basev0.WorkContextV1 {

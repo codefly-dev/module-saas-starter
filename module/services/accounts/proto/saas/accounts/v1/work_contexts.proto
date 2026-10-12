@@ -272,6 +272,15 @@ message CheckAuthorizationRevisionRequest {
     (buf.validate.field).repeated.min_items = 1,
     (buf.validate.field).repeated.max_items = 17
   ];
+  // operation_binding_id is the operation binding the context sealed, copied
+  // from its operation_binding.binding_id. A context minted from a source
+  // delegation exercises one (the delegation, used by its actor), and is
+  // confirmed only against that binding, re-read live; such a context checked
+  // without it is not confirmed. Empty for a context that seals none.
+  optional string operation_binding_id = 5 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
 }
 
 // AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered

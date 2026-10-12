@@ -952,8 +952,14 @@ type CheckAuthorizationRevisionRequest struct {
 	OwnerPrincipalId      string                        `protobuf:"bytes,2,opt,name=owner_principal_id,json=ownerPrincipalId,proto3" json:"owner_principal_id,omitempty"`
 	AuthorizationRevision uint64                        `protobuf:"varint,3,opt,name=authorization_revision,json=authorizationRevision,proto3" json:"authorization_revision,omitempty"`
 	Subjects              []*WorkContextRevisionSubject `protobuf:"bytes,4,rep,name=subjects,proto3" json:"subjects,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// operation_binding_id is the operation binding the context sealed, copied
+	// from its operation_binding.binding_id. A context minted from a source
+	// delegation exercises one (the delegation, used by its actor), and is
+	// confirmed only against that binding, re-read live; such a context checked
+	// without it is not confirmed. Empty for a context that seals none.
+	OperationBindingId *string `protobuf:"bytes,5,opt,name=operation_binding_id,json=operationBindingId,proto3,oneof" json:"operation_binding_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CheckAuthorizationRevisionRequest) Reset() {
@@ -1012,6 +1018,13 @@ func (x *CheckAuthorizationRevisionRequest) GetSubjects() []*WorkContextRevision
 		return x.Subjects
 	}
 	return nil
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetOperationBindingId() string {
+	if x != nil && x.OperationBindingId != nil {
+		return *x.OperationBindingId
+	}
+	return ""
 }
 
 // AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered
@@ -1282,13 +1295,16 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\v_project_id\"\x8f\x01\n" +
 	"\x1aWorkContextRevisionSubject\x12+\n" +
 	"\fprincipal_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\vprincipalId\x12D\n" +
-	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\b\xbaH\x05\x92\x01\x02\x10@R\x06scopes\"\x92\x02\n" +
+	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\b\xbaH\x05\x92\x01\x02\x10@R\x06scopes\"\xee\x02\n" +
 	"!CheckAuthorizationRevisionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x126\n" +
 	"\x12owner_principal_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x10ownerPrincipalId\x12>\n" +
 	"\x16authorization_revision\x18\x03 \x01(\x04B\a\xbaH\x042\x02 \x00R\x15authorizationRevision\x12T\n" +
 	"\bsubjects\x18\x04 \x03(\v2,.saas.accounts.v1.WorkContextRevisionSubjectB\n" +
-	"\xbaH\a\x92\x01\x04\b\x01\x10\x11R\bsubjects\"\xc2\x02\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x10\x11R\bsubjects\x12A\n" +
+	"\x14operation_binding_id\x18\x05 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x00R\x12operationBindingId\x88\x01\x01B\x17\n" +
+	"\x15_operation_binding_id\"\xc2\x02\n" +
 	"\x1cAuthorizeEvidenceReadRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x128\n" +
 	"\x13caller_principal_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x11callerPrincipalId\x12;\n" +
@@ -1416,6 +1432,7 @@ func file_saas_accounts_v1_work_contexts_proto_init() {
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[2].OneofWrappers = []any{}
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[6].OneofWrappers = []any{}
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[7].OneofWrappers = []any{}
+	file_saas_accounts_v1_work_contexts_proto_msgTypes[9].OneofWrappers = []any{}
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[10].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

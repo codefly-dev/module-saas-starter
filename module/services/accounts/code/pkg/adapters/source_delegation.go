@@ -139,6 +139,14 @@ func (h *moduleCapabilitiesConnectHandler) MintSourceOperationContext(ctx contex
 func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 	ctx context.Context, authority business.SourceOperationContextAuthority,
 ) (string, *basev0.WorkContextV1, error) {
+	return s.startSourceOperation(ctx, authority, business.SourceOperationContextTTL)
+}
+
+// startSourceOperation is StartSourceOperationTask for a window no longer than
+// ttl — an exchange of a delegated parent is held to what is left of it.
+func (s *WorkContextAuthorityServer) startSourceOperation(
+	ctx context.Context, authority business.SourceOperationContextAuthority, ttl time.Duration,
+) (string, *basev0.WorkContextV1, error) {
 	if !s.configured() {
 		return "", nil, ErrWorkContextAuthorityUnconfigured
 	}
@@ -150,7 +158,7 @@ func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 	if requireMintableAudience(authority.Audience) != nil {
 		return "", nil, fmt.Errorf("%w: source operation context audience", workcontext.ErrInvalid)
 	}
-	if authority.Revision == 0 || authority.OwnerPrincipalID == "" || authority.OwnerPrincipalID == authority.PrincipalID {
+	if authority.OwnerPrincipalID == "" || authority.OwnerPrincipalID == authority.PrincipalID || authority.ModulePrefix == "" {
 		return "", nil, fmt.Errorf("%w: source operation context authority", workcontext.ErrInvalid)
 	}
 	_, scopes, err := workContextScopes(authority.WireScopes(), mintContentReads(authority.Audience))
@@ -167,13 +175,11 @@ func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 			return "", nil, fmt.Errorf("%w: source operation context actor scopes", workcontext.ErrInvalid)
 		}
 	}
-	installation, err := s.audienceInstallation(ctx, authority.Tenant, authority.Audience)
-	if err != nil {
-		return "", nil, err
-	}
-	// The person's session, then the module's hop. The person bears no
-	// execution; the module's hop attests the build its requesting pod is
-	// running, as every module mint does.
+	// The person's session, sealed to the installation the using module holds in
+	// the organization, then that module's hop exercising the delegation as its
+	// operation binding. The person bears no execution; the module's hop attests
+	// the build its pod is running. Core resolves the binding live at the mint
+	// and refuses one this module is not entitled to use.
 	return s.mint(ctx, mintRequest{
 		Start: workcontext.StartInput{
 			TenantID:           authority.Tenant,
@@ -183,17 +189,18 @@ func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 			TaskID:             uuid.NewString(),
 			Audience:           authority.Audience,
 			AuthorityScopes:    scopes,
-			InstallationID:     installation,
+			InstallationID:     authority.InstallationID,
 		},
 		Hops: []delegationHop{{
-			PrincipalID:   authority.PrincipalID,
-			PrincipalKind: business.PrincipalKindService,
-			DelegationID:  authority.Delegation.ID,
-			GrantedScopes: actorScopes,
-			Execution:     attestedModuleExecution(authority.ModuleWorkContextAuthority),
+			PrincipalID:        authority.PrincipalID,
+			PrincipalKind:      business.PrincipalKindService,
+			DelegationID:       authority.Delegation.ID,
+			GrantedScopes:      actorScopes,
+			Execution:          attestedModuleExecution(authority.ModuleWorkContextAuthority),
+			OperationBindingID: authority.BindingID(),
 		}},
 		Replay: workcontext.ReplayIdempotent,
-		TTL:    business.SourceOperationContextTTL,
+		TTL:    ttl,
 	})
 }
 
@@ -207,6 +214,7 @@ func checkSourceDelegationContextRevision(ctx context.Context, req *gen.CheckAut
 	}
 	handled, err := service.CheckSourceDelegationContextRevision(
 		ctx, req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), revisionSubjects(req),
+		req.GetOperationBindingId(),
 	)
 	if !handled {
 		return false, nil

@@ -54,6 +54,12 @@ func (s *sourceDelegationMemoryStore) WithControlPlane(ctx context.Context, fn f
 	return fn(ctx)
 }
 
+// OrganizationIDExists answers for the delegation's organization, the one tenant
+// a module identity is minted in here.
+func (s *sourceDelegationMemoryStore) OrganizationIDExists(_ context.Context, id string) (bool, error) {
+	return id == delegationOrg, nil
+}
+
 func (s *sourceDelegationMemoryStore) GetSourceDelegation(_ context.Context, orgID, id string) (*business.SourceDelegation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -147,6 +153,9 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 	svc.SetAuditEmitter(audit)
 	WithService(svc)
 	installModuleWorkContextAuthority(t)
+	// The person's revision is the one the delegation's facts carry, read live,
+	// exactly as the host answers it from the same rows.
+	workContextSingleton.seals.(*sealAnswersFake).revisionFrom = func() uint64 { return store.facts.EffectiveRevision() }
 	return store, audit
 }
 
@@ -325,6 +334,19 @@ func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 	t.Run("refuses a widened scope", func(t *testing.T) {
 		_, request := mint(t)
 		request.Subjects[1].Scopes[0].Actions = []string{"read", "write"}
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses without the binding the context sealed", func(t *testing.T) {
+		_, request := mint(t)
+		request.OperationBindingId = nil
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses a binding naming another module", func(t *testing.T) {
+		_, request := mint(t)
+		other := business.SourceDelegationBindingID(delegationID, "reports")
+		request.OperationBindingId = &other
 		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})

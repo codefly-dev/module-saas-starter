@@ -236,9 +236,13 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 	WithService(svc)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
+	// The person's revision is one fact: the seal a delegation-bearing capability
+	// carries and the delegation re-check that confirms it read the same value.
+	seals := moduleSealAnswers(12)
+	seals.revisionFrom = holds.EffectiveRevision
 	workContextSingleton.Configure(WorkContextAuthorityConfiguration{
 		Issuer: "accounts.contract", KeyID: "contract-key", PrivateKey: key, Authority: &workContextAuthorityFake{},
-		Seals: moduleSealAnswers(12),
+		Seals: seals,
 	})
 	workContextSingleton.replay = &memoryReplay{}
 	require.NoError(t, workContextSingleton.configureErr)

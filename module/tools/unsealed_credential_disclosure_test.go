@@ -101,6 +101,19 @@ func verifiedCallerIsSealed(t *testing.T, path string) bool {
 		if !ok || function.Name == nil || function.Name.Name != "VerifyModuleWorkContext" || function.Body == nil {
 			continue
 		}
+		// The seal may be built in a local first (`sealed := &...{}`, then
+		// `Sealed: sealed`); resolve such a name to the literal it was assigned.
+		assigned := map[string]ast.Expr{}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			if assign, ok := node.(*ast.AssignStmt); ok && len(assign.Lhs) == len(assign.Rhs) {
+				for i, lhs := range assign.Lhs {
+					if name, ok := lhs.(*ast.Ident); ok {
+						assigned[name.Name] = assign.Rhs[i]
+					}
+				}
+			}
+			return true
+		})
 		sealed := false
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			field, ok := node.(*ast.KeyValueExpr)
@@ -111,7 +124,11 @@ func verifiedCallerIsSealed(t *testing.T, path string) bool {
 			if !ok || key.Name != "Sealed" {
 				return true
 			}
-			literal, ok := field.Value.(*ast.UnaryExpr)
+			value := field.Value
+			if name, ok := value.(*ast.Ident); ok && assigned[name.Name] != nil {
+				value = assigned[name.Name]
+			}
+			literal, ok := value.(*ast.UnaryExpr)
 			if !ok {
 				return true
 			}

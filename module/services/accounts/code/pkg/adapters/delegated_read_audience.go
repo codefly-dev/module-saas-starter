@@ -144,7 +144,8 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 			return false, nil, nil
 		}
 		return service.ConfirmSourceDelegationParent(ctx, verified.TenantId, verified.OwnerPrincipalId,
-			verified.AuthorizationRevision, operationScopesFromCore(verified.AuthorityScopes), sourceDelegationHops(verified.ActorChain))
+			verified.AuthorizationRevision, operationScopesFromCore(verified.AuthorityScopes), sourceDelegationHops(verified.ActorChain),
+			verified.GetOperationBinding().GetBindingId())
 	}
 	delegated, delegation, err := confirmDelegation()
 	if err != nil {
@@ -176,9 +177,13 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		return nil, err
 	}
 	// Re-issued in a fresh session: the module exchanging it holds no session
-	// of its own to bind. A chain whose last hop bears an execution is attested
-	// by nobody here, so core refuses it.
-	issued, err := authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, workcontext.Execution{}, "")
+	// of its own to bind.
+	var issued *gen.IssuedWorkContext
+	if delegated {
+		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
+	} else {
+		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, workcontext.Execution{}, "")
+	}
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
@@ -452,4 +457,46 @@ func sourceDelegationHops(actors []*basev0.WorkActorV1) []business.SourceDelegat
 		})
 	}
 	return out
+}
+
+// exchangeDelegatedParent re-issues a parent minted from a source delegation for
+// the caller's own binding. The caller — the module the delegation's binding
+// names as its audience — is the module that USES what is issued, so the
+// capability is minted afresh: the person's session, then the caller's hop
+// exercising the delegation as its operation binding, attesting the build its
+// verified credential was sealed to. Core resolves that binding live and refuses
+// it for any module the delegation does not entitle.
+func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
+	ctx context.Context, caller business.ModuleCaller, parent *basev0.WorkContextV1,
+	delegation *business.SourceDelegation, binding delegatedAudienceBinding, ttl time.Duration,
+) (*gen.IssuedWorkContext, error) {
+	grant, declared := service.ModulePrincipals()[caller.PrincipalID]
+	if !declared || delegation == nil || caller.Sealed == nil || caller.Sealed.InstallationID == nil {
+		return nil, status.Error(codes.PermissionDenied, "the caller holds no installation this delegation can be exercised through")
+	}
+	actorScopes := make([]business.ModuleOperationScope, 0, len(binding.scopes))
+	for _, scope := range binding.scopes {
+		actorScopes = append(actorScopes, business.ModuleOperationScope{
+			ResourceKind: scope.GetResourceKind(),
+			Actions:      append([]string(nil), scope.GetActions()...),
+			ResourceIDs:  append([]string(nil), scope.GetResourceIds()...),
+		})
+	}
+	authority := business.SourceOperationContextAuthority{
+		ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{
+			PrincipalID: caller.PrincipalID, Tenant: parent.GetTenantId(),
+			InstallationID: *caller.Sealed.InstallationID, Execution: caller.SealedExecution(),
+		},
+		ModulePrefix:     grant.Prefix,
+		OwnerPrincipalID: parent.GetOwnerPrincipalId(),
+		Delegation:       *delegation,
+		Audience:         binding.audience,
+		Scopes:           operationScopesFromCore(parent.GetAuthorityScopes()),
+		ActorScopes:      actorScopes,
+	}
+	token, signed, err := s.startSourceOperation(ctx, authority, ttl)
+	if err != nil {
+		return nil, mapWorkContextError(err)
+	}
+	return issuedWorkContext(token, signed), nil
 }

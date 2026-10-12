@@ -991,14 +991,19 @@ func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(ctx context.Context
 	}
 	seal := claims.GetSeal()
 	installation, revision, epoch := seal.GetInstallationId(), seal.GetInstallationRevision(), seal.GetPrincipalEpoch()
+	sealed := &business.SealedModuleAuthority{
+		InstallationID:       &installation,
+		InstallationRevision: &revision,
+		ProducerEpoch:        &epoch,
+	}
+	if seal.ImageDigest != nil && seal.BuildIncarnation != nil {
+		digest, incarnation := seal.GetImageDigest(), seal.GetBuildIncarnation()
+		sealed.ImageDigest, sealed.BuildIncarnation = &digest, &incarnation
+	}
 	return business.ModuleCaller{
 		PrincipalID: principal,
 		BoundOrg:    claims.GetTenantId(),
-		Sealed: &business.SealedModuleAuthority{
-			InstallationID:       &installation,
-			InstallationRevision: &revision,
-			ProducerEpoch:        &epoch,
-		},
+		Sealed:      sealed,
 	}, nil
 }
 

@@ -232,3 +232,121 @@ func (s *Service) WorkContextAudienceInstallation(ctx context.Context, orgID, au
 	}
 	return live.InstallationID, nil
 }
+
+// The unit of authority a capability minted from a source delegation exercises,
+// sealed into it as core's operation binding.
+//
+// A delegation is a person's grant to one binding of one module (the delegating
+// module), and that binding names the module it may call (its audience). Exactly
+// those two modules may USE it: the delegating module, minting from it directly;
+// and the audience module, presenting the delegation (by reference, or as the
+// parent capability it was handed). The binding id names the delegation AND the
+// module using it, and the live read answers that module as the principal the
+// binding is granted to only when the issuer's records entitle it — the id is a
+// pointer, never authority: guessing one resolves to a refusal.
+//
+// The capability itself carries the owner's ordinary authorization revision; the
+// delegation's liveness is the binding's, read live on every verification.
+
+// sourceDelegationBindingPrefix marks a binding id as a source delegation's.
+const sourceDelegationBindingPrefix = "source-delegation/"
+
+// ErrNoOperationBinding reports a binding id that names nothing this
+// organization holds — no such delegation, or a module it does not entitle.
+var ErrNoOperationBinding = errors.New("no such operation binding")
+
+// SourceDelegationBindingID is the operation binding of delegationID used by
+// the module whose prefix is usedBy.
+func SourceDelegationBindingID(delegationID, usedBy string) string {
+	return sourceDelegationBindingPrefix + delegationID + "/" + usedBy
+}
+
+func parseSourceDelegationBindingID(id string) (delegationID, usedBy string, ok bool) {
+	rest, isDelegation := strings.CutPrefix(id, sourceDelegationBindingPrefix)
+	if !isDelegation {
+		return "", "", false
+	}
+	delegationID, usedBy, found := strings.Cut(rest, "/")
+	if !found || delegationID == "" || usedBy == "" || strings.Contains(usedBy, "/") {
+		return "", "", false
+	}
+	return delegationID, usedBy, true
+}
+
+// WorkContextOperationBinding is the live state of one operation binding.
+type WorkContextOperationBinding struct {
+	ID             string
+	PrincipalID    string
+	InstallationID string
+	Revision       uint64
+	Incarnation    uint64
+	Revoked        bool
+}
+
+// WorkContextOperationBinding answers one binding by its id, exactly.
+//
+// Revoked follows the delegation, whose revocation is terminal. The revision is
+// the using module's installation revision, so a capability sealed before that
+// installation's scope or status moved stops verifying. A binding the records no
+// longer support — the delegating module's binding changed, the source is gone,
+// the person lost the role that let them delegate — is refused outright rather
+// than answered, exactly as a mint from it is.
+func (s *Service) WorkContextOperationBinding(ctx context.Context, orgID, bindingID string) (WorkContextOperationBinding, error) {
+	delegationID, usedBy, ok := parseSourceDelegationBindingID(bindingID)
+	if !ok {
+		return WorkContextOperationBinding{}, ErrNoOperationBinding
+	}
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return WorkContextOperationBinding{}, fenceErr
+	}
+	defer releaseAuthority()
+
+	snapshot := s.moduleRegistrySnapshot()
+	user := ModulePrincipalID(usedBy)
+	var binding WorkContextOperationBinding
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		delegation, err := s.store.GetSourceDelegation(ctx, orgID, delegationID)
+		if err != nil {
+			return err
+		}
+		if delegation == nil || delegation.OrgID != orgID {
+			return ErrNoOperationBinding
+		}
+		delegator, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot,
+			ModuleCaller{PrincipalID: ModulePrincipalID(delegation.ModulePrefix), BoundOrg: orgID})
+		if err != nil {
+			return err
+		}
+		granted, current := delegator.Grant.currentSourceDelegationBinding(delegation)
+		if !current {
+			return ErrSourceDelegationContextStale
+		}
+		if usedBy != delegation.ModulePrefix && usedBy != granted.Audience {
+			return ErrNoOperationBinding
+		}
+		using, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: user, BoundOrg: orgID})
+		if err != nil {
+			return err
+		}
+		binding = WorkContextOperationBinding{
+			ID: bindingID, PrincipalID: user, InstallationID: using.InstallationID,
+			Revision: using.InstallationRevision, Incarnation: 1, Revoked: !delegation.Active(),
+		}
+		if binding.Revoked {
+			return nil
+		}
+		facts, err := s.store.SourceDelegationFacts(ctx, orgID, delegation.PrincipalID, delegation.SourceID)
+		if err != nil {
+			return err
+		}
+		if facts.revocation() != "" {
+			return ErrSourceDelegationContextStale
+		}
+		return nil
+	})
+	if err != nil {
+		return WorkContextOperationBinding{}, err
+	}
+	return binding, nil
+}

@@ -41,7 +41,7 @@ func authenticateSourceOperationContext(ctx context.Context, headers http.Header
 		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("idempotent source Work Context required"))
 	}
 	ctx = stampRequestIdentity(ctx, auth.OrdinaryRequestIdentity(claims.GetOwnerPrincipalId(), claims.GetTenantId()), auth.Assurance{})
-	delegated, _, err := service.ConfirmSourceDelegationParent(ctx, claims.TenantId, claims.OwnerPrincipalId, claims.AuthorizationRevision, operationScopesFromCore(claims.AuthorityScopes), sourceDelegationHops(claims.ActorChain))
+	delegated, _, err := service.ConfirmSourceDelegationParent(ctx, claims.TenantId, claims.OwnerPrincipalId, claims.AuthorizationRevision, operationScopesFromCore(claims.AuthorityScopes), sourceDelegationHops(claims.ActorChain), claims.GetOperationBinding().GetBindingId())
 	if err != nil {
 		return ctx, translateGRPCError(sourceDelegationParentError(err))
 	}

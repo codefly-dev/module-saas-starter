@@ -728,13 +728,19 @@ that authority (`pkg/business/source_delegation.go`):
   `/modules/_source-operation-context`) authenticates like
   `MintModuleWorkContext` and takes a `delegation_id` or a `source_id`. The child
   is owned by the person, actored by the module principal (the hop carries the
-  delegation id), in the source's organization, addressed to the binding's
-  audience with exactly its delegation scopes, for 60 seconds. Its revision
-  (`business.SourceDelegationContextRevision`) binds the delegation, the binding
-  digest and the person's authorization revision, so `CheckAuthorizationRevision`
-  — which recognises a person-owned context with a module actor and confirms it
-  from the delegation rather than the row-backed agent path — stops confirming it
-  once any of them moves.
+  delegation id and the build its pod runs), in the source's organization,
+  addressed to the binding's audience with exactly its delegation scopes, for 60
+  seconds, at the person's authorization revision. The delegation is sealed as
+  the capability's core operation binding,
+  `source-delegation/<delegation>/<module prefix>`
+  (`business.SourceDelegationBindingID`), read live by every verifier through
+  `WorkContextOperationBinding`: granted to that module at its installation,
+  revoked with the delegation, and answered only for the delegating module or the
+  module its binding names. `CheckAuthorizationRevision` — which recognises a
+  person-owned context with a module actor — takes the sealed binding id
+  (`operation_binding_id`) and confirms it from the delegation rather than the
+  row-backed agent path, so it stops confirming once the delegation, its binding,
+  the source, the person's role or their revision moves.
 - **Delegation and installation are both required at use.** Minting, revision
   confirmation and exchange hold the actor's installation in the delegation's
   organization to the current envelope. `cross_tenant` permits consent in other
@@ -770,8 +776,11 @@ that authority (`pkg/business/source_delegation.go`):
   binding's invoke scopes, or its read-only lookup subset, intersected with the
   delegation's scopes (`intersectOperationScopes`), and a lookup the delegation
   does not cover is refused rather than issued empty. The capability is otherwise
-  identical in shape to a mint's — the actor hop is the *delegating* module's
-  principal, not the caller's — so the revision check confirms it unchanged.
+  identical in shape to a mint's, except that the actor hop is the **caller's**
+  principal — the module that uses the capability, whose build core attests at
+  the mint — and the operation binding names the caller; the revision check
+  confirms it the same way. A parent-token exchange re-derives the child the same
+  way, with the caller on the hop.
   `ExchangeDelegatedReadAudience` deliberately has no reference arm: a source
   delegation authorizes operation bindings only.
 - **Codes.** `FAILED_PRECONDITION` + `DELEGATION_MISSING` (the source has no

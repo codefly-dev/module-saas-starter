@@ -176,7 +176,14 @@ func newDelegationWorld(t *testing.T) *delegationWorld {
 	seedOrgAdministrator(t, w.org, w.other)
 	w.otherOrg = seedOrg(t, w.other)
 	seedOrgAdministrator(t, w.otherOrg, w.other)
-	w.svc = w.service(t, delegationRegistry(t, ""))
+	// Shared, so each organization's installation supplies its consent. The
+	// runtime acts in an organization through its own module identity, which a
+	// shared module can mint only when it is declared cross_tenant.
+	registry := delegationRegistry(t, "")
+	runtime := registry[business.ModulePrincipalID(runtimeModule)]
+	runtime.CrossTenant = true
+	registry[business.ModulePrincipalID(runtimeModule)] = runtime
+	w.svc = w.service(t, registry)
 	return w
 }
 
@@ -235,21 +242,33 @@ func (w *delegationWorld) only(t *testing.T, orgID, sourceID, module string) *bu
 	return found[0]
 }
 
-func (w *delegationWorld) mint(ref business.SourceDelegationRef) (business.SourceOperationContextAuthority, error) {
-	return w.svc.AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, ref)
+// minted is a mint's authority with the authorization revision the capability
+// signed from it carries: the person's, as the signer reads it at the mint.
+type minted struct {
+	business.SourceOperationContextAuthority
+	Revision uint64
+}
+
+func (w *delegationWorld) mint(ref business.SourceDelegationRef) (minted, error) {
+	authority, err := w.svc.AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, ref)
+	if err != nil {
+		return minted{}, err
+	}
+	revision, err := w.svc.WorkContextRevision(testCtx, authority.Tenant, authority.OwnerPrincipalID)
+	return minted{SourceOperationContextAuthority: authority, Revision: revision}, err
 }
 
 // subjects is what a consumer's SDK sends for a minted context: the owner with
 // the authority scopes, then the module actor with its granted scopes.
-func subjects(authority business.SourceOperationContextAuthority) []business.ModuleOperationRevisionSubject {
+func subjects(authority minted) []business.ModuleOperationRevisionSubject {
 	return []business.ModuleOperationRevisionSubject{
 		{PrincipalID: authority.OwnerPrincipalID, Scopes: authority.Scopes},
 		{PrincipalID: authority.PrincipalID, Scopes: authority.Scopes},
 	}
 }
 
-func (w *delegationWorld) confirm(authority business.SourceOperationContextAuthority) error {
-	handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant, authority.OwnerPrincipalID, authority.Revision, subjects(authority))
+func (w *delegationWorld) confirm(authority minted) error {
+	handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant, authority.OwnerPrincipalID, authority.Revision, subjects(authority), authority.BindingID())
 	if !handled {
 		return errors.New("revision check did not recognise a source delegation context")
 	}
@@ -301,8 +320,10 @@ func TestSourceDelegation_ConnectThenMint(t *testing.T) {
 			require.Equal(t, []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}}, authority.Scopes)
 			require.Equal(t, delegation.ID, authority.Delegation.ID)
 			require.NotZero(t, authority.Revision)
+			require.Equal(t, business.SourceDelegationBindingID(delegation.ID, delegationModule), authority.BindingID(),
+				"the delegating module exercises its own delegation")
 
-			require.NoError(t, w.svc.RecordSourceOperationContextMint(testCtx, authority))
+			require.NoError(t, w.svc.RecordSourceOperationContextMint(testCtx, authority.SourceOperationContextAuthority))
 			require.NoError(t, w.confirm(authority))
 		})
 	}
@@ -330,7 +351,7 @@ func TestSourceDelegation_ExplicitRevoke(t *testing.T) {
 	_, err = w.mint(business.SourceDelegationRef{SourceID: sourceID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationMissing, "a source with no active delegation is DELEGATION_MISSING")
 	require.ErrorIs(t, w.confirm(authority), business.ErrSourceDelegationContextStale, "revocation invalidates an outstanding context")
-	require.ErrorIs(t, w.svc.RecordSourceOperationContextMint(testCtx, authority), business.ErrSourceDelegationRevoked,
+	require.ErrorIs(t, w.svc.RecordSourceOperationContextMint(testCtx, authority.SourceOperationContextAuthority), business.ErrSourceDelegationRevoked,
 		"a capability signed before the revocation committed is withheld")
 
 	events := w.audit.of(business.EventSourceDelegationRevoked, sourceID)

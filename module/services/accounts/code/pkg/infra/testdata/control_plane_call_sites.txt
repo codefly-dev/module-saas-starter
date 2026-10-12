@@ -145,10 +145,9 @@ pkg/business/solution_host_bindings_apply.go: (*Service).recordSolutionHostBindi
 pkg/business/solution_host_bindings_apply.go: (*Service).recordSolutionHostBindingRefusal: WithControlPlane
 pkg/business/solution_registry.go: (*Service).ListSolutionRegistrations: WithControlPlane
 pkg/business/source_delegation.go: (*Service).AuthorizeDelegationReferenceExchange: WithControlPlane
-pkg/business/source_delegation.go: (*Service).CheckSourceDelegationContextRevision: WithControlPlane
-pkg/business/source_delegation.go: (*Service).ConfirmSourceDelegationParent: WithControlPlane
 pkg/business/source_delegation.go: (*Service).RecordSourceOperationContextMint: WithControlPlane
 pkg/business/source_delegation.go: (*Service).authorizeSourceDelegation: WithControlPlane
+pkg/business/source_delegation.go: (*Service).confirmSourceDelegationBinding: WithControlPlane
 pkg/business/source_delegation.go: (*Service).revokeStaleDelegation: WithControlPlane
 pkg/business/teams.go: (*Service).resolveTeamOrg: WithControlPlane
 pkg/business/users.go: (*Service).FindUserByIdentity: As(System())
@@ -162,6 +161,7 @@ pkg/business/waitlist.go: (*Service).VerifyWaitlist: As(System())
 pkg/business/waitlist.go: (*Service).authorizeAccountCreation: As(System())
 pkg/business/waitlist.go: (*Service).convertWaitlistLead: As(System())
 pkg/business/work_context_audience.go: (*Service).declaredAudienceBindingIDs: WithControlPlane
+pkg/business/work_context_seal.go: (*Service).WorkContextOperationBinding: WithControlPlane
 pkg/infra/postgres.go: (*PostgresStore).ClearAll: WithControlPlane
 pkg/infra/postgres.go: (*PostgresStore).LinkIdentity: txbind.BindRequest
 pkg/infra/postgres.go: (*PostgresStore).RegisterUser: pgx.BeginTxFunc(controlPlane)
