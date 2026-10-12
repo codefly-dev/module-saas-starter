@@ -7,6 +7,9 @@ import (
 
 	"accounts/pkg/events"
 	"accounts/pkg/jobs"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // AuditBackend names where audit entries are kept. It is chosen once, at
@@ -18,6 +21,12 @@ const (
 	// entry is written in the caller's transaction, and Service.VerifyAuditWiring
 	// holds exactly as before.
 	AuditBackendPostgres AuditBackend = "postgres"
+	// AuditBackendWarehouse keeps entries in a warehouse. The warehouse cannot
+	// join the caller's transaction, so the entry is published to the journal
+	// (domain_events) on that transaction instead, and a task appends it to the
+	// warehouse afterwards through Storage. It replaces audit_events as the
+	// store of record: a swap, not a tee.
+	AuditBackendWarehouse AuditBackend = "warehouse"
 )
 
 // AuditServiceConfig is what AuditService is built from, once, at startup.
@@ -26,17 +35,27 @@ type AuditServiceConfig struct {
 	Store   Store
 	// Producer is the transactional job producer the external tee enqueues on.
 	Producer jobs.Producer
-	// Transport publishes the org-scoped webhook event beside each audit row.
+	// Transport publishes the org-scoped webhook event beside each audit row
+	// and, under the warehouse backend, the journal event of every entry. The
+	// warehouse backend needs it.
 	Transport events.Transport
 	// ExternalTee enqueues an audit-export job beside each org-scoped audit row
-	// (AUDIT_SINK=both).
+	// (AUDIT_SINK=both). It copies audit_events rows, so it is refused under the
+	// warehouse backend.
 	ExternalTee bool
+	// Warehouse is the storage of the warehouse backend. It is required exactly
+	// when Backend is AuditBackendWarehouse.
+	Warehouse AuditStorage
 }
 
 // AuditService is the one place audit is written and read. It owns the choice
-// of AuditStorage, which it makes once at construction. Under Postgres, Emit and
-// EmitTx append to audit_events on the caller's transaction, and every read goes
-// to audit_events.
+// of AuditStorage, which it makes once at construction:
+//
+//   - under Postgres, Emit and EmitTx append to audit_events on the caller's
+//     transaction, and every read goes to audit_events;
+//   - under the warehouse, Emit and EmitTx publish the entry to the journal on
+//     the caller's transaction (including an entry with no organization) and
+//     append nothing, and every read goes to the warehouse.
 //
 // It is the TxAuditEmitter the Service writes through, so a module's audit
 // (ModuleEmitAuditEvent) and every host mutation take the same path, and it is
@@ -44,10 +63,12 @@ type AuditServiceConfig struct {
 type AuditService struct {
 	backend AuditBackend
 	store   Store
-	// storage serves every read.
+	// storage serves every read, and is what a delivery appends to under the
+	// warehouse backend.
 	storage AuditStorage
-	// postgres is the Postgres storage, non-nil under the Postgres backend. It is
-	// what lets a resource-gated read check and read in one transaction.
+	// postgres is the Postgres storage, non-nil exactly under the Postgres
+	// backend. It is what lets a resource-gated read check and read in one
+	// transaction.
 	postgres *PostgresAuditStorage
 	// emitter is nil on a read-only AuditService (newAuditReads).
 	emitter *DurableAuditEmitter
@@ -75,8 +96,20 @@ func NewAuditService(cfg AuditServiceConfig) (*AuditService, error) {
 	}
 	switch cfg.Backend {
 	case AuditBackendPostgres, "":
+		if cfg.Warehouse != nil {
+			return nil, errors.New("audit: a warehouse storage is wired but the audit backend is postgres")
+		}
 		service.backend, service.storage, service.postgres = AuditBackendPostgres, postgres, postgres
 		opts = append(opts, WithAuditStorage(postgres))
+	case AuditBackendWarehouse:
+		if cfg.Warehouse == nil {
+			return nil, errors.New("audit: the warehouse backend needs a warehouse storage")
+		}
+		if cfg.ExternalTee {
+			return nil, errors.New("audit: the external tee copies audit_events rows and cannot run under the warehouse backend")
+		}
+		service.storage = cfg.Warehouse
+		opts = append(opts, WithAuditJournal())
 	default:
 		return nil, fmt.Errorf("audit: unknown backend %q", cfg.Backend)
 	}
@@ -101,7 +134,8 @@ func newAuditReads(store Store) (*AuditService, error) {
 // Backend is the backend chosen at startup.
 func (a *AuditService) Backend() AuditBackend { return a.backend }
 
-// Storage is the AuditStorage the backend reads from.
+// Storage is the AuditStorage the backend reads from, and a delivery appends to
+// under the warehouse backend.
 func (a *AuditService) Storage() AuditStorage { return a.storage }
 
 // Emit writes an entry on a transaction of its own (AuditEmitter).
@@ -143,26 +177,55 @@ func (a *AuditService) Aggregate(ctx context.Context, q AuditQuery, spec AuditAg
 	return a.storage.Aggregate(ctx, read, spec)
 }
 
-// AggregateAuthorized aggregates after authorize has passed, inside the one
-// transaction the read's scope names: the check and the read share a snapshot.
+// AggregateAuthorized aggregates after authorize has passed inside the
+// organization's transaction. Under Postgres the check and the read share that
+// one transaction, one snapshot. Under the warehouse the check still runs in the
+// organization's Postgres transaction and the aggregate is read afterwards from
+// the warehouse: two steps, no shared snapshot.
 func (a *AuditService) AggregateAuthorized(ctx context.Context, q AuditQuery, spec AuditAggregationSpec, authorize func(context.Context) error) ([]AuditAggregateBucket, error) {
 	read, err := a.read(ctx, q, &spec)
 	if err != nil {
 		return nil, err
 	}
-	var out []AuditAggregateBucket
-	err = a.postgres.within(ctx, read.Scope, func(ctx context.Context) error {
-		if err := authorize(ctx); err != nil {
+	if a.postgres != nil {
+		var out []AuditAggregateBucket
+		err = a.postgres.within(ctx, read.Scope, func(ctx context.Context) error {
+			if err := authorize(ctx); err != nil {
+				return err
+			}
+			var err error
+			out, err = a.postgres.AggregateOnTx(ctx, read, spec)
 			return err
-		}
-		var err error
-		out, err = a.postgres.AggregateOnTx(ctx, read, spec)
-		return err
-	})
-	return out, err
+		})
+		return out, err
+	}
+	if read.Scope.Platform() {
+		return nil, status.Error(codes.InvalidArgument, "a resource-gated read names its organization")
+	}
+	if err := a.store.WithOrgTx(ctx, read.Scope.OrgID(), authorize); err != nil {
+		return nil, err
+	}
+	return a.storage.Aggregate(ctx, read, spec)
 }
 
-// read is the read of q in its scope.
-func (a *AuditService) read(_ context.Context, q AuditQuery, _ *AuditAggregationSpec) (AuditRead, error) {
-	return AuditRead{Scope: auditReadScopeFor(q), Query: q}, nil
+// read is the read of q in its scope. A storage outside Postgres also gets the
+// event-type facts the query or the aggregation needs, read from
+// audit_event_types in that same scope — the rows the Postgres reads join in SQL.
+func (a *AuditService) read(ctx context.Context, q AuditQuery, spec *AuditAggregationSpec) (AuditRead, error) {
+	read := AuditRead{Scope: auditReadScopeFor(q), Query: q}
+	if a.postgres != nil || !auditReadNeedsTypes(q, spec) {
+		return read, nil
+	}
+	err := withinAuditScope(ctx, a.store, read.Scope, func(ctx context.Context) error {
+		rows, err := a.store.ListAuditEventTypes(ctx)
+		if err != nil {
+			return err
+		}
+		read.Types = NewAuditEventTypeIndex(rows)
+		return nil
+	})
+	if err != nil {
+		return AuditRead{}, fmt.Errorf("audit read: event types: %w", err)
+	}
+	return read, nil
 }

@@ -44,6 +44,11 @@ const auditEventsSchemaRef = "saas/events/v1/events.proto#EventEnvelope"
 // A platform-scope record (one emitted with no organization) is registered but
 // never published: the emitter publishes only for a tenant, so those types exist
 // in the catalog without ever reaching a subscriber.
+//
+// One type is not an audit type: AuditRecordedEventType, the journal event of
+// the warehouse backend. It is code-owned and `internal`, so the relay marks it
+// published without fanning it out, a replay skips it, and no subscription may
+// match it.
 func RenderAuditEventsContribution() []byte {
 	var out bytes.Buffer
 	out.WriteString(`# Generated from the audit registry by RenderAuditEventsContribution.
@@ -65,6 +70,11 @@ func RenderAuditEventsContribution() []byte {
 # serialize every audited mutation in an organization. Nothing consumes the
 # ordering: an outbound webhook is dispatched in subscription-id order, and the
 # platform namespace is not subscribable by a module.
+#
+# The last entry, saas.audit.recorded.v1, is the one type here that is not an
+# audit event: the journal record of the warehouse audit backend, carrying the
+# whole entry. It is internal, so it is never fanned out, relayed or subscribable;
+# only the platform's own reader and the delivery task read it.
 `)
 	fmt.Fprintf(&out, "schema: %s\n", "codefly/saas/events-contribution/v1")
 	fmt.Fprintf(&out, "namespace: %s\n", auditEventsNamespace)
@@ -76,5 +86,9 @@ func RenderAuditEventsContribution() []byte {
 		out.WriteString("    visibility: external\n")
 		out.WriteString("    retention: 30d\n")
 	}
+	fmt.Fprintf(&out, "  - type: %s\n", AuditRecordedEventType)
+	fmt.Fprintf(&out, "    schema: %s\n", auditEventsSchemaRef)
+	out.WriteString("    visibility: internal\n")
+	out.WriteString("    retention: 30d\n")
 	return out.Bytes()
 }

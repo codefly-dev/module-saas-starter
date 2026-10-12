@@ -39,6 +39,11 @@ func (r *recordingStorage) Aggregate(_ context.Context, read AuditRead, _ AuditA
 type auditServiceStore struct {
 	scopeStore
 	reserved map[string]bool
+	types    []AuditEventTypeRow
+}
+
+func (s *auditServiceStore) ListAuditEventTypes(context.Context) ([]AuditEventTypeRow, error) {
+	return s.types, nil
 }
 
 func (s *auditServiceStore) GetDeclaredAuditEventType(context.Context, EventType) (*DeclaredAuditEventType, error) {

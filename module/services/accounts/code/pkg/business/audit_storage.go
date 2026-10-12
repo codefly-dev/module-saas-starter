@@ -230,10 +230,18 @@ var _ AuditStorage = (*PostgresAuditStorage)(nil)
 
 // within runs fn in the transaction the scope names.
 func (p *PostgresAuditStorage) within(ctx context.Context, scope AuditReadScope, fn func(context.Context) error) error {
+	return withinAuditScope(ctx, p.store, scope, fn)
+}
+
+// withinAuditScope runs fn in the Postgres transaction a read's scope names: the
+// organization's, which row-level security confines to its rows, or the control
+// plane's for the platform scope, which spans tenants. It is the one place a
+// read opens its transaction.
+func withinAuditScope(ctx context.Context, store Store, scope AuditReadScope, fn func(context.Context) error) error {
 	if scope.Platform() {
-		return p.store.WithControlPlane(ctx, fn)
+		return store.WithControlPlane(ctx, fn)
 	}
-	return p.store.WithOrgTx(ctx, scope.OrgID(), fn)
+	return store.WithOrgTx(ctx, scope.OrgID(), fn)
 }
 
 // Append inserts the entry into audit_events on the caller's ambient

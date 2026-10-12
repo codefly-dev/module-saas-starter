@@ -140,6 +140,9 @@ type DurableAuditEmitter struct {
 	// defaults to the Postgres storage over store, so an emitter built without
 	// AuditService writes audit_events exactly as it always has.
 	storage AuditStorage
+	// journal publishes each entry to the journal (AuditRecordedEventType) in
+	// the caller's transaction instead of appending it. Set by WithAuditJournal.
+	journal bool
 }
 
 // DurableAuditEmitterOption tunes the emitter at construction.
@@ -157,6 +160,17 @@ func WithExternalTee() DurableAuditEmitterOption {
 // transaction. AuditService passes the storage of the backend it chose.
 func WithAuditStorage(storage AuditStorage) DurableAuditEmitterOption {
 	return func(e *DurableAuditEmitter) { e.storage = storage }
+}
+
+// WithAuditJournal records each entry as a journal event, saas.audit.recorded.v1,
+// published on the caller's transaction through the domain-event transport, in
+// place of appending it to a storage: the entry's store of record is outside
+// Postgres, and a later task appends it (AuditService.Deliver). Every entry is
+// published, including one with no organization. It needs the transport
+// (WithDomainEventTransport), and it excludes the external tee, which copies
+// audit_events rows that this mode never writes.
+func WithAuditJournal() DurableAuditEmitterOption {
+	return func(e *DurableAuditEmitter) { e.journal = true }
 }
 
 // WithDomainEventTransport publishes an external-visibility domain event beside
@@ -178,7 +192,17 @@ func NewDurableAuditEmitter(store Store, producer jobs.Producer, opts ...Durable
 	for _, opt := range opts {
 		opt(emitter)
 	}
-	if emitter.storage == nil {
+	if emitter.journal {
+		if emitter.transport == nil {
+			return nil, errors.New("audit: the journal needs the domain-event transport")
+		}
+		if emitter.teeExternal {
+			return nil, errors.New("audit: the external tee copies audit_events rows, and the journal mode writes none")
+		}
+		if emitter.storage != nil {
+			return nil, errors.New("audit: an entry is either appended to a storage or published to the journal, not both")
+		}
+	} else if emitter.storage == nil {
 		storage, err := NewPostgresAuditStorage(store)
 		if err != nil {
 			return nil, err
@@ -244,7 +268,11 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 			return nil
 		}
 	}
-	if err := e.storage.Append(ctx, entry); err != nil {
+	if e.journal {
+		if err := e.publishJournal(ctx, entry); err != nil {
+			return err
+		}
+	} else if err := e.storage.Append(ctx, entry); err != nil {
 		return err
 	}
 	if entry.OrgID == "" {
@@ -263,6 +291,18 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 		}
 	}
 	return nil
+}
+
+// publishJournal records the entry as a journal event on the transaction already
+// on ctx: the organization's for an organization-scoped entry, and the control
+// plane's for one with no organization, which Emit opens for it. The event
+// commits with the mutation or not at all; there is no second write to lose.
+func (e *DurableAuditEmitter) publishJournal(ctx context.Context, entry AuditEntry) error {
+	envelope, err := NewAuditJournalEnvelope(entry)
+	if err != nil {
+		return err
+	}
+	return e.transport.Publish(ctx, moduleTx(ctx), envelope)
 }
 
 func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
