@@ -14,7 +14,10 @@ import (
 )
 
 // The accounts half of the MCP module read (the gateway half is
-// TestMCPModuleReadThroughTheRealGatewayOnCoreWorkContexts, in auth-gateway).
+// TestMCPModuleReadThroughTheRealGatewayOnCoreWorkContexts, in auth-gateway; the
+// two together, the real gateway in front of this StartTask, are
+// TestTheModuleReadThroughTheRealGatewayIsMintedByTheRealStartTask in
+// qualification/module-authority).
 //
 // A consumer's runtime mints a capability for the composed module it declared it
 // consumes, forwarding the viewer's credential. What the real StartTask handler

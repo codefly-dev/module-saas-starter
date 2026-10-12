@@ -37,11 +37,14 @@ type confinedCaller struct {
 
 func signConfinedCaller(t *testing.T, priv ed25519.PrivateKey, resource string) confinedCaller {
 	t.Helper()
-	caller := confinedCaller{
-		subject: uuid.Must(uuid.NewV7()).String(),
-		org:     uuid.Must(uuid.NewV7()).String(),
-		session: uuid.Must(uuid.NewV7()).String(),
-	}
+	return signConfinedCallerFor(t, priv, resource, uuid.Must(uuid.NewV7()).String(), uuid.Must(uuid.NewV7()).String())
+}
+
+// signConfinedCallerFor is signConfinedCaller for a given person in a given
+// organization, in a fresh session.
+func signConfinedCallerFor(t *testing.T, priv ed25519.PrivateKey, resource, subject, org string) confinedCaller {
+	t.Helper()
+	caller := confinedCaller{subject: subject, org: org, session: uuid.Must(uuid.NewV7()).String()}
 	claims := accessClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "saas-starter",

@@ -32,6 +32,21 @@ type host struct {
 	Authority     string
 	InternalToken string
 	Fixture       accountsReady
+	// Flow is the gateway half's module read: the fixture person's confined
+	// credential and the names it was declared under.
+	Flow moduleReadFlow
+}
+
+// moduleReadFlow is the gateway half's announcement of the module read
+// (moduleReadFlowReady in auth-gateway).
+type moduleReadFlow struct {
+	Bearer   string `json:"bearer"`
+	Subject  string `json:"subject"`
+	Org      string `json:"org"`
+	Session  string `json:"session"`
+	Solution string `json:"solution"`
+	Module   string `json:"module"`
+	Header   string `json:"header"`
 }
 
 // accountsReady is the accounts half's announcement
@@ -39,6 +54,7 @@ type host struct {
 type accountsReady struct {
 	Internal  string            `json:"internal"`
 	Authority string            `json:"authority"`
+	Connect   string            `json:"connect"`
 	Sources   map[string]string `json:"sources"`
 	Modules   map[string]string `json:"modules"`
 	Bindings  map[string]string `json:"bindings"`
@@ -104,7 +120,12 @@ func bootHost() (*host, error) {
 	}
 
 	h := &host{InternalToken: randomSecret()}
-	accountsInput, _ := json.Marshal(map[string]any{"internal_token": h.InternalToken})
+	// One gateway credential and one public origin, given to both halves: the
+	// trust and the address a deployment configures on each service alike.
+	gatewayToken, publicBase := randomSecret(), "https://host.example.com"
+	accountsInput, _ := json.Marshal(map[string]any{
+		"internal_token": h.InternalToken, "gateway_token": gatewayToken, "public_base": publicBase,
+	})
 	line, err := startHelper(filepath.Join(services, "accounts", "code", "pkg", "adapters"), accountsBin,
 		"TestModuleAuthorityContractHost", "MODULE_AUTHORITY_CONTRACT_HOST", string(accountsInput), accountsReadyPrefix)
 	if err != nil {
@@ -115,19 +136,24 @@ func bootHost() (*host, error) {
 	}
 	h.Authority = h.Fixture.Authority
 
-	gatewayInput, _ := json.Marshal(map[string]string{"internal_token": h.InternalToken, "accounts": h.Fixture.Internal})
+	gatewayInput, _ := json.Marshal(map[string]string{
+		"internal_token": h.InternalToken, "accounts": h.Fixture.Internal,
+		"connect": h.Fixture.Connect, "gateway_token": gatewayToken,
+		"tenant": h.Fixture.Tenant, "owner": h.Fixture.Owner, "public_base": publicBase,
+	})
 	line, err = startHelper(filepath.Join(services, "auth-gateway", "code"), gatewayBin,
 		"TestModuleAuthorityContractGateway", "MODULE_AUTHORITY_CONTRACT_GATEWAY", string(gatewayInput), gatewayReadyPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("gateway half: %w", err)
 	}
 	var gateway struct {
-		Gateway string `json:"gateway"`
+		Gateway string         `json:"gateway"`
+		Flow    moduleReadFlow `json:"flow"`
 	}
 	if err := json.Unmarshal([]byte(line), &gateway); err != nil {
 		return nil, fmt.Errorf("gateway half announced %q: %w", line, err)
 	}
-	h.GatewayURL = gateway.Gateway
+	h.GatewayURL, h.Flow = gateway.Gateway, gateway.Flow
 	return h, nil
 }
 

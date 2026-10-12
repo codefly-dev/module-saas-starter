@@ -21,7 +21,10 @@ package main
 // accounts is a double on step 2: this module cannot import accounts. Its half —
 // that StartTask signs exactly this shape, in the caller's verified session,
 // sealed to the audience's installation and verifiable by core — is pinned in
-// accounts' own suite (TestStartTaskMintsWhatACoreVerifierReadsForAModule).
+// accounts' own suite (TestStartTaskMintsWhatACoreVerifierReadsForAModule), and
+// the two meet, this gateway in front of the real StartTask, in
+// qualification/module-authority
+// (TestTheModuleReadThroughTheRealGatewayIsMintedByTheRealStartTask).
 
 import (
 	"context"
