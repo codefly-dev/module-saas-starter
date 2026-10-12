@@ -598,3 +598,50 @@ func TestPostgresAuditPolicyAsNonOwner(t *testing.T) {
 		require.Empty(t, rows)
 	}
 }
+
+// A time bucket's key is a UTC midnight with a "+00" offset in every session
+// zone. Keyed in the session's zone, a bucket carries that zone's offset, which
+// moves across daylight saving, and the SDK's zero fill, which has to name the
+// days the aggregate did not return, cannot know which offset a missing day
+// takes; the kit labels keys in UTC, so a "+02" midnight read as the day before.
+func TestTimeBucketKeysAreUTCInAnySessionZone(t *testing.T) {
+	dsn := os.Getenv("AUDIT_METRICS_TEST_DSN")
+	if dsn == "" {
+		if os.Getenv("AUDIT_METRICS_REQUIRE_DB") == "1" {
+			t.Fatal("database gate requires AUDIT_METRICS_TEST_DSN")
+		}
+		t.Skip("set AUDIT_METRICS_TEST_DSN to a disposable PostgreSQL database")
+	}
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, dsn)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
+	tx, err := conn.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
+	// Either side of the Central European change to summer time (29 March 2026,
+	// 01:00 UTC). 22:30 UTC on the 29th is already the 30th in Paris.
+	_, err = tx.Exec(ctx, `SET LOCAL TimeZone = 'Europe/Paris';
+ CREATE TEMP TABLE audit_events (org_id text, resource text, resource_id text, event_type text, actor_id text, created_at timestamptz, payload jsonb);
+ INSERT INTO audit_events VALUES
+ ('org-a','collection','source-a','saas.document.ingested','reader','2026-03-28T12:00:00Z','{}'),
+ ('org-a','collection','source-a','saas.document.ingested','reader','2026-03-29T22:30:00Z','{}'),
+ ('org-a','collection','source-a','saas.document.ingested','reader','2026-04-01T12:00:00Z','{}');`)
+	require.NoError(t, err)
+	ctx = txbind.BindRequest(ctx, tx, "", "")
+	store := &infra.PostgresStore{}
+	q := business.AuditQuery{OrgID: "org-a", Resource: "collection", ResourceID: "source-a", EventType: "saas.document.ingested"}
+	for bucket, want := range map[string][]string{
+		"day":   {"2026-03-28T00:00:00+00", "2026-03-29T00:00:00+00", "2026-04-01T00:00:00+00"},
+		"week":  {"2026-03-23T00:00:00+00", "2026-03-30T00:00:00+00"},
+		"month": {"2026-03-01T00:00:00+00", "2026-04-01T00:00:00+00"},
+	} {
+		rows, err := store.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{GroupBy: []string{"time"}, Bucket: bucket})
+		require.NoError(t, err, bucket)
+		keys := make([]string, 0, len(rows))
+		for _, row := range rows {
+			keys = append(keys, row.Key)
+		}
+		require.ElementsMatch(t, want, keys, bucket)
+	}
+}

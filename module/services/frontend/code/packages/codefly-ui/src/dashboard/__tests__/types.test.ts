@@ -41,3 +41,38 @@ describe("fromDashboardData", () => {
 		expect(view.widgets).toEqual([]);
 	});
 });
+
+describe("fromDashboardData's sections", () => {
+	it("carries the sections and each widget's section through", () => {
+		const view = fromDashboardData({
+			sections: [{ id: "totals", title: "Totals", description: "All time" }],
+			widgets: [
+				{
+					id: "total",
+					visualization: "number",
+					series: { points: [{ key: "all", value: 1 }], total: 1 },
+					section: "totals",
+				},
+			],
+		});
+		expect(view.sections).toEqual([
+			{ id: "totals", title: "Totals", description: "All time" },
+		]);
+		expect(view.widgets[0].section).toBe("totals");
+	});
+
+	it("forwards a percent widget's values as they are: the producer has scaled them", () => {
+		const view = fromDashboardData({
+			widgets: [
+				{
+					id: "rate",
+					visualization: "number",
+					series: { points: [{ key: "all", value: 40 }], total: 40 },
+					format: "percent",
+				},
+			],
+		});
+		expect(view.widgets[0]).toMatchObject({ format: "percent" });
+		expect(view.widgets[0].series?.total).toBe(40);
+	});
+});

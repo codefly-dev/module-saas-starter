@@ -43,8 +43,15 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   renderer for one widget, exported for a consumer that resolves each widget in
   its own query; `slots` take header actions, a layout, a per-widget renderer
   and an empty state, so a consumer composes its own features around the
-  renderer rather than beside it. What each widget and each coverage state
-  draws is tabulated in the module's `AUDIT_METRICS.md`.
+  renderer rather than beside it. A view's `sections` group its widgets under
+  titled headings in the order listed (a widget's `section` names its own);
+  `DashboardSectionHeader` is that heading, exported for a layout of the
+  consumer's own — `SortableBoard`, say, which lets a viewer drag tiles between
+  sections. A widget's `format` reaches its tile, its chart's axis, readout and
+  data table, and its table alike; `percent` there is already a percentage, and
+  `runDashboard` is where a data graph's share is scaled to one. What each
+  widget and each coverage state draws is tabulated in the module's
+  `AUDIT_METRICS.md`.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
   `@codefly-dev/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
   component stays pure, the same split as `runDashboard` → `<Dashboard>`.
@@ -67,6 +74,26 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   of a field, whose cards a reader drags from one column to another or moves from
   a menu. It commits nothing: a move is reported and the consumer confirms,
   writes or refuses it. See *A board commits no move*.
+
+### Dashboard changes a remote will see in 0.12.7
+
+- **A widget's `format` now reaches every mark, not only a scalar.** A line,
+  area or bar chart writes its axis, crosshair readout and data table in it, and
+  a table writes its values in it. A remote that declared `compact` or
+  `currency` on a chart or table widget, which only scalars honoured before,
+  now reads "1.2K" or "$1.2K" there. `percent` there is percentage points, as
+  it always was for a scalar.
+- **Sections.** `DashboardView.sections` and `DashboardWidgetView.section`
+  group widgets under `DashboardSectionHeader`. A widget inside a section is
+  titled `<h4>`, one level under the section's `<h3>`, and stays `<h3>` above
+  every section; a view without sections draws as before.
+- **`renderWidget` gets a second argument**, `{ heading }`: the level the
+  widget's title takes where the dashboard draws it. Pass it on to
+  `DashboardWidget`'s new `heading` prop. A slot that ignores it keeps `<h3>`.
+- `Card` takes `titleAs` (`"h3"` by default, or `"h4"`), and `StatTile`'s
+  `labelAs` also accepts `"h4"`.
+- `SortableBoard` (several groups, tiles moved between them) is exported beside
+  `SortableGrid`, which is now a one-group board with unchanged props.
 
 ### Status, card headers, lists and empty states
 
@@ -115,7 +142,7 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/plugin-host/ui`  | Client UI adapters (`PluginErrorBoundary`)          |
 | `@codefly-dev/ui/skin`            | `resolveSkin`, skin types                           |
 | `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
-| `@codefly-dev/ui/dashboard`       | `Dashboard`, `DashboardWidget`, metric tiles + charts, `fromDashboardData` (React-only) |
+| `@codefly-dev/ui/dashboard`       | `Dashboard`, `DashboardWidget`, `DashboardSectionHeader`, metric tiles + charts, `SortableGrid`/`SortableBoard`, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
 | `@codefly-dev/ui/board`           | `Board` (React-only)                                |

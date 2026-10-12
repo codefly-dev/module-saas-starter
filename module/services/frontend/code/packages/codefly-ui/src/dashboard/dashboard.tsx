@@ -28,8 +28,14 @@ import {
 } from "./metric-chart.js";
 import type { ChartSeries } from "./metric-geometry.js";
 import { type MetricState, MetricStateBadge } from "./metric-state.js";
-import { KPIRow, type Metric, StatTile } from "./metric-tiles.js";
+import {
+	formatMetricValue,
+	KPIRow,
+	type Metric,
+	StatTile,
+} from "./metric-tiles.js";
 import type {
+	DashboardSectionView,
 	DashboardView,
 	DashboardWidgetView,
 	SeriesPoint,
@@ -171,6 +177,24 @@ function widgetMetric(
 	};
 }
 
+/**
+ * How a widget's chart and table write a value, or `undefined` for a plain
+ * number, so each mark keeps its own default.
+ *
+ * This is the one place a widget's `format` reaches a chart or a table, and it
+ * writes through `formatMetricValue` — the function a scalar's `StatTile`
+ * writes its number with — so a widget reads the same wherever its value is
+ * drawn. It does no scaling: a `percent` value is already a percentage here
+ * (see `DashboardWidgetView.format`).
+ */
+function widgetValueFormat(
+	widget: DashboardWidgetView,
+): ((value: number) => string) | undefined {
+	const { format } = widget;
+	if (format === undefined || format === "number") return undefined;
+	return (value) => formatMetricValue(value, format);
+}
+
 /** One series on the shared label axis the metric charts consume. */
 function chartSeries(
 	widget: DashboardWidgetView,
@@ -193,18 +217,31 @@ function WidgetBody({
 	series: WidgetSeries;
 }) {
 	const title = widgetTitle(widget);
+	const formatValue = widgetValueFormat(widget);
 	switch (widget.visualization) {
 		case "line":
 			return (
-				<MetricLineChart series={chartSeries(widget, series)} title={title} />
+				<MetricLineChart
+					series={chartSeries(widget, series)}
+					title={title}
+					formatValue={formatValue}
+				/>
 			);
 		case "area":
 			return (
-				<MetricAreaChart series={chartSeries(widget, series)} title={title} />
+				<MetricAreaChart
+					series={chartSeries(widget, series)}
+					title={title}
+					formatValue={formatValue}
+				/>
 			);
 		case "bar":
 			return (
-				<MetricBarChart series={chartSeries(widget, series)} title={title} />
+				<MetricBarChart
+					series={chartSeries(widget, series)}
+					title={title}
+					formatValue={formatValue}
+				/>
 			);
 		case "number":
 			// A scalar is drawn as a tile by DashboardWidget, never as a card
@@ -222,7 +259,9 @@ function WidgetBody({
 								<tr key={p.key} className="border-b last:border-0">
 									<td className="py-1 pr-4 text-muted-foreground">{p.key}</td>
 									<td className="py-1 text-right tabular-nums">
-										{p.value.toLocaleString()}
+										{formatValue
+											? formatValue(p.value)
+											: p.value.toLocaleString()}
 									</td>
 								</tr>
 							))}
@@ -251,8 +290,17 @@ export interface DashboardWidgetProps {
 	 * passes none.
 	 */
 	actions?: ReactNode;
+	/**
+	 * The widget title's heading level: `"h3"` under the dashboard's own
+	 * `<h2>`, `"h4"` inside a section, whose own title is the `<h3>`. A
+	 * `renderWidget` slot is told which (see {@link DashboardSlots}).
+	 */
+	heading?: WidgetHeading;
 	className?: string;
 }
+
+/** The heading element a widget's title is drawn as. */
+export type WidgetHeading = "h3" | "h4";
 
 /**
  * One widget of a dashboard, drawn with the metric tier: a scalar as a
@@ -270,6 +318,7 @@ export interface DashboardWidgetProps {
 export function DashboardWidget({
 	widget,
 	actions,
+	heading = "h3",
 	className,
 }: DashboardWidgetProps) {
 	const title = widgetTitle(widget);
@@ -311,7 +360,7 @@ export function DashboardWidget({
 			<StatTile
 				metric={metric}
 				actions={actions}
-				labelAs={widget.title != null ? "h3" : "span"}
+				labelAs={widget.title != null ? heading : "span"}
 				trend="accent"
 				className={className}
 			/>
@@ -334,6 +383,7 @@ export function DashboardWidget({
 			title={title}
 			description={state ? <MetricStateBadge state={state} /> : undefined}
 			actions={actions}
+			titleAs={heading}
 			className={className}
 		>
 			{refused ? (
@@ -375,15 +425,26 @@ export interface DashboardSlots {
 	/**
 	 * Draws one widget in place of {@link DashboardWidget}. For a host that
 	 * resolves each widget in its own query: return a component that resolves
-	 * the series and then mounts `DashboardWidget` with it.
+	 * the series and then mounts `DashboardWidget` with it, passing on
+	 * `heading` — the level this widget's title takes where the dashboard
+	 * draws it (`"h4"` inside a section).
 	 */
-	renderWidget?: (widget: DashboardWidgetView) => ReactNode;
+	renderWidget?: (
+		widget: DashboardWidgetView,
+		context: { heading: WidgetHeading },
+	) => ReactNode;
 	/**
 	 * Lays the tiles out in place of the default grid or stack — for a grid
-	 * whose tiles the viewer can reorder. Tiles arrive in the view's order.
+	 * whose tiles the viewer can reorder. Tiles arrive in the view's order,
+	 * each with its widget's `section`; a layout that draws the view's
+	 * sections heads each with {@link DashboardSectionHeader}.
 	 */
 	layout?: (tiles: DashboardTile[]) => ReactNode;
-	/** Shown in place of the layout when the view holds no widgets. */
+	/**
+	 * Shown in place of the layout when the view holds no widgets and no
+	 * sections. A view with sections goes to the layout even with no widgets,
+	 * because its sections are still drawn.
+	 */
 	empty?: ReactNode;
 }
 
@@ -469,6 +530,150 @@ function DefaultLayout({
 	);
 }
 
+export interface DashboardSectionHeaderProps {
+	/** The section's title, drawn as its heading. */
+	title: ReactNode;
+	/**
+	 * The heading's accessible name, for a `title` that carries a control —
+	 * a button that renames the section, say — whose own name would otherwise
+	 * name the heading.
+	 */
+	label?: string;
+	/** What the section is for, under its title. */
+	description?: ReactNode;
+	/**
+	 * Drawn in place of the heading while the viewer edits the title — a field,
+	 * say. The heading goes meanwhile, so a field is never inside a heading.
+	 */
+	editing?: ReactNode;
+	/** Before the title: a handle the section is dragged by. */
+	leading?: ReactNode;
+	/** Controls opposite the title. */
+	actions?: ReactNode;
+	/** Under the title and description: a note about the section's contents. */
+	children?: ReactNode;
+	className?: string;
+}
+
+/**
+ * The heading of one section of a dashboard: its title, what it is for, and
+ * whatever controls a host puts beside it. {@link Dashboard} draws a declared
+ * section with it; a host that lays the sections out itself — so a viewer can
+ * drag tiles between them — draws each one's heading with it too, so a section
+ * reads the same with and without the host's controls.
+ *
+ * The title is an `<h3>`, one level under the dashboard's own `<h2>`.
+ */
+export function DashboardSectionHeader({
+	title,
+	label,
+	description,
+	editing,
+	leading,
+	actions,
+	children,
+	className,
+}: DashboardSectionHeaderProps) {
+	return (
+		<div
+			data-slot="dashboard-section-header"
+			className={cn("flex items-start gap-2", className)}
+		>
+			{leading}
+			<div className="min-w-0 flex-1 space-y-1">
+				{editing ?? (
+					<h3
+						data-slot="dashboard-section-title"
+						aria-label={label}
+						className="type-card-heading break-words"
+					>
+						{title}
+					</h3>
+				)}
+				{description != null && (
+					<p className="type-body text-muted-foreground">{description}</p>
+				)}
+				{children}
+			</div>
+			{actions != null && (
+				<div className="flex shrink-0 items-center gap-1">{actions}</div>
+			)}
+		</div>
+	);
+}
+
+/** The tiles of one section, or of the untitled group above every section. */
+interface TileGroup {
+	/** Undefined for the untitled group. */
+	section?: DashboardSectionView;
+	tiles: DashboardTile[];
+}
+
+/**
+ * The tiles in their sections, in the order the view lists the sections, each
+ * section's tiles in the view's order. A tile naming no section, or one the
+ * view does not hold, goes in an untitled group drawn first; that group is
+ * left out when it is empty and there are sections, and a declared section
+ * with no tiles is kept, because the declaration says it is there.
+ */
+function groupTiles(
+	tiles: DashboardTile[],
+	sections: readonly DashboardSectionView[],
+): TileGroup[] {
+	const declared = new Set(sections.map((section) => section.id));
+	const untitled = tiles.filter(
+		(tile) =>
+			tile.widget.section === undefined || !declared.has(tile.widget.section),
+	);
+	return [
+		...(untitled.length > 0 || sections.length === 0
+			? [{ tiles: untitled }]
+			: []),
+		...sections.map((section) => ({
+			section,
+			tiles: tiles.filter((tile) => tile.widget.section === section.id),
+		})),
+	];
+}
+
+function SectionedLayout({
+	groups,
+	...layout
+}: {
+	groups: TileGroup[];
+	columns: 1 | 2 | 3 | 4;
+	declaredColumns?: 1 | 2 | 3 | 4;
+	grid: boolean;
+}) {
+	return (
+		<div className="space-y-6">
+			{groups.map(({ section, tiles }) =>
+				section ? (
+					<section
+						key={section.id}
+						data-slot="dashboard-section"
+						className="space-y-3"
+					>
+						<DashboardSectionHeader
+							title={section.title}
+							description={section.description}
+						/>
+						{tiles.length === 0 ? (
+							<p className="type-body text-muted-foreground">
+								No widgets in this section.
+							</p>
+						) : (
+							<DefaultLayout tiles={tiles} {...layout} />
+						)}
+					</section>
+				) : (
+					<DefaultLayout key="" tiles={tiles} {...layout} />
+				),
+			)}
+		</div>
+	);
+}
+
 /**
  * Render a resolved dashboard. Pass a `DashboardView` (from your own data or via
  * `fromDashboardData(runDashboard(...))`). `accent` overrides the `--primary`
@@ -499,16 +704,25 @@ export function Dashboard({
 			} as React.CSSProperties)
 		: undefined;
 	const isGrid = (data.layout ?? "grid") === "grid";
+	const sections = data.sections ?? [];
+	const sectionIds = new Set(sections.map((section) => section.id));
+	// A widget in a section is titled one level under the section's <h3>; a
+	// widget drawn above every section stays under the dashboard's <h2>.
+	const headingOf = (widget: DashboardWidgetView): WidgetHeading =>
+		widget.section !== undefined && sectionIds.has(widget.section)
+			? "h4"
+			: "h3";
 
 	const tiles: DashboardTile[] = data.widgets.map((widget) => ({
 		id: widget.id,
 		widget,
-		node: slots?.renderWidget?.(widget) ?? (
+		node: slots?.renderWidget?.(widget, { heading: headingOf(widget) }) ?? (
 			// A span is a request for grid width, so it applies to anything the
 			// grid lays out. A scalar that declares one is kept out of the KPI
 			// row for exactly that reason — see `inKpiRow`.
 			<DashboardWidget
 				widget={widget}
+				heading={headingOf(widget)}
 				className={
 					isGrid && widget.span
 						? COL_SPAN[Math.min(widget.span, columns) as 1 | 2 | 3 | 4]
@@ -526,12 +740,21 @@ export function Dashboard({
 			className={className}
 			style={style}
 		>
-			{tiles.length === 0 ? (
+			{/* A view with sections is never "no widgets": its sections are still
+			    there to be drawn, each saying it is empty. */}
+			{tiles.length === 0 && sections.length === 0 ? (
 				(slots?.empty ?? (
 					<p className="type-body text-muted-foreground">No widgets.</p>
 				))
 			) : slots?.layout ? (
 				slots.layout(tiles)
+			) : sections.length > 0 ? (
+				<SectionedLayout
+					groups={groupTiles(tiles, sections)}
+					columns={columns}
+					declaredColumns={data.columns}
+					grid={isGrid}
+				/>
 			) : (
 				<DefaultLayout
 					tiles={tiles}
