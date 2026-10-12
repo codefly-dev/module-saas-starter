@@ -52,14 +52,17 @@ type moduleReadFlow struct {
 // accountsReady is the accounts half's announcement
 // (moduleAuthorityContractReadyLine in accounts/pkg/adapters).
 type accountsReady struct {
-	Internal  string            `json:"internal"`
-	Authority string            `json:"authority"`
-	Connect   string            `json:"connect"`
-	Sources   map[string]string `json:"sources"`
-	Modules   map[string]string `json:"modules"`
-	Bindings  map[string]string `json:"bindings"`
-	Tenant    string            `json:"tenant"`
-	Owner     string            `json:"owner"`
+	Internal  string `json:"internal"`
+	Authority string `json:"authority"`
+	Connect   string `json:"connect"`
+	// ConsumerInstallation is the installation of the solution the confined
+	// credential is delivered to.
+	ConsumerInstallation string            `json:"consumer_installation"`
+	Sources              map[string]string `json:"sources"`
+	Modules              map[string]string `json:"modules"`
+	Bindings             map[string]string `json:"bindings"`
+	Tenant               string            `json:"tenant"`
+	Owner                string            `json:"owner"`
 	// Tokens are the projected ServiceAccount tokens of the accounts half's
 	// fake pods, by module prefix, plus "unapproved": a pod of the source
 	// module's workload running a build nothing approved.
@@ -140,6 +143,7 @@ func bootHost() (*host, error) {
 		"internal_token": h.InternalToken, "accounts": h.Fixture.Internal,
 		"connect": h.Fixture.Connect, "gateway_token": gatewayToken,
 		"tenant": h.Fixture.Tenant, "owner": h.Fixture.Owner, "public_base": publicBase,
+		"consumer_installation": h.Fixture.ConsumerInstallation,
 	})
 	line, err = startHelper(filepath.Join(services, "auth-gateway", "code"), gatewayBin,
 		"TestModuleAuthorityContractGateway", "MODULE_AUTHORITY_CONTRACT_GATEWAY", string(gatewayInput), gatewayReadyPrefix)

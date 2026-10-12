@@ -312,14 +312,16 @@ type InstallSolutionRequest struct {
 	// audiences it may be minted for and the resource kinds it may ever touch.
 	//
 	// Empty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an
-	// administrator consented to when they installed it. It is NOT unrestricted
-	// for a mint made with a credential delivered to a THIRD PARTY on a person's
-	// behalf — an MCP client the person authorized for this one solution. There
-	// the installation is the only statement of what the solution may act for, so
-	// an empty list is read as nothing and such a mint is REFUSED by name
-	// (accounts' holdConfinedMintToItsConsumer). The two readings are opposite on
-	// purpose: one bounds a consumer an admin trusts, the other bounds a
-	// credential they never saw.
+	// administrator consented to when they installed it.
+	//
+	// A mint made with a credential delivered to a THIRD PARTY on a person's
+	// behalf — an MCP client the person authorized for this one solution — is not
+	// bounded by these lists. Its ceiling is the invoke bindings of the
+	// consumer's delivered authority, as this installation's scope consented to
+	// them when it was installed; a consumer with no delivered authority has no
+	// ceiling, and such a mint is refused. These lists can only narrow that
+	// ceiling: an empty list adds no bound, and a list naming more admits
+	// nothing extra.
 	AllowedAudiences []string `protobuf:"bytes,10,rep,name=allowed_audiences,json=allowedAudiences,proto3" json:"allowed_audiences,omitempty"`
 	AllowedScopes    []string `protobuf:"bytes,11,rep,name=allowed_scopes,json=allowedScopes,proto3" json:"allowed_scopes,omitempty"`
 	// The solution target being installed, from ListAvailableSolutions. Required.

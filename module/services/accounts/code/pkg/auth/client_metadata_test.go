@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"syscall"
 	"testing"
@@ -474,6 +475,12 @@ func TestNonPublicDestinationsAreRefusedAcrossEverySpecialUseRange(t *testing.T)
 		"[2001:20::1]:443",    // ORCHIDv2
 		"[2002:a00:1::1]:443", // 6to4 wrapping 10.0.0.1
 		"[5f00::1]:443",       // segment routing
+		// #1086. IPv6 outside 2000::/3, the only block IANA allocates for
+		// global unicast. Go calls each of these global unicast and the
+		// special-purpose registry lists none of them.
+		"[::a9fe:a9fe]:443", // IPv4-compatible, wrapping 169.254.169.254
+		"[fec0::1]:443",     // site-local, deprecated
+		"[4001::1]:443",     // reserved by IETF
 		// Unparseable. A guard that cannot tell what it is about to reach must
 		// not admit it.
 		"not-an-address", "", "example.com:443",
@@ -482,12 +489,16 @@ func TestNonPublicDestinationsAreRefusedAcrossEverySpecialUseRange(t *testing.T)
 		require.False(t, auth.IsPublicDestinationDialAddress(address),
 			"should refuse %q", address)
 	}
+	// The zero Addr is no address. The dial-address form never produces one,
+	// so only a direct caller can hand it over, and it is refused rather than
+	// read as matching no registry entry.
+	require.False(t, auth.IsPublicDestination(netip.Addr{}), "should refuse the zero Addr")
 	for _, address := range []string{
 		"93.184.216.34:443", "1.1.1.1:443", "[2606:4700::1111]:443",
 		// Global unicast just outside the blocks above, so the additions do not
-		// over-refuse: 2001:4860::/32 is outside 2001::/23, and 4000::/3 is
-		// ordinary assignable space.
-		"[2001:4860:4860::8888]:443", "[4001::1]:443",
+		// over-refuse: 2001:4860::/32 is outside 2001::/23, and 2003::/16 is
+		// inside 2000::/3 and just above 6to4.
+		"[2001:4860:4860::8888]:443", "[2003::1]:443",
 	} {
 		require.True(t, auth.IsPublicDestinationDialAddress(address),
 			"should admit %q", address)

@@ -83,6 +83,27 @@ func TestTheModuleReadThroughTheRealGatewayIsMintedByTheRealStartTask(t *testing
 		t.Error("the capability is sealed to no installation")
 	}
 
+	// The ceiling is the consumer's delivered authority (#1083): a capability
+	// addressed to the consumer itself is refused by name, and so is one asking
+	// for more than the binding the consumer declares at the module.
+	for name, ask := range map[string]struct {
+		audience, kind string
+		actions        []string
+		refusal        string
+	}{
+		"addressed to the consumer itself": {flow.Solution, flow.Solution, []string{"read"}, "is the consumer this credential was delivered to"},
+		"outside the declared binding":     {flow.Module, flow.Module, []string{"read", "write"}, "outside what the consumer this credential was delivered to declares"},
+	} {
+		refused := gatewayCall(t, h, http.MethodPost, "/saas.accounts.v1.WorkContextService/StartTask", map[string]any{
+			"orgId": flow.Org, "sessionId": "019f6bf7-0000-7000-8000-000000000000",
+			"taskId": "019f6bf7-1111-7111-8111-1111111111ab", "audience": ask.audience, "ttlSeconds": 300,
+			"authorityScopes": []map[string]any{{"resourceKind": ask.kind, "actions": ask.actions}},
+		}, nil)
+		if refused.status == http.StatusOK || !bytes.Contains(refused.body, []byte(ask.refusal)) {
+			t.Errorf("a mint %s: %d %s, want the ceiling's refusal %q", name, refused.status, refused.body, ask.refusal)
+		}
+	}
+
 	// The same capability without the credential it was minted under is
 	// refused at the edge: the pairing is on the credential's session.
 	bare := gatewayCallWith(t, h, http.MethodGet, "/v1/"+flow.Module+"/collection", nil, "", map[string]string{flow.Header: issued.Token})

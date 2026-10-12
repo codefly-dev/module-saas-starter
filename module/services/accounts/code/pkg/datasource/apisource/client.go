@@ -6,10 +6,12 @@
 // credential and hands it in per fetch.
 //
 // The base URL is tenant-supplied, so every dial is guarded against SSRF: a URL
-// that resolves to a private, loopback, link-local, or otherwise non-public
-// address is refused, on the initial request and on any redirect, checked
-// against the exact IP being connected to (not the hostname) so DNS rebinding
-// cannot slip past the check.
+// that resolves to any address that is not on the public internet is refused,
+// on the initial request and on any redirect, checked against the exact IP
+// being connected to (not the hostname) so DNS rebinding cannot slip past the
+// check. "Not on the public internet" is auth.IsPublicDestination, read from
+// the IANA special-purpose registries: the one classifier every tenant-directed
+// egress in this host answers through.
 package apisource
 
 import (
@@ -25,6 +27,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"accounts/pkg/auth"
 )
 
 // Credential kinds. They mirror saas.accounts.v1.ApiCredentialKind and select
@@ -98,7 +102,7 @@ func guardedClient() *http.Client {
 		DisableKeepAlives: true,
 		DialContext: (&net.Dialer{
 			Timeout: 10 * time.Second,
-			Control: guardDial,
+			Control: dialControl,
 		}).DialContext,
 	}
 	return &http.Client{
@@ -443,18 +447,21 @@ func refreshPermanentlyRejected(statusCode int, body []byte) bool {
 	}
 }
 
-// guardDial refuses to open a connection to a non-public address. It runs after
-// DNS resolution with the concrete IP:port being dialed, so it blocks the exact
-// address the connection would reach — closing the DNS-rebinding gap a
-// hostname-only check leaves open.
+// dialControl is the Control hook of every dial this package makes. It is
+// always guardDial in production; it is a variable only so a test can wrap
+// guardDial in a recorder that never lets a connection proceed, and so prove
+// each outbound path runs the guard without sending traffic anywhere.
+var dialControl = guardDial
+
+// guardDial refuses to open a connection to an address that is not on the
+// public internet. It runs after DNS resolution with the concrete IP:port being
+// dialed, so it blocks the exact address the connection would reach — closing
+// the DNS-rebinding gap a hostname-only check leaves open. The judgement is
+// auth.IsPublicDestinationDialAddress, never Go's net.IP predicates: those call
+// carrier NAT, NAT64, 6to4, Teredo, benchmarking and reserved space "global
+// unicast". An address it cannot parse is refused.
 func guardDial(_, address string, _ syscall.RawConn) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return ErrBlockedAddress
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() ||
-		ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+	if !auth.IsPublicDestinationDialAddress(address) {
 		return ErrBlockedAddress
 	}
 	return nil

@@ -451,6 +451,25 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	// A CONFINED MINT IS DECIDED ON ITS CONSUMER'S LIVE AUTHORITY, and that
+	// decision has to hold until the capability is signed: an uninstall or a
+	// narrowed installation committed in between would otherwise leave a
+	// capability minted on consent that no longer exists. So the authority use
+	// span opens here, before any other transaction this mint takes — the
+	// order the fence connection is reserved in — and the consumer's ceiling
+	// is read inside it (business.ConsumerInvokeCeiling) and released only
+	// when this returns. The span holds the installation, its target and the
+	// envelope revision, not the in-memory registry a redelivery replaces; that
+	// half is re-checked after signing (business.ConsumerCeilingStillCurrent).
+	if _, confined := accountsauth.VerifiedResourceConfinement(ctx); confined && service != nil {
+		var releaseAuthority func()
+		var fenceErr error
+		ctx, releaseAuthority, fenceErr = service.BeginModuleAuthorityUse(ctx)
+		if fenceErr != nil {
+			return nil, fenceErr
+		}
+		defer releaseAuthority()
+	}
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
@@ -470,7 +489,8 @@ func (s *WorkContextAuthorityServer) StartTask(
 	// database scope, and that refusal names a database scope rather than a
 	// consumer. Runs for a resource-confined request only; every other mint
 	// reaches the viewer's authority below exactly as before.
-	if err := s.holdConfinedMintToItsConsumer(ctx, req, permissions, scopes); err != nil {
+	consumerCeiling, err := s.holdConfinedMintToItsConsumer(ctx, req, permissions, scopes)
+	if err != nil {
 		return nil, err
 	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
@@ -529,6 +549,15 @@ func (s *WorkContextAuthorityServer) StartTask(
 	token, signed, err := s.mint(ctx, request)
 	if err != nil {
 		return nil, mapWorkContextError(err)
+	}
+	// The consumer's declaration must still be the one the ceiling was decided
+	// against now that the capability is signed and before it leaves: a binding
+	// withdrawn by a redelivery in between refuses it (see
+	// business.ConsumerCeilingStillCurrent for what this does and does not hold).
+	if consumerCeiling != nil {
+		if err := service.ConsumerCeilingStillCurrent(ctx, consumerCeiling); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.journalActorHop(ctx, signed); err != nil {
 		return nil, err
@@ -589,12 +618,20 @@ func (s *WorkContextAuthorityServer) audienceInstallation(ctx context.Context, o
 //     membership path that this rule must not survive, and it names something
 //     other than the consumer for an operator reading the refusal.
 //
-//  2. THE AUDIENCE, and 3. THE SCOPES, both against the INSTALLATION the
-//     perimeter admitted under, which is an administrator's recorded consent to
-//     this consumer: its declared `allowed_audiences`, narrowed to what this host
-//     still serves, and its agent principal's standing scope grants. The viewer's
-//     own authority continues to bound the mint below; this is the second,
-//     narrower bound, and a capability must be inside both.
+//  2. THE AUDIENCE, and 3. THE SCOPES, both against what the consumer the
+//     perimeter admitted under DECLARES it consumes: the invoke bindings of its
+//     delivered contract, as this organization's installation consents to them
+//     (business.ConsumerInvokeCeiling). The audience must be a module the
+//     consumer declares, and the scopes must fit one binding it declares there.
+//     A module the consumer declares that the installation did not consent to
+//     — consent is fixed at install — is refused as exactly that, and so is an
+//     audience naming the consumer itself.
+//     The installation's `allowed_audiences` and `allowed_scopes` are then an
+//     administrator's further narrowing — applied when they name something,
+//     and never a source of authority, so an installation whose lists are empty
+//     or wider than the declaration admits nothing the declaration does not.
+//     The viewer's own authority continues to bound the mint below; a
+//     capability must be inside all of them.
 //
 // What this does NOT re-derive is which installation the resource names. The
 // perimeter resolved resource → declared binding → target → the entitlement that
@@ -614,10 +651,10 @@ func (s *WorkContextAuthorityServer) holdConfinedMintToItsConsumer(
 	req *gen.StartTaskWorkContextRequest,
 	permissions []business.WorkContextPermission,
 	scopes []*basev0.WorkScopeV1,
-) error {
+) (*business.ConsumerCeiling, error) {
 	resource, confined := accountsauth.VerifiedResourceConfinement(ctx)
 	if !confined {
-		return nil
+		return nil, nil
 	}
 	origin, configured := accountsauth.ConfiguredPublicOrigin()
 	if !configured {
@@ -625,84 +662,107 @@ func (s *WorkContextAuthorityServer) holdConfinedMintToItsConsumer(
 		// cannot judge one. The perimeter refuses a confined credential in the
 		// same state, so the two sides agree rather than one admitting what the
 		// other cannot account for.
-		return status.Error(codes.FailedPrecondition,
+		return nil, status.Error(codes.FailedPrecondition,
 			"this host has no configured public address, so it cannot account for the resource this credential is confined to")
 	}
 	if _, err := accountsauth.RequireResourceAtOrigin(resource, origin); err != nil {
-		return status.Error(codes.PermissionDenied,
+		return nil, status.Error(codes.PermissionDenied,
 			"the credential is confined to a resource this host does not issue")
 	}
 	caller, authenticated := accountsauth.VerifiedRequestIdentity(ctx)
 	if !authenticated || caller.OrgID == uuid.Nil {
-		return status.Error(codes.PermissionDenied,
+		return nil, status.Error(codes.PermissionDenied,
 			"a confined credential names no organization, so there is none to hold this mint to")
 	}
 	if caller.OrgID.String() != req.GetOrgId() {
 		// Neither organization is named. One is the caller's own and the other is
 		// theirs to read off the request they sent; printing them would make this
 		// refusal an oracle for which organizations a person belongs to.
-		return status.Error(codes.PermissionDenied,
+		return nil, status.Error(codes.PermissionDenied,
 			"a capability minted with a credential delivered to one consumer is issued only for that credential's own organization")
 	}
 	installation, admitted := accountsauth.VerifiedInstallation(ctx)
 	if !admitted {
-		return status.Error(codes.FailedPrecondition,
+		return nil, status.Error(codes.FailedPrecondition,
 			"a confined credential reached this mint without the installation it was admitted under, so there is no consented ceiling to hold it to")
 	}
+	// THE CEILING IS WHAT THE CONSUMER DECLARES IT CONSUMES (issue #1083).
+	//
+	// Not the installation's lists: those are an administrator's hand-kept
+	// statement, optional, empty by default, and free to drift from what the
+	// consumer actually calls — too narrow breaks it, too wide lets its
+	// credential mint for modules it never uses. The consumer's delivered
+	// contract names every module it calls on a person's behalf and the scopes
+	// it asks for there, signed, held to the envelope and to this
+	// organization's installation scope, and that is what a credential
+	// delivered to it may act for. A consumer that declares no consumption of a
+	// module may not be handed a capability for it, whatever the lists say.
+	if service == nil {
+		return nil, status.Error(codes.FailedPrecondition,
+			"this host cannot read what an installed consumer declares, so there is no ceiling to hold its credential to")
+	}
+	ceiling, err := service.ConsumerInvokeCeiling(ctx, req.GetOrgId(), installation)
+	if err != nil {
+		if _, isStatus := status.FromError(err); isStatus {
+			return nil, err
+		}
+		return nil, status.Error(codes.Unavailable, "cannot read what the installed consumer declares")
+	}
+	switch ceiling.Admit(req.GetAudience(), moduleOperationScopes(scopes)) {
+	case business.ConsumerCeilingAdmitted:
+	case business.ConsumerCeilingOwnAudience:
+		return nil, status.Errorf(codes.PermissionDenied,
+			"audience %q is the consumer this credential was delivered to; the credential reaches that consumer's own routes directly, and no capability addressed to it is minted with it", req.GetAudience())
+	case business.ConsumerCeilingNotConsented:
+		// Consent is fixed when an organization installs, so a module the
+		// consumer declared afterwards is outside it — and that, not the
+		// declaration, is what an operator has to change.
+		return nil, status.Errorf(codes.PermissionDenied,
+			"the consumer this credential was delivered to declares this at audience %q, and the installation it was admitted under does not consent to it: "+
+				"consent is fixed when the consumer is installed, and installing it again consents to what it declares now", req.GetAudience())
+	case business.ConsumerCeilingOutsideDeclared:
+		return nil, status.Errorf(codes.PermissionDenied,
+			"the scopes asked for are outside what the consumer this credential was delivered to declares it consumes at audience %q", req.GetAudience())
+	default:
+		return nil, status.Errorf(codes.PermissionDenied,
+			"audience %q is not a module the consumer this credential was delivered to declares it consumes", req.GetAudience())
+	}
+
+	// THE INSTALLATION'S LISTS MAY ONLY NARROW. Read through the ordinary
+	// ceiling, where an empty list is no further bound — which is safe here,
+	// and only here, because the declaration above has already bounded the mint.
 	consumer, err := s.resolveInstallationAuthority(ctx, req.GetOrgId(), installation, permissions)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if consumer.Actor == nil {
 		// A healthy resolve always names the installation's agent. Fail closed
 		// rather than treat a missing ceiling as an absent one: enforceActorCeiling
 		// reads a nil actor as unrestricted, which is the most permissive reading
 		// of the state that says least.
-		return status.Error(codes.Internal,
+		return nil, status.Error(codes.Internal,
 			"the consumer's installation resolved without an agent principal, so its ceiling could not be read")
 	}
-	// AN EMPTY CEILING IS NOTHING HERE, where everywhere else it is everything.
-	//
-	// `allowed_audiences` and `allowed_scopes` are optional, and an empty list
-	// means UNRESTRICTED on every other mint — an installation that names no
-	// audience puts no audience limit on its agent's own headless work, which is
-	// the documented and intended reading for a consumer an administrator
-	// installed and trusts. The install form leaves both empty by default, so
-	// that is the ordinary state, not an edge case.
-	//
-	// For a CONFINED mint it inverts. The credential is held by a third party
-	// this organization never installed — an MCP client the person authorized for
-	// ONE solution — and the installation is the only statement of what that
-	// solution may act for. Read as unrestricted, it says the person's whole
-	// authority is available to that client at every module the organization
-	// installed, which is the escape the ceiling exists to close and is what the
-	// round-4 review found shipped.
-	//
-	// So it refuses, by name and actionably. A silent narrowing to "nothing" would
-	// have been the same decision with the operator left to discover it from a
-	// failing tool call.
-	//
-	// WHAT THIS IS NOT: the ceiling a consumer's own DECLARATION would give. The
-	// delivered presence document carries module PINS (module, package, version);
-	// the audience a capability names is the consumed module's ROUTE ALIAS; and no
-	// record on this host joins the two. Deriving one would be a guess at exactly
-	// the question this check answers, so the authority stays the installation an
-	// administrator consented to, and the gap is recorded rather than papered
-	// over (see the PR body and module/SOLUTION_REGISTRATION.md).
-	if len(consumer.Actor.AllowedAudiences) == 0 {
-		return status.Errorf(codes.FailedPrecondition,
-			"the installation of the consumer this credential was delivered to declares no allowed audiences, so there is nothing to hold its mint to. "+
-				"An empty ceiling is unrestricted for an installation's own work and is NOT accepted for a credential delivered to a third party: "+
-				"name the audiences agent %s may be minted for on that installation.",
-			consumer.Actor.AgentIdentifier)
+	if err := enforceActorCeiling(ctx, consumer.Actor, req.GetAudience(), scopes); err != nil {
+		return nil, err
 	}
-	if len(consumer.Actor.AllowedScopes) == 0 {
-		return status.Errorf(codes.FailedPrecondition,
-			"the installation of the consumer this credential was delivered to declares no allowed scopes, so there is nothing to bound its mint to. "+
-				"Name the resource kinds agent %s may be minted for on that installation.",
-			consumer.Actor.AgentIdentifier)
+	return ceiling, nil
+}
+
+// moduleOperationScopes is a mint's scopes in the vocabulary a consumer's
+// declared bindings are written in, for a containment check. Nothing is
+// normalized: a requested action or resource id the declaration does not name
+// verbatim is outside it.
+func moduleOperationScopes(scopes []*basev0.WorkScopeV1) []business.ModuleOperationScope {
+	out := make([]business.ModuleOperationScope, 0, len(scopes))
+	for _, scope := range scopes {
+		out = append(out, business.ModuleOperationScope{
+			ResourceKind: scope.GetResourceKind(),
+			Actions:      scope.GetActions(),
+			ResourceIDs:  scope.GetResourceIds(),
+		})
 	}
-	return enforceActorCeiling(ctx, consumer.Actor, req.GetAudience(), scopes)
+	return out
 }
 
 // StartInstallationTask is the headless mint. It opens with a service credential

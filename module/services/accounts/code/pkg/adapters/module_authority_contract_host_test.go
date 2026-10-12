@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -72,6 +73,13 @@ const (
 	// contractReadModule is the composed module the fixture person reads
 	// through a solution: declared, and installed in contractOrg.
 	contractReadModule = "documents"
+	// contractConsumer is the solution a confined credential is delivered to.
+	// Its delivered authority declares one invoke binding, reading
+	// contractReadModule; its installation in contractOrg records that
+	// authority and is the one the live module authority answers.
+	contractConsumer             = "example"
+	contractConsumerBinding      = "acme.test.example"
+	contractConsumerInstallation = "installation-current"
 )
 
 // contractPrincipals declares the source module bound to another tenant with
@@ -111,6 +119,9 @@ type moduleAuthorityContractReadyLine struct {
 	Internal string `json:"internal"`
 	// Authority is the host:port of the `authority` endpoint.
 	Authority string `json:"authority"`
+	// ConsumerInstallation is the installation of the solution a confined
+	// credential is delivered to, which the gateway's entitlement names.
+	ConsumerInstallation string `json:"consumer_installation,omitempty"`
 	// Connect is the host:port of the Connect tier and the Work Context JWKS,
 	// when a gateway token was given.
 	Connect  string            `json:"connect,omitempty"`
@@ -150,6 +161,25 @@ func (s *contractStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]strin
 }
 
 func (s *contractStore) GetPlatformRole(context.Context, string) (string, error) { return "", nil }
+
+// InstallationAuthorityState is the consumer solution's installation row: it
+// records the authority the consumer's delivered contract declares, with its
+// capabilities consented to.
+func (s *contractStore) InstallationAuthorityState(_ context.Context, _, id string) (*business.InstallationAuthorityState, error) {
+	if id != contractConsumerInstallation {
+		return nil, business.NewStoreError(business.ErrModuleInstallationInactive, business.ErrTypeNotFound)
+	}
+	return &business.InstallationAuthorityState{
+		Kind: "solution", PrincipalID: business.ModulePrincipalID(contractConsumer), BindingID: contractConsumerBinding,
+		Revision: 1, Scope: business.InstallationScope{Capabilities: true},
+	}, nil
+}
+
+func (s *contractStore) NarrowInstallationScope(
+	context.Context, string, string, uint64, business.InstallationScope, business.ModulePrincipalRegistry, uint64,
+) error {
+	return errors.New("the contract host never narrows an installation")
+}
 
 func (s *contractStore) GetOrgMembership(_ context.Context, orgID, userID string) (*gen.OrgMembership, error) {
 	if orgID == contractOrg && userID == contractPerson {
@@ -219,6 +249,8 @@ func TestModuleAuthorityContractHost(t *testing.T) {
 		Owner:    contractPerson,
 		Tokens:   tokens,
 		Connect:  connectAddress,
+
+		ConsumerInstallation: contractConsumerInstallation,
 	})
 	require.NoError(t, err)
 	_, err = fmt.Fprintln(os.Stdout, moduleAuthorityContractReady+string(ready))
@@ -244,6 +276,14 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 	registry, err := moduleregistrytest.Parse(contractPrincipals)
 	require.NoError(t, err)
 	registry[business.ModulePrincipalID(contractReadModule)] = business.ModulePrincipalGrant{Prefix: contractReadModule}
+	registry[business.ModulePrincipalID(contractConsumer)] = business.ModulePrincipalGrant{
+		Prefix: contractConsumer, PresenceBinding: contractConsumerBinding,
+		OperationAudiences: map[string]business.ModuleOperationAudience{
+			"read-documents": {Audience: contractReadModule, InvokeScopes: []business.ModuleOperationScope{
+				{ResourceKind: contractReadModule, Actions: []string{"read"}},
+			}},
+		},
+	}
 	binding := registry[business.ModulePrincipalID(contractSourceModule)].OperationAudiences["source-sync"]
 	digest := business.SourceDelegationBindingDigest(binding)
 	holds := business.SourceDelegationFacts{

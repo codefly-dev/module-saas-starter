@@ -4,10 +4,12 @@
 // credential — it holds no persistence or crypto concerns of its own.
 //
 // The sitemap URL and every page URL are tenant-supplied, so every dial is
-// guarded against SSRF: a URL that resolves to a private, loopback, link-local,
-// or otherwise non-public address is refused, on the sitemap request, on every
-// page request, and on any redirect, checked against the exact IP being
-// connected to (not the hostname) so DNS rebinding cannot slip past the check.
+// guarded against SSRF: a URL that resolves to any address that is not on the
+// public internet is refused, on the sitemap request, on every page request,
+// and on any redirect, checked against the exact IP being connected to (not the
+// hostname) so DNS rebinding cannot slip past the check. "Not on the public
+// internet" is auth.IsPublicDestination, read from the IANA special-purpose
+// registries.
 package crawler
 
 import (
@@ -22,6 +24,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"accounts/pkg/auth"
 )
 
 // maxResponseBytes bounds one fetched response (the sitemap or a page) so a
@@ -215,19 +219,19 @@ func requireHTTPURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
-// dialGuard refuses to open a connection to a non-public address. It runs after
-// DNS resolution with the concrete IP:port being dialed, so it blocks the exact
-// address the connection would reach — closing the DNS-rebinding gap a
-// hostname-only check leaves open. It is a package-level var so tests can hit a
-// loopback httptest server; production always uses the guarding implementation.
-var dialGuard = func(_, address string, _ syscall.RawConn) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return ErrBlockedAddress
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() ||
-		ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+// dialGuard is the Control hook of every dial this package makes. It is
+// always guardDial in production; it is a variable only so a test can reach an
+// httptest listener on loopback.
+var dialGuard = guardDial
+
+// guardDial refuses to open a connection to an address that is not on the
+// public internet. It runs after DNS resolution with the concrete IP:port being
+// dialed, so it blocks the exact address the connection would reach — closing
+// the DNS-rebinding gap a hostname-only check leaves open. The judgement is
+// auth.IsPublicDestinationDialAddress, the host's one classifier for every
+// tenant-directed egress; an address it cannot parse is refused.
+func guardDial(_, address string, _ syscall.RawConn) error {
+	if !auth.IsPublicDestinationDialAddress(address) {
 		return ErrBlockedAddress
 	}
 	return nil

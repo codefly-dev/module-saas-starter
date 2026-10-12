@@ -66,6 +66,9 @@ type moduleAuthorityContractGatewayInput struct {
 	// PublicBase is the deployment's public origin; the accounts half is
 	// given the same.
 	PublicBase string `json:"public_base"`
+	// ConsumerInstallation is the solution's installation in Tenant, as the
+	// accounts half records it: the one its entitlement names.
+	ConsumerInstallation string `json:"consumer_installation"`
 }
 
 // moduleReadFlowReady is what the flow needs from this half: the person's
@@ -184,9 +187,11 @@ func serveModuleReadFlow(t *testing.T, gateway *Gateway, access ed25519.PrivateK
 			"session": claims.GetSessionId(), "installation": claims.GetSeal().GetInstallationId(),
 		})
 	}))
-	gateway.solutionEntitlements = &entitledTo{ids: []string{
-		fakeSolutionTarget("example"), fakeSolutionTarget("documents"),
-	}}
+	require.NotEmpty(t, input.ConsumerInstallation)
+	gateway.solutionEntitlements = &entitledTo{
+		ids:           []string{fakeSolutionTarget("example"), fakeSolutionTarget("documents")},
+		installations: map[string]string{fakeSolutionTarget("example"): input.ConsumerInstallation},
+	}
 	caller := signConfinedCallerFor(t, access, solutionMCPResource(input.PublicBase, "example"), input.Owner, input.Tenant)
 	return moduleReadFlowReady{
 		Bearer: caller.bearer, Subject: caller.subject, Org: caller.org, Session: caller.session,
