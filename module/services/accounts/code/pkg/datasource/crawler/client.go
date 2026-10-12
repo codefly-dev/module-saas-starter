@@ -228,8 +228,8 @@ var dialGuard = guardDial
 // public internet. It runs after DNS resolution with the concrete IP:port being
 // dialed, so it blocks the exact address the connection would reach — closing
 // the DNS-rebinding gap a hostname-only check leaves open. The judgement is
-// auth.IsPublicDestinationDialAddress, the host's one classifier for every
-// tenant-directed egress; an address it cannot parse is refused.
+// auth.IsPublicDestinationDialAddress, the classifier the host's guarded
+// egress paths share; an address it cannot parse is refused.
 func guardDial(_, address string, _ syscall.RawConn) error {
 	if !auth.IsPublicDestinationDialAddress(address) {
 		return ErrBlockedAddress

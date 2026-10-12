@@ -14,7 +14,10 @@ import (
 // it: callable sources (datasource/apisource), the crawler and object-store
 // connectors, outbound webhooks and the Slack notifier that shares their client
 // (business.WebhookEndpointPolicy), and Client ID Metadata Document fetches.
-// Each of those guards' tests holds the vectors in auth/egresstest.
+// Each of those guards' tests holds the vectors in auth/egresstest. The
+// per-organization OIDC discovery, JWKS and token clients (auth/oidc) have no
+// guard: nothing exposes ConfigureOrgIdentityProvider over RPC, so no tenant
+// names their destination today.
 //
 // It does not compose Go's net.IP predicates, because they answer a different
 // question. net.IP.IsGlobalUnicast is not a public-routability test — it

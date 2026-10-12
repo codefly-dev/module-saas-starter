@@ -1,5 +1,5 @@
 // Package egresstest is the set of addresses every egress guard in this host
-// is held to. Each guard that decides whether a connection may leave for a
+// is held to (the paths with a guard are listed in auth/public_address.go). Each guard that decides whether a connection may leave for a
 // tenant-named destination answers through auth.IsPublicDestination, and each
 // guard's own test runs these vectors against it, so a guard that stops using
 // that classifier — or a classifier change that re-admits a range — fails a
