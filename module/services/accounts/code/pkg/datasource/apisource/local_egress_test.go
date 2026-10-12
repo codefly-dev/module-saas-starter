@@ -123,8 +123,9 @@ func TestLocalEgress_NoAllowanceIsThePublicGuard(t *testing.T) {
 	if err := ConfigureLocalEgress("", true); err != nil {
 		t.Fatal(err)
 	}
-	if reflect.ValueOf(withLocalEgress(guardDial)).Pointer() != reflect.ValueOf(guardDial).Pointer() {
-		t.Fatal("with no allowance the dial control must be the guard itself")
+	next := func(string, string, syscall.RawConn) error { return ErrBlockedAddress }
+	if reflect.ValueOf(withLocalEgress(next)).Pointer() != reflect.ValueOf(next).Pointer() {
+		t.Fatal("with no allowance the dial control must be the guard it wraps, itself")
 	}
 	if err := withLocalEgress(dialControl)("tcp", "127.0.0.1:18080", nil); !errors.Is(err, ErrBlockedAddress) {
 		t.Fatalf("loopback without an allowance = %v, want ErrBlockedAddress", err)
