@@ -204,9 +204,11 @@ What a refusal says, and who acts on it:
   consumer again consents to what it declares now. Consent cannot be widened in place.
 - **Not declared**, or scopes outside what is declared at that audience: the
   consumer's delivery has to declare it.
-- **The consumer's own audience** (its prefix, or `solution:<its binding>`): refused.
-  The credential already reaches that consumer's own routes, and no consumer can
-  declare a binding to itself.
+- **The consumer's own audience** (its prefix, or `solution:<its binding>`): refused,
+  because the credential already reaches that consumer's own routes. It is refused
+  before any binding is read: a self-admitting binding (headless or delegation work)
+  may name its own module, and it must never admit a person's credential held by a
+  third party.
 - **Capabilities withdrawn** by the installation's consent: refused as such, not as an
   inactive installation; installing again restores them.
 - **An installation that records no delivered authority** (made before installations
