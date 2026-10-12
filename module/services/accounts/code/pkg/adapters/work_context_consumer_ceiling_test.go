@@ -153,6 +153,7 @@ func confinedConsumerService(t *testing.T) *consumerFixture {
 		PrincipalID: business.ModulePrincipalID(declaringConsumerPrefix),
 		BindingID:   declaringConsumerBinding,
 		Revision:    1,
+		Scope:       business.InstallationScope{Capabilities: true},
 	}}
 	svc, err := business.NewService(declaredConsumerStore{fixture: fixture})
 	require.NoError(t, err)
@@ -294,7 +295,11 @@ func TestTheInstallationsListsNarrowTheDeclaredCeiling(t *testing.T) {
 func TestTheDeclaredCeilingIsReadAsConsented(t *testing.T) {
 	inside := func() *gen.StartTaskWorkContextRequest { return scoped("documents", "evidence", "read") }
 
-	t.Run("the installation scope dropped the module", func(t *testing.T) {
+	// Consent is fixed at install. A module the consumer declares that this
+	// installation does not consent to — it was installed before the consumer
+	// declared it, or an administrator narrowed it away — is refused as NOT
+	// CONSENTED, naming the remedy, never as undeclared.
+	t.Run("the installation does not consent to a declared module", func(t *testing.T) {
 		fixture := confinedConsumerService(t)
 		narrowed := business.FullInstallationScope(fixture.service.ModulePrincipals()[business.ModulePrincipalID(declaringConsumerPrefix)])
 		delete(narrowed.OperationAudiences, "documents")
@@ -304,7 +309,19 @@ func TestTheDeclaredCeilingIsReadAsConsented(t *testing.T) {
 
 		require.Nil(t, issued)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
-		require.Contains(t, err.Error(), `"documents" is not a module the consumer`)
+		require.Contains(t, err.Error(), `declares this at audience "documents", and the installation it was admitted under does not consent to it`)
+		require.Contains(t, err.Error(), "installing it again consents")
+	})
+	t.Run("the installation withdrew its consumer's capabilities", func(t *testing.T) {
+		fixture := confinedConsumerService(t)
+		fixture.state.Scope.Capabilities = false
+
+		issued, err := confinedMint(t, inside(), nil)
+
+		require.Nil(t, issued)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+		require.Contains(t, err.Error(), "withdrew its consumer's capabilities")
+		require.NotContains(t, err.Error(), "not active", "the installation is active; its consent is what withdrew them")
 	})
 	t.Run("the consumer declares no consumption", func(t *testing.T) {
 		fixture := confinedConsumerService(t)
@@ -362,4 +379,115 @@ func TestConfinedMintHoldsTheConsumersAuthorityThroughTheMint(t *testing.T) {
 	require.True(t, fixture.readInSpan, "the consumer's live authority is read inside the span")
 	require.True(t, fixture.ownerInSpan, "the span is still held after the ceiling decision, while the mint proceeds")
 	require.False(t, fixture.open, "the span is released once the mint returns")
+}
+
+func noLists(p *business.Principal) { p.AllowedAudiences, p.AllowedScopes = nil, nil }
+
+// A declaration bound to resource ids admits only requests naming a subset of
+// them: "every evidence row" is not inside "row c1".
+func TestAConfinedMintUnderAResourceBoundDeclaration(t *testing.T) {
+	for name, probe := range map[string]struct {
+		ids  []string
+		code codes.Code
+	}{
+		"no ids (every resource)": {nil, codes.PermissionDenied},
+		"the declared id":         {[]string{"c1"}, codes.OK},
+		"an undeclared id":        {[]string{"c2"}, codes.PermissionDenied},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fixture := confinedConsumerService(t)
+			fixture.declare(map[string]business.ModuleOperationAudience{"documents": {Audience: "documents",
+				InvokeScopes: []business.ModuleOperationScope{{ResourceKind: "evidence", Actions: []string{"read"}, ResourceIDs: []string{"c1"}}}}})
+			request := confinedMintRequest("documents")
+			request.AuthorityScopes = []*gen.WorkContextScope{{ResourceKind: "evidence", Actions: []string{"read"}, ResourceIds: probe.ids}}
+
+			_, err := confinedMint(t, request, noLists)
+
+			require.Equal(t, probe.code, status.Code(err), "%v", err)
+		})
+	}
+}
+
+// Two bindings for one module, each declaring half of a request, do not
+// together declare the whole of it.
+func TestTwoBindingsForOneModuleAreNotUnioned(t *testing.T) {
+	fixture := confinedConsumerService(t)
+	fixture.declare(map[string]business.ModuleOperationAudience{
+		"a": {Audience: "documents", InvokeScopes: []business.ModuleOperationScope{{ResourceKind: "evidence", Actions: []string{"read"}}}},
+		"b": {Audience: "documents", InvokeScopes: []business.ModuleOperationScope{{ResourceKind: "notes", Actions: []string{"read"}}}},
+	})
+	request := confinedMintRequest("documents")
+	request.AuthorityScopes = []*gen.WorkContextScope{{ResourceKind: "evidence", Actions: []string{"read"}}, {ResourceKind: "notes", Actions: []string{"read"}}}
+
+	_, err := confinedMint(t, request, noLists)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	_, err = confinedMint(t, scoped("documents", "notes", "read"), noLists)
+	require.NoError(t, err, "control: each half alone is declared")
+}
+
+// A confined mint addressed to the consumer ITSELF is refused by name: the
+// credential already reaches the consumer's own routes, and no consumer can
+// declare itself.
+func TestAConfinedMintForTheConsumersOwnAudienceIsRefusedByName(t *testing.T) {
+	confinedConsumerService(t)
+
+	issued, err := confinedMint(t, scoped(declaringConsumerPrefix, "evidence", "read"), func(p *business.Principal) {
+		p.AllowedAudiences = []string{declaringConsumerPrefix, "documents"}
+	})
+
+	require.Nil(t, issued)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, err.Error(), "is the consumer this credential was delivered to")
+}
+
+// redeliveryStore withdraws the consumer's declaration while the mint runs:
+// after the ceiling was decided (the owner's membership is resolved after it)
+// and before the signature.
+type redeliveryStore struct {
+	declaredConsumerStore
+	onOwner func()
+}
+
+func (s redeliveryStore) GetOrgMembership(ctx context.Context, orgID, userID string) (*gen.OrgMembership, error) {
+	s.onOwner()
+	return s.declaredConsumerStore.GetOrgMembership(ctx, orgID, userID)
+}
+
+// A redelivery that withdraws the binding during the mint refuses it. The use
+// span does not hold the in-memory registry, so the declaration is re-checked
+// once the capability is signed and before it leaves.
+func TestARedeliveryDuringTheMintRefusesIt(t *testing.T) {
+	fixture := confinedConsumerService(t)
+	svc, err := business.NewService(redeliveryStore{declaredConsumerStore{fixture: fixture}, func() { fixture.declare(nil) }})
+	require.NoError(t, err)
+	declareTestAudiences(svc)
+	fixture.service = svc
+	fixture.declare(declaredConsumption())
+	svc.SetModuleAuthorityReads(declaredConsumerAuthority{fixture: fixture}, nil)
+	service = svc
+
+	issued, err := confinedMint(t, scoped("documents", "evidence", "read"), noLists)
+
+	require.Nil(t, issued, "the declaration was withdrawn before the capability left")
+	require.Equal(t, codes.Aborted, status.Code(err))
+	require.Contains(t, err.Error(), "changed what it declares while this capability was being minted")
+}
+
+// The control for the one above: a pass that republishes the registry WITHOUT
+// changing this consumer's declaration does not refuse the mint.
+func TestARepublishThatChangesNothingDoesNotRefuseTheMint(t *testing.T) {
+	fixture := confinedConsumerService(t)
+	svc, err := business.NewService(redeliveryStore{declaredConsumerStore{fixture: fixture}, func() { fixture.declare(declaredConsumption()) }})
+	require.NoError(t, err)
+	declareTestAudiences(svc)
+	fixture.service = svc
+	fixture.declare(declaredConsumption())
+	svc.SetModuleAuthorityReads(declaredConsumerAuthority{fixture: fixture}, nil)
+	service = svc
+
+	issued, err := confinedMint(t, scoped("documents", "evidence", "read"), noLists)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, issued.GetToken())
 }

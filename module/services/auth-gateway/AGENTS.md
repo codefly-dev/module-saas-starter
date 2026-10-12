@@ -176,21 +176,50 @@ for an audience the consumer does not declare it consumes, or for scopes outside
 what it declares there. An authority that cannot be asked answers 503; a capability
 is not issued on an unanswered question.
 
-**The ceiling is what the consumer declares it consumes, not a list an
-administrator keeps.** A consumer's published contract (`module.contract.codefly.yaml`)
-names every module it calls on a person's behalf — the audience a capability for that
-module is addressed to — and the scope ceiling of each invoke binding. The render
-derives the authority document from it, delivery signs it, and accounts derives its
-registry from the signed document, the applied presence and the envelope; the
-organization's installation scope narrows that. Accounts reads the invoke bindings of
-that grant for the installation this gateway stated
-(`business.ConsumerInvokeCeiling`): the audience must be one the consumer declares,
-and the scopes must fit one binding it declares there. The installation's
-`allowed_audiences` and `allowed_scopes` then narrow when they name something and add
-no bound when empty — they are never a source of authority, so an installation whose
-lists are empty or wider than the declaration admits nothing the declaration does
-not. An installation that records no delivered authority (one made before
-installations did) declares nothing, and a confined mint under it is refused by name.
+**The ceiling is the consumer's delivered authority, not a list an administrator
+keeps.** Accounts reads the registry grant of the principal the stated installation
+records (`business.ConsumerInvokeCeiling`): the invoke half of its operation
+audiences, derived from the consumer's signed authority document, the applied
+presence and the envelope, and intersected with the installation's consent. The
+audience must be one of those bindings' audiences, and the scopes must fit one binding
+there. The installation's `allowed_audiences` and `allowed_scopes` then narrow when
+they name something and add no bound when empty: they are never a source of
+authority, so lists that are empty or wider than the grant admit nothing it does not.
+
+**What reaches that grant today.** The renderer derives an authority document from a
+module's `module.contract.codefly.yaml`, and from nothing else. A binding there may
+declare `invoke` alone — lookup is optional, and an invoke-only binding is kept — so a
+module that publishes a contract reaches this ceiling. **A solution's `api.consumes`
+in `solution.codefly.yaml` does not:** it feeds the generated SDK and
+`CODEFLY__API_CONSUMES`, never an authority document. A solution with no contract has
+no registry grant, so every confined mint addressed through it is refused. Rendering a
+solution's declared consumption into its authority document is the delivery half of
+issue #1083 and belongs to the renderer.
+
+What a refusal says, and who acts on it:
+
+- **Not consented.** Consent is fixed when an organization installs (the full grant at
+  that moment). A module the consumer declares afterwards, or one an administrator
+  narrowed away, is refused as not consented by this installation; installing the
+  consumer again consents to what it declares now. Consent cannot be widened in place.
+- **Not declared**, or scopes outside what is declared at that audience: the
+  consumer's delivery has to declare it.
+- **The consumer's own audience** (its prefix, or `solution:<its binding>`): refused.
+  The credential already reaches that consumer's own routes, and no consumer can
+  declare a binding to itself.
+- **Capabilities withdrawn** by the installation's consent: refused as such, not as an
+  inactive installation; installing again restores them.
+- **An installation that records no delivered authority** (made before installations
+  recorded it) declares nothing. This gateway's entitlement check already leaves such
+  an installation out, so the caller sees the generic 403 above before any mint; the
+  named refusal in accounts is the second line, not what an operator will read.
+
+The decision holds until the capability leaves: StartTask opens the authority use
+span before any other transaction, so an uninstall or narrowed consent waits for the
+mint. The span does not hold the in-memory registry a redelivery replaces, so the
+consumer's declaration is re-checked after signing and a changed one refuses the
+capability (`Aborted`, ask again). A withdrawal published after that check lands after
+issuance, bounded by the capability's lifetime like every other one.
 
 Both stamps are on `untrustedAuthHeaders`, so a caller can assert neither and cannot
 pick its own ceiling. The consumer check and the installation stamp run on the HTTP

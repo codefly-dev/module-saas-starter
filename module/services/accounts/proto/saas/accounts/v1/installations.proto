@@ -137,11 +137,12 @@ message InstallSolutionRequest {
   //
   // A mint made with a credential delivered to a THIRD PARTY on a person's
   // behalf — an MCP client the person authorized for this one solution — is not
-  // bounded by these lists. Its ceiling is what the solution DECLARES it
-  // consumes: the invoke bindings of its delivered contract, as this
-  // installation's scope consents to them. These lists can only narrow that
-  // ceiling: an empty list adds no bound, and a list naming more than the
-  // solution declares admits nothing extra.
+  // bounded by these lists. Its ceiling is the invoke bindings of the
+  // consumer's delivered authority, as this installation's scope consented to
+  // them when it was installed; a consumer with no delivered authority has no
+  // ceiling, and such a mint is refused. These lists can only narrow that
+  // ceiling: an empty list adds no bound, and a list naming more admits
+  // nothing extra.
   repeated string allowed_audiences = 10 [
     (buf.validate.field).repeated.max_items = 64,
     (buf.validate.field).repeated.items.string.max_len = 512

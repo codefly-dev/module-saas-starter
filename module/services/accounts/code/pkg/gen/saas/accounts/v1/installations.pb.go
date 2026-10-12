@@ -316,11 +316,12 @@ type InstallSolutionRequest struct {
 	//
 	// A mint made with a credential delivered to a THIRD PARTY on a person's
 	// behalf — an MCP client the person authorized for this one solution — is not
-	// bounded by these lists. Its ceiling is what the solution DECLARES it
-	// consumes: the invoke bindings of its delivered contract, as this
-	// installation's scope consents to them. These lists can only narrow that
-	// ceiling: an empty list adds no bound, and a list naming more than the
-	// solution declares admits nothing extra.
+	// bounded by these lists. Its ceiling is the invoke bindings of the
+	// consumer's delivered authority, as this installation's scope consented to
+	// them when it was installed; a consumer with no delivered authority has no
+	// ceiling, and such a mint is refused. These lists can only narrow that
+	// ceiling: an empty list adds no bound, and a list naming more admits
+	// nothing extra.
 	AllowedAudiences []string `protobuf:"bytes,10,rep,name=allowed_audiences,json=allowedAudiences,proto3" json:"allowed_audiences,omitempty"`
 	AllowedScopes    []string `protobuf:"bytes,11,rep,name=allowed_scopes,json=allowedScopes,proto3" json:"allowed_scopes,omitempty"`
 	// The solution target being installed, from ListAvailableSolutions. Required.

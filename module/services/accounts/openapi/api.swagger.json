@@ -2350,7 +2350,7 @@
           "type": "string"
         },
         "allowedAudiences": {
-          "description": "The agent's delegated-execution ceiling (migration 108): the Work Context\naudiences it may be minted for and the resource kinds it may ever touch.\n\nEmpty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an\nadministrator consented to when they installed it.\n\nA mint made with a credential delivered to a THIRD PARTY on a person's\nbehalf — an MCP client the person authorized for this one solution — is not\nbounded by these lists. Its ceiling is what the solution DECLARES it\nconsumes: the invoke bindings of its delivered contract, as this\ninstallation's scope consents to them. These lists can only narrow that\nceiling: an empty list adds no bound, and a list naming more than the\nsolution declares admits nothing extra.",
+          "description": "The agent's delegated-execution ceiling (migration 108): the Work Context\naudiences it may be minted for and the resource kinds it may ever touch.\n\nEmpty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an\nadministrator consented to when they installed it.\n\nA mint made with a credential delivered to a THIRD PARTY on a person's\nbehalf — an MCP client the person authorized for this one solution — is not\nbounded by these lists. Its ceiling is the invoke bindings of the\nconsumer's delivered authority, as this installation's scope consented to\nthem when it was installed; a consumer with no delivered authority has no\nceiling, and such a mint is refused. These lists can only narrow that\nceiling: an empty list adds no bound, and a list naming more admits\nnothing extra.",
           "items": {
             "type": "string"
           },

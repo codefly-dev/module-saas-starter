@@ -175,11 +175,12 @@ export type InstallSolutionRequest = Message<"saas.accounts.v1.InstallSolutionRe
    *
    * A mint made with a credential delivered to a THIRD PARTY on a person's
    * behalf — an MCP client the person authorized for this one solution — is not
-   * bounded by these lists. Its ceiling is what the solution DECLARES it
-   * consumes: the invoke bindings of its delivered contract, as this
-   * installation's scope consents to them. These lists can only narrow that
-   * ceiling: an empty list adds no bound, and a list naming more than the
-   * solution declares admits nothing extra.
+   * bounded by these lists. Its ceiling is the invoke bindings of the
+   * consumer's delivered authority, as this installation's scope consented to
+   * them when it was installed; a consumer with no delivered authority has no
+   * ceiling, and such a mint is refused. These lists can only narrow that
+   * ceiling: an empty list adds no bound, and a list naming more admits
+   * nothing extra.
    *
    * @generated from field: repeated string allowed_audiences = 10;
    */

@@ -101,8 +101,10 @@ and current revocation is checked again on the return exchange.
 ```
 
 Resource kinds, actions and resource ids are sorted and unique; wildcards are
-refused. Lookup scopes must be a subset of invoke scopes and may contain only
-`read`. Removing or changing the installed binding revokes the exchange on the
+refused. Lookup scopes are optional: a binding that declares only invoke scopes
+redeems no lookup, and a lookup exchange under it is refused by name. When present,
+they must be non-empty, a subset of invoke scopes, and may contain only `read`.
+Removing or changing the installed binding revokes the exchange on the
 next call, including the post-signing policy recheck. Every attempt emits a
 credential-free `saas.module.delegated_audience_exchange` observation (v2) with
 the effective actor, the authenticated module, the binding, the selected
