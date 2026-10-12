@@ -26,6 +26,7 @@ import {
 	type DashboardWidgetView,
 	SortableBoard,
 	type SortableGroupHandle,
+	type WidgetHeading,
 	type WidgetReadFailure,
 } from "@codefly-dev/ui/dashboard";
 import {
@@ -209,11 +210,13 @@ function SolutionWidget({
 	source,
 	widget,
 	actions,
+	heading,
 	className,
 }: {
 	source: WidgetSource;
 	widget: MetricWidget;
 	actions: ReactNode;
+	heading?: WidgetHeading;
 	className?: string;
 }) {
 	const { data, isError, error } = useWidgetSeries(source, widget);
@@ -237,6 +240,7 @@ function SolutionWidget({
 				failure: WIDGET_FAILURE[outcome],
 			}}
 			actions={actions}
+			heading={heading}
 			className={className}
 		/>
 	);
@@ -1170,7 +1174,7 @@ function SolutionDashboard({
 									UNSECTIONED,
 								)
 							: undefined,
-					renderWidget: (widget) => {
+					renderWidget: (widget, { heading }) => {
 						const declared = widgets.get(widget.id);
 						if (!declared) return null;
 						return (
@@ -1178,6 +1182,7 @@ function SolutionDashboard({
 								source={source}
 								widget={declared}
 								actions={controls(widget.id)}
+								heading={heading}
 								className="h-full"
 							/>
 						);

@@ -1328,7 +1328,8 @@ describe("what a + menu says about a removed widget", () => {
 					filter: { event: "logout" },
 					groupBy: "time",
 					bucket: "day",
-					aggregation: "count",
+					aggregation: "avg",
+					field: "payload:seconds",
 				},
 				{
 					id: "net_logins",
@@ -1359,8 +1360,9 @@ describe("what a + menu says about a removed widget", () => {
 				},
 			],
 		};
-		// Logins were recorded and no logout ever was, so every day lacks one
-		// of the two inputs.
+		// Logins were recorded and no logout ever was. The second input is an
+		// average, which has no value over no events (a count would read 0
+		// there), so every day lacks one of the two inputs.
 		auditTrail(({ eventType }) => (eventType === "auth.logout.v1" ? [] : DAYS));
 		showOnly(["w_logins"], derived.dashboards[0]);
 		renderDashboards(derived);
@@ -1532,6 +1534,23 @@ describe("a dashboard in sections", () => {
 		Object.fromEntries(sectionTitles().map((title) => [title, tilesIn(title)]));
 	const saved = () =>
 		JSON.parse(window.localStorage.getItem(LAYOUT_KEY) ?? "null")?.sections;
+
+	it("titles each section's widgets one level under the section's heading", () => {
+		renderDashboards(sectioned);
+		const overview = sectionHeadings().find(
+			(heading) => heading.textContent === "Overview",
+		);
+		expect(overview?.tagName).toBe("H3");
+		expect(
+			within(section("Overview")).getByRole("heading", { name: "Total logins" })
+				.tagName,
+		).toBe("H4");
+		expect(
+			within(section("Trends")).getByRole("heading", {
+				name: "Logins over time",
+			}).tagName,
+		).toBe("H4");
+	});
 
 	it("draws each section in declared order, under its title and description", () => {
 		renderDashboards(sectioned);

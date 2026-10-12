@@ -750,3 +750,108 @@ describe("dashboard layout", () => {
 		expect(writeSavedLayout(null, "k", "{}")).toBe(false);
 	});
 });
+
+describe("stale and invalid stored layouts", () => {
+	const w = (id: string, section?: string) => ({
+		id,
+		metric: "m",
+		visualization: "number" as const,
+		...(section ? { section } : {}),
+	});
+	const two: Dashboard = {
+		id: "d",
+		layout: "grid",
+		sections: [
+			{ id: "a", title: "A" },
+			{ id: "b", title: "B" },
+		],
+		widgets: [w("w1", "a"), w("w2", "b"), w("w3", "b")],
+	};
+
+	// Stored layouts the declaration has moved past, and stored values that cannot
+	// be trusted: each reads as something the dashboard still declares.
+	describe("stored layouts the manifest has moved past", () => {
+		it("puts the tiles of a retired section in their declared section", () => {
+			const raw = serializeLayout(
+				[
+					{ id: "a", tiles: ["w1"] },
+					{ id: "b", tiles: ["w3", "w2"] },
+				],
+				two,
+			);
+			const now: Dashboard = {
+				...two,
+				sections: [{ id: "a", title: "A" }],
+				widgets: two.widgets.map((x) => ({ ...x, section: "a" })),
+			};
+			expect(parseLayout(raw, now)).toEqual([
+				{ id: "a", tiles: ["w1", "w3", "w2"] },
+			]);
+		});
+
+		it("keeps a viewer's own section when the dashboard drops every declared one", () => {
+			const raw = serializeLayout(
+				[
+					{ id: "a", tiles: ["w1"] },
+					{ id: "custom:0123456789abcdef", title: "Mine", tiles: ["w2"] },
+					{ id: "b", tiles: ["w3"] },
+				],
+				two,
+			);
+			const none: Dashboard = {
+				...two,
+				sections: undefined,
+				widgets: two.widgets.map(({ section: _, ...x }) => x),
+			};
+			expect(parseLayout(raw, none)).toEqual([
+				{ id: "", tiles: ["w1", "w3"] },
+				{ id: "custom:0123456789abcdef", title: "Mine", tiles: ["w2"] },
+			]);
+		});
+
+		it("falls back to the default for corrupted, future-version and malformed entries", () => {
+			const fallback = parseLayout(null, two);
+			for (const raw of [
+				"{",
+				JSON.stringify({
+					version: 3,
+					sections: [],
+					seen: [],
+					seenSections: [],
+				}),
+				JSON.stringify({
+					version: 2,
+					sections: [{ id: 1, tiles: [] }],
+					seen: [],
+					seenSections: [],
+				}),
+				JSON.stringify({
+					version: 2,
+					sections: "a",
+					seen: [],
+					seenSections: [],
+				}),
+				JSON.stringify({ version: 2, sections: [], seen: [] }),
+			]) {
+				expect(parseLayout(raw, two), raw).toEqual(fallback);
+			}
+		});
+
+		it("drops a malformed viewer section and an unknown widget, sending tiles home", () => {
+			const raw = JSON.stringify({
+				version: 2,
+				sections: [
+					{ id: "custom:XYZ", title: "Bad id", tiles: ["w2"] },
+					{ id: "a", tiles: ["w1", "ghost", "metric:m"] },
+					{ id: "b", tiles: ["w3"] },
+				],
+				seen: ["w1", "w2", "w3"],
+				seenSections: ["a", "b"],
+			});
+			expect(parseLayout(raw, two)).toEqual([
+				{ id: "a", tiles: ["w1"] },
+				{ id: "b", tiles: ["w3", "w2"] },
+			]);
+		});
+	});
+});
