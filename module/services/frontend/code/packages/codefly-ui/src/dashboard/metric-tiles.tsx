@@ -279,9 +279,10 @@ export function StatTile({
 	 * The element the label is drawn as. A tile standing in for a titled
 	 * region — a dashboard widget — passes `"h3"` so the title stays in the
 	 * document outline and reachable by heading navigation, which a card with
-	 * a heading gives for free and a tile otherwise takes away.
+	 * a heading gives for free and a tile otherwise takes away. `"h4"` is
+	 * that widget inside a dashboard section, one level under the section.
 	 */
-	labelAs?: "span" | "h3";
+	labelAs?: "span" | "h3" | "h4";
 	/**
 	 * How the trend sparkline is coloured. `"muted"` is a tile reading beside
 	 * other content; `"accent"` takes the dashboard's own accent, which a

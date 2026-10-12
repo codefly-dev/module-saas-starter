@@ -270,6 +270,14 @@
         {
           "file": "packages/codefly-ui/stories/composites.stories.tsx",
           "export": "EmptyDashboard"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "DashboardSections"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "SectionHeader"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -374,10 +382,14 @@
         {
           "file": "packages/codefly-ui/stories/composites.stories.tsx",
           "export": "SortableTiles"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "SortableGroups"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
-      "remaining": "Verify dragging in the explorer with a mouse and on touch, and visual baselines under external skins."
+      "remaining": "Verify dragging in the explorer with a mouse and on touch, across groups too, reordering groups by their handle, and visual baselines under external skins."
     },
     {
       "source": "packages/codefly-ui/src/dashboard/sparkline.tsx",
@@ -766,6 +778,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "Menu"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "MenuHints"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -1028,7 +1044,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -2460,6 +2476,19 @@
         "@/lib/product-features",
         "@/lib/read-public-runtime-config",
         "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/unattended-work/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/unattended-work"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -4958,6 +4987,48 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Defines teams columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/unattended-work/ui/source-trigger-schedules.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "lucide-react",
+        "react",
+        "@/components/empty-state",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/source-label",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the unattended-work workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/unattended-work/ui/unattended-work-playground.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/empty-state",
+        "@/components/org-selector",
+        "@/lib/auth",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/source-label",
+        "../service/mutations",
+        "../service/queries",
+        "./source-trigger-schedules"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the unattended-work workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."

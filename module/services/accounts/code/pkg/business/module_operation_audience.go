@@ -118,12 +118,38 @@ func operationValuesSubset(subset, superset []string) bool {
 	return true
 }
 
+// selfAdmittingBinding reports whether a binding exists for work with NO
+// PERSON PRESENT — it declares headless scopes, delegation scopes, or both.
+//
+// It is the one case in which a binding may name its own module as the
+// audience, and the reason is structural rather than a relaxation. Every other
+// operation binding describes calling ANOTHER service, so a module naming
+// itself would be minting a capability addressed to nobody new, and the
+// declaration is refused. Unattended work inverts that: a release's trigger
+// declares whose authority an occurrence runs under, and the capability is
+// admitted by the module that executes the release — itself. The module
+// attaches it as its own incoming execution context and verifies it against
+// its own admission audience, which is its declared name. So a composition
+// that could not name its own prefix here would have to configure its
+// executing module to admit a second audience it does not accept, and neither
+// arm of a declared trigger would have anywhere to mint at all.
+//
+// The guard it narrows is not the one that protects this host's identity
+// surface: a capability addressed to "module-capabilities" is refused at
+// signing by requireMintableAudience, whatever a binding declares, so self
+// admission can never become a second spelling of a module identity.
+func selfAdmittingBinding(binding ModuleOperationAudience) bool {
+	return binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil
+}
+
 func validateOperationAudiences(prefix string, bindings map[string]ModuleOperationAudience) error {
 	if len(bindings) > 32 {
 		return fmt.Errorf("module operation audience bindings exceed limit")
 	}
 	for id, binding := range bindings {
-		if !validOperationValue(id, 128) || !validOperationValue(binding.Audience, 512) || binding.Audience == prefix || !validOperationScopes(binding.InvokeScopes, false) {
+		if !validOperationValue(id, 128) || !validOperationValue(binding.Audience, 512) ||
+			(binding.Audience == prefix && !selfAdmittingBinding(binding)) ||
+			!validOperationScopes(binding.InvokeScopes, false) {
 			return fmt.Errorf("invalid installed module operation audience binding")
 		}
 		// Lookup is OPTIONAL, like headless: a binding that declares only invoke

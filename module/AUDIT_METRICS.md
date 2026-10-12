@@ -204,6 +204,35 @@ events means partial telemetry. Older servers without samples cannot establish
 numeric completeness.
 
 SDK series expose `coverage: complete | partial | empty` and nullable `total`.
+Time buckets are **UTC** days, weeks and months, whatever zone the database
+session runs in, and every key reads `YYYY-MM-DDT00:00:00+00`. Keyed in the
+session's zone, a key's offset would move across daylight saving, so neither a
+bucket the aggregate did not return nor the kit's UTC label could be placed.
+
+A count, distinct count or sum grouped by **time** is zero-filled where the series
+is produced, in the SDK's `runMetric`: every day (or week, or month) from the
+first bucket the aggregate returned through the end of the range — the bucket
+holding `to`, or today for an open-ended query — that it did not return gets a
+`0`, because no event matched there. Without it a chart spaces points by
+position, so a day with no events vanished and the line ran straight over it,
+and the days since the last event vanished too, so the newest point and the
+"vs previous bucket" delta read an old day as the latest. The current bucket is
+in progress, so its value is so far. An average, minimum, maximum or percentile
+has no value over no events and is not filled; a bucket the aggregate *did*
+return whose value was dropped as unknown stays out and keeps the series
+partial; days before the first bucket are not filled; returned keys that
+disagree about their offset are left as they are rather than given a guessed
+one; and a series made only of filled zeros has no total.
+
+A derived metric over such series reads a day an input has no bucket for as
+that input's `0`, wherever the day falls: a failure rate whose failures start
+after the requests, or never happen, reads `0` on those days and stays
+complete, rather than dropping them as missing telemetry. A day no input had
+events on has no ratio (0/0) and keeps the series complete; a sum or difference
+of such series is filled the same way and can feed another derived metric. An
+input that is partial, or whose aggregation has no value over no events, keeps
+a missing day unknown.
+
 Missing derived operands and zero denominators stay unknown. Partial series keep
 observed chart points with a visible label and withhold the total. Distinct
 counts, averages, percentiles and ratios have no scalar total across multiple
@@ -228,11 +257,25 @@ does not have to ask which half of the kit its dashboard will get.
 | `line` / `area` / `bar` | the kit's metric chart over a `ChartSeries` — axes from the appearance palette, a crosshair readout, a legend for two or more series, and every exact value in a visually-hidden data table | the chart's own **No data** plot, plus a **No data** badge on the card | the observed points still plot, with a **Partial data** badge on the card | nothing: a series widget shows no total |
 | `table` | key/value rows | **No data yet.** | a **Partial data** badge on the card | — |
 
-A scalar widget's `format` names how its value is written, and `percent` takes a
-value that is **already a percentage**: 45 renders "45%". It is not a share —
-0.4 renders "0.4%". A producer whose own `percent` means a 0-to-1 share scales it
-before it reaches the view, because the field is bound structurally and nothing
-on the wire distinguishes the two conventions.
+A widget's `format` names how its values are written — a scalar's number, a
+chart's axis, readout and data table, and a table's values all write through the
+one function `StatTile` uses — and the view's `percent` takes a value that is
+**already a percentage**: 45 renders "45%". It is not a share — 0.4 renders
+"0.4%". A data graph's `format: "percent"` means the opposite, a share from 0 to
+1, because that is what a ratio metric produces. The two meet at exactly one
+place: `runDashboard` multiplies a percent metric's points and total by 100 on
+the widget it resolves (`byMetric` keeps the shares), so a declared 0.4 is drawn
+"40%" on every mark, and nothing after it scales again. A producer of its own
+with share semantics must do the same before the view.
+
+A view may group its widgets into **sections**: `sections` lists them in the
+order they are drawn (`id`, `title`, an optional `description`) and a widget's
+`section` names the one it is drawn in. Each section is headed by the kit's
+`DashboardSectionHeader`, whose title is an `<h3>`, and a widget inside a
+section is titled `<h4>`, so heading navigation reads it as the section's child;
+a declared section with no widgets is still drawn and says so; a widget naming
+no section is drawn first, untitled, and keeps its `<h3>`. A view without
+sections draws as it always has.
 
 Two of those cells are the contract, not presentation. A `null` total renders as
 a dash and never as `0`, because "cannot say" and "nothing happened" are

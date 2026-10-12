@@ -10,6 +10,12 @@ import {
 import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CardRoot, CardContent } from "../card-root.js";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "../dropdown-menu.js";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "../tabs-root.js";
 import {
 	Sheet,
@@ -110,6 +116,29 @@ it("restores Sheet trigger focus after Escape", async () => {
 	fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
 	await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 	await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+it("names a menu item by its label and describes it by its hint", async () => {
+	render(
+		<DropdownMenu defaultOpen>
+			<DropdownMenuTrigger>Add a report</DropdownMenuTrigger>
+			<DropdownMenuContent>
+				<DropdownMenuItem>Weekly requests</DropdownMenuItem>
+				<DropdownMenuItem hint="Empty">Monthly invoices</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>,
+	);
+	const hinted = await screen.findByRole("menuitem", {
+		name: "Monthly invoices",
+		description: "Empty",
+	});
+	// Shown after the label, too.
+	expect(hinted.textContent).toBe("Monthly invoicesEmpty");
+	expect(
+		screen
+			.getByRole("menuitem", { name: "Weekly requests" })
+			.hasAttribute("aria-describedby"),
+	).toBe(false);
 });
 
 function SidebarState() {

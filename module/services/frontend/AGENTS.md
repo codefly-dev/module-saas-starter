@@ -133,13 +133,29 @@ renderer's slots:
   `DashboardWidget`, because React fixes the number of hooks a component may
   call and a renderer taking the whole view cannot hold a varying number of
   queries;
-- **the viewer's arrangement** — reorder by drag or arrow keys, remove, add
-  back, saved per viewer and organization (`dashboard-layout.ts`), handed to
-  the renderer's `layout` slot as the kit's `SortableGrid`;
+- **the viewer's arrangement** — the declared sections, and within and between
+  them the tiles: reorder or move a tile by drag or arrow keys, remove one, add
+  it back from a +, rename, reorder or remove a section, add one of their own.
+  It is saved per viewer and organization (`dashboard-layout.ts`, version 2,
+  still the labelled browser-storage STOPGAP) and resolved here into the view
+  the kit draws — the viewer's sections, in the viewer's order, under the
+  viewer's titles, each widget in the section the viewer put it in. The
+  renderer's `layout` slot lays it out as the kit's `SortableBoard`, each
+  section headed by the kit's `DashboardSectionHeader` with the host's grip,
+  rename, + and options in it. Every + offers only the declared widgets the
+  viewer removed, asks each one's query only while it is open (the tile's own
+  query, so a tile added back draws from that answer), and says, muted, when
+  the tile would have nothing to show ("No data yet.", "Telemetry
+  incomplete."). A chart, bar or table tile spans two grid rows, so two number
+  tiles stack beside it;
 - **the ⓘ** that says what a tile counts, from which audit events, over what
   range and who caused the newest ones (`metric-info.ts`, the principal
   directory, the recent-events drill-down), handed to each widget as its
   header actions.
+
+A widget's `format` comes from the same resolved answer as its series, because
+`runDashboard` is where a declared share became percentage points; binding it
+from the declaration instead would pair a percentage with a share's format.
 
 Re-implementing any part of the drawing is refused by
 `src/components/__tests__/kit.test.ts`: a declaration taking a name

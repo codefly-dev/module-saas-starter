@@ -75,6 +75,10 @@ var serviceInfo = &gen.ServiceInfo{
 var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"DatasourceService/PruneSourceOperationReceipts":               "Expire old source receipt output while retaining effect tombstones.",
 	"DatasourceService/LookupPruneSourceOperationReceipts":         "Read an authorized source receipt-cleanup result.",
+	"DatasourceService/DelegateSourceTriggers":                     "Record the delegation a declared release's triggers run under for a source.",
+	"DatasourceService/GetSourceTriggerDeclaration":                "Read the reconcile schedule this host declares for a source, and the identity its occurrences run under.",
+	"DatasourceService/ReconcileSource":                            "Reconcile one data source: the operation a declared schedule's occurrence admits.",
+	"DatasourceService/LookupReconcileSource":                      "Read back the receipt of one reconcile pass.",
 	"DatasourceService/InvokeSourceOperation":                      "Call a declared source operation under current authority and an effect receipt.",
 	"DatasourceService/LookupInvokeSourceOperation":                "Read the current authorized outcome of a source effect without redispatching it.",
 	"DatasourceService/DeclareSourceOperations":                    "Atomically replace an API source's declared operations as an organization administrator.",

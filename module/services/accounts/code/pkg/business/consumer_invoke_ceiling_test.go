@@ -183,6 +183,21 @@ func TestAConsumerCannotDeclareItself(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A SELF-ADMITTING binding — headless work the consumer admits under its own
+// prefix — is a valid declaration and carries invoke scopes, and it still never
+// admits a confined mint addressed to the consumer: the own-audience refusal
+// comes before any binding is read.
+func TestASelfAdmittingBindingNeverAdmitsAConfinedMint(t *testing.T) {
+	evidence := []ModuleOperationScope{{ResourceKind: "evidence", Actions: []string{"read"}}}
+	self := map[string]ModuleOperationAudience{"triggers": {
+		Audience: "example-consumer", InvokeScopes: evidence, HeadlessScopes: evidence,
+	}}
+	require.NoError(t, validateOperationAudiences("example-consumer", self), "the declaration itself is valid")
+	ceiling := ConsumerCeiling{Declared: self, Consented: self, Own: []string{"example-consumer"}}
+
+	require.Equal(t, ConsumerCeilingOwnAudience, ceiling.Admit("example-consumer", evidence))
+}
+
 func TestConsumerCeilingVerdicts(t *testing.T) {
 	evidence := []ModuleOperationScope{{ResourceKind: "evidence", Actions: []string{"read"}}}
 	declared := map[string]ModuleOperationAudience{

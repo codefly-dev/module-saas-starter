@@ -86,10 +86,13 @@ const (
 //
 // A CONFINED MINT IS NEVER ADDRESSED TO THE CONSUMER ITSELF. The credential is
 // already confined to that consumer and reaches its own routes directly, so a
-// capability for its own audience would add nothing it does not hold — and no
-// consumer can declare itself (validateOperationAudiences refuses a binding to
-// its own prefix), so a ceiling read from the declaration could never admit one.
-// It is refused by name rather than as "undeclared".
+// capability for its own audience would add nothing it does not hold. It is
+// refused by name, and BEFORE any binding is consulted: a binding may name its
+// own module when it is self-admitting (headless or delegation work, see
+// selfAdmittingBinding), and such a binding carries invoke scopes. Its purpose
+// is unattended work with nobody present, never a person's credential held by a
+// third party, so it must not admit a confined mint — and checking the
+// audience first is what keeps it from doing so.
 func (c ConsumerCeiling) Admit(audience string, scopes []ModuleOperationScope) ConsumerCeilingVerdict {
 	if slices.Contains(c.Own, audience) {
 		return ConsumerCeilingOwnAudience

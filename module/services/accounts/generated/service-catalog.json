@@ -110,6 +110,7 @@
         "/saas.accounts.v1.DatasourceService/CompleteDatasourceAccountLink",
         "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup",
         "/saas.accounts.v1.DatasourceService/DeclareSourceOperations",
+        "/saas.accounts.v1.DatasourceService/DelegateSourceTriggers",
         "/saas.accounts.v1.DatasourceService/DeleteDatasourceAccountLink",
         "/saas.accounts.v1.DatasourceService/DeleteDatasourceDomain",
         "/saas.accounts.v1.DatasourceService/DeleteSource",
@@ -117,6 +118,7 @@
         "/saas.accounts.v1.DatasourceService/GetDatasourceDirectory",
         "/saas.accounts.v1.DatasourceService/GetSource",
         "/saas.accounts.v1.DatasourceService/GetSourceSync",
+        "/saas.accounts.v1.DatasourceService/GetSourceTriggerDeclaration",
         "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
         "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks",
         "/saas.accounts.v1.DatasourceService/ListSourceDelegations",
@@ -124,8 +126,10 @@
         "/saas.accounts.v1.DatasourceService/ListSources",
         "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
         "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",
+        "/saas.accounts.v1.DatasourceService/LookupReconcileSource",
         "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
         "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
+        "/saas.accounts.v1.DatasourceService/ReconcileSource",
         "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
         "/saas.accounts.v1.DatasourceService/SyncSource",
         "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
@@ -2914,6 +2918,58 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/DelegateSourceTriggers",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "DelegateSourceTriggers",
+      "input_type": "saas.accounts.v1.DelegateSourceTriggersRequest",
+      "output_type": "saas.accounts.v1.DelegateSourceTriggersResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.delegation.created",
+            "saas.datasource.delegation.revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Record the delegation a declared release's triggers run under for a source.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/DeleteDatasourceAccountLink",
       "service": "DatasourceService",
       "full_service": "saas.accounts.v1.DatasourceService",
@@ -3251,6 +3307,55 @@
       },
       "policy_tier": "org_admin",
       "description": "Read one source sync's typed stages, durable lifecycle and module-reported execution references; with no job id, the source's latest sync.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/GetSourceTriggerDeclaration",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "GetSourceTriggerDeclaration",
+      "input_type": "saas.accounts.v1.GetSourceTriggerDeclarationRequest",
+      "output_type": "saas.accounts.v1.GetSourceTriggerDeclarationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Read the reconcile schedule this host declares for a source, and the identity its occurrences run under.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -3642,6 +3747,59 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/LookupReconcileSource",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "LookupReconcileSource",
+      "input_type": "saas.accounts.v1.LookupReconcileSourceRequest",
+      "output_type": "saas.accounts.v1.ReconcileSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:read"
+        ],
+        "scopes": [
+          "datasource:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "effect_id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Read back the receipt of one reconcile pass.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
       "service": "DatasourceService",
       "full_service": "saas.accounts.v1.DatasourceService",
@@ -3742,6 +3900,61 @@
       },
       "policy_tier": "org_member",
       "description": "Expire old source receipt output while retaining effect tombstones.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/ReconcileSource",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "ReconcileSource",
+      "input_type": "saas.accounts.v1.ReconcileSourceRequest",
+      "output_type": "saas.accounts.v1.ReconcileSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasource:invoke"
+        ],
+        "scopes": [
+          "datasource:invoke"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "source_id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.source.synced"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_REQUIRED",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Reconcile one data source: the operation a declared schedule's occurrence admits.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
