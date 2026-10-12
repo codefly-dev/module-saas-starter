@@ -17,6 +17,13 @@ import (
 func TestGuardDial_RefusesEveryNonPublicRange(t *testing.T) {
 	for _, tc := range egresstest.Refused {
 		t.Run(tc.Name, func(t *testing.T) {
+			if err := guardDial("tcp", tc.DialAddress(), nil); !errors.Is(err, ErrBlockedAddress) {
+				t.Fatalf("guardDial(%q) = %v, want ErrBlockedAddress", tc.DialAddress(), err)
+			}
+		})
+	}
+	for _, tc := range egresstest.Unclassifiable {
+		t.Run(tc.Name, func(t *testing.T) {
 			if err := guardDial("tcp", tc.Address, nil); !errors.Is(err, ErrBlockedAddress) {
 				t.Fatalf("guardDial(%q) = %v, want ErrBlockedAddress", tc.Address, err)
 			}
@@ -27,8 +34,8 @@ func TestGuardDial_RefusesEveryNonPublicRange(t *testing.T) {
 func TestGuardDial_AdmitsPublicAddresses(t *testing.T) {
 	for _, tc := range egresstest.Admitted {
 		t.Run(tc.Name, func(t *testing.T) {
-			if err := guardDial("tcp", tc.Address, nil); err != nil {
-				t.Fatalf("guardDial(%q) = %v, want admitted", tc.Address, err)
+			if err := guardDial("tcp", tc.DialAddress(), nil); err != nil {
+				t.Fatalf("guardDial(%q) = %v, want admitted", tc.DialAddress(), err)
 			}
 		})
 	}

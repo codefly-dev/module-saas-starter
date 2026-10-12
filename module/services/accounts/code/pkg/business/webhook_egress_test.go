@@ -14,33 +14,14 @@ import (
 // policy is judged on what it would dial and never dials anything.
 var errWebhookDialStopped = errors.New("test: dial stopped before connect")
 
-// egressAddress is the address a vector names, or false for a vector that is a
-// dialer input shape rather than an address (a hostname, no port). The webhook
-// policy receives URL hosts, never those shapes, and the dial guards' own
-// tests hold them.
-func egressAddress(v egresstest.Vector) (string, bool) {
-	host, _, err := net.SplitHostPort(v.Address)
-	if err != nil {
-		return "", false
-	}
-	if _, err := netip.ParseAddr(host); err != nil {
-		return "", false
-	}
-	return host, true
-}
-
 // The webhook policy refuses every non-public range, whether the address comes
 // back from DNS at connect time or is written into the URL as a literal, and
-// never dials a refused one.
+// never dials a refused one. Unclassifiable dial inputs are not its input: it
+// receives a URL's host, and the dial guards' tests hold those.
 func TestWebhookEndpointPolicyRefusesEveryNonPublicRange(t *testing.T) {
 	t.Parallel()
-	applied := 0
 	for _, v := range egresstest.Refused {
-		host, ok := egressAddress(v)
-		if !ok {
-			continue
-		}
-		applied++
+		host := v.Host
 		t.Run(v.Name, func(t *testing.T) {
 			dialed := ""
 			dial := func(_ context.Context, _, address string) (net.Conn, error) {
@@ -58,19 +39,13 @@ func TestWebhookEndpointPolicyRefusesEveryNonPublicRange(t *testing.T) {
 			}
 		})
 	}
-	if applied == 0 {
-		t.Fatal("no refusal vector names an address")
-	}
 }
 
 // A public address is admitted and dialed as itself, on port 443.
 func TestWebhookEndpointPolicyAdmitsPublicAddresses(t *testing.T) {
 	t.Parallel()
 	for _, v := range egresstest.Admitted {
-		host, ok := egressAddress(v)
-		if !ok {
-			t.Fatalf("admitted vector %q names no address", v.Name)
-		}
+		host := v.Host
 		t.Run(v.Name, func(t *testing.T) {
 			answer := netip.MustParseAddr(host)
 			dialed := ""

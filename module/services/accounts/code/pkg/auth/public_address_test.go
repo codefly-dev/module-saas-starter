@@ -11,6 +11,13 @@ import (
 func TestIsPublicDestinationDialAddressHoldsTheEgressVectors(t *testing.T) {
 	for _, v := range egresstest.Refused {
 		t.Run("refuses/"+v.Name, func(t *testing.T) {
+			if auth.IsPublicDestinationDialAddress(v.DialAddress()) {
+				t.Fatalf("admitted %q", v.DialAddress())
+			}
+		})
+	}
+	for _, v := range egresstest.Unclassifiable {
+		t.Run("refuses/"+v.Name, func(t *testing.T) {
 			if auth.IsPublicDestinationDialAddress(v.Address) {
 				t.Fatalf("admitted %q", v.Address)
 			}
@@ -18,8 +25,8 @@ func TestIsPublicDestinationDialAddressHoldsTheEgressVectors(t *testing.T) {
 	}
 	for _, v := range egresstest.Admitted {
 		t.Run("admits/"+v.Name, func(t *testing.T) {
-			if !auth.IsPublicDestinationDialAddress(v.Address) {
-				t.Fatalf("refused %q", v.Address)
+			if !auth.IsPublicDestinationDialAddress(v.DialAddress()) {
+				t.Fatalf("refused %q", v.DialAddress())
 			}
 		})
 	}
