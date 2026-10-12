@@ -207,10 +207,6 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
-  - type: saas.datasource.protection_changed
-    schema: saas/events/v1/events.proto#EventEnvelope
-    visibility: external
-    retention: 30d
   - type: saas.datasource.receipts.pruned
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -352,10 +348,6 @@ publishes:
     visibility: external
     retention: 30d
   - type: saas.document.snapshot.skipped_stale
-    schema: saas/events/v1/events.proto#EventEnvelope
-    visibility: external
-    retention: 30d
-  - type: saas.document.source_verified
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d

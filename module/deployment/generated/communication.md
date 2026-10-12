@@ -408,14 +408,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Retention:** 30d
 - **Consumers:** _none_
 
-## saas.datasource.protection_changed
-
-- **Publisher:** saas
-- **Visibility:** external
-- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Retention:** 30d
-- **Consumers:** _none_
-
 ## saas.datasource.receipts.pruned
 
 - **Publisher:** saas
@@ -697,14 +689,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Consumers:** _none_
 
 ## saas.document.snapshot.skipped_stale
-
-- **Publisher:** saas
-- **Visibility:** external
-- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Retention:** 30d
-- **Consumers:** _none_
-
-## saas.document.source_verified
 
 - **Publisher:** saas
 - **Visibility:** external

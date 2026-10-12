@@ -258,7 +258,7 @@ func TestValidatePayload_DocumentModuleReservedTypes(t *testing.T) {
 		complete := func() map[string]any {
 			return map[string]any{
 				"version": "v1", "extractor_key": "k", "revision": 2, "digest": "d", "parent_digest": "p",
-				"retired": false, "request_type": "t", "proposal_kind": "human", "proposal_source": "a note",
+				"retired": false, "request_type": "t", "proposal_kind": "person", "proposal_source": "a note",
 			}
 		}
 		require.NoError(t, ValidatePayload(EventDocumentExtractorRevised, complete()))
@@ -302,29 +302,6 @@ func TestValidatePayload_DocumentModuleReservedTypes(t *testing.T) {
 			p = complete()
 			delete(p, "correlation_id")
 			require.Errorf(t, ValidatePayload(event, p), "%s: correlation_id is required", event)
-		}
-	})
-	t.Run("source_verified and protection_changed", func(t *testing.T) {
-		verified := map[string]any{"solution": "documents", "version_id": "v", "source_id": "s", "receipt_job_id": "j",
-			"policy_revision": "r", "binding_sha256": "b", "effect_sha256": "e", "owner": "o"}
-		require.NoError(t, ValidatePayload(EventDocumentSourceVerified, verified))
-		for field := range verified {
-			if field == "solution" {
-				continue
-			}
-			p := maps.Clone(verified)
-			delete(p, field)
-			require.Errorf(t, ValidatePayload(EventDocumentSourceVerified, p), "source_verified %s is required", field)
-		}
-		changed := map[string]any{"solution": "documents", "policy_revision": "r", "retired": true, "owner": "o", "binding_sha256": "b"}
-		require.NoError(t, ValidatePayload(EventDatasourceProtectionChanged, changed))
-		for field := range changed {
-			if field == "solution" {
-				continue
-			}
-			p := maps.Clone(changed)
-			delete(p, field)
-			require.Errorf(t, ValidatePayload(EventDatasourceProtectionChanged, p), "protection_changed %s is required", field)
 		}
 	})
 }

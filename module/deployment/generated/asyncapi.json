@@ -559,17 +559,6 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
-    "saas.datasource.protection_changed": {
-      "address": "saas.datasource.protection_changed",
-      "title": "saas.datasource.protection_changed",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.datasource.protection_changed"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
     "saas.datasource.receipts.pruned": {
       "address": "saas.datasource.receipts.pruned",
       "title": "saas.datasource.receipts.pruned",
@@ -961,17 +950,6 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.snapshot.skipped_stale"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
-    "saas.document.source_verified": {
-      "address": "saas.document.source_verified",
-      "title": "saas.document.source_verified",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.document.source_verified"
         }
       },
       "x-visibility": "external",
@@ -2472,13 +2450,6 @@
       },
       "title": "saas publishes saas.datasource.operation.invoked"
     },
-    "send:saas.datasource.protection_changed": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.datasource.protection_changed"
-      },
-      "title": "saas publishes saas.datasource.protection_changed"
-    },
     "send:saas.datasource.receipts.pruned": {
       "action": "send",
       "channel": {
@@ -2730,13 +2701,6 @@
         "$ref": "#/channels/saas.document.snapshot.skipped_stale"
       },
       "title": "saas publishes saas.document.snapshot.skipped_stale"
-    },
-    "send:saas.document.source_verified": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.document.source_verified"
-      },
-      "title": "saas publishes saas.document.source_verified"
     },
     "send:saas.document.subscribed": {
       "action": "send",
@@ -3812,13 +3776,6 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
-      "saas.datasource.protection_changed": {
-        "name": "saas.datasource.protection_changed",
-        "title": "saas.datasource.protection_changed",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
       "saas.datasource.receipts.pruned": {
         "name": "saas.datasource.receipts.pruned",
         "title": "saas.datasource.receipts.pruned",
@@ -4067,13 +4024,6 @@
       "saas.document.snapshot.skipped_stale": {
         "name": "saas.document.snapshot.skipped_stale",
         "title": "saas.document.snapshot.skipped_stale",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
-      "saas.document.source_verified": {
-        "name": "saas.document.source_verified",
-        "title": "saas.document.source_verified",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

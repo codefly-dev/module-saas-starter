@@ -486,8 +486,6 @@ const (
 	EventDatasourceDomainClaimed        EventType = "saas.datasource.domain_claimed"
 	EventDatasourceDomainVerified       EventType = "saas.datasource.domain_verified"
 	EventDatasourceDomainRemoved        EventType = "saas.datasource.domain_removed"
-	// A deployment installed or retired a protected upload source policy.
-	EventDatasourceProtectionChanged EventType = "saas.datasource.protection_changed"
 
 	EventDatasourceGitHubAppSetupStarted   EventType = "saas.datasource.github_app.setup_started"
 	EventDatasourceGitHubAppSetupCompleted EventType = "saas.datasource.github_app.setup_completed"
@@ -562,8 +560,6 @@ const (
 	// declare a type here through DeclareAuditEventTypes: the host registers
 	// each one, with the shape the emitting module sends.
 	//
-	// A verified source provenance was attached to an immutable version.
-	EventDocumentSourceVerified EventType = "saas.document.source_verified"
 	// A read or search that involved no collection: the caller could read none,
 	// or its request resolved to none. saas.document.read / search each record
 	// one collection and require its boundary, so without these the refusal and
@@ -927,21 +923,6 @@ var auditEventCatalog = []AuditEventDefinition{
 			PayloadField{Name: "producer", Kind: FieldString, Required: true, MaxLen: 128},
 			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true,
 				Enum: []string{"permanent", "exhausted", "cancelled", "unknown"}})...))),
-	mutation(EventDatasourceProtectionChanged, CategorySystem, "Deployment installed or retired a protected upload source policy.",
-		str("solution"),
-		PayloadField{Name: "policy_revision", Kind: FieldString, Required: true},
-		PayloadField{Name: "retired", Kind: FieldBool, Required: true},
-		PayloadField{Name: "owner", Kind: FieldString, Required: true},
-		PayloadField{Name: "binding_sha256", Kind: FieldString, Required: true}),
-	mutation(EventDocumentSourceVerified, CategorySystem, "An immutable document version received verified source provenance.",
-		str("solution"),
-		PayloadField{Name: "version_id", Kind: FieldString, Required: true},
-		PayloadField{Name: "source_id", Kind: FieldString, Required: true},
-		PayloadField{Name: "receipt_job_id", Kind: FieldString, Required: true},
-		PayloadField{Name: "policy_revision", Kind: FieldString, Required: true},
-		PayloadField{Name: "binding_sha256", Kind: FieldString, Required: true},
-		PayloadField{Name: "effect_sha256", Kind: FieldString, Required: true},
-		PayloadField{Name: "owner", Kind: FieldString, Required: true}),
 	observation(EventDocumentReadUnscoped, CategoryAccess, "A document read that involved no collection ended with an explicit outcome: it was denied, found nothing the caller may read, or failed before any collection was resolved.", documentUnscopedReadFields...),
 	observation(EventDocumentSearchUnscoped, CategoryAccess, "A search that involved no collection ended with an explicit outcome: it was denied, the caller may read no collection it names, or it failed before any collection was resolved.", documentUnscopedReadFields...),
 	// A confirmation is recorded only when it commits: the module appends the
@@ -965,8 +946,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	// The native extractor itself stays off the trail; its digest names it.
 	// Everything a revision always names is required: the version it was
 	// derived from, the key and revision, its digest, whether it retires the
-	// key, the native request type and what proposed it. `proposal_source` is
-	// free text a person or a tool supplied, so it is PII.
+	// key, the native request type and what proposed it. `proposal_source`
+	// names the proposing run, receipt or derivation, but nothing bounds it to
+	// an identifier: it is an unvalidated string of up to 512 bytes, so it is
+	// marked PII and redacted from exports and webhooks.
 	requiresIdempotencyKey(requiresEntry(mutation(EventDocumentExtractorRevised, CategoryLifecycle,
 		"An extractor attached to a document was revised: attached, corrected or retired.",
 		append(required(documentFields, "version"),

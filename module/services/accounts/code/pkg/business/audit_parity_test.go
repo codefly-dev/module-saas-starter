@@ -45,15 +45,13 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceSourceAccessLost,
 	EventDatasourceSourceAccessRestored,
 	EventDatasourceSourceRecovered,
+	EventDocumentArchived,
 	// A document module reports these through EmitAuditEvent: the `saas`
 	// namespace is the host's, so a module cannot declare them itself.
-	EventDatasourceProtectionChanged,
 	EventDocumentConfirmed,
 	EventDocumentExtractorRevised,
 	EventDocumentReadUnscoped,
 	EventDocumentSearchUnscoped,
-	EventDocumentSourceVerified,
-	EventDocumentArchived,
 	// A document module's operator redrive reports this through EmitAuditEvent.
 	EventDocumentDeadLetterRedriven,
 	EventDocumentDeleted,
