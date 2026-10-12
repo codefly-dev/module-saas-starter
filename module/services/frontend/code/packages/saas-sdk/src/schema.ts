@@ -41,6 +41,8 @@ export type MetricOperation = "sum" | "ratio" | "difference";
  * How a metric's value is written wherever the dashboard shows it. `number`,
  * the default, writes it as it is. `percent` reads it as a share from 0 to 1
  * and writes it times 100 with a percent sign, so 0.4 reads "40%".
+ * `runDashboard` does that scaling, once, on the widgets it resolves (see
+ * `ResolvedWidget.format`); nothing after it scales again.
  */
 export type MetricValueFormat = "number" | "percent";
 

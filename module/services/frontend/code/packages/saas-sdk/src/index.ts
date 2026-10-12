@@ -6,6 +6,7 @@ export {
 	type MetricId,
 	type ResolvedWidget,
 	runDashboard,
+	type WidgetValueFormat,
 } from "./datagraph/dashboard.js";
 export {
 	assertAuditScopeContract,

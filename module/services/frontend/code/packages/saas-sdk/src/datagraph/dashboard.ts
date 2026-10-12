@@ -1,7 +1,7 @@
 import type {
 	DashboardLayout,
+	DashboardSection,
 	DataGraph,
-	MetricValueFormat,
 	WidgetVisualization,
 } from "../schema.js";
 import { resolveMetrics } from "./run.js";
@@ -24,15 +24,47 @@ export function defineDataGraph<const T extends DataGraph>(graph: T): T {
 /** Metric ids declared on a data graph, as a literal union (or `string`). */
 export type MetricId<T extends DataGraph> = T["metrics"][number]["id"];
 
+/**
+ * How a resolved widget's values are written. `percent` means the series is in
+ * percentage points — 40 is "40%" — which is the kit's `DashboardWidgetView`
+ * convention, so a widget crosses `fromDashboardData` as it is.
+ */
+export type WidgetValueFormat = "number" | "percent";
+
 /** A dashboard widget bound to its resolved metric series. */
 export interface ResolvedWidget {
 	id: string;
 	visualization: WidgetVisualization;
 	title?: string;
+	/** The declared section the widget is drawn in, if the dashboard has sections. */
+	section?: string;
 	metricId: string;
+	/**
+	 * The metric's series as the widget draws it. For a metric declared
+	 * `format: "percent"` its values are percentage points, not the metric's
+	 * shares (see {@link WidgetValueFormat}); `byMetric` keeps the shares.
+	 */
 	series: MetricSeries;
-	/** How the widget's values are written: its metric's declared format. */
-	format?: MetricValueFormat;
+	/** How the widget's values are written; absent for a plain number. */
+	format?: WidgetValueFormat;
+}
+
+/**
+ * A share from 0 to 1 as percentage points: the one place a data graph's
+ * `percent`, which reads a metric's value as a share, becomes the percentage a
+ * dashboard draws. A ratio is not always a share ("versions per memo" is one
+ * that is not), so a metric says so by declaring the format, and nothing
+ * downstream scales again: the kit's `format: "percent"` takes 40 as "40%".
+ */
+function asPercentage(series: MetricSeries): MetricSeries {
+	return {
+		...series,
+		points: series.points.map((point) => ({
+			...point,
+			value: point.value * 100,
+		})),
+		total: series.total === null ? null : series.total * 100,
+	};
 }
 
 /**
@@ -45,6 +77,8 @@ export interface DashboardData<T extends DataGraph = DataGraph> {
 	id: string;
 	title?: string;
 	layout: DashboardLayout;
+	/** The sections the widgets are grouped into, in declared order. */
+	sections?: readonly DashboardSection[];
 	widgets: ResolvedWidget[];
 	byMetric: Record<MetricId<T>, MetricSeries>;
 }
@@ -81,14 +115,17 @@ export async function runDashboard<const T extends DataGraph>(
 				`widget '${widget.id}' is bound to unknown metric: ${widget.metric}`,
 			);
 		}
+		const percent =
+			graph.metrics.find((metric) => metric.id === widget.metric)?.format ===
+			"percent";
 		return {
 			id: widget.id,
 			visualization: widget.visualization,
 			title: widget.title,
+			section: widget.section,
 			metricId: widget.metric,
-			series,
-			format: graph.metrics.find((metric) => metric.id === widget.metric)
-				?.format,
+			series: percent ? asPercentage(series) : series,
+			format: percent ? "percent" : undefined,
 		};
 	});
 
@@ -96,6 +133,7 @@ export async function runDashboard<const T extends DataGraph>(
 		id: dashboard.id,
 		title: dashboard.title,
 		layout: dashboard.layout,
+		sections: dashboard.sections,
 		widgets,
 		byMetric,
 	};

@@ -121,6 +121,93 @@ describe("runDashboard", () => {
 		]);
 	});
 
+	// The one conversion boundary: a data graph's `percent` reads a value as a
+	// share, the kit's reads it as percentage points, and runDashboard is where
+	// the one becomes the other — once, so 0.4 is drawn "40%", never "0.4%".
+	it("resolves a percent metric's shares into percentage points, and leaves byMetric as shares", async () => {
+		const shares = defineDataGraph({
+			events: [{ name: "closed", type: "deal.closed.v1" }],
+			metrics: [
+				{
+					id: "closed",
+					kind: "source",
+					filter: { event: "closed" },
+					groupBy: "event_type",
+					aggregation: "count",
+				},
+				{
+					id: "won",
+					kind: "source",
+					filter: { event: "closed", actor: "winner" },
+					groupBy: "event_type",
+					aggregation: "count",
+				},
+				{
+					id: "win_rate",
+					kind: "derived",
+					operation: "ratio",
+					inputs: ["won", "closed"],
+					format: "percent",
+				},
+				{
+					id: "per_close",
+					kind: "derived",
+					operation: "ratio",
+					inputs: ["won", "closed"],
+				},
+			],
+			dashboards: [
+				{
+					id: "deals",
+					layout: "grid",
+					widgets: [
+						{ id: "rate", metric: "win_rate", visualization: "number" },
+						{ id: "plain", metric: "per_close", visualization: "number" },
+					],
+				},
+			],
+		});
+		const { client } = fakeAuditClient((request) => [
+			{ key: "all", count: request.actorId === "winner" ? 2 : 5 },
+		]);
+
+		const data = await runDashboard(client, shares, "deals", context);
+		const [rate, plain] = data.widgets;
+
+		expect(rate.format).toBe("percent");
+		expect(rate.series.points.map((point) => point.value)).toEqual([40]);
+		expect(rate.series.total).toBe(40);
+		expect(data.byMetric.win_rate.total).toBe(0.4);
+		expect(plain.format).toBeUndefined();
+		expect(plain.series.total).toBe(0.4);
+	});
+
+	it("carries the dashboard's sections and each widget's section", async () => {
+		const sectioned = defineDataGraph({
+			...graph,
+			dashboards: [
+				{
+					...graph.dashboards[0],
+					sections: [{ id: "totals", title: "Totals" }],
+					widgets: graph.dashboards[0].widgets.map((widget) => ({
+						...widget,
+						section: "totals",
+					})),
+				},
+			],
+		});
+		const { client } = fakeAuditClient(() => [
+			{ key: "user.signed_in.v1", count: 7 },
+		]);
+
+		const data = await runDashboard(client, sectioned, "activity", context);
+
+		expect(data.sections).toEqual([{ id: "totals", title: "Totals" }]);
+		expect(data.widgets.map((widget) => widget.section)).toEqual(
+			data.widgets.map(() => "totals"),
+		);
+	});
+
 	it("rejects an unknown dashboard id", async () => {
 		const { client } = fakeAuditClient(() => []);
 		await expect(
