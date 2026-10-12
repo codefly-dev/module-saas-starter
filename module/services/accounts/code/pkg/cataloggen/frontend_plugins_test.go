@@ -69,6 +69,7 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 		"/admin/platform/feature-flags",
 		"/admin/platform/jobs",
 		"/admin/platform/organizations",
+		"/admin/platform/unattended-work",
 		"/admin/platform/waitlist",
 		"/admin/roles",
 		"/admin/roles/{roleId}",

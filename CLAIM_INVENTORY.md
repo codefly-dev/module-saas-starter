@@ -88,6 +88,17 @@ must not be inferred from a row here. See
 | ~~ADR-0002: "No branding or arbitrary CSS from remotes"~~ | `docs/adr/0002-remote-ui-tier-boundary.md` | **not enforced, and the CSP cannot be the enforcement point**: `style-src` carries `'unsafe-inline'` with no nonce/hash and the remote's JS runs in-origin via `'strict-dynamic'`, so a remote can always inject a global `<style>`; the remote also renders with no shadow root, iframe or cascade layer, so its CSS is document-global. #778 added the external-stylesheet form, a delivery mechanism rather than a new capability | known drift, filed | #791 |
 | A registered remote can ship its own stylesheet | `server/security-headers.mjs`; `src/proxy.ts` | `security-headers.test.ts` + `proxy-solution-csp.test.ts` assert the origin reaches `style-src`. Holds only where chunks are served from the MANIFEST's origin — `manifestOrigin(frontend.manifestUrl)` is the sole source, so a CDN `publicPath` is still refused while `'strict-dynamic'` lets its script load anyway | known drift, filed | #792 |
 
+## Unattended work and declared schedules
+
+| Claim | Source | Executable evidence | Status | Owner |
+| --- | --- | --- | --- | --- |
+| This host fires nothing on a source's reconcile schedule | MODULE.md § Unattended work; accounts/AGENTS.md § A datasource source is refreshed by three things | `TestNoHostTimerFiresTheReconcileSchedule` (`pkg/business`) walks every non-test file's AST and fails on the removed producer's names | implemented | accounts |
+| The declaration carries the field names the executing module validates | MODULE.md § Unattended work; WORK_CONTEXTS.md § Triggers | `TestTriggerDeclarationMatchesTheContractFieldNames`, `TestTriggerDeclarationUsesDeclaredPolicyValues` (`pkg/business`) | implemented | accounts |
+| Only intervals a five-field cron can name are declarable; the rest are refused by name | accounts/AGENTS.md § A datasource source is refreshed by three things | `TestTriggerScheduleSpellsOnlyTheIntervalsCronCanName` (`pkg/business`) | implemented | accounts |
+| An occurrence under the reference arm is minted from current facts, and the next one after a revocation is refused | MODULE.md § Unattended work; WORK_CONTEXTS.md § Triggers | `TestTriggerOccurrenceMintsFromTheReferenceAndIsRefusedAfterRevocation` (`pkg/adapters`) | implemented | accounts |
+| The installation-principal arm mints for a binding whose audience is the executing module's own name | WORK_CONTEXTS.md § Triggers | `TestTriggerOccurrenceMintsFromTheInstallationBinding`, `TestTriggerIdentityWithoutADeclarationRefusesBothArms` (`pkg/adapters`) | implemented | accounts |
+| A schedule actually coming due, in a composed environment, under either arm | MODULE.md § Unattended work ("what is not proven") | none — nothing in this repository composes a module that executes declared work | planned | #1081 |
+
 ## Handbook and interface surfaces
 
 Generated interface documentation and story tracing are **not** owned here.

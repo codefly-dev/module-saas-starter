@@ -3,6 +3,7 @@ import {
 	Building2,
 	CreditCard,
 	Flag,
+	KeyRound,
 	Layers,
 	ListChecks,
 	ShieldCheck,
@@ -64,6 +65,13 @@ const sections = [
 			"Inspect the domain-event catalog, subscribers, relay lag, and dead letters.",
 		href: "/admin/platform/events",
 		icon: Workflow,
+	},
+	{
+		title: "Unattended Work",
+		description:
+			"Bind the identity work no person started runs under, and read the trigger each source declares.",
+		href: "/admin/platform/unattended-work",
+		icon: KeyRound,
 	},
 ];
 
