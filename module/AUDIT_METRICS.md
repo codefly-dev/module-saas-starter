@@ -204,17 +204,34 @@ events means partial telemetry. Older servers without samples cannot establish
 numeric completeness.
 
 SDK series expose `coverage: complete | partial | empty` and nullable `total`.
+Time buckets are **UTC** days, weeks and months, whatever zone the database
+session runs in, and every key reads `YYYY-MM-DDT00:00:00+00`. Keyed in the
+session's zone, a key's offset would move across daylight saving, so neither a
+bucket the aggregate did not return nor the kit's UTC label could be placed.
+
 A count, distinct count or sum grouped by **time** is zero-filled where the series
-is produced, in the SDK's `runMetric`: every day (or week, or month) between the
-first and the last bucket the aggregate returned, that it did not return, gets a
+is produced, in the SDK's `runMetric`: every day (or week, or month) from the
+first bucket the aggregate returned through the end of the range — the bucket
+holding `to`, or today for an open-ended query — that it did not return gets a
 `0`, because no event matched there. Without it a chart spaces points by
-position, so a day with no events vanished and the line ran straight over it.
-An average, minimum, maximum or percentile has no value over no events and is
-not filled; a bucket the aggregate *did* return whose value was dropped as
-unknown stays out and keeps the series partial; days before the first bucket and
-after the last are not filled; and a series made only of filled zeros has no
-total. A derived metric reads a day no input had events on as no events, not as
-missing telemetry: a ratio there has no point and the series stays complete.
+position, so a day with no events vanished and the line ran straight over it,
+and the days since the last event vanished too, so the newest point and the
+"vs previous bucket" delta read an old day as the latest. The current bucket is
+in progress, so its value is so far. An average, minimum, maximum or percentile
+has no value over no events and is not filled; a bucket the aggregate *did*
+return whose value was dropped as unknown stays out and keeps the series
+partial; days before the first bucket are not filled; returned keys that
+disagree about their offset are left as they are rather than given a guessed
+one; and a series made only of filled zeros has no total.
+
+A derived metric over such series reads a day an input has no bucket for as
+that input's `0`, wherever the day falls: a failure rate whose failures start
+after the requests, or never happen, reads `0` on those days and stays
+complete, rather than dropping them as missing telemetry. A day no input had
+events on has no ratio (0/0) and keeps the series complete; a sum or difference
+of such series is filled the same way and can feed another derived metric. An
+input that is partial, or whose aggregation has no value over no events, keeps
+a missing day unknown.
 
 Missing derived operands and zero denominators stay unknown. Partial series keep
 observed chart points with a visible label and withhold the total. Distinct
@@ -254,8 +271,10 @@ with share semantics must do the same before the view.
 A view may group its widgets into **sections**: `sections` lists them in the
 order they are drawn (`id`, `title`, an optional `description`) and a widget's
 `section` names the one it is drawn in. Each section is headed by the kit's
-`DashboardSectionHeader`; a declared section with no widgets is still drawn and
-says so; a widget naming no section is drawn first, untitled. A view without
+`DashboardSectionHeader`, whose title is an `<h3>`, and a widget inside a
+section is titled `<h4>`, so heading navigation reads it as the section's child;
+a declared section with no widgets is still drawn and says so; a widget naming
+no section is drawn first, untitled, and keeps its `<h3>`. A view without
 sections draws as it always has.
 
 Two of those cells are the contract, not presentation. A `null` total renders as

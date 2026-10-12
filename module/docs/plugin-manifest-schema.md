@@ -100,8 +100,9 @@ has three node kinds:
   widget it resolves; the dashboard kit's own `format: "percent"` takes the
   scaled value (see `AUDIT_METRICS.md`, "How a resolved series is drawn").
   A count, distinct count or sum grouped by `time` reads `0` on a day (week,
-  month) with no events between its first and last bucket, rather than
-  skipping it.
+  month) with no events, from its first bucket through today (or the end of
+  the range asked for), rather than skipping it; a derived metric over such
+  counts reads an input's day with no events as that input's `0`.
 - **`dashboards`** — a `layout` of `widgets`, each binding a `visualization` to
   one metric. These metric-bound widgets are distinct from `ui.widgets`, which
   are presentation slots contributed to host surfaces; the two never mix.
