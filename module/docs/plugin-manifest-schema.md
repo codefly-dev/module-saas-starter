@@ -96,6 +96,12 @@ has three node kinds:
   (the default) writes its value as it is, and `percent` reads it as a share
   from 0 to 1 and writes it as a percentage (0.4 reads 40%) on every widget
   that draws it. A ratio is not always a share, so the host never infers one.
+  The share is scaled to a percentage once, by the SDK's `runDashboard`, on the
+  widget it resolves; the dashboard kit's own `format: "percent"` takes the
+  scaled value (see `AUDIT_METRICS.md`, "How a resolved series is drawn").
+  A count, distinct count or sum grouped by `time` reads `0` on a day (week,
+  month) with no events between its first and last bucket, rather than
+  skipping it.
 - **`dashboards`** — a `layout` of `widgets`, each binding a `visualization` to
   one metric. These metric-bound widgets are distinct from `ui.widgets`, which
   are presentation slots contributed to host surfaces; the two never mix.
