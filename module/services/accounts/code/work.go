@@ -16,6 +16,7 @@ import (
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
 	"accounts/pkg/datasource"
+	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/email"
 	"accounts/pkg/eventcatalog"
 	"accounts/pkg/githubconnector"
@@ -1210,25 +1211,23 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
-		// Datasource reconcile (issue #487 §6): the production safety net for lost
-		// webhooks and for local development without a public tunnel. Each sweep
-		// enqueues a reconcile job for every active GitHub source whose schedule has
-		// elapsed; the job resolves the head and snapshots only if it moved, so the
-		// sweep does no GitHub work itself.
-		sweepReconcile := func() {
-			if n, err := service.RunDatasourceReconcile(retentionCtx); err != nil {
-				rw.Warn("datasource reconcile sweep failed", wool.ErrField(err))
-			} else if n > 0 {
-				rw.Info("enqueued datasource reconciles", wool.Field("count", n))
-			}
-		}
+		// There is deliberately NO datasource reconcile sweep here. A source's
+		// reconcile schedule is a trigger this host DECLARES and an executing
+		// module fires (business/datasource_trigger.go): the host that also
+		// fired it would be two schedules for one source, and the one nobody
+		// declared would win. The interval remains the source's configuration
+		// and re-declares the trigger; the occurrence admits
+		// DatasourceService/ReconcileSource, the same operation a person's
+		// manual pass does.
 
-		// GitHub App installation re-check (issue #691): the same safety net, for
-		// the half that webhooks alone cannot cover. Parking a source removes it
-		// from the reconcile sweep above, so a restored installation whose
-		// `unsuspend` delivery GitHub failed to hand over would leave that source
-		// parked for good. This re-verifies installations that still hold one.
-		// The sweep runs on the same tick, but each installation is only enqueued
+		// GitHub App installation re-check (issue #691): the safety net for the
+		// half that webhooks alone cannot cover. Parking a source takes it off
+		// its declared reconcile schedule, so a restored installation whose
+		// `unsuspend` delivery GitHub failed to hand over would leave that
+		// source parked for good. This re-verifies installations that still
+		// hold one. It is a re-check of this host's OWN records against the
+		// provider, not work on a source's content, which is why it stays here
+		// while the reconcile schedule left. Each installation is only enqueued
 		// once per re-check window, so the tick does not set the rate.
 		sweepInstallationRecheck := func() {
 			if n, err := service.RunGitHubInstallationRecheck(retentionCtx); err != nil {
@@ -1242,15 +1241,14 @@ func doWork(ctx context.Context) (Clean, error) {
 		runRetention()
 		sweepReplay()
 		sweepPrivacyArtifacts()
-		sweepReconcile()
 		sweepInstallationRecheck()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
 		replayTicker := time.NewTicker(time.Hour)
-		reconcileTicker := time.NewTicker(time.Minute)
+		installationRecheckTicker := time.NewTicker(time.Minute)
 		defer retentionTicker.Stop()
 		defer replayTicker.Stop()
-		defer reconcileTicker.Stop()
+		defer installationRecheckTicker.Stop()
 		for {
 			select {
 			case <-retentionCtx.Done():
@@ -1260,8 +1258,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			case <-replayTicker.C:
 				sweepReplay()
 				sweepPrivacyArtifacts()
-			case <-reconcileTicker.C:
-				sweepReconcile()
+			case <-installationRecheckTicker.C:
 				sweepInstallationRecheck()
 			}
 		}
@@ -2655,6 +2652,11 @@ func loadSigningKey(
 // deployment can still be fixed rather than discovered from a crash loop — and
 // so a test can reach all of them with nothing running.
 func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
+	// First, so a deployed composition that sets the allowance is told so before
+	// any other refusal can answer in its place.
+	if err := configureLocalEgress(isLocal, infra.InCluster()); err != nil {
+		return err
+	}
 	selection, err := keyservice.Selection(ctx, isLocal)
 	if err != nil {
 		return err
@@ -2666,6 +2668,56 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 		return err
 	}
 	return requireApplicationBaseURL(isLocal)
+}
+
+// configureLocalEgress installs the callable-source local egress allowance
+// (`datasource-oauth/local_egress`, apisource/local_egress.go), or refuses to
+// start when it is set on a runtime that is not local.
+//
+// "Local" here is two facts the host already has, and both must hold:
+//
+//   - the Codefly environment is local (codefly.IsLocal) — the one environment
+//     identity every other local-only exemption in this file reads;
+//   - the process is not in a Kubernetes pod (infra.InCluster) — the kubelet's
+//     own projection, which the solution host already treats as its in-cluster
+//     identity.
+//
+// The environment alone is one variable, delivered by whatever renders the
+// deployment, so a deployment could name itself local. The pod fact is put
+// there by the kubelet, and no configuration value can set or clear it. A
+// Codefly-rendered pod mounts no service-account token by default, so there the
+// fact is KUBERNETES_SERVICE_HOST alone: defeating both checks takes the pod
+// spec — CODEFLY__ENVIRONMENT=local and an explicit override clearing that
+// variable — never a configuration value. A deployment that can name itself
+// local has already lifted the refusals of the dev identity provider and the
+// ephemeral signing key, both worse than this allowance. A local runtime started by
+// `codefly run` has neither fact, so the allowance works exactly where it is
+// meant to: on a developer's machine. A local Kubernetes cluster is refused
+// too, by the same rule; it is not where a stub provider runs "beside" the host.
+//
+// Even past both checks the allowance admits only explicit loopback ip:port
+// entries, so it never reaches beyond the host's own network namespace. In a
+// pod that namespace is shared with every container in the pod, sidecars
+// included (a mesh proxy's admin port is on loopback); on a developer's machine
+// it is every local listener, chosen by the developer who lists the port.
+func configureLocalEgress(isLocal, inCluster bool) error {
+	value := workspaceEnv("datasource-oauth", "local_egress")
+	err := apisource.ConfigureLocalEgress(value, isLocal && !inCluster)
+	switch {
+	case err == nil:
+		if strings.TrimSpace(value) != "" {
+			wool.Get(context.Background()).In("configureLocalEgress").Warn(
+				"callable sources may dial these loopback addresses past the public-address guard (local runtime only)",
+				wool.Field("datasource-oauth/local_egress", value))
+		}
+		return nil
+	case errors.Is(err, apisource.ErrLocalEgressOutsideLocal):
+		return fmt.Errorf("datasource-oauth/local_egress is set, but this runtime is not local (local environment: %t, in a Kubernetes pod: %t): "+
+			"remove it from this composition. The allowance exists only so a host booted on a developer's machine can reach a stub provider beside it; "+
+			"a deployed host reaches public addresses only: %w", isLocal, inCluster, err)
+	default:
+		return fmt.Errorf("datasource-oauth/local_egress: %w", err)
+	}
 }
 
 // requireApplicationBaseURL refuses to start a deployed runtime without the

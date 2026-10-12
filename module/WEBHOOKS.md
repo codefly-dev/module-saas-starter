@@ -2,11 +2,16 @@
 
 Webhook endpoints must be public `https://` URLs on port 443. Accounts resolves
 all A/AAAA records when an endpoint is registered and again immediately before
-each connection. If any answer is loopback, private, link-local, multicast,
-metadata, cluster, documentation, benchmark, or otherwise special-use, the
-request is rejected. Redirects are returned as failed attempts and never
-followed. Kubernetes egress policy independently denies the same IPv4/IPv6
-ranges.
+each connection. If any answer is not on the public internet, the request is
+rejected. That judgement is `auth.IsPublicDestination`, the classifier the
+host's guarded egress paths share. The paths it covers, and the OIDC clients it
+does not, are listed in
+[CALLABLE_SOURCES.md](./CALLABLE_SOURCES.md#oauth-and-disclosure). It reads the
+IANA IPv4 and IPv6 special-purpose registries, with IPv6 bounded to the
+`2000::/3` global unicast allocation. A connection is pinned to the address that was
+judged. Redirects are returned as failed attempts and never followed.
+Kubernetes egress policy is an independent second layer over the
+special-purpose ranges it lists; the application check is the complete one.
 
 This follows the application- and network-layer defense-in-depth guidance in
 the [OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).

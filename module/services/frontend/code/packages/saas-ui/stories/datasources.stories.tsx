@@ -60,9 +60,10 @@ function Preview({
 		addGitHubSource: async () => {
 			throw new Error("Connection is unavailable in this preview.");
 		},
-		syncSource: async () => {
+		reconcileSource: async () => {
 			throw new Error("Synchronization is unavailable in this preview.");
 		},
+		lookupReconcileSource: async () => undefined,
 		deleteSource: async () => {
 			throw new Error("Deletion is unavailable in this preview.");
 		},
@@ -287,9 +288,10 @@ function DeclaredPreview({
 		addGitHubSource: async () => {
 			throw new Error("Connection is unavailable in this preview.");
 		},
-		syncSource: async () => {
+		reconcileSource: async () => {
 			throw new Error("Synchronization is unavailable in this preview.");
 		},
+		lookupReconcileSource: async () => undefined,
 		deleteSource: async () => {
 			throw new Error("Deletion is unavailable in this preview.");
 		},

@@ -1044,7 +1044,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -2476,6 +2476,32 @@
         "@/lib/product-features",
         "@/lib/read-public-runtime-config",
         "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/plugin-transport/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/plugin-transport"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/unattended-work/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/unattended-work"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -4662,6 +4688,21 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/plugin-transport/ui/plugin-transport-playground.tsx",
+      "imports": [
+        "@codefly-dev/ui/plugin-host/runtime",
+        "react",
+        "@/shared/ui",
+        "../model/demo-plugin"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the plugin-transport workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/roles/ui/manage-member-roles-dialog.tsx",
       "imports": [
         "lucide-react",
@@ -4974,6 +5015,48 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Defines teams columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/unattended-work/ui/source-trigger-schedules.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "lucide-react",
+        "react",
+        "@/components/empty-state",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/source-label",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the unattended-work workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/unattended-work/ui/unattended-work-playground.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/empty-state",
+        "@/components/org-selector",
+        "@/lib/auth",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/source-label",
+        "../service/mutations",
+        "../service/queries",
+        "./source-trigger-schedules"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the unattended-work workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."

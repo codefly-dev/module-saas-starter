@@ -46,8 +46,20 @@ export {
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
-	useSyncSource,
+	useReconcileSource,
 } from "./datasources/queries.js";
+// The effect identity a manual pass commits under, and the record of the
+// passes this browser admitted. Exported because the host's own
+// reconcile-schedules panel shows a person's pass beside the declared
+// schedule's occurrences, which it can only do if the identity leaves the kit.
+export {
+	type AdmittedReconcilePass,
+	createReconcilePassLedger,
+	notifySourceReconcileAdmitted,
+	onSourceReconcileAdmitted,
+	type ReconcilePassLedger,
+	type SourceReconcileStatus,
+} from "./datasources/reconcile-passes.js";
 export {
 	type ConnectGitHubValues,
 	connectGitHubSchema,
@@ -92,6 +104,7 @@ export type {
 	DatasourceView,
 	DomainView,
 	GroupBindingView,
+	SourceReconcileReceipt,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,
 	SourceSyncTriggerName,

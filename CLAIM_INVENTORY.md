@@ -88,6 +88,21 @@ must not be inferred from a row here. See
 | ~~ADR-0002: "No branding or arbitrary CSS from remotes"~~ | `docs/adr/0002-remote-ui-tier-boundary.md` | **not enforced, and the CSP cannot be the enforcement point**: `style-src` carries `'unsafe-inline'` with no nonce/hash and the remote's JS runs in-origin via `'strict-dynamic'`, so a remote can always inject a global `<style>`; the remote also renders with no shadow root, iframe or cascade layer, so its CSS is document-global. #778 added the external-stylesheet form, a delivery mechanism rather than a new capability | known drift, filed | #791 |
 | A registered remote can ship its own stylesheet | `server/security-headers.mjs`; `src/proxy.ts` | `security-headers.test.ts` + `proxy-solution-csp.test.ts` assert the origin reaches `style-src`. Holds only where chunks are served from the MANIFEST's origin — `manifestOrigin(frontend.manifestUrl)` is the sole source, so a CDN `publicPath` is still refused while `'strict-dynamic'` lets its script load anyway | known drift, filed | #792 |
 
+## Unattended work and declared schedules
+
+| Claim | Source | Executable evidence | Status | Owner |
+| --- | --- | --- | --- | --- |
+| This host fires nothing on a source's reconcile schedule | MODULE.md § Unattended work; accounts/AGENTS.md § A datasource source is refreshed by three things | `TestNoHostTimerFiresTheReconcileSchedule` (`pkg/business`) walks every non-test file's AST and fails on the removed producer's names | implemented | accounts |
+| The declaration carries the field names the executing module validates | MODULE.md § Unattended work; WORK_CONTEXTS.md § Triggers | `TestTriggerDeclarationMatchesTheContractFieldNames`, `TestTriggerDeclarationUsesDeclaredPolicyValues` (`pkg/business`) | implemented | accounts |
+| Only intervals a five-field cron can name are declarable; the rest are refused by name | accounts/AGENTS.md § A datasource source is refreshed by three things | `TestTriggerScheduleSpellsOnlyTheIntervalsCronCanName` (`pkg/business`) | implemented | accounts |
+| An occurrence under the reference arm is minted from current facts, and the next one after a revocation is refused | MODULE.md § Unattended work; WORK_CONTEXTS.md § Triggers | `TestTriggerOccurrenceMintsFromTheReferenceAndIsRefusedAfterRevocation` (`pkg/adapters`) | implemented | accounts |
+| The installation-principal arm mints for a binding whose audience is the executing module's own name | WORK_CONTEXTS.md § Triggers | `TestTriggerOccurrenceMintsFromTheInstallationBinding`, `TestTriggerIdentityWithoutADeclarationRefusesBothArms` (`pkg/adapters`) | implemented | accounts |
+| "Sync now" admits `ReconcileSource` under a kit-minted effect identity, and a double press yields one receipt and one job | MODULE.md § Unattended work; saas-ui README § Datasources | `reconcile-pass.test.tsx` (`packages/saas-ui`) drives the panel: one identity per pass, the repeat press recovers through `LookupReconcileSource` without re-admitting, the identity survives a failure | implemented | frontend |
+| No surface in this repository reaches a source sync without an effect identity | MODULE.md § Unattended work; saas-ui README § Datasources | `reconcile-is-the-only-manual-pass.test.ts` walks the TypeScript AST of `src` and the published packages and fails on any `syncSource` on a datasource client | implemented | frontend |
+| A person's pass is listed beside the declared schedule's occurrences, with its effect identity | MODULE.md § Unattended work | `source-trigger-schedules.container.test.tsx` asserts the manual row is in the SAME `admissions` table as the two scheduled rows, and that a recovered receipt replaces its row rather than adding one | implemented | frontend |
+| Every pass a source ever took, listed | — | none, and none is possible here: a receipt is recovered by identity and never enumerated, so the panel shows only the passes this browser admitted and says so | not claimed | accounts |
+| A schedule actually coming due, in a composed environment, under either arm | MODULE.md § Unattended work ("what is not proven") | none — nothing in this repository composes a module that executes declared work | planned | #1081 |
+
 ## Handbook and interface surfaces
 
 Generated interface documentation and story tracing are **not** owned here.
