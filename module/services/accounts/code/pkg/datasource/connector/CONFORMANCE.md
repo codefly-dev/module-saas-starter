@@ -118,7 +118,11 @@ HTTP route and JSON contract, not a record change-set interface.
 `operations/declaration_test.go` covers declaration digests, schema refusal,
 required path parameters, escaping, query/body routing, and GET body refusal.
 `apisource/operations_test.go` covers methods, byte caps, typed provider rate
-limits, token endpoint guards, and transport disclosure.
+limits, token endpoint guards, and transport disclosure. `apisource/guard_test.go`
+holds the egress guard to the shared `auth/egresstest` vectors, one named case
+per non-global range, and proves the operation dial and every token exchange
+run the guard on the address being dialed; `crawler/guard_test.go` and
+`objectstore/guard_test.go` do the same for those connectors.
 `connectortest.RunOperations`, run by `business/TestAPIOperationsConformance`,
 checks the host call path for unknown operations, schema and path refusals,
 GET body refusal, output caps, typed 429 responses and a lost mutation reply

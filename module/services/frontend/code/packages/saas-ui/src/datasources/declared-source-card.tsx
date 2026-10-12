@@ -36,7 +36,11 @@ import {
 import { messageOf } from "./errors.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import { readAppSetupReturn, scrubAppSetupReturn } from "./github-app-setup.js";
-import { useAddGitHubSource, useListSources } from "./queries.js";
+import {
+	useAddGitHubSource,
+	useListSources,
+	useReconcileSource,
+} from "./queries.js";
 import type { DatasourceClient, DatasourceView } from "./types.js";
 import {
 	cn,
@@ -171,20 +175,30 @@ function DeclaredSourceCardView({
 	const reconnectSource = client.reconnectSource?.bind(client);
 	const appSetup = useAppSetupReturn(orgId, canManage, completeAppSetup);
 	const addMutation = useAddGitHubSource(client);
+	const reconcile = useReconcileSource(client);
 	const [reconnectPending, setReconnectPending] = useState(false);
 	const [reconnectError, setReconnectError] = useState<string>();
 
+	// The same admission the full panel makes: one occurrence of the host's
+	// `ReconcileSource` under an effect identity this press minted, and a repeat
+	// press reads the first one's receipt back rather than re-sending the source.
 	const handleSync = async () => {
 		if (!source) return;
 		setNotice(null);
 		setActionError(null);
 		setSyncing(true);
 		try {
-			const jobId = await client.syncSource(orgId, source.id);
+			const pass = await reconcile.mutateAsync({ orgId, id: source.id });
 			setNotice(
-				"Sync queued. Ingestion runs in the background; content appears when it is ready.",
+				pass.repeat
+					? `Already being reconciled under pass ${pass.effectId}${
+							pass.jobId ? `, job ${pass.jobId}` : ""
+						} — the same job, not a second one.`
+					: `Reconcile admitted. Pass ${pass.effectId}${
+							pass.jobId ? `, job ${pass.jobId}` : ""
+						}. Ingestion runs in the background; content appears when it is ready.`,
 			);
-			onSyncEnqueued?.(jobId);
+			if (pass.jobId) onSyncEnqueued?.(pass.jobId);
 		} catch (error) {
 			setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`);
 		} finally {
@@ -342,7 +356,7 @@ function DeclaredSourceCardView({
 							{syncing ? "Syncing…" : "Sync now"}
 						</Button>
 					)}
-					{canManage && state === "error" && (
+					{canManage && state === "error" && reconnectSource && (
 						<CredentialForm
 							heading="Reconnect this source"
 							intro="Supply the credential again. The source, its collection, its content and its history are preserved, and a sync starts right away."
@@ -369,9 +383,7 @@ function DeclaredSourceCardView({
 										? credential.accessToken
 										: undefined;
 								try {
-									const jobId = reconnectSource
-										? await reconnectSource(orgId, source.id, token)
-										: await client.syncSource(orgId, source.id, token);
+									const jobId = await reconnectSource(orgId, source.id, token);
 									setNotice(
 										"Reconnected. Sync queued; ingestion runs in the background.",
 									);
@@ -388,6 +400,18 @@ function DeclaredSourceCardView({
 					{!canManage && state === "error" && (
 						<p className="type-body text-muted-foreground">
 							An organization administrator reconnects this source.
+						</p>
+					)}
+					{/* A reconnect is not a reconcile: it rebinds whose authority the
+					    source's syncs run under, and nothing makes that idempotent. The
+					    plain sync carrying a replacement credential that used to stand
+					    in for it went with `syncSource`, so a client without
+					    `reconnectSource` says so rather than offering a control that
+					    would do something else. */}
+					{canManage && state === "error" && !reconnectSource && (
+						<p className="type-body text-muted-foreground">
+							This client cannot reconnect a source. An organization
+							administrator reconnects it in Admin → Data sources.
 						</p>
 					)}
 				</>

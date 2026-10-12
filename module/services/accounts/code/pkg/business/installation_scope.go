@@ -107,7 +107,7 @@ func intersectInstallationScope(g ModulePrincipalGrant, consent InstallationScop
 			continue
 		}
 		binding.InvokeScopes = intersectOperationScopes(binding.InvokeScopes, installed.InvokeScopes)
-		binding.LookupScopes = intersectOperationScopes(binding.LookupScopes, installed.LookupScopes)
+		binding.LookupScopes = nilIfEmpty(intersectOperationScopes(binding.LookupScopes, installed.LookupScopes))
 		binding.HeadlessScopes = nilIfEmpty(intersectOperationScopes(binding.HeadlessScopes, installed.HeadlessScopes))
 		binding.SourceDelegationScopes = nilIfEmpty(intersectOperationScopes(binding.SourceDelegationScopes, installed.SourceDelegationScopes))
 		if len(binding.InvokeScopes) > 0 {

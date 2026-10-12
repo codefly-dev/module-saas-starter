@@ -6,10 +6,11 @@ import {
 	DatasourcesPanel,
 } from "@codefly-dev/saas-ui";
 import { HardDriveDownload } from "lucide-react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
-import { useMemo } from "react";
+import { SourceTriggerSchedules } from "@/features/unattended-work";
 import { useAuth } from "@/lib/auth";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 import { createDatasourceClient } from "./datasource-client";
@@ -51,6 +52,11 @@ export function DatasourcesAdmin() {
 					    source's per-item access lists are translated through. */}
 					<DatasourceAccountLinks key={`links-${orgId}`} client={client} orgId={orgId} />
 					<DatasourceDirectoryPanel key={`directory-${orgId}`} client={client} orgId={orgId} />
+					{/* What keeps each source current, as the trigger it declares
+					    rather than as a queue this host sweeps. The panel is the
+					    host's own: the source list above is the published kit's,
+					    and a schedule is not a fact the kit's client carries. */}
+					<SourceTriggerSchedules key={`schedules-${orgId}`} orgId={orgId} />
 				</>
 			) : (
 				<EmptyState

@@ -132,6 +132,18 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
+      "path": "/admin/platform/plugin-transport",
+      "source_path": "src/app/admin/platform/plugin-transport/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
+      "path": "/admin/platform/unattended-work",
+      "source_path": "src/app/admin/platform/unattended-work/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
       "path": "/admin/platform/waitlist",
       "source_path": "src/app/admin/platform/waitlist/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",

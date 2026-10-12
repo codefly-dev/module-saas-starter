@@ -914,7 +914,7 @@ func (x SourceOperation_Effect) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SourceOperation_Effect.Descriptor instead.
 func (SourceOperation_Effect) EnumDescriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{65, 0}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{77, 0}
 }
 
 // GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
@@ -5486,6 +5486,949 @@ func (x *RevokeSourceDelegationResponse) GetDelegation() *SourceDelegation {
 	return nil
 }
 
+// TriggerIdentity is the identity a declared trigger's occurrences run under.
+// EXACTLY ONE field is set, and the two are not alternatives of equal
+// standing:
+//
+//   - source names a connected source whose delegation this host owns. It is
+//     the grant reference: an opaque identifier rather than a credential,
+//     re-checked against current facts on every mint, so an occurrence's run
+//     may outlive the capability that admitted it and revoking the delegation
+//     refuses the next occurrence.
+//   - binding names one of the release's declared operation bindings, and an
+//     occurrence runs under the installation's own principal from that
+//     binding's headless scopes. That is an ordinary token admission, bounded
+//     by the capability's own short lifetime — which is why it is the first
+//     proof and not the contract.
+//
+// THE NAMES ARE THE INSTALLATION DOCUMENT'S, not this host's and not the
+// executing module's read API's. That distinction is load-bearing: the module
+// that fires triggers answers an operator's READ with `source_delegation` and
+// `installation_binding`, and decodes an INSTALLATION with `source` and
+// `binding`. Only the second has to parse for a release to install at all, so
+// it is the one this host speaks — everywhere, so there is one vocabulary
+// here rather than two that can drift apart.
+type TriggerIdentity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	Binding       string                 `protobuf:"bytes,2,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerIdentity) Reset() {
+	*x = TriggerIdentity{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerIdentity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerIdentity) ProtoMessage() {}
+
+func (x *TriggerIdentity) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerIdentity.ProtoReflect.Descriptor instead.
+func (*TriggerIdentity) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *TriggerIdentity) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *TriggerIdentity) GetBinding() string {
+	if x != nil {
+		return x.Binding
+	}
+	return ""
+}
+
+// DeclaredTriggerSchedule is the clock a release declares, in the vocabulary
+// the executing module validates: a five-field cron expression in a named IANA
+// location, what becomes of occurrences that came due while nothing was
+// running them, what becomes of one that comes due while the previous still
+// runs, how long one occurrence's run may take, and the input every
+// occurrence is admitted with. A schedule has no arrival to take an input
+// from and no runtime may invent one that satisfies a release's own schema, so
+// the declaration carries it.
+type DeclaredTriggerSchedule struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Cron     string                 `protobuf:"bytes,1,opt,name=cron,proto3" json:"cron,omitempty"`
+	Timezone string                 `protobuf:"bytes,2,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	// missed_run is "skip" or "catch_up", and overlap is "skip", "queue" or
+	// "cancel_previous" — the values the installation decode admits. The read
+	// API of the module that fires triggers reports the same two facts as
+	// MISSED_RUN_POLICY_* and OVERLAP_POLICY_*; those are a projection, and a
+	// declaration carrying them would be refused.
+	MissedRun string `protobuf:"bytes,3,opt,name=missed_run,json=missedRun,proto3" json:"missed_run,omitempty"`
+	Overlap   string `protobuf:"bytes,4,opt,name=overlap,proto3" json:"overlap,omitempty"`
+	// deadline is how long one occurrence's run may take, as an integer count of
+	// NANOSECONDS — the installation document decodes durations with plain
+	// encoding/json, so a duration string such as "10m" fails the whole document
+	// rather than the field.
+	Deadline int64 `protobuf:"varint,5,opt,name=deadline,proto3" json:"deadline,omitempty"`
+	// input_json is the input every occurrence is admitted with, as the JSON text
+	// the document carries verbatim. It is a string rather than bytes because
+	// that is what it is: a JSON value a composition pastes into an installation,
+	// and base64 would make it unreadable for the one reader who needs it.
+	InputJson     string `protobuf:"bytes,6,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeclaredTriggerSchedule) Reset() {
+	*x = DeclaredTriggerSchedule{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclaredTriggerSchedule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclaredTriggerSchedule) ProtoMessage() {}
+
+func (x *DeclaredTriggerSchedule) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclaredTriggerSchedule.ProtoReflect.Descriptor instead.
+func (*DeclaredTriggerSchedule) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *DeclaredTriggerSchedule) GetCron() string {
+	if x != nil {
+		return x.Cron
+	}
+	return ""
+}
+
+func (x *DeclaredTriggerSchedule) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *DeclaredTriggerSchedule) GetMissedRun() string {
+	if x != nil {
+		return x.MissedRun
+	}
+	return ""
+}
+
+func (x *DeclaredTriggerSchedule) GetOverlap() string {
+	if x != nil {
+		return x.Overlap
+	}
+	return ""
+}
+
+func (x *DeclaredTriggerSchedule) GetDeadline() int64 {
+	if x != nil {
+		return x.Deadline
+	}
+	return 0
+}
+
+func (x *DeclaredTriggerSchedule) GetInputJson() string {
+	if x != nil {
+		return x.InputJson
+	}
+	return ""
+}
+
+// TriggerDelegationReference is one delegation reference as an operator binds
+// it to a declared release's triggers: the value to write in the release's
+// trigger identity, which module and binding it confers, whose authority it
+// carries, what it allows, and whether it is still live.
+type TriggerDelegationReference struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// reference is what a release's trigger names as its source_delegation. It
+	// is the connected source's id, because the host resolves the active
+	// delegation from it on every mint — so a reference never names a revoked
+	// row and a reconnect does not invalidate what an operator installed.
+	Reference string `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
+	// delegation_id is the row the reference resolved to at read time. It is
+	// deliberately not the reference: a reconnect replaces the row.
+	DelegationId string `protobuf:"bytes,2,opt,name=delegation_id,json=delegationId,proto3" json:"delegation_id,omitempty"`
+	// module is the consuming module's registration prefix and binding the key
+	// of its operation_audiences entry whose source_delegation_scopes this
+	// delegation confers.
+	Module   string `protobuf:"bytes,3,opt,name=module,proto3" json:"module,omitempty"`
+	Binding  string `protobuf:"bytes,4,opt,name=binding,proto3" json:"binding,omitempty"`
+	Audience string `protobuf:"bytes,5,opt,name=audience,proto3" json:"audience,omitempty"`
+	// tenant is the organization an occurrence acts in and owner_principal_id
+	// the person whose authority it carries. Neither is a caller's to choose:
+	// both are read off the delegation.
+	Tenant           string `protobuf:"bytes,6,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	OwnerPrincipalId string `protobuf:"bytes,7,opt,name=owner_principal_id,json=ownerPrincipalId,proto3" json:"owner_principal_id,omitempty"`
+	// scopes is what occurrences may do, as `kind:action[:resource]` — exactly
+	// the binding's declared delegation scopes, and never the module's own
+	// authority.
+	Scopes    []string               `protobuf:"bytes,8,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	Active    bool                   `protobuf:"varint,9,opt,name=active,proto3" json:"active,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// revoked_at is unset while the delegation is active.
+	RevokedAt     *timestamppb.Timestamp     `protobuf:"bytes,11,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	Revocation    SourceDelegationRevocation `protobuf:"varint,12,opt,name=revocation,proto3,enum=saas.accounts.v1.SourceDelegationRevocation" json:"revocation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerDelegationReference) Reset() {
+	*x = TriggerDelegationReference{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerDelegationReference) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerDelegationReference) ProtoMessage() {}
+
+func (x *TriggerDelegationReference) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerDelegationReference.ProtoReflect.Descriptor instead.
+func (*TriggerDelegationReference) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *TriggerDelegationReference) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *TriggerDelegationReference) GetDelegationId() string {
+	if x != nil {
+		return x.DelegationId
+	}
+	return ""
+}
+
+func (x *TriggerDelegationReference) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *TriggerDelegationReference) GetBinding() string {
+	if x != nil {
+		return x.Binding
+	}
+	return ""
+}
+
+func (x *TriggerDelegationReference) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+func (x *TriggerDelegationReference) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *TriggerDelegationReference) GetOwnerPrincipalId() string {
+	if x != nil {
+		return x.OwnerPrincipalId
+	}
+	return ""
+}
+
+func (x *TriggerDelegationReference) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+func (x *TriggerDelegationReference) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *TriggerDelegationReference) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *TriggerDelegationReference) GetRevokedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return nil
+}
+
+func (x *TriggerDelegationReference) GetRevocation() SourceDelegationRevocation {
+	if x != nil {
+		return x.Revocation
+	}
+	return SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_UNSPECIFIED
+}
+
+// TriggerChildContext is one child Work Context this host minted against a
+// reference: one occurrence's identity, as the audit trail recorded it. The
+// host keeps no other record — a capability lives about a minute and nothing
+// caches one.
+type TriggerChildContext struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	DelegationId string                 `protobuf:"bytes,1,opt,name=delegation_id,json=delegationId,proto3" json:"delegation_id,omitempty"`
+	Module       string                 `protobuf:"bytes,2,opt,name=module,proto3" json:"module,omitempty"`
+	Binding      string                 `protobuf:"bytes,3,opt,name=binding,proto3" json:"binding,omitempty"`
+	Audience     string                 `protobuf:"bytes,4,opt,name=audience,proto3" json:"audience,omitempty"`
+	Scopes       []string               `protobuf:"bytes,5,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	// lookup says the capability could only recover an effect's receipt rather
+	// than produce the effect.
+	Lookup   bool                   `protobuf:"varint,6,opt,name=lookup,proto3" json:"lookup,omitempty"`
+	MintedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=minted_at,json=mintedAt,proto3" json:"minted_at,omitempty"`
+	// record is the trail row this child was read from. A child has no identity
+	// of its own — nothing stores a capability — so the record of the mint is
+	// what one is identified by.
+	Record        string `protobuf:"bytes,8,opt,name=record,proto3" json:"record,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerChildContext) Reset() {
+	*x = TriggerChildContext{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerChildContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerChildContext) ProtoMessage() {}
+
+func (x *TriggerChildContext) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerChildContext.ProtoReflect.Descriptor instead.
+func (*TriggerChildContext) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *TriggerChildContext) GetDelegationId() string {
+	if x != nil {
+		return x.DelegationId
+	}
+	return ""
+}
+
+func (x *TriggerChildContext) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *TriggerChildContext) GetBinding() string {
+	if x != nil {
+		return x.Binding
+	}
+	return ""
+}
+
+func (x *TriggerChildContext) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+func (x *TriggerChildContext) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+func (x *TriggerChildContext) GetLookup() bool {
+	if x != nil {
+		return x.Lookup
+	}
+	return false
+}
+
+func (x *TriggerChildContext) GetMintedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.MintedAt
+	}
+	return nil
+}
+
+func (x *TriggerChildContext) GetRecord() string {
+	if x != nil {
+		return x.Record
+	}
+	return ""
+}
+
+// SourceTriggerDeclaration is the reconcile schedule this host declares for
+// one source, as the trigger a declared release carries. The host fires
+// nothing on it: the source's reconcile_interval is the configuration that
+// re-declares the trigger, and an executing module owns the clock, the
+// occurrences and their cursor.
+type SourceTriggerDeclaration struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// release is the kind-of-work name the declaration installs under, and
+	// operation the host operation an occurrence admits, by its method path.
+	Release   string `protobuf:"bytes,1,opt,name=release,proto3" json:"release,omitempty"`
+	Operation string `protobuf:"bytes,2,opt,name=operation,proto3" json:"operation,omitempty"`
+	// schedule and identity are unset when undeclarable_reason is set.
+	Schedule *DeclaredTriggerSchedule `protobuf:"bytes,3,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	Identity *TriggerIdentity         `protobuf:"bytes,4,opt,name=identity,proto3" json:"identity,omitempty"`
+	// digest fingerprints the declaration, so an interval edit is visibly a
+	// different declaration rather than the same one with different contents.
+	Digest string `protobuf:"bytes,5,opt,name=digest,proto3" json:"digest,omitempty"`
+	// last_occurrence_at is the most recent reconcile this host recorded for the
+	// source, whatever admitted it, and next_occurrence_at the next instant the
+	// declared cron comes due. The authoritative cursor belongs to the module
+	// that fires the trigger; this is what the declaration says, read back.
+	LastOccurrenceAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_occurrence_at,json=lastOccurrenceAt,proto3" json:"last_occurrence_at,omitempty"`
+	NextOccurrenceAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=next_occurrence_at,json=nextOccurrenceAt,proto3" json:"next_occurrence_at,omitempty"`
+	// undeclarable_reason says why this source declares no trigger at all: its
+	// schedule is disabled, or its interval is not one a five-field cron can
+	// express. Empty means the declaration above is complete.
+	UndeclarableReason string `protobuf:"bytes,8,opt,name=undeclarable_reason,json=undeclarableReason,proto3" json:"undeclarable_reason,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *SourceTriggerDeclaration) Reset() {
+	*x = SourceTriggerDeclaration{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceTriggerDeclaration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceTriggerDeclaration) ProtoMessage() {}
+
+func (x *SourceTriggerDeclaration) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceTriggerDeclaration.ProtoReflect.Descriptor instead.
+func (*SourceTriggerDeclaration) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *SourceTriggerDeclaration) GetRelease() string {
+	if x != nil {
+		return x.Release
+	}
+	return ""
+}
+
+func (x *SourceTriggerDeclaration) GetOperation() string {
+	if x != nil {
+		return x.Operation
+	}
+	return ""
+}
+
+func (x *SourceTriggerDeclaration) GetSchedule() *DeclaredTriggerSchedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
+func (x *SourceTriggerDeclaration) GetIdentity() *TriggerIdentity {
+	if x != nil {
+		return x.Identity
+	}
+	return nil
+}
+
+func (x *SourceTriggerDeclaration) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *SourceTriggerDeclaration) GetLastOccurrenceAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastOccurrenceAt
+	}
+	return nil
+}
+
+func (x *SourceTriggerDeclaration) GetNextOccurrenceAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextOccurrenceAt
+	}
+	return nil
+}
+
+func (x *SourceTriggerDeclaration) GetUndeclarableReason() string {
+	if x != nil {
+		return x.UndeclarableReason
+	}
+	return ""
+}
+
+type DelegateSourceTriggersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DelegateSourceTriggersRequest) Reset() {
+	*x = DelegateSourceTriggersRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DelegateSourceTriggersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DelegateSourceTriggersRequest) ProtoMessage() {}
+
+func (x *DelegateSourceTriggersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DelegateSourceTriggersRequest.ProtoReflect.Descriptor instead.
+func (*DelegateSourceTriggersRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *DelegateSourceTriggersRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *DelegateSourceTriggersRequest) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+type DelegateSourceTriggersResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// One reference per module binding that accepts delegations, by module
+	// prefix. Empty means no composed module declares one, so no release's
+	// triggers can name a reference here at all.
+	Delegations   []*TriggerDelegationReference `protobuf:"bytes,1,rep,name=delegations,proto3" json:"delegations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DelegateSourceTriggersResponse) Reset() {
+	*x = DelegateSourceTriggersResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DelegateSourceTriggersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DelegateSourceTriggersResponse) ProtoMessage() {}
+
+func (x *DelegateSourceTriggersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DelegateSourceTriggersResponse.ProtoReflect.Descriptor instead.
+func (*DelegateSourceTriggersResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *DelegateSourceTriggersResponse) GetDelegations() []*TriggerDelegationReference {
+	if x != nil {
+		return x.Delegations
+	}
+	return nil
+}
+
+type GetSourceTriggerDeclarationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSourceTriggerDeclarationRequest) Reset() {
+	*x = GetSourceTriggerDeclarationRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSourceTriggerDeclarationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSourceTriggerDeclarationRequest) ProtoMessage() {}
+
+func (x *GetSourceTriggerDeclarationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSourceTriggerDeclarationRequest.ProtoReflect.Descriptor instead.
+func (*GetSourceTriggerDeclarationRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *GetSourceTriggerDeclarationRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *GetSourceTriggerDeclarationRequest) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+type GetSourceTriggerDeclarationResponse struct {
+	state       protoimpl.MessageState    `protogen:"open.v1"`
+	Declaration *SourceTriggerDeclaration `protobuf:"bytes,1,opt,name=declaration,proto3" json:"declaration,omitempty"`
+	// delegations are the references an operator may bind to this source's
+	// triggers, revoked ones included, newest first.
+	Delegations []*TriggerDelegationReference `protobuf:"bytes,2,rep,name=delegations,proto3" json:"delegations,omitempty"`
+	// children are the child Work Contexts minted against those references,
+	// newest first and bounded to a recent window.
+	Children      []*TriggerChildContext `protobuf:"bytes,3,rep,name=children,proto3" json:"children,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSourceTriggerDeclarationResponse) Reset() {
+	*x = GetSourceTriggerDeclarationResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSourceTriggerDeclarationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSourceTriggerDeclarationResponse) ProtoMessage() {}
+
+func (x *GetSourceTriggerDeclarationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSourceTriggerDeclarationResponse.ProtoReflect.Descriptor instead.
+func (*GetSourceTriggerDeclarationResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *GetSourceTriggerDeclarationResponse) GetDeclaration() *SourceTriggerDeclaration {
+	if x != nil {
+		return x.Declaration
+	}
+	return nil
+}
+
+func (x *GetSourceTriggerDeclarationResponse) GetDelegations() []*TriggerDelegationReference {
+	if x != nil {
+		return x.Delegations
+	}
+	return nil
+}
+
+func (x *GetSourceTriggerDeclarationResponse) GetChildren() []*TriggerChildContext {
+	if x != nil {
+		return x.Children
+	}
+	return nil
+}
+
+type ReconcileSourceRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	OrgId    string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	SourceId string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	// effect_id is the effect identity this pass commits under, also accepted in
+	// the effect-id header. Two passes under one identity are one pass.
+	EffectId      string `protobuf:"bytes,3,opt,name=effect_id,json=effectId,proto3" json:"effect_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReconcileSourceRequest) Reset() {
+	*x = ReconcileSourceRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[74]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReconcileSourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReconcileSourceRequest) ProtoMessage() {}
+
+func (x *ReconcileSourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[74]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReconcileSourceRequest.ProtoReflect.Descriptor instead.
+func (*ReconcileSourceRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{74}
+}
+
+func (x *ReconcileSourceRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ReconcileSourceRequest) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *ReconcileSourceRequest) GetEffectId() string {
+	if x != nil {
+		return x.EffectId
+	}
+	return ""
+}
+
+type ReconcileSourceResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	EffectId string                 `protobuf:"bytes,1,opt,name=effect_id,json=effectId,proto3" json:"effect_id,omitempty"`
+	// status is "committed" when this pass is recorded, "unknown" when a
+	// recovery found no receipt for the effect.
+	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	// job_id traces the work this pass handed to the source's own sync engine.
+	// Empty when the pass committed nothing to trace — a recovered receipt with
+	// no job, or a source whose schedule is disabled.
+	JobId         string `protobuf:"bytes,3,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReconcileSourceResponse) Reset() {
+	*x = ReconcileSourceResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[75]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReconcileSourceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReconcileSourceResponse) ProtoMessage() {}
+
+func (x *ReconcileSourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[75]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReconcileSourceResponse.ProtoReflect.Descriptor instead.
+func (*ReconcileSourceResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{75}
+}
+
+func (x *ReconcileSourceResponse) GetEffectId() string {
+	if x != nil {
+		return x.EffectId
+	}
+	return ""
+}
+
+func (x *ReconcileSourceResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ReconcileSourceResponse) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+type LookupReconcileSourceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EffectId      string                 `protobuf:"bytes,1,opt,name=effect_id,json=effectId,proto3" json:"effect_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LookupReconcileSourceRequest) Reset() {
+	*x = LookupReconcileSourceRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[76]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupReconcileSourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupReconcileSourceRequest) ProtoMessage() {}
+
+func (x *LookupReconcileSourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[76]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupReconcileSourceRequest.ProtoReflect.Descriptor instead.
+func (*LookupReconcileSourceRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{76}
+}
+
+func (x *LookupReconcileSourceRequest) GetEffectId() string {
+	if x != nil {
+		return x.EffectId
+	}
+	return ""
+}
+
 // DatasourceService is the tenant-facing surface a solution drives (directly or
 // through the generated SDK) to declare and operate connected datasources.
 // SourceOperation is an admitted route and bounded JSON contract, never a credential.
@@ -5507,7 +6450,7 @@ type SourceOperation struct {
 
 func (x *SourceOperation) Reset() {
 	*x = SourceOperation{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[65]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5519,7 +6462,7 @@ func (x *SourceOperation) String() string {
 func (*SourceOperation) ProtoMessage() {}
 
 func (x *SourceOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[65]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5532,7 +6475,7 @@ func (x *SourceOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceOperation.ProtoReflect.Descriptor instead.
 func (*SourceOperation) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{65}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *SourceOperation) GetName() string {
@@ -5616,7 +6559,7 @@ type DeclareSourceOperationsRequest struct {
 
 func (x *DeclareSourceOperationsRequest) Reset() {
 	*x = DeclareSourceOperationsRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[66]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5628,7 +6571,7 @@ func (x *DeclareSourceOperationsRequest) String() string {
 func (*DeclareSourceOperationsRequest) ProtoMessage() {}
 
 func (x *DeclareSourceOperationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[66]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5641,7 +6584,7 @@ func (x *DeclareSourceOperationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclareSourceOperationsRequest.ProtoReflect.Descriptor instead.
 func (*DeclareSourceOperationsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{66}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *DeclareSourceOperationsRequest) GetOrgId() string {
@@ -5674,7 +6617,7 @@ type DeclareSourceOperationsResponse struct {
 
 func (x *DeclareSourceOperationsResponse) Reset() {
 	*x = DeclareSourceOperationsResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[67]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5686,7 +6629,7 @@ func (x *DeclareSourceOperationsResponse) String() string {
 func (*DeclareSourceOperationsResponse) ProtoMessage() {}
 
 func (x *DeclareSourceOperationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[67]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5699,7 +6642,7 @@ func (x *DeclareSourceOperationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclareSourceOperationsResponse.ProtoReflect.Descriptor instead.
 func (*DeclareSourceOperationsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{67}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *DeclareSourceOperationsResponse) GetOperations() []*SourceOperation {
@@ -5719,7 +6662,7 @@ type ListSourceOperationsRequest struct {
 
 func (x *ListSourceOperationsRequest) Reset() {
 	*x = ListSourceOperationsRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[68]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5731,7 +6674,7 @@ func (x *ListSourceOperationsRequest) String() string {
 func (*ListSourceOperationsRequest) ProtoMessage() {}
 
 func (x *ListSourceOperationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[68]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5744,7 +6687,7 @@ func (x *ListSourceOperationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSourceOperationsRequest.ProtoReflect.Descriptor instead.
 func (*ListSourceOperationsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{68}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ListSourceOperationsRequest) GetOrgId() string {
@@ -5770,7 +6713,7 @@ type ListSourceOperationsResponse struct {
 
 func (x *ListSourceOperationsResponse) Reset() {
 	*x = ListSourceOperationsResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[69]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5782,7 +6725,7 @@ func (x *ListSourceOperationsResponse) String() string {
 func (*ListSourceOperationsResponse) ProtoMessage() {}
 
 func (x *ListSourceOperationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[69]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5795,7 +6738,7 @@ func (x *ListSourceOperationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSourceOperationsResponse.ProtoReflect.Descriptor instead.
 func (*ListSourceOperationsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{69}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *ListSourceOperationsResponse) GetOperations() []*SourceOperation {
@@ -5820,7 +6763,7 @@ type InvokeSourceOperationRequest struct {
 
 func (x *InvokeSourceOperationRequest) Reset() {
 	*x = InvokeSourceOperationRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[70]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5832,7 +6775,7 @@ func (x *InvokeSourceOperationRequest) String() string {
 func (*InvokeSourceOperationRequest) ProtoMessage() {}
 
 func (x *InvokeSourceOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[70]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5845,7 +6788,7 @@ func (x *InvokeSourceOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeSourceOperationRequest.ProtoReflect.Descriptor instead.
 func (*InvokeSourceOperationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{70}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *InvokeSourceOperationRequest) GetOrgId() string {
@@ -5897,7 +6840,7 @@ type SourceOperationReceipt struct {
 
 func (x *SourceOperationReceipt) Reset() {
 	*x = SourceOperationReceipt{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[71]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5909,7 +6852,7 @@ func (x *SourceOperationReceipt) String() string {
 func (*SourceOperationReceipt) ProtoMessage() {}
 
 func (x *SourceOperationReceipt) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[71]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5922,7 +6865,7 @@ func (x *SourceOperationReceipt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceOperationReceipt.ProtoReflect.Descriptor instead.
 func (*SourceOperationReceipt) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{71}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *SourceOperationReceipt) GetEffectId() string {
@@ -5970,7 +6913,7 @@ type InvokeSourceOperationResponse struct {
 
 func (x *InvokeSourceOperationResponse) Reset() {
 	*x = InvokeSourceOperationResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[72]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5982,7 +6925,7 @@ func (x *InvokeSourceOperationResponse) String() string {
 func (*InvokeSourceOperationResponse) ProtoMessage() {}
 
 func (x *InvokeSourceOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[72]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5995,7 +6938,7 @@ func (x *InvokeSourceOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeSourceOperationResponse.ProtoReflect.Descriptor instead.
 func (*InvokeSourceOperationResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{72}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *InvokeSourceOperationResponse) GetOutputJson() string {
@@ -6023,7 +6966,7 @@ type LookupInvokeSourceOperationRequest struct {
 
 func (x *LookupInvokeSourceOperationRequest) Reset() {
 	*x = LookupInvokeSourceOperationRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[73]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6035,7 +6978,7 @@ func (x *LookupInvokeSourceOperationRequest) String() string {
 func (*LookupInvokeSourceOperationRequest) ProtoMessage() {}
 
 func (x *LookupInvokeSourceOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[73]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6048,7 +6991,7 @@ func (x *LookupInvokeSourceOperationRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use LookupInvokeSourceOperationRequest.ProtoReflect.Descriptor instead.
 func (*LookupInvokeSourceOperationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{73}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *LookupInvokeSourceOperationRequest) GetEffectId() string {
@@ -6070,7 +7013,7 @@ type PruneSourceOperationReceiptsRequest struct {
 
 func (x *PruneSourceOperationReceiptsRequest) Reset() {
 	*x = PruneSourceOperationReceiptsRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[74]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6082,7 +7025,7 @@ func (x *PruneSourceOperationReceiptsRequest) String() string {
 func (*PruneSourceOperationReceiptsRequest) ProtoMessage() {}
 
 func (x *PruneSourceOperationReceiptsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[74]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6095,7 +7038,7 @@ func (x *PruneSourceOperationReceiptsRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use PruneSourceOperationReceiptsRequest.ProtoReflect.Descriptor instead.
 func (*PruneSourceOperationReceiptsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{74}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *PruneSourceOperationReceiptsRequest) GetOrgId() string {
@@ -6130,7 +7073,7 @@ type PruneSourceOperationReceiptsResponse struct {
 
 func (x *PruneSourceOperationReceiptsResponse) Reset() {
 	*x = PruneSourceOperationReceiptsResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[75]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6142,7 +7085,7 @@ func (x *PruneSourceOperationReceiptsResponse) String() string {
 func (*PruneSourceOperationReceiptsResponse) ProtoMessage() {}
 
 func (x *PruneSourceOperationReceiptsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[75]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6155,7 +7098,7 @@ func (x *PruneSourceOperationReceiptsResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use PruneSourceOperationReceiptsResponse.ProtoReflect.Descriptor instead.
 func (*PruneSourceOperationReceiptsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{75}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *PruneSourceOperationReceiptsResponse) GetEffectId() string {
@@ -6188,7 +7131,7 @@ type LookupPruneSourceOperationReceiptsRequest struct {
 
 func (x *LookupPruneSourceOperationReceiptsRequest) Reset() {
 	*x = LookupPruneSourceOperationReceiptsRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[76]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6200,7 +7143,7 @@ func (x *LookupPruneSourceOperationReceiptsRequest) String() string {
 func (*LookupPruneSourceOperationReceiptsRequest) ProtoMessage() {}
 
 func (x *LookupPruneSourceOperationReceiptsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[76]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6213,7 +7156,7 @@ func (x *LookupPruneSourceOperationReceiptsRequest) ProtoReflect() protoreflect.
 
 // Deprecated: Use LookupPruneSourceOperationReceiptsRequest.ProtoReflect.Descriptor instead.
 func (*LookupPruneSourceOperationReceiptsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{76}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *LookupPruneSourceOperationReceiptsRequest) GetEffectId() string {
@@ -6588,7 +7531,79 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x1eRevokeSourceDelegationResponse\x12B\n" +
 	"\n" +
 	"delegation\x18\x01 \x01(\v2\".saas.accounts.v1.SourceDelegationR\n" +
-	"delegation\"\xd4\x03\n" +
+	"delegation\"C\n" +
+	"\x0fTriggerIdentity\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x18\n" +
+	"\abinding\x18\x02 \x01(\tR\abinding\"\xbd\x01\n" +
+	"\x17DeclaredTriggerSchedule\x12\x12\n" +
+	"\x04cron\x18\x01 \x01(\tR\x04cron\x12\x1a\n" +
+	"\btimezone\x18\x02 \x01(\tR\btimezone\x12\x1d\n" +
+	"\n" +
+	"missed_run\x18\x03 \x01(\tR\tmissedRun\x12\x18\n" +
+	"\aoverlap\x18\x04 \x01(\tR\aoverlap\x12\x1a\n" +
+	"\bdeadline\x18\x05 \x01(\x03R\bdeadline\x12\x1d\n" +
+	"\n" +
+	"input_json\x18\x06 \x01(\tR\tinputJson\"\xe7\x03\n" +
+	"\x1aTriggerDelegationReference\x12\x1c\n" +
+	"\treference\x18\x01 \x01(\tR\treference\x12#\n" +
+	"\rdelegation_id\x18\x02 \x01(\tR\fdelegationId\x12\x16\n" +
+	"\x06module\x18\x03 \x01(\tR\x06module\x12\x18\n" +
+	"\abinding\x18\x04 \x01(\tR\abinding\x12\x1a\n" +
+	"\baudience\x18\x05 \x01(\tR\baudience\x12\x16\n" +
+	"\x06tenant\x18\x06 \x01(\tR\x06tenant\x12,\n" +
+	"\x12owner_principal_id\x18\a \x01(\tR\x10ownerPrincipalId\x12\x16\n" +
+	"\x06scopes\x18\b \x03(\tR\x06scopes\x12\x16\n" +
+	"\x06active\x18\t \x01(\bR\x06active\x129\n" +
+	"\n" +
+	"created_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"revoked_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12L\n" +
+	"\n" +
+	"revocation\x18\f \x01(\x0e2,.saas.accounts.v1.SourceDelegationRevocationR\n" +
+	"revocation\"\x89\x02\n" +
+	"\x13TriggerChildContext\x12#\n" +
+	"\rdelegation_id\x18\x01 \x01(\tR\fdelegationId\x12\x16\n" +
+	"\x06module\x18\x02 \x01(\tR\x06module\x12\x18\n" +
+	"\abinding\x18\x03 \x01(\tR\abinding\x12\x1a\n" +
+	"\baudience\x18\x04 \x01(\tR\baudience\x12\x16\n" +
+	"\x06scopes\x18\x05 \x03(\tR\x06scopes\x12\x16\n" +
+	"\x06lookup\x18\x06 \x01(\bR\x06lookup\x127\n" +
+	"\tminted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bmintedAt\x12\x16\n" +
+	"\x06record\x18\b \x01(\tR\x06record\"\xb5\x03\n" +
+	"\x18SourceTriggerDeclaration\x12\x18\n" +
+	"\arelease\x18\x01 \x01(\tR\arelease\x12\x1c\n" +
+	"\toperation\x18\x02 \x01(\tR\toperation\x12E\n" +
+	"\bschedule\x18\x03 \x01(\v2).saas.accounts.v1.DeclaredTriggerScheduleR\bschedule\x12=\n" +
+	"\bidentity\x18\x04 \x01(\v2!.saas.accounts.v1.TriggerIdentityR\bidentity\x12\x16\n" +
+	"\x06digest\x18\x05 \x01(\tR\x06digest\x12H\n" +
+	"\x12last_occurrence_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x10lastOccurrenceAt\x12H\n" +
+	"\x12next_occurrence_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x10nextOccurrenceAt\x12/\n" +
+	"\x13undeclarable_reason\x18\b \x01(\tR\x12undeclarableReason\"g\n" +
+	"\x1dDelegateSourceTriggersRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12%\n" +
+	"\tsource_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\"p\n" +
+	"\x1eDelegateSourceTriggersResponse\x12N\n" +
+	"\vdelegations\x18\x01 \x03(\v2,.saas.accounts.v1.TriggerDelegationReferenceR\vdelegations\"l\n" +
+	"\"GetSourceTriggerDeclarationRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12%\n" +
+	"\tsource_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\"\x86\x02\n" +
+	"#GetSourceTriggerDeclarationResponse\x12L\n" +
+	"\vdeclaration\x18\x01 \x01(\v2*.saas.accounts.v1.SourceTriggerDeclarationR\vdeclaration\x12N\n" +
+	"\vdelegations\x18\x02 \x03(\v2,.saas.accounts.v1.TriggerDelegationReferenceR\vdelegations\x12A\n" +
+	"\bchildren\x18\x03 \x03(\v2%.saas.accounts.v1.TriggerChildContextR\bchildren\"\x89\x01\n" +
+	"\x16ReconcileSourceRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12%\n" +
+	"\tsource_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\x12'\n" +
+	"\teffect_id\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\beffectId\"e\n" +
+	"\x17ReconcileSourceResponse\x12\x1b\n" +
+	"\teffect_id\x18\x01 \x01(\tR\beffectId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x15\n" +
+	"\x06job_id\x18\x03 \x01(\tR\x05jobId\"G\n" +
+	"\x1cLookupReconcileSourceRequest\x12'\n" +
+	"\teffect_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\beffectId\"\xd4\x03\n" +
 	"\x0fSourceOperation\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x16\n" +
@@ -6729,7 +7744,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"+SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED\x10\x04\x120\n" +
 	",SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST\x10\x05\x12.\n" +
 	"*SOURCE_DELEGATION_REVOCATION_USER_INACTIVE\x10\x06\x120\n" +
-	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\x9e0\n" +
+	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\x898\n" +
 	"\x11DatasourceService\x12\xb9\x03\n" +
 	"\x1cPruneSourceOperationReceipts\x125.saas.accounts.v1.PruneSourceOperationReceiptsRequest\x1a6.saas.accounts.v1.PruneSourceOperationReceiptsResponse\"\xa9\x02\xc2\xf3\x18l\b\x02\x10\x03\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +
 	"\tsource_id\x10\x04\x18\x030\x01:#\n" +
@@ -6811,7 +7826,20 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xc7\x01\n" +
 	"\x16RevokeSourceDelegation\x12/.saas.accounts.v1.RevokeSourceDelegationRequest\x1a0.saas.accounts.v1.RevokeSourceDelegationResponse\"J\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
-	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01B\xb7\x01\n" +
+	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xeb\x01\n" +
+	"\x16DelegateSourceTriggers\x12/.saas.accounts.v1.DelegateSourceTriggersRequest\x1a0.saas.accounts.v1.DelegateSourceTriggersResponse\"n\xc2\xf3\x18j\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:J\n" +
+	"\"saas.datasource.delegation.created\n" +
+	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xb2\x01\n" +
+	"\x1bGetSourceTriggerDeclaration\x124.saas.accounts.v1.GetSourceTriggerDeclarationRequest\x1a5.saas.accounts.v1.GetSourceTriggerDeclarationResponse\"&\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\x83\x03\n" +
+	"\x0fReconcileSource\x12(.saas.accounts.v1.ReconcileSourceRequest\x1a).saas.accounts.v1.ReconcileSourceResponse\"\x9a\x02\xc2\xf3\x18j\b\x02\x10\x03\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +
+	"\tsource_id\x10\x04\x18\x030\x01:!\n" +
+	"\x1dsaas.datasource.source.synced\x10\x02@\x03H\x04P\x02X\x02`\x01\xda\xf3\x18\xa7\x01\n" +
+	"\x02\b<\x12\x03\b\xd8\x04\x18\x05\"\x02\b\x02*\vUNAVAILABLE*\x12RESOURCE_EXHAUSTED*\aABORTED2\x0fsaas-datasourceJ9/saas.accounts.v1.DatasourceService/LookupReconcileSourceP\x80 X\x80 `\x01r\x18\n" +
+	"\x06source\x12\x06invoke\x12\x04read\x18\x01\x12\xbf\x01\n" +
+	"\x15LookupReconcileSource\x12..saas.accounts.v1.LookupReconcileSourceRequest\x1a).saas.accounts.v1.ReconcileSourceResponse\"K\xc2\xf3\x18G\b\x02\x10\x03\x1a\x0fdatasource:read\"\x0fdatasource:read*\x0f\n" +
+	"\teffect_id\x10\x04\x18\x030\x01:\x02\x10\x01@\x01H\x03P\x02X\x02`\x01B\xb7\x01\n" +
 	"\x14com.saas.accounts.v1B\x0fDatasourceProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -6827,7 +7855,7 @@ func file_saas_accounts_v1_datasource_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_datasource_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
-var file_saas_accounts_v1_datasource_proto_msgTypes = make([]protoimpl.MessageInfo, 77)
+var file_saas_accounts_v1_datasource_proto_msgTypes = make([]protoimpl.MessageInfo, 89)
 var file_saas_accounts_v1_datasource_proto_goTypes = []any{
 	(DatasourceProvider)(0),                           // 0: saas.accounts.v1.DatasourceProvider
 	(DatasourceStatus)(0),                             // 1: saas.accounts.v1.DatasourceStatus
@@ -6908,23 +7936,35 @@ var file_saas_accounts_v1_datasource_proto_goTypes = []any{
 	(*ListSourceDelegationsResponse)(nil),             // 76: saas.accounts.v1.ListSourceDelegationsResponse
 	(*RevokeSourceDelegationRequest)(nil),             // 77: saas.accounts.v1.RevokeSourceDelegationRequest
 	(*RevokeSourceDelegationResponse)(nil),            // 78: saas.accounts.v1.RevokeSourceDelegationResponse
-	(*SourceOperation)(nil),                           // 79: saas.accounts.v1.SourceOperation
-	(*DeclareSourceOperationsRequest)(nil),            // 80: saas.accounts.v1.DeclareSourceOperationsRequest
-	(*DeclareSourceOperationsResponse)(nil),           // 81: saas.accounts.v1.DeclareSourceOperationsResponse
-	(*ListSourceOperationsRequest)(nil),               // 82: saas.accounts.v1.ListSourceOperationsRequest
-	(*ListSourceOperationsResponse)(nil),              // 83: saas.accounts.v1.ListSourceOperationsResponse
-	(*InvokeSourceOperationRequest)(nil),              // 84: saas.accounts.v1.InvokeSourceOperationRequest
-	(*SourceOperationReceipt)(nil),                    // 85: saas.accounts.v1.SourceOperationReceipt
-	(*InvokeSourceOperationResponse)(nil),             // 86: saas.accounts.v1.InvokeSourceOperationResponse
-	(*LookupInvokeSourceOperationRequest)(nil),        // 87: saas.accounts.v1.LookupInvokeSourceOperationRequest
-	(*PruneSourceOperationReceiptsRequest)(nil),       // 88: saas.accounts.v1.PruneSourceOperationReceiptsRequest
-	(*PruneSourceOperationReceiptsResponse)(nil),      // 89: saas.accounts.v1.PruneSourceOperationReceiptsResponse
-	(*LookupPruneSourceOperationReceiptsRequest)(nil), // 90: saas.accounts.v1.LookupPruneSourceOperationReceiptsRequest
-	(*timestamppb.Timestamp)(nil),                     // 91: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),                       // 92: google.protobuf.Duration
-	(v1.JobState)(0),                                  // 93: saas.jobs.v1.JobState
-	(*v1.JobExecutionReference)(nil),                  // 94: saas.jobs.v1.JobExecutionReference
-	(*structpb.Struct)(nil),                           // 95: google.protobuf.Struct
+	(*TriggerIdentity)(nil),                           // 79: saas.accounts.v1.TriggerIdentity
+	(*DeclaredTriggerSchedule)(nil),                   // 80: saas.accounts.v1.DeclaredTriggerSchedule
+	(*TriggerDelegationReference)(nil),                // 81: saas.accounts.v1.TriggerDelegationReference
+	(*TriggerChildContext)(nil),                       // 82: saas.accounts.v1.TriggerChildContext
+	(*SourceTriggerDeclaration)(nil),                  // 83: saas.accounts.v1.SourceTriggerDeclaration
+	(*DelegateSourceTriggersRequest)(nil),             // 84: saas.accounts.v1.DelegateSourceTriggersRequest
+	(*DelegateSourceTriggersResponse)(nil),            // 85: saas.accounts.v1.DelegateSourceTriggersResponse
+	(*GetSourceTriggerDeclarationRequest)(nil),        // 86: saas.accounts.v1.GetSourceTriggerDeclarationRequest
+	(*GetSourceTriggerDeclarationResponse)(nil),       // 87: saas.accounts.v1.GetSourceTriggerDeclarationResponse
+	(*ReconcileSourceRequest)(nil),                    // 88: saas.accounts.v1.ReconcileSourceRequest
+	(*ReconcileSourceResponse)(nil),                   // 89: saas.accounts.v1.ReconcileSourceResponse
+	(*LookupReconcileSourceRequest)(nil),              // 90: saas.accounts.v1.LookupReconcileSourceRequest
+	(*SourceOperation)(nil),                           // 91: saas.accounts.v1.SourceOperation
+	(*DeclareSourceOperationsRequest)(nil),            // 92: saas.accounts.v1.DeclareSourceOperationsRequest
+	(*DeclareSourceOperationsResponse)(nil),           // 93: saas.accounts.v1.DeclareSourceOperationsResponse
+	(*ListSourceOperationsRequest)(nil),               // 94: saas.accounts.v1.ListSourceOperationsRequest
+	(*ListSourceOperationsResponse)(nil),              // 95: saas.accounts.v1.ListSourceOperationsResponse
+	(*InvokeSourceOperationRequest)(nil),              // 96: saas.accounts.v1.InvokeSourceOperationRequest
+	(*SourceOperationReceipt)(nil),                    // 97: saas.accounts.v1.SourceOperationReceipt
+	(*InvokeSourceOperationResponse)(nil),             // 98: saas.accounts.v1.InvokeSourceOperationResponse
+	(*LookupInvokeSourceOperationRequest)(nil),        // 99: saas.accounts.v1.LookupInvokeSourceOperationRequest
+	(*PruneSourceOperationReceiptsRequest)(nil),       // 100: saas.accounts.v1.PruneSourceOperationReceiptsRequest
+	(*PruneSourceOperationReceiptsResponse)(nil),      // 101: saas.accounts.v1.PruneSourceOperationReceiptsResponse
+	(*LookupPruneSourceOperationReceiptsRequest)(nil), // 102: saas.accounts.v1.LookupPruneSourceOperationReceiptsRequest
+	(*timestamppb.Timestamp)(nil),                     // 103: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),                       // 104: google.protobuf.Duration
+	(v1.JobState)(0),                                  // 105: saas.jobs.v1.JobState
+	(*v1.JobExecutionReference)(nil),                  // 106: saas.jobs.v1.JobExecutionReference
+	(*structpb.Struct)(nil),                           // 107: google.protobuf.Struct
 }
 var file_saas_accounts_v1_datasource_proto_depIdxs = []int32{
 	12,  // 0: saas.accounts.v1.ApiOAuth2Config.grant:type_name -> saas.accounts.v1.ApiOAuth2Config.Grant
@@ -6933,15 +7973,15 @@ var file_saas_accounts_v1_datasource_proto_depIdxs = []int32{
 	0,   // 3: saas.accounts.v1.Datasource.provider:type_name -> saas.accounts.v1.DatasourceProvider
 	14,  // 4: saas.accounts.v1.Datasource.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
 	1,   // 5: saas.accounts.v1.Datasource.status:type_name -> saas.accounts.v1.DatasourceStatus
-	91,  // 6: saas.accounts.v1.Datasource.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 7: saas.accounts.v1.Datasource.updated_at:type_name -> google.protobuf.Timestamp
-	91,  // 8: saas.accounts.v1.Datasource.last_synced_at:type_name -> google.protobuf.Timestamp
+	103, // 6: saas.accounts.v1.Datasource.created_at:type_name -> google.protobuf.Timestamp
+	103, // 7: saas.accounts.v1.Datasource.updated_at:type_name -> google.protobuf.Timestamp
+	103, // 8: saas.accounts.v1.Datasource.last_synced_at:type_name -> google.protobuf.Timestamp
 	16,  // 9: saas.accounts.v1.Datasource.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
 	17,  // 10: saas.accounts.v1.Datasource.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
 	18,  // 11: saas.accounts.v1.Datasource.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
-	91,  // 12: saas.accounts.v1.Datasource.last_ingested_at:type_name -> google.protobuf.Timestamp
+	103, // 12: saas.accounts.v1.Datasource.last_ingested_at:type_name -> google.protobuf.Timestamp
 	2,   // 13: saas.accounts.v1.Datasource.live_delivery:type_name -> saas.accounts.v1.DatasourceLiveDelivery
-	92,  // 14: saas.accounts.v1.Datasource.reconcile_interval:type_name -> google.protobuf.Duration
+	104, // 14: saas.accounts.v1.Datasource.reconcile_interval:type_name -> google.protobuf.Duration
 	19,  // 15: saas.accounts.v1.AddGitHubSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
 	0,   // 16: saas.accounts.v1.AddSourceRequest.provider:type_name -> saas.accounts.v1.DatasourceProvider
 	14,  // 17: saas.accounts.v1.AddSourceRequest.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
@@ -6959,31 +7999,31 @@ var file_saas_accounts_v1_datasource_proto_depIdxs = []int32{
 	26,  // 29: saas.accounts.v1.GetDatasourceCatalogResponse.providers:type_name -> saas.accounts.v1.DatasourceProviderDescriptor
 	19,  // 30: saas.accounts.v1.ListSourcesResponse.datasources:type_name -> saas.accounts.v1.Datasource
 	19,  // 31: saas.accounts.v1.GetSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	93,  // 32: saas.accounts.v1.SourceSyncDelivery.state:type_name -> saas.jobs.v1.JobState
-	94,  // 33: saas.accounts.v1.SourceSyncDelivery.execution:type_name -> saas.jobs.v1.JobExecutionReference
+	105, // 32: saas.accounts.v1.SourceSyncDelivery.state:type_name -> saas.jobs.v1.JobState
+	106, // 33: saas.accounts.v1.SourceSyncDelivery.execution:type_name -> saas.jobs.v1.JobExecutionReference
 	8,   // 34: saas.accounts.v1.SourceSyncFailure.reason:type_name -> saas.accounts.v1.SourceSyncFailureReason
-	91,  // 35: saas.accounts.v1.SourceSyncFailure.retry_at:type_name -> google.protobuf.Timestamp
+	103, // 35: saas.accounts.v1.SourceSyncFailure.retry_at:type_name -> google.protobuf.Timestamp
 	7,   // 36: saas.accounts.v1.SourceSyncProgress.phase:type_name -> saas.accounts.v1.SourceSyncPhase
 	9,   // 37: saas.accounts.v1.SourceSyncProgress.trigger:type_name -> saas.accounts.v1.SourceSyncTrigger
-	91,  // 38: saas.accounts.v1.SourceSyncProgress.queued_at:type_name -> google.protobuf.Timestamp
-	91,  // 39: saas.accounts.v1.SourceSyncProgress.fetching_at:type_name -> google.protobuf.Timestamp
-	91,  // 40: saas.accounts.v1.SourceSyncProgress.compiled_at:type_name -> google.protobuf.Timestamp
-	91,  // 41: saas.accounts.v1.SourceSyncProgress.handed_off_at:type_name -> google.protobuf.Timestamp
-	91,  // 42: saas.accounts.v1.SourceSyncProgress.finished_at:type_name -> google.protobuf.Timestamp
+	103, // 38: saas.accounts.v1.SourceSyncProgress.queued_at:type_name -> google.protobuf.Timestamp
+	103, // 39: saas.accounts.v1.SourceSyncProgress.fetching_at:type_name -> google.protobuf.Timestamp
+	103, // 40: saas.accounts.v1.SourceSyncProgress.compiled_at:type_name -> google.protobuf.Timestamp
+	103, // 41: saas.accounts.v1.SourceSyncProgress.handed_off_at:type_name -> google.protobuf.Timestamp
+	103, // 42: saas.accounts.v1.SourceSyncProgress.finished_at:type_name -> google.protobuf.Timestamp
 	37,  // 43: saas.accounts.v1.SourceSyncProgress.changes:type_name -> saas.accounts.v1.SourceSyncChanges
 	38,  // 44: saas.accounts.v1.SourceSyncProgress.failure:type_name -> saas.accounts.v1.SourceSyncFailure
-	93,  // 45: saas.accounts.v1.GetSourceSyncResponse.state:type_name -> saas.jobs.v1.JobState
+	105, // 45: saas.accounts.v1.GetSourceSyncResponse.state:type_name -> saas.jobs.v1.JobState
 	36,  // 46: saas.accounts.v1.GetSourceSyncResponse.deliveries:type_name -> saas.accounts.v1.SourceSyncDelivery
 	39,  // 47: saas.accounts.v1.GetSourceSyncResponse.progress:type_name -> saas.accounts.v1.SourceSyncProgress
-	91,  // 48: saas.accounts.v1.BeginGitHubAppSetupResponse.expires_at:type_name -> google.protobuf.Timestamp
+	103, // 48: saas.accounts.v1.BeginGitHubAppSetupResponse.expires_at:type_name -> google.protobuf.Timestamp
 	43,  // 49: saas.accounts.v1.CompleteGitHubAppSetupResponse.repositories:type_name -> saas.accounts.v1.GitHubAppRepository
 	19,  // 50: saas.accounts.v1.MigrateGitHubSourceToAppResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	91,  // 51: saas.accounts.v1.DatasourceAccountLink.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 52: saas.accounts.v1.DatasourceGroupBinding.created_at:type_name -> google.protobuf.Timestamp
+	103, // 51: saas.accounts.v1.DatasourceAccountLink.created_at:type_name -> google.protobuf.Timestamp
+	103, // 52: saas.accounts.v1.DatasourceGroupBinding.created_at:type_name -> google.protobuf.Timestamp
 	10,  // 53: saas.accounts.v1.DatasourceVerifiedDomain.status:type_name -> saas.accounts.v1.DatasourceDomainStatus
-	91,  // 54: saas.accounts.v1.DatasourceVerifiedDomain.verified_at:type_name -> google.protobuf.Timestamp
-	91,  // 55: saas.accounts.v1.DatasourceVerifiedDomain.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 56: saas.accounts.v1.BeginDatasourceAccountLinkResponse.expires_at:type_name -> google.protobuf.Timestamp
+	103, // 54: saas.accounts.v1.DatasourceVerifiedDomain.verified_at:type_name -> google.protobuf.Timestamp
+	103, // 55: saas.accounts.v1.DatasourceVerifiedDomain.created_at:type_name -> google.protobuf.Timestamp
+	103, // 56: saas.accounts.v1.BeginDatasourceAccountLinkResponse.expires_at:type_name -> google.protobuf.Timestamp
 	50,  // 57: saas.accounts.v1.CompleteDatasourceAccountLinkResponse.link:type_name -> saas.accounts.v1.DatasourceAccountLink
 	50,  // 58: saas.accounts.v1.ListMyDatasourceAccountLinksResponse.links:type_name -> saas.accounts.v1.DatasourceAccountLink
 	50,  // 59: saas.accounts.v1.GetDatasourceDirectoryResponse.links:type_name -> saas.accounts.v1.DatasourceAccountLink
@@ -6993,81 +8033,101 @@ var file_saas_accounts_v1_datasource_proto_depIdxs = []int32{
 	51,  // 63: saas.accounts.v1.BindDatasourceGroupResponse.binding:type_name -> saas.accounts.v1.DatasourceGroupBinding
 	52,  // 64: saas.accounts.v1.ClaimDatasourceDomainResponse.domain:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
 	52,  // 65: saas.accounts.v1.VerifyDatasourceDomainResponse.domain:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
-	91,  // 66: saas.accounts.v1.SourceDelegation.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 67: saas.accounts.v1.SourceDelegation.revoked_at:type_name -> google.protobuf.Timestamp
+	103, // 66: saas.accounts.v1.SourceDelegation.created_at:type_name -> google.protobuf.Timestamp
+	103, // 67: saas.accounts.v1.SourceDelegation.revoked_at:type_name -> google.protobuf.Timestamp
 	11,  // 68: saas.accounts.v1.SourceDelegation.revocation:type_name -> saas.accounts.v1.SourceDelegationRevocation
 	74,  // 69: saas.accounts.v1.ListSourceDelegationsResponse.delegations:type_name -> saas.accounts.v1.SourceDelegation
 	74,  // 70: saas.accounts.v1.RevokeSourceDelegationResponse.delegation:type_name -> saas.accounts.v1.SourceDelegation
-	95,  // 71: saas.accounts.v1.SourceOperation.input_schema:type_name -> google.protobuf.Struct
-	95,  // 72: saas.accounts.v1.SourceOperation.output_schema:type_name -> google.protobuf.Struct
-	13,  // 73: saas.accounts.v1.SourceOperation.effect:type_name -> saas.accounts.v1.SourceOperation.Effect
-	79,  // 74: saas.accounts.v1.DeclareSourceOperationsRequest.operations:type_name -> saas.accounts.v1.SourceOperation
-	79,  // 75: saas.accounts.v1.DeclareSourceOperationsResponse.operations:type_name -> saas.accounts.v1.SourceOperation
-	79,  // 76: saas.accounts.v1.ListSourceOperationsResponse.operations:type_name -> saas.accounts.v1.SourceOperation
-	85,  // 77: saas.accounts.v1.InvokeSourceOperationResponse.receipt:type_name -> saas.accounts.v1.SourceOperationReceipt
-	88,  // 78: saas.accounts.v1.DatasourceService.PruneSourceOperationReceipts:input_type -> saas.accounts.v1.PruneSourceOperationReceiptsRequest
-	90,  // 79: saas.accounts.v1.DatasourceService.LookupPruneSourceOperationReceipts:input_type -> saas.accounts.v1.LookupPruneSourceOperationReceiptsRequest
-	84,  // 80: saas.accounts.v1.DatasourceService.InvokeSourceOperation:input_type -> saas.accounts.v1.InvokeSourceOperationRequest
-	87,  // 81: saas.accounts.v1.DatasourceService.LookupInvokeSourceOperation:input_type -> saas.accounts.v1.LookupInvokeSourceOperationRequest
-	82,  // 82: saas.accounts.v1.DatasourceService.ListSourceOperations:input_type -> saas.accounts.v1.ListSourceOperationsRequest
-	80,  // 83: saas.accounts.v1.DatasourceService.DeclareSourceOperations:input_type -> saas.accounts.v1.DeclareSourceOperationsRequest
-	20,  // 84: saas.accounts.v1.DatasourceService.AddGitHubSource:input_type -> saas.accounts.v1.AddGitHubSourceRequest
-	22,  // 85: saas.accounts.v1.DatasourceService.AddSource:input_type -> saas.accounts.v1.AddSourceRequest
-	27,  // 86: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:input_type -> saas.accounts.v1.GetDatasourceCatalogRequest
-	29,  // 87: saas.accounts.v1.DatasourceService.ListSources:input_type -> saas.accounts.v1.ListSourcesRequest
-	31,  // 88: saas.accounts.v1.DatasourceService.GetSource:input_type -> saas.accounts.v1.GetSourceRequest
-	33,  // 89: saas.accounts.v1.DatasourceService.SyncSource:input_type -> saas.accounts.v1.SyncSourceRequest
-	35,  // 90: saas.accounts.v1.DatasourceService.GetSourceSync:input_type -> saas.accounts.v1.GetSourceSyncRequest
-	41,  // 91: saas.accounts.v1.DatasourceService.DeleteSource:input_type -> saas.accounts.v1.DeleteSourceRequest
-	44,  // 92: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:input_type -> saas.accounts.v1.BeginGitHubAppSetupRequest
-	46,  // 93: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:input_type -> saas.accounts.v1.CompleteGitHubAppSetupRequest
-	48,  // 94: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:input_type -> saas.accounts.v1.MigrateGitHubSourceToAppRequest
-	54,  // 95: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:input_type -> saas.accounts.v1.BeginDatasourceAccountLinkRequest
-	56,  // 96: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:input_type -> saas.accounts.v1.CompleteDatasourceAccountLinkRequest
-	58,  // 97: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:input_type -> saas.accounts.v1.ListMyDatasourceAccountLinksRequest
-	60,  // 98: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:input_type -> saas.accounts.v1.DeleteDatasourceAccountLinkRequest
-	62,  // 99: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:input_type -> saas.accounts.v1.GetDatasourceDirectoryRequest
-	64,  // 100: saas.accounts.v1.DatasourceService.BindDatasourceGroup:input_type -> saas.accounts.v1.BindDatasourceGroupRequest
-	66,  // 101: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:input_type -> saas.accounts.v1.UnbindDatasourceGroupRequest
-	68,  // 102: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:input_type -> saas.accounts.v1.ClaimDatasourceDomainRequest
-	70,  // 103: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:input_type -> saas.accounts.v1.VerifyDatasourceDomainRequest
-	72,  // 104: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:input_type -> saas.accounts.v1.DeleteDatasourceDomainRequest
-	75,  // 105: saas.accounts.v1.DatasourceService.ListSourceDelegations:input_type -> saas.accounts.v1.ListSourceDelegationsRequest
-	77,  // 106: saas.accounts.v1.DatasourceService.RevokeSourceDelegation:input_type -> saas.accounts.v1.RevokeSourceDelegationRequest
-	89,  // 107: saas.accounts.v1.DatasourceService.PruneSourceOperationReceipts:output_type -> saas.accounts.v1.PruneSourceOperationReceiptsResponse
-	89,  // 108: saas.accounts.v1.DatasourceService.LookupPruneSourceOperationReceipts:output_type -> saas.accounts.v1.PruneSourceOperationReceiptsResponse
-	86,  // 109: saas.accounts.v1.DatasourceService.InvokeSourceOperation:output_type -> saas.accounts.v1.InvokeSourceOperationResponse
-	86,  // 110: saas.accounts.v1.DatasourceService.LookupInvokeSourceOperation:output_type -> saas.accounts.v1.InvokeSourceOperationResponse
-	83,  // 111: saas.accounts.v1.DatasourceService.ListSourceOperations:output_type -> saas.accounts.v1.ListSourceOperationsResponse
-	81,  // 112: saas.accounts.v1.DatasourceService.DeclareSourceOperations:output_type -> saas.accounts.v1.DeclareSourceOperationsResponse
-	21,  // 113: saas.accounts.v1.DatasourceService.AddGitHubSource:output_type -> saas.accounts.v1.AddGitHubSourceResponse
-	23,  // 114: saas.accounts.v1.DatasourceService.AddSource:output_type -> saas.accounts.v1.AddSourceResponse
-	28,  // 115: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:output_type -> saas.accounts.v1.GetDatasourceCatalogResponse
-	30,  // 116: saas.accounts.v1.DatasourceService.ListSources:output_type -> saas.accounts.v1.ListSourcesResponse
-	32,  // 117: saas.accounts.v1.DatasourceService.GetSource:output_type -> saas.accounts.v1.GetSourceResponse
-	34,  // 118: saas.accounts.v1.DatasourceService.SyncSource:output_type -> saas.accounts.v1.SyncSourceResponse
-	40,  // 119: saas.accounts.v1.DatasourceService.GetSourceSync:output_type -> saas.accounts.v1.GetSourceSyncResponse
-	42,  // 120: saas.accounts.v1.DatasourceService.DeleteSource:output_type -> saas.accounts.v1.DeleteSourceResponse
-	45,  // 121: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:output_type -> saas.accounts.v1.BeginGitHubAppSetupResponse
-	47,  // 122: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:output_type -> saas.accounts.v1.CompleteGitHubAppSetupResponse
-	49,  // 123: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:output_type -> saas.accounts.v1.MigrateGitHubSourceToAppResponse
-	55,  // 124: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:output_type -> saas.accounts.v1.BeginDatasourceAccountLinkResponse
-	57,  // 125: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:output_type -> saas.accounts.v1.CompleteDatasourceAccountLinkResponse
-	59,  // 126: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:output_type -> saas.accounts.v1.ListMyDatasourceAccountLinksResponse
-	61,  // 127: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:output_type -> saas.accounts.v1.DeleteDatasourceAccountLinkResponse
-	63,  // 128: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:output_type -> saas.accounts.v1.GetDatasourceDirectoryResponse
-	65,  // 129: saas.accounts.v1.DatasourceService.BindDatasourceGroup:output_type -> saas.accounts.v1.BindDatasourceGroupResponse
-	67,  // 130: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:output_type -> saas.accounts.v1.UnbindDatasourceGroupResponse
-	69,  // 131: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:output_type -> saas.accounts.v1.ClaimDatasourceDomainResponse
-	71,  // 132: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:output_type -> saas.accounts.v1.VerifyDatasourceDomainResponse
-	73,  // 133: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:output_type -> saas.accounts.v1.DeleteDatasourceDomainResponse
-	76,  // 134: saas.accounts.v1.DatasourceService.ListSourceDelegations:output_type -> saas.accounts.v1.ListSourceDelegationsResponse
-	78,  // 135: saas.accounts.v1.DatasourceService.RevokeSourceDelegation:output_type -> saas.accounts.v1.RevokeSourceDelegationResponse
-	107, // [107:136] is the sub-list for method output_type
-	78,  // [78:107] is the sub-list for method input_type
-	78,  // [78:78] is the sub-list for extension type_name
-	78,  // [78:78] is the sub-list for extension extendee
-	0,   // [0:78] is the sub-list for field type_name
+	103, // 71: saas.accounts.v1.TriggerDelegationReference.created_at:type_name -> google.protobuf.Timestamp
+	103, // 72: saas.accounts.v1.TriggerDelegationReference.revoked_at:type_name -> google.protobuf.Timestamp
+	11,  // 73: saas.accounts.v1.TriggerDelegationReference.revocation:type_name -> saas.accounts.v1.SourceDelegationRevocation
+	103, // 74: saas.accounts.v1.TriggerChildContext.minted_at:type_name -> google.protobuf.Timestamp
+	80,  // 75: saas.accounts.v1.SourceTriggerDeclaration.schedule:type_name -> saas.accounts.v1.DeclaredTriggerSchedule
+	79,  // 76: saas.accounts.v1.SourceTriggerDeclaration.identity:type_name -> saas.accounts.v1.TriggerIdentity
+	103, // 77: saas.accounts.v1.SourceTriggerDeclaration.last_occurrence_at:type_name -> google.protobuf.Timestamp
+	103, // 78: saas.accounts.v1.SourceTriggerDeclaration.next_occurrence_at:type_name -> google.protobuf.Timestamp
+	81,  // 79: saas.accounts.v1.DelegateSourceTriggersResponse.delegations:type_name -> saas.accounts.v1.TriggerDelegationReference
+	83,  // 80: saas.accounts.v1.GetSourceTriggerDeclarationResponse.declaration:type_name -> saas.accounts.v1.SourceTriggerDeclaration
+	81,  // 81: saas.accounts.v1.GetSourceTriggerDeclarationResponse.delegations:type_name -> saas.accounts.v1.TriggerDelegationReference
+	82,  // 82: saas.accounts.v1.GetSourceTriggerDeclarationResponse.children:type_name -> saas.accounts.v1.TriggerChildContext
+	107, // 83: saas.accounts.v1.SourceOperation.input_schema:type_name -> google.protobuf.Struct
+	107, // 84: saas.accounts.v1.SourceOperation.output_schema:type_name -> google.protobuf.Struct
+	13,  // 85: saas.accounts.v1.SourceOperation.effect:type_name -> saas.accounts.v1.SourceOperation.Effect
+	91,  // 86: saas.accounts.v1.DeclareSourceOperationsRequest.operations:type_name -> saas.accounts.v1.SourceOperation
+	91,  // 87: saas.accounts.v1.DeclareSourceOperationsResponse.operations:type_name -> saas.accounts.v1.SourceOperation
+	91,  // 88: saas.accounts.v1.ListSourceOperationsResponse.operations:type_name -> saas.accounts.v1.SourceOperation
+	97,  // 89: saas.accounts.v1.InvokeSourceOperationResponse.receipt:type_name -> saas.accounts.v1.SourceOperationReceipt
+	100, // 90: saas.accounts.v1.DatasourceService.PruneSourceOperationReceipts:input_type -> saas.accounts.v1.PruneSourceOperationReceiptsRequest
+	102, // 91: saas.accounts.v1.DatasourceService.LookupPruneSourceOperationReceipts:input_type -> saas.accounts.v1.LookupPruneSourceOperationReceiptsRequest
+	96,  // 92: saas.accounts.v1.DatasourceService.InvokeSourceOperation:input_type -> saas.accounts.v1.InvokeSourceOperationRequest
+	99,  // 93: saas.accounts.v1.DatasourceService.LookupInvokeSourceOperation:input_type -> saas.accounts.v1.LookupInvokeSourceOperationRequest
+	94,  // 94: saas.accounts.v1.DatasourceService.ListSourceOperations:input_type -> saas.accounts.v1.ListSourceOperationsRequest
+	92,  // 95: saas.accounts.v1.DatasourceService.DeclareSourceOperations:input_type -> saas.accounts.v1.DeclareSourceOperationsRequest
+	20,  // 96: saas.accounts.v1.DatasourceService.AddGitHubSource:input_type -> saas.accounts.v1.AddGitHubSourceRequest
+	22,  // 97: saas.accounts.v1.DatasourceService.AddSource:input_type -> saas.accounts.v1.AddSourceRequest
+	27,  // 98: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:input_type -> saas.accounts.v1.GetDatasourceCatalogRequest
+	29,  // 99: saas.accounts.v1.DatasourceService.ListSources:input_type -> saas.accounts.v1.ListSourcesRequest
+	31,  // 100: saas.accounts.v1.DatasourceService.GetSource:input_type -> saas.accounts.v1.GetSourceRequest
+	33,  // 101: saas.accounts.v1.DatasourceService.SyncSource:input_type -> saas.accounts.v1.SyncSourceRequest
+	35,  // 102: saas.accounts.v1.DatasourceService.GetSourceSync:input_type -> saas.accounts.v1.GetSourceSyncRequest
+	41,  // 103: saas.accounts.v1.DatasourceService.DeleteSource:input_type -> saas.accounts.v1.DeleteSourceRequest
+	44,  // 104: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:input_type -> saas.accounts.v1.BeginGitHubAppSetupRequest
+	46,  // 105: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:input_type -> saas.accounts.v1.CompleteGitHubAppSetupRequest
+	48,  // 106: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:input_type -> saas.accounts.v1.MigrateGitHubSourceToAppRequest
+	54,  // 107: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:input_type -> saas.accounts.v1.BeginDatasourceAccountLinkRequest
+	56,  // 108: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:input_type -> saas.accounts.v1.CompleteDatasourceAccountLinkRequest
+	58,  // 109: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:input_type -> saas.accounts.v1.ListMyDatasourceAccountLinksRequest
+	60,  // 110: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:input_type -> saas.accounts.v1.DeleteDatasourceAccountLinkRequest
+	62,  // 111: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:input_type -> saas.accounts.v1.GetDatasourceDirectoryRequest
+	64,  // 112: saas.accounts.v1.DatasourceService.BindDatasourceGroup:input_type -> saas.accounts.v1.BindDatasourceGroupRequest
+	66,  // 113: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:input_type -> saas.accounts.v1.UnbindDatasourceGroupRequest
+	68,  // 114: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:input_type -> saas.accounts.v1.ClaimDatasourceDomainRequest
+	70,  // 115: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:input_type -> saas.accounts.v1.VerifyDatasourceDomainRequest
+	72,  // 116: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:input_type -> saas.accounts.v1.DeleteDatasourceDomainRequest
+	75,  // 117: saas.accounts.v1.DatasourceService.ListSourceDelegations:input_type -> saas.accounts.v1.ListSourceDelegationsRequest
+	77,  // 118: saas.accounts.v1.DatasourceService.RevokeSourceDelegation:input_type -> saas.accounts.v1.RevokeSourceDelegationRequest
+	84,  // 119: saas.accounts.v1.DatasourceService.DelegateSourceTriggers:input_type -> saas.accounts.v1.DelegateSourceTriggersRequest
+	86,  // 120: saas.accounts.v1.DatasourceService.GetSourceTriggerDeclaration:input_type -> saas.accounts.v1.GetSourceTriggerDeclarationRequest
+	88,  // 121: saas.accounts.v1.DatasourceService.ReconcileSource:input_type -> saas.accounts.v1.ReconcileSourceRequest
+	90,  // 122: saas.accounts.v1.DatasourceService.LookupReconcileSource:input_type -> saas.accounts.v1.LookupReconcileSourceRequest
+	101, // 123: saas.accounts.v1.DatasourceService.PruneSourceOperationReceipts:output_type -> saas.accounts.v1.PruneSourceOperationReceiptsResponse
+	101, // 124: saas.accounts.v1.DatasourceService.LookupPruneSourceOperationReceipts:output_type -> saas.accounts.v1.PruneSourceOperationReceiptsResponse
+	98,  // 125: saas.accounts.v1.DatasourceService.InvokeSourceOperation:output_type -> saas.accounts.v1.InvokeSourceOperationResponse
+	98,  // 126: saas.accounts.v1.DatasourceService.LookupInvokeSourceOperation:output_type -> saas.accounts.v1.InvokeSourceOperationResponse
+	95,  // 127: saas.accounts.v1.DatasourceService.ListSourceOperations:output_type -> saas.accounts.v1.ListSourceOperationsResponse
+	93,  // 128: saas.accounts.v1.DatasourceService.DeclareSourceOperations:output_type -> saas.accounts.v1.DeclareSourceOperationsResponse
+	21,  // 129: saas.accounts.v1.DatasourceService.AddGitHubSource:output_type -> saas.accounts.v1.AddGitHubSourceResponse
+	23,  // 130: saas.accounts.v1.DatasourceService.AddSource:output_type -> saas.accounts.v1.AddSourceResponse
+	28,  // 131: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:output_type -> saas.accounts.v1.GetDatasourceCatalogResponse
+	30,  // 132: saas.accounts.v1.DatasourceService.ListSources:output_type -> saas.accounts.v1.ListSourcesResponse
+	32,  // 133: saas.accounts.v1.DatasourceService.GetSource:output_type -> saas.accounts.v1.GetSourceResponse
+	34,  // 134: saas.accounts.v1.DatasourceService.SyncSource:output_type -> saas.accounts.v1.SyncSourceResponse
+	40,  // 135: saas.accounts.v1.DatasourceService.GetSourceSync:output_type -> saas.accounts.v1.GetSourceSyncResponse
+	42,  // 136: saas.accounts.v1.DatasourceService.DeleteSource:output_type -> saas.accounts.v1.DeleteSourceResponse
+	45,  // 137: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:output_type -> saas.accounts.v1.BeginGitHubAppSetupResponse
+	47,  // 138: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:output_type -> saas.accounts.v1.CompleteGitHubAppSetupResponse
+	49,  // 139: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:output_type -> saas.accounts.v1.MigrateGitHubSourceToAppResponse
+	55,  // 140: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:output_type -> saas.accounts.v1.BeginDatasourceAccountLinkResponse
+	57,  // 141: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:output_type -> saas.accounts.v1.CompleteDatasourceAccountLinkResponse
+	59,  // 142: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:output_type -> saas.accounts.v1.ListMyDatasourceAccountLinksResponse
+	61,  // 143: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:output_type -> saas.accounts.v1.DeleteDatasourceAccountLinkResponse
+	63,  // 144: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:output_type -> saas.accounts.v1.GetDatasourceDirectoryResponse
+	65,  // 145: saas.accounts.v1.DatasourceService.BindDatasourceGroup:output_type -> saas.accounts.v1.BindDatasourceGroupResponse
+	67,  // 146: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:output_type -> saas.accounts.v1.UnbindDatasourceGroupResponse
+	69,  // 147: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:output_type -> saas.accounts.v1.ClaimDatasourceDomainResponse
+	71,  // 148: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:output_type -> saas.accounts.v1.VerifyDatasourceDomainResponse
+	73,  // 149: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:output_type -> saas.accounts.v1.DeleteDatasourceDomainResponse
+	76,  // 150: saas.accounts.v1.DatasourceService.ListSourceDelegations:output_type -> saas.accounts.v1.ListSourceDelegationsResponse
+	78,  // 151: saas.accounts.v1.DatasourceService.RevokeSourceDelegation:output_type -> saas.accounts.v1.RevokeSourceDelegationResponse
+	85,  // 152: saas.accounts.v1.DatasourceService.DelegateSourceTriggers:output_type -> saas.accounts.v1.DelegateSourceTriggersResponse
+	87,  // 153: saas.accounts.v1.DatasourceService.GetSourceTriggerDeclaration:output_type -> saas.accounts.v1.GetSourceTriggerDeclarationResponse
+	89,  // 154: saas.accounts.v1.DatasourceService.ReconcileSource:output_type -> saas.accounts.v1.ReconcileSourceResponse
+	89,  // 155: saas.accounts.v1.DatasourceService.LookupReconcileSource:output_type -> saas.accounts.v1.ReconcileSourceResponse
+	123, // [123:156] is the sub-list for method output_type
+	90,  // [90:123] is the sub-list for method input_type
+	90,  // [90:90] is the sub-list for extension type_name
+	90,  // [90:90] is the sub-list for extension extendee
+	0,   // [0:90] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_datasource_proto_init() }
@@ -7094,7 +8154,7 @@ func file_saas_accounts_v1_datasource_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_datasource_proto_rawDesc), len(file_saas_accounts_v1_datasource_proto_rawDesc)),
 			NumEnums:      14,
-			NumMessages:   77,
+			NumMessages:   89,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

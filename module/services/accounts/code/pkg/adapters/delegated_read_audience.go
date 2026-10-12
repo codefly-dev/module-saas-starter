@@ -367,6 +367,11 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedOperationAudience(ctx contex
 		} else {
 			binding, err = service.ModuleOperationAudience(ctx, caller, tenant, parentAudience, req.BindingId)
 		}
+		// A binding that declares no lookup redeems none: refused by name rather
+		// than signed as a capability carrying no scope at all.
+		if err == nil && req.Lookup && len(binding.LookupScopes) == 0 {
+			err = status.Errorf(codes.PermissionDenied, "operation audience binding %q declares no lookup", req.BindingId)
+		}
 		return delegatedAudienceBinding{audience: binding.Audience, scopes: binding.WireScopes(req.Lookup), policy: binding}, err
 	})
 }

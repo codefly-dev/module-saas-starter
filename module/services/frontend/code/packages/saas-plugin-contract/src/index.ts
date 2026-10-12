@@ -15,11 +15,12 @@ export type {
 	FrontendAppearanceDefinition,
 	FrontendAppearanceFieldName,
 	FrontendAppearanceTokenName,
-	FrontendOptionalAppearanceFieldName,
-	FrontendOptionalAppearanceTokenName,
 	FrontendBranding,
 	FrontendConfig,
+	FrontendDatePattern,
 	FrontendLogo,
+	FrontendOptionalAppearanceFieldName,
+	FrontendOptionalAppearanceTokenName,
 	FrontendPlugin,
 	FrontendServiceAllowlist,
 	FrontendServiceAllowlistEntry,
@@ -28,7 +29,6 @@ export type {
 	FrontendServiceProtocol,
 	FrontendServiceRequirement,
 	FrontendServiceTarget,
-	FrontendDatePattern,
 	FrontendThemePreference,
 	FrontendThemeTokenOverrides,
 	FrontendThemeTokens,
@@ -53,6 +53,21 @@ export {
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
 } from "./contracts.js";
 export type {
+	FrontendHeadingOrderRule,
+	FrontendSkinRules,
+	FrontendSlotRule,
+} from "./skin-rules.js";
+export {
+	DEFAULT_FRONTEND_SKIN_RULES,
+	resolveSkinRules,
+} from "./skin-rules.js";
+export {
+	encodeFrontendServicePath,
+	frontendServiceTargetPath,
+	isConnectProcedurePath,
+	isFrontendServicePath,
+} from "./transport.js";
+export type {
 	FrontendControlSize,
 	FrontendControlSizeName,
 	FrontendControlSizeOverrides,
@@ -73,15 +88,6 @@ export type {
 	ResolvedTypeSlot,
 	TypographyLayers,
 } from "./typography.js";
-export {
-	DEFAULT_FRONTEND_SKIN_RULES,
-	resolveSkinRules,
-} from "./skin-rules.js";
-export type {
-	FrontendHeadingOrderRule,
-	FrontendSkinRules,
-	FrontendSlotRule,
-} from "./skin-rules.js";
 export {
 	DEFAULT_CONTROL_SIZES,
 	DEFAULT_TYPE_ROLES,

@@ -1,5 +1,10 @@
 import { toJsonString } from "@bufbuild/protobuf";
-import type { FrontendServiceProtocol } from "@codefly-dev/saas-plugin-contract";
+import {
+	type FrontendServiceProtocol,
+	frontendServiceTargetPath,
+	isConnectProcedurePath,
+	isFrontendServicePath,
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	emptyFrontendPluginCapabilitiesRequest,
 	FRONTEND_PLUGIN_CAPABILITIES_BFF_PATH,
@@ -22,7 +27,6 @@ const DEFAULT_REQUEST_LIMIT = 1024 * 1024;
 const DEFAULT_RESPONSE_LIMIT = 5 * 1024 * 1024;
 const CAPABILITY_RESPONSE_LIMIT = 16 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
-const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]+$/;
 const BEARER = /^Bearer [A-Za-z0-9._~-]{16,8192}$/;
 const REST_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const CONNECT_METHODS = new Set(["POST"]);
@@ -122,13 +126,7 @@ function allowedMethods(protocol: FrontendServiceProtocol): Set<string> {
 function safePath(request: Request, segments: readonly string[]): boolean {
 	const rawPath = new URL(request.url).pathname;
 	if (/%(?:00|25|2f|5c)/i.test(rawPath)) return false;
-	return segments.every(
-		(segment) =>
-			segment !== "." &&
-			segment !== ".." &&
-			segment.length <= 256 &&
-			SAFE_PATH_SEGMENT.test(segment),
-	);
+	return isFrontendServicePath(segments);
 }
 
 function sameOrigin(request: Request): boolean {
@@ -254,7 +252,7 @@ function targetURL(
 	search: string,
 ) {
 	const target = new URL(baseURL);
-	target.pathname = `${routePrefix}${path.length ? `/${path.map(encodeURIComponent).join("/")}` : ""}`;
+	target.pathname = frontendServiceTargetPath(routePrefix, path);
 	target.search = search;
 	return target;
 }
@@ -310,6 +308,17 @@ export async function handlePluginBffRequest(
 
 	const method = request.method.toUpperCase();
 	const capabilityProbe = isCapabilityProbe(params.path);
+	// A Connect alias carries procedures and nothing else: the protocol's path
+	// is `/<fully.qualified.Service>/<Method>`, so any other shape could not
+	// have resolved upstream anyway. Checking it here keeps a Connect alias from
+	// reading as a prefix-less proxy when its requirement declares the root.
+	if (
+		!capabilityProbe &&
+		resolution.value.entry.protocol === "connect" &&
+		!isConnectProcedurePath(params.path)
+	) {
+		return problem("invalid_path", 400, requestID);
+	}
 	const methods = capabilityProbe
 		? new Set(["GET"])
 		: allowedMethods(resolution.value.entry.protocol);

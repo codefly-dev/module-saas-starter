@@ -200,7 +200,7 @@ export function InstallSolutionDialog({
 					<div className="grid gap-4 sm:grid-cols-2">
 						<Field
 							label="Allowed audiences"
-							description="One per line. Empty leaves this solution's own work unrestricted, and refuses every mint made with a credential delivered to a third party on a person's behalf — name them to let this solution be reached over MCP. The host refuses an audience it does not serve and says which it does."
+							description="One per line. Empty leaves this solution's own work unrestricted. A credential delivered to a third party on a person's behalf (an MCP client) is held to the modules this solution's delivered authority names, as this installation consents to them now, and names here only narrow that. The host refuses an audience it does not serve and says which it does."
 							error={errors.allowedAudiences?.message}
 						>
 							{(control) => (

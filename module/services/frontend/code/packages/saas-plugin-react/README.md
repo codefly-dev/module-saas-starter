@@ -49,6 +49,33 @@ read the host token accessor, replace `Authorization`, send cookies or trusted
 identity/tenant headers, choose a backend origin, or escape the fixed
 `/api/plugins/{plugin}/{alias}/…` same-origin route.
 
+A relative path is one or more safe segments, and the **last** one may carry a
+Google custom verb — `records:recover`,
+`records/record-1/interactions/interaction-1:respond` — whose colon reaches the
+upstream literal, because the colon separates the verb from the resource rather
+than naming one. A Connect alias is reached the same way, by passing one
+procedure path:
+
+```tsx
+const records = usePluginService("example", "records");
+await records.request("records:recover", { method: "POST", body });
+
+const procedures = usePluginService("example", "procedures");
+await procedures.request("example.records.v1.RecordService/RecoverRecord", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: "{}",
+});
+```
+
+A colon before the last segment, two colons in one segment, a traversal, or an
+encoded separator throws `PluginTransportConfigurationError` with code
+`invalid_path` before any request leaves the browser. The rule is the host's,
+read from `@codefly-dev/saas-plugin-contract`'s `isFrontendServicePath` rather
+than restated here, so a route this client admits is one the host forwards. The
+full policy is in the module's
+[BFF contract](../../../../docs/frontend-plugin-bff-contract.md).
+
 Failed service responses can be converted into the public, non-sensitive
 availability model before they enter a route or widget boundary:
 

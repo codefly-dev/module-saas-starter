@@ -40,7 +40,12 @@ function baseClient(overrides: Partial<DatasourceClient>): DatasourceClient {
 	return {
 		listSources: vi.fn(async () => []),
 		addGitHubSource: vi.fn(async () => {}),
-		syncSource: vi.fn(async () => "job-1"),
+		reconcileSource: vi.fn(async (_orgId, _id, effectId: string) => ({
+			effectId,
+			status: "committed" as const,
+			jobId: "job-1",
+		})),
+		lookupReconcileSource: vi.fn(async () => undefined),
 		deleteSource: vi.fn(async () => {}),
 		...overrides,
 	};

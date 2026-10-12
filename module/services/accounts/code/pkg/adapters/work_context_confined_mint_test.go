@@ -36,8 +36,9 @@ const (
 	confinedResource     = "https://host.example.com/api/solutions/example/proxy/mcp"
 )
 
-// confinedConsumer is the installed consumer's ceiling: it may address the
-// `documents` module and act on evidence, and nothing else.
+// confinedConsumer is the installation's agent and its two lists, which narrow
+// what the consumer declares (declaredConsumption): `documents` only, evidence
+// only. The declaration is the ceiling; these may only take from it.
 func confinedConsumer() *business.InstallationAuthorityFacts {
 	return &business.InstallationAuthorityFacts{
 		OwnerPrincipalID: renewActorID,
@@ -89,7 +90,7 @@ func newConfinedMintServer(t *testing.T) *WorkContextAuthorityServer {
 // The consumer's own work: the audience its installation declares, a scope its
 // agent is granted, in its own organization. Admitted.
 func TestConfinedMintIsIssuedInsideItsConsumersCeiling(t *testing.T) {
-	solutionBoundaryService(t)
+	confinedConsumerService(t)
 	withConfiguredOrigin(t)
 	server := newConfinedMintServer(t)
 
@@ -123,14 +124,14 @@ func TestConfinedMintIsRefusedOutsideItsConsumersCeiling(t *testing.T) {
 		},
 		// 2. AN AUDIENCE THE CONSUMER DOES NOT DECLARE. `example` is in the
 		// host's vocabulary — a declared module prefix — so the vocabulary gate
-		// admits it and only the installation's ceiling refuses it.
+		// admits it and only the consumer's declaration refuses it.
 		"an audience the consumer does not declare": {
 			request:      func() *gen.StartTaskWorkContextRequest { return confinedMintRequest("example") },
 			expectedCode: codes.PermissionDenied,
-			expectedText: "allowed audiences",
+			expectedText: "is not a module the consumer",
 		},
-		// 3. A SCOPE OUTSIDE THE INSTALLATION'S GRANT.
-		"a scope the installation does not grant": {
+		// 3. A SCOPE THE CONSUMER DOES NOT DECLARE AT THAT MODULE.
+		"a scope the consumer does not declare": {
 			request: func() *gen.StartTaskWorkContextRequest {
 				req := confinedMintRequest("documents")
 				req.AuthorityScopes = []*gen.WorkContextScope{{
@@ -139,7 +140,7 @@ func TestConfinedMintIsRefusedOutsideItsConsumersCeiling(t *testing.T) {
 				return req
 			},
 			expectedCode: codes.PermissionDenied,
-			expectedText: "allowed scopes",
+			expectedText: "outside what the consumer",
 		},
 		// A confinement the perimeter admitted without naming an installation.
 		// Nothing produces it, and a mint is not issued on a ceiling nobody can
@@ -164,7 +165,7 @@ func TestConfinedMintIsRefusedOutsideItsConsumersCeiling(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			solutionBoundaryService(t)
+			confinedConsumerService(t)
 			withConfiguredOrigin(t)
 			server := newConfinedMintServer(t)
 			ctx := confinedCallerContext(confinedResource, confinedInstallation)
@@ -190,7 +191,7 @@ func TestConfinedMintIsRefusedOutsideItsConsumersCeiling(t *testing.T) {
 // same scope the consumer's ceiling refuses above are issued here, so the
 // refusals are about the confinement and not about the mint.
 func TestAnUnconfinedMintIsNotHeldToAnyConsumer(t *testing.T) {
-	solutionBoundaryService(t)
+	confinedConsumerService(t)
 	withConfiguredOrigin(t)
 	server := newConfinedMintServer(t)
 
@@ -209,7 +210,7 @@ func TestAnUnconfinedMintIsNotHeldToAnyConsumer(t *testing.T) {
 // of the two refusals it is — an operator fixes a configuration, a client
 // re-authorizes.
 func TestConfinedMintRefusesWithNoConfiguredOrigin(t *testing.T) {
-	solutionBoundaryService(t)
+	confinedConsumerService(t)
 	previous, _ := accountsauth.ConfiguredPublicOrigin()
 	require.NoError(t, accountsauth.SetConfiguredPublicOrigin(""))
 	t.Cleanup(func() { _ = accountsauth.SetConfiguredPublicOrigin(previous) })
@@ -283,7 +284,7 @@ func TestConfinedMintThroughTheRealInterceptor(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			solutionBoundaryService(t)
+			confinedConsumerService(t)
 			withConfiguredOrigin(t)
 			server := newConfinedMintServer(t)
 			ctx, err := authorizeAsTheGateway(t, forwardedByTheGateway(true))
@@ -299,46 +300,12 @@ func TestConfinedMintThroughTheRealInterceptor(t *testing.T) {
 	}
 }
 
-// AN EMPTY CEILING IS NOTHING FOR A CONFINED MINT, where it is unrestricted
-// everywhere else.
-//
-// This is the ordinary state, not an edge case: both fields are optional, the
-// proto documents empty as unrestricted, and the install dialog leaves them
-// empty. Read that way here, a credential delivered to one third-party client
-// mints for any audience this host serves and then pairs at every module the
-// organization installed — which is the escape the ceiling exists to close.
-func TestConfinedMintUnderAnUndeclaredCeilingIsRefused(t *testing.T) {
-	for name, strip := range map[string]func(*business.Principal){
-		"no declared audiences": func(p *business.Principal) { p.AllowedAudiences = nil },
-		"no declared scopes":    func(p *business.Principal) { p.AllowedScopes = nil },
-	} {
-		t.Run(name, func(t *testing.T) {
-			solutionBoundaryService(t)
-			withConfiguredOrigin(t)
-			server, authority := newSolutionBoundaryServer(t)
-			consumer := confinedConsumer()
-			strip(consumer.Actor)
-			authority.installationFcts = consumer
-			ctx, err := authorizeAsTheGateway(t, forwardedByTheGateway(true))
-			require.NoError(t, err)
-
-			// `documents` is what this consumer's full ceiling DOES declare, so
-			// the only thing that can refuse it here is the empty list itself.
-			issued, err := server.StartTask(ctx, confinedMintRequest("documents"))
-
-			require.Error(t, err, "an installation with %s put no bound on a credential delivered to a third party", name)
-			require.Nil(t, issued)
-			require.Equal(t, codes.FailedPrecondition, status.Code(err))
-			require.Contains(t, err.Error(), "declares no allowed")
-		})
-	}
-}
-
-// THE CONTROL for the two above: the same empty ceiling puts no bound on an
-// UNCONFINED mint, which is what the field means everywhere else and what an
-// installation's own headless work relies on.
+// An installation whose lists are empty puts no bound on an UNCONFINED mint,
+// which is what the fields mean everywhere and what an installation's own
+// headless work relies on — and no consumer's declaration is read for one: the
+// audience and scope below are both outside what the consumer declares.
 func TestAnUndeclaredCeilingStillLeavesAnUnconfinedMintUnbounded(t *testing.T) {
-	solutionBoundaryService(t)
+	confinedConsumerService(t)
 	withConfiguredOrigin(t)
 	server, authority := newSolutionBoundaryServer(t)
 	consumer := confinedConsumer()
@@ -356,7 +323,7 @@ func TestAnUndeclaredCeilingStillLeavesAnUnconfinedMintUnbounded(t *testing.T) {
 // only once each. Without the credential they are deleted — which also leaves the
 // request unauthenticated, so there is nothing to mint for either.
 func TestCeilingHeadersCannotBeForged(t *testing.T) {
-	solutionBoundaryService(t)
+	confinedConsumerService(t)
 	withConfiguredOrigin(t)
 
 	t.Run("no gateway credential", func(t *testing.T) {
