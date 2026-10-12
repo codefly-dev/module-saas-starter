@@ -2697,6 +2697,11 @@ func configureLocalEgress(isLocal, inCluster bool) error {
 	err := apisource.ConfigureLocalEgress(value, isLocal && !inCluster)
 	switch {
 	case err == nil:
+		if strings.TrimSpace(value) != "" {
+			wool.Get(context.Background()).In("configureLocalEgress").Warn(
+				"callable sources may dial these loopback addresses past the public-address guard (local runtime only)",
+				wool.Field("datasource-oauth/local_egress", value))
+		}
 		return nil
 	case errors.Is(err, apisource.ErrLocalEgressOutsideLocal):
 		return fmt.Errorf("datasource-oauth/local_egress is set, but this runtime is not local (local environment: %t, in a Kubernetes pod: %t): "+
