@@ -20,10 +20,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuditService_QueryAuditLog_FullMethodName       = "/saas.accounts.v1.AuditService/QueryAuditLog"
-	AuditService_AggregateAuditLog_FullMethodName   = "/saas.accounts.v1.AuditService/AggregateAuditLog"
-	AuditService_ListAuditEventTypes_FullMethodName = "/saas.accounts.v1.AuditService/ListAuditEventTypes"
-	AuditService_ExportAuditLog_FullMethodName      = "/saas.accounts.v1.AuditService/ExportAuditLog"
+	AuditService_QueryAuditLog_FullMethodName            = "/saas.accounts.v1.AuditService/QueryAuditLog"
+	AuditService_AggregateAuditLog_FullMethodName        = "/saas.accounts.v1.AuditService/AggregateAuditLog"
+	AuditService_ListAuditEventTypes_FullMethodName      = "/saas.accounts.v1.AuditService/ListAuditEventTypes"
+	AuditService_ExportAuditLog_FullMethodName           = "/saas.accounts.v1.AuditService/ExportAuditLog"
+	AuditService_DeliverAuditEvents_FullMethodName       = "/saas.accounts.v1.AuditService/DeliverAuditEvents"
+	AuditService_LookupDeliverAuditEvents_FullMethodName = "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents"
 )
 
 // AuditServiceClient is the client API for AuditService service.
@@ -36,6 +38,17 @@ type AuditServiceClient interface {
 	AggregateAuditLog(ctx context.Context, in *AggregateAuditLogRequest, opts ...grpc.CallOption) (*AggregateAuditLogResponse, error)
 	ListAuditEventTypes(ctx context.Context, in *ListAuditEventTypesRequest, opts ...grpc.CallOption) (*ListAuditEventTypesResponse, error)
 	ExportAuditLog(ctx context.Context, in *ExportAuditLogRequest, opts ...grpc.CallOption) (*ExportAuditLogResponse, error)
+	// DeliverAuditEvents appends one range of the journal's audit records to the
+	// warehouse audit storage: the operation module-runtime calls after reading the
+	// range through ReadJournal. It is an operation, not a sweep. It takes each
+	// record's organization from the journal row and never from the caller, emits no
+	// audit of its own, and commits one receipt per range under the installation's
+	// tenant; delivery is at least once, and every read of the storage returns each
+	// entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
+	DeliverAuditEvents(ctx context.Context, in *DeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error)
+	// LookupDeliverAuditEvents reads back the receipt of one delivery effect. It
+	// never delivers: recovery reads what committed and nothing else.
+	LookupDeliverAuditEvents(ctx context.Context, in *LookupDeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error)
 }
 
 type auditServiceClient struct {
@@ -86,6 +99,26 @@ func (c *auditServiceClient) ExportAuditLog(ctx context.Context, in *ExportAudit
 	return out, nil
 }
 
+func (c *auditServiceClient) DeliverAuditEvents(ctx context.Context, in *DeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeliverAuditEventsResponse)
+	err := c.cc.Invoke(ctx, AuditService_DeliverAuditEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auditServiceClient) LookupDeliverAuditEvents(ctx context.Context, in *LookupDeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeliverAuditEventsResponse)
+	err := c.cc.Invoke(ctx, AuditService_LookupDeliverAuditEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuditServiceServer is the server API for AuditService service.
 // All implementations must embed UnimplementedAuditServiceServer
 // for forward compatibility.
@@ -96,6 +129,17 @@ type AuditServiceServer interface {
 	AggregateAuditLog(context.Context, *AggregateAuditLogRequest) (*AggregateAuditLogResponse, error)
 	ListAuditEventTypes(context.Context, *ListAuditEventTypesRequest) (*ListAuditEventTypesResponse, error)
 	ExportAuditLog(context.Context, *ExportAuditLogRequest) (*ExportAuditLogResponse, error)
+	// DeliverAuditEvents appends one range of the journal's audit records to the
+	// warehouse audit storage: the operation module-runtime calls after reading the
+	// range through ReadJournal. It is an operation, not a sweep. It takes each
+	// record's organization from the journal row and never from the caller, emits no
+	// audit of its own, and commits one receipt per range under the installation's
+	// tenant; delivery is at least once, and every read of the storage returns each
+	// entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
+	DeliverAuditEvents(context.Context, *DeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error)
+	// LookupDeliverAuditEvents reads back the receipt of one delivery effect. It
+	// never delivers: recovery reads what committed and nothing else.
+	LookupDeliverAuditEvents(context.Context, *LookupDeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error)
 	mustEmbedUnimplementedAuditServiceServer()
 }
 
@@ -117,6 +161,12 @@ func (UnimplementedAuditServiceServer) ListAuditEventTypes(context.Context, *Lis
 }
 func (UnimplementedAuditServiceServer) ExportAuditLog(context.Context, *ExportAuditLogRequest) (*ExportAuditLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExportAuditLog not implemented")
+}
+func (UnimplementedAuditServiceServer) DeliverAuditEvents(context.Context, *DeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeliverAuditEvents not implemented")
+}
+func (UnimplementedAuditServiceServer) LookupDeliverAuditEvents(context.Context, *LookupDeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method LookupDeliverAuditEvents not implemented")
 }
 func (UnimplementedAuditServiceServer) mustEmbedUnimplementedAuditServiceServer() {}
 func (UnimplementedAuditServiceServer) testEmbeddedByValue()                      {}
@@ -211,6 +261,42 @@ func _AuditService_ExportAuditLog_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuditService_DeliverAuditEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeliverAuditEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditServiceServer).DeliverAuditEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditService_DeliverAuditEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditServiceServer).DeliverAuditEvents(ctx, req.(*DeliverAuditEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuditService_LookupDeliverAuditEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LookupDeliverAuditEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditServiceServer).LookupDeliverAuditEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditService_LookupDeliverAuditEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditServiceServer).LookupDeliverAuditEvents(ctx, req.(*LookupDeliverAuditEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuditService_ServiceDesc is the grpc.ServiceDesc for AuditService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -233,6 +319,14 @@ var AuditService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExportAuditLog",
 			Handler:    _AuditService_ExportAuditLog_Handler,
+		},
+		{
+			MethodName: "DeliverAuditEvents",
+			Handler:    _AuditService_DeliverAuditEvents_Handler,
+		},
+		{
+			MethodName: "LookupDeliverAuditEvents",
+			Handler:    _AuditService_LookupDeliverAuditEvents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
