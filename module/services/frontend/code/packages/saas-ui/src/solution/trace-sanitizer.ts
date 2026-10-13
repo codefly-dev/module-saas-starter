@@ -28,6 +28,14 @@ export const TRACE_ATTRIBUTE_VALUE_MAX_LENGTH = 256;
  * Transport attributes every exported span may keep, whatever the caller
  * allows: they describe the call, never its content. `url.path` is exported
  * with any query or fragment cut off.
+ *
+ * A path is the one entry here that can still carry content, because a path
+ * SEGMENT is the caller's to shape: `/reset/tok_live_…/confirm` and
+ * `/accounts/<iban>` export whole, query-stripping notwithstanding. Cutting it
+ * from this set outright would cost every consumer its most useful diagnostic
+ * for a feature that is off by default, so it stays — and a consumer that puts
+ * identifiers in paths withholds it by naming it in
+ * {@link TraceSanitizerPolicy.deniedAttributeKeys}.
  */
 export const TRACE_STANDARD_ATTRIBUTE_KEYS: readonly string[] = [
 	"http.request.method",
@@ -95,11 +103,25 @@ export interface TraceSanitizerPolicy {
 	/** Attribute keys the caller vouches for, beyond the standard transport set. */
 	readonly allowedAttributeKeys: readonly string[];
 	/**
-	 * Span (and event) names the caller vouches for. Given, every other name
-	 * that is not a bare HTTP method becomes the placeholder. Omitted, names
-	 * pass once their query is cut and their length is within the cap.
+	 * Span (and event) names the caller vouches for. Every name that is
+	 * neither listed here nor a bare HTTP method becomes the placeholder.
+	 *
+	 * Omitting it vouches for NOTHING, which is the safe reading: a span name
+	 * is free-form text an instrumentation author chose, so it carries
+	 * whatever they put there — `"load user alice@example.com reset token
+	 * tok_live_…"` is a name a reasonable tracer would produce. Stripping its
+	 * query and checking its length, which is all an unvetted name used to
+	 * get, does nothing about either of those. A caller that wants its own
+	 * names exported lists them.
 	 */
 	readonly allowedSpanNames?: readonly string[];
+	/**
+	 * Keys to withhold even though they are standard transport attributes.
+	 * Subtracts from {@link TRACE_STANDARD_ATTRIBUTE_KEYS}, so a consumer that
+	 * puts identifiers in its paths can drop `url.path` without giving up the
+	 * method, status and server attributes beside it.
+	 */
+	readonly deniedAttributeKeys?: readonly string[];
 }
 
 /**
@@ -111,7 +133,7 @@ export interface TraceSanitizerPolicy {
  */
 export class SanitizingSpanExporter implements SpanExporter {
 	private readonly allowedKeys: ReadonlySet<string>;
-	private readonly allowedNames: ReadonlySet<string> | null;
+	private readonly allowedNames: ReadonlySet<string>;
 	// One sanitized resource per source resource, so a batch still groups
 	// under a single resource when it is serialized.
 	private readonly resources = new WeakMap<Resource, Resource>();
@@ -120,14 +142,14 @@ export class SanitizingSpanExporter implements SpanExporter {
 		private readonly inner: SpanExporter,
 		policy: TraceSanitizerPolicy,
 	) {
+		const denied = new Set(policy.deniedAttributeKeys ?? []);
 		this.allowedKeys = new Set(
 			[...TRACE_STANDARD_ATTRIBUTE_KEYS, ...policy.allowedAttributeKeys].filter(
-				(key) => !isDeniedAttributeKey(key),
+				(key) => !isDeniedAttributeKey(key) && !denied.has(key),
 			),
 		);
-		this.allowedNames = policy.allowedSpanNames
-			? new Set(policy.allowedSpanNames)
-			: null;
+		// An absent allowlist vouches for no name at all. See allowedSpanNames.
+		this.allowedNames = new Set(policy.allowedSpanNames ?? []);
 	}
 
 	export(
@@ -188,13 +210,7 @@ export class SanitizingSpanExporter implements SpanExporter {
 
 	private name(name: string): string {
 		if (STANDARD_HTTP_SPAN_NAME.test(name)) return name;
-		if (this.allowedNames) {
-			return this.allowedNames.has(name) ? name : TRACE_SPAN_NAME_PLACEHOLDER;
-		}
-		const cut = stripQuery(name);
-		return cut && cut.length <= TRACE_ATTRIBUTE_VALUE_MAX_LENGTH
-			? cut
-			: TRACE_SPAN_NAME_PLACEHOLDER;
+		return this.allowedNames.has(name) ? name : TRACE_SPAN_NAME_PLACEHOLDER;
 	}
 
 	private attributes(source: Attributes): Attributes {
@@ -255,11 +271,36 @@ function boundedValue(
 		return value.length <= TRACE_ATTRIBUTE_VALUE_MAX_LENGTH ? value : undefined;
 	}
 	if (Array.isArray(value)) {
+		// Every element must be a primitive the attribute type actually allows.
+		// Measuring String(item) alone let a payload of any size through: an
+		// object stringifies to "[object Object]", 15 characters, so
+		// ["{a card number and a CVV}"] sat far under the cap and exported whole.
+		// The cap has to bind what the element CONTAINS, not what it prints as.
+		if (!value.every(isBoundedArrayElement)) return undefined;
 		const total = value.reduce<number>(
 			(sum, item) => sum + String(item ?? "").length,
 			0,
 		);
-		return total <= TRACE_ATTRIBUTE_VALUE_MAX_LENGTH ? value : undefined;
+		// A copy, not the caller's array. Spans export on a batch delay, so a
+		// mutation after sanitize() and before serialization would otherwise
+		// change bytes that were already vetted.
+		return total <= TRACE_ATTRIBUTE_VALUE_MAX_LENGTH
+			? ([...value] as AttributeValue)
+			: undefined;
 	}
 	return undefined;
+}
+
+/**
+ * An array element that may leave the browser: null, or a primitive whose own
+ * text is within the cap. Anything else — an object, a function, a nested
+ * array — is not an attribute value, and its stringification says nothing
+ * about what it holds.
+ */
+function isBoundedArrayElement(item: unknown): boolean {
+	if (item === null || item === undefined) return true;
+	if (typeof item === "number" || typeof item === "boolean") return true;
+	return (
+		typeof item === "string" && item.length <= TRACE_ATTRIBUTE_VALUE_MAX_LENGTH
+	);
 }
