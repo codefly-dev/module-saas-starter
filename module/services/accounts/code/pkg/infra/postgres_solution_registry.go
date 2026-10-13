@@ -367,9 +367,9 @@ func (s *PostgresStore) SolutionRuntimeBoundarySeeds(ctx context.Context) ([]str
 // write — but only from the delivered declaration, never from a registrant's
 // request. A boundary a caller could name would let one solution mint for
 // another's and read, answer and recover its runs.
-// LiveDeclaredSolutionBindingIDs returns the binding id of every DECLARED,
-// NON-TOMBSTONED registration. It is what the host's audience vocabulary is
-// derived from (issue #952).
+// LiveDeclaredBindings returns every DECLARED, NON-TOMBSTONED registration's
+// binding id, declared kind and route alias. It is what the host's audience
+// vocabulary is derived from (issue #952).
 //
 // Tombstones are EXCLUDED here, which is the one difference from
 // SolutionRuntimeBoundarySeeds above, which includes them. The two want different
@@ -377,20 +377,24 @@ func (s *PostgresStore) SolutionRuntimeBoundarySeeds(ctx context.Context) ([]str
 // so its boundary still has to be protected from a caller naming it — but its
 // audience must not survive the withdrawal that took the consumer away, or a
 // capability could be minted for a solution delivery has removed.
-func (s *PostgresStore) LiveDeclaredSolutionBindingIDs(ctx context.Context) ([]string, error) {
-	var bindings []string
+func (s *PostgresStore) LiveDeclaredBindings(ctx context.Context) ([]business.LiveDeclaredBinding, error) {
+	var bindings []business.LiveDeclaredBinding
 	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
 		rows, err := s.getQueryExecutor(ctx).Query(ctx,
-			`SELECT declared_binding_id FROM public.solution_registrations
+			`SELECT declared_binding_id, declared_kind, solution_id FROM public.solution_registrations
 			 WHERE declared_binding_id IS NOT NULL AND tombstoned_at IS NULL`)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var binding string
-			if err := rows.Scan(&binding); err != nil {
+			var binding business.LiveDeclaredBinding
+			var kind *string
+			if err := rows.Scan(&binding.BindingID, &kind, &binding.Alias); err != nil {
 				return err
+			}
+			if kind != nil {
+				binding.Kind = business.SolutionDeclaredKind(*kind)
 			}
 			bindings = append(bindings, binding)
 		}

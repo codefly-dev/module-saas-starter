@@ -156,7 +156,7 @@ func (s *contractStore) WithOrgTx(ctx context.Context, _ string, fn func(context
 	return fn(ctx)
 }
 
-func (s *contractStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+func (s *contractStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
 	return nil, nil
 }
 

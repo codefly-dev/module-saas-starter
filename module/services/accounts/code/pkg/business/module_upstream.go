@@ -66,6 +66,12 @@ func (s *Service) RecordModuleUpstream(ctx context.Context, authority ModuleWork
 		if current == nil || current.TombstonedAt != nil || current.Declared == nil || current.Declared.BindingID != grant.PresenceBinding {
 			return fmt.Errorf("%w: %q is not declared by presence %q", ErrModuleUpstreamRefused, solutionID, grant.PresenceBinding)
 		}
+		if current.Declared.Kind == SolutionDeclaredKindModule && (origin != "" || manifest != "") {
+			// A module's address is resolved by the gateway through the Codefly
+			// SDK from what the composition wrote, never reported: a recorded
+			// origin would be a second, unaudited answer to where viewers go.
+			return fmt.Errorf("%w: %q is a module, whose address is resolved, never reported", ErrModuleUpstreamRefused, solutionID)
+		}
 		backendSame := origin == "" || (current.Backend != nil && current.Backend.Upstream == origin && current.Backend.ServiceAlias == solutionID)
 		frontendSame := manifest == "" || (current.Frontend != nil && current.Frontend.Manifest == manifest)
 		if backendSame && frontendSame {

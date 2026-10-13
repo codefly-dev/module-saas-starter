@@ -317,6 +317,17 @@ recorded origin only over TLS to the SPIFFE identity the applied presence names.
 The request body is bounded at 80 KiB at the gateway. A report that is refused
 refuses the mint.
 
+**A module reports nothing.** A module has no reported half: its registration
+is active once its presence is applied, and the gateway resolves where it
+serves through the Codefly SDK: of the endpoints that presence declares for the
+service that runs it, the one the Codefly CLI handed the gateway an address for
+— the endpoint composed solutions consume through the host. The registry never
+holds a module address, and a module's mint may not record one. While a module's declaration is live its alias is also a member of the
+host's closed audience vocabulary, so a solution can mint a viewer's Work
+Context for it; the tombstone that withdraws the module withdraws the audience.
+Addressability is all a presence grants: authority for the module's own calls is
+still the authority document's alone.
+
 ### The registry key is the route alias
 
 A binding ID identifies one **deployment instance** — the renderer's is

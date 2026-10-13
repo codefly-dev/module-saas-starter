@@ -11,17 +11,8 @@ import (
 // binding and generation. Presence can declare several workloads; until it
 // identifies which serves an endpoint, only one distinct identity is routable.
 func appliedWorkloadSPIFFEID(binding *accountsv1.SolutionHostBindingState) string {
-	applied := binding.GetApplied()
-	record := binding.GetRegistration()
-	declared := record.GetDeclared()
-	if applied == nil || applied.GetRemoved() || declared == nil ||
-		declared.GetBindingId() != binding.GetBindingId() ||
-		declared.GetGeneration() != applied.GetGeneration().GetGeneration() ||
-		applied.GetSolutionId() != record.GetSolutionId() || record.GetTombstonedAt() != nil {
-		return ""
-	}
-	document, err := solutionhost.Parse([]byte(applied.GetGeneration().GetDocument()))
-	if err != nil || document.Binding != declared.GetBindingId() || document.Generation != declared.GetGeneration() {
+	document, ok := appliedPresence(binding)
+	if !ok {
 		return ""
 	}
 	id := ""
@@ -33,4 +24,56 @@ func appliedWorkloadSPIFFEID(binding *accountsv1.SolutionHostBindingState) strin
 		id = candidate
 	}
 	return id
+}
+
+// appliedPresence is the presence document this host APPLIED for the binding,
+// and only when the registration, the applied generation and the parsed
+// document name the same binding and generation.
+func appliedPresence(binding *accountsv1.SolutionHostBindingState) (*solutionhost.SolutionHostBinding, bool) {
+	applied := binding.GetApplied()
+	record := binding.GetRegistration()
+	declared := record.GetDeclared()
+	if applied == nil || applied.GetRemoved() || declared == nil ||
+		declared.GetBindingId() != binding.GetBindingId() ||
+		declared.GetGeneration() != applied.GetGeneration().GetGeneration() ||
+		applied.GetSolutionId() != record.GetSolutionId() || record.GetTombstonedAt() != nil {
+		return nil, false
+	}
+	document, err := solutionhost.Parse([]byte(applied.GetGeneration().GetDocument()))
+	if err != nil || document.Binding != declared.GetBindingId() || document.Generation != declared.GetGeneration() {
+		return nil, false
+	}
+	return document, true
+}
+
+// moduleEndpoint names the endpoint a declared module serves this gateway on:
+// module, service, endpoint and API, exactly as Codefly keys an endpoint. It is
+// a NAME, never an address — the presence declares endpoints and freezes no
+// address — and the Codefly SDK resolves it to where it lives.
+type moduleEndpoint struct {
+	Module, Service, Name, API string
+}
+
+// appliedModuleEndpoints are the endpoints an applied MODULE presence declares
+// for the service that runs its workload. Which one this gateway forwards
+// /v1/<alias> to is not decided here: it is the one the composition handed this
+// gateway an address for (see solutionRegistryCache.resolveModuleUpstreams),
+// because the composition is what knows which endpoint a consuming solution
+// reaches the module through.
+func appliedModuleEndpoints(binding *accountsv1.SolutionHostBindingState) []moduleEndpoint {
+	document, ok := appliedPresence(binding)
+	if !ok || document.Kind != solutionhost.KindModule {
+		return nil
+	}
+	serving := map[string]bool{}
+	for _, workload := range document.Workloads {
+		serving[workload.Artifact] = true
+	}
+	var endpoints []moduleEndpoint
+	for _, endpoint := range document.Endpoints {
+		if serving[endpoint.Service] && endpoint.Module != "" && endpoint.API != "" {
+			endpoints = append(endpoints, moduleEndpoint{Module: endpoint.Module, Service: endpoint.Service, Name: endpoint.Name, API: endpoint.API})
+		}
+	}
+	return endpoints
 }

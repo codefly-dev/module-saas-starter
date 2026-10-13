@@ -27,7 +27,7 @@ func (*exactRecordStore) WithControlPlane(ctx context.Context, fn func(context.C
 	return fn(ctx)
 }
 
-func (*exactRecordStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+func (*exactRecordStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
 	return nil, nil
 }
 
