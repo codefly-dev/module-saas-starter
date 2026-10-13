@@ -48,7 +48,7 @@ func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T)
 		envelope, err = testStore.LatestModuleEnvelopeRevision(ctx)
 		return err
 	}))
-	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: grant}, envelope)
+	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: grant}, envelope, nil)
 	request := business.ExecutableArtifactRequest{Installation: installation.Id, Policy: "content", Identity: business.ExecutableArtifactIdentity{Schema: policy.Schema, Source: "acme.example.solution", Subject: []byte(`{"version":9007199254740993,"dependencies":[]}`), Contracts: policy.Contracts, ExpectedRevision: 9007199254740993}}
 	decide := func(action string) (*business.ExecutableArtifactApproval, error) {
 		return svc.DecideExecutableArtifact(auth.WithVerifiedDatabaseIdentity(testCtx, owner, org), caller, org, owner, "example", action, request)
@@ -119,9 +119,9 @@ func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T)
 	// A removed policy and unhealthy installation must not trap old consent.
 	withoutPolicy := grant
 	withoutPolicy.ArtifactPolicies = nil
-	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: withoutPolicy}, envelope)
+	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: withoutPolicy}, envelope, nil)
 	_, _, err = svc.RevokeApprovedExecutableArtifact(auth.WithVerifiedDatabaseIdentity(testCtx, owner, org), caller, org, owner, "example", installation.Id, first.ID, func(business.ArtifactPermission) error { return nil })
-	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: grant}, envelope)
+	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: grant}, envelope, nil)
 	require.NoError(t, err)
 	_, err = decide("authorize")
 	require.ErrorContains(t, err, "revoked")

@@ -886,11 +886,6 @@ func (s *Service) currentModuleGrantFromSnapshot(
 			return ModulePrincipalGrant{}, false, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
 				"principal %s: a newer module envelope is committed than the registry was derived from", principalID)
 		}
-		if s.deliveredSince(ctx, snapshot) {
-			s.requestRegistryPass()
-			return ModulePrincipalGrant{}, false, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
-				"principal %s: a document was delivered after the registry was derived", principalID)
-		}
 		return ModulePrincipalGrant{}, false, nil
 	}
 	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {

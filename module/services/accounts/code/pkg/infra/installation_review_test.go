@@ -47,7 +47,7 @@ func TestInstallationDBFenceSerializesPlacementAndNarrowing(t *testing.T) {
 			}}
 			svc, err := business.NewService(store)
 			require.NoError(t, err)
-			svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{a.principal: a.grant}, a.envelope)
+			svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{a.principal: a.grant}, a.envelope, nil)
 			svc.SetModuleAuthorityReads(testStore, nil)
 			caller := business.ModuleCaller{PrincipalID: a.principal, BoundOrg: a.org}
 			placed := make(chan error, 1)

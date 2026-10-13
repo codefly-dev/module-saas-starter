@@ -63,7 +63,7 @@ func consumerCeilingService(t *testing.T, a dynamicInstall, current business.Mod
 	current.PresenceBinding, current.Tenant, current.CrossTenant = a.binding, a.org, true
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
-	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{a.principal: current}, a.envelope)
+	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{a.principal: current}, a.envelope, nil)
 	svc.SetModuleAuthorityReads(testStore, nil)
 	return svc
 }

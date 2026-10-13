@@ -181,7 +181,7 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 		envelope, err = testStore.LatestModuleEnvelopeRevision(ctx)
 		return err
 	}))
-	svc.InstallDerivedModulePrincipals(registry, envelope)
+	svc.InstallDerivedModulePrincipals(registry, envelope, nil)
 	// The installer proves which module it is with its pod's projected token,
 	// bound to the build its authority approves (#1056).
 	cluster := executiontest.New()

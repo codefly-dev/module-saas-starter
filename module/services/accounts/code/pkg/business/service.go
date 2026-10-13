@@ -356,13 +356,11 @@ func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 // InstallDerivedModulePrincipals publishes a registry derived from one envelope
 // revision. Callers must derive the entries from that revision before publishing;
 // this operation does not infer or advance a revision from the current database.
-func (s *Service) InstallDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64) {
-	s.installDerivedModulePrincipals(registry, envelopeRevision, nil)
-}
-
-// installDerivedModulePrincipals is InstallDerivedModulePrincipals carrying the
-// size of the delivery inbox the registry was derived from.
-func (s *Service) installDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64) {
+//
+// delivered is the size of the delivery inbox the registry was derived from,
+// read in the same snapshot as its inputs, or nil when it was not derived from
+// a counted read of the inbox. See deliveredSince.
+func (s *Service) InstallDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64) {
 	s.observeModuleEnvelopeRevision(envelopeRevision)
 	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision, delivered: delivered})
 }

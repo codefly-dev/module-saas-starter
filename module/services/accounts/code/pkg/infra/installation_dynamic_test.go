@@ -170,7 +170,7 @@ func TestDynamicInstallationDBCancelsOnlyItsOrgAndFencesLeases(t *testing.T) {
 			foreignPendingID := enqueue(b)
 			svc, err := business.NewService(testStore)
 			require.NoError(t, err)
-			svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{a.principal: a.grant}, a.envelope)
+			svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{a.principal: a.grant}, a.envelope, nil)
 			emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
 			require.NoError(t, err)
 			svc.SetAuditEmitter(emitter)

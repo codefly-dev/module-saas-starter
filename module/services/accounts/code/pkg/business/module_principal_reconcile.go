@@ -129,7 +129,7 @@ func NewModulePrincipalReconciler(activation *SolutionAuthorityActivation) (*Mod
 
 func (r *ModulePrincipalReconciler) publish(published *publishedModuleRegistry) {
 	r.last = published
-	r.activation.reconciler.service.installDerivedModulePrincipals(published.registry, published.revision, published.delivered)
+	r.activation.reconciler.service.InstallDerivedModulePrincipals(published.registry, published.revision, published.delivered)
 }
 
 // degraded is the last published registry kept only where it is still

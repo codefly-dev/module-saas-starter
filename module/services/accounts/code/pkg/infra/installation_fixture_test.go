@@ -80,5 +80,5 @@ func installCapabilityFixture(t *testing.T, svc *business.Service, org, owner st
 		require.Equal(t, envelope, *live.EnvelopeRevision)
 		registry[principal] = grant
 	}
-	svc.InstallDerivedModulePrincipals(registry, envelope)
+	svc.InstallDerivedModulePrincipals(registry, envelope, nil)
 }

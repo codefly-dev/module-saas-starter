@@ -127,6 +127,15 @@ func (s *Service) authorizeModuleIdentity(
 		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, err
 	}
 	if !registered {
+		// A workload that starts beside its own delivery asks before the pass
+		// that reads it has run. Only here — the mint that names a prefix — is
+		// that "not established yet": every other caller of the registry,
+		// a person's revision check among them, hears what it always did.
+		if s.deliveredSince(ctx, snapshot) {
+			s.requestRegistryPass()
+			return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+				"principal %s: a document was delivered after the registry was derived", principalID)
+		}
 		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, fmt.Errorf("%w: %s is not a declared module principal",
 			ErrModuleIdentityDenied, prefix)
 	}

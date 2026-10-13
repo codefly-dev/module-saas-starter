@@ -433,10 +433,19 @@ exist and writing them needs root. Two settings name a local stand-in, and each
 is **refused at boot when the process runs in a pod** (`infra.InCluster()`), so
 neither is a way for a composition to move a deployed host's trust:
 
-| Key | Meaning |
-| --- | --- |
-| `SOLUTION_HOST_LOCAL_CLUSTER` | an absolute directory holding `server` (the https origin of the local stand-in for the API server), `ca.crt`, `token` and `namespace`. TokenReview and pod reads go there. It does not make `InCluster()` true: the process is still not in a pod, and everything keyed on that stays local. |
-| `SOLUTION_HOST_LOCAL_TRUST_ANCHOR` | an absolute directory holding `verification_policy.json`. A relocated anchor must be a **local** profile — one bound to a cluster CA by its `local` block — so it can only ever admit a developer's key for the one local cluster whose CA it names. |
+- **`SOLUTION_HOST_LOCAL_CLUSTER`** — an absolute directory holding `server`
+  (the https origin of the local stand-in for the API server), `ca.crt`,
+  `token` and `namespace`. TokenReview and pod reads go there. It does not make
+  `InCluster()` true: the process is still not in a pod, and everything keyed
+  on that stays local.
+- **`SOLUTION_HOST_LOCAL_TRUST_ANCHOR`** — an absolute directory holding
+  `verification_policy.json`. A relocated anchor must be a **local** profile —
+  one bound to a cluster CA by its `local` block — so it can only ever admit a
+  developer's key for the one local cluster whose CA it names.
+
+Neither is a workspace setting and neither is in the table above: both are
+read from the process environment by the code that would otherwise read the
+kubelet's paths, never through a workspace configuration group.
 
 In a pod both constants stand exactly as described above.
 

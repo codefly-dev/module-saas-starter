@@ -662,12 +662,12 @@ func TestSourceDelegation_DedicatedTenantCannotBorrowInstallation(t *testing.T) 
 		revision, err = testStore.LatestModuleEnvelopeRevision(ctx)
 		return err
 	}))
-	w.svc.InstallDerivedModulePrincipals(registry, revision)
+	w.svc.InstallDerivedModulePrincipals(registry, revision, nil)
 	_, err := w.mint(business.SourceDelegationRef{SourceID: source})
 	require.ErrorIs(t, err, business.ErrModuleTenantNotCurrent)
 	grant.Tenant = ""
 	registry[principal] = grant
-	w.svc.InstallDerivedModulePrincipals(registry, revision)
+	w.svc.InstallDerivedModulePrincipals(registry, revision, nil)
 	authority, err := w.mint(business.SourceDelegationRef{SourceID: source})
 	require.NoError(t, err)
 	require.NotEmpty(t, authority.InstallationID)
