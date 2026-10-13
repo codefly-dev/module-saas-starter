@@ -17,9 +17,10 @@ import (
 )
 
 // The published module-authority client, against the real host: the
-// auth-gateway's module broker for every mint, accounts' `authority` endpoint
-// for the exchange. Nothing here is a fake of either seam — the one thing a
-// fake could never prove is that the client and the host agree on the wire.
+// auth-gateway's module broker — on its workload endpoint, where a composed
+// workload reaches it — for every mint, accounts' `authority` endpoint for the
+// exchange. Nothing here is a fake of either seam — the one thing a fake could
+// never prove is that the client and the host agree on the wire.
 
 type gatewaySeam struct{ url string }
 
@@ -35,7 +36,7 @@ func (p projectedToken) ProjectedToken() (string, error) { return string(p), nil
 func newClient(t *testing.T, h *host, prefix, token string) *moduleauthority.Client {
 	t.Helper()
 	client, err := moduleauthority.New(moduleauthority.Seams{
-		Gateway:       gatewaySeam{url: h.GatewayURL},
+		Gateway:       gatewaySeam{url: h.WorkloadURL},
 		Authority:     moduleauthority.Authority{Address: h.Authority},
 		InternalToken: h.InternalToken,
 	}, moduleauthority.Credentials{Prefix: prefix, Token: projectedToken(token)})

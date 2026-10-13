@@ -214,13 +214,12 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		logModuleExchangeRefusal("module-work-context", payload.Prefix, err)
 		switch status.Code(err) {
-		case codes.PermissionDenied:
-			// A verdict on a caller the endpoint already admitted: the token is
-			// not the workload the prefix declares, or the pod is not running
-			// its approved build. Named as forbidden, not as a missing
-			// credential — a module would otherwise re-present the same token.
-			httpError(w, http.StatusForbidden, "forbidden")
-		case codes.Unauthenticated:
+		case codes.PermissionDenied, codes.Unauthenticated:
+			// A refused token — not the workload the prefix declares, or a pod
+			// not running its approved build — is 401 on this exchange: the
+			// published module-authority client reads it as invalid
+			// credentials, and qualification/module-authority holds the host
+			// to that wire contract.
 			httpError(w, http.StatusUnauthorized, "unauthorized")
 		case codes.InvalidArgument:
 			httpError(w, http.StatusBadRequest, "invalid request")

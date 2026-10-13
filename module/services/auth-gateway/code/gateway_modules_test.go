@@ -327,9 +327,8 @@ func TestGateway_ModuleWorkContext_RelaysAccountsOutcome(t *testing.T) {
 		code codes.Code
 		want int
 	}{
-		// A verdict on a caller the workload endpoint admitted: forbidden, so
-		// a module does not re-present the token a missing credential would.
-		"refusal":          {codes.PermissionDenied, http.StatusForbidden},
+		// A refused token is invalid credentials to the published client.
+		"refusal":          {codes.PermissionDenied, http.StatusUnauthorized},
 		"rejected request": {codes.InvalidArgument, http.StatusBadRequest},
 		// accounts could not establish what the pod runs: retryable, not a verdict.
 		"execution unbound": {codes.Unavailable, http.StatusServiceUnavailable},
