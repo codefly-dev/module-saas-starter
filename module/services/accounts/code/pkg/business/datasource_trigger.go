@@ -416,27 +416,30 @@ func datasourceTriggerInput(orgID, sourceID string) []byte {
 // stated as planned in MODULE.md and WORK_CONTEXTS.md rather than quietly
 // shortened to fit.
 //
-// ONLY A DELEGATION THE EXECUTING MODULE CAN ACTUALLY USE IS NAMED (issue
-// #1121, m5). It used to take the first active reference from any module, so a
-// deployment whose executing module holds none read as "bound" because some
-// other module's delegation existed — and every occurrence was then refused at
-// the mint, with the page saying the opposite.
+// ONLY A SELF-ADDRESSED DELEGATION IS NAMED, AND IT IS A CANDIDATE (issue
+// #1121, m5 and F1). It used to take the first active reference from any
+// module, which named delegations no trigger could ever use: a mint by source
+// id resolves the active delegation OF THE CALLING MODULE
+// (ActiveSourceDelegation by source and prefix) and the capability is addressed
+// to the binding's declared audience, which the module admitting it must itself
+// accept. Both are true of exactly one shape — a delegation whose binding names
+// its own module as the audience, the self-admitting binding
+// selfAdmittingBinding exists to allow. A delegation to module A addressed to
+// audience B is reachable only through the delegation-id exchange, which a
+// source-id reference cannot name.
 //
-// What makes a delegation usable by the module that fires the trigger is
-// derivable from the delegation itself, and needs no new configuration: the
-// reference arm is a source id, a mint by source id resolves the active
-// delegation OF THE CALLING MODULE (ActiveSourceDelegation by source and
-// prefix), and the capability it answers with is addressed to the binding's
-// declared audience — which the executing module must itself admit, because it
-// attaches the capability as its own incoming execution context. Both are true
-// of exactly one shape: a delegation whose binding names its own module as the
-// audience, which is the self-admitting binding selfAdmittingBinding exists to
-// allow. A delegation to module A addressed to audience B is usable only
-// through the delegation-id exchange, which a source-id reference cannot reach.
+// THAT IS A SHAPE, NOT AN EXECUTOR. Nothing this host holds declares which
+// module executes declared work — self-addressed bindings are generic and a
+// deployment may have several — so a source whose only such delegation belongs
+// to module A is a candidate under A's name, and if the composed executor is B,
+// holding none, B's mint is refused with ErrSourceDelegationMissing. The
+// declaration therefore reports WHOSE delegation it resolved to
+// (SourceTriggerDeclaration.IdentityHolder) and claims nothing about readiness;
+// see candidateForADeclaredExecutor, which carries the whole argument.
 //
-// An active delegation with no resolvable scopes is not one either: the module
-// no longer declares the binding it was recorded against, so the next mint
-// revokes it as binding_changed.
+// An active delegation with no resolvable scopes is not a candidate either: the
+// module no longer declares the binding it was recorded against, so the next
+// mint revokes it as binding_changed.
 //
 // THE REFERENCE IS THE SOURCE ID, AND REVOCATION IS THEREFORE NOT DURABLE
 // (issue #1112, M3). Every delegation on one source reads back under the same

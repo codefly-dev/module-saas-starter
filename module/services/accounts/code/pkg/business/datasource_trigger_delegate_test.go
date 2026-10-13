@@ -105,17 +105,19 @@ func TestDelegateSourceTriggersLeavesAnotherModulesDelegationAlone(t *testing.T)
 	require.Equal(t, 0, store.revocations, "a backfill revoked something")
 }
 
-// A delegation the executor's own current declaration no longer supports is
-// not "nothing was missing" (issue #1121, N8).
+// A delegation the HOLDER's own current declaration no longer supports is not
+// "nothing was missing" (issue #1121, N8). Holder, not executor: a
+// self-addressed target is one that COULD serve a trigger, never one proved to
+// fire the release (F1).
 //
 // A delegation carries a digest of its binding's audience and delegation
 // scopes, and the very next mint revokes one whose binding has changed
 // (`binding_changed`). The backfill used to skip any target holding an active
-// row, so an operator pressing the button over a source whose executor's
-// binding had moved was told nothing was missing — over a trigger that could
-// never mint. It is revoked here, under the same reason the mint would use, and
+// row, so an operator pressing the button over a source whose self-addressed
+// holder's binding had moved was told nothing was missing — over a trigger that
+// could never mint. It is revoked here, under the same reason the mint would use, and
 // a fresh one is recorded in the same transaction.
-func TestDelegateSourceTriggersReplacesTheExecutorsStaleDelegation(t *testing.T) {
+func TestDelegateSourceTriggersReplacesTheSelfAddressedHoldersStaleDelegation(t *testing.T) {
 	store := newDelegateTriggerStore(t)
 	svc, _ := newDatasourceService(store, &recordingProducer{}, &fakeGitHub{defaultBranch: "main", commit: "abc"})
 	source := githubSource(t, svc, "main", nil, "")
@@ -123,7 +125,7 @@ func TestDelegateSourceTriggersReplacesTheExecutorsStaleDelegation(t *testing.T)
 	require.NoError(t, err)
 	svc.SetModuleCapabilities(nil, nil, registry)
 
-	// The executor's delegation as recorded against an EARLIER shape of its
+	// The holder's delegation as recorded against an EARLIER shape of its
 	// binding: same binding id, a digest that no longer matches.
 	stale := store.insert(source.ID, "connecting-member", "runtime", registry)
 	stale.BindingDigest = "0" + stale.BindingDigest[1:]

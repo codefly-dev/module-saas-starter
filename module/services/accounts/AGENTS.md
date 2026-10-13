@@ -1006,14 +1006,16 @@ the values and records the other column beside them).
   destructive for a backfill: it took a personal
   source's delegation from its owner and moved every unrelated module's
   authority onto the administrator, failing in-flight children's re-checks. The
-  backfill records **only for a module that executes declared work** —
-  `SourceDelegationTarget.ExecutesDeclaredWork`, the self-admitting binding
-  below — because that is what the reference it answers with is for (#1121). It
+  backfill records **only for a SELF-ADDRESSED target** —
+  `SourceDelegationTarget.SelfAddressed`, the self-admitting binding below —
+  because that is the shape the reference it answers with can serve (#1121). It
   recorded one for every module accepting delegations, handing the calling
   administrator's authority over that source to modules whose delegation no
-  trigger of this host could name. A connect still delegates to every target:
-  that is a person establishing the source, and a consuming module's sync is the
-  delegation's main purpose.
+  trigger of this host could name. It does **not** follow that such a target is
+  the module which will execute the release: nothing here declares that (F1), so
+  this narrows who may hold a candidate and proves nothing about who fires it. A
+  connect still delegates to every target: that is a person establishing the
+  source, and a consuming module's sync is the delegation's main purpose.
 
   It leaves a target's LIVE delegation untouched and records for a target with
   none — or with one the module's current declaration no longer supports. A

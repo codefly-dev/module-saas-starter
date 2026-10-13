@@ -229,19 +229,24 @@ type SourceDelegationTarget struct {
 	Binding   ModuleOperationAudience
 }
 
-// ExecutesDeclaredWork reports whether this target's binding is one the module
-// holding it can admit as its OWN incoming execution context: its audience is
-// its own declared prefix.
+// SelfAddressed reports whether this target's binding is one the module holding
+// it can admit as its OWN incoming execution context: its audience is its own
+// declared prefix.
 //
-// It is what makes a target the executing module of a declared trigger rather
-// than a module whose delegation some other module presents (issue #1121, N8).
-// A trigger's reference arm is a source id, a mint by source id resolves the
-// active delegation of the CALLING module, and the capability is addressed to
-// the binding's audience — so a delegation to module A addressed to audience B
-// can serve a trigger only through the delegation-id exchange, which no
-// reference this host declares can reach. See selfAdmittingBinding for why
-// naming your own prefix is admitted at all.
-func (t SourceDelegationTarget) ExecutesDeclaredWork() bool {
+// It is the shape a declared trigger's reference arm can serve (issue #1121,
+// N8), and nothing more than that: a trigger's reference is a source id, a mint
+// by source id resolves the active delegation of the CALLING module, and the
+// capability is addressed to the binding's audience — so a delegation to module
+// A addressed to audience B can serve a trigger only through the delegation-id
+// exchange, which no reference this host declares can reach. See
+// selfAdmittingBinding for why naming your own prefix is admitted at all.
+//
+// IT DOES NOT IDENTIFY THE EXECUTOR (issue #1121, F1). Nothing this host holds
+// declares which module executes declared work, and these bindings are generic,
+// so a self-addressed target is a candidate the backfill may record for — never
+// a module proved to install and fire the release. The name says "self
+// addressed" because that is the fact it tests.
+func (t SourceDelegationTarget) SelfAddressed() bool {
 	return t.Binding.Audience != "" && t.Binding.Audience == t.Prefix
 }
 
@@ -287,15 +292,17 @@ const (
 	// delegation exactly as it is, and only a target with none — or with one
 	// its module's current declaration no longer supports — gets one.
 	//
-	// It is also narrowed to the modules that EXECUTE declared work
-	// (SourceDelegationTarget.ExecutesDeclaredWork), because that is what it is
-	// for: the reference a declared release's trigger names. It used to record
+	// It is also narrowed to SELF-ADDRESSED targets
+	// (SourceDelegationTarget.SelfAddressed), because that is the shape the
+	// reference a declared release's trigger names can serve. It used to record
 	// one for every module accepting delegations, which hands the calling
 	// administrator's authority over that source to modules whose delegation no
 	// trigger of this host could ever name — authority nobody asked to grant
-	// (issue #1121, N8). A connect still delegates to every target: that is a
-	// person establishing the source, and the consuming module's sync is the
-	// delegation's main purpose.
+	// (issue #1121, N8). It does not follow that a self-addressed target is the
+	// module which will execute the release; nothing here declares that (F1).
+	// A connect still delegates to every target: that is a person establishing
+	// the source, and the consuming module's sync is the delegation's main
+	// purpose.
 	//
 	// The distinction is issue #1112, M2. The backfill used to run the replace
 	// mode, which took every delegation on the source, marked it `replaced` and
@@ -338,7 +345,7 @@ func (s *Service) recordSourceDelegationsTx(
 	recorded := 0
 	for _, target := range targets {
 		if mode == sourceDelegationBackfill {
-			if !target.ExecutesDeclaredWork() {
+			if !target.SelfAddressed() {
 				continue
 			}
 			existing, err := s.store.ActiveSourceDelegation(ctx, sourceID, target.Prefix)
