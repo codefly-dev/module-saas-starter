@@ -451,3 +451,159 @@ describe("the playground's declaration card when the read is paused", () => {
 		await screen.findByText("saas_datasource_reconcile");
 	});
 });
+
+// THE CHILDREN CARD AND THE ACTION'S EXPLANATION READ THE SAME RESPONSE
+// (issue #1121, r24). Both asserted an absence straight off an array length,
+// so a read that had not answered — cold refusal, held request, paused offline
+// — produced "No child has been minted against this source's references" and a
+// tooltip reading "No live reference: an occurrence would be refused". Neither
+// is a fact the host had supplied; a true empty is only knowable after a
+// successful read.
+//
+// The button's disabled state is deliberately NOT part of this fix: refusing to
+// act on an unknown reference set is correct. What changes is what the operator
+// is TOLD about why.
+const CHILDREN_EMPTY =
+	"No child has been minted against this source's references.";
+const NO_LIVE_REFERENCE = "No live reference: an occurrence would be refused";
+
+describe("the children card and the occurrence button on a read that has not answered", () => {
+	afterEach(() => onlineManager.setOnline(true));
+
+	function held() {
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async () => {
+					await gate;
+					return HttpResponse.json({
+						declaration: declared,
+						delegations: [reference],
+						children: [child],
+					});
+				},
+			),
+		);
+		return () => release?.();
+	}
+
+	function refuse() {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+	}
+
+	it("claims no absent child while the request is still held", async () => {
+		const release = held();
+		renderInApp(<Page />);
+		await screen.findByText("acme/handbook");
+
+		expect(screen.queryByText(CHILDREN_EMPTY)).toBeNull();
+		expect(screen.queryByTitle(NO_LIVE_REFERENCE)).toBeNull();
+
+		release();
+		await screen.findByText("docstore");
+	});
+
+	it("says a refused read was refused rather than reporting no children", async () => {
+		refuse();
+		renderInApp(<Page />);
+		await screen.findByText("acme/handbook");
+
+		await waitFor(() => expect(screen.queryByText(CHILDREN_EMPTY)).toBeNull());
+		expect(screen.queryByTitle(NO_LIVE_REFERENCE)).toBeNull();
+		// The action stays refused — authorization is unchanged — and says why.
+		const run = screen.getByRole("button", { name: /Run one occurrence/ });
+		expect(run.hasAttribute("disabled")).toBe(true);
+		expect(run.getAttribute("title")).toMatch(/permission/i);
+	});
+
+	it("claims no absent child while the read is paused offline", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({
+					declaration: declared,
+					delegations: [reference],
+					children: [child],
+				}),
+			),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		client.setQueryData(["unattended-sources", "org-1"], sources.datasources);
+		onlineManager.setOnline(false);
+		renderInApp(<Page />, client);
+		await screen.findByText("acme/handbook");
+
+		await waitFor(() => {
+			const state = client.getQueryState([
+				"source-trigger-declaration",
+				"org-1",
+				SOURCE,
+			]);
+			expect(state?.fetchStatus).toBe("paused");
+		});
+		expect(screen.queryByText(CHILDREN_EMPTY)).toBeNull();
+		expect(screen.queryByTitle(NO_LIVE_REFERENCE)).toBeNull();
+
+		onlineManager.setOnline(true);
+		await screen.findByText("docstore");
+	});
+
+	// A TRUE EMPTY IS STILL SAID — after a read that succeeded. Suppressing it
+	// everywhere would trade one false statement for a blank card.
+	it("reports no children once a successful read says so", async () => {
+		serve({ declaration: declared, delegations: [reference], children: [] });
+		renderInApp(<Page />);
+
+		expect(await screen.findByText(CHILDREN_EMPTY)).toBeTruthy();
+	});
+
+	// And a transient failure keeps what the last good read said, under a
+	// notice, rather than reporting an absence it cannot see.
+	it("keeps the children a transient failure left behind", async () => {
+		let down = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				down
+					? HttpResponse.json({ message: "boom" }, { status: 500 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [reference],
+							children: [child],
+						}),
+			),
+		);
+		const { client } = renderInApp(<Page />);
+		await screen.findByText("docstore");
+
+		down = true;
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: ["source-trigger-declaration"] })
+				.catch(() => undefined);
+		});
+
+		expect(screen.getByText("docstore")).toBeTruthy();
+		expect(screen.queryByText(CHILDREN_EMPTY)).toBeNull();
+	});
+});

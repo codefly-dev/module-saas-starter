@@ -430,10 +430,24 @@ function TriggerIdentityPanel({
 								onError: (error) => toast.error(String(error)),
 							})
 						}
+						// The DISABLED state is unchanged: refusing to act on a
+						// reference set this page cannot see is correct, and this
+						// change is not about what the button does. What changes is
+						// what the operator is TOLD — "No live reference" is a claim
+						// about the host's answer, and a read that has not answered
+						// has made none (issue #1121, r24).
 						disabled={reconcile.isPending || live.length === 0}
 						title={
 							live.length === 0
-								? "No live reference: an occurrence would be refused"
+								? unanswered
+									? "Still reading this source’s references"
+									: !read.isSuccess
+										? readOutcomeMessage(
+												outcome,
+												"this source’s references",
+												"No live reference: an occurrence would be refused",
+											)
+										: "No live reference: an occurrence would be refused"
 								: undefined
 						}
 					>
@@ -442,14 +456,23 @@ function TriggerIdentityPanel({
 					</Button>
 				</CardHeader>
 				<CardContent>
-					{children.length === 0 ? (
-						<p
-							role="status"
-							className="py-6 text-center text-sm text-muted-foreground"
-						>
-							No child has been minted against this source&apos;s references.
-						</p>
-					) : (
+					{/*
+					 * A TRUE EMPTY IS ONLY KNOWABLE AFTER A SUCCESSFUL READ. This
+					 * card reads the same response as the declaration above it, and
+					 * reported "no child has been minted" off an array length — so a
+					 * held request, a paused read and a refusal all produced a
+					 * statement about this source's children that the host had never
+					 * made (issue #1121, r24). The empty sentence now waits for the
+					 * read that licenses it; everything else says which state it is
+					 * in. A transient failure keeps the rows, because those children
+					 * were really minted and one request not coming back does not
+					 * unmint them.
+					 */}
+					<DelayedLoading
+						active={unanswered}
+						label="Reading the children this source minted"
+					/>
+					{children.length > 0 ? (
 						<Table>
 							<TableHeader>
 								<TableRow>
@@ -480,6 +503,24 @@ function TriggerIdentityPanel({
 								))}
 							</TableBody>
 						</Table>
+					) : unanswered ? null : read.isSuccess ? (
+						<p
+							role="status"
+							className="py-6 text-center text-sm text-muted-foreground"
+						>
+							No child has been minted against this source&apos;s references.
+						</p>
+					) : (
+						<p
+							role="status"
+							className="py-6 text-center text-sm text-muted-foreground"
+						>
+							{readOutcomeMessage(
+								outcome,
+								"the children this source minted",
+								"No child has been minted against this source’s references.",
+							)}
+						</p>
 					)}
 				</CardContent>
 			</Card>
