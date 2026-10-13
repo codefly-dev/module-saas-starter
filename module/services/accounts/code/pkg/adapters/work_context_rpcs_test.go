@@ -430,7 +430,7 @@ func (renewMembershipStore) WithControlPlane(ctx context.Context, fn func(contex
 	return fn(ctx)
 }
 
-func (renewMembershipStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+func (renewMembershipStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
 	return nil, nil
 }
 

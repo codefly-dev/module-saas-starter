@@ -58,9 +58,20 @@ alias the catalog *owns* is refused outright rather than half-served — the mat
 takes only the paths it matches, so serving the rest would split one prefix
 between two authorities.
 
-It uses the **solution shape**: the same cache, single carried resolution,
-upstream URL policy, guarded transport, tombstone rule and 120 s presence
-revocation bound. Before forwarding a bearer it asks accounts for the viewer's
+Where it goes is **resolved, never recorded**. The registry holds no module
+address. On each refresh the gateway reads the endpoints the module's APPLIED
+presence declares for the service that runs it, and asks the Codefly SDK
+(`codefly.For(...).Module().Service().Endpoint().API().ResolveNetworkInstance()`)
+for each: the Codefly CLI writes this gateway's `CODEFLY__ENDPOINT__…` variables
+for exactly the endpoints composed solutions consume through the host, locally
+and in a render, so exactly one answers and that is where `/v1/<alias>` goes.
+None, or more than one, leaves the module unrouted (`503 module registration
+not active`) and is logged once. In-cluster traffic after the gateway is plain
+HTTP; the mesh provides mTLS.
+
+Otherwise it uses the **solution shape**: the same cache, single carried
+resolution, upstream URL policy, guarded transport, tombstone rule and 120 s
+presence revocation bound. Before forwarding a bearer it asks accounts for the viewer's
 live entitlement to the resolved target, without caching that decision. Accounts
 intersects the delivered authority, envelope and organization's installation
 scope. The path is forwarded unchanged; a module owns its `/v1/<alias>` surface.
