@@ -1,7 +1,7 @@
 schema: codefly/module-package/v2
 kind: module-package
 id: codefly/saas-starter
-version: 0.1.0
+version: 0.1.1
 minimum-codefly-version: ">=0.3.32 <1.0.0"
 artifact-roots:
   - contracts

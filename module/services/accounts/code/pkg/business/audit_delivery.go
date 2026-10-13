@@ -15,6 +15,10 @@ import (
 // journal's audit records to the warehouse (ADR 0009). It is an operation, not a
 // sweep: it names one range, it carries the effect identity AuditDeliveryEffectID
 // derives from it, and its receipt is read back rather than inferred.
+const AuditDeliveryAudience = "saas-audit"
+const AuditDeliveryResourceKind = "saas.audit-delivery"
+const LookupDeliverAuditEventsMethod = "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents"
+
 const DeliverAuditEventsMethod = "/saas.accounts.v1.AuditService/DeliverAuditEvents"
 
 // AuditDeliveryMaxRange is the most audit records one delivery takes: the page

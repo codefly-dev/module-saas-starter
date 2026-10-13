@@ -12,7 +12,8 @@
 -- AND actor_id equal to app.current_user_id); the journal now admits the same
 -- one, and nothing wider. The app_tenant branch admits a NULL tenant only when
 -- the type is saas.audit.recorded.v1, app.current_user_id is set and non-empty,
--- and p_actor_principal_id is that user. A person's principal id is their user
+-- and p_actor_principal_id is that user. The audit record in p_data must also
+-- name that actor and no organization. A person's principal id is their user
 -- id (sync_human_principal), and the emitter sets the envelope's actor to the
 -- audit entry's actor id, the value audit_events.actor_id records.
 --
@@ -34,6 +35,7 @@ CREATE OR REPLACE FUNCTION public.publish_domain_event(p_id uuid, p_type text, p
 DECLARE
     caller_role TEXT;
     inserted_id UUID;
+    audit_record JSONB;
 BEGIN
     caller_role := COALESCE(
         NULLIF(current_setting('role', true), 'none'),
@@ -65,6 +67,14 @@ BEGIN
                OR p_type IS DISTINCT FROM 'saas.audit.recorded.v1'
                OR NULLIF(current_setting('app.current_user_id', true), '') IS NULL
                OR p_actor_principal_id IS DISTINCT FROM NULLIF(current_setting('app.current_user_id', true), '') THEN
+                RAISE EXCEPTION 'event tenant does not match the signed request scope'
+                    USING ERRCODE = 'insufficient_privilege';
+            END IF;
+            -- The audit entry lives in data, so an envelope naming the current
+            -- user must not smuggle in another actor or organization.
+            audit_record := convert_from(p_data, 'UTF8')::jsonb;
+            IF audit_record->>'actor_id' IS DISTINCT FROM p_actor_principal_id
+               OR COALESCE(audit_record->>'organization_id', '') <> '' THEN
                 RAISE EXCEPTION 'event tenant does not match the signed request scope'
                     USING ERRCODE = 'insufficient_privilege';
             END IF;

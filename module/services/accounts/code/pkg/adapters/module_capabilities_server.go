@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -44,7 +45,7 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
 	values := md.Get(workContextHeader)
-	if len(values) == 0 || values[0] == "" {
+	if len(values) != 1 || values[0] == "" {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
 	return WorkContextSingleton().VerifyModuleWorkContext(ctx, values[0])
@@ -950,4 +951,49 @@ func moduleApprovalProto(a *business.ApprovalRequest) *gen.ModuleApproval {
 		EscalateAt: timeProto(a.EscalateAt),
 		CreatedAt:  timestamppb.New(a.CreatedAt),
 	}
+}
+
+func (s *ModuleCapabilitiesServer) ReadJournal(ctx context.Context, req *gen.ModuleReadJournalRequest) (*gen.ModuleReadJournalResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := service.ModuleReadJournal(ctx, caller, business.ModuleReadJournalInput{
+		After: req.GetAfter(), Limit: req.GetLimit(), Types: req.GetTypes(), DeliveryBindings: req.GetDeliveryBindings(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return moduleJournalPageToProto(req.GetAfter(), page)
+}
+
+func moduleJournalPageToProto(after string, page business.ModuleReadJournalResult) (*gen.ModuleReadJournalResponse, error) {
+	out := &gen.ModuleReadJournalResponse{NextAfter: after}
+	for _, entry := range page.Entries {
+		data, err := structpb.NewStruct(entry.Data)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "journal entry cannot be represented as an object")
+		}
+		projected := &gen.ModuleJournalEntry{
+			Position: entry.Position, EventId: entry.EventID, Type: entry.Type, OrganizationId: entry.OrganizationID,
+			OccurredAt: timestamppb.New(entry.OccurredAt), Data: data, DeliveryMachinery: entry.DeliveryMachinery,
+		}
+		// Struct encodes objects more widely than their JSON bytes. Leave room
+		// below the transport's 4 MiB limit and resume at the last entry sent.
+		out.Entries = append(out.Entries, projected)
+		previous := out.NextAfter
+		out.NextAfter = entry.Position
+		if proto.Size(out) > business.ModuleJournalMaxWireBytes {
+			out.Entries = out.Entries[:len(out.Entries)-1]
+			out.NextAfter = previous
+			if len(out.Entries) == 0 {
+				return nil, status.Error(codes.ResourceExhausted, "journal entry exceeds the transport bound")
+			}
+			break
+		}
+	}
+	return out, nil
 }

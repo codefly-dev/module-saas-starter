@@ -42,12 +42,13 @@ const journalWhere = `
 	AND COALESCE(e.xact_id, '0'::xid8) < pg_snapshot_xmin(pg_current_snapshot())`
 
 // readJournalPageSQL reads the first $6 rows in key order, then keeps the rows
-// whose predecessors carry at most $7 bytes of data, so one page is bounded in
-// bytes as well as in rows; the first row has no predecessor and is always kept.
+// whose cumulative data fits $7 bytes, so one page is bounded in bytes as
+// well as in rows; the first row is always kept even when it exceeds the bound.
 const readJournalPageSQL = `
 	SELECT xact::text, seq, id::text, type, tenant_id::text, occurred_at, datacontenttype, data
 	FROM (
-		SELECT *, sum(octet_length(data)) OVER (ORDER BY xact, seq) AS running
+		SELECT *, sum(octet_length(data)) OVER (ORDER BY xact, seq) AS running,
+               row_number() OVER (ORDER BY xact, seq) AS row_number
 		FROM (
 			SELECT COALESCE(e.xact_id, '0'::xid8) AS xact, e.seq, e.id, e.type, e.tenant_id,
 			       COALESCE(e.event_time, e.created_at) AS occurred_at, e.datacontenttype, e.data
@@ -57,7 +58,7 @@ const readJournalPageSQL = `
 			LIMIT $6
 		) page
 	) sized
-	WHERE running - octet_length(data) <= $7
+	WHERE running <= $7 OR row_number = 1
 	ORDER BY xact, seq`
 
 const countJournalRangeSQL = `

@@ -251,7 +251,8 @@ message ListAuditEventTypesResponse {
 // The range ends at a position that is final (below the oldest transaction still
 // running) and holds at most 500 audit records, or it is refused before anything
 // is appended. The effect id is "saas.audit.recorded.v1/<from>", derived by the
-// caller and presented in the effect-id header: one range, one receipt.
+// host: one range, one receipt. A runtime task may carry its own transport
+// effect identity; the range receipt is independent of that task identity.
 message DeliverAuditEventsRequest {
   string from = 1 [(buf.validate.field).string = {
     min_len: 1
@@ -265,19 +266,12 @@ message DeliverAuditEventsRequest {
 
 message DeliverAuditEventsResponse {
   string effect_id = 1;
-  // status is "committed" when the range is recorded, "unknown" when a recovery
-  // found no receipt for the effect.
+  // status is "committed" when the range is recorded. An absent lookup
+  // returns NOT_FOUND: absence is inconclusive, never a committed response.
   string status = 2;
   // delivered is the number of audit records of the range appended to the
   // storage; a range with none still commits a receipt.
   int32 delivered = 3;
-}
-
-message LookupDeliverAuditEventsRequest {
-  string effect_id = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 128
-  }];
 }
 
 // AuditService — append-only audit event log
@@ -375,9 +369,9 @@ service AuditService {
   rpc DeliverAuditEvents(DeliverAuditEventsRequest) returns (DeliverAuditEventsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_MEMBER
-      permissions: "audit:deliver"
-      scopes: "audit:deliver"
+      // Headless module principals are authorized by their live grant and
+      // saas.audit-delivery scope, not by a human organization membership.
+      tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}
       idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
@@ -387,7 +381,7 @@ service AuditService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (codefly.runnable.v0.operation) = {
-      attempt_timeout: {seconds: 120}
+      attempt_timeout: {seconds: 60}
       total_timeout: {seconds: 600}
       max_attempts: 3
       backoff: {seconds: 5}
@@ -411,14 +405,14 @@ service AuditService {
       completion: COMPLETION_CALL
     };
   }
-  // LookupDeliverAuditEvents reads back the receipt of one delivery effect. It
-  // never delivers: recovery reads what committed and nothing else.
-  rpc LookupDeliverAuditEvents(LookupDeliverAuditEventsRequest) returns (DeliverAuditEventsResponse) {
+  // LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+  // derives the range receipt identity from from. It never delivers.
+  rpc LookupDeliverAuditEvents(DeliverAuditEventsRequest) returns (DeliverAuditEventsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_MEMBER
-      permissions: "audit:deliver"
-      scopes: "audit:deliver"
+      // Headless module principals are authorized by their live grant and
+      // saas.audit-delivery scope, not by a human organization membership.
+      tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

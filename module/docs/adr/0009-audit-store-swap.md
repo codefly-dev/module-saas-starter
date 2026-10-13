@@ -48,8 +48,8 @@ tenant, and an `internal` type in it is never fanned out.
    every audit entry, including one with no organization, to the journal as the
    internal type `saas.audit.recorded.v1`, carrying the whole entry, in the
    caller's transaction through the existing transport. No table, relay or drain is
-   added to this module, and the only migration is the one that lets a user-scoped
-   transaction publish an entry with no organization (item 2a). The type is
+   added to this module. Migration 36 admits user-scoped publication (item 2a),
+   and migration 37 records the writing transaction for the journal cursor. The type is
    code-owned and `internal`: the
    relay marks it published with no fan-out, a replay skips it, and no
    subscription may match it. The organization-scoped webhook event of an external
@@ -66,7 +66,9 @@ tenant, and an `internal` type in it is never fanned out.
    Migration 36 replaces the function with an identical body except that the
    `app_tenant` branch also admits one case: the tenant is NULL, the type is
    `saas.audit.recorded.v1`, `app.current_user_id` is set and non-empty, and the
-   event's actor (`p_actor_principal_id`) is that same user. It mirrors the rule
+   event's actor (`p_actor_principal_id`) is that same user. The record in `data`
+   must name that actor and no organization as well; an envelope cannot disguise
+   a record that the original audit row policy would refuse. It mirrors the rule
    the `audit_events_tenant` policy already applies to the same entry's row
    (`org_id IS NULL` and `actor_id` equal to `app.current_user_id`), so the journal
    admits exactly what `audit_events` admits and nothing wider; every other
@@ -94,15 +96,32 @@ tenant, and an `internal` type in it is never fanned out.
    record's organization from its row and never from the caller, and appends each
    entry through `AuditStorage` to the warehouse. It emits no audit of its own.
    Its receipt is one per range, effect id `saas.audit.recorded.v1/<from>`, in
-   the installation's tenant, so an entry with no organization needs no tenant of
-   its own. Delivery is at-least-once, and overlapping ranges append an entry
+   the installation's tenant. Both invocation and lookup take the same `{from, to}`
+   body. The host derives its range receipt key internally; the runtime's
+   transport effect id identifies the task operation separately. Lookup verifies
+   the same request digest and reports a missing receipt as `NOT_FOUND`; a
+   successful lookup is always proof of a committed range. An entry with no
+   organization needs no tenant of its own. Delivery is at-least-once, and overlapping ranges append an entry
    twice; every read returns each entry once by id.
+   Delivery and lookup require a verified, idempotent operation context addressed
+   to `saas-audit`, a live cross-tenant module grant, and `saas.audit-delivery`
+   with `invoke` or `read`, respectively. Human membership and API-key scopes do
+   not grant this cross-tenant operation. Authorization is repeated after the
+   receipt serialization hold, before either execution or replay.
+   A binding id is marked as delivery machinery only for the calling module;
+   another module reusing that id remains ordinary traffic. Journal pages fit
+   the cumulative JSON byte bound and a 3 MiB projected protobuf bound, with
+   the cursor ending at the last entry actually returned. The producer also
+   checks the encoded size of each audit record before committing it, so a
+   compact numeric array cannot leave an unreadable record in the journal.
 
    *Revised 2026-10-13.* The first draft started one task per event and read the
    journal row by event id. Delivering per event made each delivery's own audit (the
    mint of its Work Context, its exchanges) an event to deliver, and so on without
-   end; a range, with the reader skipping pages that hold only that footprint, ends
-   it. The change is in this item only; the swap, the journal type and the other items stand.
+   end. Page delivery holds machinery-only pages until their oldest entry is
+   older than one hour, then delivers them too. An idle deployment therefore
+   settles at one delivery per hold instead of one per polling pass. The swap,
+   journal type and remaining decisions stand.
 
 4. **Reads come from the warehouse.** The activity list, aggregation and export go
    through `AuditStorage`. A warehouse read names its scope (an organization, or
@@ -143,3 +162,9 @@ tenant, and an `internal` type in it is never fanned out.
   actor id and of `app.current_user_id`, which are the canonical lowercase user id
   everywhere they are set; a non-canonical spelling of the same id is refused where
   `audit_events` would accept it, which fails closed.
+
+## Build or reuse
+
+| Component | Searched and found | Decision |
+| --- | --- | --- |
+| Audit storage and journal delivery | This repository's existing journal, closed #1000's storage interfaces and parity suite, and the shared `core`, `sdk-go`, and `saas-sdk-go` implementations; existing receipts and module capability verification are implemented and tested. | Reuse the journal, storage shapes, SDK receipt guard, and live module authority checks. Extend the existing adapters; no parallel queue, identity provider, or receipt implementation. |

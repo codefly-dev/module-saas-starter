@@ -40,15 +40,10 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 			require.Contains(t, method.GetProcedure(), "Complete")
 		}
 	}
-	// Artifact approval/authorization/revocation and current installation lookup
-	// are internal module capabilities, never public caller endpoints; so is the
-	// declared-presence RPC this branch adds. Base 49, main +4, this branch +1;
-	// then -2 when MintModuleRegistration and MintSolutionRegistration were
-	// deleted with their secrets (#1056), and +1 for the live-authority read a
-	// callee's verifier asks (#1107) — picking either side's number would be
-	// silently wrong, so this is read off the regenerated
-	// generated/authz-methods.json.
-	require.Equal(t, 54, internalCount) // includes the internal retained-frontend read
+	// ReadJournal, the live authority read and retained-frontend lookup are internal.
+	require.Equal(t, 55, internalCount)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_INTERNAL,
+		methodByProcedure(catalog, "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal").GetPolicy().GetExposure())
 	require.Equal(t, 17, failClosedCount)
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(

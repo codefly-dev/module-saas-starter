@@ -291,8 +291,8 @@ func TestReadJournalPageBoundsTheBytesOfAPage(t *testing.T) {
 		return rows
 	}
 	require.Len(t, read(1), 1, "the first row is always served")
-	require.Len(t, read(len(body)), 2, "the bytes before the second row fit; those before the third do not")
-	require.Len(t, read(2*len(body)), 3)
+	require.Len(t, read(len(body)), 1, "the next row would exceed the byte bound")
+	require.Len(t, read(2*len(body)), 2)
 	require.Len(t, read(0), 3, "no bound")
 }
 

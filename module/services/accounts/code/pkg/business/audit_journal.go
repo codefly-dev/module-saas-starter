@@ -10,6 +10,8 @@ import (
 	"accounts/pkg/events"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -36,7 +38,7 @@ const maxAuditJournalData = 960 * 1024
 // exceed the data limit. The journal is the audit entry's only copy until a
 // delivery appends it, so the entry is not truncated and not dropped: the emit
 // fails, and the caller's transaction with it, exactly as a failed append does.
-var ErrAuditEntryTooLarge = errors.New("audit: the entry does not fit in a journal event (data is limited to 960 KiB)")
+var ErrAuditEntryTooLarge = errors.New("audit: the entry exceeds the journal JSON or encoded page limit")
 
 // auditJournalNamespace derives the journal event id from the audit entry id.
 // The two cannot be one id: an organization-scoped entry of an external type is
@@ -110,6 +112,19 @@ func NewAuditJournalEnvelope(entry AuditEntry) (*events.EventEnvelope, error) {
 	}
 	if len(data) > maxAuditJournalData {
 		return nil, fmt.Errorf("%w: entry %s is %d bytes", ErrAuditEntryTooLarge, entry.ID, len(data))
+	}
+	// JSON arrays of small numbers grow substantially as protobuf Struct values.
+	// Refuse an entry before commit if ReadJournal could never return it alone.
+	var object map[string]any
+	if err := json.Unmarshal(data, &object); err != nil {
+		return nil, fmt.Errorf("audit: journal object: %w", err)
+	}
+	projected, err := structpb.NewStruct(object)
+	if err != nil {
+		return nil, fmt.Errorf("audit: journal object: %w", err)
+	}
+	if size := proto.Size(projected); size > ModuleJournalMaxWireBytes-1024 {
+		return nil, fmt.Errorf("%w: entry %s requires %d protobuf bytes", ErrAuditEntryTooLarge, entry.ID, size)
 	}
 	return &events.EventEnvelope{
 		Id:              AuditJournalEventID(entry.ID),

@@ -3,21 +3,22 @@
 package infra_test
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"sort"
 	"testing"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra/storetx"
+	"connectrpc.com/connect"
+	"github.com/codefly-dev/sdk-go/receipts/connecttransport"
 
 	"github.com/codefly-dev/sdk-go/receipts"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // dedupWarehouse is a warehouse that, like the real one, may hold an entry twice
@@ -53,10 +54,7 @@ func (w *dedupWarehouse) Aggregate(context.Context, business.AuditRead, business
 // at least once while a read of the warehouse returns each entry once. Delivery
 // writes no audit of its own.
 //
-// The replay is the receipt guard's, which this test runs by hand (Serialize,
-// Lookup, then the handler under its effect) because the guard admits only methods
-// marked by the generated descriptors, and DeliverAuditEvents has none until the
-// protos are generated. The marked-method path itself is not exercised here.
+// The generated operation marking and real SDK guard serialize and replay the range.
 func TestDeliverAuditEventsWritesOneReceiptPerRangeAndReplaysFromIt(t *testing.T) {
 	warehouse := &dedupWarehouse{}
 	audit, err := business.NewAuditService(business.AuditServiceConfig{
@@ -88,35 +86,32 @@ func TestDeliverAuditEventsWritesOneReceiptPerRangeAndReplaysFromIt(t *testing.T
 	require.Equal(t, ids, eventIDs(business.ModuleReadJournalResult{Entries: records.entries}))
 	position := func(i int) string { return records.entries[i].Position }
 
-	// handle runs one delivery as the receipt guard would: serialize on the effect,
-	// answer a committed one from its receipt, otherwise run the handler under it.
 	handlerRuns := 0
-	handle := func(from, to string) (*wrapperspb.Int32Value, error) {
+	_, guard := svc.SourceOperationReceipts()
+	require.True(t, guard.IsOperation(business.DeliverAuditEventsMethod))
+	handle := func(from, to string) (*gen.DeliverAuditEventsResponse, error) {
 		effectID := business.AuditDeliveryEffectID(from)
-		digest := sha256.Sum256([]byte(from + "\n" + to))
-		held, err := receiptStore.Serialize(testCtx, installation, effectID, business.DeliverAuditEventsMethod)
+		ctx := auth.WithVerifiedDatabaseIdentity(testCtx, caller.PrincipalID, installation)
+		ctx = business.WithSourceOperationRecheck(ctx, func(context.Context) error { return nil })
+		req := connect.NewRequest(&gen.DeliverAuditEventsRequest{From: from, To: to})
+		req.Header().Set(receipts.EffectIDHeaderName, effectID)
+		response, err := connecttransport.WrapUnary(guard, business.DeliverAuditEventsMethod,
+			func(ctx context.Context, req *connect.Request[gen.DeliverAuditEventsRequest]) (*connect.Response[gen.DeliverAuditEventsResponse], error) {
+				handlerRuns++
+				var out *gen.DeliverAuditEventsResponse
+				_, err := svc.DeliverAuditEvents(ctx, req.Msg.From, req.Msg.To, func(ctx context.Context, r business.AuditDeliveryResult) error {
+					out = &gen.DeliverAuditEventsResponse{EffectId: effectID, Status: "committed", Delivered: int32(r.Delivered)}
+					return svc.RecordSourceOperationReceipt(ctx, out)
+				})
+				if err != nil {
+					return nil, err
+				}
+				return connect.NewResponse(out), nil
+			})(ctx, req)
 		if err != nil {
 			return nil, err
 		}
-		defer held.Release()
-		if saved, found, err := held.Lookup(testCtx); err != nil || found {
-			if err != nil {
-				return nil, err
-			}
-			if !bytes.Equal(saved.RequestDigest, digest[:]) {
-				return nil, receipts.ErrEffectIDReused
-			}
-			replayed := &wrapperspb.Int32Value{}
-			return replayed, proto.Unmarshal(saved.Response, replayed)
-		}
-		handlerRuns++
-		ctx := receipts.WithEffect(testCtx, receipts.Effect{ID: effectID, Tenant: installation, Method: business.DeliverAuditEventsMethod, RequestDigest: digest[:]})
-		var out *wrapperspb.Int32Value
-		_, err = svc.DeliverAuditEvents(ctx, from, to, func(ctx context.Context, r business.AuditDeliveryResult) error {
-			out = wrapperspb.Int32(int32(r.Delivered))
-			return svc.RecordSourceOperationReceipt(ctx, out)
-		})
-		return out, err
+		return response.Msg, nil
 	}
 	receiptCount := func(tenant, from string) int {
 		_, found, err := receiptStore.Lookup(testCtx, tenant, business.AuditDeliveryEffectID(from), business.DeliverAuditEventsMethod)
@@ -137,7 +132,7 @@ func TestDeliverAuditEventsWritesOneReceiptPerRangeAndReplaysFromIt(t *testing.T
 	// The first range: all three records, from the start.
 	first, err := handle(business.JournalStart, position(2))
 	require.NoError(t, err)
-	require.EqualValues(t, 3, first.Value)
+	require.EqualValues(t, 3, first.Delivered)
 	require.Len(t, warehouse.appended, 3)
 	require.Equal(t, map[string]string{ids[0]: orgA, ids[1]: "", ids[2]: orgB}, entriesOf(),
 		"each record's organization is its row's, and the one with none has none")
@@ -159,7 +154,7 @@ func TestDeliverAuditEventsWritesOneReceiptPerRangeAndReplaysFromIt(t *testing.T
 	// read of the warehouse still returns each entry once.
 	overlap, err := handle(position(0), position(2))
 	require.NoError(t, err)
-	require.EqualValues(t, 2, overlap.Value)
+	require.EqualValues(t, 2, overlap.Delivered)
 	require.Len(t, warehouse.appended, 5, "at least once")
 	require.Equal(t, 1, receiptCount(installation, position(0)))
 	listed, _, err := warehouse.List(testCtx, business.AuditRead{})
@@ -188,7 +183,7 @@ func TestDeliverAuditEventsWritesOneReceiptPerRangeAndReplaysFromIt(t *testing.T
 	open.commit(t)
 	done, err := handle(position(2), beyond)
 	require.NoError(t, err)
-	require.EqualValues(t, 1, done.Value)
+	require.EqualValues(t, 1, done.Delivered)
 
 	// Delivering wrote no audit entry of its own: nothing after the last record
 	// this test published, but that record.

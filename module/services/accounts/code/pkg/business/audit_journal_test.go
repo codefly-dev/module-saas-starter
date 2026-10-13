@@ -369,3 +369,10 @@ func TestWarehouseBackendAnswersARefusedPercentileAsInvalidArgument(t *testing.T
 		t.Fatal("HasPercentile")
 	}
 }
+
+func TestAuditJournalRefusesAnEntryThatFitsJSONButCannotFitReadJournal(t *testing.T) {
+	entry := AuditEntry{ID: uuid.NewString(), EventType: EventMFATOTPSetupStarted, Payload: map[string]any{"values": make([]int, 350000)}, CreatedAt: time.Now()}
+	if _, err := NewAuditJournalEnvelope(entry); !errors.Is(err, ErrAuditEntryTooLarge) {
+		t.Fatalf("numeric array = %v, want a pre-commit size refusal", err)
+	}
+}

@@ -103,12 +103,16 @@ func TestJournalRowIsDeliveryMachinery(t *testing.T) {
 		want     bool
 	}{
 		{"operation mint for a delivery binding", auditRow(t, business.EventModuleOperationContextMint, callerID, mint("delivery-binding")), callerID, delivery, true},
+		{"another module's operation mint with the same binding id", auditRow(t, business.EventModuleOperationContextMint, otherID, mint("delivery-binding")), callerID, delivery, false},
+		{"operation mint with no caller", auditRow(t, business.EventModuleOperationContextMint, callerID, mint("delivery-binding")), "", delivery, false},
 		{"operation mint for another binding", auditRow(t, business.EventModuleOperationContextMint, callerID, mint("customer-binding")), callerID, delivery, false},
 		{"operation mint with no binding", auditRow(t, business.EventModuleOperationContextMint, callerID, map[string]any{"prefix": "runtime"}), callerID, delivery, false},
 		{"operation mint with a binding that is not text", auditRow(t, business.EventModuleOperationContextMint, callerID, mint(7)), callerID, delivery, false},
 		{"operation mint and no delivery bindings named", auditRow(t, business.EventModuleOperationContextMint, callerID, mint("delivery-binding")), callerID, nil, false},
 		{"exchange on a delivery binding, issued", auditRow(t, business.EventDelegatedAudienceExchange, otherID, exchange("delivery-binding", business.DelegatedAudienceExchangeIssued)), callerID, delivery, true},
 		{"exchange on a delivery binding, refused", auditRow(t, business.EventDelegatedAudienceExchange, otherID, exchange("delivery-binding", business.DelegatedAudienceExchangeRefused)), callerID, delivery, true},
+		{"another module's exchange with the same binding id", auditRow(t, business.EventDelegatedAudienceExchange, otherID, map[string]any{"module_principal_id": otherID, "binding_kind": "operation", "binding_id": "delivery-binding"}), callerID, delivery, false},
+		{"source delegation with the same binding id", auditRow(t, business.EventDelegatedAudienceExchange, otherID, map[string]any{"module_principal_id": callerID, "binding_kind": "source_delegation", "binding_id": "delivery-binding"}), callerID, delivery, false},
 		{"exchange on another binding", auditRow(t, business.EventDelegatedAudienceExchange, otherID, exchange("customer-binding", business.DelegatedAudienceExchangeIssued)), callerID, delivery, false},
 		{"exchange with a binding that is not text", auditRow(t, business.EventDelegatedAudienceExchange, otherID, exchange(true, business.DelegatedAudienceExchangeIssued)), callerID, delivery, false},
 		{"exchange and no delivery bindings named", auditRow(t, business.EventDelegatedAudienceExchange, otherID, exchange("delivery-binding", business.DelegatedAudienceExchangeIssued)), callerID, map[string]struct{}{}, false},

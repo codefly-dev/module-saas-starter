@@ -153,6 +153,8 @@ const (
 	// ModuleJournalMaxPageBytes bounds the producers' bytes in one page, below
 	// the transport's message limit once the data is a JSON object.
 	ModuleJournalMaxPageBytes = 2 << 20
+	// ModuleJournalMaxWireBytes bounds the encoded response below 4 MiB.
+	ModuleJournalMaxWireBytes = 3 << 20
 	moduleJournalMaxTypes     = 16
 	moduleJournalMaxBindings  = 64
 	moduleJournalMaxIDLength  = 256
@@ -360,6 +362,17 @@ func JournalRowIsDeliveryMachinery(row JournalRow, callerPrincipal string, deliv
 func AuditEntryIsDeliveryMachinery(entry AuditEntry, callerPrincipal string, deliveryBindings map[string]struct{}) bool {
 	switch entry.EventType {
 	case EventModuleOperationContextMint, EventDelegatedAudienceExchange:
+		principal := entry.ActorID
+		if entry.EventType == EventDelegatedAudienceExchange {
+			principal, _ = entry.Payload["module_principal_id"].(string)
+			kind, _ := entry.Payload["binding_kind"].(string)
+			if kind != "operation" {
+				return false
+			}
+		}
+		if callerPrincipal == "" || principal == "" || canonicalPrincipalID(principal) != canonicalPrincipalID(callerPrincipal) {
+			return false
+		}
 		binding, ok := entry.Payload["binding_id"].(string)
 		if !ok || binding == "" {
 			return false

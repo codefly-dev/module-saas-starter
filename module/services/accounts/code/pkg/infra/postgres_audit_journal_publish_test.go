@@ -188,3 +188,23 @@ func TestControlPlaneStillPublishesForNoTenant(t *testing.T) {
 	}))
 	require.Len(t, journalRowsOf(t, envelope.GetId()), 1)
 }
+
+// Matching envelope authority cannot disguise another actor or tenant inside
+// the audit record that the warehouse actually reads.
+func TestUserAuditJournalRecordCannotContradictItsEnvelope(t *testing.T) {
+	transport := auditJournalTransport(t)
+	user := seedUser(t)
+	other := seedUser(t)
+	org := seedOrg(t, user)
+	for _, forged := range []struct{ name, actor, org string }{
+		{"another actor", other, ""}, {"another organization", user, org},
+	} {
+		t.Run(forged.name, func(t *testing.T) {
+			envelope := auditJournalEnvelopeOf(t, forged.actor, forged.org)
+			envelope.ActorPrincipalId = user
+			envelope.TenantId = ""
+			requireTenantGuardRefusal(t, publishInUserTx(transport, user, envelope))
+			require.Empty(t, journalRowsOf(t, envelope.Id))
+		})
+	}
+}

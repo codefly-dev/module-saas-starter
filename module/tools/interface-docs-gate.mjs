@@ -121,6 +121,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/PlaceRecord": "authorization",
   "ModuleCapabilitiesService/PublishEvent": "events",
   "ModuleCapabilitiesService/ReplayEvents": "events",
+  "ModuleCapabilitiesService/ReadJournal": "events",
   "ModuleCapabilitiesService/RequestApproval": "approvals",
   "ModuleCapabilitiesService/ResolveWorkContextAuthority": "authorization",
   "ModuleCapabilitiesService/Subscribe": "events",
