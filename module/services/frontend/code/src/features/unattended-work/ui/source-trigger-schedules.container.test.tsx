@@ -234,9 +234,9 @@ describe("the host's own sweep", () => {
 		expect(
 			table.querySelector('[data-slot="next-occurrence"]')?.textContent,
 		).toBe(declaredAt);
-		expect(table.querySelector('[data-slot="host-sweep-due"]')?.textContent).toBe(
-			sweepAt,
-		);
+		expect(
+			table.querySelector('[data-slot="host-sweep-due"]')?.textContent,
+		).toBe(sweepAt);
 		// The sweep admits no operation, so it has no effect identity to show —
 		// said rather than left as a dash that would read as "it has none".
 		expect(
@@ -249,7 +249,11 @@ describe("the host's own sweep", () => {
 		// never both run. With it off there is no host pass at all, and showing
 		// an instant would be describing one.
 		serve({
-			declaration: { ...declared, hostSweepEnabled: false, hostSweepDueAt: undefined },
+			declaration: {
+				...declared,
+				hostSweepEnabled: false,
+				hostSweepDueAt: undefined,
+			},
 			delegations: [],
 			children: [],
 		});
@@ -262,15 +266,13 @@ describe("the host's own sweep", () => {
 		// NOT "an executing module fires the declaration", which asserted that
 		// something else does fire it — a readiness claim this host cannot make
 		// (issue #1121, F1). The switch says only that this host stopped.
-		expect(
-			within(table).getByText(/This host does not fire it/),
-		).toBeTruthy();
+		expect(within(table).getByText(/This host does not fire it/)).toBeTruthy();
 		expect(
 			within(table).queryByText(/An executing module fires the declaration/),
 		).toBeNull();
-		expect(table.querySelector('[data-slot="host-sweep-due"]')?.textContent).toBe(
-			"—",
-		);
+		expect(
+			table.querySelector('[data-slot="host-sweep-due"]')?.textContent,
+		).toBe("—");
 		// The declaration itself is unchanged by the switch: it is what the
 		// source declares, not what this host does about it.
 		expect(
@@ -319,9 +321,9 @@ describe("what the panel says about this host's own sweep", () => {
 		await waitFor(() =>
 			expect(table.querySelector('[data-slot="host-sweep"]')).not.toBeNull(),
 		);
-		expect(table.querySelector('[data-slot="host-sweep-due"]')?.textContent).toBe(
-			new Date("2026-10-12T09:07:00Z").toLocaleString(),
-		);
+		expect(
+			table.querySelector('[data-slot="host-sweep-due"]')?.textContent,
+		).toBe(new Date("2026-10-12T09:07:00Z").toLocaleString());
 		// And the DECLARATION's own rows stay withheld, which was the half the
 		// old conditional had right: without a schedule there is no declared
 		// occurrence to show.
@@ -376,13 +378,137 @@ describe("what the panel says about this host's own sweep", () => {
 		await screen.findByText("acme/handbook");
 
 		await waitFor(() =>
-			expect(
-				document.querySelector('[data-slot="admissions"]'),
-			).not.toBeNull(),
+			expect(document.querySelector('[data-slot="admissions"]')).not.toBeNull(),
 		);
 		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
 		expect(
 			document.querySelector('[data-slot="scheduled-occurrence"]'),
 		).toBeNull();
+	});
+});
+
+// WHAT ONE SOURCE'S ROW SAYS WHEN THE DECLARATION READ DID NOT SUCCEED
+// (issue #1121, the final UI review).
+//
+// The list read is classified; the PER-SOURCE declaration read was not, and a
+// row that reads only `data` answers three different situations the same way.
+// All three probes drive the real hooks through the container harness.
+describe("a per-source declaration read that is refused, pending or stale", () => {
+	// Cold refusal: the host answered nothing, and the row said "None —
+	// occurrences would be refused", which is a definite statement about this
+	// source's identity. `declaredIdentity(undefined)` treated unknown as
+	// absent, so a viewer whose read was denied was told the trigger has no
+	// identity rather than that they cannot see it.
+	it("does not report an absent identity when the read was refused", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json(
+					{ code: "permission_denied", message: "denied" },
+					{ status: 403 },
+				),
+			),
+		);
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("acme/handbook");
+
+		await waitFor(() =>
+			expect(
+				document.querySelector('[data-slot="source-trigger"]'),
+			).not.toBeNull(),
+		);
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		// And nothing about this host's own sweep, which the read never answered.
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+	});
+
+	// A refusal AFTER a success must not leave the previous answer on screen:
+	// TanStack keeps the last good data when a refetch rejects, so the row went
+	// on showing a cached declaration — including the sweep row this amendment
+	// added — to a viewer who is no longer allowed to see it. The clearing
+	// belongs in the query function, where the refusal is classified.
+	it("drops a cached declaration when a later read is refused", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json(
+							{ code: "permission_denied", message: "denied" },
+							{ status: 403 },
+						)
+					: HttpResponse.json({
+							declaration: {
+								release: "saas_datasource_reconcile",
+								operation:
+									"/saas.accounts.v1.DatasourceService/ReconcileSource",
+								undeclarableReason: "the source has no reconcile schedule",
+								hostSweepEnabled: true,
+								hostSweepDueAt: "2026-10-12T09:07:00Z",
+							},
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("the source has no reconcile schedule");
+		await waitFor(() =>
+			expect(document.querySelector('[data-slot="host-sweep"]')).not.toBeNull(),
+		);
+
+		denied = true;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+		expect(
+			screen.queryByText("the source has no reconcile schedule"),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+	});
+
+	// The sweep is ON and this source has no due instant — a parked source,
+	// whose stored instant the park path cleared. "next pass —" reads as a pass
+	// whose time is unknown; the supplied facts say there is no pass due.
+	it("says the sweep has nothing due rather than a next pass with no time", async () => {
+		serve({
+			declaration: {
+				release: "saas_datasource_reconcile",
+				operation: "/saas.accounts.v1.DatasourceService/ReconcileSource",
+				undeclarableReason:
+					"the source is parked and is not on its reconcile schedule",
+				hostSweepEnabled: true,
+			},
+			delegations: [],
+			children: [],
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText(/parked and is not on its reconcile schedule/);
+		const sweep = await waitFor(() => {
+			const found = document.querySelector<HTMLElement>(
+				'[data-slot="host-sweep"]',
+			);
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+
+		expect(sweep.textContent).not.toMatch(/next pass/);
+		expect(sweep.textContent).toMatch(/nothing due/i);
+		expect(
+			sweep.querySelector('[data-slot="host-sweep-due"]')?.textContent,
+		).toBe("—");
 	});
 });

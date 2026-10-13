@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDatasourceService } from "@/lib/hooks/use-api-client";
+import { mayKeepRetainedRows, readOutcome } from "@/shared/lib/read-outcome";
 
 /**
  * The reads behind the unattended-work playground.
@@ -32,9 +33,34 @@ export function useTriggerSources(orgId: string) {
  */
 export function useSourceTriggerDeclaration(orgId: string, sourceId: string) {
 	const service = useDatasourceService();
+	const client = useQueryClient();
 	return useQuery({
 		queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
 		enabled: !!orgId && !!sourceId,
-		queryFn: () => service.getSourceTriggerDeclaration({ orgId, sourceId }),
+		queryFn: async () => {
+			try {
+				return await service.getSourceTriggerDeclaration({ orgId, sourceId });
+			} catch (error) {
+				// A REFUSAL DELETES WHAT IT WAS READING, and it does it here
+				// rather than at render (issue #1121). TanStack keeps the last
+				// successful answer when a refetch rejects, so a viewer whose
+				// authority was withdrawn went on seeing the declaration — and
+				// the sweep row beside it — from cache. Authority is a property
+				// of the read, so what the read may leave behind is too.
+				//
+				// Only a refusal clears. A transient failure keeps the prior
+				// answer under a stale notice, because blanking a good answer
+				// because one request did not come back is worse than the
+				// staleness (shared/lib/read-outcome.ts).
+				if (!mayKeepRetainedRows(readOutcome(true, error))) {
+					for (const query of client
+						.getQueryCache()
+						.findAll({ queryKey: ["source-trigger-declaration"] })) {
+						query.setState({ data: undefined, dataUpdatedAt: 0 });
+					}
+				}
+				throw error;
+			}
+		},
 	});
 }

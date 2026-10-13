@@ -28,6 +28,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { sourceLabel } from "../model/source-label";
 import {
@@ -96,8 +97,8 @@ export function SourceTriggerSchedules({ orgId }: { orgId: string }) {
 			<CardHeader>
 				<CardTitle>Reconcile schedules</CardTitle>
 				<CardDescription>
-					Each connected source declares its reconcile schedule as a trigger
-					for a module that executes declared work. Whether one consumes that
+					Each connected source declares its reconcile schedule as a trigger for
+					a module that executes declared work. Whether one consumes that
 					declaration is not something this host can confirm, so nothing below
 					claims it: what is shown is what this host declares, and what this
 					host itself does about it — the stopgap sweep, which fires on the
@@ -166,7 +167,18 @@ function SourceTriggerRow({
 	passes: AdmittedReconcilePass[];
 }) {
 	const read = useSourceTriggerDeclaration(orgId, sourceId);
+	// THIS ROW'S OWN READ IS CLASSIFIED, not just its data (issue #1121). The
+	// source LIST is classified by the panel above; the per-source declaration
+	// was not, so a refused read, a read still in flight and a source whose
+	// trigger genuinely has no identity all rendered the same sentence — "None
+	// — occurrences would be refused", which is a statement about this source's
+	// authority that the host never made. A viewer denied the read was told the
+	// trigger has no identity rather than that they cannot see it.
+	const outcome = readOutcome(read.isError, read.error);
 	const declaration = read.data?.declaration;
+	const stale = declaration ? staleReadNotice(outcome, "this trigger") : null;
+	const phase = useLoadingPhase(read.isFetching);
+	const waiting = phase.indicator || phase.quiet;
 	const identity = useMemo(() => declaredIdentity(declaration), [declaration]);
 	// The operation is read off the declaration so the manual rows name the
 	// same string the scheduled ones do. A literal here would be this page's
@@ -177,22 +189,50 @@ function SourceTriggerRow({
 	// A source that declares no trigger still takes a manual pass: the
 	// declaration is refused for the interval it carries, not for the
 	// operation, and a person's pass does not go through a schedule at all. So
-	// the undeclarable reason replaces the SCHEDULE's rows, never the table.
+	// the undeclarable reason replaces the SCHEDULE's rows, never the table —
+	// and neither does a read that did not answer, which is why the manual rows
+	// below sit outside every declaration branch.
 	return (
 		<div className="rounded-lg border p-4" data-slot="source-trigger">
 			<div className="flex items-center justify-between gap-2">
 				<span className="font-medium">{label}</span>
-				{declaration?.undeclarableReason ? (
-					<Badge tone="neutral">Declares no trigger</Badge>
-				) : (
-					<Badge tone="success">{declaration?.schedule?.cron ?? "—"}</Badge>
-				)}
+				{declaration ? (
+					declaration.undeclarableReason ? (
+						<Badge tone="neutral">Declares no trigger</Badge>
+					) : (
+						<Badge tone="success">{declaration.schedule?.cron ?? "—"}</Badge>
+					)
+				) : null}
 			</div>
-			<dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-				<Fact label="Release" value={declaration?.release ?? "—"} mono />
-				<Fact label="Operation" value={operation} mono />
-				<Fact label="Declared identity" value={identity} />
-			</dl>
+			<DelayedLoading
+				active={read.isFetching && !declaration}
+				label={`Reading the trigger ${label} declares`}
+			/>
+			{stale && (
+				<p role="status" className="mt-2 text-sm text-muted-foreground">
+					{stale}
+				</p>
+			)}
+			{/*
+			 * The declaration's facts need a declaration. Without one the read
+			 * either has not answered or was refused, and the message says
+			 * which — never a dash, which would read as "this host has none".
+			 */}
+			{declaration ? (
+				<dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+					<Fact label="Release" value={declaration.release || "—"} mono />
+					<Fact label="Operation" value={operation} mono />
+					<Fact label="Declared identity" value={identity} />
+				</dl>
+			) : waiting ? null : (
+				<p role="status" className="mt-2 text-sm text-muted-foreground">
+					{readOutcomeMessage(
+						outcome,
+						"this source's declared trigger",
+						"This source declares no trigger.",
+					)}
+				</p>
+			)}
 			{declaration?.undeclarableReason && (
 				<p className="mt-2 text-sm text-muted-foreground">
 					{declaration.undeclarableReason}
@@ -264,19 +304,29 @@ function SourceTriggerRow({
 					{declaration && (
 						<TableRow data-slot="host-sweep">
 							<TableCell className="text-sm">
-								{declaration.hostSweepEnabled
-									? "This host’s stopgap sweep · next pass"
-									: "This host’s stopgap sweep · off"}
+								{/*
+								 * Three states, because the facts supplied are three
+								 * (issue #1121). Enabled WITH an instant is a pass
+								 * due. Enabled with none is a source the sweep will
+								 * not reach — a parked source, whose stored instant
+								 * the park path cleared — and "next pass —" read as a
+								 * pass whose time was unknown. Disabled is neither.
+								 */}
+								{!declaration.hostSweepEnabled
+									? "This host’s stopgap sweep · off"
+									: declaration.hostSweepDueAt
+										? "This host’s stopgap sweep · next pass"
+										: "This host’s stopgap sweep · on, nothing due for this source"}
 							</TableCell>
 							<TableCell className="text-sm text-muted-foreground">
-								{declaration.hostSweepEnabled
-									? NO_EFFECT_IDENTITY
-									: SWEEP_OFF_FIRES_NOTHING_HERE}
+								{!declaration.hostSweepEnabled
+									? SWEEP_OFF_FIRES_NOTHING_HERE
+									: declaration.hostSweepDueAt
+										? NO_EFFECT_IDENTITY
+										: SWEEP_ON_NOTHING_DUE}
 							</TableCell>
 							<TableCell className="text-sm" data-slot="host-sweep-due">
-								{declaration.hostSweepEnabled
-									? instant(declaration.hostSweepDueAt)
-									: "—"}
+								{instant(declaration.hostSweepDueAt)}
 							</TableCell>
 							<TableCell className="text-sm">—</TableCell>
 						</TableRow>
@@ -346,6 +396,15 @@ const NO_EFFECT_IDENTITY = "None — the sweep admits no operation";
  * as covered while nothing fired at all. The honest statement is the negative
  * one plus the gap.
  */
+/**
+ * The sweep is running and this source has no instant in it. Said rather than
+ * shown as a missing time: the stored instant is what the park and restore
+ * paths clear, so its absence is the source being off the schedule — a fact,
+ * not a gap in what the host answered.
+ */
+const SWEEP_ON_NOTHING_DUE =
+	"None — this source is not on the sweep's schedule";
+
 const SWEEP_OFF_FIRES_NOTHING_HERE =
 	"This host does not fire it — whether an executing module does is unverified here";
 
