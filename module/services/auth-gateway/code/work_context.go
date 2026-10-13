@@ -3,14 +3,12 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 )
 
 // accountsJWKSPath is the standards-named endpoint accounts publishes its
@@ -20,31 +18,48 @@ const accountsJWKSPath = "/v1/auth/.well-known/jwks.json"
 
 const workContextJWKSCacheTTL = 5 * time.Minute
 
-// workContextVerifier verifies presented Work Contexts at the edge against the
+// workContextVerifier inspects presented Work Contexts at the edge against the
 // access-token JWKS published by accounts. The Work Context signing key is the
 // access-token key, so the public gateway route serves both and the edge never
 // needs Vault.
 //
-// Every failure — a forged signature, an expired or widened context, an unknown
-// key id, or an accounts outage that makes the key set unreachable — collapses
-// to workcontext.ErrWorkContextInvalid. The edge answers 401 without leaking which
-// check failed or that a dependency is down.
+// It is core/workcontext's Inspector — the forwarding hop's entrypoint, and the
+// one implementation of the capability's checks. The edge holds a trust root and
+// a routing table and nothing more: it checks the encoding, the issuer, the
+// signature under the key the capability names, the window, the shape, and the
+// audience against the route THIS HOP resolved. It consults no live state and
+// consumes nothing — the callee verifies at full strength and burns a single-use
+// nonce exactly once.
+//
+// Every failure — a foreign encoding, a forged signature, an expired or widened
+// context, an unknown key id, or an accounts outage that makes the key set
+// unreachable — collapses to errInvalidWorkContext. The edge answers 401 without
+// leaking which check failed or that a dependency is down.
 //
 // The cache carries no stale grace: a presented capability is an optional
 // attenuation a caller may always retry, so this path fails closed the moment
 // the key set expires. The access-token path makes the opposite call (see
 // accessJWKS), because losing it would take authentication down entirely.
 type workContextVerifier struct {
-	cache *jwksCache[*workcontext.WorkContextVerifier]
+	cache *jwksCache[*workcontext.Inspector]
 }
+
+// workContextIssuer is the issuer accounts signs every Work Context as — the
+// literal its permissions plugin is configured with (`WithWorkContextAuthority`
+// in accounts' work.go). It is NOT the access-token `iss`, which follows the
+// public origin; the capability's issuer is the authority's stable name.
+const workContextIssuer = legacyTokenIssuer
+
+// errInvalidWorkContext is the one error class this edge answers with.
+var errInvalidWorkContext = errors.New("work context: invalid at this edge")
 
 func newWorkContextVerifier(accountsBaseURL string) *workContextVerifier {
 	cache := newJWKSCache(
 		strings.TrimSuffix(accountsBaseURL, "/")+accountsJWKSPath,
 		workContextJWKSCacheTTL,
 		0,
-		func(keys map[string]ed25519.PublicKey) (*workcontext.WorkContextVerifier, error) {
-			return workcontext.NewWorkContextVerifier(workcontext.WorkContextVerifierOptions{PublicKeys: keys})
+		func(keys map[string]ed25519.PublicKey) (*workcontext.Inspector, error) {
+			return &workcontext.Inspector{Issuer: workContextIssuer, Keys: keys}, nil
 		},
 		invalidWorkContext,
 	)
@@ -68,114 +83,67 @@ func (v *workContextVerifier) Refresh(ctx context.Context) error {
 // forwarded and left for a callee to puzzle over.
 const gatewayAudience = "auth-gateway"
 
-// Verify establishes trust for a presented Work Context against the route it was
-// presented TO.
-//
-// `expected` is the audience derived from the resolved route — `solution:<binding
-// id>` for a solution route, the module capability audience for a declared module
-// route, and EMPTY for a catalog route, whose destination is this host's own
-// service and therefore has no audience of its own (see gatewayAudience: the hop's
-// name is never one).
-//
-// An empty `expected` means "do not compare", and that is sdk-go's own sentinel
-// (`check.want != ""` in workcontext/work_context.go), not a choice made here. It
-// is load-bearing that this is the ONLY place that relies on it and that the
-// reliance is explicit: for the two surfaces where an audience IS derivable, a
-// value is always passed, so a capability minted for one solution cannot be spent
-// on another's route.
-//
-// What is checked here is the signature, the window and the audience. Scope and
-// consumption stay the callee's: this hop never consumes a nonce, never reads
-// seals, and never grants.
-func (v *workContextVerifier) Verify(
-	ctx context.Context, token workcontext.WorkContextToken, expected string,
-) error {
-	_, err := v.VerifyAny(ctx, token, expected)
-	return err
-}
-
-// VerifyAny is Verify for a route that accepts MORE THAN ONE audience, and it
-// returns the verified claims so a caller can hold the capability to facts
-// beyond its audience.
+// Inspect checks a presented capability against the route it was presented TO,
+// and returns what a hop may route on.
 //
 // `permitted` is the set of audiences the resolved route accepts. One entry is
-// the ordinary case and is what Verify passes. A route with several is a route
-// whose destination legitimately consumes capabilities of two different kinds —
-// a declared module's own identity, and a viewer's delegated capability for it —
-// and listing both is what keeps a single-valued expectation from refusing the
-// one the caller actually holds (see verifiedModuleCapability).
+// the ordinary case: `solution:<binding id>` for a solution route. A declared
+// module route accepts two — the module's own identity and a viewer's delegated
+// capability for it — and the capability passes when it is addressed to either.
 //
-// The audience comparison is made HERE rather than by passing a value to sdk-go,
-// because sdk-go compares one string. An EMPTY `permitted` — no entry at all, or
-// one empty entry, which is what the catalog routes pass — means "do not
-// compare", and that is sdk-go's own sentinel (`check.want != ""` in
-// workcontext/work_context.go) restated locally so the one reliance on it stays
-// in one place and stays explicit.
-func (v *workContextVerifier) VerifyAny(
-	ctx context.Context, token workcontext.WorkContextToken, permitted ...string,
-) (*basev0.WorkContextV1, error) {
-	keyID, err := workContextTokenKeyID(token)
-	if err != nil {
-		return nil, err
-	}
-	verifier, err := v.cache.resolve(ctx, keyID)
-	if err != nil {
-		return nil, err
-	}
-	claims, err := verifier.Verify(token, workcontext.WorkContextExpectations{})
+// A catalog route passes NONE. Its destination is one of this host's own
+// services, which resolves no audience of its own (the hop's name is never one),
+// so there is no route target to hold the capability to: it is inspected for its
+// encoding, issuer, signature, window and shape, and its audience is left to the
+// callee that consumes it. That is exactly the strength this route had before the
+// capability moved to core, and it is stated here rather than hidden behind an
+// empty-string sentinel: the audience Inspect is given in that case is the
+// capability's own, so the comparison is satisfied by construction, and that is
+// the point of saying so.
+func (v *workContextVerifier) Inspect(
+	ctx context.Context, encoded string, permitted ...string,
+) (*workcontext.Inspected, error) {
+	decoded, err := workcontext.Decode(encoded)
 	if err != nil {
 		return nil, invalidWorkContext(err)
 	}
-	// Refused AFTER the signature check, deliberately: an unsigned token claiming
-	// the hop's audience is an invalid token, not a routing question, and answering
-	// the audience refusal first would tell an unauthenticated caller which
-	// audience the hop answers to.
-	if claims.GetAudience() == gatewayAudience {
-		return nil, fmt.Errorf("%w: a capability addressed to this forwarding hop is never consumed by it", workcontext.ErrWorkContextInvalid)
+	inspector, err := v.cache.resolve(ctx, decoded.Context().GetKeyId())
+	if err != nil {
+		return nil, err
 	}
-	wanted := make([]string, 0, len(permitted))
+	targets := make([]string, 0, len(permitted))
 	for _, audience := range permitted {
 		if audience != "" {
-			wanted = append(wanted, audience)
+			targets = append(targets, audience)
 		}
 	}
-	if len(wanted) == 0 {
-		return claims, nil
+	if len(targets) == 0 {
+		targets = []string{decoded.Context().GetAudience()}
 	}
-	for _, audience := range wanted {
-		if claims.GetAudience() == audience {
-			return claims, nil
+	var refusal error
+	for _, target := range targets {
+		inspected, err := inspector.Inspect(encoded, target)
+		if err != nil {
+			refusal = err
+			continue
 		}
+		// Refused AFTER the signature check, deliberately: an unsigned token
+		// claiming the hop's audience is an invalid token, not a routing
+		// question, and answering the audience refusal first would tell an
+		// unauthenticated caller which audience the hop answers to.
+		if inspected.Audience() == gatewayAudience {
+			return nil, fmt.Errorf("%w: a capability addressed to this forwarding hop is never consumed by it", errInvalidWorkContext)
+		}
+		return inspected, nil
 	}
 	// The refusal names neither the presented audience nor the permitted set: the
 	// caller learns that the capability is not valid at this route, which is the
 	// whole verdict, and not which consumers this route serves.
-	return nil, fmt.Errorf("%w: the capability names a consumer this route does not serve", workcontext.ErrWorkContextInvalid)
-}
-
-func workContextTokenKeyID(token workcontext.WorkContextToken) (string, error) {
-	segment, _, found := strings.Cut(token.Encoded(), ".")
-	if !found {
-		return "", fmt.Errorf("%w: malformed token", workcontext.ErrWorkContextInvalid)
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(segment)
-	if err != nil {
-		return "", invalidWorkContext(err)
-	}
-	probe := struct {
-		KeyID string `json:"key_id"`
-	}{}
-	if err := json.Unmarshal(payload, &probe); err != nil {
-		return "", invalidWorkContext(err)
-	}
-	if probe.KeyID == "" {
-		return "", fmt.Errorf("%w: token is missing a key id", workcontext.ErrWorkContextInvalid)
-	}
-	return probe.KeyID, nil
+	return nil, invalidWorkContext(refusal)
 }
 
 // invalidWorkContext folds an arbitrary underlying failure into the single
 // invalid sentinel, so callers see one error class regardless of cause.
 func invalidWorkContext(err error) error {
-	return fmt.Errorf("%w: %v", workcontext.ErrWorkContextInvalid, err)
+	return fmt.Errorf("%w: %v", errInvalidWorkContext, err)
 }

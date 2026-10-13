@@ -5,8 +5,8 @@ package main
 // the rule).
 //
 // The property: such a credential is admitted at `/v1/<alias>/*` if and only if
-// it arrives with a verified capability for THAT module, minted on the subject,
-// in the organization, and in the session the credential itself names. Each
+// it arrives with an inspected capability for THAT module, in the organization
+// and the session the credential itself names. Each
 // refusal below is one binding broken on its own, with everything else held
 // equal, so a test that passed because two things were wrong at once would not
 // pass here.
@@ -18,8 +18,7 @@ import (
 	"testing"
 	"time"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -38,11 +37,14 @@ type confinedCaller struct {
 
 func signConfinedCaller(t *testing.T, priv ed25519.PrivateKey, resource string) confinedCaller {
 	t.Helper()
-	caller := confinedCaller{
-		subject: uuid.Must(uuid.NewV7()).String(),
-		org:     uuid.Must(uuid.NewV7()).String(),
-		session: uuid.Must(uuid.NewV7()).String(),
-	}
+	return signConfinedCallerFor(t, priv, resource, uuid.Must(uuid.NewV7()).String(), uuid.Must(uuid.NewV7()).String())
+}
+
+// signConfinedCallerFor is signConfinedCaller for a given person in a given
+// organization, in a fresh session.
+func signConfinedCallerFor(t *testing.T, priv ed25519.PrivateKey, resource, subject, org string) confinedCaller {
+	t.Helper()
+	caller := confinedCaller{subject: subject, org: org, session: uuid.Must(uuid.NewV7()).String()}
 	claims := accessClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "saas-starter",
@@ -70,22 +72,9 @@ func signConfinedCaller(t *testing.T, priv ed25519.PrivateKey, resource string) 
 // owner, their organization as tenant, their session as the session.
 func mintViewerCapability(
 	t *testing.T, kid string, priv ed25519.PrivateKey, audience, owner, tenant, session string,
-) workcontext.WorkContextToken {
+) string {
 	t.Helper()
-	signer, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{
-		Issuer: "saas-starter", KeyID: kid, PrivateKey: priv,
-	})
-	require.NoError(t, err)
-	token, _, err := signer.StartTask(workcontext.StartTaskInput{
-		Audience:         audience,
-		TenantID:         tenant,
-		OwnerPrincipalID: owner,
-		TaskID:           uuid.Must(uuid.NewV7()).String(),
-		SessionID:        session,
-		AuthorityScopes:  []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}},
-	})
-	require.NoError(t, err)
-	return token
+	return mintCapability(t, kid, priv, edgeCapability{Audience: audience, Owner: owner, Tenant: tenant, Session: session})
 }
 
 // confinedModuleHarness wires a gateway with the edge verifier, one declared
@@ -119,7 +108,7 @@ func moduleRequest(caller confinedCaller, capability string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
 	req.Header.Set("authorization", "Bearer "+caller.bearer)
 	if capability != "" {
-		req.Header.Set(workcontext.WorkContextHeaderName, capability)
+		req.Header.Set(carrier.HeaderName, capability)
 	}
 	return req
 }
@@ -131,7 +120,7 @@ func TestModuleRoute_AConfinedCredentialIsAdmittedWithThePersonsCapability(t *te
 	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
 
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, moduleRequest(caller, capability.Encoded()))
+	gw.ServeHTTP(w, moduleRequest(caller, capability))
 
 	require.Equal(t, http.StatusOK, w.Code,
 		"the consumer this credential was delivered to must be able to read the module its solution declared")
@@ -149,9 +138,6 @@ func TestModuleRoute_AConfinedCredentialIsAdmittedWithThePersonsCapability(t *te
 func TestModuleRoute_AConfinedCredentialIsRefusedWithoutAMatchingCapability(t *testing.T) {
 	for name, capabilityFor := range map[string]func(c confinedCaller) (audience, owner, tenant, session string){
 		"no capability at all": nil,
-		"a capability owned by somebody else": func(c confinedCaller) (string, string, string, string) {
-			return "documents", uuid.Must(uuid.NewV7()).String(), c.org, c.session
-		},
 		"a capability for another organization": func(c confinedCaller) (string, string, string, string) {
 			return "documents", c.subject, uuid.Must(uuid.NewV7()).String(), c.session
 		},
@@ -170,7 +156,7 @@ func TestModuleRoute_AConfinedCredentialIsRefusedWithoutAMatchingCapability(t *t
 			encoded := ""
 			if capabilityFor != nil {
 				audience, owner, tenant, session := capabilityFor(caller)
-				encoded = mintViewerCapability(t, kid, wcPriv, audience, owner, tenant, session).Encoded()
+				encoded = mintViewerCapability(t, kid, wcPriv, audience, owner, tenant, session)
 			}
 
 			w := httptest.NewRecorder()
@@ -193,7 +179,7 @@ func TestModuleRoute_ACapabilityForAnotherModuleIsRefused(t *testing.T) {
 	capability := mintViewerCapability(t, kid, wcPriv, "ledgers", caller.subject, caller.org, caller.session)
 
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, moduleRequest(caller, capability.Encoded()))
+	gw.ServeHTTP(w, moduleRequest(caller, capability))
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	require.Nil(t, module.lastHeaders)
@@ -227,7 +213,7 @@ func TestModuleRoute_WithoutAnEdgeVerifierAConfinedCredentialStaysRefused(t *tes
 	gw.workContext = nil
 
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, moduleRequest(caller, capability.Encoded()))
+	gw.ServeHTTP(w, moduleRequest(caller, capability))
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	require.Nil(t, module.lastHeaders)
@@ -244,7 +230,7 @@ func TestModuleRoute_ACallerCannotAssertItsOwnConfinementOrInstallation(t *testi
 	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
 	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
 
-	req := moduleRequest(caller, capability.Encoded())
+	req := moduleRequest(caller, capability)
 	req.Header.Set(resourceConfinementHeader, solutionMCPResource(testPublicBase, "something-else"))
 	req.Header.Set(installationConfinementHeader, "install-of-somebody-elses-organization")
 	w := httptest.NewRecorder()
@@ -257,4 +243,25 @@ func TestModuleRoute_ACallerCannotAssertItsOwnConfinementOrInstallation(t *testi
 	require.Equal(t, "install-"+fakeSolutionTarget("documents"),
 		module.lastHeaders.Get(installationConfinementHeader),
 		"the installation is the one the authority admitted, not the one it asked for")
+}
+
+// THE OWNER IS NOT COMPARED, and that is a property of the ISSUER this edge
+// relies on rather than a gap. accounts signs into a capability only its
+// caller's verified session or a fresh one — never a session a request names —
+// so a capability carrying this credential's session was minted by this
+// credential, and a session belongs to one person. The capability below, owned by
+// someone else yet carrying the bearer's session, is therefore one accounts
+// cannot issue (its StartTask, StartChildSession and StartInstallationTask tests
+// pin that); a hop reads no principal to act as, so it is admitted here. If the
+// issuer ever signs a caller-named session again, this test is the one whose
+// premise breaks.
+func TestModuleRoute_TheSessionIsTheBindingAndTheOwnerIsNotRead(t *testing.T) {
+	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
+	capability := mintViewerCapability(t, kid, wcPriv, "documents", uuid.Must(uuid.NewV7()).String(), caller.org, caller.session)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, moduleRequest(caller, capability))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, module.lastHeaders)
 }

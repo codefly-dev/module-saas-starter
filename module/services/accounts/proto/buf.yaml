@@ -144,3 +144,10 @@ breaking:
       # (`service_account_token`), held by accounts against the pod's running
       # build. Reserved by number and name.
       - saas/accounts/v1/module_registration.proto
+      # StartInstallationTaskRequest.session_id (4) and
+      # StartChildSessionWorkContextRequest.session_id (3) (#1082): the issuer
+      # assigns the session a capability opens and returns it in
+      # IssuedWorkContext. A session a caller could name is one it could name
+      # after another credential's, and a resource-confined credential is paired
+      # with a capability on the session alone. Reserved by number and name.
+      - saas/accounts/v1/work_contexts.proto

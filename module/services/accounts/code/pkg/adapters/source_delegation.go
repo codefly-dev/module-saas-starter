@@ -8,7 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -76,7 +76,7 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 	if err != nil {
 		return nil, mapSourceDelegationError(err)
 	}
-	token, signed, err := WorkContextSingleton().StartSourceOperationTask(authority)
+	token, signed, err := WorkContextSingleton().StartSourceOperationTask(ctx, authority)
 	if err != nil {
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
@@ -92,7 +92,7 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 		return nil, err
 	}
 	return &gen.ModuleMintSourceOperationContextResponse{
-		Token:            token.Encoded(),
+		Token:            token,
 		ExpiresAt:        timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
 		PrincipalId:      authority.PrincipalID,
 		Tenant:           authority.Tenant,
@@ -137,10 +137,18 @@ func (h *moduleCapabilitiesConnectHandler) MintSourceOperationContext(ctx contex
 // the actor-chain journal has no row to record it against, and the durable
 // record is the delegation's use event.
 func (s *WorkContextAuthorityServer) StartSourceOperationTask(
-	authority business.SourceOperationContextAuthority,
-) (workcontext.WorkContextToken, *basev0.WorkContextV1, error) {
-	if s == nil || s.configureErr != nil || s.signer == nil {
-		return workcontext.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
+	ctx context.Context, authority business.SourceOperationContextAuthority,
+) (string, *basev0.WorkContextV1, error) {
+	return s.startSourceOperation(ctx, authority, business.SourceOperationContextTTL)
+}
+
+// startSourceOperation is StartSourceOperationTask for a window no longer than
+// ttl — an exchange of a delegated parent is held to what is left of it.
+func (s *WorkContextAuthorityServer) startSourceOperation(
+	ctx context.Context, authority business.SourceOperationContextAuthority, ttl time.Duration,
+) (string, *basev0.WorkContextV1, error) {
+	if !s.configured() {
+		return "", nil, ErrWorkContextAuthorityUnconfigured
 	}
 	// The shared mint rule (requireMintableAudience): empty is refused because a
 	// capability with no audience is good at whichever consumer accepts it, and
@@ -148,42 +156,51 @@ func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 	// it is read as a module identity. Stated once so it cannot lapse here while
 	// holding elsewhere.
 	if requireMintableAudience(authority.Audience) != nil {
-		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: source operation context audience", workcontext.ErrWorkContextInvalid)
+		return "", nil, fmt.Errorf("%w: source operation context audience", workcontext.ErrInvalid)
 	}
-	if authority.Revision == 0 || authority.OwnerPrincipalID == "" || authority.OwnerPrincipalID == authority.PrincipalID {
-		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: source operation context authority", workcontext.ErrWorkContextInvalid)
+	if authority.OwnerPrincipalID == "" || authority.OwnerPrincipalID == authority.PrincipalID || authority.ModulePrefix == "" {
+		return "", nil, fmt.Errorf("%w: source operation context authority", workcontext.ErrInvalid)
 	}
 	_, scopes, err := workContextScopes(authority.WireScopes(), mintContentReads(authority.Audience))
 	if err != nil || len(scopes) == 0 {
-		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: source operation context scopes", workcontext.ErrWorkContextInvalid)
+		return "", nil, fmt.Errorf("%w: source operation context scopes", workcontext.ErrInvalid)
 	}
 	// A plain mint grants the actor everything the person delegated. A
 	// reference-backed exchange grants it only what this call needs, already
-	// narrowed to the delegation, so the hop carries less than the owner does —
-	// the same shape the signer's attenuation produces on the parent-token arm.
+	// narrowed to the delegation, so the hop carries less than the owner does.
 	actorScopes := cloneWorkScopes(scopes)
 	if len(authority.ActorScopes) > 0 {
 		_, actorScopes, err = workContextScopes(authority.WireActorScopes(), mintContentReads(authority.Audience))
 		if err != nil || len(actorScopes) == 0 {
-			return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: source operation context actor scopes", workcontext.ErrWorkContextInvalid)
+			return "", nil, fmt.Errorf("%w: source operation context actor scopes", workcontext.ErrInvalid)
 		}
 	}
-	return s.signer.StartTask(workcontext.StartTaskInput{
-		Audience:              authority.Audience,
-		TenantID:              authority.Tenant,
-		OwnerPrincipalID:      authority.OwnerPrincipalID,
-		TaskID:                uuid.NewString(),
-		SessionID:             uuid.NewString(),
-		AuthorizationRevision: authority.Revision,
-		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes:       scopes,
-		ActorChain: []*basev0.WorkActorV1{{
-			PrincipalId:   authority.PrincipalID,
-			PrincipalKind: business.PrincipalKindService,
-			DelegationId:  authority.Delegation.ID,
-			GrantedScopes: actorScopes,
+	// The person's session, sealed to the installation the using module holds in
+	// the organization, then that module's hop exercising the delegation as its
+	// operation binding. The person bears no execution; the module's hop attests
+	// the build its pod is running. Core resolves the binding live at the mint
+	// and refuses one this module is not entitled to use.
+	return s.mint(ctx, mintRequest{
+		Start: workcontext.StartInput{
+			TenantID:           authority.Tenant,
+			OwnerPrincipalID:   authority.OwnerPrincipalID,
+			OwnerPrincipalKind: business.PrincipalKindHuman,
+			OrganizationID:     authority.Tenant,
+			TaskID:             uuid.NewString(),
+			Audience:           authority.Audience,
+			AuthorityScopes:    scopes,
+			InstallationID:     authority.InstallationID,
+		},
+		Hops: []delegationHop{{
+			PrincipalID:        authority.PrincipalID,
+			PrincipalKind:      business.PrincipalKindService,
+			DelegationID:       authority.Delegation.ID,
+			GrantedScopes:      actorScopes,
+			Execution:          attestedModuleExecution(authority.ModuleWorkContextAuthority),
+			OperationBindingID: authority.BindingID(),
 		}},
-		TTL: business.SourceOperationContextTTL,
+		Replay: workcontext.ReplayIdempotent,
+		TTL:    ttl,
 	})
 }
 
@@ -197,6 +214,7 @@ func checkSourceDelegationContextRevision(ctx context.Context, req *gen.CheckAut
 	}
 	handled, err := service.CheckSourceDelegationContextRevision(
 		ctx, req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), revisionSubjects(req),
+		req.GetOperationBindingId(),
 	)
 	if !handled {
 		return false, nil

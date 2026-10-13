@@ -319,6 +319,24 @@ type SealedModuleAuthority struct {
 	// scopes, which is what this host did and what must go.
 	BindingID       *string
 	BindingRevision *uint64
+	// ImageDigest and BuildIncarnation are the build the credential's pod was
+	// bound to at its mint, which core holds against the approved build on every
+	// verification. Set together or not at all.
+	ImageDigest      *string
+	BuildIncarnation *uint64
+}
+
+// SealedExecution is the execution a verified module credential was sealed to,
+// for a capability derived on that module's behalf without a fresh review of
+// its pod: the credential was minted from one, and core has just held its seal
+// against the approved build. Empty when the credential seals none.
+func (c ModuleCaller) SealedExecution() ExecutionIdentity {
+	if c.Sealed == nil || c.Sealed.ImageDigest == nil || c.Sealed.BuildIncarnation == nil {
+		return ExecutionIdentity{}
+	}
+	return ExecutionIdentity{
+		PrincipalID: c.PrincipalID, Running: RunningDigest(*c.Sealed.ImageDigest), Incarnation: *c.Sealed.BuildIncarnation,
+	}
 }
 
 // ExactOperationBinding resolves the one binding a credential named.

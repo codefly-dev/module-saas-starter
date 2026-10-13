@@ -1825,7 +1825,7 @@
       "type": "object"
     },
     "v1ExchangeWorkContextAudienceRequest": {
-      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task,\nSession, owner, and delegation lineage for another service boundary while\nattenuating the effective authority to the requested scopes.",
+      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer.",
       "properties": {
         "attenuatedScopes": {
           "items": {
@@ -4428,7 +4428,7 @@
       "type": "object"
     },
     "v1RenewWorkContextRequest": {
-      "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, Session, owner, and delegation lineage; it may attenuate but can never\nwiden the current actor's authority.",
+      "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, owner, and delegation lineage and opens a fresh Session assigned by the\nissuer; it may attenuate but can never widen the current actor's authority.",
       "properties": {
         "attenuatedScopes": {
           "description": "Optional narrowed scopes. Empty keeps the current actor's effective\nauthority unchanged; when present they must attenuate it.",
@@ -5048,6 +5048,7 @@
       "type": "object"
     },
     "v1StartChildSessionWorkContextRequest": {
+      "description": "StartChildSessionWorkContextRequest delegates one more hop from a verified\nparent. The child Session is assigned by the issuer and returned in\nIssuedWorkContext (with the parent's as parent_session_id), never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone.",
       "properties": {
         "actorPrincipalId": {
           "type": "string"
@@ -5070,9 +5071,6 @@
         },
         "replayPolicy": {
           "$ref": "#/definitions/v1WorkContextReplayPolicy"
-        },
-        "sessionId": {
-          "type": "string"
         },
         "ttlSeconds": {
           "format": "int32",
@@ -12050,6 +12048,7 @@
         "operationId": "WorkContextService_StartChildSession",
         "parameters": [
           {
+            "description": "StartChildSessionWorkContextRequest delegates one more hop from a verified\nparent. The child Session is assigned by the issuer and returned in\nIssuedWorkContext (with the parent's as parent_session_id), never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone.",
             "in": "body",
             "name": "body",
             "required": true,
@@ -12082,7 +12081,7 @@
         "operationId": "WorkContextService_ExchangeAudience",
         "parameters": [
           {
-            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task,\nSession, owner, and delegation lineage for another service boundary while\nattenuating the effective authority to the requested scopes.",
+            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer.",
             "in": "body",
             "name": "body",
             "required": true,
@@ -12116,7 +12115,7 @@
         "operationId": "WorkContextService_RenewWorkContext",
         "parameters": [
           {
-            "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, Session, owner, and delegation lineage; it may attenuate but can never\nwiden the current actor's authority.",
+            "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, owner, and delegation lineage and opens a fresh Session assigned by the\nissuer; it may attenuate but can never widen the current actor's authority.",
             "in": "body",
             "name": "body",
             "required": true,

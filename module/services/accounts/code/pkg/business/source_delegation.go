@@ -3,13 +3,11 @@ package business
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -192,23 +190,6 @@ func SourceDelegationBindingDigest(binding ModuleOperationAudience) string {
 	}
 	sum := sha256.Sum256(append([]byte("codefly.saas.source-delegation-binding.v1\x00"), encoded...))
 	return hex.EncodeToString(sum[:])
-}
-
-// SourceDelegationContextRevision is the authorization revision a context
-// minted from a delegation is sealed with. It binds the delegation row, the
-// binding shape it was recorded against, and the person's authorization
-// revision in the org, so CheckAuthorizationRevision stops confirming it the
-// moment the delegation is revoked or replaced, the binding changes, or the
-// person's membership, role or account status moves (the database bumps that
-// revision on each). It is never zero.
-func SourceDelegationContextRevision(delegationID, bindingDigest string, personRevision uint64) uint64 {
-	material := strings.Join([]string{delegationID, bindingDigest, strconv.FormatUint(personRevision, 10)}, "\x00")
-	sum := sha256.Sum256(append([]byte("codefly.saas.source-delegation-context.v1\x00"), material...))
-	revision := binary.BigEndian.Uint64(sum[:8]) & (1<<63 - 1)
-	if revision == 0 {
-		return 1
-	}
-	return revision
 }
 
 // sourceDelegationBinding is the one binding of a module that accepts source
@@ -452,10 +433,14 @@ type SourceDelegationRef struct {
 }
 
 // SourceOperationContextAuthority is what one mint from a delegation asserts.
-// ModuleWorkContextAuthority names the calling module's principal (the actor)
-// with Tenant set to the delegation's organization; the owner is the person.
+// ModuleWorkContextAuthority names the module that USES the capability (the
+// actor) — the delegating module on a plain mint, the binding's audience module
+// on an exchange — with Tenant set to the delegation's organization, its
+// installation there, and the build its pod runs; the owner is the person.
 type SourceOperationContextAuthority struct {
 	ModuleWorkContextAuthority
+	// ModulePrefix is the using module's prefix, which with the delegation names
+	// the operation binding the capability exercises (BindingID).
 	ModulePrefix     string
 	OwnerPrincipalID string
 	Delegation       SourceDelegation
@@ -469,8 +454,13 @@ type SourceOperationContextAuthority struct {
 	ActorScopes []ModuleOperationScope
 	// Lookup records that this capability was narrowed to receipt lookup, so
 	// the durable record of the mint says which of the two it was.
-	Lookup   bool
-	Revision uint64
+	Lookup bool
+}
+
+// BindingID is the operation binding this capability exercises: the delegation,
+// used by this module.
+func (a SourceOperationContextAuthority) BindingID() string {
+	return SourceDelegationBindingID(a.Delegation.ID, a.ModulePrefix)
 }
 
 // WireScopes projects the binding's delegation scopes onto the signing surface.
@@ -544,11 +534,11 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 //
 // The capability is deliberately indistinguishable from the one the
 // parent-token arm produces — owned by the person, one actor hop carrying the
-// delegating module and the delegation id, sealed to the same revision — so the
-// revision check confirms it and a consumer cannot tell which arm admitted the
-// work. Its scopes are the caller's binding narrowed to what the person
-// delegated, which is the ceiling the signer's attenuation would have applied
-// had there been a parent.
+// module that uses it (the caller) and the delegation id, the delegation sealed
+// as its operation binding — so every verifier reads the same live binding and a
+// consumer cannot tell which arm admitted the work. Its scopes are the caller's
+// binding narrowed to what the person delegated, which is the ceiling the
+// signer's attenuation would have applied had there been a parent.
 func (s *Service) AuthorizeDelegationReferenceExchange(
 	ctx context.Context, caller ModuleCaller, delegationID, bindingID string, lookup bool,
 ) (SourceOperationContextAuthority, error) {
@@ -634,22 +624,29 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 			revokeAs, stale = reason, delegation
 			return nil
 		}
-		personRevision := facts.EffectiveRevision()
-		if personRevision == 0 {
+		if facts.EffectiveRevision() == 0 {
 			return ErrSourceDelegationInvalid
 		}
+		// The actor is the module that USES the capability — the caller, the
+		// audience the delegation's binding names — so its hop attests the build
+		// its own pod is running, and the delegation is the operation binding the
+		// hop exercises (business.SourceDelegationBindingID), read live by every
+		// verifier. The caller authenticated with its module Work Context, whose
+		// seal names the build its pod was bound to at that mint and which core
+		// has just held against the approved build again.
 		authority = SourceOperationContextAuthority{
-			// The actor is the delegating module, exactly as a mint from this
-			// delegation would seal it — not the caller, which is the audience.
-			ModuleWorkContextAuthority: ModuleWorkContextAuthority{PrincipalID: ModulePrincipalID(delegation.ModulePrefix), Tenant: delegation.OrgID},
-			ModulePrefix:               delegation.ModulePrefix,
-			OwnerPrincipalID:           delegation.PrincipalID,
-			Delegation:                 *delegation,
-			Audience:                   binding.Audience,
-			Scopes:                     cloneOperationScopes(granted.SourceDelegationScopes),
-			ActorScopes:                cloneOperationScopes(actorScopes),
-			Lookup:                     lookup,
-			Revision:                   SourceDelegationContextRevision(delegation.ID, delegation.BindingDigest, personRevision),
+			ModuleWorkContextAuthority: ModuleWorkContextAuthority{
+				PrincipalID: caller.PrincipalID, Tenant: delegation.OrgID,
+				InstallationID: callerAuthority.InstallationID, InstallationRevision: callerAuthority.InstallationRevision,
+				ProducerEpoch: callerAuthority.ProducerEpoch, Execution: caller.SealedExecution(),
+			},
+			ModulePrefix:     grant.Prefix,
+			OwnerPrincipalID: delegation.PrincipalID,
+			Delegation:       *delegation,
+			Audience:         binding.Audience,
+			Scopes:           cloneOperationScopes(granted.SourceDelegationScopes),
+			ActorScopes:      cloneOperationScopes(actorScopes),
+			Lookup:           lookup,
 		}
 		return nil
 	})
@@ -744,8 +741,7 @@ func (s *Service) authorizeSourceDelegation(
 			revokeAs, stale = reason, delegation
 			return nil
 		}
-		personRevision := facts.EffectiveRevision()
-		if personRevision == 0 {
+		if facts.EffectiveRevision() == 0 {
 			// A member with no authorization revision is a database that broke
 			// its own invariant; nothing can be sealed that a consumer could
 			// later confirm.
@@ -758,7 +754,6 @@ func (s *Service) authorizeSourceDelegation(
 			Delegation:                 *delegation,
 			Audience:                   binding.Audience,
 			Scopes:                     cloneOperationScopes(binding.SourceDelegationScopes),
-			Revision:                   SourceDelegationContextRevision(delegation.ID, delegation.BindingDigest, personRevision),
 		}
 		return nil
 	})
@@ -821,40 +816,79 @@ func cloneOperationScopes(scopes []ModuleOperationScope) []ModuleOperationScope 
 // Revision check and parent re-check
 // ---------------------------------------------------------------------------
 
-// confirmSourceDelegationTx reports whether one delegation, as the database and
-// the declaration say now, still confirms a context sealed with revision for
-// ownerID in orgID whose subjects are the given ones. It is the one rule the
-// revision check and the exchange of a delegation-bearing parent share: the
-// delegation is active, in orgID, from ownerID, to the module grant names; its
-// binding is unchanged and its delegation scopes cover every subject; the
-// source exists and the person is still an active owner or admin; and the
-// revision recomputes to the sealed one at the person's current authorization
-// revision. Runs inside the caller's control-plane transaction.
-func (s *Service) confirmSourceDelegationTx(
-	ctx context.Context, grant ModulePrincipalGrant, delegation *SourceDelegation,
-	orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
-) (bool, error) {
-	if !delegation.Active() || delegation.OrgID != orgID || delegation.PrincipalID != ownerPrincipalID ||
-		delegation.ModulePrefix != grant.Prefix {
-		return false, nil
+// confirmSourceDelegationBinding reports the delegation a context minted from a
+// source delegation exercises, when the database and the declaration still
+// support it: the operation binding its last hop sealed (bindingID) names that
+// delegation used by exactly that hop's module, and the issuer's records entitle
+// that module to use it (WorkContextOperationBinding); the delegation is active,
+// in orgID and from ownerPrincipalID; the delegation's scopes cover every
+// subject; and the person's authorization revision is still the one the context
+// carries. Anything else is ErrSourceDelegationContextStale.
+//
+// The binding id is the pointer and never the authority: every fact behind it is
+// re-read here, and a module not entitled to the delegation resolves to nothing.
+func (s *Service) confirmSourceDelegationBinding(
+	ctx context.Context, orgID, ownerPrincipalID, actorPrincipalID, bindingID string,
+	revision uint64, subjects []ModuleOperationRevisionSubject,
+) (*SourceDelegation, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
 	}
-	binding, current := grant.currentSourceDelegationBinding(delegation)
-	if !current {
-		return false, nil
+	defer releaseAuthority()
+
+	delegationID, usedBy, ok := parseSourceDelegationBindingID(bindingID)
+	if !ok || ModulePrincipalID(usedBy) != actorPrincipalID {
+		return nil, ErrSourceDelegationContextStale
 	}
-	for _, subject := range subjects {
-		if !operationScopesSubset(subject.Scopes, binding.SourceDelegationScopes) {
-			return false, nil
+	live, err := s.WorkContextOperationBinding(ctx, orgID, bindingID)
+	switch {
+	case errors.Is(err, ErrNoOperationBinding), errors.Is(err, ErrSourceDelegationContextStale),
+		errors.Is(err, ErrModuleInstallationInactive):
+		return nil, ErrSourceDelegationContextStale
+	case err != nil:
+		return nil, err
+	case live.Revoked:
+		return nil, ErrSourceDelegationContextStale
+	}
+	var delegation *SourceDelegation
+	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		found, err := s.store.GetSourceDelegation(ctx, orgID, delegationID)
+		if err != nil {
+			return err
 		}
-	}
-	facts, err := s.store.SourceDelegationFacts(ctx, orgID, ownerPrincipalID, delegation.SourceID)
+		if found == nil || !found.Active() || found.PrincipalID != ownerPrincipalID {
+			return ErrSourceDelegationContextStale
+		}
+		snapshot := s.moduleRegistrySnapshot()
+		delegator, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot,
+			ModuleCaller{PrincipalID: ModulePrincipalID(found.ModulePrefix), BoundOrg: orgID})
+		if err != nil {
+			return err
+		}
+		granted, current := delegator.Grant.currentSourceDelegationBinding(found)
+		if !current {
+			return ErrSourceDelegationContextStale
+		}
+		for _, subject := range subjects {
+			if !operationScopesSubset(subject.Scopes, granted.SourceDelegationScopes) {
+				return ErrSourceDelegationContextStale
+			}
+		}
+		facts, err := s.store.SourceDelegationFacts(ctx, orgID, ownerPrincipalID, found.SourceID)
+		if err != nil {
+			return err
+		}
+		if facts.revocation() != "" || facts.EffectiveRevision() != revision {
+			return ErrSourceDelegationContextStale
+		}
+		delegation = found
+		return nil
+	})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if facts.revocation() != "" || facts.EffectiveRevision() == 0 {
-		return false, nil
-	}
-	return SourceDelegationContextRevision(delegation.ID, delegation.BindingDigest, facts.EffectiveRevision()) == revision, nil
+	return delegation, nil
 }
 
 // sourceDelegationShape classifies a context by its owner and actors. It is a
@@ -892,18 +926,18 @@ func (s *Service) sourceDelegationShape(
 }
 
 // CheckSourceDelegationContextRevision confirms a Work Context minted from a
-// source delegation — owned by a person, with a declared module principal as
-// its actor — or exchanged from one. It reports handled=false for any other
-// shape (the owner is itself a module principal, or no actor is one), so the
-// caller falls through to the checks every other context takes.
+// source delegation — owned by a person, with a declared module principal as its
+// actor — or exchanged from one. It reports handled=false for any other shape
+// (the owner is itself a module principal, or no actor is one), so the caller
+// falls through to the checks every other context takes.
 //
 // A handled context is confirmed only when exactly two subjects are presented,
-// the owner then one declared module principal, and some ACTIVE delegation from
-// the owner in orgID to that module passes confirmSourceDelegationTx. Anything
-// else is ErrSourceDelegationContextStale. The delegation and this organization's
-// live installation must both permit the module under the current envelope.
+// the owner then the module that uses the capability, and bindingID — the
+// operation binding the context sealed — passes confirmSourceDelegationBinding.
+// Anything else, a missing binding id included, is ErrSourceDelegationContextStale.
 func (s *Service) CheckSourceDelegationContextRevision(
-	ctx context.Context, orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
+	ctx context.Context, orgID, ownerPrincipalID string, revision uint64,
+	subjects []ModuleOperationRevisionSubject, bindingID string,
 ) (handled bool, err error) {
 	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
@@ -915,40 +949,19 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	for _, subject := range subjects[min(1, len(subjects)):] {
 		actors = append(actors, subject.PrincipalID)
 	}
-	grant, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
+	_, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
 	if err != nil {
 		return true, err
 	}
 	if !ok {
 		return false, nil
 	}
-	if len(subjects) != 2 || subjects[0].PrincipalID != ownerPrincipalID ||
-		subjects[1].PrincipalID != ModulePrincipalID(grant.Prefix) {
+	if len(subjects) != 2 || subjects[0].PrincipalID != ownerPrincipalID {
 		return true, ErrSourceDelegationContextStale
 	}
-	confirmed := false
-	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		delegations, err := s.store.ActiveSourceDelegationsForPrincipal(ctx, orgID, ownerPrincipalID, grant.Prefix)
-		if err != nil {
-			return err
-		}
-		for _, delegation := range delegations {
-			ok, err := s.confirmSourceDelegationTx(ctx, grant, delegation, orgID, ownerPrincipalID, revision, subjects)
-			if err != nil {
-				return err
-			}
-			if ok {
-				confirmed = true
-				return nil
-			}
-		}
-		return nil
-	})
-	if err != nil {
+	if _, err := s.confirmSourceDelegationBinding(ctx, orgID, ownerPrincipalID, subjects[1].PrincipalID,
+		bindingID, revision, subjects); err != nil {
 		return true, err
-	}
-	if !confirmed {
-		return true, ErrSourceDelegationContextStale
 	}
 	return true, nil
 }
@@ -967,14 +980,14 @@ type SourceDelegationHop struct {
 //
 // It reports handled=false for any other shape, so a parent without a module
 // actor keeps exactly the checks it always had. A handled parent must have one
-// actor hop, a declared module principal, whose delegation id names a
-// delegation that confirmSourceDelegationTx accepts now for the parent's
-// tenant, owner, revision and scopes; anything else is
-// ErrSourceDelegationContextStale. The id in the token is only a pointer: the
-// row, the source, the person and the binding are re-read, never trusted.
+// actor hop, a declared module principal, and the operation binding it sealed
+// (bindingID) must pass confirmSourceDelegationBinding for the parent's tenant,
+// owner, revision and scopes; anything else is ErrSourceDelegationContextStale.
+// The binding id in the token is only a pointer: the row, the source, the person
+// and the binding are re-read, never trusted.
 func (s *Service) ConfirmSourceDelegationParent(
 	ctx context.Context, orgID, ownerPrincipalID string, revision uint64,
-	ownerScopes []ModuleOperationScope, hops []SourceDelegationHop,
+	ownerScopes []ModuleOperationScope, hops []SourceDelegationHop, bindingID string,
 ) (handled bool, delegation *SourceDelegation, err error) {
 	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
@@ -986,35 +999,26 @@ func (s *Service) ConfirmSourceDelegationParent(
 	for _, hop := range hops {
 		actors = append(actors, hop.PrincipalID)
 	}
-	grant, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
+	_, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
 	if err != nil {
 		return true, nil, err
 	}
 	if !ok {
 		return false, nil, nil
 	}
-	if len(hops) != 1 || hops[0].PrincipalID != ModulePrincipalID(grant.Prefix) || hops[0].DelegationID == "" {
+	if len(hops) != 1 || hops[0].DelegationID == "" {
 		return true, nil, ErrSourceDelegationContextStale
 	}
 	subjects := []ModuleOperationRevisionSubject{
 		{PrincipalID: ownerPrincipalID, Scopes: ownerScopes},
 		{PrincipalID: hops[0].PrincipalID, Scopes: hops[0].Scopes},
 	}
-	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		found, err := s.store.GetSourceDelegation(ctx, orgID, hops[0].DelegationID)
-		if err != nil || found == nil {
-			return err
-		}
-		ok, err := s.confirmSourceDelegationTx(ctx, grant, found, orgID, ownerPrincipalID, revision, subjects)
-		if ok {
-			delegation = found
-		}
-		return err
-	})
+	delegation, err = s.confirmSourceDelegationBinding(ctx, orgID, ownerPrincipalID, hops[0].PrincipalID,
+		bindingID, revision, subjects)
 	if err != nil {
 		return true, nil, err
 	}
-	if delegation == nil {
+	if delegation.ID != hops[0].DelegationID {
 		return true, nil, ErrSourceDelegationContextStale
 	}
 	return true, delegation, nil

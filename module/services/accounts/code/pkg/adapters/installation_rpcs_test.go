@@ -9,7 +9,6 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -22,7 +21,6 @@ const (
 	installAgentID = "019fec91-2000-7000-8000-0000000000a3"
 	installID      = "019fec91-2000-7000-8000-0000000000a4"
 	installTaskID  = "019fec91-2000-7000-8000-0000000000a5"
-	installSession = "019fec91-2000-7000-8000-0000000000a6"
 )
 
 func newInstallationMintServer(t *testing.T, facts *business.InstallationAuthorityFacts, err error) *WorkContextAuthorityServer {
@@ -35,6 +33,7 @@ func newInstallationMintServer(t *testing.T, facts *business.InstallationAuthori
 		KeyID:      "accounts-test-key",
 		PrivateKey: privateKey,
 		Authority:  &workContextAuthorityFake{installationFcts: facts, installationErr: err},
+		Seals:      newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
 	// Every mint resolves the host's audience vocabulary, so a server with no
@@ -77,7 +76,6 @@ func installTaskRequest() *gen.StartInstallationTaskRequest {
 		OrgId:          installOrgID,
 		InstallationId: installID,
 		TaskId:         installTaskID,
-		SessionId:      installSession,
 		Audience:       "acme.collection",
 		AuthorityScopes: []*gen.WorkContextScope{{
 			ResourceKind: "doc",
@@ -98,17 +96,16 @@ func TestStartInstallationTaskMintsUnderOwnerOfRecordWithAgentActor(t *testing.T
 
 	// The signed capability itself carries the same owner and a single actor hop
 	// naming the agent — the attributable, provable-on-behalf-of write.
-	token, err := workcontext.ParseWorkContextToken(issued.GetToken())
+	verified, err := server.verifyIssued(context.Background(), issued.GetToken())
 	require.NoError(t, err)
-	claims, err := server.verifier.Verify(token, workcontext.WorkContextExpectations{
-		Issuer:           "accounts.test",
-		TenantID:         installOrgID,
-		OwnerPrincipalID: installOwnerID,
-	})
-	require.NoError(t, err)
+	claims := verified.Context()
+	require.Equal(t, installOwnerID, claims.GetOwnerPrincipalId())
+	require.Equal(t, installOrgID, claims.GetTenantId())
 	require.Len(t, claims.GetActorChain(), 1)
 	require.Equal(t, installAgentID, claims.GetActorChain()[0].GetPrincipalId())
 	require.Equal(t, business.PrincipalKindAgent, claims.GetActorChain()[0].GetPrincipalKind())
+	// Sealed to the installation the authority is drawn from.
+	require.Equal(t, installTaskRequest().GetInstallationId(), claims.GetSeal().GetInstallationId())
 }
 
 func TestStartInstallationTaskRequiresInternalCredential(t *testing.T) {

@@ -439,32 +439,41 @@ image, approved incarnation. The response carries
   `cross_tenant` in the envelope. Execution proves the principal first; the
   organization's live installation then authorizes the mint. A selector grants
   nothing by itself.
-- **Unsealed-credential disclosure remains in force pending the database proof.**
-  `checkAgainstSealed` enforces NOTHING on a module capability with no seal.
-  Uninstalling a solution does not revoke a module capability in flight.
-  These are the conservative disclosures required by
-  `TestUnsealedCredentialDisclosureMatchesTheCode`; this branch must not
-  replace them with an all-path revocation guarantee until database-backed
-  tests demonstrate the next-use refusal for enqueue, claim, fetch, delegated
-  exchange, module proxy and executable artifacts with an already minted
-  credential. Compiling those tests is not that evidence.
-- The implementation under test resolves the caller organization's installation
-  status, scope, revision, binding and envelope revision in
-  `AuthorizeModuleCapability`, before `checkAgainstSealed`. Its use span,
-  `BeginModuleAuthorityUse`, is intended to retain shared installation, target
-  and envelope locks through the effect, including signing and exchange.
-  The separate lock pool does not lend control-plane privileges to effects.
-  This describes the implementation, not a verified every-path guarantee.
-- **The sealed target, `min(sealed, live)`, remains a separate cutover.**
-  `StartModuleTask` and `VerifyModuleWorkContext` carry identity and tenant,
-  not installation id/revision, epoch, binding or build identity. Even if all
-  next-use checks pass, reinstalling restores an old credential's authority
-  under the new consent, and later widening can expand that credential's
-  authority. Revocation across reinstall and a mint-time ceiling are absent.
+- **Every module credential is sealed.** Accounts mints and verifies Work
+  Contexts with `core/workcontext` (`pkg/adapters/work_context_core.go`):
+  `StartModuleTask` seals the installation the business mint resolved, its
+  revision, the principal's producer epoch and the build the requesting pod is
+  running, and `VerifyModuleWorkContext` returns a `ModuleCaller` whose `Sealed`
+  carries the first three. So an uninstall revokes a module capability at its
+  next use — core refuses it at verification, because its sealed installation is
+  no longer active — and so does a reinstall under a new installation id, which
+  an unsealed credential could not do. `checkAgainstSealed` still compares the
+  live installation against the seal on every capability decision; its nil
+  branch serves the host's own reads (a mint resolving what it is about to seal,
+  a fence, a revision recheck), never a credential. So the sealed half of
+  `min(sealed, live)` now exists for the installation, its revision and the
+  producer epoch; a sealed GRANT ceiling on a module's own identity capability
+  does not — that capability seals no scopes, and every use reads the declared
+  grant live — and neither does a sealed operation binding (below).
+  `TestSealedModuleCredentialDBLiveInstallationAtEveryEntryPoint` (`pkg/infra`)
+  is the database evidence: enqueue, claim, heartbeat, ack, retry, dead-letter,
+  blob and file fetch, both delegated bindings and both artifact decisions refuse
+  after an uninstall and after a reinstall.
+- The implementation resolves the caller organization's installation status,
+  scope, revision, binding and envelope revision in `AuthorizeModuleCapability`,
+  before `checkAgainstSealed`. Its use span, `BeginModuleAuthorityUse`, retains
+  shared installation, target and envelope locks through the effect, including
+  signing and exchange. The separate lock pool does not lend control-plane
+  privileges to effects.
+- **A module principal's epoch is its authorization revision in the
+  organization** (migration 35). Installing a module and every change to its
+  installation's revision advance it, so a capability sealed before a scope or
+  status change is refused after it.
 - Every mint calls `BindExecution`: the projected token is reviewed and its
-  running pod/build checked against delivered approval. Installation facts are
-  resolved into mint authority and checked again by `FenceModuleMint` after
-  signing/audit. The SDK signing-format cutover is still needed to seal them.
+  running pod/build checked against delivered approval, and the digest it read is
+  the execution the capability attests — core holds it against the approved
+  build again at the mint. The approved-build view is keyed by the module's
+  PREFIX, the name the authority document gives it, never by its registry UUID.
 - **The exact binding lookup exists; `moduleOperationContextStale` still
   searches** the current operation bindings for a compatible scope superset.
   Replacing this with `ExactOperationBinding` requires the sealed binding id.
@@ -644,9 +653,9 @@ a digest without an incarnation is refused by its schema.
 **Wired (#1056):** every module mint calls `BindExecution`, and the approved
 digests come from the delivered authority documents through
 `ApprovedBuildReconciler`. `TestEveryModuleMintIsExecutionBound` (module/tools)
-holds the call chain. `module_operation_context.go`'s binding search is
-unblocked by the sealed binding id, which the Work Context cutover carries and
-which is still outstanding.
+holds the call chain. `module_operation_context.go`'s binding search
+still waits on a sealed operation binding: this host seals none into any
+capability, and its seal source answers every binding id as absent.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,
@@ -669,8 +678,9 @@ request adds a
 `organization_id` selector as the module Work Context mint.
 
 - The child is addressed to the binding's `audience` and carries **exactly** its
-  `headless_scopes`, as both the authority scopes and the module actor's granted
-  scopes. Owner and sole actor are the module's service principal; the tenant is
+  `headless_scopes` as its authority scopes. It is owned by the module's service
+  principal acting directly, with no actor hop (core models an owner acting);
+  the tenant is
   the selected installation's organization. It lives 60 seconds (`business.ModuleOperationContextTTL`,
   the exchanged-operation ceiling) with the idempotent replay policy.
 - A binding without `headless_scopes` is refused (`PermissionDenied`); the invoke
@@ -719,13 +729,19 @@ that authority (`pkg/business/source_delegation.go`):
   `/modules/_source-operation-context`) authenticates like
   `MintModuleWorkContext` and takes a `delegation_id` or a `source_id`. The child
   is owned by the person, actored by the module principal (the hop carries the
-  delegation id), in the source's organization, addressed to the binding's
-  audience with exactly its delegation scopes, for 60 seconds. Its revision
-  (`business.SourceDelegationContextRevision`) binds the delegation, the binding
-  digest and the person's authorization revision, so `CheckAuthorizationRevision`
-  — which recognises a person-owned context with a module actor and confirms it
-  from the delegation rather than the row-backed agent path — stops confirming it
-  once any of them moves.
+  delegation id and the build its pod runs), in the source's organization,
+  addressed to the binding's audience with exactly its delegation scopes, for 60
+  seconds, at the person's authorization revision. The delegation is sealed as
+  the capability's core operation binding,
+  `source-delegation/<delegation>/<module prefix>`
+  (`business.SourceDelegationBindingID`), read live by every verifier through
+  `WorkContextOperationBinding`: granted to that module at its installation,
+  revoked with the delegation, and answered only for the delegating module or the
+  module its binding names. `CheckAuthorizationRevision` — which recognises a
+  person-owned context with a module actor — takes the sealed binding id
+  (`operation_binding_id`) and confirms it from the delegation rather than the
+  row-backed agent path, so it stops confirming once the delegation, its binding,
+  the source, the person's role or their revision moves.
 - **Delegation and installation are both required at use.** Minting, revision
   confirmation and exchange hold the actor's installation in the delegation's
   organization to the current envelope. `cross_tenant` permits consent in other
@@ -761,8 +777,11 @@ that authority (`pkg/business/source_delegation.go`):
   binding's invoke scopes, or its read-only lookup subset, intersected with the
   delegation's scopes (`intersectOperationScopes`), and a lookup the delegation
   does not cover is refused rather than issued empty. The capability is otherwise
-  identical in shape to a mint's — the actor hop is the *delegating* module's
-  principal, not the caller's — so the revision check confirms it unchanged.
+  identical in shape to a mint's, except that the actor hop is the **caller's**
+  principal — the module that uses the capability, whose build core attests at
+  the mint — and the operation binding names the caller; the revision check
+  confirms it the same way. A parent-token exchange re-derives the child the same
+  way, with the caller on the hop.
   `ExchangeDelegatedReadAudience` deliberately has no reference arm: a source
   delegation authorizes operation bindings only.
 - **Codes.** `FAILED_PRECONDITION` + `DELEGATION_MISSING` (the source has no

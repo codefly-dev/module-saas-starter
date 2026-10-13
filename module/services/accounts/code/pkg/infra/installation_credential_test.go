@@ -16,6 +16,7 @@ import (
 	"accounts/pkg/adapters"
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 	"accounts/pkg/datasource/github"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
@@ -75,11 +76,13 @@ func (installationCipher) DecryptSecret(context.Context, string, string) (string
 	return "example-token", nil
 }
 
-// This is the pending database evidence for the conservative disclosure. It
-// retains the real signed module credential across uninstall and tests the
-// business authorization entrypoints used by the transports. It does not claim
-// to exercise gateway caching or the delegated exchange's parent-token verifier.
-func TestUnsealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.T) {
+// The database evidence that a module credential is held to the installation it
+// was minted for. It retains the real signed credential across an uninstall and a
+// reinstall: the issuer stops verifying it the moment its installation is no
+// longer active, every business entrypoint refuses an identity verified from it
+// before then, and a reinstall — new consent under a new installation id — does
+// not revive it. It does not claim to exercise gateway caching.
+func TestSealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.T) {
 	principal := business.ModulePrincipalID("example")
 	queue := executionQueue("credential-live")
 	var grant business.ModulePrincipalGrant
@@ -107,18 +110,25 @@ func TestUnsealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.
 	svc.SetDatasourceConnector(installationCipher{}, testStore, "")
 	svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return installationContent{} })
 	source := seedDatasourceSource(t, org)
+	svc.SetModuleAuthorityReads(testStore, nil)
+	svc.SetWorkContextSealStore(testStore)
+	cluster := executiontest.New()
+	svc.SetExecutionBinding(cluster, cluster)
+	cluster.Approve("example", executiontest.Digest("example"), 1)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	issuer := &adapters.WorkContextAuthorityServer{}
-	issuer.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "example-key", PrivateKey: key, Authority: testStore})
-	credential, _, err := issuer.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: principal, Tenant: org, InstallationID: installation.Id, InstallationRevision: 1})
+	issuer.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "example-key", PrivateKey: key, Authority: testStore, Seals: svc})
+	credential, _, err := issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{
+		PrincipalID: principal, Tenant: org, InstallationID: installation.Id, InstallationRevision: 1,
+		Execution: business.ExecutionIdentity{Running: business.RunningDigest(executiontest.Image("example")), Incarnation: 1},
+	})
+	require.NoError(t, err, "the module's principal holds an epoch from its installation (migration 35)")
+	verified, err := issuer.VerifyModuleWorkContext(testCtx, credential)
 	require.NoError(t, err)
-	caller := func(t *testing.T) business.ModuleCaller {
-		c, err := issuer.VerifyModuleWorkContext(credential.Encoded())
-		require.NoError(t, err, "the credential remains cryptographically valid after uninstall")
-		require.Nil(t, c.Sealed, "exercise the deployed unsealed credential format")
-		return c
-	}
+	require.NotNil(t, verified.Sealed)
+	require.Equal(t, installation.Id, *verified.Sealed.InstallationID)
+	caller := func(*testing.T) business.ModuleCaller { return verified }
 	ctx := auth.WithVerifiedDatabaseIdentity(testCtx, owner, org)
 	enqueue := &jobsv1.EnqueueJobRequest{Job: &jobsv1.NewJob{Direction: jobsv1.JobDirection_JOB_DIRECTION_OUTBOX, Scope: &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{OrganizationId: org}}, Queue: queue, Topic: "example.work", Source: "example", IdempotencyKey: business.NewIDString(), SchemaVersion: 1, ContentType: "application/json", Payload: []byte(`{}`), MaxAttempts: 3}}
 	artifact := business.ExecutableArtifactRequest{Installation: installation.Id, Policy: "content", Identity: business.ExecutableArtifactIdentity{Schema: policy.Schema, Source: "acme.example", Subject: []byte(`{"version":1}`), ExpectedRevision: 1, Contracts: policy.Contracts}}
@@ -214,12 +224,15 @@ func TestUnsealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.
 		_, _, err := testStore.UninstallSolution(ctx, org, installation.Id)
 		return err
 	}))
+	_, err = issuer.VerifyModuleWorkContext(testCtx, credential)
+	require.Error(t, err, "the issuer stops verifying a credential whose installation is gone")
 	for _, path := range paths {
 		t.Run("uninstalled/"+path.name, func(t *testing.T) { require.ErrorIs(t, path.use(t), business.ErrModuleInstallationInactive) })
 	}
 	require.Empty(t, proxy().Entitlements, "the next fresh module proxy entitlement read refuses")
-	// Reinstall is NEW consent. The same old token becomes usable again: no
-	// installation identity/revision was sealed into that credential.
+	// Reinstall is NEW consent, under a new installation id. The old credential
+	// names the installation it was minted for, so neither the issuer nor any
+	// entrypoint accepts it again.
 	var replacement *gen.Installation
 	require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
 		var err error
@@ -227,9 +240,14 @@ func TestUnsealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.
 		return err
 	}))
 	require.NotEqual(t, installation.Id, replacement.Id)
+	_, err = issuer.VerifyModuleWorkContext(testCtx, credential)
+	require.Error(t, err, "a reinstall does not revive a credential sealed to the old installation")
+	// An identity verified from it before the uninstall is refused too: the live
+	// read is made for the installation the credential is sealed to, and that one
+	// is not active, whatever replaced it.
 	enqueue.Job.IdempotencyKey = business.NewIDString()
 	_, err = svc.ModuleEnqueueJob(ctx, caller(t), org, enqueue)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, business.ErrModuleInstallationInactive)
 }
 
 func TestHostJobsNeedNoModuleConsumerAuthority(t *testing.T) {

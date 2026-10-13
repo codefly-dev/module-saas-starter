@@ -214,10 +214,13 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	exec(`DELETE FROM scope_grants WHERE org_id=$1 AND scope_path='root'`, readOrg)
 
 	// Revoking the permission the disclosure rests on fails the whole call rather
-	// than quietly narrowing the next page, because the capability sealed it.
+	// than quietly narrowing the next page, because the capability sealed it. The
+	// revocation advances the principal's authorization revision, so core refuses
+	// the capability as stale before its scopes are judged again.
 	exec(`DELETE FROM role_assignments WHERE org_id=$1 AND role_id=$2`, readOrg, inspector)
+	resolve(inspect[:1]...)
 	_, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(detailed))
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	exec(`INSERT INTO role_assignments(org_id,subject_id,subject_kind,role_id) VALUES($1,$2,'principal',$3)`, readOrg, readOwner, inspector)
 
 	// Another tenant's collections and their metadata are outside the snapshot.

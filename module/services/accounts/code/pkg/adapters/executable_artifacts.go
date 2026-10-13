@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -48,7 +47,7 @@ func (s *ModuleCapabilitiesServer) RevokeExecutableArtifact(ctx context.Context,
 		return nil, status.Error(codes.PermissionDenied, "artifact consent requires the person present")
 	}
 	out, revision, err := service.RevokeApprovedExecutableArtifact(a.ctx, a.caller, a.parent.TenantId, a.parent.OwnerPrincipalId, a.parent.Audience, req.InstallationId, req.ApprovalId, func(p business.ArtifactPermission) error {
-		if err := workcontext.RequireWorkContextScope(a.parent, workcontext.WorkContextScopeRequirement{ResourceKind: p.Resource, Action: p.Action, ResourceID: req.InstallationId}); err != nil {
+		if !workContextGrants(a.parent, p.Resource, p.Action, req.InstallationId) {
 			return status.Error(codes.PermissionDenied, "artifact parent scope denied")
 		}
 		return nil
@@ -87,7 +86,7 @@ func (s *ModuleCapabilitiesServer) decideExecutableArtifact(ctx context.Context,
 	if action != "authorize" {
 		permission = policy.Activate
 	}
-	if err = workcontext.RequireWorkContextScope(parent, workcontext.WorkContextScopeRequirement{ResourceKind: permission.Resource, Action: permission.Action, ResourceID: req.InstallationId}); err != nil {
+	if !workContextGrants(parent, permission.Resource, permission.Action, req.InstallationId) {
 		return nil, status.Error(codes.PermissionDenied, "artifact parent scope denied")
 	}
 	identity := req.Identity
@@ -106,7 +105,7 @@ func (h *moduleCapabilitiesConnectHandler) ApproveExecutableArtifact(ctx context
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.ApproveExecutableArtifact(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -118,7 +117,7 @@ func (h *moduleCapabilitiesConnectHandler) AuthorizeExecutableArtifact(ctx conte
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.AuthorizeExecutableArtifact(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -130,7 +129,7 @@ func (h *moduleCapabilitiesConnectHandler) RevokeExecutableArtifact(ctx context.
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.RevokeExecutableArtifact(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)

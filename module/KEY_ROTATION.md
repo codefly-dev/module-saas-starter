@@ -127,7 +127,7 @@ key rather than signing through the key service:
 
 | Consumer | Where |
 | --- | --- |
-| the Work Context signer | `github.com/codefly-dev/sdk-go/workcontext`, `WorkContextSignerOptions.PrivateKey` |
+| the Work Context signer | `github.com/codefly-dev/core/workcontext`, `Authority.Key` — core also accepts an injected `Authority.Signer`; this host still passes the material |
 | the delegation minter | `github.com/codefly-dev/core`, `policy.MintEd25519` |
 | the OAuth state signer's seed | `pkg/auth/oauth_state.go` |
 

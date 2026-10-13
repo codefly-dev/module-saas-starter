@@ -15,7 +15,6 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -53,6 +52,12 @@ type sourceDelegationMemoryStore struct {
 
 func (s *sourceDelegationMemoryStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
+}
+
+// OrganizationIDExists answers for the delegation's organization, the one tenant
+// a module identity is minted in here.
+func (s *sourceDelegationMemoryStore) OrganizationIDExists(_ context.Context, id string) (bool, error) {
+	return id == delegationOrg, nil
 }
 
 func (s *sourceDelegationMemoryStore) GetSourceDelegation(_ context.Context, orgID, id string) (*business.SourceDelegation, error) {
@@ -148,6 +153,9 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 	svc.SetAuditEmitter(audit)
 	WithService(svc)
 	installModuleWorkContextAuthority(t)
+	// The person's revision is the one the delegation's facts carry, read live,
+	// exactly as the host answers it from the same rows.
+	workContextSingleton.seals.(*sealAnswersFake).revisionFrom = func() uint64 { return store.facts.EffectiveRevision() }
 	return store, audit
 }
 
@@ -163,14 +171,9 @@ func mintSourceContext(prefix, token string, ref business.SourceDelegationRef) (
 
 func verifySourceContext(t *testing.T, token string) *basev0.WorkContextV1 {
 	t.Helper()
-	parsed, err := workcontext.ParseWorkContextToken(token)
+	verified, err := WorkContextSingleton().verifyFor(context.Background(), token, "ingestservice")
 	require.NoError(t, err)
-	verified, err := WorkContextSingleton().verifier.Verify(parsed, workcontext.WorkContextExpectations{
-		Issuer:   WorkContextSingleton().issuer,
-		Audience: "ingestservice",
-	})
-	require.NoError(t, err)
-	return verified
+	return verified.Context()
 }
 
 func requireRefusal(t *testing.T, err error, code codes.Code, reason string) {
@@ -224,7 +227,7 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			requireScopes(t, want, actor.GetGrantedScopes())
 
 			// Neither a module identity nor anything the capability surface accepts.
-			_, err = WorkContextSingleton().VerifyModuleWorkContext(resp.GetToken())
+			_, err = WorkContextSingleton().VerifyModuleWorkContext(context.Background(), resp.GetToken())
 			require.Equal(t, codes.Unauthenticated, status.Code(err))
 
 			used := audit.of(business.EventSourceDelegationUsed)
@@ -334,6 +337,19 @@ func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
+	t.Run("refuses without the binding the context sealed", func(t *testing.T) {
+		_, request := mint(t)
+		request.OperationBindingId = nil
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses a binding naming another module", func(t *testing.T) {
+		_, request := mint(t)
+		other := business.SourceDelegationBindingID(delegationID, "reports")
+		request.OperationBindingId = &other
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
 	t.Run("refuses another tenant", func(t *testing.T) {
 		store, request := mint(t)
 		// The module's declared tenancy is never consulted, so the refusal is
@@ -382,14 +398,12 @@ func TestMintSourceOperationContextRevokesWhatNoLongerHolds(t *testing.T) {
 // bound to another tenant without cross_tenant cannot exchange a parent in this
 // one, and the same module declared cross_tenant can.
 func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *testing.T) {
-	_, facts, client, _ := sourceReadFixture(t)
-	parentToken, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{
-		Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
-		TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222",
-		AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
+	_, _, client, _ := sourceReadFixture(t)
+	parentToken, _ := mintTestCapability(t, workContextSingleton, testCapability{
+		Audience: "example", Tenant: readOrg, Owner: readOwner,
+		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
+		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
 	})
-	require.NoError(t, err)
 	exchange := func(crossTenant bool) error {
 		registry := installedOperationRegistry(true)
 		grant := registry[business.ModulePrincipalID("example")]
@@ -397,12 +411,11 @@ func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *t
 		registry[business.ModulePrincipalID("example")] = grant
 		service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 		service.SetModuleCapabilities(nil, nil, registry)
-		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
-		require.NoError(t, err)
-		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "generate", ParentWorkContextToken: parentToken.Encoded()})
-		req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
+		module := mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg)
+		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "generate", ParentWorkContextToken: parentToken})
+		req.Header().Set(workContextHeader, module)
 		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
-		_, err = client.ExchangeDelegatedOperationAudience(context.Background(), req)
+		_, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
 		return err
 	}
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(exchange(false)))
