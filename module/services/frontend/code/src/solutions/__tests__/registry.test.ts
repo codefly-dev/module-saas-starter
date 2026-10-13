@@ -734,9 +734,9 @@ describe("registry snapshot", () => {
     if (manifests === "unavailable") throw new Error("fixture registry must load");
     expect(manifests?.find(m => m.id === "audit")?.kind).toBe("module");
     expect(manifests?.find(m => m.id === "reports")?.kind).toBe("solution");
-    const module = manifests!.find(m => m.id === "audit")!;
-    expect(navProjection(module, granted)?.id).toBe("audit");
-    expect(entitledSolutions([module], entitlements({solutions: [{...granted, targetId: "another-target"}]}))).toEqual([]);
+    const sharedModule = manifests!.find(m => m.id === "audit")!;
+    expect(navProjection(sharedModule, granted)?.id).toBe("audit");
+    expect(entitledSolutions([sharedModule], entitlements({solutions: [{...granted, targetId: "another-target"}]}))).toEqual([]);
     expect(parseManifest(baseManifest({kind: "module"}))?.kind).toBeUndefined();
   });
 

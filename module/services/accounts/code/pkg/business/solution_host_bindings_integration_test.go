@@ -196,10 +196,9 @@ func registration(t *testing.T, solutionID string) *business.SolutionRegistratio
 }
 
 // A delivered generation becomes a durable registration record, and the record
-// says which binding declared it. Nothing has heartbeated, so it is PENDING: that
-// is the whole point — declared and not observed is a state an operator can see,
-// where before it was indistinguishable from never deployed.
-func TestSolutionHostBinding_DeliveredGenerationDeclaresAPendingRegistration(t *testing.T) {
+// says which binding declared it. A headless declared component is ACTIVE without
+// any runtime report. Each organisation's installation readiness remains separate.
+func TestSolutionHostBinding_DeliveredGenerationDeclaresAnActiveRegistration(t *testing.T) {
 	solutionID := testDeclaredSolutionID(t)
 	document := declaredBinding(t, solutionID, 1)
 	mount := &deliveredSet{}
@@ -230,8 +229,8 @@ func TestSolutionHostBinding_DeliveredGenerationDeclaresAPendingRegistration(t *
 	if declared.Declared.BindingID != document.Binding || declared.Declared.Generation != 1 {
 		t.Fatalf("declaration = %+v", declared.Declared)
 	}
-	if got := declared.Status(); got != business.SolutionRegistrationPending {
-		t.Fatalf("status = %q, want pending: declared presence is not an observation", got)
+	if got := declared.Status(); got != business.SolutionRegistrationActive {
+		t.Fatalf("status = %q, want active: the applied declaration needs no runtime heartbeat or frontend", got)
 	}
 }
 
