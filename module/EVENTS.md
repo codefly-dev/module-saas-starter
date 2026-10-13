@@ -291,6 +291,16 @@ this type in the writer's own transaction, and its `data` is the whole entry
 derived from the audit entry id, because the entry id is already the id of the
 organization's webhook event, and an `id` is unique in the journal.
 
+The writer may be a user-scoped transaction, which runs as `app_tenant` with only
+`app.current_user_id` set. `publish_domain_event` refuses a tenant-less event from
+`app_tenant` except this one: the type is `saas.audit.recorded.v1`,
+`app.current_user_id` is set and non-empty, and the envelope's `actor_principal_id`
+(the entry's actor id, for a person their user id) is that same user. That is the
+rule the `audit_events_tenant` policy applies to the same entry's row, so the
+journal admits what `audit_events` admits and nothing wider (migration 36). Any
+other tenant-less event from `app_tenant`, and any event whose tenant is not the
+transaction's signed scope, is refused as before.
+
 It is code-owned (in the audit events contribution, not an audit registry type),
 `visibility: internal` and declares no partition. It is therefore never fanned
 out, relayed or replayed to a subscriber, and no subscription pattern may match

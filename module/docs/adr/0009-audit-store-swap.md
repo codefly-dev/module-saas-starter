@@ -47,14 +47,35 @@ tenant, and an `internal` type in it is never fanned out.
 2. **The journal, not an outbox.** Under `warehouse`, `AuditService` publishes
    every audit entry, including one with no organization, to the journal as the
    internal type `saas.audit.recorded.v1`, carrying the whole entry, in the
-   caller's transaction through the existing transport. No table, migration, relay
-   or drain is added to this module. The type is code-owned and `internal`: the
+   caller's transaction through the existing transport. No table, relay or drain is
+   added to this module, and the only migration is the one that lets a user-scoped
+   transaction publish an entry with no organization (item 2a). The type is
+   code-owned and `internal`: the
    relay marks it published with no fan-out, a replay skips it, and no
    subscription may match it. The organization-scoped webhook event of an external
    audit type is published beside it, unchanged. The journal event's `data` is
    limited to 960 KiB ([EVENTS.md](../../EVENTS.md)); an entry that does not fit
    is refused and fails the caller's transaction, because until it is delivered
    the journal event is the entry's only copy.
+
+   2a. **A user-scoped transaction publishes its own no-organization entries.**
+   Some entries with no organization are written inside a user-scoped transaction
+   (the WebAuthn registration and the MFA enrolment, for example). That
+   transaction runs as `app_tenant` and sets only `app.current_user_id`, and
+   `publish_domain_event` refused every event with no tenant from `app_tenant`.
+   Migration 36 replaces the function with an identical body except that the
+   `app_tenant` branch also admits one case: the tenant is NULL, the type is
+   `saas.audit.recorded.v1`, `app.current_user_id` is set and non-empty, and the
+   event's actor (`p_actor_principal_id`) is that same user. It mirrors the rule
+   the `audit_events_tenant` policy already applies to the same entry's row
+   (`org_id IS NULL` and `actor_id` equal to `app.current_user_id`), so the journal
+   admits exactly what `audit_events` admits and nothing wider; every other
+   refusal, the advisory lock and the insert are unchanged. The emitter puts the
+   entry's actor id on the envelope's `actor_principal_id`, which for a person is
+   their user id (a human principal's id is the `users.uuid` that
+   `sync_human_principal` copies). The entry is published on the transaction the
+   caller already holds; nothing moves the writer to the control plane. The type
+   is internal, so the relay never fans the row out.
 
 3. **module-runtime reads the journal.** This module never calls module-runtime
    and mints no identity of its own. module-runtime, which holds a `cross_tenant`
@@ -100,8 +121,10 @@ tenant, and an `internal` type in it is never fanned out.
 - A deployment cannot select `warehouse` until the warehouse `AuditStorage` and
   the delivery path exist in the build; startup refuses it by name until then.
 - Every no-organization entry is published on the transaction the caller already
-  holds. A caller on a user-scoped transaction cannot publish a journal event with
-  no tenant: `publish_domain_event` admits that only for the control plane. Such
-  writers (for example the WebAuthn registration events) must move to the control
-  plane or the function must admit them, a decision this ADR leaves open and the
-  warehouse backend depends on.
+  holds, including a user-scoped one: `publish_domain_event` admits a tenant-less
+  `saas.audit.recorded.v1` from `app_tenant` when its actor is the transaction's
+  user (migration 36). A tenant-less event of any other type, or for any other
+  actor, is still refused from `app_tenant`. The comparison is on the text of the
+  actor id and of `app.current_user_id`, which are the canonical lowercase user id
+  everywhere they are set; a non-canonical spelling of the same id is refused where
+  `audit_events` would accept it, which fails closed.
