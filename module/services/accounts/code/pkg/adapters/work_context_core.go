@@ -444,6 +444,17 @@ func (s *WorkContextAuthorityServer) reissue(
 		if installation, err = s.audienceInstallation(ctx, claims.GetTenantId(), audience); err != nil {
 			return "", nil, err
 		}
+		// An empty answer is refused rather than passed on. Core reads an empty
+		// installation as "keep the parent's", and the parent's names the
+		// installation of the audience it used to address — so a resolver that
+		// answered "" without an error would silently seal this capability to
+		// the wrong module's installation. The re-mint could not make that
+		// mistake, because core's Start refuses an empty installation outright,
+		// and a derivation has no such backstop.
+		if installation == "" {
+			return "", nil, status.Errorf(codes.FailedPrecondition,
+				"audience %q resolves to no installation to seal the capability to", audience)
+		}
 	}
 	return s.coreAuthority(claims.GetTenantId(), claims.GetOwnerPrincipalId()).Reissue(ctx, parent, workcontext.ReissueInput{
 		Audience:       audience,

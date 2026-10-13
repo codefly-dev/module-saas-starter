@@ -498,21 +498,71 @@ func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
 	ctx context.Context, caller business.ModuleCaller, parent *workcontext.Verified,
 	delegation *business.SourceDelegation, binding delegatedAudienceBinding, ttl time.Duration,
 ) (*gen.IssuedWorkContext, error) {
-	// A precondition on the exchanging module rather than an input to the mint:
-	// the capability is the parent's, so nothing of the caller's is signed into
-	// it, but a caller that holds no installation this delegation can be
-	// exercised through has no business exchanging one.
-	_, declared := service.ModulePrincipals()[caller.PrincipalID]
+	grant, declared := service.ModulePrincipals()[caller.PrincipalID]
 	if !declared || delegation == nil || caller.Sealed == nil || caller.Sealed.InstallationID == nil {
-		return nil, status.Error(codes.PermissionDenied, "the caller holds no installation this delegation can be exercised through")
+		return nil, status.Error(codes.PermissionDenied, "the caller is not a declared module holding an installation in this organization")
+	}
+	// THE CALLER MUST BE A MODULE THIS DELEGATION ENTITLES, and asking it here
+	// is the whole reason this function is not three lines.
+	//
+	// Exactly two modules may use a delegation — the one the person granted to,
+	// and the audience its binding names — and WorkContextOperationBinding is
+	// where that is decided. The mint used to ask as a SIDE EFFECT: it named
+	// SourceDelegationBindingID(delegation, caller) as the capability's
+	// operation binding, and core resolved that id live, which refuses an id
+	// naming any other module. A derivation carries the PARENT's binding
+	// instead, so that read no longer happens on its own.
+	//
+	// Leaving it out made the exchange transitive. The audience module is
+	// entitled to CONSUME what it is handed; without this it could also pass it
+	// on, re-issuing the child for any audience it declares a binding for,
+	// because every remaining gate then holds — the parent's audience is now
+	// the third module's own prefix, the delegation still confirms against the
+	// delegating module's hop, and that module's own binding attenuates the
+	// parent. The person's authority would reach a module they never delegated
+	// to, with the delegating module still named as the actor.
+	if _, err := service.WorkContextOperationBinding(ctx, parent.Context().GetTenantId(),
+		business.SourceDelegationBindingID(delegation.ID, grant.Prefix)); err != nil {
+		return nil, sourceDelegationCallerError(err)
+	}
+	// The audience is policy, not a caller's word, but it is still a mint
+	// input: requireMintableAudience refuses an empty one — good at whichever
+	// consumer accepts it — and the capability surface's own audience, which a
+	// peer reads as a module identity. The mint ran it; a derivation has to run
+	// it too, because an installed binding may name either (nothing in
+	// validateOperationAudiences rejects the reserved spelling).
+	if err := requireMintableAudience(binding.audience); err != nil {
+		return nil, status.Errorf(codes.PermissionDenied, "installed audience binding names an audience no capability may be minted for: %s", binding.audience)
 	}
 	_, scopes, err := workContextScopes(binding.scopes, mintContentReads(binding.audience))
-	if err != nil || len(scopes) == 0 {
-		return nil, status.Error(codes.PermissionDenied, "installed audience binding declares no usable scope")
+	if err != nil {
+		return nil, status.Errorf(codes.PermissionDenied, "installed audience binding declares unusable scopes: %v", err)
+	}
+	if len(scopes) == 0 {
+		return nil, status.Error(codes.PermissionDenied, "installed audience binding declares no scope")
 	}
 	token, signed, err := s.reissue(ctx, parent, binding.audience, workcontext.ReplayIdempotent, ttl, scopes)
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
 	return issuedWorkContext(token, signed), nil
+}
+
+// sourceDelegationCallerError maps the live binding read that decides whether
+// the caller is a module this delegation entitles. Every way the answer can be
+// "no" is PermissionDenied and says the same thing, so a module learns nothing
+// from the refusal beyond the fact that it cannot exchange; only a genuine
+// outage is Unavailable, because only an outage is worth retrying.
+func sourceDelegationCallerError(err error) error {
+	switch {
+	case errors.Is(err, business.ErrNoOperationBinding),
+		errors.Is(err, business.ErrSourceDelegationContextStale),
+		errors.Is(err, business.ErrModuleInstallationInactive),
+		errors.Is(err, business.ErrModuleIdentityDenied):
+		return status.Error(codes.PermissionDenied, "the caller is not a module this source delegation entitles")
+	case status.Code(err) != codes.Unknown:
+		return err
+	default:
+		return status.Error(codes.Unavailable, "source delegation authority is unavailable")
+	}
 }

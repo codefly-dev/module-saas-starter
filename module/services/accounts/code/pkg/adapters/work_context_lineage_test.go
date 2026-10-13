@@ -28,16 +28,25 @@ import (
 
 // reissuedFrom is the capability a re-issue of parent must be: the parent field
 // for field, except what a new signature for a new callee has to move — the
-// audience, key, nonce, window, replay policy, the new session and its lineage,
-// the seal (issuer state, re-resolved for the audience's installation) — and
-// the effective authority when the caller attenuated it.
+// audience, key, nonce, window, replay policy, the new session and its lineage
+// — and the effective authority when the caller attenuated it.
+//
+// Of the SEAL only the installation and its revision are allowed to move, and
+// only that much is taken from the child: the principal epoch and the owner's
+// execution stay the parent's, so a derivation that restamped them from live
+// state — which is how a revoked credential would be renewed by deriving —
+// fails here. The operation binding is not taken from the child at all, so it
+// must be the parent's exactly.
 func reissuedFrom(parent, child *basev0.WorkContextV1, attenuated []*basev0.WorkScopeV1) *basev0.WorkContextV1 {
 	expected, _ := proto.Clone(parent).(*basev0.WorkContextV1)
 	expected.Audience, expected.KeyId, expected.Nonce = child.Audience, child.KeyId, child.Nonce
 	expected.NotBeforeUnix, expected.IssuedAtUnix = child.NotBeforeUnix, child.IssuedAtUnix
 	expected.ExpiresAtUnix, expected.ReplayPolicy = child.ExpiresAtUnix, child.ReplayPolicy
 	expected.SessionId, expected.ParentSessionId = child.SessionId, child.ParentSessionId
-	expected.Seal, expected.OperationBinding = child.Seal, child.OperationBinding
+	if seal := expected.GetSeal(); seal != nil {
+		seal.InstallationId = child.GetSeal().GetInstallationId()
+		seal.InstallationRevision = child.GetSeal().GetInstallationRevision()
+	}
 	if attenuated != nil {
 		if hops := expected.GetActorChain(); len(hops) > 0 {
 			hops[len(hops)-1].GrantedScopes = attenuated
