@@ -512,3 +512,272 @@ describe("a per-source declaration read that is refused, pending or stale", () =
 		).toBe("—");
 	});
 });
+
+// THE REST OF THE CLOSURE CONDITIONS for the per-source declaration read
+// (issue #1121, r22 F1): pending, a non-refusal failure, 403 then a transient
+// failure, 403 then a remount, recovery on success, and manual admissions
+// surviving all of it.
+//
+// A declaration served only after the test releases it, so "pending" is a real
+// state rather than a race.
+function heldDeclaration() {
+	let release: (() => void) | undefined;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	server.use(
+		http.post(rpc("DatasourceService", "ListSources"), () =>
+			HttpResponse.json(sources),
+		),
+		http.post(
+			rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+			async () => {
+				await gate;
+				return HttpResponse.json({
+					declaration: declared,
+					delegations: [],
+					children: [],
+				});
+			},
+		),
+	);
+	return () => release?.();
+}
+
+describe("the declaration read's remaining states", () => {
+	it("claims nothing while the read is still in flight", async () => {
+		const release = heldDeclaration();
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("acme/handbook");
+
+		// The row exists; its declaration does not yet. Neither an absent
+		// identity nor a sweep state may be asserted about a read in flight.
+		await waitFor(() =>
+			expect(
+				document.querySelector('[data-slot="source-trigger"]'),
+			).not.toBeNull(),
+		);
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+
+		release();
+		await screen.findByText("*/30 * * * *");
+	});
+
+	// A failure that is NOT a refusal reads differently, because the two mean
+	// different things: unknown versus not allowed.
+	it("separates a failed read from a refused one", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({ message: "boom" }, { status: 500 }),
+			),
+		);
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("acme/handbook");
+
+		await waitFor(() =>
+			expect(screen.getByText(/Couldn.t load/i)).toBeTruthy(),
+		);
+		expect(screen.queryByText(/don.t have permission/i)).toBeNull();
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+	});
+
+	// A refusal, then a transient failure. The snapshot the refusal deleted must
+	// not come back: a transient failure retains what the cache HAS, and after a
+	// refusal it has nothing.
+	it("does not resurrect a refused snapshot through a later transient failure", async () => {
+		let phase: "ok" | "denied" | "down" = "ok";
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				if (phase === "ok") {
+					return HttpResponse.json({
+						declaration: declared,
+						delegations: [],
+						children: [],
+					});
+				}
+				return phase === "denied"
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({ message: "boom" }, { status: 500 });
+			}),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		phase = "denied";
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		phase = "down";
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+		expect(screen.queryByText("*/30 * * * *")).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+	});
+
+	// And not through a remount either: the snapshot is gone from the cache, so
+	// a component mounting into that same cache has nothing to show.
+	it("does not resurrect a refused snapshot through a remount", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const first = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		denied = true;
+		await act(async () => {
+			await first.client.refetchQueries({
+				queryKey: ["source-trigger-declaration"],
+			});
+		});
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		cleanup();
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, first.client);
+		await screen.findByText("acme/handbook");
+		expect(screen.queryByText("*/30 * * * *")).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+	});
+
+	// Recovery is exactly one thing: a read that succeeds.
+	it("recovers when a later read succeeds", async () => {
+		let denied = true;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		denied = false;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+		await screen.findByText("*/30 * * * *");
+		await waitFor(() =>
+			expect(document.querySelector('[data-slot="host-sweep"]')).not.toBeNull(),
+		);
+		expect(screen.queryByText(/don.t have permission/i)).toBeNull();
+	});
+
+	// A transient failure keeps the last good answer AND says it may be out of
+	// date. Blanking a good answer because one request did not come back is
+	// worse than the staleness.
+	it("keeps a transiently failed answer and labels it stale", async () => {
+		let down = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				down
+					? HttpResponse.json({ message: "boom" }, { status: 500 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		down = true;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+
+		expect(screen.getByText("*/30 * * * *")).toBeTruthy();
+		await waitFor(() =>
+			expect(screen.getByText(/may be out of date/i)).toBeTruthy(),
+		);
+	});
+
+	// Through every one of those, the passes THIS BROWSER admitted stay: they
+	// come from the kit's notification, not from the declaration read, and a
+	// person's pass goes through no schedule at all.
+	it("keeps manual admissions through a refusal", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+		act(() =>
+			notifySourceReconcileAdmitted({
+				sourceId: SOURCE,
+				effectId: "effect-dddd",
+				jobId: "job-9",
+				status: "committed",
+				repeat: false,
+				at: "2026-10-12T09:20:00Z",
+			}),
+		);
+		await screen.findByText("effect-dddd");
+
+		denied = true;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		expect(screen.getByText("effect-dddd")).toBeTruthy();
+		expect(document.querySelectorAll('[data-slot="manual-pass"]')).toHaveLength(
+			1,
+		);
+	});
+});

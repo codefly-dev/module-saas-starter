@@ -1,4 +1,11 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -250,5 +257,87 @@ describe("UnattendedWorkPlayground", () => {
 		expect(
 			screen.getByText(/No reference is bound to this source's triggers/),
 		).toBeTruthy();
+	});
+});
+
+// THE PLAYGROUND IS THE OTHER CONSUMER OF THE SHARED DECLARATION QUERY
+// (issue #1121, r22 F1 closure). It already withheld retained rows on refusal,
+// which is the half that was right; what it did not do is SAY so — the facts
+// rendered as em dashes, which read as "this host declares nothing" to a viewer
+// who is simply not allowed to see it. The fix to the shared query deletes the
+// snapshot, so this card must now explain the state rather than dash it.
+describe("the playground's declaration card when the read does not succeed", () => {
+	function serveDeclaration(handler: () => Response) {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				handler(),
+			),
+		);
+	}
+
+	it("says a refused declaration was refused, rather than dashing its facts", async () => {
+		serveDeclaration(() =>
+			HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+		);
+		renderInApp(<Page />);
+		await screen.findByText("acme/handbook");
+
+		// Scoped to the DECLARATION card: the delegations card below it carries
+		// its own refusal message, so a page-wide match would pass without this
+		// card saying anything at all.
+		const card = await waitFor(() => {
+			const found = document.querySelector<HTMLElement>(
+				'[data-slot="declared-trigger"]',
+			);
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+		await waitFor(() =>
+			expect(within(card).getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+		// No invented facts: the release and operation are the host's answer,
+		// and it gave none.
+		expect(screen.queryByText("saas_datasource_reconcile")).toBeNull();
+	});
+
+	it("recovers the declaration card when a later read succeeds", async () => {
+		let denied = true;
+		serveDeclaration(() =>
+			denied
+				? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+				: HttpResponse.json({
+						declaration: declared,
+						delegations: [reference],
+						children: [child],
+					}),
+		);
+		const { client } = renderInApp(<Page />);
+		// Scoped to the declaration card: the delegations card carries the same
+		// sentence about its own read, so an unscoped match is ambiguous.
+		const card = await waitFor(() => {
+			const found = document.querySelector<HTMLElement>(
+				'[data-slot="declared-trigger"]',
+			);
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+		await waitFor(() =>
+			expect(within(card).getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		denied = false;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+
+		await screen.findByText("saas_datasource_reconcile");
+		expect(
+			within(
+				document.querySelector('[data-slot="declared-trigger"]') as HTMLElement,
+			).queryByText(/don.t have permission/i),
+		).toBeNull();
 	});
 });

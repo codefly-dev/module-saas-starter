@@ -186,6 +186,11 @@ function TriggerIdentityPanel({
 	const outcome = readOutcome(read.isError, read.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const declaration = withheld ? undefined : read.data?.declaration;
+	// Only meaningful when an answer survived: a refusal has nothing to be
+	// stale about, having just been deleted at the query boundary.
+	const declarationStale = declaration
+		? staleReadNotice(outcome, "this trigger")
+		: null;
 	const references = withheld ? [] : (read.data?.delegations ?? []);
 	const children = withheld ? [] : (read.data?.children ?? []);
 	const live = references.filter((reference) => reference.active);
@@ -201,8 +206,34 @@ function TriggerIdentityPanel({
 						host still runs the schedule itself as a stopgap.
 					</CardDescription>
 				</CardHeader>
-				<CardContent className="space-y-2 text-sm">
-					{declaration?.undeclarableReason ? (
+				<CardContent className="space-y-2 text-sm" data-slot="declared-trigger">
+					{/*
+					 * THE CARD SAYS WHICH STATE THE READ IS IN (issue #1121, r22
+					 * F1). It withheld refused rows already, which is right, and
+					 * then rendered every fact as an em dash — which reads as
+					 * "this host declares nothing" to a viewer who is simply not
+					 * allowed to see it. A refusal and a failure are now said in
+					 * the card they are about; a transient failure keeps the
+					 * prior answer under a stale notice.
+					 */}
+					<DelayedLoading
+						active={read.isFetching && !declaration}
+						label="Reading the declared trigger"
+					/>
+					{declarationStale && (
+						<p role="status" className="text-muted-foreground">
+							{declarationStale}
+						</p>
+					)}
+					{!declaration && !read.isFetching ? (
+						<p role="status" className="text-muted-foreground">
+							{readOutcomeMessage(
+								outcome,
+								"this source's declared trigger",
+								"This source declares no trigger.",
+							)}
+						</p>
+					) : declaration?.undeclarableReason ? (
 						<p role="status" className="text-muted-foreground">
 							{declaration.undeclarableReason}
 						</p>
