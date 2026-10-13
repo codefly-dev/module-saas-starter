@@ -78,10 +78,18 @@ export interface BrowserTracingOptions {
 	 */
 	allowedAttributeKeys: readonly string[];
 	/**
-	 * Span names that may be exported. Given, any other name that is not a
-	 * bare HTTP method exports as a fixed placeholder.
+	 * Span names that may be exported. Any name that is neither listed here
+	 * nor a bare HTTP method exports as a fixed placeholder — and omitting
+	 * this vouches for no name at all, because a span name is free-form text
+	 * that carries whatever its instrumentation author put there.
 	 */
 	allowedSpanNames?: readonly string[];
+	/**
+	 * Built-in transport keys to withhold. Use it to drop `url.path` when path
+	 * segments carry identifiers (`/accounts/<iban>`), without giving up the
+	 * method, status and server attributes beside it.
+	 */
+	deniedAttributeKeys?: readonly string[];
 	/**
 	 * Origins a `<meta name="trace-export">` may name, beyond the page's own
 	 * (e.g. `http://localhost:4318`). Merged with the build-time
@@ -196,6 +204,7 @@ export function installBrowserTracing(
 							{
 								allowedAttributeKeys: options.allowedAttributeKeys,
 								allowedSpanNames: options.allowedSpanNames,
+								deniedAttributeKeys: options.deniedAttributeKeys,
 							},
 						),
 						{ scheduledDelayMillis: TRACE_EXPORT_DELAY_MS },
