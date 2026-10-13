@@ -1,6 +1,6 @@
 {
 	"name": "@codefly-dev/saas-plugin-react",
-	"version": "0.4.5",
+	"version": "0.4.6",
 	"description": "Product-neutral React contribution composition and runtime adapters for the Codefly SaaS frontend plugin host.",
 	"type": "module",
 	"sideEffects": false,
