@@ -189,3 +189,51 @@ describe("SolutionsMenu ownership (#949)", () => {
 		}
 	});
 });
+
+it("updates group headings and membership through the existing poll without changing links", async () => {
+	vi.resetModules();
+	tokenState.token = token(ALICE);
+	tokenState.fetch.mockReset();
+	vi.useFakeTimers();
+	try {
+		const answer = (id: string, title: string) =>
+			Response.json({
+				solutions: [
+					{
+						id: "audit",
+						nav: { title: "Audit", path: "/s/audit" },
+						available: true,
+						group: { id, title, order: 1 },
+					},
+				],
+			});
+		tokenState.fetch.mockResolvedValue(answer("operations", "Operations"));
+		await mountMenu();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(0);
+		});
+		expect(
+			screen.queryByRole("heading", { name: "Operations" }),
+		).not.toBeNull();
+		expect(
+			screen.getByRole("link", { name: "Audit" }).getAttribute("href"),
+		).toBe("/s/audit");
+		tokenState.fetch.mockResolvedValue(answer("review", "Review"));
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(10_000);
+		});
+		expect(screen.queryByRole("heading", { name: "Operations" })).toBeNull();
+		expect(screen.queryByRole("heading", { name: "Review" })).not.toBeNull();
+		expect(
+			screen.getByRole("link", { name: "Audit" }).getAttribute("href"),
+		).toBe("/s/audit");
+		tokenState.fetch.mockResolvedValue(listing());
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(10_000);
+		});
+		expect(screen.queryByRole("heading", { name: "Review" })).toBeNull();
+	} finally {
+		cleanup();
+		vi.useRealTimers();
+	}
+});

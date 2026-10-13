@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import {
+	groupSolutionNavigation,
+	type SolutionGroup,
+} from "@/solutions/solution-groups";
 import { useSyncExternalStore } from "react";
 
 import { decodeJWTPayload } from "@/lib/auth-session";
@@ -13,6 +17,7 @@ import {
 interface SolutionNav {
 	id: string;
 	assetVersion?: string;
+	group?: SolutionGroup;
 	nav: { title: string; path: string; order?: number };
 	/**
 	 * False when the solution is installed and granted but its installation is
@@ -101,6 +106,10 @@ function sameList(a: SolutionNav[], b: SolutionNav[]): boolean {
 			item.id === other.id &&
 			item.nav.title === other.nav.title &&
 			item.nav.path === other.nav.path &&
+			item.nav.order === other.nav.order &&
+			item.group?.id === other.group?.id &&
+			item.group?.title === other.group?.title &&
+			item.group?.order === other.group?.order &&
 			// Availability is rendered, so a change in it must re-render. Leaving it
 			// out of the comparison would freeze a solution's disabled state for the
 			// life of the page.
@@ -208,6 +217,33 @@ export function SolutionsMenu({
 	if (solutions.length === 0) {
 		return null;
 	}
+	return (
+		<div className="flex flex-col gap-4">
+			{groupSolutionNavigation(solutions).map((section) => (
+				<section
+					key={section.key}
+					aria-label={section.title}
+					className="flex flex-col gap-2"
+				>
+					{solutions.some((entry) => entry.group) && (
+						<h3 className="text-sm font-medium text-muted-foreground">
+							{section.title}
+						</h3>
+					)}
+					<SolutionLinks solutions={section.items} variant={variant} />
+				</section>
+			))}
+		</div>
+	);
+}
+
+function SolutionLinks({
+	solutions,
+	variant,
+}: {
+	solutions: SolutionNav[];
+	variant: "list" | "cards";
+}) {
 	if (variant === "cards") {
 		return (
 			<div className="grid gap-3 sm:grid-cols-2">

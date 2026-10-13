@@ -54,6 +54,12 @@ Applied modules and solutions are active independently of their optional
 frontend block; headless backends remain usable. Registry availability does not
 replace the separate organisation installation status and consent checks.
 
+An optional top-level `group` on an applied solution declaration is copied to
+the registration as presentation only, including for headless solutions.
+Migration 38 adds that nullable projection; modules and tombstones cannot carry
+it. Moving or clearing a group preserves the installation target and grants.
+The catalogue exposes it without backend topology; authority never reads it.
+
 Migration 26 destructively removes runtime-only state and makes declaration
 ownership mandatory. Its from-zero proof is `TestMigration25FromZero` in the
 store module; `TestMigration22FromZero` separately proves immutable installation

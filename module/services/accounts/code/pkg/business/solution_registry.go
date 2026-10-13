@@ -114,11 +114,20 @@ type SolutionRegistration struct {
 	Publisher  string
 	Revision   int64
 	Frontend   *SolutionFrontendHalf
+	Group      *SolutionGroup
 	// Declared is the binding that declared this record, or nil when the record
 	// has not been reconciled from a declaration.
 	Declared     *SolutionDeclaredBinding
 	UpdatedAt    time.Time
 	TombstonedAt *time.Time
+}
+
+// SolutionGroup is the registry's presentation projection. Only applying a
+// solution declaration writes it; no authority check reads group membership.
+type SolutionGroup struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Order int32  `json:"order"`
 }
 
 // SolutionRuntimeBoundarySeedStore reads the runtime-boundary seeds the Work

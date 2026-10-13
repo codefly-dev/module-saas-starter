@@ -138,6 +138,8 @@ func tombstoneOf(t *testing.T, document *solutionhost.SolutionHostBinding, gener
 	removed.Workloads = nil
 	removed.Modules = nil
 	removed.Endpoints = nil
+	removed.Frontend = nil
+	removed.Group = nil
 	removed.Removed = true
 	if err := removed.Validate(); err != nil {
 		t.Fatalf("test tombstone is not valid: %v", err)
@@ -193,6 +195,56 @@ func registration(t *testing.T, solutionID string) *business.SolutionRegistratio
 		}
 	}
 	return nil
+}
+
+// Grouping traverses signed delivery, Core admission and the same transaction
+// that applies presence. Headless solutions need no fabricated frontend, and
+// presentation changes preserve the identity that existing consent names.
+func TestSolutionGroupRoundTripsThroughSignedHeadlessPresence(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	mount := &deliveredSet{}
+	reconciler := newTestReconciler(t, mount)
+	var targetID string
+	for i, group := range []*solutionhost.SolutionGroup{
+		{ID: "operations", Title: "Operations", Order: 2147483647},
+		{ID: "research", Title: "Research", Order: -2147483648},
+		nil,
+		{ID: "research", Title: "Research tools", Order: 3},
+	} {
+		document := declaredBinding(t, solutionID, uint64(i+1))
+		document.Group = group
+		mount.put(t, document)
+		if err := reconciler.RunOnce(testCtx); err != nil {
+			t.Fatal(err)
+		}
+		row := registration(t, solutionID)
+		if row == nil || row.Declared == nil || row.Frontend != nil {
+			t.Fatalf("headless registration missing or acquired a frontend: %+v", row)
+		}
+		if i == 0 {
+			targetID = row.Declared.TargetID
+		}
+		if targetID == "" || row.Declared.TargetID != targetID || row.Declared.Generation != uint64(i+1) {
+			t.Fatalf("group change moved consent identity or failed to apply: %+v", row.Declared)
+		}
+		if group == nil {
+			if row.Group != nil {
+				t.Fatalf("omitted group retained old membership: %+v", row.Group)
+			}
+		} else if row.Group == nil || row.Group.ID != group.ID || row.Group.Title != group.Title || int64(row.Group.Order) != group.Order {
+			t.Fatalf("applied group did not survive storage: got %+v, want %+v", row.Group, group)
+		}
+		if i == 3 {
+			mount.put(t, tombstoneOf(t, document, 5))
+			if err := reconciler.RunOnce(testCtx); err != nil {
+				t.Fatal(err)
+			}
+			withdrawn := registration(t, solutionID)
+			if withdrawn == nil || withdrawn.TombstonedAt == nil || withdrawn.Group != nil {
+				t.Fatalf("withdrawal retained group or failed: %+v", withdrawn)
+			}
+		}
+	}
 }
 
 // A delivered generation becomes a durable registration record, and the record

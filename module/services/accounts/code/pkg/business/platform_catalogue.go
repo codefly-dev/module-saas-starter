@@ -169,7 +169,16 @@ func projectPlatformCatalogue(
 	now time.Time,
 ) []*PlatformCatalogueEntry {
 	var moduleEntries []*PlatformCatalogueEntry
+	declaredModules := make(map[string]bool)
+	for _, registration := range registrations {
+		if declared := registration.Declared; declared != nil && declared.Kind == SolutionDeclaredKindModule {
+			declaredModules[declared.BindingID] = true
+		}
+	}
 	for _, grant := range modules {
+		if grant.PresenceBinding != "" && declaredModules[grant.PresenceBinding] {
+			continue // The applied registry row also carries its installations.
+		}
 		entry := newCatalogueEntry(gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE, grant.Prefix, now)
 		entry.PublisherValue = &gen.CatalogueEntry_PublisherGap{PublisherGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueModulePublisher)}
 		moduleEntries = append(moduleEntries, &PlatformCatalogueEntry{Entry: entry})
@@ -217,16 +226,23 @@ func projectPlatformCatalogue(
 			continue
 		}
 		row := solution(registration.SolutionID)
+		if registration.Declared != nil && registration.Declared.Kind == SolutionDeclaredKindModule {
+			row.Entry.Kind = gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE
+		}
 		row.Registration = registration
 		row.Entry.PublisherValue = &gen.CatalogueEntry_Publisher{Publisher: registration.Publisher}
 	}
 
 	byName := func(a, b *PlatformCatalogueEntry) int { return strings.Compare(a.Entry.Name, b.Entry.Name) }
-	slices.SortFunc(moduleEntries, byName)
 	solutionEntries := make([]*PlatformCatalogueEntry, 0, len(solutions))
 	for _, row := range solutions {
-		solutionEntries = append(solutionEntries, row)
+		if row.Entry.Kind == gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE {
+			moduleEntries = append(moduleEntries, row)
+		} else {
+			solutionEntries = append(solutionEntries, row)
+		}
 	}
+	slices.SortFunc(moduleEntries, byName)
 	slices.SortFunc(solutionEntries, byName)
 	return append(moduleEntries, solutionEntries...)
 }

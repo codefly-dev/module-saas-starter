@@ -72,3 +72,20 @@ it("retries a stale server render until the new generation arrives", () => {
 	vi.advanceTimersByTime(5_000);
 	expect(state.router.refresh).toHaveBeenCalledTimes(2);
 });
+
+it("does not open an unentitled sibling even when a visible solution shares its group", () => {
+	state.current = [
+		Object.assign(
+			{ id: "entitled-sibling", assetVersion: "old", available: true },
+			{
+				group: { id: "operations", title: "Operations", order: 1 },
+			},
+		),
+	];
+	render(
+		<SolutionLivePage id="example" assetVersion="old">
+			denied page
+		</SolutionLivePage>,
+	);
+	expect(screen.queryByText("denied page")).toBeNull();
+});

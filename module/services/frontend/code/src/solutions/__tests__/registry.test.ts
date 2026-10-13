@@ -13,6 +13,8 @@ const { getEndpoints, getWorkspaceSecret } = vi.hoisted(() => ({
 }));
 vi.mock("codefly", () => ({ getEndpoints, getWorkspaceSecret }));
 
+import { groupSolutionNavigation } from "@/solutions/solution-groups";
+
 import type {
   SolutionEntitlement,
   ViewerEntitlements,
@@ -1151,5 +1153,41 @@ describe("an entitlement that can never join a registration", () => {
     } finally {
       errors.mockRestore();
     }
+  });
+});
+
+
+describe("solution grouping does not confer access", () => {
+  const group = { id: "operations", title: "Operations", order: 1 };
+  it("filters individual targets before grouping, including a newly delivered sibling", () => {
+    const registered = ["audit", "ledger", "new-sibling"].map((id) => ({
+      ...manifestFor(id), kind: "solution" as const, group,
+    }));
+    const visible = entitledSolutions(registered, entitlements()).map(
+      ({ manifest, entitlement }) => navProjection(manifest, entitlement),
+    );
+    expect(groupSolutionNavigation(visible).map((section) => section.items.map((item) => item.id))).toEqual([["audit"]]);
+    expect(groupSolutionNavigation(entitledSolutions(registered, entitlements({ solutions: [] })).map(
+      ({ manifest, entitlement }) => navProjection(manifest, entitlement),
+    ))).toEqual([]);
+  });
+  it("regrouping changes presentation without changing grant inputs or target identity", () => {
+    const permissions = entitlements();
+    const revision = permissions.revision;
+    const solution = { ...manifestFor("audit"), kind: "solution" as const, group };
+    const moved = { ...solution, group: { id: "review", title: "Review", order: 3 } };
+    for (const candidate of [solution, moved]) {
+      const [pair] = entitledSolutions([candidate], permissions);
+      expect(pair.entitlement).toBe(granted);
+      expect(pair.manifest.targetId).toBe(targetFor("audit"));
+      expect(navProjection(pair.manifest, pair.entitlement).nav.path).toBe("/s/audit");
+    }
+    expect(permissions.revision).toBe(revision);
+    expect(navProjection(moved, granted).group).toEqual(moved.group);
+    expect(navProjection({ ...moved, kind: "module" }, granted).group).toBeUndefined();
+  });
+  it("rejects malformed group metadata when reading a manifest", () => {
+    expect(parseManifest(baseManifest({ group }))?.group).toEqual(group);
+    expect(parseManifest(baseManifest({ group: { ...group, grants: ["all"] } }))).toBeNull();
   });
 });

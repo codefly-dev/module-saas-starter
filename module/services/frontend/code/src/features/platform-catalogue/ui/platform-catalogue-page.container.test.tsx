@@ -1,6 +1,12 @@
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	screen,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { PlatformCataloguePage } from "./platform-catalogue-page";
@@ -304,5 +310,77 @@ describe("PlatformCataloguePage admin container", () => {
 		serve({ entries: [], registryRevision: "0" });
 		renderInApp(<PlatformCataloguePage />);
 		expect(await screen.findByText(/Nothing is deployed/)).toBeTruthy();
+	});
+});
+
+describe("solution groups in the catalogue", () => {
+	it("regroups an open catalogue when a later declaration applies", async () => {
+		let title = "Operations";
+		server.use(
+			http.post(rpc("PlatformAdminService", "ListPlatformCatalogue"), () =>
+				HttpResponse.json({
+					registryRevision: title === "Operations" ? "15" : "16",
+					entries: [
+						solution("headless-report", {
+							registration: {
+								solutionId: "headless-report",
+								group: { id: "operations", title, order: 1 },
+							},
+							installations: [],
+						}),
+					],
+				}),
+			),
+		);
+		vi.useFakeTimers();
+		try {
+			const { client } = renderInApp(<PlatformCataloguePage />);
+			await act(async () => {
+				await vi.waitFor(() => expect(client.isFetching()).toBe(0));
+				await vi.advanceTimersByTimeAsync(1);
+			});
+			expect(screen.queryByText("Operations")).toBeTruthy();
+			title = "Research";
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(15_000);
+				await vi.waitFor(() => expect(client.isFetching()).toBe(0));
+				await vi.advanceTimersByTimeAsync(1);
+			});
+			expect(screen.queryByText("Research")).toBeTruthy();
+			expect(screen.queryByText("Operations")).toBeNull();
+			expect(screen.getByText("headless-report")).toBeTruthy();
+		} finally {
+			cleanup();
+			vi.useRealTimers();
+		}
+	});
+
+	it("groups a headless solution without introducing group install or access actions", async () => {
+		server.use(
+			http.post(rpc("PlatformAdminService", "ListPlatformCatalogue"), () =>
+				HttpResponse.json({
+					registryRevision: "15",
+					entries: [
+						solution("headless-report", {
+							registration: {
+								solutionId: "headless-report",
+								group: { id: "operations", title: "Operations", order: 1 },
+							},
+							installations: [],
+						}),
+						solution("ungrouped-report", { installations: [] }),
+					],
+				}),
+			),
+		);
+		renderInApp(<PlatformCataloguePage />);
+		expect(await screen.findByText("Operations")).toBeTruthy();
+		expect(screen.getByText("headless-report")).toBeTruthy();
+		expect(screen.getByText("Modules and other solutions")).toBeTruthy();
+		expect(
+			screen.queryByRole("button", {
+				name: /install.*operations|grant.*operations/i,
+			}),
+		).toBeNull();
 	});
 });

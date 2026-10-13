@@ -60,6 +60,9 @@ func solutionManifest(record *accountsv1.SolutionRegistration) (string, bool) {
 		},
 		"backend": map[string]any{"serviceAlias": alias, "capabilityPath": solutionCapabilityPath},
 	}
+	if group := record.GetGroup(); group != nil && record.GetDeclared().GetKind() == accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION {
+		manifest["group"] = map[string]any{"id": group.GetId(), "title": group.GetTitle(), "order": group.GetOrder()}
+	}
 	// Only when declared: a null dashboard would reach the frontend's data-graph
 	// validator as a present slot.
 	if frontend.Dashboard != nil {

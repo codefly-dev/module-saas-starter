@@ -7,17 +7,13 @@ import "google/protobuf/timestamp.proto";
 // Read-only projection of the host's declared solution presence. The gateway
 // shares these messages and reads the accounts internal listener.
 
-// SolutionRegistrationStatus is derived from declared state and complete,
-// compatible frontend/backend observations, never from an expiring lease.
+// SolutionRegistrationStatus is derived from applied presence, never from an
+// expiring registration lease or the existence of a frontend.
 enum SolutionRegistrationStatus {
   SOLUTION_REGISTRATION_STATUS_UNSPECIFIED = 0;
-  // The presence is applied: for a module that is all, and for a solution its
-  // applied generation carries a `frontend` block. This is the only status
-  // either surface serves.
+  // Presence is applied. Both modules and solutions may be headless.
   SOLUTION_REGISTRATION_STATUS_ACTIVE = 1;
-  // A solution whose applied presence declares no `frontend` block. The record
-  // is durable but incomplete, so no page advertises it and the gateway routes
-  // nothing to it.
+  // No applied declaration is available for this record.
   SOLUTION_REGISTRATION_STATUS_PENDING = 2;
   // Was `SOLUTION_REGISTRATION_STATUS_EXPIRED`: both halves registered but a
   // lease had lapsed. Presence is delivered, never heartbeat-asserted, so there
@@ -41,8 +37,8 @@ enum SolutionRegistrationStatus {
 // generation. manifest carries that block as JSON (title, order,
 // exposed_module, host_contract, dashboard, surfaces) — the author-declared
 // half of the manifest the gateway's registry projection builds, adding the
-// host's own constants. Present on a solution whose applied generation
-// declares one; a module has none.
+// host's own constants. Present on either kind when its applied generation
+// declares one; absent on a headless component.
 message SolutionFrontendBinding {
   int64 revision = 1;
   string manifest = 2;
@@ -91,6 +87,18 @@ message SolutionRegistration {
   reserved "runtime_boundary";
   // The binding and immutable target that declared this record.
   optional SolutionDeclaredBinding declared = 10;
+  // Presentation from the composing workspace's applied declaration. Present
+  // only for a solution, independently of its frontend. Membership grants no
+  // access, consent or installation; viewer lists filter solutions first.
+  optional SolutionGroup group = 11;
+}
+
+// SolutionGroup organises solutions in navigation and the catalogue. It is not
+// an authorization subject, installation target or scope.
+message SolutionGroup {
+  string id = 1;
+  string title = 2;
+  int32 order = 3;
 }
 
 // ListSolutionRegistrationsRequest reads the whole registry. There is one

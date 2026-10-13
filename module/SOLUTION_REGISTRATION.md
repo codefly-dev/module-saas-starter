@@ -7,6 +7,17 @@ The gateway reads that state for `/solutions/{id}/…`, and the frontend reads i
 for `/s/{id}`. This document states who may declare presence, what the host
 checks, and how presence differs from a tenant's authority to use a solution.
 
+An optional **solution group** organises the catalogue and member navigation.
+The composing platform supplies its stable `id`, display `title` and signed
+32-bit `order` on the solution's signed presence, independently of its frontend.
+Headless solutions therefore appear in catalogue groups without declaring a page.
+The host copies this metadata only when that generation applies, and clears it
+when omitted or withdrawn. A group owns no deployment, installation, consent,
+grant or permission. Each member remains a separate solution with its existing
+target and URL. Member navigation groups only the solutions already admitted
+for that viewer; an empty group is hidden. Group changes arrive through the
+existing registry refresh and do not restart the host.
+
 ## 1. The supported trust model
 
 **A registered solution is host-trusted.** Its remote is loaded as a

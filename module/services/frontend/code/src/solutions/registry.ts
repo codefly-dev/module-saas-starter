@@ -1,5 +1,10 @@
 import "server-only";
 
+import {
+	parseSolutionGroup,
+	type SolutionGroup,
+} from "@/solutions/solution-groups";
+
 import { checkRuntimeCompatibility } from "@/solutions/compatibility";
 
 import { assertDataGraph, type DataGraph } from "@codefly/saas-plugin-manifest";
@@ -14,6 +19,8 @@ import { getEndpoints, getWorkspaceSecret } from "codefly";
 
 export interface SolutionManifest {
 	id: string;
+	/** Composition-owned presentation metadata; never a grant or target identity. */
+	group?: SolutionGroup;
 	/** Stamped from the host's declaration, never from the remote manifest. */
 	kind?: "module" | "solution";
 	/** Opaque identity of the applied target and generation, stamped by the gateway. */
@@ -121,7 +128,7 @@ export interface SolutionSurface {
 /** The per-viewer navigation projection (see navProjection in projections.ts). */
 export type SolutionNav = Pick<
 	SolutionManifest,
-	"id" | "nav" | "assetVersion"
+	"id" | "nav" | "assetVersion" | "group"
 > & {
 	/**
 	 * False when the solution is installed and granted but its installation is
@@ -413,6 +420,7 @@ function manifestsFromSnapshot(payload: unknown): {
 			/^[a-f0-9]{64}$/.test(entry.assetVersion)
 				? { assetVersion: entry.assetVersion }
 				: {}),
+			group: entry.kind === "solution" ? parsed.group : undefined,
 			...(entry.kind === "module" || entry.kind === "solution"
 				? { kind: entry.kind }
 				: {}),
@@ -867,6 +875,8 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 			return null;
 		}
 	}
+	const group = parseSolutionGroup(candidate.group);
+	if (group === null) return null;
 	const surfaces = parseSurfaces(candidate.surfaces);
 	if (surfaces === null) {
 		return null;
@@ -901,6 +911,7 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 	}
 	return {
 		id: candidate.id,
+		...(group ? { group } : {}),
 		// parseManifest reads a document the SOLUTION wrote, so it never carries
 		// a target: the host stamps it from the registry record in
 		// manifestsFromSnapshot. Empty here is therefore correct and not a

@@ -463,6 +463,23 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 	require.Contains(t, catalogueEntryNames(withTombstones), "CATALOGUE_ENTRY_KIND_SOLUTION:retired")
 }
 
+func TestCatalogueSharedModuleRetainsItsKindAndIndependentInstallations(t *testing.T) {
+	const binding = "acme.test.shared-module"
+	registration := &SolutionRegistration{SolutionID: "shared-module", Declared: &SolutionDeclaredBinding{
+		BindingID: binding, TargetID: "shared-module-target", Kind: SolutionDeclaredKindModule,
+	}}
+	entries := projectPlatformCatalogue(ModulePrincipalRegistry{
+		ModulePrincipalID("different-principal"): {Prefix: "different-principal", PresenceBinding: binding},
+	}, []*SolutionRegistration{registration}, []*CatalogueInstallationRecord{
+		catalogueTestInstallation("one", "shared-module", "Acme", "example/shared:1.0.0"),
+		catalogueTestInstallation("two", "shared-module", "ExampleCorp", "example/shared:1.0.0"),
+	}, false, time.Now())
+	require.Len(t, entries, 1, "the same deployment must not acquire a second catalogue row from its principal")
+	require.Equal(t, gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE, entries[0].Entry.Kind)
+	require.Len(t, entries[0].Entry.Installations, 2)
+	require.Same(t, registration, entries[0].Registration)
+}
+
 func TestParseAgentRelease(t *testing.T) {
 	release, ok := parseAgentRelease("example.io/billing:2.0.1")
 	require.True(t, ok)

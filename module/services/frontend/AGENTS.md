@@ -25,6 +25,14 @@ both kinds. Platform Connect procedures still reach the gateway root.
 These declarations grant no access to content. The solution page reads the full
 manifest in process; browser projections carry only the fields described below.
 
+Solution groups are optional presentation metadata (`id`, `title`, `order`),
+stamped from the solution's applied declaration. The member navigation first
+filters each solution by installation and entitlement, then groups the visible
+items. Home and sidebar share that grouping and the live navigation poll; empty
+groups disappear. A group has no install, grant or consent action. The platform
+catalogue also groups headless solutions and refreshes every 15 seconds while
+open; modules remain outside solution groups.
+Rename, reorder and membership changes preserve solution links and access.
 
 The gateway stamps an opaque `assetVersion` from the applied binding, target,
 generation and release. Browser assets use
@@ -47,7 +55,7 @@ caller's organization installed and the caller's teams were granted, not the
 deployment-wide registered set.
 
 - `GET /api/solutions` is **authenticated** and returns the navigation
-  projection — `{id, nav, available, assetVersion}` per entitled solution and nothing else. It is
+  projection — `{id, nav, available, assetVersion, group?}` per entitled component. It is
   what the sidebar polls (through `authedFetch`, so a lapsed access token is
   exchanged and retried rather than emptying the menu). It answers `401` to an
   unauthenticated caller and `503` when the registry or the authority cannot be

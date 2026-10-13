@@ -20,7 +20,7 @@ const solutionRegistrationColumns = `solution_id, publisher, revision, tombstone
 	frontend_revision, frontend_manifest,
 	declared_binding_id, declared_generation, declared_release, declared_target_id::text,
 	declared_kind,
-	updated_at`
+	updated_at, solution_group`
 
 func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, error) {
 	var (
@@ -39,7 +39,7 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 		&frontRevision, &frontManifest,
 		&declaredBinding, &declaredGen, &declaredRelease, &declaredTarget,
 		&declaredKind,
-		&record.UpdatedAt,
+		&record.UpdatedAt, &record.Group,
 	); err != nil {
 		return nil, err
 	}
@@ -143,8 +143,8 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 			frontend_revision, frontend_manifest,
 			declared_binding_id, declared_generation, declared_release, declared_target_id,
 			declared_kind,
-			updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, '')::uuid, $11, $12)
+			updated_at, solution_group)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, '')::uuid, $11, $12, $13)
 		ON CONFLICT (solution_id) DO UPDATE SET
 			publisher = EXCLUDED.publisher,
 			revision = EXCLUDED.revision,
@@ -156,12 +156,13 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 			declared_release = EXCLUDED.declared_release,
 			declared_target_id = EXCLUDED.declared_target_id,
 			declared_kind = EXCLUDED.declared_kind,
-			updated_at = EXCLUDED.updated_at`,
+			updated_at = EXCLUDED.updated_at,
+			solution_group = EXCLUDED.solution_group`,
 		record.SolutionID, record.Publisher, record.Revision, record.TombstonedAt,
 		frontRevision, frontManifest,
 		declaredBinding, declaredGen, declaredRelease, declaredTarget,
 		declaredKind,
-		record.UpdatedAt)
+		record.UpdatedAt, record.Group)
 	return err
 }
 

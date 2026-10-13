@@ -69,6 +69,9 @@ func solutionRegistrationProto(record *business.SolutionRegistration) *gen.Solut
 	if half := record.Frontend; half != nil {
 		out.Frontend = &gen.SolutionFrontendBinding{Revision: half.Revision, Manifest: half.Manifest}
 	}
+	if group := record.Group; group != nil && record.Declared != nil && record.Declared.Kind == business.SolutionDeclaredKindSolution {
+		out.Group = &gen.SolutionGroup{Id: group.ID, Title: group.Title, Order: group.Order}
+	}
 	if record.TombstonedAt != nil {
 		out.TombstonedAt = timestamppb.New(*record.TombstonedAt)
 	}

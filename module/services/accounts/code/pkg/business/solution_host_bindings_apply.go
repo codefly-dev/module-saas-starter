@@ -485,6 +485,15 @@ func (s *Service) declareSolutionRegistration(
 	if current != nil && current.Declared != nil && current.Declared.TargetID == targetID {
 		next.Publisher = current.Publisher
 	}
+	// Grouping belongs to this applied solution generation, independently of
+	// whether it has a page. Omitting it clears the old presentation without
+	// changing the installation target or any authority record. Core admission
+	// bounds order to int32 and refuses groups on modules and tombstones.
+	if document.Group != nil && kind == SolutionDeclaredKindSolution {
+		next.Group = &SolutionGroup{
+			ID: document.Group.ID, Title: document.Group.Title, Order: int32(document.Group.Order),
+		}
+	}
 	// The frontend half is THIS generation's `frontend` block and nothing
 	// older: a generation that drops the block takes the page with it, and
 	// nothing a running process reports can put one back.

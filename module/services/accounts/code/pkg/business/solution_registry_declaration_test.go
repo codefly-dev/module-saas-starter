@@ -103,6 +103,58 @@ func TestTheDeclaredKindReachesTheRegistryRecord(t *testing.T) {
 	}
 }
 
+// Presentation changes replace only the declaration's projection. A headless
+// solution keeps the same installation target when its group moves or clears.
+func TestDeclaredSolutionGroupFollowsAppliedGenerationWithoutChangingTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		group *solutionhost.SolutionGroup
+		want  *SolutionGroup
+	}{
+		{"rename and reorder", &solutionhost.SolutionGroup{ID: "operations", Title: "Operations tools", Order: -2}, &SolutionGroup{ID: "operations", Title: "Operations tools", Order: -2}},
+		{"move", &solutionhost.SolutionGroup{ID: "research", Title: "Research", Order: 4}, &SolutionGroup{ID: "research", Title: "Research", Order: 4}},
+		{"clear", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &declarationProjectionStore{current: &SolutionRegistration{
+				SolutionID: "example", Publisher: "solution:example",
+				Declared: &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "stable-target", Generation: 1, Kind: SolutionDeclaredKindSolution},
+				Group:    &SolutionGroup{ID: "operations", Title: "Operations", Order: 1},
+			}}
+			svc := &Service{store: store}
+			document := &solutionhost.SolutionHostBinding{
+				Binding: "acme.test.example", Generation: 2, Kind: solutionhost.KindSolution,
+				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"}, Group: tc.group,
+			}
+			_, err := svc.declareSolutionRegistration(context.Background(), document, "example", "stable-target", time.Now())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, store.saved.Group)
+			require.Nil(t, store.saved.Frontend, "headless solutions are grouped without inventing a page")
+			require.Equal(t, "stable-target", store.saved.Declared.TargetID)
+			require.Equal(t, "example", store.saved.SolutionID)
+			require.Equal(t, uint64(2), store.saved.Declared.Generation)
+		})
+	}
+}
+
+func TestWithdrawalClearsSolutionGroup(t *testing.T) {
+	store := &declarationProjectionStore{current: &SolutionRegistration{
+		SolutionID: "example", Publisher: "solution:example",
+		Declared: &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "target", Kind: SolutionDeclaredKindSolution},
+		Group:    &SolutionGroup{ID: "operations", Title: "Operations", Order: 1},
+	}}
+	svc := &Service{store: store}
+	now := time.Now()
+	_, err := svc.withdrawDeclaredSolutionRegistration(context.Background(),
+		&SolutionHostBindingRecord{BindingID: "acme.test.example", Applied: &SolutionHostBindingApplied{SolutionID: "example"}},
+		&solutionhost.SolutionHostBinding{Binding: "acme.test.example", Generation: 2, Kind: solutionhost.KindSolution, Removed: true,
+			Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"}}, "target", now)
+	require.NoError(t, err)
+	require.Nil(t, store.saved.Group)
+	require.Equal(t, &now, store.saved.TombstonedAt)
+	require.Equal(t, "target", store.saved.Declared.TargetID)
+}
+
 // A kind this host has no routing surface for is REFUSED, and the refusal leaves
 // the record alone.
 //

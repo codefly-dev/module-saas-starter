@@ -211,6 +211,9 @@ export function navProjection(
 	return {
 		id: manifest.id,
 		nav: { ...manifest.nav },
+		...(manifest.kind === "solution" && manifest.group
+			? { group: { ...manifest.group } }
+			: {}),
 		...(manifest.assetVersion ? { assetVersion: manifest.assetVersion } : {}),
 		available: entitlement.healthy,
 	};
