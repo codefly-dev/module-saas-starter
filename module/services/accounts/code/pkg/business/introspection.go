@@ -194,6 +194,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ModuleCapabilitiesService/NotifyUser":                         "Notify a user subject to category policy.",
 	"ModuleCapabilitiesService/RequestApproval":                    "Open a pending approval whose resume job the module claims.",
 	"ModuleCapabilitiesService/GetApproval":                        "Read one approval request on the caller's tenant.",
+	"ModuleCapabilitiesService/ResolveWorkContextAuthority":        "Answer one live value a callee verifier holds a capability's seal against.",
 	"ModuleCapabilitiesService/CancelApproval":                     "Withdraw a still-open approval request.",
 	"ModuleCapabilitiesService/CheckWorkContextRecordAccess":       "Check exact placed-record access under current delegated viewer authority.",
 	"ModuleCapabilitiesService/ExchangeDelegatedReadAudience":      "Exchange a current signed parent through an installed read-only module binding.",

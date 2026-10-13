@@ -115,6 +115,7 @@ var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
 	"/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+	"/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
 	"/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
 	"/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe",
 	"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",

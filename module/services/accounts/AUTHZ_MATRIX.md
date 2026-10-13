@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **268 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **269 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -145,6 +145,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Publish one domain event to the outbox for the caller's tenant. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Re-deliver durable events to the caller's own subscriptions. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Open a pending approval whose resume job the module claims. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Answer one live value a callee verifier holds a capability's seal against. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.module.executable_artifact_decision | FORBIDDEN / INTERNAL | SECRET → INTERNAL | Permanently revoke consent for an exact executable identity. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/Subscribe` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Create or re-affirm a durable event subscription for the caller. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Revoke one of the caller's own event subscriptions. |
@@ -280,7 +281,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 52
+- `internal`: 53
 - `mfa`: 5
 - `org_admin`: 64
 - `org_member`: 56

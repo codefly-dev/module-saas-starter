@@ -148,13 +148,45 @@ func (r tenantReplay) Consume(ctx context.Context, nonce string, retainUntil tim
 	return err
 }
 
+// ErrNoApprovalGrants reports that this host records no approval grants, so a
+// capability carrying a grant hop names a decision it never made.
+//
+// It is a sentinel rather than an ad-hoc error because the answer leaves this
+// process: the module authority surface serves this host's grant source to a
+// composed module's verifier (module_work_context_authority.go), and "this host
+// records none" has to be told apart there from a grant source that failed to
+// answer. One is a refusal of the capability; the other is an outage.
+var ErrNoApprovalGrants = errors.New("this host records no approval grants")
+
 // noApprovalGrants is core's GrantSource for a host that records no approval
 // grants: a capability carrying a grant hop names a decision this host never
 // made, and is refused.
 type noApprovalGrants struct{}
 
 func (noApprovalGrants) Grant(context.Context, string) (*workcontext.Grant, error) {
-	return nil, errors.New("this host records no approval grants")
+	return nil, ErrNoApprovalGrants
+}
+
+// moduleAuthoritySources are the three sources a callee's verifier needs, for
+// one tenant and one capability owner: the seal source, the revision source and
+// the grant source.
+//
+// They are THE SAME VALUES, from the same types, that coreAuthority mints with
+// and coreVerifier verifies with a few lines above. That is the whole point of
+// this accessor existing rather than the serving path building its own: the
+// answers a composed module verifies against must be the state the issuer read
+// at the mint, and two constructions of "the current seal" would agree only by
+// coincidence.
+//
+// The replay store is deliberately not among them. Single-use consumption is the
+// consumer's own, durable and shared across its replicas; a host that consumed
+// on a callee's behalf would burn the nonce on the way to answering a question.
+func (s *WorkContextAuthorityServer) moduleAuthoritySources(
+	tenant, owner string,
+) (workcontext.SealSource, workcontext.RevisionSource, workcontext.GrantSource) {
+	return hostSealSource{answers: s.seals, tenant: tenant},
+		ownerRevisions{answers: s.seals, owner: owner},
+		noApprovalGrants{}
 }
 
 // coreAuthority is the minter for capabilities owned by owner in tenant.

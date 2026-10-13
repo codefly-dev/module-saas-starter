@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:8ac64d948bd881562508736eeb88fd7031b1b862ed43bfaa58c80090d8afae29",
+      "digest": "sha256:49b6defafbf8aa3ad53bb675fd165c1896a51113da9d30edc0364fc34a7673bf",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -42,6 +42,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
             "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
             "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
@@ -64,7 +65,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:8ac64d948bd881562508736eeb88fd7031b1b862ed43bfaa58c80090d8afae29",
+      "digest": "sha256:49b6defafbf8aa3ad53bb675fd165c1896a51113da9d30edc0364fc34a7673bf",
       "services": [
         {
           "name": "APIKeyService",
@@ -315,6 +316,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
             "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
             "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
