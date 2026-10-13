@@ -397,3 +397,58 @@ func TestStopgapSweepLeavesTheDeclarationUnchanged(t *testing.T) {
 	require.Equal(t, before.Schedule.Cron, after.Schedule.Cron)
 	require.Equal(t, before.Digest, after.Digest, "the sweep moved the declaration an installation pinned")
 }
+
+// One occurrence's enqueue key names the ORGANIZATION and the SOURCE as well as
+// the effect (issue #1112, m2 — and N4 on PR #1115, which found the fix
+// untested).
+//
+// An effect identity is the CALLER's to choose and the GitHub reconcile job's
+// scope is Global, so a key of the effect alone put every tenant's reconciles
+// in one namespace: a caller in one organization could pick an identity already
+// pending for a source in another and have the platform collapse the two,
+// suppressing that organization's reconcile with no refusal anywhere. The test
+// asserts the three parts are all present AND that two organizations choosing
+// the same identity do not collide — the second half being the defect, which an
+// assertion on the key's shape alone would not catch.
+func TestReconcileOccurrenceKeyIsScopedByOrgAndSource(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newReconcileOperationStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
+
+	// Two sources in two DIFFERENT organizations, which is the scenario: the
+	// GitHub reconcile job's scope is Global, so one key namespace spans every
+	// tenant. Within one organization the attempt row already binds an effect
+	// identity to its source and refuses a second use, so a same-org test
+	// would pass for the wrong reason.
+	const otherOrg = "22222222-2222-4222-8222-222222222222"
+	first := newUploadSource(t, svc)
+	takeConnectSync(t, producer, first)
+	second := newUploadSourceIn(t, svc, otherOrg)
+	takeConnectSync(t, producer, second)
+	require.NotEqual(t, first.OrgID, second.OrgID, "fixture: the two sources must be in different organizations")
+
+	// The SAME caller-chosen identity, in each organization.
+	const chosen = "an identity the caller chose"
+	reconcileOnce(t, svc, first.OrgID, first.ID, chosen)
+	reconcileOnce(t, svc, second.OrgID, second.ID, chosen)
+
+	firstKey := jobKeys(producer, first.ID)
+	secondKey := jobKeys(producer, second.ID)
+	require.Len(t, firstKey, 1)
+	require.Len(t, secondKey, 1)
+	require.NotEqual(t, firstKey[0], secondKey[0],
+		"two organizations' sources under one caller-chosen identity produced the same key; the platform would collapse them and one tenant's reconcile would be suppressed with no refusal anywhere")
+
+	// Each part is named, so a future key change cannot drop one silently.
+	require.Contains(t, firstKey[0], first.OrgID, "the key does not name the organization")
+	require.Contains(t, firstKey[0], first.ID, "the key does not name the source")
+	require.Contains(t, firstKey[0], chosen, "the key does not name the effect")
+
+	// And the idempotency the operation DOES need still holds: two attempts of
+	// one occurrence on one source agree.
+	reconcileOnce(t, svc, first.OrgID, first.ID, chosen)
+	again := jobKeys(producer, first.ID)
+	require.Len(t, again, 2)
+	require.Equal(t, again[0], again[1],
+		"two attempts of one occurrence produced different keys; the pull would run twice")
+}

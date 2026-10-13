@@ -5491,15 +5491,31 @@ func (x *RevokeSourceDelegationResponse) GetDelegation() *SourceDelegation {
 // standing:
 //
 //   - source names a connected source whose delegation this host owns. It is
-//     the grant reference: an opaque identifier rather than a credential,
-//     re-checked against current facts on every mint, so an occurrence's run
-//     may outlive the capability that admitted it and revoking the delegation
-//     refuses the next occurrence.
+//     the grant reference: an identifier rather than a credential, re-checked
+//     against current facts on every mint, so an occurrence's run may outlive
+//     the capability that admitted it and revoking the delegation refuses the
+//     next occurrence.
+//
+//     IT IS NOT OPAQUE, and revocation is therefore not permanent. The value
+//     is the source's own id, and a mint resolves whichever delegation of that
+//     source is active, so revoking one and then RECONNECTING the source
+//     records a new delegation the same reference resolves to — re-arming an
+//     installed trigger with no explicit re-delegation. A reference that
+//     revocation ends for good is a delegation-level one; this host accepts
+//     that form at MintSourceOperationContext (delegation_id), but the client
+//     an executing module mints through sends only source_id, so a declaration
+//     cannot name it yet.
+//
 //   - binding names one of the release's declared operation bindings, and an
-//     occurrence runs under the installation's own principal from that
-//     binding's headless scopes. That is an ordinary token admission, bounded
-//     by the capability's own short lifetime — which is why it is the first
-//     proof and not the contract.
+//     occurrence would run under the installation's own principal from that
+//     binding's headless scopes — an ordinary token admission, bounded by the
+//     capability's own short lifetime.
+//
+//     IT IS PLANNED, and no declaration this host builds has ever set it. It
+//     cannot serve the reconcile trigger: the headless mint lives 60 seconds
+//     against that trigger's 10-minute declared deadline, and the capability
+//     is the module's own principal while ReconcileSource requires an
+//     organization member.
 //
 // THE NAMES ARE THE INSTALLATION DOCUMENT'S, not this host's and not the
 // executing module's read API's. That distinction is load-bearing: the module

@@ -613,8 +613,8 @@ func (s *Service) GetSourceTriggerDeclaration(ctx context.Context, orgID, source
 // shared one it moved every unrelated module's authority onto the
 // administrator. Neither is a backfill. So a target that already holds an
 // active delegation is untouched, and a personal source belongs to its owner —
-// the same division ReconcileSourceAuthority makes, and the one whose
-// authority a reference on that source would borrow.
+// the same division ReconcileDatasourceSource makes on the pass itself, and
+// the one whose authority a reference on that source would borrow.
 func (s *Service) DelegateSourceTriggers(ctx context.Context, actorID, orgID, sourceID string) ([]TriggerDelegationReference, error) {
 	orgID, sourceID = strings.TrimSpace(orgID), strings.TrimSpace(sourceID)
 	if orgID == "" || sourceID == "" {
@@ -634,10 +634,15 @@ func (s *Service) DelegateSourceTriggers(ctx context.Context, actorID, orgID, so
 		if source == nil {
 			return ErrTriggerSourceNotFound
 		}
-		// A personal source is its owner's to delegate. An administrator may
-		// read it, and may reconcile nothing on it; recording a reference
-		// against it would make occurrences borrow the ADMINISTRATOR's
-		// authority for a source the owner alone may act on.
+		// A personal source is its owner's to delegate. ReconcileDatasourceSource
+		// refuses a personal source to anyone but its owner, so a reference
+		// recorded under an administrator would borrow an authority that cannot
+		// perform the pass it admits — every occurrence refused, with the
+		// reference reading as bound.
+		//
+		// Note it is ReconcileDatasourceSource and NOT ReconcileSourceAuthority
+		// that draws that line: the authority check admits the owner OR an
+		// organization administrator, so it would pass here.
 		if source.PersonalOwnerUserID != "" && source.PersonalOwnerUserID != actorID {
 			return ErrTriggerSourcePersonal
 		}

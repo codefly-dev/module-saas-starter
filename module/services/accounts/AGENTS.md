@@ -934,9 +934,12 @@ the values and records the other column beside them).
   backfill leaves a target that already holds an active delegation untouched and
   records only for a target with none, and it refuses a personal source the
   caller does not own (`ErrTriggerSourcePersonal` → `PermissionDenied`, told
-  apart from `NotFound` because the source exists and is readable) — the same
-  division `ReconcileSourceAuthority` makes, so a reference can never bind a
-  trigger to an authority that cannot perform the operation it admits.
+  apart from `NotFound` because the source exists and is readable) — the
+  division `ReconcileDatasourceSource` makes on the pass itself, so a reference
+  can never bind a trigger to an authority that cannot perform the operation it
+  admits. Not `ReconcileSourceAuthority`: that role gate admits the owner *or*
+  an organization administrator, so an administrator reaches it on another
+  member's personal source and is stopped one step later.
 - **What a reader sees.** `DatasourceService/GetSourceTriggerDeclaration` answers
   the declaration, the references an operator may bind to it, and the children
   minted against them. The children come from `saas.datasource.delegation.used`,

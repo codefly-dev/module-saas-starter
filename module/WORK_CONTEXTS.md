@@ -716,10 +716,13 @@ press took a personal source's delegation away from its owner and moved every
 unrelated module's authority onto the administrator — failing in-flight children's
 re-checks and running everything afterwards under the wrong authority. A target
 that already holds an active delegation is now left exactly as it is, and only a
-target with none gets one. A personal source is its owner's, which is the same
-division `ReconcileSourceAuthority` makes: an administrator may not reconcile
-it, so a reference under them would bind a trigger to an authority that cannot
-perform the operation it admits.
+target with none gets one. A personal source is its owner's, which is the
+division `ReconcileDatasourceSource` makes on the pass itself: it refuses a
+personal source to anyone but its owner, so a reference under an administrator
+would bind a trigger to an authority that cannot perform the operation it
+admits. (`ReconcileSourceAuthority`, the role gate before it, admits the owner
+*or* an organization administrator — so it is not the check that draws this
+line.)
 
 **Reading it back.** `DatasourceService/GetSourceTriggerDeclaration` answers the
 declaration, the references an operator may bind to it, and the children minted
@@ -742,6 +745,30 @@ reconcile every source in the organization (issue #1112). The action names are
 the existing per-source vocabulary on purpose: a new `reconcile` verb would be
 one no composition declares in its `source_delegation_scopes`, and would refuse
 every real delegation rather than narrow it.
+
+**And the scope check alone is not enough, because the scope list is
+per-BINDING.** A mint seals the binding's declared `source_delegation_scopes`
+verbatim, and one scope may name up to 64 resource ids — so a child minted from
+source A's delegation legitimately carries a scope naming A, B and C. A scope
+check admits it on all three, under A's delegator's authority, with B's and C's
+delegations never read and their revocation unable to stop it. So
+`requireReconcile` also compares the **delegation's own source** with the one
+being acted on (`requireDelegatedSourceMatch`), from the delegation
+`ConfirmSourceDelegationParent` returns — which the adapter used to discard. The
+two checks answer different questions and neither implies the other: "may this
+capability act on this source at all" and "is this the source whose owner's
+authority it is carrying".
+
+**The ceiling on how many sources one trigger can serve** is therefore the
+declared scope's, not a deployment variable's. A binding declares at most one
+scope per `resource_kind` (kinds must be strictly increasing) and at most 64
+resource ids in it, so a module's trigger reaches at most **64 named
+`datasource.sources`** — and only those, since an unconstrained kind is refused
+outright as "not an installation-selected source slot". The registry those
+scopes are read from is derived per reconcile pass from the live authority
+documents in the module envelope; the `MODULE_PRINCIPALS` environment variable
+that once carried it is gone (#1055/#1064), so nothing here is bounded by an
+environment's size.
 
 **Two gaps belong to the module that fires triggers, not to this host, and are
 named rather than worked around.**

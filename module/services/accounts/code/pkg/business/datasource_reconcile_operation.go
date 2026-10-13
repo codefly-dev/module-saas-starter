@@ -208,10 +208,14 @@ func (s *Service) ReconcileSourceAuthority(ctx context.Context, actor, org, sour
 		if source == nil {
 			return status.Error(codes.NotFound, "datasource source not found")
 		}
-		// A shared source is an organization administrator's to reconcile; a
-		// personal one is its owner's. The same division the rest of this
-		// surface makes, and the same one a delegation re-checks: the person a
-		// reference borrows authority from holds exactly this role.
+		// The caller must be the source's own owner OR an organization
+		// administrator. This is the ROLE gate and it is deliberately the
+		// weaker of the two: a personal source belonging to another member
+		// passes here, and is refused by ReconcileDatasourceSource, which is
+		// where the owner-only rule lives. Stated because the two read alike
+		// and the difference matters — a reader who took this for the
+		// owner-only check would believe an administrator cannot reach another
+		// member's personal source at all, and they can reach this far.
 		if source.PersonalOwnerUserID != actor && !IsOrgAdminRole(orgRoleToString(member.Role)) {
 			return status.Error(codes.PermissionDenied, "source owner or organization administrator required")
 		}

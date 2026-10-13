@@ -83,9 +83,12 @@ func TestDelegateSourceTriggersLeavesAnotherModulesDelegationAlone(t *testing.T)
 //
 // A reference on a source makes occurrences borrow the authority of the person
 // the delegation names. On a personal source that person must be its owner:
-// ReconcileSourceAuthority already refuses an administrator the reconcile
-// itself, so recording a reference under them would bind a trigger to an
-// authority that cannot perform the operation it admits.
+// ReconcileDatasourceSource refuses a personal source to anyone but its owner,
+// so recording a reference under an administrator would bind a trigger to an
+// authority that cannot perform the pass it admits. (The role gate before it,
+// ReconcileSourceAuthority, admits the owner OR an administrator — so it is
+// not what draws this line, and a comment saying it was would send a reader
+// to the wrong function.)
 func TestDelegateSourceTriggersRefusesAnotherMembersPersonalSource(t *testing.T) {
 	store := newDelegateTriggerStore(t)
 	svc, _ := newDatasourceService(store, &recordingProducer{}, &fakeGitHub{defaultBranch: "main", commit: "abc"})

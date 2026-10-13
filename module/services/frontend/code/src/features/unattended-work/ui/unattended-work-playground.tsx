@@ -197,7 +197,8 @@ function TriggerIdentityPanel({
 					<CardTitle>The declared trigger</CardTitle>
 					<CardDescription>
 						The source&apos;s reconcile interval is the configuration; this is
-						the trigger it declares. This host fires nothing on it.
+						the trigger it declares. Nothing fires this declaration yet, so the
+						host still runs the schedule itself as a stopgap.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-2 text-sm">
