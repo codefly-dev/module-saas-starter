@@ -247,10 +247,9 @@ type topologyModule struct {
 }
 
 type topologyInterface struct {
-	Service      string   `yaml:"service"`
-	Endpoint     string   `yaml:"endpoint"`
-	Visibility   string   `yaml:"visibility"`
-	AllowModules []string `yaml:"allow-modules,omitempty"`
+	Service    string `yaml:"service"`
+	Endpoint   string `yaml:"endpoint"`
+	Visibility string `yaml:"visibility"`
 }
 
 type topologyService struct {
@@ -2259,7 +2258,6 @@ func bootstrapJobIngressPolicy(namespace string, labels map[string]string, servi
 			"ingress": []any{map[string]any{
 				"from": []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{
 					"codefly.dev/bootstrap-service": service,
-					"job-name":                      service,
 				}}}},
 				"ports": networkPorts(ports),
 			}},
@@ -2275,7 +2273,6 @@ func bootstrapJobEgressPolicy(namespace string, labels map[string]string, servic
 		Spec: map[string]any{
 			"podSelector": map[string]any{"matchLabels": map[string]string{
 				"codefly.dev/bootstrap-service": service,
-				"job-name":                      service,
 			}},
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{

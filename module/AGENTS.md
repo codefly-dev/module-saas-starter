@@ -60,11 +60,13 @@ adding a REST-enabled RPC means editing it. Do not go looking for a generator.
 ## Go suites
 
 Every Go service here carries **its own `go.mod`** — `accounts`, `auth-gateway`,
-`store`, `telemetry` — and `tools` is another, with **no `go.work`** tying them
-together. So `go test ./...` only ever covers the module you run it in, and a
-service's suite is outside whatever you run from the tree root. The canonical
-repository adds its own root module (the module agent, the host, and the generated
-reference composition), for six in total; a consumer's root module is its own.
+`store` and `policy-log` — and `tools` is another, with **no `go.work`** tying them together. So
+`go test ./...` only ever covers the module you run it in, and a service's suite
+is outside whatever you run from the tree root. The canonical repository adds its
+own root module (the module agent, the host, and the generated reference
+composition); a consumer's root module is its own.
+`libraries/source-read-sdk/go` and `qualification/module-authority` are two more
+modules, outside this tree, that CI exercises in steps of their own.
 
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.
@@ -82,8 +84,8 @@ each invocation fresh database state. Do not opt into `WithSharedControlChannel`
 which is only for older CLIs and reuses fixed local database directories across
 otherwise independent runs and migration revisions.
 
-Core is pinned per Go module. The host's five services (accounts, auth-gateway,
-policy-log, store, telemetry) run one core release, v0.19.3, which carries the
+Core is pinned per Go module. The host's four Go services (accounts, auth-gateway,
+policy-log, store) run one core release, v0.19.3, which carries the
 issuer-side `Authority.ReadBack`. The module agent (the root module),
 `module/tools` and the module-authority qualification module stay on released
 v0.18.0. Never ship a host release on an untagged pseudo-version. Run
@@ -102,7 +104,7 @@ Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-Accounts, auth-gateway, policy-log, store and telemetry use released SDK v0.3.1;
+Accounts, auth-gateway, policy-log and store use released SDK v0.4.0;
 accounts must not retain the pre-release SDK SHA from the callable-source
 development branch. Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local

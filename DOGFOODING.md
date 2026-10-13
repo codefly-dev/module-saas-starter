@@ -24,7 +24,7 @@ cd ~/Development/deus/codefly/module-saas-starter
 codefly run service --fixture dev-admin
 ```
 
-Expected graph: `vault + store + cache + telemetry → accounts →
+Expected graph: `vault + store + cache → accounts →
 auth-gateway → frontend` (plus marketing). Independent
 services may start concurrently. If any service
 hangs at "waiting for ready", check that step's `--debug` output.
@@ -219,7 +219,7 @@ the same Codefly-managed graph. For each of `email` (Resend),
 `configurations/local-dogfood/<group>.env.example` and
 `<group>.secret.env.example` to their Git-ignored names and fill them in
 ([LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md#configure-providers-through-codefly)).
-Keep `observability.env.example` as it is for local (`debug`) telemetry.
+Keep `observability.env.example` as it is for a `local-dogfood` run with no collector: with `OTEL_EXPORTER_OTLP_ENDPOINT` unset in the process environment nothing is exported over OTLP, and `local-dogfood` is not the plain `local` runtime, whose traces go to wool's stdout tracer, so a run with no collector exports no traces or metrics.
 Turnstile's published test keys drive the three abuse-protection cases:
 
 | Case | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | `TURNSTILE_SECRET_KEY` |
@@ -239,7 +239,7 @@ codefly run service --env local-dogfood
 - [ ] Grant analytics consent, navigate through onboarding, and verify bounded browser plus durable backend events in PostHog.
 - [ ] Withdraw analytics consent or log out. Browser capture stops immediately and identity resets.
 - [ ] Trigger controlled browser and backend errors. Sentry correlates release and environment without creating performance transactions.
-- [ ] With the `debug` exporter, exercise login/onboarding and observe trace/metric/log summaries from the in-graph telemetry service.
+- [ ] With `OTEL_EXPORTER_OTLP_ENDPOINT` unset, check that accounts and auth-gateway log once at startup that OTLP export is disabled, then exercise login/onboarding; no traces or metrics are exported in `local-dogfood` (wool's stdout tracer is for the plain `local` runtime), so observe the logs on stdout. To see traces, set `OTEL_EXPORTER_OTLP_ENDPOINT` to a collector this machine can reach, for example `http://localhost:4317`, and confirm the startup line says export is enabled. Set it to a URL with no port and confirm the service refuses to start, naming the rule.
 - [ ] Switch Turnstile to the **fail** keys. Registration and waitlist submission fail without database writes.
 - [ ] Switch Turnstile to the **replay** keys. The first deterministic verification follows Cloudflare's fixture behavior; replay rejection leaves state unchanged.
 

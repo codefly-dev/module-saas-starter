@@ -11,7 +11,7 @@ Two Codefly inputs are intentionally independent:
 
 | Input | Authority | Purpose |
 |---|---|---|
-| `--env local-dogfood` | `configurations/local-dogfood/*` | Select independently configured identity, billing, email, analytics, error, telemetry, and abuse adapters |
+| `--env local-dogfood` | `configurations/local-dogfood/*` | Select independently configured identity, billing, email, analytics, error, and abuse adapters |
 | optional `--fixture <name>` | `module/fixtures/<name>.yaml` | Seed a useful starting product state |
 
 A fixture never changes the identity provider. The ordinary `local`
@@ -33,12 +33,11 @@ production/background fallback; a local port never belongs in product config.
 ## Configure providers through Codefly
 
 WorkOS is the identity adapter. The production-grade dogfood stack also
-includes Stripe, Resend, PostHog, Sentry, the in-graph OpenTelemetry gateway,
-and Cloudflare Turnstile. Each one is a Codefly configuration group on this
+includes Stripe, Resend, PostHog, Sentry, and Cloudflare Turnstile. Each one is a Codefly configuration group on this
 profile: copy the committed `configurations/local-dogfood/<group>.env.example`
 (and `<group>.secret.env.example`, where there is one) to the Git-ignored
 `<group>.env` / `<group>.secret.env`, and fill in the values. Every group is
-optional except `observability` and `email` — see the notes below. Stripe setup belongs to
+optional except `email` — see the notes below. Stripe setup belongs to
 the [`codefly-dev/provider-stripe`](https://github.com/codefly-dev/provider-stripe)
 plugin, which validates the account, observes the webhook and projects the
 `billing` group.
@@ -50,19 +49,21 @@ plugin, which validates the account, observes the webhook and projects the
 | `email` | Resend |
 | `product-analytics` | PostHog |
 | `error-tracking` | Sentry |
-| `observability` | the in-graph OpenTelemetry gateway |
+| `observability` | none: the collector is the standard `OTEL_EXPORTER_OTLP_ENDPOINT` variable, below |
 | `abuse-protection` | Cloudflare Turnstile |
 
 Validate the result with `codefly doctor workspace --env local-dogfood`.
 
-`observability` is the one group this profile cannot skip. The `telemetry`
-service declares it as a workspace-configuration-dependency, and on
-`local-dogfood` the real `observability.env` / `observability.secret.env` are
-Git-ignored, so there is no committed default to fall back on. Codefly skips a
-declared group whose files are absent rather than failing, and the collector
-refuses to start without an explicit `OBSERVABILITY_EXPORTER` — it will not
-silently downgrade itself to `debug` and drop every span. Copy
-`observability.env.example` as it is to keep telemetry local.
+Traces and metrics follow one standard variable, `OTEL_EXPORTER_OTLP_ENDPOINT`,
+in the environment the services run with: set it and `accounts` and `auth-gateway`
+export over OTLP/gRPC, leave it unset and they export nothing over OTLP. That is
+the default here, so `observability` needs no setup (logs still go to stdout):
+`local-dogfood` is not the `local` runtime, and wool's stdout tracer belongs to
+that runtime alone. To export to a collector this machine can reach, set the
+variable to its address, for example `http://localhost:4317`. A value that names
+no port, or carries credentials, stops the service at startup with the reason.
+The group's own file, `observability.env`, exists only so the group does; nothing
+reads the key in it.
 
 `email` is required because this profile is not the `local` environment, and
 accounts refuses to start there without an explicit `EMAIL_PROVIDER`: `resend`
