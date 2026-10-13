@@ -129,7 +129,7 @@ func (s *countingDeclarationStore) WithControlPlane(ctx context.Context, fn func
 	return fn(ctx)
 }
 
-func (s *countingDeclarationStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+func (s *countingDeclarationStore) LiveDeclaredBindings(context.Context) ([]LiveDeclaredBinding, error) {
 	s.reads++
 	return nil, nil
 }

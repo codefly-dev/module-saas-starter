@@ -48,7 +48,14 @@ function entry(alias: string): FrontendServiceAllowlistEntry | null {
  * forwarded answer is faked — which is the point, because the defect this page
  * exists for lived in the two path rules the client and the BFF each own.
  */
-function render(plugin: string = transportDemoPlugin.name) {
+function render(
+	plugin: string = transportDemoPlugin.name,
+	// Whether the browser transport was told what this composition installed.
+	// The canonical host installs no plugin service, so its own runtime knows
+	// nothing about the demo aliases and the host stays the only authority; an
+	// installing composition hands them over and the client refuses first.
+	installed = false,
+) {
 	const upstream = vi.fn(
 		async (target: RequestInfo | URL, init?: RequestInit) => {
 			void init;
@@ -75,6 +82,14 @@ function render(plugin: string = transportDemoPlugin.name) {
 	// it to the route handler the real request would reach.
 	const runtime = createPluginRuntime({
 		getAccessToken: () => TOKEN,
+		...(installed
+			? {
+					services: (transportDemoPlugin.services ?? []).map((service) => ({
+						...service,
+						plugin: transportDemoPlugin.name,
+					})),
+				}
+			: {}),
 		fetch: async (input, init) => {
 			const url = new URL(String(input), "http://localhost:3000");
 			// What the route's catch-all hands the handler: decoded segments
@@ -99,10 +114,25 @@ function render(plugin: string = transportDemoPlugin.name) {
 	};
 }
 
-function sendRow(route: string) {
+function rowFor(route: string): HTMLTableRowElement {
 	const row = screen.getByText(route).closest("tr");
 	if (!row) throw new Error(`no row for ${route}`);
+	return row as HTMLTableRowElement;
+}
+
+function press(row: HTMLTableRowElement) {
 	fireEvent.click(row.querySelector("button") as HTMLButtonElement);
+}
+
+/**
+ * Press until the row has actually sent. A mutating row arms on the first press
+ * and sends on the second, so a test that pressed once would assert against a
+ * request that was never made.
+ */
+function sendRow(route: string) {
+	const row = rowFor(route);
+	press(row);
+	if (row.textContent?.includes("Press again to send")) press(row);
 	return row;
 }
 
@@ -178,6 +208,96 @@ describe("the plugin transport playground", () => {
 		expect(row.textContent).toContain("400");
 		expect(row.textContent).not.toContain("demo.internal");
 		expect(upstream).not.toHaveBeenCalled();
+	});
+
+	it("arms a mutating row and sends nothing until it is confirmed", async () => {
+		// The plugin name above the table is the operator's to edit. Pointed at a
+		// plugin their composition really installed, one press on this row is a
+		// real write to that backend under their own credential, so the first
+		// press only arms it and names what it will write to.
+		const { upstream } = render();
+		const row = rowFor("POST records/records:recover");
+
+		press(row);
+
+		expect(row.textContent).toContain("Confirm POST");
+		expect(row.textContent).toContain("transport-demo/records");
+		expect(upstream).not.toHaveBeenCalled();
+
+		press(row);
+
+		await waitFor(() => {
+			expect(row.textContent).toContain("/v1/demo/records:recover");
+		});
+		expect(upstream).toHaveBeenCalledTimes(1);
+		// Sent, and no longer armed: the next press arms again rather than
+		// repeating the write.
+		expect(row.textContent).not.toContain("Press again to send");
+	});
+
+	it("sends a read on the first press", async () => {
+		// GET is safe and idempotent, so there is nothing to confirm; making the
+		// operator press twice for every row would turn the confirmation into
+		// noise they learn to click through.
+		const { upstream } = render();
+		const row = rowFor("GET records/records");
+
+		press(row);
+
+		await waitFor(() => {
+			expect(row.textContent).toContain("/v1/demo/records");
+		});
+		expect(upstream).toHaveBeenCalledTimes(1);
+	});
+
+	it("retracts an armed row when the target plugin is renamed", async () => {
+		// The confirmation named a plugin. Renaming the target must not carry the
+		// armed press over to a different backend.
+		const { upstream } = render();
+		const row = rowFor("POST records/records:recover");
+
+		press(row);
+		expect(row.textContent).toContain("Confirm POST");
+
+		fireEvent.change(screen.getByLabelText("Plugin"), {
+			target: { value: "other-plugin" },
+		});
+
+		expect(row.textContent).not.toContain("Press again to send");
+		expect(upstream).not.toHaveBeenCalled();
+	});
+
+	it("refuses a procedure outside the declared services in the browser", async () => {
+		// With `routePrefix: "/"` the first path segment is the service name,
+		// chosen by the caller. The requirement's declared list is what stops a
+		// contributed page reaching every service the upstream origin serves, and
+		// a client that was told the requirement applies it before anything
+		// leaves the browser.
+		const { upstream } = render(transportDemoPlugin.name, true);
+
+		const row = sendRow("POST procedures/demo.other.v1.SecretService/Read");
+
+		await waitFor(() => {
+			expect(row.textContent).toContain("refused in the browser");
+		});
+		expect(upstream).not.toHaveBeenCalled();
+	});
+
+	it("carries a connect procedure under a mount prefix", async () => {
+		const { upstream } = render();
+
+		const row = sendRow(
+			"POST mounted/demo.procedures.v1.RecordService/RecoverRecord",
+		);
+
+		await waitFor(() => {
+			expect(row.textContent).toContain(
+				"/v1/connect/demo.procedures.v1.RecordService/RecoverRecord",
+			);
+		});
+		expect(String(upstream.mock.calls[0][0])).toBe(
+			"http://demo.internal/v1/connect/demo.procedures.v1.RecordService/RecoverRecord",
+		);
 	});
 
 	it("answers 'not installed' for a plugin no composition composed", async () => {

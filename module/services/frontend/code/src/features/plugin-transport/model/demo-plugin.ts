@@ -1,8 +1,8 @@
 import {
 	definePlugin,
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
-	isConnectProcedurePath,
 	isFrontendServicePath,
+	resolveConnectProcedure,
 } from "@codefly-dev/saas-plugin-contract";
 
 /**
@@ -30,10 +30,24 @@ export const transportDemoPlugin = definePlugin({
 		{
 			// A Connect requirement declares the origin root, because that is
 			// where the Connect protocol puts a procedure — and where this
-			// contract's own capability handshake has always been probed.
+			// contract's own capability handshake has always been probed. It
+			// also names the services it may reach: a procedure's path carries
+			// its own service name, so without that list the alias would reach
+			// every service the upstream origin serves.
 			alias: "procedures",
 			protocol: "connect",
 			routePrefix: "/",
+			connectServices: ["demo.procedures.v1.RecordService"],
+			compatibility: { contract: "demo.procedures", major: 1 },
+		},
+		{
+			// The same backend mounted under a path prefix rather than at the
+			// origin root. The prefix says where Connect is mounted; the
+			// service list still says which services the alias speaks to.
+			alias: "mounted",
+			protocol: "connect",
+			routePrefix: "/v1/connect",
+			connectServices: ["demo.procedures.v1.RecordService"],
 			compatibility: { contract: "demo.procedures", major: 1 },
 		},
 	],
@@ -111,6 +125,20 @@ export const TRANSPORT_DEMO_ROUTES: readonly TransportDemoRoute[] = [
 		carried: true,
 	},
 	{
+		alias: "mounted",
+		method: "POST",
+		path: "demo.procedures.v1.RecordService/RecoverRecord",
+		shape: "connect procedure under a mount prefix",
+		carried: true,
+	},
+	{
+		alias: "procedures",
+		method: "POST",
+		path: "demo.other.v1.SecretService/Read",
+		shape: "a procedure of a service the requirement never declared",
+		carried: false,
+	},
+	{
 		alias: "records",
 		method: "POST",
 		path: "records:recover/commands",
@@ -122,6 +150,13 @@ export const TRANSPORT_DEMO_ROUTES: readonly TransportDemoRoute[] = [
 		method: "GET",
 		path: "records/../secrets",
 		shape: "a traversal out of the declared prefix",
+		carried: false,
+	},
+	{
+		alias: "records",
+		method: "POST",
+		path: "..:recover",
+		shape: "a traversal wearing a custom verb",
 		carried: false,
 	},
 	{
@@ -145,6 +180,21 @@ export function transportCarries(route: TransportDemoRoute): boolean {
 		(service) => service.alias === route.alias,
 	);
 	return alias?.protocol === "connect"
-		? isConnectProcedurePath(segments)
+		? resolveConnectProcedure(alias.connectServices ?? [], segments) !== null
 		: true;
+}
+
+/**
+ * Whether sending this route would write upstream. HTTP's own reading: GET is
+ * safe and idempotent, anything else is not — derived rather than flagged per
+ * row, so a row added later cannot forget to declare itself dangerous.
+ *
+ * It matters because the page's plugin name is the operator's to edit. Pointed
+ * at a plugin their composition really installed, a press on one of these rows
+ * is a real write to that backend under the operator's own credential, so the
+ * page asks first. A route the transport will not carry needs no confirmation:
+ * nothing leaves the browser.
+ */
+export function transportMutates(route: TransportDemoRoute): boolean {
+	return route.method !== "GET" && transportCarries(route);
 }

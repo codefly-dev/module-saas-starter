@@ -19,11 +19,21 @@ host, port, module, service, endpoint, or upstream prefix from a browser.
    path-bearing, query-bearing, or fragment-bearing addresses are unavailable.
 4. The relative path is appended to the installed prefix one safe segment at a
    time. Dot segments, slashes, backslashes, control values, encoded separators,
-   encoded percent signs, oversized segments, and empty segments fail closed.
-   The **last** segment may also carry a Google custom verb — `<resource>:<verb>`
-   with one colon and a lowerCamelCase verb — and its colon is forwarded
-   literal. A colon anywhere else in the path, a second colon in one segment, an
-   empty resource or verb, and a non-lowerCamelCase verb all fail closed.
+   encoded percent signs, **encoded colons**, oversized segments, and empty
+   segments fail closed. The **last** segment may also carry a Google custom
+   verb — `<resource>:<verb>` with one colon and a lowerCamelCase verb — and its
+   colon is forwarded literal. A colon anywhere else in the path, a second colon
+   in one segment, an empty resource or verb, and a non-lowerCamelCase verb all
+   fail closed; so does a resource half that is itself a dot segment, because
+   `..:recover` is a traversal wearing a verb and would bind `..` as the
+   resource upstream.
+5. The resolved allowlist entry is held to the composition's own rules a second
+   time, at runtime. The BFF reads the GENERATED allowlist rather than the
+   composition that validated it, so a build-time rule nothing re-checks is one
+   a stale or hand-edited projection walks straight past: a `rest` entry
+   declaring the origin root, and a `connect` entry declaring no services it may
+   reach, are both `503 backend_unavailable` — the alias cannot be served, and
+   no request the caller could phrase differently would change that.
 
 ## Which bindings the transport carries
 
@@ -42,22 +52,49 @@ refused in the browser before a request left it, and a contributed page reached
 LESS than the module served: a binding written in that form was not available
 through the transport at all, and a composition had to reach it some other way.
 
-**Connect procedures.** They are carried, and a requirement says so by
-declaring `/` as its `routePrefix`. The Connect protocol puts a unary procedure
-at `/<fully.qualified.Service>/<Method>` from the origin, which is where this
-contract's own fixed capability handshake has always been probed — so a Connect
-backend serving where the protocol says had no prefix it could declare, and a
-composition had to take a second Connect transport from somewhere else. The root
-prefix is Connect-only: a REST requirement declaring it would turn its alias
-into a prefix-less proxy of the whole upstream. On a Connect alias the relative
-path must name exactly one procedure (a dotted proto full name, then a method
-name); any other shape is `400 invalid_path`, which is a narrowing — the
-protocol serves nothing else at that path — and never reaches the upstream.
+**Connect procedures.** They are carried, and a `connect` requirement declares
+two things: where its upstream mounts Connect, and which of that upstream's
+services the alias may reach.
+
+- `routePrefix` is the mount. `/` is the origin root, where the Connect protocol
+  puts a unary procedure and where this contract's own fixed capability
+  handshake has always been probed; a product path prefix such as `/v1/connect`
+  is a Connect mount behind a path, and the procedure lands under it. The root
+  is Connect-only: a REST requirement declaring it would turn its alias into a
+  prefix-less proxy of the whole upstream.
+- `connectServices` is the bound, and it is **required** and non-empty. A
+  Connect procedure's path is `/<fully.qualified.Service>/<Method>`, so the
+  CALLER supplies the service name — which means the prefix cannot say which
+  service an alias speaks to, and only this list can. One entry is an alias
+  scoped to a single service; several are several services of one backend behind
+  one alias and one capability handshake. Each must be a fully qualified proto
+  service name, and the same name twice is refused at composition.
+
+On a Connect alias the relative path must name exactly one procedure of a
+declared service. Any other shape — a REST-shaped path, a method with no
+service, a procedure of a service the requirement never declared — is
+`400 invalid_path` and never reaches the upstream. The upstream path is then
+built from the procedure that was ADMITTED rather than from the segments as they
+arrived, so the bound and the destination cannot disagree about which service is
+being spoken to.
+
+Why the list exists: without it, a requirement declaring the root reached every
+service its upstream origin served, as the viewer and under the viewer's own
+forwarded bearer, because the first path segment was the caller's to choose. A
+requirement that wants the one-service reach a `/<pkg.Service>` prefix used to
+express now writes `connectServices: ["pkg.Service"]`; the scope moved from a
+prefix that had to be parsed to a field that declares it, and `routePrefix`
+keeps its single meaning on both protocols.
 
 A contributed page is therefore *not* restricted to REST bindings. What it may
-not do is choose a prefix: both shapes are reachable only under the alias its
-own requirement declared, and a route outside that alias is still
+not do is choose a prefix or a service: both shapes are reachable only under the
+alias its own requirement declared, and a route outside that alias is still
 `404 plugin_service_not_found`.
+
+The browser transport applies the same rule when the host hands it the installed
+requirements (`createPluginRuntime({ services })`), so a procedure outside the
+declared services is refused before a request leaves the page. The BFF refuses
+it either way — the client half is agreement, never the authority.
 
 The **playground** for all of this is `/admin/platform/plugin-transport`
 (super-admin): it sends every shape through the real transport and shows which
@@ -66,8 +103,15 @@ upstream's own forwarded answer. Its route list is
 `src/features/plugin-transport/model/demo-plugin.ts`, a demo plugin the
 canonical host declares and does not install, so every alias answers
 `plugin_service_not_found` here — which is already proof the shape was carried,
-because that refusal comes from resolution rather than from the path gate. The
-forwarded answer is proved by
+because that refusal comes from resolution rather than from the path gate.
+
+The plugin name on that page is editable, so an operator can point the table at
+a plugin their own composition installed — which is also what makes a press
+dangerous, since the custom-verb rows are writes. Anything but a read is
+therefore armed by the first press, which names the plugin and alias it will
+write to, and sent only by the second; renaming the target retracts it. A row
+the transport will not carry needs no confirmation, because nothing leaves the
+browser. The forwarded answer is proved by
 `src/features/plugin-transport/ui/plugin-transport-playground.container.test.tsx`,
 which drives the published client transport into this handler over a stub
 upstream.

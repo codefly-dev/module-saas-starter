@@ -39,7 +39,7 @@ func (s *authorityInstallationStore) GetOrganizationBySlug(context.Context, stri
 // The audience vocabulary's one read. This store declares NO solution bindings:
 // the ceiling these tests install names declared MODULE prefixes, which the
 // fixture declares through the principal registry below.
-func (s *authorityInstallationStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+func (s *authorityInstallationStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
 	return nil, nil
 }
 func (s *authorityInstallationStore) ListAvailableSolutionTargets(_ context.Context, query business.AvailableSolutionQuery) ([]*business.AvailableSolutionTarget, error) {
