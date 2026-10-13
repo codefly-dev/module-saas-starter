@@ -26,6 +26,18 @@ export function useModuleTenantIdentity(
 		queryKey: ["module-tenant-identity", prefix, binding, organizationId],
 		enabled: !!prefix && !!binding && !!organizationId,
 		queryFn: async () => {
+			// The answer this fetch is reading, so a superseded refusal cannot
+			// delete a newer one (issue #1121; the same guard the declaration
+			// read carries, for the same race).
+			const key = [
+				"module-tenant-identity",
+				prefix,
+				binding,
+				organizationId,
+			] as const;
+			const readingAnswerFrom =
+				client.getQueryCache().find({ queryKey: key, exact: true })?.state
+					.dataUpdatedAt ?? 0;
 			try {
 				return await service.resolveModuleTenantIdentity({
 					prefix,
@@ -42,18 +54,12 @@ export function useModuleTenantIdentity(
 				// (issue #1121): a refusal is evidence about the key it
 				// answered, and about no other.
 				if (!mayKeepRetainedRows(readOutcome(true, error))) {
-					client
+					const entry = client
 						.getQueryCache()
-						.find({
-							queryKey: [
-								"module-tenant-identity",
-								prefix,
-								binding,
-								organizationId,
-							],
-							exact: true,
-						})
-						?.setState({ data: undefined, dataUpdatedAt: 0 });
+						.find({ queryKey: key, exact: true });
+					if (entry && entry.state.dataUpdatedAt <= readingAnswerFrom) {
+						entry.setState({ data: undefined, dataUpdatedAt: 0 });
+					}
 				}
 				throw error;
 			}

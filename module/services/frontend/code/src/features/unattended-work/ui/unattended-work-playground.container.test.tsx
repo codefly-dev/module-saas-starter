@@ -341,3 +341,55 @@ describe("the playground's declaration card when the read does not succeed", () 
 		).toBeNull();
 	});
 });
+
+// A READ IN FLIGHT CLAIMS NOTHING ABOUT THE IDENTITY EITHER (issue #1121).
+//
+// The card learned to say which state its read was in and still fell into the
+// facts list while the read was in flight: the `<dl>` rendered dashes, and the
+// Identity row, computed from no declaration at all, said "None — occurrences
+// would be refused". That is the same false statement about authority the
+// schedule row was fixed for, surviving in the other consumer because the
+// branch tested `!declaration && !read.isFetching` — true only once the read
+// had finished, and so false for the whole of the pending window.
+describe("the playground's declaration card while the read is in flight", () => {
+	it("claims no identity before the declaration arrives", async () => {
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async () => {
+					await gate;
+					return HttpResponse.json({
+						declaration: declared,
+						delegations: [reference],
+						children: [],
+					});
+				},
+			),
+		);
+		renderInApp(<Page />);
+
+		const card = await waitFor(() => {
+			const found = document.querySelector<HTMLElement>(
+				'[data-slot="declared-trigger"]',
+			);
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+		// Nothing about the identity, and no facts spelled as dashes, while the
+		// host has not answered.
+		expect(
+			within(card).queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(within(card).queryByText("Identity")).toBeNull();
+
+		release?.();
+		await screen.findByText("saas_datasource_reconcile");
+	});
+});

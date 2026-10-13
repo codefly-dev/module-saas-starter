@@ -32,6 +32,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { sourceLabel } from "../model/source-label";
 import {
@@ -191,6 +192,10 @@ function TriggerIdentityPanel({
 	const declarationStale = declaration
 		? staleReadNotice(outcome, "this trigger")
 		: null;
+	// The same never-flashing wait the schedule row uses, so the pending window
+	// is a state of its own rather than the tail of the empty one.
+	const declarationPhase = useLoadingPhase(read.isFetching && !declaration);
+	const waiting = declarationPhase.indicator || declarationPhase.quiet;
 	const references = withheld ? [] : (read.data?.delegations ?? []);
 	const children = withheld ? [] : (read.data?.children ?? []);
 	const live = references.filter((reference) => reference.active);
@@ -225,7 +230,17 @@ function TriggerIdentityPanel({
 							{declarationStale}
 						</p>
 					)}
-					{!declaration && !read.isFetching ? (
+					{/*
+					 * THE FACTS NEED A DECLARATION — the branch is on having
+					 * one, never on the read having finished. Testing
+					 * `!declaration && !read.isFetching` meant the pending
+					 * window fell through to the facts list, which rendered
+					 * dashes and an Identity row computed from no declaration
+					 * at all: "None — occurrences would be refused", the exact
+					 * false claim about authority the schedule row was fixed
+					 * for (issue #1121).
+					 */}
+					{declaration ? null : waiting ? null : (
 						<p role="status" className="text-muted-foreground">
 							{readOutcomeMessage(
 								outcome,
@@ -233,48 +248,49 @@ function TriggerIdentityPanel({
 								"This source declares no trigger.",
 							)}
 						</p>
-					) : declaration?.undeclarableReason ? (
+					)}
+					{!declaration ? null : declaration.undeclarableReason ? (
 						<p role="status" className="text-muted-foreground">
 							{declaration.undeclarableReason}
 						</p>
 					) : (
 						<dl className="grid gap-2 sm:grid-cols-2">
-							<Fact label="Release" value={declaration?.release ?? "—"} mono />
+							<Fact label="Release" value={declaration.release || "—"} mono />
 							<Fact
 								label="Operation"
-								value={declaration?.operation ?? "—"}
+								value={declaration.operation || "—"}
 								mono
 							/>
 							<Fact
 								label="Schedule"
-								value={declaration?.schedule?.cron ?? "—"}
+								value={declaration.schedule?.cron ?? "—"}
 								mono
 							/>
 							<Fact
 								label="Timezone"
-								value={declaration?.schedule?.timezone ?? "—"}
+								value={declaration.schedule?.timezone ?? "—"}
 							/>
 							<Fact
 								label="Missed occurrences"
-								value={declaration?.schedule?.missedRun ?? "—"}
+								value={declaration.schedule?.missedRun ?? "—"}
 							/>
 							<Fact
 								label="Overlap"
-								value={declaration?.schedule?.overlap ?? "—"}
+								value={declaration.schedule?.overlap ?? "—"}
 							/>
 							<Fact
 								label="Occurrence deadline"
-								value={nanosecondsAsDuration(declaration?.schedule?.deadline)}
+								value={nanosecondsAsDuration(declaration.schedule?.deadline)}
 							/>
 							<Fact
 								label="Occurrence input"
-								value={declaration?.schedule?.inputJson || "—"}
+								value={declaration.schedule?.inputJson || "—"}
 								mono
 							/>
 							<Fact label="Identity" value={declaredIdentity(declaration)} />
 							<Fact
 								label="Declaration"
-								value={declaration?.digest ?? "—"}
+								value={declaration.digest || "—"}
 								mono
 							/>
 						</dl>

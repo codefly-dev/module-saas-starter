@@ -919,3 +919,136 @@ describe("one refused declaration does not blank another", () => {
 		expect(client.getQueryData(other)).toBeTruthy();
 	});
 });
+
+// A SUPERSEDED REFUSAL MUST NOT ERASE A NEWER SUCCESS (issue #1121).
+//
+// Two fetches overlap on one key. The older one is superseded — TanStack
+// cancels it when the newer starts — but the request itself is already in
+// flight and eventually rejects with 403. Its catch then ran and deleted the
+// answer the NEWER fetch had just written, leaving the query in a state no
+// component can read correctly: status `success`, fetchStatus `idle`, `data`
+// undefined and `error` null. The row has no refusal to report and no
+// declaration to show, so it says "This source declares no trigger" about a
+// source whose latest read succeeded.
+//
+// The condition is the one the lifecycle already records: delete only if no
+// newer success replaced what this fetch was reading. `dataUpdatedAt` is that
+// fact, so the fix reads the field it already writes rather than adding a
+// mechanism beside it.
+describe("a superseded refusal", () => {
+	const KEY = ["source-trigger-declaration", "org-1", SOURCE] as const;
+
+	function overlapping() {
+		let call = 0;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(twoSources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async ({ request }) => {
+					const body = (await request.json()) as { sourceId?: string };
+					if (body.sourceId !== SOURCE) {
+						return HttpResponse.json({
+							declaration: declaredB,
+							delegations: [],
+							children: [],
+						});
+					}
+					call++;
+					if (call === 1) {
+						return HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						});
+					}
+					if (call === 2) {
+						// The OLD fetch: superseded, answers last, and answers 403.
+						await held;
+						return HttpResponse.json(
+							{ code: "permission_denied" },
+							{ status: 403 },
+						);
+					}
+					// The NEWER fetch, which succeeds with a different answer.
+					return HttpResponse.json({
+						declaration: {
+							...declared,
+							schedule: { ...declared.schedule, cron: "45 * * * *" },
+						},
+						delegations: [],
+						children: [],
+					});
+				},
+			),
+		);
+		return () => release403?.();
+	}
+
+	it("does not erase the newer answer it was superseded by", async () => {
+		const release = overlapping();
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		// The old fetch starts and is left in flight.
+		const stale = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		// The newer fetch supersedes it and lands.
+		await act(async () => {
+			await client.refetchQueries({ queryKey: KEY, exact: true });
+		});
+		await screen.findByText("45 * * * *");
+
+		// Now the superseded request finally answers 403.
+		release();
+		await act(async () => {
+			await stale;
+		});
+
+		const state = client.getQueryState([...KEY]);
+		expect(state?.status).toBe("success");
+		// The newer answer is still there, and still on screen.
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+		expect(screen.getByText("45 * * * *")).toBeTruthy();
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+	});
+
+	// The deletion itself must survive the guard: a refusal with nothing newer
+	// behind it still clears, including when no component is mounted to see it.
+	it("still deletes a refusal that nothing newer replaced, with the view unmounted", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+
+		cleanup();
+		denied = true;
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: KEY, exact: true, type: "all" })
+				.catch(() => undefined);
+		});
+
+		expect(client.getQueryData([...KEY])).toBeUndefined();
+	});
+});

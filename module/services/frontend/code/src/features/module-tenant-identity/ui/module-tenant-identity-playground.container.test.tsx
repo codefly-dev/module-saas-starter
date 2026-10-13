@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	screen,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -272,5 +278,88 @@ describe("a refusal's blast radius is the triple it answered", () => {
 
 		expect(screen.queryByText("audit-1")).toBeNull();
 		expect(client.getQueryData(other)).toBeTruthy();
+	});
+});
+
+// AND THE SAME SUPERSESSION RACE, in the other query family (issue #1121).
+//
+// Two fetches overlap on one triple. The older is superseded, answers last and
+// answers 403, and its catch deleted the answer the NEWER fetch had written —
+// leaving status `success`, fetchStatus `idle`, `data` undefined and `error`
+// null, which no component can read correctly. The guard is the same: delete
+// only when no newer success replaced what this fetch was reading.
+describe("a superseded refusal in the identity read", () => {
+	const KEY = ["module-tenant-identity", "example", "operate", ORG] as const;
+
+	it("does not erase the newer answer it was superseded by", async () => {
+		let call = 0;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				async () => {
+					call++;
+					if (call === 1) return HttpResponse.json(minted);
+					if (call === 2) {
+						await held;
+						return HttpResponse.json(
+							{ code: "permission_denied", message: "refused" },
+							{ status: 403 },
+						);
+					}
+					return HttpResponse.json(minted);
+				},
+			),
+		);
+		const { client } = renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+		await screen.findByText("audit-1");
+
+		const stale = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: KEY, exact: true });
+		});
+
+		release403?.();
+		await act(async () => {
+			await stale;
+		});
+
+		expect(client.getQueryState([...KEY])?.status).toBe("success");
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+		expect(screen.getByText("audit-1")).toBeTruthy();
+	});
+
+	// The deletion still happens when nothing newer replaced it, unmounted.
+	it("still deletes a refusal that nothing newer replaced, with the view unmounted", async () => {
+		serve(minted);
+		const { client } = renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+		await screen.findByText("audit-1");
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+
+		cleanup();
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				() =>
+					HttpResponse.json(
+						{ code: "permission_denied", message: "refused" },
+						{ status: 403 },
+					),
+			),
+		);
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: KEY, exact: true, type: "all" })
+				.catch(() => undefined);
+		});
+
+		expect(client.getQueryData([...KEY])).toBeUndefined();
 	});
 });

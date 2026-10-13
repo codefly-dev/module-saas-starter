@@ -38,6 +38,15 @@ export function useSourceTriggerDeclaration(orgId: string, sourceId: string) {
 		queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
 		enabled: !!orgId && !!sourceId,
 		queryFn: async () => {
+			// What this fetch is reading, as the lifecycle already records it.
+			// A refusal may only delete the answer it was refused about; if a
+			// newer fetch has written one since, `dataUpdatedAt` has moved and
+			// this fetch's refusal is stale news (issue #1121).
+			const readingAnswerFrom =
+				client.getQueryCache().find({
+					queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
+					exact: true,
+				})?.state.dataUpdatedAt ?? 0;
 			try {
 				return await service.getSourceTriggerDeclaration({ orgId, sourceId });
 			} catch (error) {
@@ -62,14 +71,27 @@ export function useSourceTriggerDeclaration(orgId: string, sourceId: string) {
 				// and says "This source declares no trigger" — a false
 				// statement about a source the viewer may see. A refusal is
 				// evidence about the key it answered, and about no other.
+				//
+				// AND ONLY WHILE IT IS STILL THIS FETCH'S ANSWER TO DELETE. Two
+				// fetches overlap; the older is superseded, answers last and
+				// answers 403, and deleting here erased the newer fetch's
+				// success — leaving status `success`, fetchStatus `idle`, data
+				// undefined and error null, a state no component reads
+				// correctly: the row has no refusal to report and no
+				// declaration to show, so it says a source declares no trigger
+				// when its latest read succeeded. A superseded refusal is stale
+				// news about authority, not current evidence. The deletion
+				// still happens when nothing newer replaced the answer —
+				// including with no component mounted, which is the case this
+				// guard must not swallow.
 				if (!mayKeepRetainedRows(readOutcome(true, error))) {
-					client
-						.getQueryCache()
-						.find({
-							queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
-							exact: true,
-						})
-						?.setState({ data: undefined, dataUpdatedAt: 0 });
+					const entry = client.getQueryCache().find({
+						queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
+						exact: true,
+					});
+					if (entry && entry.state.dataUpdatedAt <= readingAnswerFrom) {
+						entry.setState({ data: undefined, dataUpdatedAt: 0 });
+					}
 				}
 				throw error;
 			}
