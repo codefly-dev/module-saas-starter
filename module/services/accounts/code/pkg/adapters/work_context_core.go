@@ -383,12 +383,88 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 	return token, signed, nil
 }
 
+// reissue re-points a capability its holder PRESENTED at another audience,
+// through core's Reissue: the same owner, task, actor chain, authorization
+// revision, seal and operation binding, in a new session whose
+// parent_session_id is the presented parent's, with the effective authority
+// attenuated when the caller asked for it.
+//
+// It is how an audience exchange is expressed, and it replaced a re-mint from
+// the owner for every path that derives from a presented capability. A re-mint
+// reconstructs the chain from the owner, so what it returns descends from an
+// intermediate this host never released: the capability named a session its
+// holder had never seen, or none at all when the chain was empty. A party
+// holding both the parent and the re-issue could not tell a re-issue OF ITS OWN
+// capability from one of any other capability the same owner holds, so the only
+// safe answer available to it was to refuse every one.
+//
+// Nothing here re-reads and re-stamps the parent's sealed state: core holds it
+// against live state with the verifier's own check, so a capability whose
+// installation, principal epoch, hop execution or binding has moved re-issues
+// nothing. That is also why this attests no execution and names no new binding —
+// both belong to a principal, and a re-issue adds none.
+//
+// A renewal keeps remint. A renewal deliberately outlives the capability
+// presented, and a derivation never can: core clamps a derived capability to its
+// parent's expiry.
+func (s *WorkContextAuthorityServer) reissue(
+	ctx context.Context, parent *workcontext.Verified, audience, replay string,
+	ttl time.Duration, attenuated []*basev0.WorkScopeV1,
+) (string, *basev0.WorkContextV1, error) {
+	if !s.configured() {
+		return "", nil, ErrWorkContextAuthorityUnconfigured
+	}
+	if parent == nil {
+		return "", nil, fmt.Errorf("%w: reissue needs a verified parent", workcontext.ErrInvalid)
+	}
+	if ttl == 0 {
+		ttl = workContextDefaultTTL
+	}
+	claims := parent.Context()
+	// The seal follows the owner, exactly as it does for a re-mint. A person's
+	// capability is sealed to the organization's installation of the audience it
+	// addresses — what an uninstall revokes — so one re-issued for another
+	// audience is sealed to that audience's installation as it stands now, and
+	// refused when the organization has none. Never the parent's: that names
+	// another audience's installation, or one since replaced. A module or
+	// installation principal is sealed to its own installation, which the
+	// audience does not change, so nothing is named for it and the parent's
+	// stands.
+	//
+	// A capability exercising an OPERATION BINDING is the exception, and not an
+	// accommodation: its installation is not the audience's at all but the one
+	// that granted the binding (the source-delegation mint is the only thing
+	// that issues one, and it seals to the module's own installation). A binding
+	// is held within an installation and does not travel, so such a capability
+	// is re-issued within the installation it holds — core refuses the move
+	// outright rather than mint a capability every verifier would refuse.
+	var installation string
+	if claims.GetOwnerPrincipalKind() == business.PrincipalKindHuman && claims.GetOperationBinding() == nil {
+		var err error
+		if installation, err = s.audienceInstallation(ctx, claims.GetTenantId(), audience); err != nil {
+			return "", nil, err
+		}
+	}
+	return s.coreAuthority(claims.GetTenantId(), claims.GetOwnerPrincipalId()).Reissue(ctx, parent, workcontext.ReissueInput{
+		Audience:       audience,
+		Scopes:         attenuated,
+		ReplayPolicy:   replay,
+		TTL:            ttl,
+		InstallationID: installation,
+	})
+}
+
 // remint re-issues a verified capability for a new audience: the same owner,
 // the same chain of hops with the same delegation ids, the last hop's scopes
-// optionally attenuated. It is how an audience exchange and a renewal are
-// expressed on core, which derives only by adding a hop and never extends a
-// window: the capability is minted afresh from its owner, and every hop is
-// re-derived and re-checked against live state rather than copied.
+// optionally attenuated. The capability is minted afresh from its owner, and
+// every hop is re-derived and re-checked against live state rather than copied.
+//
+// It is how a RENEWAL is expressed, and only a renewal. A renewal extends an
+// in-flight capability past the window the presented one has left, which no
+// derivation can do — core clamps a derived capability to its parent's expiry —
+// so a renewal is not derived from what was presented and carries no lineage
+// back to it. Every other path that re-issues a presented capability uses
+// reissue, which does, and the difference is the whole of why both exist.
 //
 // lastExecution attests the last hop's execution when that hop's principal bears
 // one; earlier hops cannot be attested by the caller and must bear none, so a

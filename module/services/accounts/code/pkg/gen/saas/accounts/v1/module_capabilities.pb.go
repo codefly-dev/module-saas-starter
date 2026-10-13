@@ -4312,6 +4312,9 @@ func (x *CheckWorkContextRecordAccessResponse) GetScopeNodeId() string {
 
 // ModuleExchangeDelegatedReadAudienceRequest selects only an installed binding.
 // User identity and authority come exclusively from the signed parent context.
+// The child is derived from that context: it appends no actor hop and its
+// parent_session_id is the parent's Session, so the party that admitted that
+// session can recognise the child as its descendant.
 type ModuleExchangeDelegatedReadAudienceRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	BindingId              string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
@@ -4370,8 +4373,11 @@ func (x *ModuleExchangeDelegatedReadAudienceRequest) GetParentWorkContextToken()
 // The caller presents its authority one of two ways, and exactly one:
 //
 //   - parent_work_context_token, a live capability it already holds. The child
-//     is attenuated against that parent and expires with it, so work that
-//     outlives the parent cannot be authorized this way at all.
+//     is DERIVED from that parent: attenuated against the authority the parent
+//     actually holds, expiring no later than it — so work that outlives the
+//     parent cannot be authorized this way at all — appending no actor hop, and
+//     carrying the parent's Session as its parent_session_id, which is how the
+//     party that admitted that session recognises the child as its descendant.
 //   - delegation_id, a reference to a host-owned, revocable source delegation.
 //     No capability is presented, none is held, and none needs to still be
 //     valid: the host re-checks the delegation live and mints a fresh short

@@ -252,8 +252,18 @@ export const StartRootSessionWorkContextRequestSchema: GenMessage<StartRootSessi
 /**
  * ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,
  * and delegation lineage for another service boundary while attenuating the
- * effective authority to the requested scopes. The reissued capability opens the
- * caller's own authenticated Session, assigned by the issuer.
+ * effective authority to the requested scopes.
+ *
+ * The reissued capability is DERIVED from the one presented. It appends no
+ * actor hop — the holder is the principal the capability already names, and
+ * only the callee and the reach change — and it opens a fresh Session, assigned
+ * by the issuer, whose parent_session_id is the presented capability's Session.
+ * That link is what lets a party holding both tell this reissue from a reissue
+ * of any other capability the same owner holds; equality is not available,
+ * because a derived capability may never reuse its parent's Session. It expires
+ * no later than the capability it came from, and a window beyond that one's is
+ * a renewal (RenewWorkContextRequest), which is minted afresh from the owner
+ * and so descends from nothing the caller presented.
  *
  * @generated from message saas.accounts.v1.ExchangeWorkContextAudienceRequest
  */
