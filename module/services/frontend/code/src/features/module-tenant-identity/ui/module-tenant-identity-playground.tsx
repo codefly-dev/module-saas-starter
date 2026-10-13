@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/empty-state";
 import {
 	readOutcome,
 	readOutcomeMessage,
+	staleReadNotice,
 } from "@/shared/lib/read-outcome";
 import {
 	Badge,
@@ -25,6 +26,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { useModuleTenantIdentity } from "../service/queries";
 
@@ -73,7 +75,14 @@ export function ModuleTenantIdentityPlayground() {
 	// A disabled query is not a loading one: with a field empty it sits at
 	// isPending with an idle fetch status, and a wait for a read that was never
 	// issued is a spinner that never resolves.
-	const waiting = read.isPending && read.fetchStatus !== "idle";
+	const phase = useLoadingPhase(read.isFetching);
+	const waiting = phase.indicator || phase.quiet;
+	const stale = answer
+		? staleReadNotice(
+				outcome,
+				"this module’s authority and issued capabilities",
+			)
+		: null;
 
 	return (
 		<div className="space-y-6">
@@ -140,11 +149,22 @@ export function ModuleTenantIdentityPlayground() {
 						</Button>
 					</div>
 
-					{waiting ? (
-						<DelayedLoading active label="Resolving the declared authority" />
-					) : outcome !== "empty" ? (
+					<DelayedLoading
+						active={read.isFetching}
+						label="Resolving the declared authority"
+					/>
+					{stale && (
 						<p role="status" className="text-sm text-muted-foreground">
-							{readOutcomeMessage(outcome, "this module's declared authority", "")}
+							{stale}
+						</p>
+					)}
+					{waiting ? null : outcome !== "empty" && !answer ? (
+						<p role="status" className="text-sm text-muted-foreground">
+							{readOutcomeMessage(
+								outcome,
+								"this module's declared authority",
+								"",
+							)}
 						</p>
 					) : !answer ? (
 						<EmptyState
@@ -166,12 +186,24 @@ export function ModuleTenantIdentityPlayground() {
 					<CardDescription>
 						Every mint is recorded, and the record is the only trace: a
 						capability lives about a minute and nothing caches one. A reference
-						that no longer resolves shows up as the next mint having no row
-						here at all.
+						that no longer resolves shows up as the next mint having no row here
+						at all.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
-					{!answer || answer.recent.length === 0 ? (
+					<DelayedLoading
+						active={read.isFetching}
+						label="Reading issued capabilities"
+					/>
+					{waiting ? null : !answer ? (
+						<p role="status" className="text-sm text-muted-foreground">
+							{readOutcomeMessage(
+								outcome,
+								"issued capabilities",
+								"Complete the selection above to read issued capabilities.",
+							)}
+						</p>
+					) : answer.recent.length === 0 ? (
 						<p
 							role="status"
 							className="py-6 text-center text-sm text-muted-foreground"
@@ -246,7 +278,11 @@ function Minted({
 					label="Lifetime"
 					value={`${identity.lifetimeSeconds.toString()} seconds`}
 				/>
-				<Fact label="Authorization revision" value={identity.revision.toString()} mono />
+				<Fact
+					label="Authorization revision"
+					value={identity.revision.toString()}
+					mono
+				/>
 				<Fact
 					label="Tenancy"
 					value={
@@ -260,16 +296,19 @@ function Minted({
 				<p className="text-xs text-muted-foreground">
 					Scopes, as this organization&apos;s installation narrowed them
 				</p>
-				<p className="font-mono text-xs break-all" data-slot="module-tenant-scopes">
+				<p
+					className="font-mono text-xs break-all"
+					data-slot="module-tenant-scopes"
+				>
 					{identity.scopes.join(", ") || "—"}
 				</p>
 			</div>
 			<p className="text-xs text-muted-foreground">
 				The owner is the module&apos;s own service principal and it acts
-				directly: no person, and no actor hop. The scopes are the
-				binding&apos;s <code>headless_scopes</code> narrowed by this
-				organization&apos;s installation scope, never the{" "}
-				<code>invoke_scopes</code> it holds for work a person asked for.
+				directly: no person, and no actor hop. The scopes are the binding&apos;s{" "}
+				<code>headless_scopes</code> narrowed by this organization&apos;s
+				installation scope, never the <code>invoke_scopes</code> it holds for
+				work a person asked for.
 			</p>
 		</div>
 	);

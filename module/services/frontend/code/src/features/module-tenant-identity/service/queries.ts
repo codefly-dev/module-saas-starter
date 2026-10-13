@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePlatformAdminService } from "@/lib/hooks/use-api-client";
+import { mayKeepRetainedRows, readOutcome } from "@/shared/lib/read-outcome";
 
 /**
  * The read behind the per-tenant module identity playground.
@@ -20,10 +21,27 @@ export function useModuleTenantIdentity(
 	organizationId: string,
 ) {
 	const service = usePlatformAdminService();
+	const client = useQueryClient();
 	return useQuery({
 		queryKey: ["module-tenant-identity", prefix, binding, organizationId],
 		enabled: !!prefix && !!binding && !!organizationId,
-		queryFn: () =>
-			service.resolveModuleTenantIdentity({ prefix, binding, organizationId }),
+		queryFn: async () => {
+			try {
+				return await service.resolveModuleTenantIdentity({
+					prefix,
+					binding,
+					organizationId,
+				});
+			} catch (error) {
+				if (!mayKeepRetainedRows(readOutcome(true, error))) {
+					for (const query of client
+						.getQueryCache()
+						.findAll({ queryKey: ["module-tenant-identity"] })) {
+						query.setState({ data: undefined, dataUpdatedAt: 0 });
+					}
+				}
+				throw error;
+			}
+		},
 	});
 }

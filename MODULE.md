@@ -265,8 +265,8 @@ not per deployment. That is what a consumer admitting a publication for a tenant
 reads the publisher's tenant from.
 `PlatformAdminService/ResolveModuleTenantIdentity` and
 `/admin/platform/module-identity` answer what one mint would assert, or why it
-would be refused, and issue nothing; the client-side gap that still stops a
-module reaching it (`saas-sdk-go/moduleauthority` takes no tenant) is named in
+would be refused, and issue nothing. The existing client selects one tenant
+through `Credentials.OrganizationID`; its operation-mint wiring is described in
 [WORK_CONTEXTS.md](./module/WORK_CONTEXTS.md#a-module-identity-minted-for-one-tenant).
 
 ## The host as an OAuth 2.1 authorization server

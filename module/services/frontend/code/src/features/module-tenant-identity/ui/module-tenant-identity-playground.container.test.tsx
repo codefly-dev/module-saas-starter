@@ -122,7 +122,9 @@ describe("ModuleTenantIdentityPlayground", () => {
 
 		// The trail of capabilities actually issued, which is the only record of
 		// one: nothing caches a capability.
-		expect(document.querySelectorAll('[data-slot="module-tenant-mint"]')).toHaveLength(1);
+		expect(
+			document.querySelectorAll('[data-slot="module-tenant-mint"]'),
+		).toHaveLength(1);
 
 		// And the whole point: one request, the resolution, carrying the triple
 		// — and no mint anywhere.
@@ -152,5 +154,84 @@ describe("ModuleTenantIdentityPlayground", () => {
 		expect(
 			document.querySelector('[data-slot="module-tenant-identity"]'),
 		).toBeNull();
+	});
+});
+
+describe("independent review: authority read outcomes", () => {
+	it("does not claim no issued capabilities before a read", () => {
+		renderInApp(<ModuleTenantIdentityPlayground />);
+		expect(screen.queryByText(/No capability has been issued/)).toBeNull();
+	});
+	it("removes issued capability rows after a forbidden refetch", async () => {
+		serve(minted);
+		renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+		await screen.findByText("audit-1");
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				() =>
+					HttpResponse.json(
+						{
+							code: "permission_denied",
+							message: "requires platform super_admin role",
+						},
+						{ status: 403 },
+					),
+			),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Resolve again" }));
+		await screen.findAllByText(/not allowed|permission|cannot view|access/i);
+		expect(screen.queryByText("audit-1")).toBeNull();
+	});
+	it("does not restore a forbidden snapshot after a later unavailable read", async () => {
+		serve(minted);
+		renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+		await screen.findByText("audit-1");
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				() =>
+					HttpResponse.json(
+						{ code: "permission_denied", message: "refused" },
+						{ status: 403 },
+					),
+			),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Resolve again" }));
+		await screen.findAllByText(/don't have permission/);
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				() =>
+					HttpResponse.json(
+						{ code: "unavailable", message: "unavailable" },
+						{ status: 503 },
+					),
+			),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Resolve again" }));
+		await screen.findAllByText(/Couldn't load/);
+		expect(screen.queryByText("audit-1")).toBeNull();
+	});
+	it("retains a successful answer with a notice on transient failure", async () => {
+		serve(minted);
+		renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+		await screen.findByText("audit-1");
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				() =>
+					HttpResponse.json(
+						{ code: "unavailable", message: "unavailable" },
+						{ status: 503 },
+					),
+			),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Resolve again" }));
+		await screen.findByText(/may be out of date/);
+		expect(screen.getByText("audit-1")).toBeTruthy();
 	});
 });

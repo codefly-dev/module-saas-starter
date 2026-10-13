@@ -581,14 +581,28 @@ surface that answered an operator with a module's capability would be a second
 spelling of that module's identity. So the read resolves the decision from the
 same declared facts and stops before the signature.
 
-**What is still owed elsewhere.** The host accepts the organization on both
-mints and the gateway relays it, but the published module-authority client's
-`ModuleWorkContext(ctx)` and `MintModuleOperationContext(ctx, binding)` take no
-tenant — so a module consuming that client mints one identity for the whole
-deployment and cannot name an organization at all. That is a client-side gap in
-`saas-sdk-go/moduleauthority`, not here, and until it closes a module cannot
-reach this capability through the client it is given. Nothing in this repository
-works around it.
+**Selecting a tenant through the published client.**
+`saas-sdk-go/moduleauthority` already exposes `Credentials.OrganizationID`
+(including v0.1.0). Construct a separate client for each organization: both
+`ModuleWorkContext` and `MintModuleOperationContext` send that selector. For an
+outbound operation use `MintModuleOperationContext` with the installed binding;
+`ModuleWorkContext` addresses the host's capability broker and is not authority
+to call a different audience. The operation result names its tenant and
+principal; a publisher must hold that tenant to its committed change and use
+that principal as its source. This is consumer wiring, not a missing mint.
+
+**What this repository does not exercise.** `qualification/module-authority`
+still pins `v0.0.3-0.20261011073356-ac003d53e6b1`, a pre-0.1.0 pseudo-version
+whose mints take no organization at all — so the per-tenant mint is proved
+against this host's own seam and not through the published client. Raising that
+pin, with a qualification case that mints for two organizations through it, is
+the gap that remains here.
+
+The operator page and its issued-capability trail distinguish a read not yet
+requested, loading, a failed read and a successful empty result. A forbidden
+read clears retained identity snapshots, so later refresh failures cannot
+redisplay authority the viewer was refused. Transient failures retain a prior
+successful answer with a stale-data notice.
 
 ## Operation contexts from a source delegation
 

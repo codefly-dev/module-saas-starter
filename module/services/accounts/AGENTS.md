@@ -1065,8 +1065,9 @@ browser has none, and a surface that answered an operator with a module's
 capability would be a second spelling of that module's identity. The playground
 is `/admin/platform/module-identity`.
 
-The client-side gap that still stops a module reaching this —
-`saas-sdk-go/moduleauthority` takes no tenant on either mint — is named in
+The published client selects the tenant through `Credentials.OrganizationID`,
+using a separate client per organization. Outbound calls use the installed
+operation binding through `MintModuleOperationContext`, as described in
 [WORK_CONTEXTS.md](../WORK_CONTEXTS.md#a-module-identity-minted-for-one-tenant).
 
 ## Subject visibility is a projection, not a module's own vocabulary
