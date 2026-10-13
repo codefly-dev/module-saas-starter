@@ -60,11 +60,12 @@ adding a REST-enabled RPC means editing it. Do not go looking for a generator.
 ## Go suites
 
 Every Go service here carries **its own `go.mod`** — `accounts`, `auth-gateway`,
-`store`, `telemetry` — and `tools` is another, with **no `go.work`** tying them
-together. So `go test ./...` only ever covers the module you run it in, and a
-service's suite is outside whatever you run from the tree root. The canonical
-repository adds its own root module (the module agent, the host, and the generated
-reference composition), for six in total; a consumer's root module is its own.
+`policy-log`, `store` and `telemetry` — and `tools` is another, with **no `go.work`**
+tying them together. The canonical repository also carries the root module agent,
+`qualification/module-authority` and `libraries/source-read-sdk/go`. Inventory
+tracked manifests with `git ls-files '*go.mod'`; a root `go test ./...` covers
+only the root module, not the service, tool, qualification or library suites.
+A consumer's root module is its own.
 
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.
@@ -82,13 +83,18 @@ each invocation fresh database state. Do not opt into `WithSharedControlChannel`
 which is only for older CLIs and reuses fixed local database directories across
 otherwise independent runs and migration revisions.
 
-Core is pinned per Go module. The host's five services (accounts, auth-gateway,
-policy-log, store, telemetry) run one core release, v0.19.3, which carries the
-issuer-side `Authority.ReadBack`. The module agent (the root module),
-`module/tools` and the module-authority qualification module stay on released
-v0.18.0. Never ship a host release on an untagged pseudo-version. Run
-qualification with `GOWORK=off` so a developer workspace cannot mask the pinned
-dependency.
+Core is pinned per Go module. All eight modules that require it — the five Go
+services, the root module agent, `module/tools` and module-authority qualification
+— pin released v0.19.4. It retains issuer-side `Authority.ReadBack` and corrects
+the dependency graph for stable client-go v0.37.1: no structured-merge-diff/v7
+edge and no kube-openapi requirement newer than
+`v0.0.0-20260721132016-d427ff9ee9ad`. A successful pruned graph with no visible v7
+edge alone is insufficient; check both conditions and compile the client-go
+consumer. The source-read SDK has no direct Core requirement; its existing
+SDK dependency selects Core v0.2.33 transitively, but its build and test package
+graph compiles no Core package. This is not an all-module selection claim.
+Never ship on an untagged Core pseudo-version. Run qualification
+with `GOWORK=off` so a developer workspace cannot mask the pinned dependency.
 Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.54,
 whose builder uses Go 1.27.2 under `GOTOOLCHAIN=local`; CI uses the same patch.
 Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).
@@ -102,7 +108,7 @@ Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-Accounts, auth-gateway, policy-log, store and telemetry use released SDK v0.3.1;
+Accounts, auth-gateway, policy-log, store and telemetry use released SDK v0.4.0;
 accounts must not retain the pre-release SDK SHA from the callable-source
 development branch. Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local
