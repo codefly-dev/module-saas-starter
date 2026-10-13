@@ -366,6 +366,11 @@ func parseModuleEnvelopePrincipal(prefix string, wire moduleEnvelopePrincipalWir
 		return ModuleEnvelopePrincipal{}, err
 	}
 	grant := wire.Grant.grant(prefix)
+	// The install-step queue is the host's own: its jobs are other solutions'
+	// install steps, and a module granted it could claim and complete one.
+	if slices.Contains(grant.Queues, InstallationStepQueue) {
+		return ModuleEnvelopePrincipal{}, fmt.Errorf("principal %q is granted the queue %q, which is the host's own and is granted to no module", prefix, InstallationStepQueue)
+	}
 	tenant, err := canonicalModuleTenant(prefix, grant.Tenant)
 	if err != nil {
 		return ModuleEnvelopePrincipal{}, err
@@ -683,6 +688,9 @@ func (s *Service) PutModuleEnvelope(
 	entry := &PolicyLogEntry{OperationID: newPolicyLogOperationID("module-envelope"),
 		Decision: PolicyLogNarrowed, SubjectKind: PolicyLogModuleEnvelope, SubjectID: "module-envelope",
 		Policy: policy, EnvelopeRevision: envelope.Revision, Actor: actorID}
+	// witnessed is set before apply runs under the policy log; apply refuses
+	// to revoke anything while it is false.
+	witnessed := false
 	apply := func(ctx context.Context) error {
 		if err := s.moduleEnvelopes.AppendModuleEnvelopeRecord(ctx, record, expectedRevision); err != nil {
 			return err
@@ -694,6 +702,13 @@ func (s *Service) PutModuleEnvelope(
 		for _, installation := range installations {
 			if installationTenancyAllowed(envelope, installation.PrincipalID, installation.OrgID) {
 				continue
+			}
+			// An installation acknowledged between the classification and
+			// this transaction is found here and nowhere else. Revoking it is
+			// a narrowing, so the write that was classified a pure grant
+			// stops and is taken again under the witness.
+			if !witnessed {
+				return errModuleEnvelopeNarrowsAfterAll
 			}
 			if err := s.uninstallSolutionTx(ctx, actorID, "user", installation.OrgID, installation.ID); err != nil {
 				return err
@@ -716,11 +731,19 @@ func (s *Service) PutModuleEnvelope(
 	if err != nil {
 		return nil, err
 	}
-	write := apply
-	if narrows {
-		write = func(ctx context.Context) error { return s.WithPolicyLoggedNarrowing(ctx, entry, apply) }
-	} else {
-		write = func(ctx context.Context) error { return s.store.WithControlPlane(ctx, apply) }
+	underWitness := func(ctx context.Context) error {
+		witnessed = true
+		return s.WithPolicyLoggedNarrowing(ctx, entry, apply)
+	}
+	write := underWitness
+	if !narrows {
+		write = func(ctx context.Context) error {
+			err := s.store.WithControlPlane(ctx, apply)
+			if errors.Is(err, errModuleEnvelopeNarrowsAfterAll) {
+				return underWitness(ctx)
+			}
+			return err
+		}
 	}
 	if err := write(ctx); err != nil {
 		if errors.Is(err, ErrModuleEnvelopeConflict) {
@@ -743,6 +766,11 @@ func (s *Service) PutModuleEnvelope(
 // one; the refusal is Unavailable because the caller's retry succeeds once it
 // has.
 var ErrModuleRegistryStale = errors.New("the module registry predates the committed module envelope")
+
+// errModuleEnvelopeNarrowsAfterAll stops an envelope write that was classified
+// a pure grant and then found something to revoke. It never leaves this file:
+// the write is retried under the witness.
+var errModuleEnvelopeNarrowsAfterAll = errors.New("the envelope write revokes an installation and was not witnessed")
 
 // moduleRegistrySnapshot is the installed registry and the envelope revision
 // it was derived from, loaded ONCE. A decision reads its grant from this value
@@ -858,12 +886,60 @@ func (s *Service) currentModuleGrantFromSnapshot(
 			return ModulePrincipalGrant{}, false, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
 				"principal %s: a newer module envelope is committed than the registry was derived from", principalID)
 		}
+		if s.deliveredSince(ctx, snapshot) {
+			s.requestRegistryPass()
+			return ModulePrincipalGrant{}, false, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+				"principal %s: a document was delivered after the registry was derived", principalID)
+		}
 		return ModulePrincipalGrant{}, false, nil
 	}
 	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
 		return ModulePrincipalGrant{}, true, err
 	}
 	return grant, true, nil
+}
+
+// deliveredSince reports that the delivery inbox holds a document the registry
+// in snapshot was derived without.
+//
+// It is the delivery half of the envelope fence above, for the one answer that
+// fence does not cover. A principal the registry does not hold is "not a
+// declared module principal" — a judgement, which ends the workload that asked.
+// That is right when nothing declares it and wrong for the moment between a
+// document being accepted and the pass it requested finishing: the host has
+// been told, and has not yet read what it was told. A workload that starts
+// beside its own delivery asks in exactly that moment, and it must hear "not
+// established yet", which it retries, rather than a refusal.
+//
+// Durable and per replica, like the fence: the inbox is in the store and each
+// replica derives its own registry, so the comparison is between the snapshot
+// this decision reads and the store, never between two in-memory views.
+//
+// Nothing is granted here and nothing is widened. The only answer it changes
+// is which refusal an undeclared principal hears, and only while a delivered
+// document is unread. A document that has been read and grants this principal
+// nothing leaves the count equal, and the answer is the judgement it always
+// was. Delivery is authenticated and signed, so a caller cannot manufacture
+// the condition. Where the registry carries no marker — it was stated
+// directly, or published degraded — or the inbox cannot be counted, the answer
+// is unchanged.
+func (s *Service) deliveredSince(ctx context.Context, snapshot *installedModuleRegistry) bool {
+	if snapshot == nil || snapshot.delivered == nil {
+		return false
+	}
+	counter, counts := s.deliveryStore.(SolutionDeliveryCounter)
+	if !counts {
+		return false
+	}
+	var delivered uint64
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		delivered, err = counter.CountDeliveredDocuments(ctx)
+		return err
+	}); err != nil {
+		return false
+	}
+	return delivered > *snapshot.delivered
 }
 
 // ModuleInstallationConsent identifies the rows a tenancy change may revoke.
@@ -880,171 +956,159 @@ func installationTenancyAllowed(envelope *ModuleEnvelope, principalID, orgID str
 }
 
 // moduleEnvelopeNarrows reports whether writing next would take authority away
-// from anyone: a build or a principal the current envelope approves that next
-// does not, a principal whose section changed at all (a changed section may
-// drop a binding, a workload or a ceiling, and the conservative reading of a
-// change is a narrowing), or an installation next would uninstall. A host with
-// no envelope has granted nothing, so its first envelope narrows nothing.
+// from anyone, and it is the boundary of the one write that skips the
+// policy-log witness, so it recognises a pure grant and calls everything else a
+// narrowing.
+//
+// A pure grant is exactly this, against the envelope in force: every approved
+// build is still approved, every principal is still there with a section that
+// is the same JSON value, every other top-level key is the same JSON value,
+// and no installation loses its organization. What may differ is the
+// revision, builds that were added, and whole principals that were added.
+//
+// A principal's section is compared for equality and never for "at least as
+// much". The schema does not let more JSON mean more authority: a resource
+// list that appears narrows an audience that was unrestricted, a required
+// kind that appears refuses artifacts that passed, a tenant that is set
+// removes every other organization, and a unit that gains a field is a
+// different unit under core's whole-unit containment. A comparison that tried
+// to tell those apart would be a second copy of every rule that reads the
+// envelope, wrong whenever one of them moved. So a changed section is a
+// narrowing, whatever changed.
+//
+// A host with no envelope has granted nothing, so its first envelope narrows
+// nothing an envelope granted; installations are still checked.
 func (s *Service) moduleEnvelopeNarrows(ctx context.Context, next *ModuleEnvelope, nextDocument []byte) (bool, error) {
-	var current *ModuleEnvelopeRecord
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var err error
-		current, err = s.moduleEnvelopes.LatestModuleEnvelopeRecord(ctx)
-		return err
-	}); err != nil {
-		return false, err
-	}
-	if current != nil {
-		var before, after moduleEnvelopeWire
-		if err := json.Unmarshal(current.Document, &before); err != nil {
-			return true, nil
+	narrows := false
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		current, err := s.moduleEnvelopes.LatestModuleEnvelopeRecord(ctx)
+		if err != nil {
+			return err
 		}
-		if err := json.Unmarshal(nextDocument, &after); err != nil {
-			return true, nil
+		if current != nil && !moduleEnvelopeOnlyAdds(current.Document, nextDocument) {
+			narrows = true
+			return nil
 		}
-		approved := make(map[solutionhost.ImageDigest]bool, len(after.ApprovedBuilds))
-		for _, build := range after.ApprovedBuilds {
-			approved[build] = true
+		// Inside the control plane, like the apply's own read: outside it a
+		// row policy hides every installation, and the answer is "none lose
+		// anything" for the wrong reason.
+		installations, err := s.moduleEnvelopes.ModuleInstallations(ctx)
+		if err != nil {
+			return err
 		}
-		for _, build := range before.ApprovedBuilds {
-			if !approved[build] {
-				return true, nil
+		for _, installation := range installations {
+			if !installationTenancyAllowed(next, installation.PrincipalID, installation.OrgID) {
+				narrows = true
+				return nil
 			}
 		}
-		for prefix, was := range before.Principals {
-			is, kept := after.Principals[prefix]
-			if !kept {
-				return true, nil
-			}
-			wasJSON, err := json.Marshal(was)
-			if err != nil {
-				return true, nil
-			}
-			isJSON, err := json.Marshal(is)
-			if err != nil {
-				return true, nil
-			}
-			var wasValue, isValue any
-			if json.Unmarshal(wasJSON, &wasValue) != nil || json.Unmarshal(isJSON, &isValue) != nil {
-				return true, nil
-			}
-			if !envelopeValueWidens(wasValue, isValue) {
-				return true, nil
-			}
-		}
-	}
-	installations, err := s.moduleEnvelopes.ModuleInstallations(ctx)
-	if err != nil {
-		return false, err
-	}
-	for _, installation := range installations {
-		if !installationTenancyAllowed(next, installation.PrincipalID, installation.OrgID) {
-			return true, nil
-		}
-	}
-	return false, nil
+		return nil
+	})
+	return narrows, err
 }
 
-// envelopeValueWidens reports whether after grants at least everything before
-// did, over the envelope's JSON shape: every key of an object is kept and
-// widened; a list keeps every element (lists of objects match by their
-// identifying field, scalar lists by value); a true stays true; a string stays
-// the same, except that an empty one may be set. Anything else — a key gone, an
-// element gone, a value changed — is read as a narrowing, so the witness is
-// required for it.
-func envelopeValueWidens(before, after any) bool {
-	switch was := before.(type) {
-	case map[string]any:
-		is, ok := after.(map[string]any)
-		if !ok {
+// moduleEnvelopeOnlyAdds reports that after is before plus approved builds
+// and whole principals, and nothing else: see moduleEnvelopeNarrows. Anything
+// it cannot read as that — a document that does not decode, a key it does not
+// know — is not an addition.
+func moduleEnvelopeOnlyAdds(before, after []byte) bool {
+	was, ok := envelopeTopLevel(before)
+	if !ok {
+		return false
+	}
+	is, ok := envelopeTopLevel(after)
+	if !ok {
+		return false
+	}
+	for key := range was {
+		if _, kept := is[key]; !kept {
 			return false
 		}
-		for key, value := range was {
-			next, kept := is[key]
-			if !kept {
-				return envelopeValueEmpty(value)
+	}
+	for key, value := range is {
+		switch key {
+		case "revision":
+		case "approved_builds":
+			if !envelopeBuildsKept(was[key], value) {
+				return false
 			}
-			if !envelopeValueWidens(value, next) {
+		case "principals":
+			if !envelopePrincipalsKept(was[key], value) {
+				return false
+			}
+		default:
+			previous, existed := was[key]
+			if !existed || !sameJSONValue(previous, value) {
 				return false
 			}
 		}
-		return true
-	case []any:
-		is, ok := after.([]any)
-		if !ok {
+	}
+	return true
+}
+
+func envelopeTopLevel(document []byte) (map[string]json.RawMessage, bool) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(document, &top); err != nil || top == nil {
+		return nil, false
+	}
+	return top, true
+}
+
+func envelopeBuildsKept(before, after json.RawMessage) bool {
+	var was, is []string
+	if len(before) > 0 && json.Unmarshal(before, &was) != nil {
+		return false
+	}
+	if len(after) > 0 && json.Unmarshal(after, &is) != nil {
+		return false
+	}
+	for _, build := range was {
+		if !slices.Contains(is, build) {
 			return false
 		}
-		for _, element := range was {
-			if !envelopeListKeeps(is, element) {
-				return false
-			}
-		}
-		return true
-	case bool:
-		is, ok := after.(bool)
-		return ok && (!was || is)
-	case string:
-		is, ok := after.(string)
-		return ok && (was == "" || was == is)
-	case float64:
-		is, ok := after.(float64)
-		return ok && was == is
-	case nil:
-		return true
 	}
-	return false
+	return true
 }
 
-// envelopeListKeeps reports whether list keeps element: an object by its
-// identifying field (id, resource_kind, spiffe_id) and widened, a scalar by
-// value.
-func envelopeListKeeps(list []any, element any) bool {
-	object, isObject := element.(map[string]any)
-	for _, candidate := range list {
-		if !isObject {
-			if envelopeValueWidens(element, candidate) && envelopeValueWidens(candidate, element) {
-				return true
-			}
-			continue
-		}
-		other, ok := candidate.(map[string]any)
-		if !ok {
-			continue
-		}
-		identified := false
-		same := true
-		for _, key := range []string{"id", "resource_kind", "spiffe_id"} {
-			if value, exists := object[key]; exists {
-				identified = true
-				if other[key] != value {
-					same = false
-				}
-			}
-		}
-		if identified && same && envelopeValueWidens(object, other) {
-			return true
-		}
-		if !identified && envelopeValueWidens(object, other) && envelopeValueWidens(other, object) {
-			return true
+func envelopePrincipalsKept(before, after json.RawMessage) bool {
+	var was, is map[string]json.RawMessage
+	if len(before) > 0 && json.Unmarshal(before, &was) != nil {
+		return false
+	}
+	if len(after) > 0 && json.Unmarshal(after, &is) != nil {
+		return false
+	}
+	for prefix, section := range was {
+		kept, exists := is[prefix]
+		if !exists || !sameJSONValue(section, kept) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
-func envelopeValueEmpty(value any) bool {
-	switch typed := value.(type) {
-	case nil:
-		return true
-	case string:
-		return typed == ""
-	case bool:
-		return !typed
-	case float64:
-		return typed == 0
-	case []any:
-		return len(typed) == 0
-	case map[string]any:
-		return len(typed) == 0
+// sameJSONValue reports that two encodings are one JSON value: key order and
+// whitespace aside, every member, element and number literal equal. Numbers
+// are compared as written, so two revisions past 2^53 that a float would fold
+// together stay different.
+func sameJSONValue(a, b json.RawMessage) bool {
+	canonical := func(raw json.RawMessage) ([]byte, bool) {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		var value any
+		if err := decoder.Decode(&value); err != nil {
+			return nil, false
+		}
+		if decoder.More() {
+			return nil, false
+		}
+		encoded, err := json.Marshal(value)
+		return encoded, err == nil
 	}
-	return false
+	left, ok := canonical(a)
+	if !ok {
+		return false
+	}
+	right, ok := canonical(b)
+	return ok && bytes.Equal(left, right)
 }

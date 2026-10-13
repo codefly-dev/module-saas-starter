@@ -148,3 +148,32 @@ func TestInstallationStepRefusesAScopeNamingTheStepItself(t *testing.T) {
 	}})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
+
+// The step's kind is the issuer's to stamp on every path. An ordinary
+// installation task that could name it would carry a second spelling of "run
+// this installation's install step" — on another installation's id.
+func TestNoInstallationMintAcceptsAScopeNamingTheInstallStep(t *testing.T) {
+	for _, kind := range []string{"installations", "Installations", "INSTALLATIONS"} {
+		for name, ceiling := range map[string][]string{"a ceiling naming the kind": {"doc", "installations"}, "no ceiling": nil} {
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				facts := healthyInstallationFacts()
+				facts.Actor.AllowedScopes = ceiling
+				server := newInstallationMintServer(t, facts, nil)
+				t.Cleanup(func() { SetInternalToken("") })
+				req := installTaskRequest()
+				req.AuthorityScopes = []*gen.WorkContextScope{{
+					ResourceKind: kind, Actions: []string{InstallationStepAction}, ResourceIds: []string{"another-installation"},
+				}}
+				_, err := server.StartInstallationTask(installInternalContext(), req)
+				require.Equal(t, codes.InvalidArgument, status.Code(err), "an ordinary installation task minted the install step's scope: %v", err)
+
+				step := installTaskRequest()
+				step.TaskId = installID
+				_, err = server.signInstallationStep(context.Background(), step, facts, []*basev0.WorkScopeV1{{
+					ResourceKind: kind, Actions: []string{InstallationStepAction}, ResourceIds: []string{"another-installation"},
+				}})
+				require.Equal(t, codes.InvalidArgument, status.Code(err))
+			})
+		}
+	}
+}

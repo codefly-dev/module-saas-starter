@@ -98,6 +98,14 @@ func (s *Service) ModuleAuthorizeWorkContext(
 	}
 	installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: identity.PrincipalID, BoundOrg: identity.Tenant})
 	if err != nil {
+		if errors.Is(err, errModuleInstalledNowhere) {
+			// Proven, admitted, and installed nowhere: a precondition this
+			// workload waits on, not a judgement of it. Only here — a
+			// capability's use and a headless operation have no install step
+			// to wait for, and hear the refusal.
+			return ModuleWorkContextAuthority{}, wrapStatus(codes.FailedPrecondition, errModuleInstalledNowhere,
+				"principal %s in organization %s", identity.PrincipalID, identity.Tenant)
+		}
 		return ModuleWorkContextAuthority{}, err
 	}
 	identity.InstallationID, identity.InstallationRevision, identity.ProducerEpoch = installed.InstallationID, installed.InstallationRevision, installed.ProducerEpoch

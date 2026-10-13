@@ -304,6 +304,10 @@ func (s *Service) moduleRegistryFenced() bool {
 type installedModuleRegistry struct {
 	registry         ModulePrincipalRegistry
 	envelopeRevision uint64
+	// delivered is the size of the delivery inbox this registry was derived
+	// from, nil when it was not derived from a counted read of it. See
+	// deliveredSince.
+	delivered *uint64
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
@@ -353,8 +357,14 @@ func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 // revision. Callers must derive the entries from that revision before publishing;
 // this operation does not infer or advance a revision from the current database.
 func (s *Service) InstallDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64) {
+	s.installDerivedModulePrincipals(registry, envelopeRevision, nil)
+}
+
+// installDerivedModulePrincipals is InstallDerivedModulePrincipals carrying the
+// size of the delivery inbox the registry was derived from.
+func (s *Service) installDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64) {
 	s.observeModuleEnvelopeRevision(envelopeRevision)
-	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision})
+	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision, delivered: delivered})
 }
 
 // observeModuleEnvelopeRevision records that a revision is committed. It only

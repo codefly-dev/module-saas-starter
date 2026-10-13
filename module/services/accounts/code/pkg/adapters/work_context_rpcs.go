@@ -820,6 +820,12 @@ func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, r
 	if facts.Actor == nil {
 		return nil, status.Error(codes.Internal, "installation authority resolved without an agent actor")
 	}
+	// The step's kind is the issuer's to stamp on every path, not only the
+	// one that stamps it: an ordinary task that could name it would carry a
+	// second spelling of "run this installation's install step".
+	if err := refuseInstallationStepKind(scopes); err != nil {
+		return nil, err
+	}
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
@@ -833,6 +839,17 @@ const (
 	InstallationStepResourceKind = "installations"
 	InstallationStepAction       = "install"
 )
+
+// refuseInstallationStepKind refuses a caller-supplied scope that names the
+// install step's kind, however it is cased or padded.
+func refuseInstallationStepKind(scopes []*basev0.WorkScopeV1) error {
+	for _, scope := range scopes {
+		if strings.EqualFold(strings.TrimSpace(scope.GetResourceKind()), InstallationStepResourceKind) {
+			return status.Errorf(codes.InvalidArgument, "an installation's scope may not name %q: the install step's own scope is the host's to add", InstallationStepResourceKind)
+		}
+	}
+	return nil
+}
 
 // signInstallationStep signs the capability an install step is delivered
 // under: the installation's own scopes, held to the agent's ceiling exactly as
@@ -853,10 +870,8 @@ func (s *WorkContextAuthorityServer) signInstallationStep(ctx context.Context, r
 	}
 	// Before the ceiling, so the refusal names what is wrong with the scope
 	// rather than what the agent may not hold.
-	for _, scope := range scopes {
-		if scope.GetResourceKind() == InstallationStepResourceKind {
-			return nil, status.Errorf(codes.InvalidArgument, "an installation's scope may not name %q: the install step's own scope is the host's to add", InstallationStepResourceKind)
-		}
+	if err := refuseInstallationStepKind(scopes); err != nil {
+		return nil, err
 	}
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err

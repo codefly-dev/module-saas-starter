@@ -162,3 +162,18 @@ func (s *PostgresStore) ListDeliveredDocuments(
 }
 
 var _ business.SolutionDeliveryStore = (*PostgresStore)(nil)
+
+// CountDeliveredDocuments is how many documents the inbox holds, of every kind.
+//
+// The inbox is append-only — a generation is inserted once and never rewritten
+// or removed — so the count only grows, and it grows exactly when a document a
+// registry pass has not read yet arrives. That makes it the marker a registry
+// snapshot is compared with: see business.Service.deliveredSince.
+func (s *PostgresStore) CountDeliveredDocuments(ctx context.Context) (uint64, error) {
+	var count int64
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx,
+		`SELECT count(*) FROM public.solution_delivery_documents`).Scan(&count); err != nil {
+		return 0, err
+	}
+	return uint64(count), nil
+}

@@ -349,6 +349,14 @@ func TestGateway_ModuleWorkContext_RelaysAccountsOutcome(t *testing.T) {
 	}
 }
 
+// asWorkload marks a request as arrived on the workload endpoint from peer, as
+// the mutual-TLS listener's middleware does once it has verified the peer.
+func asWorkload(req *http.Request, peer string) *http.Request {
+	return req.WithContext(context.WithValue(req.Context(), workloadPeerKey{}, peer))
+}
+
+const testWorkloadPeer = "spiffe://cluster.local/ns/cell-documents/sa/backend"
+
 // The dynamic half of a registration travels with the mint, to accounts, under
 // the projected token that proves who reports it. The gateway forwards it and
 // decides nothing about it beyond its shape.
@@ -358,7 +366,7 @@ func TestGateway_ModuleWorkContext_ForwardsTheReportedOriginAndManifest(t *testi
 	req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
 	req.Body = io.NopCloser(strings.NewReader(`{"prefix":"documents","upstream":"https://backend.cell-documents.svc.cluster.local:8080","manifest":"{\"id\":\"documents\"}"}`))
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
+	gw.ServeHTTP(w, asWorkload(req, testWorkloadPeer))
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "https://backend.cell-documents.svc.cluster.local:8080", mint.lastUpstream)
@@ -389,6 +397,27 @@ func TestGateway_ModuleWorkContext_RefusesAnOriginThatIsNotOne(t *testing.T) {
 			req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
 			req.Body = io.NopCloser(bytes.NewReader(body))
 			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, asWorkload(req, testWorkloadPeer))
+
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Zero(t, mint.requestCount)
+		})
+	}
+}
+
+// On the plain endpoint the internal token is all that separates a caller from
+// a workload's projected token, so the dynamic half is not accepted there: a
+// holder of both could move that workload's recorded origin and manifest.
+func TestGateway_ModuleWorkContext_TheOriginIsReportedOnlyOnTheWorkloadEndpoint(t *testing.T) {
+	for name, body := range map[string]string{
+		"an origin":  `{"prefix":"documents","upstream":"https://backend.cell-documents.svc.cluster.local:8080"}`,
+		"a manifest": `{"prefix":"documents","manifest":"{}"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			gw, mint := newWorkContextExchangeHarness(t)
+			req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
+			req.Body = io.NopCloser(strings.NewReader(body))
+			w := httptest.NewRecorder()
 			gw.ServeHTTP(w, req)
 
 			require.Equal(t, http.StatusBadRequest, w.Code)
@@ -406,7 +435,7 @@ func TestGateway_ModuleWorkContext_BoundsTheRequest(t *testing.T) {
 	req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
 	req.Body = io.NopCloser(bytes.NewReader(body))
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
+	gw.ServeHTTP(w, asWorkload(req, testWorkloadPeer))
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Zero(t, mint.requestCount)
@@ -416,7 +445,7 @@ func TestGateway_ModuleWorkContext_BoundsTheRequest(t *testing.T) {
 	req = workContextRequest("documents", "documents-projected-token", "test-internal-token")
 	req.Body = io.NopCloser(bytes.NewReader(body))
 	w = httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
+	gw.ServeHTTP(w, asWorkload(req, testWorkloadPeer))
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, 1, mint.requestCount)
 }

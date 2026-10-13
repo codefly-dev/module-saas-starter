@@ -80,6 +80,7 @@ pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPl
 pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).PutModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
+pkg/business/module_envelope.go: (*Service).deliveredSince: WithControlPlane
 pkg/business/module_envelope.go: (*Service).moduleEnvelopeNarrows: WithControlPlane
 pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane

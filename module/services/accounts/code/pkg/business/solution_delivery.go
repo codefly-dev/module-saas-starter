@@ -146,6 +146,17 @@ type SolutionDeliveryStore interface {
 	ListDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
 }
 
+// SolutionDeliveryCounter is the inbox's size, where the store can answer it.
+//
+// Optional, and asked for by assertion: a store that cannot count leaves the
+// registry with no marker, and a mint then answers exactly as it did before
+// the marker existed.
+type SolutionDeliveryCounter interface {
+	// CountDeliveredDocuments is the number of delivered documents of every
+	// kind. The inbox is append-only, so it never decreases.
+	CountDeliveredDocuments(ctx context.Context) (uint64, error)
+}
+
 // SolutionDeliveryCarrierAuthorizer decides whether the CALLER may deliver this
 // kind of document.
 //

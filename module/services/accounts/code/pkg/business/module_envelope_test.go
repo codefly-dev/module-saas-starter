@@ -486,3 +486,16 @@ func TestSharedEnvelopeTenantIsNotAnOrganizationGrant(t *testing.T) {
 	_, err = canonicalModuleTenant("example", "not-an-organization")
 	require.Error(t, err)
 }
+
+// The install-step queue is the host's own: its jobs are other solutions'
+// install steps, and a module granted it could claim and complete one.
+func TestTheInstallStepQueueIsGrantedToNoModule(t *testing.T) {
+	document := testEnvelopeDocument()
+	principal := document["principals"].(map[string]any)[testModulePrefix].(map[string]any)
+	grant := principal["grant"].(map[string]any)
+	queues, _ := grant["queues"].([]any)
+	grant["queues"] = append(queues, InstallationStepQueue)
+	_, err := ParseModuleEnvelope(encodeEnvelope(t, document))
+	require.ErrorIs(t, err, ErrModuleEnvelopeInvalid)
+	require.ErrorContains(t, err, InstallationStepQueue)
+}

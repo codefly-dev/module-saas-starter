@@ -371,7 +371,8 @@ as `Authorization: Bearer <token>` (exactly one header, that scheme), body
 `{prefix, organization_id?, upstream?, manifest?}`, bounded at 80 KiB.
 `upstream` and `manifest` are the dynamic half of the workload's registration
 ([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#the-document-and-who-owns-which-field)):
-the gateway checks the origin's shape — `https`, a host and a port, a host a
+they are accepted only on the `workload` endpoint and refused `400` on the
+plain one; the gateway checks the origin's shape — `https`, a host and a port, a host a
 registered upstream may name — refuses `400` before asking accounts otherwise,
 and forwards both unread beyond that. Accounts answers `FailedPrecondition`
 for a workload that is admitted and installed nowhere, relayed as `412`. A shared module selects an organization; accounts

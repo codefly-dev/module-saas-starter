@@ -307,7 +307,9 @@ half — the alias, the target and the workload identity stay the delivery's. No
 installation is required: a solution nobody has installed must still be reachable
 for its install step, which is delivered to the origin recorded here.
 
-The origin is bounded twice, at the gateway and again in accounts: `https`, a
+The dynamic half is accepted only on the `workload` endpoint, where the
+reporter's identity is on the connection; on the plain endpoint the request is
+refused. The origin is bounded twice, at the gateway and again in accounts: `https`, a
 host and a port and nothing else, on a composition-local host (loopback or
 private address, a bare service name, or a cluster-local name). It cannot
 redirect a solution's traffic to another workload: the gateway reaches a
@@ -413,7 +415,7 @@ Every key is in the `federation` group.
 | --- | --- |
 | `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. It is also the one declaration that turns the surface **on**: empty means no reconciler and no delivery endpoint, and no new declared presence can be reconciled. |
 | `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the coordinate and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
-| *(no setting)* | WHERE the pinned-key verification policy is read from is **not configurable**: it is a constant, `infra.SolutionHostTrustAnchorPath`. There is no environment value, no flag and no overridable default. Workspace environment is delivered by the **composition**, so an overridable path would let a composition point this verifier at a policy it wrote itself, sign its own presence documents, and pass every downstream check — against an anchor it chose. A deployment needing a different path changes the pod spec that mounts it, which the platform renders and the composition cannot supply. That document also carries the signer-to-domain mapping, keyed by `keyId`, so workspace environment cannot widen a key's authority independently of its pin. A signer granted a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
+| *(no setting in a pod)* | WHERE the pinned-key verification policy is read from is **not configurable in a deployment**: it is a constant, `infra.SolutionHostTrustAnchorPath`. In a pod there is no environment value, no flag and no overridable default; the one relocation, for a host started as a process, is refused in a pod and described below. Workspace environment is delivered by the **composition**, so an overridable path would let a composition point this verifier at a policy it wrote itself, sign its own presence documents, and pass every downstream check — against an anchor it chose. A deployment needing a different path changes the pod spec that mounts it, which the platform renders and the composition cannot supply. That document also carries the signer-to-domain mapping, keyed by `keyId`, so workspace environment cannot widen a key's authority independently of its pin. A signer granted a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
 | `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's envelope is checked. `keys` is the only value. Required with the coordinate, with **no default** — every default is wrong somewhere. The trust anchor's **absence** is checked first and refuses the boot naming the anchor, so an unmounted anchor is never reported as a missing setting. |
 | `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the inbox is re-read. Empty uses 30s. |
 
@@ -487,16 +489,25 @@ is Core's exact rule and a narrowing takes effect at the next check with no
 restart. It is never read out of a delivered document — "an envelope a document
 carried would be a document declaring its own ceiling".
 
-**Only a narrowing needs the policy-log witness.** A revision that takes
-authority away — a principal, an approved build, a unit, an action, a workload,
-a `true` that becomes `false`, a value that changes, or an organization a live
-installation depends on — is written under `WithPolicyLoggedNarrowing`, so a
-host restored from an older database cannot silently give it back. A revision
-that only adds is written on the control plane without it. The comparison
-(`moduleEnvelopeNarrows`) is the boundary and fails towards the witness:
-anything it does not recognise as "at least everything that was granted" —
-including a document it cannot decode — is a narrowing. A host with no witness
-configured therefore accepts grants and refuses every narrowing. Absence and damage are
+**Only a pure grant skips the policy-log witness.** A revision is a pure grant
+when, against the revision in force, every approved build is still approved,
+every principal is still there with a section that is the same JSON value,
+every other top-level key is the same value, and no installation loses its
+organization. What may differ is the revision, approved builds that were
+added, and whole principals that were added. Everything else is written under
+`WithPolicyLoggedNarrowing`, so a host restored from an older database cannot
+silently give it back.
+
+A principal's section is compared for equality and never for "at least as
+much", because in this schema more JSON does not mean more authority: a
+resource list that appears restricts an audience that was unrestricted, a
+required kind that appears refuses artifacts that passed, a tenant that is set
+removes every other organization, and a unit that gains a field is a different
+unit. So a changed section needs the witness, whatever changed. The
+classification reads installations on the control plane, and an apply that was
+classified a pure grant and then finds an installation to revoke stops and is
+taken again under the witness. A host with no witness configured therefore
+accepts pure grants and refuses everything else. Absence and damage are
 different answers: no revision written is a complete deployment that grants no
 module anything, while a revision that cannot be read leaves what the last pass
 installed serving, because reading a damaged ceiling as "no ceiling" withdraws
@@ -608,15 +619,22 @@ TokenReview/BindExecution path requires that URI to equal both the reviewed
 namespace/ServiceAccount identity and the SPIFFE ID in applied presence. A
 mismatch returns 403, logs the mint refusal, and issues no credential.
 
+A principal the registry does not hold is refused, with one exception: while
+the delivery inbox holds a document the registry was derived without, the
+answer is `503` ("not established yet") and a pass is requested. A workload
+that starts beside its own delivery asks in exactly that moment. Once the pass
+has read the inbox, a principal it still does not hold is refused as before.
+
 A workload that is admitted and **installed nowhere** is answered `412`
-(`FailedPrecondition` from accounts), not `403`: nothing is wrong with the
+(`FailedPrecondition` from accounts, on the module's own mint only — a
+capability's use and a headless operation still hear the refusal), not `403`: nothing is wrong with the
 workload, there is simply no installation to seal a credential to. It serves
 its install endpoint and asks again. The origin and manifest it reported with
 that mint are recorded all the same, because the install step is delivered
 there.
 
 The `workload-identity` group supplies `CERT_FILE`, `KEY_FILE`,
-`TRUST_BUNDLE_FILE`, `ALLOWED_CALLERS_FILE`, and `TOKEN_FILE` as readable paths;
+`TRUST_BUNDLE_FILE` and `ALLOWED_CALLERS_FILE` as readable paths;
 missing files fail startup with the key named. The SDK certificate reloader
 keeps the last good pair during rotation. Trust is reread for each handshake;
 caller admission rereads the newline-separated, `#`-commented allowlist for each

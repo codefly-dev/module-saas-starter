@@ -101,6 +101,10 @@ type publishedModuleRegistry struct {
 	registry ModulePrincipalRegistry
 	revision uint64
 	sources  map[string]modulePrincipalSource
+	// delivered is the inbox's size in the snapshot this registry was derived
+	// from. Nil on every degraded publish: a registry that was not derived
+	// from a full read of the inbox says nothing about what the inbox holds.
+	delivered *uint64
 }
 
 // modulePrincipalSource is what an entry was derived from: enough to re-judge
@@ -125,7 +129,7 @@ func NewModulePrincipalReconciler(activation *SolutionAuthorityActivation) (*Mod
 
 func (r *ModulePrincipalReconciler) publish(published *publishedModuleRegistry) {
 	r.last = published
-	r.activation.reconciler.service.InstallDerivedModulePrincipals(published.registry, published.revision)
+	r.activation.reconciler.service.installDerivedModulePrincipals(published.registry, published.revision, published.delivered)
 }
 
 // degraded is the last published registry kept only where it is still
@@ -239,7 +243,11 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 	if envelope == nil {
 		// No ceiling has ever been written: nothing is allowed, so nothing is
 		// granted. Not an unreadable input — the empty registry is the answer.
-		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}})
+		empty := &publishedModuleRegistry{registry: ModulePrincipalRegistry{}}
+		if inputsErr == nil {
+			empty.delivered = inputs.delivered
+		}
+		r.publish(empty)
 		return nil
 	}
 	if inputsErr != nil {
@@ -276,7 +284,11 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		}
 	}
 
-	next := &publishedModuleRegistry{registry: ModulePrincipalRegistry{}, revision: envelope.Revision, sources: map[string]modulePrincipalSource{}}
+	next := &publishedModuleRegistry{
+		registry: ModulePrincipalRegistry{}, revision: envelope.Revision, sources: map[string]modulePrincipalSource{},
+		// Derived from the whole inbox as this snapshot held it.
+		delivered: inputs.delivered,
+	}
 	for _, one := range inside {
 		document := one.document
 		candidates, workloadErr := r.workloadsFor(document, applied[document.PresenceBinding])

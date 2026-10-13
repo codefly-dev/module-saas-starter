@@ -210,6 +210,14 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		httpError(w, http.StatusBadRequest, "invalid prefix")
 		return true
 	}
+	// The dynamic half is reported only where the reporter's identity is on
+	// the connection. On the plain endpoint the internal token is all that
+	// separates a caller from a workload's projected token, and a holder of
+	// both could move that workload's recorded origin and manifest.
+	if !workloadRequest && (payload.Upstream != "" || payload.Manifest != "") {
+		httpError(w, http.StatusBadRequest, "upstream and manifest are reported on the workload endpoint")
+		return true
+	}
 	if payload.Upstream != "" {
 		parsed, err := url.Parse(payload.Upstream)
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.Port() == "" || parsed.User != nil ||
