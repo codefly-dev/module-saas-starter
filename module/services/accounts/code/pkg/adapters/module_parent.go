@@ -37,9 +37,9 @@ func authenticateModuleParent(ctx context.Context, encoded string) (moduleParent
 	if _, err := service.AuthorizeModuleCapability(ctx, caller); err != nil {
 		return moduleParentAuthentication{}, err
 	}
-	presented, err := authority.verifyIssued(ctx, encoded)
+	presented, err := authority.readBack(ctx, encoded)
 	if err != nil {
-		return moduleParentAuthentication{}, refusedReadBack(err, status.Error(codes.PermissionDenied, "invalid module parent"))
+		return moduleParentAuthentication{}, refusedReadBack(ctx, err, status.Error(codes.PermissionDenied, "invalid module parent"))
 	}
 	if presented.Context().GetTenantId() == "" || presented.Context().GetOwnerPrincipalId() == "" {
 		return moduleParentAuthentication{}, status.Error(codes.PermissionDenied, "invalid module parent")

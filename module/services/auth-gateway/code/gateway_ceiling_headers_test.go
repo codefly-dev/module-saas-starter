@@ -34,10 +34,9 @@ import (
 // audience of the module its solution declared it consumes.
 func mintRequestOf(caller confinedCaller, forged http.Header) *http.Request {
 	body, _ := json.Marshal(map[string]any{
-		"orgId":     caller.org,
-		"sessionId": caller.session,
-		"taskId":    uuid.Must(uuid.NewV7()).String(),
-		"audience":  "documents",
+		"orgId":    caller.org,
+		"taskId":   uuid.Must(uuid.NewV7()).String(),
+		"audience": "documents",
 		"authorityScopes": []map[string]any{
 			{"resourceKind": "documents", "actions": []string{"read"}},
 		},

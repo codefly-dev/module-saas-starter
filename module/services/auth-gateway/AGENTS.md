@@ -168,7 +168,11 @@ ordinary browser session, where no consumer ceiling applies. It is also sufficie
 to name the owner, because accounts signs into a capability only its caller's
 verified session or a fresh one — never a session a request names — and a session
 belongs to one person; so the owner is not read here, which keeps the edge to what
-core's `Inspector` exposes to a forwarding hop.
+core's `Inspector` exposes to a forwarding hop. Dropping the owner comparison is
+deliberate, not an omission: the session already names the owner, and a second
+check on a property the session establishes would be a check the edge cannot make
+from what it holds. `TestModuleRoute_TheSessionIsTheBindingAndTheOwnerIsNotRead`
+pins the dependency, so a change to how accounts assigns sessions is caught there.
 
 **The edge check is core's `Inspector`** (`work_context.go`): encoding, issuer,
 the signature under the key the capability names, window, shape, and the audience

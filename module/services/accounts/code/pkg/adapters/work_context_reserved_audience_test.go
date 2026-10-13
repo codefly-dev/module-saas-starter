@@ -49,7 +49,6 @@ func TestPersonMintsRefuseTheModuleAudience(t *testing.T) {
 		{"StartTask", func() error {
 			_, err := server.StartTask(ctx, &gen.StartTaskWorkContextRequest{
 				OrgId: uuidForReservedAudienceTest, TaskId: uuidForReservedAudienceTest,
-				SessionId:        uuidForReservedAudienceTest,
 				ActorPrincipalId: uuidForReservedAudienceTest,
 				AuthorityScopes:  scopesForReservedAudienceTest(),
 				Audience:         ModuleWorkContextAudience,

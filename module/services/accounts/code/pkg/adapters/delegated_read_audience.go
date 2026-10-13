@@ -91,7 +91,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 			return nil, refuseUnidentifiedParent()
 		}
 		stale := decoded.Context()
-		staleErr := refusedReadBack(err, nil)
+		staleErr := refusedReadBack(ctx, err, nil)
 		if service != nil {
 			service.ObserveDelegatedAudienceExchange(auth.WithVerifiedDatabaseIdentity(ctx, stale.OwnerPrincipalId, stale.TenantId),
 				business.DelegatedAudienceExchangeObservation{
