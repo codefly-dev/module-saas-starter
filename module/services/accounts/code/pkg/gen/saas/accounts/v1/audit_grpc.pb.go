@@ -46,9 +46,9 @@ type AuditServiceClient interface {
 	// tenant; delivery is at least once, and every read of the storage returns each
 	// entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
 	DeliverAuditEvents(ctx context.Context, in *DeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error)
-	// LookupDeliverAuditEvents reads back the receipt of one delivery effect. It
-	// never delivers: recovery reads what committed and nothing else.
-	LookupDeliverAuditEvents(ctx context.Context, in *LookupDeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error)
+	// LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+	// derives the range receipt identity from from. It never delivers.
+	LookupDeliverAuditEvents(ctx context.Context, in *DeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error)
 }
 
 type auditServiceClient struct {
@@ -109,7 +109,7 @@ func (c *auditServiceClient) DeliverAuditEvents(ctx context.Context, in *Deliver
 	return out, nil
 }
 
-func (c *auditServiceClient) LookupDeliverAuditEvents(ctx context.Context, in *LookupDeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error) {
+func (c *auditServiceClient) LookupDeliverAuditEvents(ctx context.Context, in *DeliverAuditEventsRequest, opts ...grpc.CallOption) (*DeliverAuditEventsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeliverAuditEventsResponse)
 	err := c.cc.Invoke(ctx, AuditService_LookupDeliverAuditEvents_FullMethodName, in, out, cOpts...)
@@ -137,9 +137,9 @@ type AuditServiceServer interface {
 	// tenant; delivery is at least once, and every read of the storage returns each
 	// entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
 	DeliverAuditEvents(context.Context, *DeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error)
-	// LookupDeliverAuditEvents reads back the receipt of one delivery effect. It
-	// never delivers: recovery reads what committed and nothing else.
-	LookupDeliverAuditEvents(context.Context, *LookupDeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error)
+	// LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+	// derives the range receipt identity from from. It never delivers.
+	LookupDeliverAuditEvents(context.Context, *DeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error)
 	mustEmbedUnimplementedAuditServiceServer()
 }
 
@@ -165,7 +165,7 @@ func (UnimplementedAuditServiceServer) ExportAuditLog(context.Context, *ExportAu
 func (UnimplementedAuditServiceServer) DeliverAuditEvents(context.Context, *DeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeliverAuditEvents not implemented")
 }
-func (UnimplementedAuditServiceServer) LookupDeliverAuditEvents(context.Context, *LookupDeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error) {
+func (UnimplementedAuditServiceServer) LookupDeliverAuditEvents(context.Context, *DeliverAuditEventsRequest) (*DeliverAuditEventsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method LookupDeliverAuditEvents not implemented")
 }
 func (UnimplementedAuditServiceServer) mustEmbedUnimplementedAuditServiceServer() {}
@@ -280,7 +280,7 @@ func _AuditService_DeliverAuditEvents_Handler(srv interface{}, ctx context.Conte
 }
 
 func _AuditService_LookupDeliverAuditEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LookupDeliverAuditEventsRequest)
+	in := new(DeliverAuditEventsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ func _AuditService_LookupDeliverAuditEvents_Handler(srv interface{}, ctx context
 		FullMethod: AuditService_LookupDeliverAuditEvents_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AuditServiceServer).LookupDeliverAuditEvents(ctx, req.(*LookupDeliverAuditEventsRequest))
+		return srv.(AuditServiceServer).LookupDeliverAuditEvents(ctx, req.(*DeliverAuditEventsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

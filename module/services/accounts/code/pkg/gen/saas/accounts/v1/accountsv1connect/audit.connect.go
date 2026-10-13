@@ -68,9 +68,9 @@ type AuditServiceClient interface {
 	// tenant; delivery is at least once, and every read of the storage returns each
 	// entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
 	DeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
-	// LookupDeliverAuditEvents reads back the receipt of one delivery effect. It
-	// never delivers: recovery reads what committed and nothing else.
-	LookupDeliverAuditEvents(context.Context, *connect.Request[v1.LookupDeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
+	// LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+	// derives the range receipt identity from from. It never delivers.
+	LookupDeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
 }
 
 // NewAuditServiceClient constructs a client for the saas.accounts.v1.AuditService service. By
@@ -114,7 +114,7 @@ func NewAuditServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(auditServiceMethods.ByName("DeliverAuditEvents")),
 			connect.WithClientOptions(opts...),
 		),
-		lookupDeliverAuditEvents: connect.NewClient[v1.LookupDeliverAuditEventsRequest, v1.DeliverAuditEventsResponse](
+		lookupDeliverAuditEvents: connect.NewClient[v1.DeliverAuditEventsRequest, v1.DeliverAuditEventsResponse](
 			httpClient,
 			baseURL+AuditServiceLookupDeliverAuditEventsProcedure,
 			connect.WithSchema(auditServiceMethods.ByName("LookupDeliverAuditEvents")),
@@ -130,7 +130,7 @@ type auditServiceClient struct {
 	listAuditEventTypes      *connect.Client[v1.ListAuditEventTypesRequest, v1.ListAuditEventTypesResponse]
 	exportAuditLog           *connect.Client[v1.ExportAuditLogRequest, v1.ExportAuditLogResponse]
 	deliverAuditEvents       *connect.Client[v1.DeliverAuditEventsRequest, v1.DeliverAuditEventsResponse]
-	lookupDeliverAuditEvents *connect.Client[v1.LookupDeliverAuditEventsRequest, v1.DeliverAuditEventsResponse]
+	lookupDeliverAuditEvents *connect.Client[v1.DeliverAuditEventsRequest, v1.DeliverAuditEventsResponse]
 }
 
 // QueryAuditLog calls saas.accounts.v1.AuditService.QueryAuditLog.
@@ -159,7 +159,7 @@ func (c *auditServiceClient) DeliverAuditEvents(ctx context.Context, req *connec
 }
 
 // LookupDeliverAuditEvents calls saas.accounts.v1.AuditService.LookupDeliverAuditEvents.
-func (c *auditServiceClient) LookupDeliverAuditEvents(ctx context.Context, req *connect.Request[v1.LookupDeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error) {
+func (c *auditServiceClient) LookupDeliverAuditEvents(ctx context.Context, req *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error) {
 	return c.lookupDeliverAuditEvents.CallUnary(ctx, req)
 }
 
@@ -177,9 +177,9 @@ type AuditServiceHandler interface {
 	// tenant; delivery is at least once, and every read of the storage returns each
 	// entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
 	DeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
-	// LookupDeliverAuditEvents reads back the receipt of one delivery effect. It
-	// never delivers: recovery reads what committed and nothing else.
-	LookupDeliverAuditEvents(context.Context, *connect.Request[v1.LookupDeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
+	// LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+	// derives the range receipt identity from from. It never delivers.
+	LookupDeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
 }
 
 // NewAuditServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -268,6 +268,6 @@ func (UnimplementedAuditServiceHandler) DeliverAuditEvents(context.Context, *con
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuditService.DeliverAuditEvents is not implemented"))
 }
 
-func (UnimplementedAuditServiceHandler) LookupDeliverAuditEvents(context.Context, *connect.Request[v1.LookupDeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error) {
+func (UnimplementedAuditServiceHandler) LookupDeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuditService.LookupDeliverAuditEvents is not implemented"))
 }
