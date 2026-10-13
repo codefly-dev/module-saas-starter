@@ -81,6 +81,13 @@ const sections = [
 		icon: KeyRound,
 	},
 	{
+		title: "Module Identity",
+		description:
+			"Resolve what a module's capability for one tenant would carry, and why it would be refused.",
+		href: "/admin/platform/module-identity",
+		icon: KeyRound,
+	},
+	{
 		title: "Plugin Transport",
 		description:
 			"Send each shape a module's bindings produce through the host's plugin transport, and read the answer.",

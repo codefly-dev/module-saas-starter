@@ -101,6 +101,14 @@ func platformAdminHandlers() []platformAdminHandler {
 			_, err := srv.PutModuleEnvelope(ctx, &gen.PutModuleEnvelopeRequest{Document: `{"revision":1}`})
 			return err
 		}},
+		// It reads what a module's per-tenant capability would carry in any
+		// organization, which is cross-tenant authority however read-only it is.
+		{"ResolveModuleTenantIdentity", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
+			_, err := srv.ResolveModuleTenantIdentity(ctx, &gen.ResolveModuleTenantIdentityRequest{
+				Prefix: "example", Binding: "operate", OrganizationId: platformTargetD,
+			})
+			return err
+		}},
 		{"ListFeatureFlags", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
 			_, err := srv.ListFeatureFlags(ctx, &gen.ListFeatureFlagsRequest{})
 			return err

@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:0a02fc7e630eb13971649710dd7b3058ab843ee281065b1532b17821c07dac8a",
+      "digest": "sha256:8ac64d948bd881562508736eeb88fd7031b1b862ed43bfaa58c80090d8afae29",
       "services": [
         {
           "name": "APIKeyService",
@@ -353,6 +353,7 @@
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
             "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
+            "/saas.accounts.v1.PlatformAdminService/ResolveModuleTenantIdentity",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
             "/saas.accounts.v1.PlatformAdminService/RevokeSession",
             "/saas.accounts.v1.PlatformAdminService/SearchUsers",

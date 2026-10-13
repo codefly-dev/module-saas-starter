@@ -23,31 +23,32 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PlatformAdminService_SearchUsers_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/SearchUsers"
-	PlatformAdminService_SuspendUser_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/SuspendUser"
-	PlatformAdminService_UnsuspendUser_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
-	PlatformAdminService_ImpersonateUser_FullMethodName        = "/saas.accounts.v1.PlatformAdminService/ImpersonateUser"
-	PlatformAdminService_StopImpersonation_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/StopImpersonation"
-	PlatformAdminService_ListActiveSessions_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"
-	PlatformAdminService_RevokeSession_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/RevokeSession"
-	PlatformAdminService_GetOrgEntitlements_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements"
-	PlatformAdminService_OverrideEntitlement_FullMethodName    = "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement"
-	PlatformAdminService_GrantPlatformRole_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole"
-	PlatformAdminService_RevokePlatformRole_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole"
-	PlatformAdminService_ListPlatformAdmins_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins"
-	PlatformAdminService_ListAllOrganizations_FullMethodName   = "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations"
-	PlatformAdminService_GetOrganizationRoster_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster"
-	PlatformAdminService_ListFeatureFlags_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"
-	PlatformAdminService_UpsertFeatureFlag_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
-	PlatformAdminService_GetJobOperations_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/GetJobOperations"
-	PlatformAdminService_ListJobs_FullMethodName               = "/saas.accounts.v1.PlatformAdminService/ListJobs"
-	PlatformAdminService_GetJob_FullMethodName                 = "/saas.accounts.v1.PlatformAdminService/GetJob"
-	PlatformAdminService_ReplayJob_FullMethodName              = "/saas.accounts.v1.PlatformAdminService/ReplayJob"
-	PlatformAdminService_GetEventOperations_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/GetEventOperations"
-	PlatformAdminService_ListEventSubscriptions_FullMethodName = "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions"
-	PlatformAdminService_ListPlatformCatalogue_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue"
-	PlatformAdminService_GetModuleEnvelope_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope"
-	PlatformAdminService_PutModuleEnvelope_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope"
+	PlatformAdminService_SearchUsers_FullMethodName                 = "/saas.accounts.v1.PlatformAdminService/SearchUsers"
+	PlatformAdminService_SuspendUser_FullMethodName                 = "/saas.accounts.v1.PlatformAdminService/SuspendUser"
+	PlatformAdminService_UnsuspendUser_FullMethodName               = "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
+	PlatformAdminService_ImpersonateUser_FullMethodName             = "/saas.accounts.v1.PlatformAdminService/ImpersonateUser"
+	PlatformAdminService_StopImpersonation_FullMethodName           = "/saas.accounts.v1.PlatformAdminService/StopImpersonation"
+	PlatformAdminService_ListActiveSessions_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"
+	PlatformAdminService_RevokeSession_FullMethodName               = "/saas.accounts.v1.PlatformAdminService/RevokeSession"
+	PlatformAdminService_GetOrgEntitlements_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements"
+	PlatformAdminService_OverrideEntitlement_FullMethodName         = "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement"
+	PlatformAdminService_GrantPlatformRole_FullMethodName           = "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole"
+	PlatformAdminService_RevokePlatformRole_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole"
+	PlatformAdminService_ListPlatformAdmins_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins"
+	PlatformAdminService_ListAllOrganizations_FullMethodName        = "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations"
+	PlatformAdminService_GetOrganizationRoster_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster"
+	PlatformAdminService_ListFeatureFlags_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"
+	PlatformAdminService_UpsertFeatureFlag_FullMethodName           = "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
+	PlatformAdminService_GetJobOperations_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/GetJobOperations"
+	PlatformAdminService_ListJobs_FullMethodName                    = "/saas.accounts.v1.PlatformAdminService/ListJobs"
+	PlatformAdminService_GetJob_FullMethodName                      = "/saas.accounts.v1.PlatformAdminService/GetJob"
+	PlatformAdminService_ReplayJob_FullMethodName                   = "/saas.accounts.v1.PlatformAdminService/ReplayJob"
+	PlatformAdminService_GetEventOperations_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/GetEventOperations"
+	PlatformAdminService_ListEventSubscriptions_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions"
+	PlatformAdminService_ListPlatformCatalogue_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue"
+	PlatformAdminService_GetModuleEnvelope_FullMethodName           = "/saas.accounts.v1.PlatformAdminService/GetModuleEnvelope"
+	PlatformAdminService_PutModuleEnvelope_FullMethodName           = "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope"
+	PlatformAdminService_ResolveModuleTenantIdentity_FullMethodName = "/saas.accounts.v1.PlatformAdminService/ResolveModuleTenantIdentity"
 )
 
 // PlatformAdminServiceClient is the client API for PlatformAdminService service.
@@ -114,6 +115,10 @@ type PlatformAdminServiceClient interface {
 	// effect at the next check with no restart: the module registry is derived
 	// again from it, so a narrowing removes what the new ceiling no longer allows.
 	PutModuleEnvelope(ctx context.Context, in *PutModuleEnvelopeRequest, opts ...grpc.CallOption) (*PutModuleEnvelopeResponse, error)
+	// ResolveModuleTenantIdentity answers what a per-tenant module operation
+	// context would assert for one module, one of its bindings and one
+	// organization — or why it would be refused. It issues no capability.
+	ResolveModuleTenantIdentity(ctx context.Context, in *ResolveModuleTenantIdentityRequest, opts ...grpc.CallOption) (*ResolveModuleTenantIdentityResponse, error)
 }
 
 type platformAdminServiceClient struct {
@@ -375,6 +380,16 @@ func (c *platformAdminServiceClient) PutModuleEnvelope(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *platformAdminServiceClient) ResolveModuleTenantIdentity(ctx context.Context, in *ResolveModuleTenantIdentityRequest, opts ...grpc.CallOption) (*ResolveModuleTenantIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveModuleTenantIdentityResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_ResolveModuleTenantIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PlatformAdminServiceServer is the server API for PlatformAdminService service.
 // All implementations must embed UnimplementedPlatformAdminServiceServer
 // for forward compatibility.
@@ -439,6 +454,10 @@ type PlatformAdminServiceServer interface {
 	// effect at the next check with no restart: the module registry is derived
 	// again from it, so a narrowing removes what the new ceiling no longer allows.
 	PutModuleEnvelope(context.Context, *PutModuleEnvelopeRequest) (*PutModuleEnvelopeResponse, error)
+	// ResolveModuleTenantIdentity answers what a per-tenant module operation
+	// context would assert for one module, one of its bindings and one
+	// organization — or why it would be refused. It issues no capability.
+	ResolveModuleTenantIdentity(context.Context, *ResolveModuleTenantIdentityRequest) (*ResolveModuleTenantIdentityResponse, error)
 	mustEmbedUnimplementedPlatformAdminServiceServer()
 }
 
@@ -523,6 +542,9 @@ func (UnimplementedPlatformAdminServiceServer) GetModuleEnvelope(context.Context
 }
 func (UnimplementedPlatformAdminServiceServer) PutModuleEnvelope(context.Context, *PutModuleEnvelopeRequest) (*PutModuleEnvelopeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PutModuleEnvelope not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) ResolveModuleTenantIdentity(context.Context, *ResolveModuleTenantIdentityRequest) (*ResolveModuleTenantIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveModuleTenantIdentity not implemented")
 }
 func (UnimplementedPlatformAdminServiceServer) mustEmbedUnimplementedPlatformAdminServiceServer() {}
 func (UnimplementedPlatformAdminServiceServer) testEmbeddedByValue()                              {}
@@ -995,6 +1017,24 @@ func _PlatformAdminService_PutModuleEnvelope_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PlatformAdminService_ResolveModuleTenantIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveModuleTenantIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).ResolveModuleTenantIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_ResolveModuleTenantIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).ResolveModuleTenantIdentity(ctx, req.(*ResolveModuleTenantIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PlatformAdminService_ServiceDesc is the grpc.ServiceDesc for PlatformAdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1101,6 +1141,10 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PutModuleEnvelope",
 			Handler:    _PlatformAdminService_PutModuleEnvelope_Handler,
+		},
+		{
+			MethodName: "ResolveModuleTenantIdentity",
+			Handler:    _PlatformAdminService_ResolveModuleTenantIdentity_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -2511,6 +2511,37 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/admin/platform/module-identity/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/module-tenant-identity"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/module-tenant-identity/ui/module-tenant-identity-playground.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "lucide-react",
+        "react",
+        "@/components/empty-state",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Platform playground for the per-tenant module identity: it composes the kit's card, table and badge primitives and owns no visual of its own.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/admin/platform/waitlist/page.tsx",
       "imports": [
         "@/features/waitlist/ui/waitlist-admin-page"

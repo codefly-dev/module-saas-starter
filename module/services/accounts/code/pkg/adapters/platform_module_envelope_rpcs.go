@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/grpc/codes"
@@ -101,4 +102,65 @@ func (h *platformAdminConnectHandler) GetModuleEnvelope(ctx context.Context, req
 
 func (h *platformAdminConnectHandler) PutModuleEnvelope(ctx context.Context, req *connect.Request[gen.PutModuleEnvelopeRequest]) (*connect.Response[gen.PutModuleEnvelopeResponse], error) {
 	return unary(ctx, req, h.inner.PutModuleEnvelope)
+}
+
+// ResolveModuleTenantIdentity answers what a per-tenant module operation
+// context would assert for one module, one of its bindings and one
+// organization — or why it would be refused — for a platform super_admin.
+//
+// IT ISSUES NO CAPABILITY, and that is the shape rather than a limitation
+// (issue #1121). The mint it describes requires the module pod's projected
+// ServiceAccount token, held against the build its authority document approves;
+// an operator's browser has none, and a path that answered one with a module's
+// capability would be a second spelling of that module's identity. So this
+// reads the decision and stops before the signature.
+func (s *PlatformAdminServer) ResolveModuleTenantIdentity(
+	ctx context.Context, req *gen.ResolveModuleTenantIdentityRequest,
+) (*gen.ResolveModuleTenantIdentityResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
+	resolution, err := service.ResolveModuleTenantIdentity(ctx, req.GetPrefix(), req.GetBinding(), req.GetOrganizationId())
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	response := &gen.ResolveModuleTenantIdentityResponse{
+		Refusal: resolution.Refusal,
+		Recent:  make([]*gen.ModuleTenantIdentityMint, 0, len(resolution.Recent)),
+	}
+	if identity := resolution.Identity; identity != nil {
+		response.Identity = &gen.ModuleTenantIdentity{
+			PrincipalId:     identity.PrincipalID,
+			Tenant:          identity.Tenant,
+			Audience:        identity.Audience,
+			Scopes:          identity.Scopes,
+			LifetimeSeconds: int64(identity.Lifetime / time.Second),
+			Revision:        identity.Revision,
+			Shared:          identity.Shared,
+		}
+	}
+	for _, mint := range resolution.Recent {
+		response.Recent = append(response.Recent, &gen.ModuleTenantIdentityMint{
+			Record:   mint.Record,
+			Tenant:   mint.Tenant,
+			Binding:  mint.Binding,
+			Audience: mint.Audience,
+			Scopes:   mint.Scopes,
+			MintedAt: timestamppb.New(mint.MintedAt),
+		})
+	}
+	return response, nil
+}
+
+func (h *platformAdminConnectHandler) ResolveModuleTenantIdentity(
+	ctx context.Context, req *connect.Request[gen.ResolveModuleTenantIdentityRequest],
+) (*connect.Response[gen.ResolveModuleTenantIdentityResponse], error) {
+	return unary(ctx, req, h.inner.ResolveModuleTenantIdentity)
 }

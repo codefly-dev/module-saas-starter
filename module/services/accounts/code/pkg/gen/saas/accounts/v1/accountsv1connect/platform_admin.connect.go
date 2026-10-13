@@ -112,6 +112,9 @@ const (
 	// PlatformAdminServicePutModuleEnvelopeProcedure is the fully-qualified name of the
 	// PlatformAdminService's PutModuleEnvelope RPC.
 	PlatformAdminServicePutModuleEnvelopeProcedure = "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope"
+	// PlatformAdminServiceResolveModuleTenantIdentityProcedure is the fully-qualified name of the
+	// PlatformAdminService's ResolveModuleTenantIdentity RPC.
+	PlatformAdminServiceResolveModuleTenantIdentityProcedure = "/saas.accounts.v1.PlatformAdminService/ResolveModuleTenantIdentity"
 )
 
 // PlatformAdminServiceClient is a client for the saas.accounts.v1.PlatformAdminService service.
@@ -174,6 +177,10 @@ type PlatformAdminServiceClient interface {
 	// effect at the next check with no restart: the module registry is derived
 	// again from it, so a narrowing removes what the new ceiling no longer allows.
 	PutModuleEnvelope(context.Context, *connect.Request[v1.PutModuleEnvelopeRequest]) (*connect.Response[v1.PutModuleEnvelopeResponse], error)
+	// ResolveModuleTenantIdentity answers what a per-tenant module operation
+	// context would assert for one module, one of its bindings and one
+	// organization — or why it would be refused. It issues no capability.
+	ResolveModuleTenantIdentity(context.Context, *connect.Request[v1.ResolveModuleTenantIdentityRequest]) (*connect.Response[v1.ResolveModuleTenantIdentityResponse], error)
 }
 
 // NewPlatformAdminServiceClient constructs a client for the saas.accounts.v1.PlatformAdminService
@@ -337,36 +344,43 @@ func NewPlatformAdminServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(platformAdminServiceMethods.ByName("PutModuleEnvelope")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveModuleTenantIdentity: connect.NewClient[v1.ResolveModuleTenantIdentityRequest, v1.ResolveModuleTenantIdentityResponse](
+			httpClient,
+			baseURL+PlatformAdminServiceResolveModuleTenantIdentityProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("ResolveModuleTenantIdentity")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // platformAdminServiceClient implements PlatformAdminServiceClient.
 type platformAdminServiceClient struct {
-	searchUsers            *connect.Client[v1.SearchUsersRequest, v1.SearchUsersResponse]
-	suspendUser            *connect.Client[v1.SuspendUserRequest, emptypb.Empty]
-	unsuspendUser          *connect.Client[v1.UnsuspendUserRequest, emptypb.Empty]
-	impersonateUser        *connect.Client[v1.ImpersonateUserRequest, v1.ImpersonateUserResponse]
-	stopImpersonation      *connect.Client[v1.StopImpersonationRequest, v1.StopImpersonationResponse]
-	listActiveSessions     *connect.Client[v1.ListActiveSessionsRequest, v1.ListActiveSessionsResponse]
-	revokeSession          *connect.Client[v1.RevokeSessionRequest, emptypb.Empty]
-	getOrgEntitlements     *connect.Client[v1.GetOrgEntitlementsRequest, v1.GetOrgEntitlementsResponse]
-	overrideEntitlement    *connect.Client[v1.OverrideEntitlementRequest, v1.OverrideEntitlementResponse]
-	grantPlatformRole      *connect.Client[v1.GrantPlatformRoleRequest, emptypb.Empty]
-	revokePlatformRole     *connect.Client[v1.RevokePlatformRoleRequest, emptypb.Empty]
-	listPlatformAdmins     *connect.Client[v1.ListPlatformAdminsRequest, v1.ListPlatformAdminsResponse]
-	listAllOrganizations   *connect.Client[v1.ListAllOrganizationsRequest, v1.ListAllOrganizationsResponse]
-	getOrganizationRoster  *connect.Client[v1.GetOrganizationRosterRequest, v1.GetOrganizationRosterResponse]
-	listFeatureFlags       *connect.Client[v1.ListFeatureFlagsRequest, v1.ListFeatureFlagsResponse]
-	upsertFeatureFlag      *connect.Client[v1.UpsertFeatureFlagRequest, v1.UpsertFeatureFlagResponse]
-	getJobOperations       *connect.Client[v11.GetJobOperationsRequest, v11.GetJobOperationsResponse]
-	listJobs               *connect.Client[v11.ListJobsRequest, v11.ListJobsResponse]
-	getJob                 *connect.Client[v11.GetJobRequest, v11.GetJobResponse]
-	replayJob              *connect.Client[v11.ReplayJobRequest, v11.ReplayJobResponse]
-	getEventOperations     *connect.Client[v12.GetEventOperationsRequest, v12.GetEventOperationsResponse]
-	listEventSubscriptions *connect.Client[v12.ListEventSubscriptionsRequest, v12.ListEventSubscriptionsResponse]
-	listPlatformCatalogue  *connect.Client[v1.ListPlatformCatalogueRequest, v1.ListPlatformCatalogueResponse]
-	getModuleEnvelope      *connect.Client[v1.GetModuleEnvelopeRequest, v1.GetModuleEnvelopeResponse]
-	putModuleEnvelope      *connect.Client[v1.PutModuleEnvelopeRequest, v1.PutModuleEnvelopeResponse]
+	searchUsers                 *connect.Client[v1.SearchUsersRequest, v1.SearchUsersResponse]
+	suspendUser                 *connect.Client[v1.SuspendUserRequest, emptypb.Empty]
+	unsuspendUser               *connect.Client[v1.UnsuspendUserRequest, emptypb.Empty]
+	impersonateUser             *connect.Client[v1.ImpersonateUserRequest, v1.ImpersonateUserResponse]
+	stopImpersonation           *connect.Client[v1.StopImpersonationRequest, v1.StopImpersonationResponse]
+	listActiveSessions          *connect.Client[v1.ListActiveSessionsRequest, v1.ListActiveSessionsResponse]
+	revokeSession               *connect.Client[v1.RevokeSessionRequest, emptypb.Empty]
+	getOrgEntitlements          *connect.Client[v1.GetOrgEntitlementsRequest, v1.GetOrgEntitlementsResponse]
+	overrideEntitlement         *connect.Client[v1.OverrideEntitlementRequest, v1.OverrideEntitlementResponse]
+	grantPlatformRole           *connect.Client[v1.GrantPlatformRoleRequest, emptypb.Empty]
+	revokePlatformRole          *connect.Client[v1.RevokePlatformRoleRequest, emptypb.Empty]
+	listPlatformAdmins          *connect.Client[v1.ListPlatformAdminsRequest, v1.ListPlatformAdminsResponse]
+	listAllOrganizations        *connect.Client[v1.ListAllOrganizationsRequest, v1.ListAllOrganizationsResponse]
+	getOrganizationRoster       *connect.Client[v1.GetOrganizationRosterRequest, v1.GetOrganizationRosterResponse]
+	listFeatureFlags            *connect.Client[v1.ListFeatureFlagsRequest, v1.ListFeatureFlagsResponse]
+	upsertFeatureFlag           *connect.Client[v1.UpsertFeatureFlagRequest, v1.UpsertFeatureFlagResponse]
+	getJobOperations            *connect.Client[v11.GetJobOperationsRequest, v11.GetJobOperationsResponse]
+	listJobs                    *connect.Client[v11.ListJobsRequest, v11.ListJobsResponse]
+	getJob                      *connect.Client[v11.GetJobRequest, v11.GetJobResponse]
+	replayJob                   *connect.Client[v11.ReplayJobRequest, v11.ReplayJobResponse]
+	getEventOperations          *connect.Client[v12.GetEventOperationsRequest, v12.GetEventOperationsResponse]
+	listEventSubscriptions      *connect.Client[v12.ListEventSubscriptionsRequest, v12.ListEventSubscriptionsResponse]
+	listPlatformCatalogue       *connect.Client[v1.ListPlatformCatalogueRequest, v1.ListPlatformCatalogueResponse]
+	getModuleEnvelope           *connect.Client[v1.GetModuleEnvelopeRequest, v1.GetModuleEnvelopeResponse]
+	putModuleEnvelope           *connect.Client[v1.PutModuleEnvelopeRequest, v1.PutModuleEnvelopeResponse]
+	resolveModuleTenantIdentity *connect.Client[v1.ResolveModuleTenantIdentityRequest, v1.ResolveModuleTenantIdentityResponse]
 }
 
 // SearchUsers calls saas.accounts.v1.PlatformAdminService.SearchUsers.
@@ -496,6 +510,12 @@ func (c *platformAdminServiceClient) PutModuleEnvelope(ctx context.Context, req 
 	return c.putModuleEnvelope.CallUnary(ctx, req)
 }
 
+// ResolveModuleTenantIdentity calls
+// saas.accounts.v1.PlatformAdminService.ResolveModuleTenantIdentity.
+func (c *platformAdminServiceClient) ResolveModuleTenantIdentity(ctx context.Context, req *connect.Request[v1.ResolveModuleTenantIdentityRequest]) (*connect.Response[v1.ResolveModuleTenantIdentityResponse], error) {
+	return c.resolveModuleTenantIdentity.CallUnary(ctx, req)
+}
+
 // PlatformAdminServiceHandler is an implementation of the saas.accounts.v1.PlatformAdminService
 // service.
 type PlatformAdminServiceHandler interface {
@@ -557,6 +577,10 @@ type PlatformAdminServiceHandler interface {
 	// effect at the next check with no restart: the module registry is derived
 	// again from it, so a narrowing removes what the new ceiling no longer allows.
 	PutModuleEnvelope(context.Context, *connect.Request[v1.PutModuleEnvelopeRequest]) (*connect.Response[v1.PutModuleEnvelopeResponse], error)
+	// ResolveModuleTenantIdentity answers what a per-tenant module operation
+	// context would assert for one module, one of its bindings and one
+	// organization — or why it would be refused. It issues no capability.
+	ResolveModuleTenantIdentity(context.Context, *connect.Request[v1.ResolveModuleTenantIdentityRequest]) (*connect.Response[v1.ResolveModuleTenantIdentityResponse], error)
 }
 
 // NewPlatformAdminServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -716,6 +740,12 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 		connect.WithSchema(platformAdminServiceMethods.ByName("PutModuleEnvelope")),
 		connect.WithHandlerOptions(opts...),
 	)
+	platformAdminServiceResolveModuleTenantIdentityHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceResolveModuleTenantIdentityProcedure,
+		svc.ResolveModuleTenantIdentity,
+		connect.WithSchema(platformAdminServiceMethods.ByName("ResolveModuleTenantIdentity")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.PlatformAdminService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PlatformAdminServiceSearchUsersProcedure:
@@ -768,6 +798,8 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 			platformAdminServiceGetModuleEnvelopeHandler.ServeHTTP(w, r)
 		case PlatformAdminServicePutModuleEnvelopeProcedure:
 			platformAdminServicePutModuleEnvelopeHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceResolveModuleTenantIdentityProcedure:
+			platformAdminServiceResolveModuleTenantIdentityHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -875,4 +907,8 @@ func (UnimplementedPlatformAdminServiceHandler) GetModuleEnvelope(context.Contex
 
 func (UnimplementedPlatformAdminServiceHandler) PutModuleEnvelope(context.Context, *connect.Request[v1.PutModuleEnvelopeRequest]) (*connect.Response[v1.PutModuleEnvelopeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.PutModuleEnvelope is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) ResolveModuleTenantIdentity(context.Context, *connect.Request[v1.ResolveModuleTenantIdentityRequest]) (*connect.Response[v1.ResolveModuleTenantIdentityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ResolveModuleTenantIdentity is not implemented"))
 }

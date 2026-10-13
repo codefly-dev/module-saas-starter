@@ -1,0 +1,156 @@
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { HttpResponse, http, type JsonBodyType } from "msw";
+import { afterEach, describe, expect, it } from "vitest";
+import { renderInApp, rpc } from "@/test/container";
+import { server } from "@/test/setup";
+import { ModuleTenantIdentityPlayground } from "./module-tenant-identity-playground";
+
+// THE PAGE RESOLVES A MINT AND NEVER PERFORMS ONE.
+//
+// That is the claim worth testing, and it is a claim about what the page asks
+// for rather than about what renders: a surface that answered an operator with
+// a module's capability would be a second spelling of that module's identity.
+// So the test records the requests the page makes, asserts they are the
+// resolution and nothing else, and then asserts the two answers an operator
+// has to tell apart — what would be carried, and why nothing would be.
+
+afterEach(cleanup);
+
+const ORG = "11111111-1111-4111-8111-111111111111";
+
+const minted = {
+	identity: {
+		principalId: "module:example",
+		tenant: ORG,
+		audience: "example.api",
+		scopes: ["records:read:one", "records:write:one"],
+		lifetimeSeconds: "60",
+		revision: "8123456789",
+		shared: true,
+	},
+	refusal: "",
+	recent: [
+		{
+			record: "audit-1",
+			tenant: ORG,
+			binding: "operate",
+			audience: "example.api",
+			scopes: ["records:read:one"],
+			mintedAt: "2026-10-13T09:00:00Z",
+		},
+	],
+};
+
+const refused = {
+	refusal: "the organization has no live installation of this module",
+	recent: [],
+};
+
+/** Serve the resolution, and record every request the page makes. */
+function serve(answer: JsonBodyType): { calls: unknown[] } {
+	const calls: unknown[] = [];
+	server.use(
+		http.post(
+			rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+			async ({ request }) => {
+				calls.push(await request.json());
+				return HttpResponse.json(answer);
+			},
+		),
+	);
+	return { calls };
+}
+
+function fill() {
+	fireEvent.change(screen.getByLabelText("Module prefix"), {
+		target: { value: "example" },
+	});
+	fireEvent.change(screen.getByLabelText("Operation binding"), {
+		target: { value: "operate" },
+	});
+	fireEvent.change(screen.getByLabelText("Organization"), {
+		target: { value: ORG },
+	});
+}
+
+describe("ModuleTenantIdentityPlayground", () => {
+	it("asks nothing until the triple is named", async () => {
+		const recorded = serve(minted);
+		renderInApp(<ModuleTenantIdentityPlayground />);
+
+		// The answer is about the three together, so two of them is a different
+		// question — and showing its answer as this one's would be wrong.
+		fireEvent.change(screen.getByLabelText("Module prefix"), {
+			target: { value: "example" },
+		});
+		fireEvent.change(screen.getByLabelText("Operation binding"), {
+			target: { value: "operate" },
+		});
+		expect(
+			await screen.findByText(/Name a module, a binding and an organization/),
+		).toBeTruthy();
+		expect(recorded.calls).toHaveLength(0);
+	});
+
+	it("shows what one tenant's capability would carry, and asks for no mint", async () => {
+		const recorded = serve(minted);
+		renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+
+		expect(
+			await screen.findByText(/A capability would be issued/),
+		).toBeTruthy();
+		// Acting FOR the organization named: the tenant is the capability's, and
+		// it is what a consumer admitting a publication reads it from.
+		// Scoped to the resolution's own card: the audience also appears in the
+		// trail below it, and `getByText` over the page would be ambiguous for
+		// the wrong reason.
+		const resolved = document.querySelector<HTMLElement>(
+			'[data-slot="module-tenant-identity"]',
+		) as HTMLElement;
+		expect(within(resolved).getByText(ORG)).toBeTruthy();
+		expect(within(resolved).getByText("example.api")).toBeTruthy();
+		expect(within(resolved).getByText("60 seconds")).toBeTruthy();
+		// The scopes are the binding's headless list as this organization's
+		// installation narrowed it — never its invoke scopes.
+		expect(
+			within(resolved).getByText("records:read:one, records:write:one"),
+		).toBeTruthy();
+		expect(
+			screen.getByText(/may act for any organization that installs it/),
+		).toBeTruthy();
+
+		// The trail of capabilities actually issued, which is the only record of
+		// one: nothing caches a capability.
+		expect(document.querySelectorAll('[data-slot="module-tenant-mint"]')).toHaveLength(1);
+
+		// And the whole point: one request, the resolution, carrying the triple
+		// — and no mint anywhere.
+		expect(recorded.calls).toEqual([
+			{ prefix: "example", binding: "operate", organizationId: ORG },
+		]);
+	});
+
+	it("shows the refusal in the host's own words", async () => {
+		// A refusal is a decision about declared authority, and each one is a
+		// different thing for an operator to do about it — so the page prints
+		// what the host said rather than mapping every refusal onto one word.
+		serve(refused);
+		renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+
+		expect(
+			await screen.findByText(/No capability would be issued/),
+		).toBeTruthy();
+		expect(
+			screen.getByText(/has no live installation of this module/),
+		).toBeTruthy();
+		expect(
+			screen.getByText(/is a decision about declared authority, not an outage/),
+		).toBeTruthy();
+		// A refused resolution shows no capability's facts at all.
+		expect(
+			document.querySelector('[data-slot="module-tenant-identity"]'),
+		).toBeNull();
+	});
+});

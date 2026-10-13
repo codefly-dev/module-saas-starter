@@ -363,7 +363,8 @@ The host mints a child Work Context with:
 - owner = the module's own service principal (kind `service`), acting directly:
   no actor hop, as core models an owner acting, with the seal naming its
   installation and the build its pod runs;
-- tenant = the tenant the module envelope's grant declares for that principal;
+- tenant = **the organization the capability acts FOR**, which the caller names
+  and the envelope decides (see below);
 - a 60-second lifetime and the idempotent replay policy;
 - an authorization revision that is a digest of the module's whole derived
   registry entry (`business.ModuleOperationContextRevision`, never zero).
@@ -412,6 +413,63 @@ The rules are fail-closed on purpose:
 A composed module reaches it through the gateway's `POST
 /modules/_operation-context` ([services/auth-gateway/AGENTS.md](./services/auth-gateway/AGENTS.md)),
 which brokers to accounts exactly as `/modules/_work-context` does.
+
+### A module identity minted for ONE tenant
+
+This mint **is** the per-tenant module identity, and it is worth naming rather
+than leaving as a parameter nobody documents (issue #1121). `organization_id` on
+the request is the organization the capability acts for: its tenant is that
+organization, so a module can present itself as *acting for a tenant* instead of
+as itself. That is what a consumer admitting a publication for a tenant needs
+from a publisher with nobody signed in — it takes the tenant from the verified
+capability, where this host has already decided the principal may speak for it,
+never from a request field it would have to trust.
+
+**Which organizations may be named is the envelope's, never the caller's.**
+`moduleMintOrganization` decides it, identically for the identity mint and this
+one:
+
+| The envelope declares | It may mint for |
+| --- | --- |
+| `tenant: <org>` | that organization only; another is `PermissionDenied`. `cross_tenant` beside a pin changes nothing |
+| no tenant, `cross_tenant: true` | one organization per mint, named on the request |
+| no tenant, no `cross_tenant` | nothing: naming an organization is not authority over it |
+
+**And every named organization is then held to its own consent.** The mint
+re-reads the binding *after* `authorizeModuleCapabilityFromSnapshot` intersects
+that organization's installation scope, so what a per-tenant capability carries
+is that tenant's consent and not the deployment's: an organization that
+consented to fewer headless scopes gets fewer, and one that consented to none
+leaves the binding with no headless scopes and is refused. The bound is
+therefore per tenant, which a single deployment-wide identity could not be.
+Proved by `TestSharedInstallationMintSelectsOnlyConsentingOrganization`, which
+mints for two organizations and compares what each capability carries.
+
+**Reading it back, and the playground.**
+`PlatformAdminService/ResolveModuleTenantIdentity` answers what one mint would
+assert for a module, a binding and an organization — the principal, the tenant,
+the audience, the scopes, the lifetime, the revision, and whether the principal
+is shared — or the refusal, in one of four forms, because what an operator does
+about each is different: declare the principal, widen the envelope's tenancy,
+install the module there, or consent to the binding's headless scopes there.
+Beside it it answers the trail of capabilities actually issued, which is the
+only record of one. `/admin/platform/module-identity` drives it.
+
+**It issues no capability, and that is the shape rather than a limitation.** The
+mint authenticates with the module pod's projected ServiceAccount token held
+against the build its authority document approves; a browser has none, and a
+surface that answered an operator with a module's capability would be a second
+spelling of that module's identity. So the read resolves the decision from the
+same declared facts and stops before the signature.
+
+**What is still owed elsewhere.** The host accepts the organization on both
+mints and the gateway relays it, but the published module-authority client's
+`ModuleWorkContext(ctx)` and `MintModuleOperationContext(ctx, binding)` take no
+tenant — so a module consuming that client mints one identity for the whole
+deployment and cannot name an organization at all. That is a client-side gap in
+`saas-sdk-go/moduleauthority`, not here, and until it closes a module cannot
+reach this capability through the client it is given. Nothing in this repository
+works around it.
 
 ## Operation contexts from a source delegation
 
@@ -730,7 +788,7 @@ against them. The children are read from `saas.datasource.delegation.used`,
 because that trail is the only record of one — a capability lives about a minute
 and nothing caches it — so a revoked reference shows up as the next occurrence
 having no child at all. The playground that drives the whole walk is
-`/admin/platform/unattended-work`.
+`/admin/unattended-work`.
 
 **What the reconcile trigger's occurrences admit, and the scope that binds
 them.** `DatasourceService/ReconcileSource` and `LookupReconcileSource` are

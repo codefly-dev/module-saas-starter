@@ -867,6 +867,15 @@ the values and records the other column beside them).
   occurrence's run outlive the capability that admitted it, and makes a
   revocation land on the NEXT occurrence rather than behind something held from
   the one before.
+
+  `DeclareSourceTrigger` sets it **only for a delegation the executing module
+  can use** (#1121): a mint by source id resolves the delegation of the CALLING
+  module and the capability is addressed to the binding's audience, which the
+  executing module must itself admit — so the one usable shape is a delegation
+  whose binding names its own module as the audience
+  (`TriggerDelegationReference.usableByExecutor`). It took the first active
+  reference from any module before, so a deployment whose executor held none
+  read as "bound" while every occurrence was refused at the mint.
 - **`binding` is the installation-principal arm, and PLANNED.** It would name
   one of the release's bindings and mint from that binding's `headless_scopes`
   under the module's own principal (`MintModuleOperationContext`) — an ordinary
@@ -931,8 +940,21 @@ the values and records the other column beside them).
   destructive for a backfill: it took a personal
   source's delegation from its owner and moved every unrelated module's
   authority onto the administrator, failing in-flight children's re-checks. The
-  backfill leaves a target that already holds an active delegation untouched and
-  records only for a target with none, and it refuses a personal source the
+  backfill records **only for a module that executes declared work** —
+  `SourceDelegationTarget.ExecutesDeclaredWork`, the self-admitting binding
+  below — because that is what the reference it answers with is for (#1121). It
+  recorded one for every module accepting delegations, handing the calling
+  administrator's authority over that source to modules whose delegation no
+  trigger of this host could name. A connect still delegates to every target:
+  that is a person establishing the source, and a consuming module's sync is the
+  delegation's main purpose.
+
+  It leaves a target's LIVE delegation untouched and records for a target with
+  none — or with one the module's current declaration no longer supports. A
+  delegation whose binding digest has moved is refused by the very next mint as
+  `binding_changed`, so skipping it reported "nothing was missing" over a
+  trigger that could never mint; it is revoked here under that same reason and
+  replaced in one transaction. It also refuses a personal source the
   caller does not own (`ErrTriggerSourcePersonal` → `PermissionDenied`, told
   apart from `NotFound` because the source exists and is readable) — the
   division `ReconcileDatasourceSource` makes on the pass itself, so a reference
@@ -945,7 +967,54 @@ the values and records the other column beside them).
   minted against them. The children come from `saas.datasource.delegation.used`,
   which is the only record of one: a capability lives about a minute and nothing
   caches it, so a revoked reference shows up as the next occurrence having no
-  child at all. The playground is `/admin/platform/unattended-work`.
+  child at all. The playground is `/admin/unattended-work`, under `/admin/`
+  rather than `/admin/platform/` because the route catalog derives a page's
+  access boundary from its path and every RPC behind this one is org-scoped and
+  `ORG_ADMIN` (#1121): while it sat under the platform prefix the catalog
+  derived `super_admin` and the page's own gate said `admin`.
+- **The reader is also told what THIS HOST does about the schedule, and when**
+  (#1121). The declaration carries `host_sweep_enabled` and `host_sweep_due_at`
+  beside `next_occurrence_at`, because the declared cron and the stopgap sweep
+  share a period and NOT a phase: the cron comes due on the quarter or half
+  hour, the sweep fires on the source's stored instant, which every pass moves
+  to `now + interval`. Neither is aligned to the other on purpose — a cron
+  aligned to the stored instant would stop being derived from the interval
+  alone, and a stored instant aligned to the cron would make every source of one
+  provider come due in the same second. `DATASOURCE_RECONCILE_SWEEP_ENABLED`
+  (application group, ON unless `false`) is what an operator turns off when a
+  composed module starts consuming the declaration; it is read in two places
+  that are one fact — the tick is not installed, and `RunDatasourceReconcile`
+  itself refuses.
+
+## A module identity minted for one tenant
+
+`MintModuleOperationContext` takes the organization the capability acts FOR, and
+that makes it the per-tenant module identity: a module with nobody signed in can
+present itself as acting for a tenant rather than as itself, which is what a
+consumer admitting a publication for a tenant reads the publisher's tenant from.
+
+Which organizations may be named is the envelope's and never the caller's
+(`moduleMintOrganization`): a principal pinned to a tenant names that tenant and
+no other, an unpinned principal declaring `cross_tenant` names one per mint, and
+one declaring neither names nothing. Each named organization is then held to its
+own live installation, and the binding is re-read AFTER that installation's scope
+narrows it — so what a per-tenant capability carries is that tenant's consent,
+not the deployment's, and an organization consenting to no headless scopes is
+refused. `TestSharedInstallationMintSelectsOnlyConsentingOrganization` mints for
+two organizations and compares what each carries.
+
+`PlatformAdminService/ResolveModuleTenantIdentity` (`super_admin`) answers what
+one mint would assert, or why it would be refused, plus the trail of
+capabilities actually issued (`saas.module.operation_context_minted`, the only
+record of one). **It issues no capability**: the mint authenticates with the
+module pod's projected ServiceAccount token held against the approved build, a
+browser has none, and a surface that answered an operator with a module's
+capability would be a second spelling of that module's identity. The playground
+is `/admin/platform/module-identity`.
+
+The client-side gap that still stops a module reaching this —
+`saas-sdk-go/moduleauthority` takes no tenant on either mint — is named in
+[WORK_CONTEXTS.md](../WORK_CONTEXTS.md#a-module-identity-minted-for-one-tenant).
 
 ## Subject visibility is a projection, not a module's own vocabulary
 

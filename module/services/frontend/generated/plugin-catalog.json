@@ -126,6 +126,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
+      "path": "/admin/platform/module-identity",
+      "source_path": "src/app/admin/platform/module-identity/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
       "path": "/admin/platform/organizations",
       "source_path": "src/app/admin/platform/organizations/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",

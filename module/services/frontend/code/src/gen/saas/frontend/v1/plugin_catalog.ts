@@ -59,6 +59,7 @@ export const FRONTEND_ROUTES = [
   { path: "/admin/platform/events", sourcePath: "src/app/admin/platform/events/page.tsx", match: "exact", access: "super_admin" },
   { path: "/admin/platform/feature-flags", sourcePath: "src/app/admin/platform/feature-flags/page.tsx", match: "exact", access: "super_admin" },
   { path: "/admin/platform/jobs", sourcePath: "src/app/admin/platform/jobs/page.tsx", match: "exact", access: "super_admin" },
+  { path: "/admin/platform/module-identity", sourcePath: "src/app/admin/platform/module-identity/page.tsx", match: "exact", access: "super_admin" },
   { path: "/admin/platform/organizations", sourcePath: "src/app/admin/platform/organizations/page.tsx", match: "exact", access: "super_admin" },
   { path: "/admin/platform/plugin-transport", sourcePath: "src/app/admin/platform/plugin-transport/page.tsx", match: "exact", access: "super_admin" },
   { path: "/admin/platform/waitlist", sourcePath: "src/app/admin/platform/waitlist/page.tsx", match: "exact", access: "super_admin" },

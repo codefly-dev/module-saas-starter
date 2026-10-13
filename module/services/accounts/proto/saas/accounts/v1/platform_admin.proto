@@ -576,6 +576,100 @@ message PutModuleEnvelopeResponse {
   ModuleEnvelope envelope = 1;
 }
 
+// ---------------------------------------------------------------------------
+// A module identity minted for ONE tenant.
+//
+// A composed module acting with no person present mints a Work Context for one
+// of its installed operation bindings (MintModuleOperationContext) and names
+// the organization it is acting FOR. That is what lets a module present itself
+// as acting for a tenant rather than as itself: the capability's tenant is the
+// organization named, its scopes are that organization's installation narrowed
+// to the binding's headless_scopes, it lives a minute, and every issuance is
+// recorded.
+//
+// Which organizations it may name is not the caller's to choose. A principal
+// the envelope PINS to a tenant may name that tenant and no other; an unpinned
+// principal declaring cross_tenant may name an organization that has a live
+// installation consenting to the binding, and nothing else. An organization
+// whose installation consents to less gets less, and one that consents to
+// nothing is refused — so the bound is per tenant, not per deployment.
+//
+// This read answers what that mint would assert, for an operator, WITHOUT
+// issuing a capability. A browser holds no module identity (the mint requires
+// the pod's projected ServiceAccount token, held against the build its
+// authority document approves), and a path that handed an operator a module's
+// capability would be a second spelling of that identity — so there is
+// deliberately no such path, here or anywhere.
+// ---------------------------------------------------------------------------
+
+message ResolveModuleTenantIdentityRequest {
+  // prefix is the module principal's registration prefix and binding the key
+  // of its operation_audiences entry.
+  string prefix = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 63
+    pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+  }];
+  string binding = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  // organization_id is the tenant the capability would act for.
+  string organization_id = 3 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleTenantIdentity is what one per-tenant mint would assert. Every field is
+// the host's: nothing here is requestable.
+message ModuleTenantIdentity {
+  // principal_id is the module's own service principal, which owns the
+  // capability and acts directly — there is no person and no actor hop.
+  string principal_id = 1;
+  // tenant is the organization it would act for, and audience the service the
+  // binding declares it may call. A binding whose audience is the module's own
+  // prefix is one the module admits itself, which is how unattended work is
+  // admitted by the module that executes it.
+  string tenant = 2;
+  string audience = 3;
+  // scopes is exactly what the capability would carry, as
+  // `kind:action[:resource]`: the binding's headless_scopes narrowed by THIS
+  // organization's installation scope. Never its invoke_scopes, which describe
+  // authority exercised on a person's behalf.
+  repeated string scopes = 4;
+  // lifetime_seconds is the fixed lifetime every such capability carries.
+  int64 lifetime_seconds = 5;
+  // revision is the authorization revision it would be sealed with: a digest
+  // of the module's whole effective entry, so any change to the entry stops
+  // confirming every capability minted under the old one.
+  uint64 revision = 6;
+  // shared says the principal is unpinned and declares cross_tenant, so it may
+  // act for more than one organization. A pinned principal reads false and can
+  // only ever name the tenant its envelope declares.
+  bool shared = 7;
+}
+
+// ModuleTenantIdentityMint is one capability actually issued, as the audit
+// trail recorded it. There is no other record: a capability lives a minute and
+// nothing caches one.
+message ModuleTenantIdentityMint {
+  string record = 1;
+  string tenant = 2;
+  string binding = 3;
+  string audience = 4;
+  repeated string scopes = 5;
+  google.protobuf.Timestamp minted_at = 6;
+}
+
+message ResolveModuleTenantIdentityResponse {
+  // identity is set when a mint for this organization would be issued; refusal
+  // says why it would not. Exactly one is present, and a refusal is a decision
+  // about declared authority rather than an outage.
+  ModuleTenantIdentity identity = 1;
+  string refusal = 2;
+  // recent is the trail of capabilities this module was actually issued for
+  // this organization, newest first.
+  repeated ModuleTenantIdentityMint recent = 3;
+}
+
 // PlatformAdminService — cross-tenant operations for platform operators.
 // All RPCs require a platform_role in the JWT claims.
 service PlatformAdminService {
@@ -1040,5 +1134,23 @@ service PlatformAdminService {
       put: "/v1/platform/module-envelope"
       body: "*"
     };
+  }
+
+  // ResolveModuleTenantIdentity answers what a per-tenant module operation
+  // context would assert for one module, one of its bindings and one
+  // organization — or why it would be refused. It issues no capability.
+  rpc ResolveModuleTenantIdentity(ResolveModuleTenantIdentityRequest) returns (ResolveModuleTenantIdentityResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/module-tenant-identity"};
   }
 }

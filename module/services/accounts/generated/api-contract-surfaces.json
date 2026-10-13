@@ -386,6 +386,7 @@
         "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
         "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
         "/saas.accounts.v1.PlatformAdminService/ReplayJob",
+        "/saas.accounts.v1.PlatformAdminService/ResolveModuleTenantIdentity",
         "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
         "/saas.accounts.v1.PlatformAdminService/RevokeSession",
         "/saas.accounts.v1.PlatformAdminService/SearchUsers",

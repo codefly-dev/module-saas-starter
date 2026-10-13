@@ -4032,6 +4032,51 @@
         ]
       }
     },
+    "/v1/platform/module-tenant-identity": {
+      "get": {
+        "summary": "ResolveModuleTenantIdentity answers what a per-tenant module operation\ncontext would assert for one module, one of its bindings and one\norganization — or why it would be refused. It issues no capability.",
+        "operationId": "PlatformAdminService_ResolveModuleTenantIdentity",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResolveModuleTenantIdentityResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "prefix",
+            "description": "prefix is the module principal's registration prefix and binding the key\nof its operation_audiences entry.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "binding",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "organizationId",
+            "description": "organization_id is the tenant the capability would act for.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
     "/v1/platform/organizations/{orgId}/entitlements": {
       "get": {
         "summary": "Entitlements \u0026 billing",
@@ -10107,6 +10152,72 @@
       },
       "description": "ModuleEnvelope is one revision of the module envelope: the authority ceiling a\nplatform super_admin writes, which every module principal on this host is\nderived inside. Revisions are append-only; the current ceiling is the\nhighest."
     },
+    "v1ModuleTenantIdentity": {
+      "type": "object",
+      "properties": {
+        "principalId": {
+          "type": "string",
+          "description": "principal_id is the module's own service principal, which owns the\ncapability and acts directly — there is no person and no actor hop."
+        },
+        "tenant": {
+          "type": "string",
+          "description": "tenant is the organization it would act for, and audience the service the\nbinding declares it may call. A binding whose audience is the module's own\nprefix is one the module admits itself, which is how unattended work is\nadmitted by the module that executes it."
+        },
+        "audience": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "scopes is exactly what the capability would carry, as\n`kind:action[:resource]`: the binding's headless_scopes narrowed by THIS\norganization's installation scope. Never its invoke_scopes, which describe\nauthority exercised on a person's behalf."
+        },
+        "lifetimeSeconds": {
+          "type": "string",
+          "format": "int64",
+          "description": "lifetime_seconds is the fixed lifetime every such capability carries."
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64",
+          "description": "revision is the authorization revision it would be sealed with: a digest\nof the module's whole effective entry, so any change to the entry stops\nconfirming every capability minted under the old one."
+        },
+        "shared": {
+          "type": "boolean",
+          "description": "shared says the principal is unpinned and declares cross_tenant, so it may\nact for more than one organization. A pinned principal reads false and can\nonly ever name the tenant its envelope declares."
+        }
+      },
+      "description": "ModuleTenantIdentity is what one per-tenant mint would assert. Every field is\nthe host's: nothing here is requestable."
+    },
+    "v1ModuleTenantIdentityMint": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "type": "string"
+        },
+        "tenant": {
+          "type": "string"
+        },
+        "binding": {
+          "type": "string"
+        },
+        "audience": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mintedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "ModuleTenantIdentityMint is one capability actually issued, as the audit\ntrail recorded it. There is no other record: a capability lives a minute and\nnothing caches one."
+    },
     "v1Notification": {
       "type": "object",
       "properties": {
@@ -11035,6 +11146,26 @@
     },
     "v1RequestDeletionRequest": {
       "type": "object"
+    },
+    "v1ResolveModuleTenantIdentityResponse": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "$ref": "#/definitions/v1ModuleTenantIdentity",
+          "description": "identity is set when a mint for this organization would be issued; refusal\nsays why it would not. Exactly one is present, and a refusal is a decision\nabout declared authority rather than an outage."
+        },
+        "refusal": {
+          "type": "string"
+        },
+        "recent": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ModuleTenantIdentityMint"
+          },
+          "description": "recent is the trail of capabilities this module was actually issued for\nthis organization, newest first."
+        }
+      }
     },
     "v1Role": {
       "type": "object",
