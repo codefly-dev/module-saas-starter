@@ -281,13 +281,25 @@ func TestBringingAPartitionInStepLocksThePartitionNotItsName(t *testing.T) {
 		})
 		provisioned <- outcome{err, time.Since(started)}
 	}()
-	// Provisioning is at the target: trying for it, or queued for it.
+	// Provisioning is at the target: sleeping between tries for it, or queued
+	// for it behind the reader. Nothing else here sleeps, and the reader holds
+	// nothing else. Provisioning cannot pass the target while the reader holds
+	// it, so from its first try until the reader commits it stays there.
+	//
+	// The observer reads pg_stat_activity outside any transaction. A session
+	// collects the list of backends, and the statement each is running, the
+	// first time it reads them in a transaction, and shows that same list until
+	// the transaction ends; only the wait event is read live. Read from inside
+	// the reader's transaction, a first read taken before provisioning sent its
+	// statement hid provisioning for the rest of the test.
+	observer := retentionSession(t)
+	readerPID := int32(reader.PgConn().PID())
 	require.Eventually(t, func() bool {
 		var waiting int
-		err := reader.QueryRow(testCtx, `
+		err := observer.QueryRow(testCtx, `
 			SELECT count(*) FROM pg_stat_activity
 			 WHERE query LIKE '%audit_events_provision_partitions%' AND pid <> pg_backend_pid()
-			   AND (wait_event = 'PgSleep' OR wait_event_type = 'Lock')`).Scan(&waiting)
+			   AND (wait_event = 'PgSleep' OR $1::integer = ANY(pg_blocking_pids(pid)))`, readerPID).Scan(&waiting)
 		return err == nil && waiting > 0
 	}, 10*time.Second, 20*time.Millisecond, "provisioning never came to the target")
 	_, err = reader.Exec(testCtx, `COMMIT`)

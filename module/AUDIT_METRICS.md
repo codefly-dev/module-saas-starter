@@ -179,6 +179,98 @@ the two counts disagreeing means an incomplete operation, not a small one.
 
 A dry run, and a run the redrive left alone, record nothing.
 
+`saas.document.read_unscoped` and `saas.document.search_unscoped` are
+observational version-1 contracts for a read or a search that involved no
+collection: the caller could read none, or its request resolved to none.
+`saas.document.read` and
+`saas.document.search` each record one collection and require its boundary, so
+without these the refusal and the empty answer reached only the producer's own
+log. Neither requires an entry or an emission idempotency key. Their payload is:
+
+| Field | Kind | Required | Meaning |
+| --- | --- | --- | --- |
+| `solution` | string | no | Names the solution, as on every document event |
+| `actor_principal_id` | uuid | no | The acting principal |
+| `owner_principal_id` | uuid | no | The owning principal |
+| `initiator` | string | no | A provenance string, such as a webhook delivery id |
+| `correlation_id` | string | yes | Stable logical operation identity across transport retries |
+| `outcome` | enum | yes | `empty`, `denied`, or `failed` |
+| `duration_ms` | int | no | Observed elapsed milliseconds |
+
+They are types of their own rather than `saas.document.read` with an optional
+boundary, because the registry declares each field's requirement on its own and
+cannot state "boundary is required unless the outcome is denied, empty or
+failed". So `boundary` is not a field, and a payload naming a collection is
+refused as an unregistered field. `returned` is not an outcome, because evidence
+is always returned from some collection and belongs on the scoped type, and
+there is no `result_count`, because with no collection there is no result to
+count. Nor is there a `version`. A refusal is the outcome `denied`, never a type
+of its own. No field is bounded or marked PII; unknown payload fields are
+rejected, so there is no field to carry a query, a prompt or an excerpt.
+
+`saas.document.confirmed` records a person confirming the value a reference
+read at one version of a document: an append-only fact about that reference.
+It is a transactional version-1 contract recorded only when the confirmation
+commits — the module appends the event in the same transaction as its
+append-only confirmation row, and a refused confirmation writes nothing — so it
+carries no `outcome`. The entry is entry_id and the confirmation id is the
+emission idempotency key, so a retried emission collapses; the emission is
+refused without either. Its payload is:
+
+| Field | Kind | Required | Meaning |
+| --- | --- | --- | --- |
+| `solution` | string | no | Names the write, with `version` |
+| `version` | string | yes | The document version the reference was read at |
+| `boundary` | string | no | The data boundary (scope node) the write landed in |
+| `actor_principal_id` | uuid | no | The acting principal |
+| `owner_principal_id` | uuid | no | The owning principal |
+| `initiator` | string | no | A provenance string, such as a webhook delivery id |
+| `extractor` | string | yes | With the three rows below, names the reference confirmed |
+| `extractor_version` | string | yes | |
+| `field` | string | yes | |
+| `format` | string | yes | |
+| `address` | string | yes, at most 1024 bytes | The reference's position in its format's own notation |
+
+The version and every reference field are required: a confirmation that cannot
+say which version and which reference it confirmed is not one. The confirmed
+value is deliberately not a field — the spine records that a reference was
+confirmed, where, and by whom, never what it read — so a payload carrying it is
+refused as an unregistered field. No field is marked PII.
+
+`saas.document.extractor_revised` records an extractor attached to a document
+being revised: attached, corrected or retired. It is a transactional version-1
+contract. The entry is entry_id, and the emission is refused without it or
+without an emission idempotency key. The native extractor itself stays off the
+trail; its digest names it. Its payload is:
+
+| Field | Kind | Required | Meaning |
+| --- | --- | --- | --- |
+| `solution` | string | no | Names the write, with `version` |
+| `version` | string | yes | The document version the revision was derived from |
+| `boundary` | string | no | The data boundary (scope node) the write landed in |
+| `actor_principal_id` | uuid | no | The acting principal |
+| `owner_principal_id` | uuid | no | The owning principal |
+| `initiator` | string | no | A provenance string, such as a webhook delivery id |
+| `extractor_key` | string | yes, at most 128 bytes | The extractor's key |
+| `revision` | int | yes | The key's revision |
+| `digest` | string | yes, at most 64 bytes | The revision's digest, which names the native extractor |
+| `parent_digest` | string | no, at most 64 bytes | The parent revision's digest; a first attachment has none |
+| `retired` | bool | yes | Whether the revision retires the key |
+| `request_type` | string | yes, at most 128 bytes | The native request type |
+| `proposal_kind` | string | yes, at most 16 bytes | What proposed the revision |
+| `proposal_source` | string | no, at most 512 bytes; **PII** | The proposing run, receipt or derivation |
+
+Everything a revision always names is required. `proposal_source` names the
+proposing run, receipt or derivation, but nothing bounds it to an identifier: it
+is an unvalidated string, so it is marked PII and redacted from exports and
+webhooks. It is the only field of the four types so marked.
+
+On all four types, a required string, uuid or enum field means a nonempty,
+non-blank value, not merely a present key; a required int or bool is satisfied
+by `0` or `false`, which are values. The registry,
+`services/accounts/code/pkg/business/audit_registry.go`, is the source of these
+tables.
+
 ## Version acknowledgement
 
 Successful aggregate responses include `scope_contract_version: 1` (Connect JSON:
