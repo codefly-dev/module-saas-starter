@@ -31,11 +31,14 @@
 // consumer, so the catalog publishes components and shapes, and a consumer's own
 // metric ids and titles travel as values.
 
+import type { MetricFormat } from "./metric-tiles.js";
 import type {
 	DashboardLayoutKind,
+	DashboardSectionView,
 	DashboardView,
 	DashboardWidgetView,
 	SeriesPoint,
+	WidgetReadFailure,
 	WidgetSeries,
 	WidgetVisualization,
 } from "./types.js";
@@ -132,6 +135,20 @@ const DASHBOARD_LAYOUTS = closedSet<DashboardLayoutKind>()([
 	"stack",
 ] as const);
 
+/** How a widget's read ended, when it did not succeed. */
+const WIDGET_READ_FAILURES = closedSet<WidgetReadFailure>()([
+	"failed",
+	"refused",
+] as const);
+
+/** How a scalar widget's value reads. */
+const METRIC_FORMATS = closedSet<MetricFormat>()([
+	"number",
+	"compact",
+	"currency",
+	"percent",
+] as const);
+
 // ---------------------------------------------------------------------------
 // The data model: the shapes a catalog binding resolves to.
 // ---------------------------------------------------------------------------
@@ -170,17 +187,55 @@ const DASHBOARD_WIDGET_PROPERTIES = {
 	},
 	title: { type: "string" },
 	series: { $ref: "#/$defs/WidgetSeries" },
+	failure: {
+		enum: WIDGET_READ_FAILURES,
+		description:
+			"How the read ended when it did not succeed. Not a severity ordering: \"failed\" says the read did not complete and says nothing about authority, so a series already in hand is still drawn, as stale; \"refused\" says this viewer may not see the number, which makes a previously fetched one wrong rather than old, so the renderer discards it.",
+	},
 	span: {
 		type: "integer",
 		enum: [1, 2, 3, 4],
 		description: "Grid columns this widget spans; ignored in a stack.",
 	},
+	section: {
+		type: "string",
+		description:
+			"The id of the section this widget is drawn in. A widget naming no section, or one the view does not declare, falls to the untitled group.",
+	},
+	format: {
+		enum: METRIC_FORMATS,
+		description: "How a scalar widget's value reads. Defaults to a number.",
+	},
+	unit: {
+		type: "string",
+		description: "Suffix after a scalar widget's value, e.g. \"req/s\".",
+	},
+	higherIsBetter: {
+		type: "boolean",
+		description:
+			"When false a rising value reads as bad, the way an error count does. Defaults true.",
+	},
 } satisfies SchemaProperties<DashboardWidgetView>;
+
+const DASHBOARD_SECTION_PROPERTIES = {
+	id: {
+		type: "string",
+		description: "Stable identity a widget's `section` names.",
+	},
+	title: { type: "string" },
+	description: { type: "string" },
+} satisfies SchemaProperties<DashboardSectionView>;
 
 const DASHBOARD_VIEW_PROPERTIES = {
 	title: { type: "string" },
 	description: { type: "string" },
 	layout: { enum: DASHBOARD_LAYOUTS, description: "Defaults to a grid." },
+	sections: {
+		type: "array",
+		items: { $ref: "#/$defs/DashboardSectionView" },
+		description:
+			"The sections the widgets are grouped into, in the order they are drawn. A view without sections draws its widgets as one untitled group.",
+	},
 	columns: {
 		type: "integer",
 		enum: [1, 2, 3, 4],
@@ -230,6 +285,14 @@ export const DASHBOARD_DATA_SCHEMA = {
 				"id",
 				"visualization",
 				"series",
+			] as const),
+		},
+		DashboardSectionView: {
+			type: "object",
+			properties: DASHBOARD_SECTION_PROPERTIES,
+			required: closedSet<RequiredKeys<DashboardSectionView>>()([
+				"id",
+				"title",
 			] as const),
 		},
 		DashboardView: {

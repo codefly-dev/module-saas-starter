@@ -76,6 +76,13 @@
 				"series": {
 					"$ref": "#/$defs/WidgetSeries"
 				},
+				"failure": {
+					"enum": [
+						"failed",
+						"refused"
+					],
+					"description": "How the read ended when it did not succeed. Not a severity ordering: \"failed\" says the read did not complete and says nothing about authority, so a series already in hand is still drawn, as stale; \"refused\" says this viewer may not see the number, which makes a previously fetched one wrong rather than old, so the renderer discards it."
+				},
 				"span": {
 					"type": "integer",
 					"enum": [
@@ -85,12 +92,52 @@
 						4
 					],
 					"description": "Grid columns this widget spans; ignored in a stack."
+				},
+				"section": {
+					"type": "string",
+					"description": "The id of the section this widget is drawn in. A widget naming no section, or one the view does not declare, falls to the untitled group."
+				},
+				"format": {
+					"enum": [
+						"number",
+						"compact",
+						"currency",
+						"percent"
+					],
+					"description": "How a scalar widget's value reads. Defaults to a number."
+				},
+				"unit": {
+					"type": "string",
+					"description": "Suffix after a scalar widget's value, e.g. \"req/s\"."
+				},
+				"higherIsBetter": {
+					"type": "boolean",
+					"description": "When false a rising value reads as bad, the way an error count does. Defaults true."
 				}
 			},
 			"required": [
 				"id",
 				"visualization",
 				"series"
+			]
+		},
+		"DashboardSectionView": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"description": "Stable identity a widget's `section` names."
+				},
+				"title": {
+					"type": "string"
+				},
+				"description": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"id",
+				"title"
 			]
 		},
 		"DashboardView": {
@@ -108,6 +155,13 @@
 						"stack"
 					],
 					"description": "Defaults to a grid."
+				},
+				"sections": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/DashboardSectionView"
+					},
+					"description": "The sections the widgets are grouped into, in the order they are drawn. A view without sections draws its widgets as one untitled group."
 				},
 				"columns": {
 					"type": "integer",
