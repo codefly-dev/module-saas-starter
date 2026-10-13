@@ -37,7 +37,12 @@ import (
 //     principal, so clause 3 alone left it unaddressable. It is derived from
 //     delivered presence exactly as clause 2 is, and withdrawn with the same
 //     tombstone. Addressability only: authority for the module's own calls is
-//     still the authority document's alone.
+//     still the authority document's alone. It is keyed by alias, unlike
+//     clause 2, because the alias is what the module verifies a viewer's Work
+//     Context against; so a capability minted for a withdrawn module stays
+//     good at a successor declared under the same alias until it expires. That
+//     is bounded by the capability's lifetime and by the per-request
+//     installation admission the gateway makes before forwarding it.
 //  5. Nothing else. The gateway's own name is never an audience: a capability
 //     addressed to the forwarding hop is one the hop would consume rather than
 //     forward.
@@ -194,19 +199,15 @@ func (s *Service) HostAudiences(ctx context.Context) (map[string]struct{}, error
 		if id := strings.TrimSpace(binding.BindingID); id != "" {
 			set[SolutionAudience(id)] = struct{}{}
 		}
-		// A declared module's alias (clause 4). Never one that would collide
-		// with a member of another clause: the module capability audience and
-		// the solution prefix are this set's own spellings, and an alias that
-		// equals one is a declaration this vocabulary cannot tell apart.
+		// A declared module's alias (clause 4). An alias is one RFC 1123 label
+		// (core refuses any other route alias), so it can never spell a
+		// `solution:` audience.
 		if binding.Kind != SolutionDeclaredKindModule {
 			continue
 		}
-		alias := strings.TrimSpace(binding.Alias)
-		if alias == "" || alias == ModuleCapabilitiesAudience || alias == SourceOperationAudience ||
-			strings.HasPrefix(alias, SolutionAudiencePrefix) {
-			continue
+		if alias := strings.TrimSpace(binding.Alias); alias != "" {
+			set[alias] = struct{}{}
 		}
-		set[alias] = struct{}{}
 	}
 	// A declared module's own prefix. The registry is keyed by principal id, and
 	// the audience is the PREFIX that id is derived from — the value the

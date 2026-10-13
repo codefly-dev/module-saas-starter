@@ -46,6 +46,10 @@ func appliedPresence(binding *accountsv1.SolutionHostBindingState) (*solutionhos
 	return document, true
 }
 
+// moduleGatewayAPIs are the APIs a module's /v1/<alias> surface may be served
+// on: the REST surface a solution's passthrough transcodes to, or plain HTTP.
+var moduleGatewayAPIs = map[string]bool{"rest": true, "http": true}
+
 // moduleEndpoint names the endpoint a declared module serves this gateway on:
 // module, service, endpoint and API, exactly as Codefly keys an endpoint. It is
 // a NAME, never an address — the presence declares endpoints and freezes no
@@ -69,9 +73,15 @@ func appliedModuleEndpoints(binding *accountsv1.SolutionHostBindingState) []modu
 	for _, workload := range document.Workloads {
 		serving[workload.Artifact] = true
 	}
+	// Only the HTTP-family APIs a /v1/<alias> surface is served on: a gRPC or
+	// Connect endpoint's address is not an HTTP origin the proxy can forward to.
+	// And only the module's own endpoints: a presence naming another module's
+	// endpoint could otherwise point this alias at any address this gateway
+	// holds a carrier for.
+	alias := binding.GetRegistration().GetSolutionId()
 	var endpoints []moduleEndpoint
 	for _, endpoint := range document.Endpoints {
-		if serving[endpoint.Service] && endpoint.Module != "" && endpoint.API != "" {
+		if serving[endpoint.Service] && endpoint.Module == alias && moduleGatewayAPIs[endpoint.API] {
 			endpoints = append(endpoints, moduleEndpoint{Module: endpoint.Module, Service: endpoint.Service, Name: endpoint.Name, API: endpoint.API})
 		}
 	}

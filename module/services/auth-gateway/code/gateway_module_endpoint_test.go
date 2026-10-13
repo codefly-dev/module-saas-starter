@@ -64,9 +64,11 @@ func TestAModulePresenceOffersTheEndpointsOfTheServiceItRuns(t *testing.T) {
 	binding := modulePresenceBinding(t,
 		endpointOf("documents", "grpc", "grpc"), endpointOf("documents", "rest", "rest"), endpointOf("store", "rest", "rest"))
 	require.Equal(t, []moduleEndpoint{
-		{Module: "documents", Service: "documents", Name: "grpc", API: "grpc"},
 		{Module: "documents", Service: "documents", Name: "rest", API: "rest"},
-	}, appliedModuleEndpoints(binding), "another service's endpoint is not the module's surface")
+	}, appliedModuleEndpoints(binding), "only the serving service's HTTP-family endpoints: not grpc, not another service's")
+
+	foreign := modulePresenceBinding(t, solutionhost.Endpoint{Name: "rest", Service: "documents", Module: "accounts", API: "rest", Visibility: "internal"})
+	require.Empty(t, appliedModuleEndpoints(foreign), "a presence may not name another module's endpoint as its own surface")
 
 	var document solutionhost.SolutionHostBinding
 	require.NoError(t, json.Unmarshal([]byte(binding.Applied.Generation.Document), &document))
@@ -91,6 +93,7 @@ func TestAModuleIsRoutedToTheEndpointTheCompositionAddressed(t *testing.T) {
 		{"none addressed", map[moduleEndpoint]string{}, ""},
 		{"two addressed", map[moduleEndpoint]string{rest: "http://localhost:8080", grpc: "http://localhost:9090"}, ""},
 		{"an address the policy refuses", map[moduleEndpoint]string{rest: "http://8.8.8.8:80"}, ""},
+		{"a refused address beside one that answers", map[moduleEndpoint]string{rest: "http://localhost:8080", grpc: "http://8.8.8.8:80"}, "http://localhost:8080"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cache := newSolutionRegistryCache(nil)

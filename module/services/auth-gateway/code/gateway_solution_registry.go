@@ -146,7 +146,7 @@ type solutionRegistryCache struct {
 	// same refresh as the record it routes, so a lookup never pairs one
 	// snapshot's record with another's address.
 	moduleUpstreams map[string]*url.URL
-	// moduleRefusals remembers which (alias, reason) was already logged.
+	// moduleRefusals remembers, per alias, the last refusal reason logged.
 	moduleRefusals sync.Map
 	revision       int64
 	loaded         bool
@@ -218,6 +218,12 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 		return errSolutionRegistryUnconfigured
 	}
 	resp, err := c.client.List(ctx, &accountsv1.ListSolutionRegistrationsRequest{IncludeTombstoned: true})
+	// Resolved BEFORE the lock: resolution may read the workspace from disk,
+	// and every lookup waits on this lock.
+	var upstreams map[string]*url.URL
+	if err == nil {
+		upstreams = c.resolveModuleUpstreams(ctx, resp.moduleEndpoints)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.attemptedAt = c.now()
@@ -231,7 +237,7 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	}
 	c.records = records
 	c.workloadIDs = resp.workloadIDs
-	c.moduleUpstreams = c.resolveModuleUpstreams(ctx, resp.moduleEndpoints)
+	c.moduleUpstreams = upstreams
 	c.revision = resp.GetRegistryRevision()
 	c.loaded = true
 	c.lastErr = nil
@@ -260,19 +266,18 @@ func (c *solutionRegistryCache) reconcile(ctx context.Context) {
 }
 
 // resolveModuleUpstreams resolves each declared module to the one address this
-// gateway forwards /v1/<alias> to: of the endpoints its applied presence
-// declares, the one the composition handed this gateway an address for — the
-// Codefly CLI writes exactly the endpoints composed solutions consume through
-// the host. None leaves the module unrouted; two are refused as ambiguous
-// rather than chosen between; an address the upstream policy refuses is
-// refused. Each refusal is logged once per alias and reason, not on every
-// refresh.
+// gateway forwards /v1/<alias> to: of the HTTP-family endpoints its applied
+// presence declares, the one the composition handed this gateway an address
+// for — the Codefly CLI writes exactly the endpoints composed solutions consume
+// through the host. An address the upstream policy refuses is not a candidate
+// (it is logged, and another endpoint may still answer); none leaves the module
+// unrouted; several are refused as ambiguous rather than chosen between. Each
+// alias's reason is logged once, and again only after it changes.
 func (c *solutionRegistryCache) resolveModuleUpstreams(ctx context.Context, endpoints map[string][]moduleEndpoint) map[string]*url.URL {
 	upstreams := make(map[string]*url.URL, len(endpoints))
 	for alias, candidates := range endpoints {
 		var resolved []*url.URL
-		var named []string
-		refused := false
+		var named, refused []string
 		for _, endpoint := range candidates {
 			address, err := c.resolveEndpoint(ctx, endpoint)
 			if err != nil {
@@ -280,17 +285,18 @@ func (c *solutionRegistryCache) resolveModuleUpstreams(ctx context.Context, endp
 			}
 			upstream, ok := routableUpstream(address)
 			if !ok {
-				c.noteModuleRefusal(alias, fmt.Sprintf("endpoint %s resolves to an address the upstream policy refuses", endpoint))
-				refused = true
+				refused = append(refused, endpoint.String())
 				continue
 			}
 			resolved = append(resolved, upstream)
 			named = append(named, endpoint.String())
 		}
 		switch {
-		case refused:
 		case len(resolved) == 1:
 			upstreams[alias] = resolved[0]
+			c.noteModuleRouted(alias)
+		case len(resolved) == 0 && len(refused) > 0:
+			c.noteModuleRefusal(alias, fmt.Sprintf("its endpoints resolve only to addresses the upstream policy refuses (%v)", refused))
 		case len(resolved) == 0:
 			c.noteModuleRefusal(alias, "the composition handed this gateway no address for any endpoint its presence declares")
 		default:
@@ -301,13 +307,19 @@ func (c *solutionRegistryCache) resolveModuleUpstreams(ctx context.Context, endp
 }
 
 // noteModuleRefusal logs why a declared module is not routed, once per alias
-// and reason.
+// until the reason changes or the module is routed again.
 func (c *solutionRegistryCache) noteModuleRefusal(alias, reason string) {
-	key := alias + "\x00" + reason
-	if _, seen := c.moduleRefusals.LoadOrStore(key, struct{}{}); seen {
+	if previous, seen := c.moduleRefusals.Swap(alias, reason); seen && previous == reason {
 		return
 	}
 	log.Printf("solution registry: module %q is not routed: %s", alias, reason)
+}
+
+// noteModuleRouted forgets a module's last refusal, so a later one is logged.
+func (c *solutionRegistryCache) noteModuleRouted(alias string) {
+	if _, seen := c.moduleRefusals.LoadAndDelete(alias); seen {
+		log.Printf("solution registry: module %q is routed again", alias)
+	}
 }
 
 // String spells the endpoint as Codefly references one: module/service/name::api.
