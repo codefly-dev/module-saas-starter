@@ -498,9 +498,29 @@ jobs:
         shell: bash
         run: |
           baseline="$(mktemp -d)"
-          git fetch --no-tags origin \
-            refs/heads/main:refs/remotes/origin/main
-          git archive origin/main module/services/accounts/proto | tar -x -C "${baseline}"
+          # Compare this tree against the base it was MERGED WITH, not against
+          # main as it stands right now. On a pull_request the checkout is the
+          # merge ref, whose first parent is that base -- and GitHub recomputes
+          # merge refs lazily, so a tree merged with an older main, diffed
+          # against live main, reports every message main has gained since as a
+          # deletion. Measured on #1051's own merge ref: 47 violations against
+          # live main, 0 against its first parent, from a diff that touches no
+          # proto at all. Those reds read exactly like a real contract break and
+          # cost a day of merging main into PRs to chase.
+          #
+          # This does not weaken the gate. A proto change that only breaks the
+          # contract once a concurrent change lands is caught where it has to
+          # be: the merge queue builds main + the PR afresh, so there HEAD^1 IS
+          # current main.
+          if git rev-parse --verify -q HEAD^2 >/dev/null; then
+            baseline_rev="HEAD^1"
+          else
+            git fetch --no-tags origin \
+              refs/heads/main:refs/remotes/origin/main
+            baseline_rev="origin/main"
+          fi
+          echo "proto baseline: ${baseline_rev} ($(git rev-parse --short "${baseline_rev}"))"
+          git archive "${baseline_rev}" module/services/accounts/proto | tar -x -C "${baseline}"
           # Compare the owned module as one Buf image; the vendored option
           # closure is a separate module, not a second public API to compare.
           # Both sides are built with the same --path filter. The proto
