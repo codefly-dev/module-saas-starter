@@ -33,12 +33,27 @@ export function useModuleTenantIdentity(
 					organizationId,
 				});
 			} catch (error) {
+				// The refused triple, and only it. `findAll({ queryKey })` is a
+				// PREFIX match, so this cleared every cached triple — including
+				// answers about other bindings and other organizations that
+				// nothing had refused. This page asks one triple at a time, so
+				// the harm was a needless refetch rather than a false claim, but
+				// the rule is the same one the declaration query now follows
+				// (issue #1121): a refusal is evidence about the key it
+				// answered, and about no other.
 				if (!mayKeepRetainedRows(readOutcome(true, error))) {
-					for (const query of client
+					client
 						.getQueryCache()
-						.findAll({ queryKey: ["module-tenant-identity"] })) {
-						query.setState({ data: undefined, dataUpdatedAt: 0 });
-					}
+						.find({
+							queryKey: [
+								"module-tenant-identity",
+								prefix,
+								binding,
+								organizationId,
+							],
+							exact: true,
+						})
+						?.setState({ data: undefined, dataUpdatedAt: 0 });
 				}
 				throw error;
 			}

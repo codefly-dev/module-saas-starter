@@ -52,12 +52,24 @@ export function useSourceTriggerDeclaration(orgId: string, sourceId: string) {
 				// answer under a stale notice, because blanking a good answer
 				// because one request did not come back is worse than the
 				// staleness (shared/lib/read-outcome.ts).
+				//
+				// AND IT CLEARS EXACTLY ONE KEY — the one that was refused.
+				// `findAll({ queryKey })` matches by PREFIX, so clearing
+				// `["source-trigger-declaration"]` reached every organization
+				// and every source: one source's 403 blanked a sibling source
+				// whose own read had succeeded. That sibling's query stays in
+				// `success` with no error, so its row has no refusal to report
+				// and says "This source declares no trigger" — a false
+				// statement about a source the viewer may see. A refusal is
+				// evidence about the key it answered, and about no other.
 				if (!mayKeepRetainedRows(readOutcome(true, error))) {
-					for (const query of client
+					client
 						.getQueryCache()
-						.findAll({ queryKey: ["source-trigger-declaration"] })) {
-						query.setState({ data: undefined, dataUpdatedAt: 0 });
-					}
+						.find({
+							queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
+							exact: true,
+						})
+						?.setState({ data: undefined, dataUpdatedAt: 0 });
 				}
 				throw error;
 			}

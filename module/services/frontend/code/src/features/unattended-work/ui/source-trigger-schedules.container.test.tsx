@@ -781,3 +781,141 @@ describe("the declaration read's remaining states", () => {
 		);
 	});
 });
+
+// A REFUSAL DELETES ONE DECLARATION, NOT EVERY DECLARATION (issue #1121, the
+// parent's scope finding on b3d01c3d3).
+//
+// `getQueryCache().findAll({ queryKey })` matches by PREFIX in TanStack Query,
+// so clearing `["source-trigger-declaration"]` reached every org and every
+// source. One source refusing its read then blanked a sibling source whose own
+// read had SUCCEEDED — and the damage is invisible at the component, because
+// that sibling's query status is still `success` with no error: the row has no
+// refusal to report and falls through to "This source declares no trigger",
+// which is a false statement about a source the viewer is allowed to see.
+//
+// The blast radius of a refusal is the key that was refused. These two probes
+// pin that at both scopes a key carries: another source in the same
+// organization, and the same source in another organization.
+const SOURCE_B = "aaaaaaaa-0000-4000-8000-000000000002";
+
+const twoSources = {
+	datasources: [
+		sources.datasources[0],
+		{
+			id: SOURCE_B,
+			orgId: "org-1",
+			provider: "DATASOURCE_PROVIDER_GITHUB",
+			github: { repo: "acme/runbooks", branch: "main" },
+			status: "DATASOURCE_STATUS_ACTIVE",
+		},
+	],
+};
+
+const declaredB = {
+	...declared,
+	schedule: { ...declared.schedule, cron: "15 * * * *" },
+	identity: { source: SOURCE_B },
+	digest: "9e22",
+};
+
+describe("one refused declaration does not blank another", () => {
+	it("leaves an authorized source's declaration intact when a sibling source is refused", async () => {
+		let denyA = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(twoSources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async ({ request }) => {
+					const body = (await request.json()) as { sourceId?: string };
+					if (body.sourceId === SOURCE_B) {
+						return HttpResponse.json({
+							declaration: declaredB,
+							delegations: [],
+							children: [],
+						});
+					}
+					return denyA
+						? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+						: HttpResponse.json({
+								declaration: declared,
+								delegations: [],
+								children: [],
+							});
+				},
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+		await screen.findByText("15 * * * *");
+
+		denyA = true;
+		// ONLY A IS REFETCHED, which is the whole point: B's query is not
+		// re-run, so if A's refusal deleted B's snapshot nothing restores it.
+		// Refetching both would hide the defect, because B's own successful
+		// re-read would repopulate what A had just wiped.
+		await act(async () => {
+			await client.refetchQueries({
+				queryKey: ["source-trigger-declaration", "org-1", SOURCE],
+				exact: true,
+			});
+		});
+
+		// A is gone and says why.
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+		expect(screen.queryByText("*/30 * * * *")).toBeNull();
+		// B is UNTOUCHED: its read succeeded, so its declaration, its sweep row
+		// and its cached answer all stand. The last assertion is the one that
+		// fails on the prefix clear — the component would otherwise claim B
+		// declares no trigger while its query sits in `success`.
+		expect(screen.getByText("15 * * * *")).toBeTruthy();
+		expect(
+			client.getQueryData(["source-trigger-declaration", "org-1", SOURCE_B]),
+		).toBeTruthy();
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+	});
+
+	it("leaves another organization's declaration of the same source intact", async () => {
+		const other = ["source-trigger-declaration", "org-2", SOURCE] as const;
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		// A second organization's answer for the same source id, which no part
+		// of this refusal is about.
+		client.setQueryData(other, {
+			declaration: declaredB,
+			delegations: [],
+			children: [],
+		});
+
+		denied = true;
+		await act(async () => {
+			await client.refetchQueries({
+				queryKey: ["source-trigger-declaration", "org-1", SOURCE],
+			});
+		});
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		expect(client.getQueryData(other)).toBeTruthy();
+	});
+});

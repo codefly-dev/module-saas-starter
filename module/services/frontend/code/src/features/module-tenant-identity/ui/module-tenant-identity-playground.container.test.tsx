@@ -235,3 +235,42 @@ describe("independent review: authority read outcomes", () => {
 		expect(screen.getByText("audit-1")).toBeTruthy();
 	});
 });
+
+// AND THE REFUSAL IS ABOUT ONE TRIPLE (issue #1121, the same scope finding the
+// declaration query carried). `findAll({ queryKey })` matches by prefix, so a
+// refusal here deleted every cached triple — other bindings, other
+// organizations — none of which had been refused. This page asks one triple at
+// a time, so the harm was a needless refetch rather than a false claim; the rule
+// is the same either way, and this pins it.
+describe("a refusal's blast radius is the triple it answered", () => {
+	it("keeps another organization's cached answer", async () => {
+		serve(minted);
+		const { client } = renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+		await screen.findByText("audit-1");
+
+		const other = [
+			"module-tenant-identity",
+			"saas",
+			"module:audit",
+			"22222222-2222-4222-8222-222222222222",
+		] as const;
+		client.setQueryData(other, minted);
+
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				() =>
+					HttpResponse.json(
+						{ code: "permission_denied", message: "refused" },
+						{ status: 403 },
+					),
+			),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Resolve again" }));
+		await screen.findAllByText(/not allowed|permission|cannot view|access/i);
+
+		expect(screen.queryByText("audit-1")).toBeNull();
+		expect(client.getQueryData(other)).toBeTruthy();
+	});
+});
