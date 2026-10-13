@@ -71,6 +71,28 @@ func (s *Service) ReconcileDatasourceSource(ctx context.Context, actor, org, sou
 	if !ok {
 		return operationUnavailable()
 	}
+	// NOTHING IS ENQUEUED FOR A PASS THAT WILL BE REFUSED (issue #1121, m2/N4).
+	// The effect's binding and request digest are read FIRST, in their own
+	// read-only transaction, because both refusals below are decisions about
+	// the attempt row alone: enqueueing and then refusing left a job behind for
+	// a request this host rejected, and since the key now names the
+	// organization and the source as well as the effect, a re-presented
+	// identity naming a different source produced a key of its own — a real
+	// second re-send of that source rather than a collapsed replay.
+	//
+	// This is not a second authority. The transaction below is still the
+	// decision: a concurrent attempt can take the row between the two reads, so
+	// the checks are made again where they commit. What this read adds is that
+	// the queue is not touched by a request already known to be refused.
+	if err := s.store.WithOrgTx(ctx, org, func(ctx context.Context) error {
+		prior, err := attempts.GetSourceOperationAttempt(ctx, org, effect.ID)
+		if err != nil {
+			return operationUnavailable()
+		}
+		return reconcileAttemptAdmits(prior, actor, source.ID, effect.RequestDigest)
+	}); err != nil {
+		return err
+	}
 	// The enqueue comes before the record, and the record is what makes the
 	// pass recoverable. That order is safe only because the enqueue is keyed by
 	// the effect: a crash between the two leaves one job that a retry under the
@@ -84,8 +106,10 @@ func (s *Service) ReconcileDatasourceSource(ctx context.Context, actor, org, sou
 		if err != nil {
 			return operationUnavailable()
 		}
-		switch {
-		case prior == nil:
+		if err := reconcileAttemptAdmits(prior, actor, source.ID, effect.RequestDigest); err != nil {
+			return err
+		}
+		if prior == nil {
 			created, err := attempts.CreateSourceOperationAttempt(ctx, SourceOperationAttempt{
 				OrgID: org, EffectID: effect.ID, ActorID: actor, SourceID: source.ID,
 				Operation: reconcileSourceOperation, DeclarationDigest: ReconcileSourceMethod,
@@ -94,10 +118,6 @@ func (s *Service) ReconcileDatasourceSource(ctx context.Context, actor, org, sou
 			if err != nil || !created {
 				return operationUnavailable()
 			}
-		case prior.ActorID != actor || prior.SourceID != source.ID || prior.Operation != reconcileSourceOperation:
-			return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
-		case !bytes.Equal(prior.RequestDigest, effect.RequestDigest):
-			return operationRefused("SOURCE_EFFECT_REUSED")
 		}
 		return commit(ctx, jobID)
 	})
@@ -111,8 +131,18 @@ func (s *Service) ReconcileDatasourceSource(ctx context.Context, actor, org, sou
 	// durability rule rather than an oversight: "a sync was requested" observes
 	// a handover that has already happened, so rolling it back with the write
 	// it observes would lose the record of work that is still going to run.
-	s.emit(ctx, actor, "user", EventDatasourceSourceSynced, "datasource", source.ID, org,
-		map[string]any{"job_id": jobID, "repo": source.Repo})
+	//
+	// The actor stays the person, because for a delegated pass the authority IS
+	// that person's and ADR 0008 puts them in the trail on purpose. What the
+	// row now also says is whether anybody was present: an unattended pass
+	// names the delegation it was admitted under (issue #1121, m3), so a reader
+	// can tell one from a person's "Sync now" without joining the mint trail
+	// by hand.
+	payload := map[string]any{"job_id": jobID, "repo": source.Repo}
+	if delegationID, unattended := unattendedPass(ctx); unattended {
+		payload["unattended"], payload["delegation_id"] = true, delegationID
+	}
+	s.emit(ctx, actor, "user", EventDatasourceSourceSynced, "datasource", source.ID, org, payload)
 	// The schedule's own projection moves with the pass, not with a clock this
 	// host runs: the stored instant is what the park and restore paths read as
 	// "this source is on its schedule", and a pass that left it alone would let
@@ -120,6 +150,26 @@ func (s *Service) ReconcileDatasourceSource(ctx context.Context, actor, org, sou
 	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.store.BumpDatasourceReconcile(ctx, source.ID)
 	})
+}
+
+// reconcileAttemptAdmits judges one effect identity against the attempt row
+// that already holds it: absent is a first attempt, an identical binding and
+// request digest is a retry of the same occurrence, and anything else is a
+// refusal.
+//
+// One function because it is asked twice — once before the enqueue, once where
+// the receipt commits — and two copies of a refusal rule are two places for the
+// pre-check to start admitting what the commit refuses.
+func reconcileAttemptAdmits(prior *SourceOperationAttempt, actor, sourceID string, requestDigest []byte) error {
+	switch {
+	case prior == nil:
+		return nil
+	case prior.ActorID != actor || prior.SourceID != sourceID || prior.Operation != reconcileSourceOperation:
+		return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
+	case !bytes.Equal(prior.RequestDigest, requestDigest):
+		return operationRefused("SOURCE_EFFECT_REUSED")
+	}
+	return nil
 }
 
 // enqueueReconcileOccurrence hands one pass to the engine the source's provider

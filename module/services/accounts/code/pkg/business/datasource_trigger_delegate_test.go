@@ -25,9 +25,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Two modules, each with one binding that accepts a delegation. Two rather
-// than one because the harm is to the delegation this call did NOT come to
-// record.
+// Three modules, each with one binding that accepts a delegation, and they are
+// not interchangeable.
+//
+// `docstore` and `reportstore` are CONSUMING modules: their bindings name
+// another service as the audience, which is what a person's connect delegates
+// to. `runtime` is the module that EXECUTES declared work: its binding names
+// its own prefix, because it mints the capability for an occurrence and then
+// admits that capability as its own incoming execution context.
+//
+// The distinction is what the backfill is narrowed to (issue #1121, N8): a
+// trigger's reference arm is a source id, a mint by source id resolves the
+// delegation of the CALLING module, and the capability is addressed to the
+// binding's audience — so only the self-admitting shape can serve one. A
+// delegation recorded for a consuming module is the administrator's authority
+// handed to a module whose delegation no trigger of this host could name.
 const delegateTriggerPrincipals = `{` +
 	`"docstore":{"workload":{"service_account":"docstore","namespace":"acme-prod","container":"app"},` +
 	`"tenant":"` + testOrg + `","operation_audiences":{"source-sync":{"audience":"ingestservice",` +
@@ -36,6 +48,11 @@ const delegateTriggerPrincipals = `{` +
 	`"reportstore":{"workload":{"service_account":"reportstore","namespace":"acme-prod","container":"app"},` +
 	`"tenant":"` + testOrg + `","operation_audiences":{"source-sync":{"audience":"reportservice",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
+	`"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}},` +
+	`"runtime":{"workload":{"service_account":"runtime","namespace":"acme-prod","container":"app"},` +
+	`"tenant":"` + testOrg + `","operation_audiences":{"occurrences":{"audience":"runtime",` +
+	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
+	`"headless_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 	`"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}}}`
 
 // A delegation another module already holds survives an administrator's
@@ -70,12 +87,68 @@ func TestDelegateSourceTriggersLeavesAnotherModulesDelegationAlone(t *testing.T)
 	require.Equal(t, "connecting-member", after.PrincipalID,
 		"an administrator's reference operation re-owned another module's delegation")
 
-	// And the module that had none got one — that IS the point of the call.
-	recorded := store.activeFor(source.ID, "reportstore")
-	require.NotNil(t, recorded, "the module with no delegation did not get one")
+	// And the EXECUTING module, which had none, got one — that IS the point of
+	// the call: the reference a declared release's trigger names.
+	recorded := store.activeFor(source.ID, "runtime")
+	require.NotNil(t, recorded, "the executing module with no delegation did not get one")
 	require.Equal(t, "an-administrator", recorded.PrincipalID)
-	// Exactly one delegation per module, and no replacement anywhere.
+
+	// The other CONSUMING module did not (issue #1121, N8). It accepts
+	// delegations, and it had none, and the old backfill recorded one anyway —
+	// handing the administrator's authority over this source to a module whose
+	// delegation no trigger of this host can name. A person's connect is what
+	// delegates to a consuming module, and that path is unchanged.
+	require.Nil(t, store.activeFor(source.ID, "reportstore"),
+		"the backfill recorded a reference for a module that executes no declared work")
+
+	// No replacement anywhere.
 	require.Equal(t, 0, store.revocations, "a backfill revoked something")
+}
+
+// A delegation the executor's own current declaration no longer supports is
+// not "nothing was missing" (issue #1121, N8).
+//
+// A delegation carries a digest of its binding's audience and delegation
+// scopes, and the very next mint revokes one whose binding has changed
+// (`binding_changed`). The backfill used to skip any target holding an active
+// row, so an operator pressing the button over a source whose executor's
+// binding had moved was told nothing was missing — over a trigger that could
+// never mint. It is revoked here, under the same reason the mint would use, and
+// a fresh one is recorded in the same transaction.
+func TestDelegateSourceTriggersReplacesTheExecutorsStaleDelegation(t *testing.T) {
+	store := newDelegateTriggerStore(t)
+	svc, _ := newDatasourceService(store, &recordingProducer{}, &fakeGitHub{defaultBranch: "main", commit: "abc"})
+	source := githubSource(t, svc, "main", nil, "")
+	registry, err := moduleregistrytest.Parse(delegateTriggerPrincipals)
+	require.NoError(t, err)
+	svc.SetModuleCapabilities(nil, nil, registry)
+
+	// The executor's delegation as recorded against an EARLIER shape of its
+	// binding: same binding id, a digest that no longer matches.
+	stale := store.insert(source.ID, "connecting-member", "runtime", registry)
+	stale.BindingDigest = "0" + stale.BindingDigest[1:]
+
+	_, err = svc.DelegateSourceTriggers(context.Background(), "an-administrator", testOrg, source.ID)
+	require.NoError(t, err)
+
+	gone := store.get(stale.ID)
+	require.NotNil(t, gone)
+	require.False(t, gone.Active(), "a delegation the next mint would revoke was left in place")
+	require.Equal(t, business.SourceDelegationBindingChanged, gone.RevokedReason,
+		"it is revoked for the reason the mint itself would record")
+
+	fresh := store.activeFor(source.ID, "runtime")
+	require.NotNil(t, fresh, "nothing replaced the unusable delegation")
+	require.NotEqual(t, stale.ID, fresh.ID)
+	require.Equal(t, "an-administrator", fresh.PrincipalID)
+
+	// And a delegation that IS current is still left exactly as it is: the
+	// revocation above is not the connect path creeping back.
+	store.revocations = 0
+	_, err = svc.DelegateSourceTriggers(context.Background(), "another-administrator", testOrg, source.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0, store.revocations, "a current delegation was replaced")
+	require.Equal(t, fresh.ID, store.activeFor(source.ID, "runtime").ID)
 }
 
 // A personal source is its owner's. An administrator is refused rather than
@@ -106,7 +179,10 @@ func TestDelegateSourceTriggersRefusesAnotherMembersPersonalSource(t *testing.T)
 	// reference borrows is exactly theirs.
 	_, err = svc.DelegateSourceTriggers(context.Background(), "the-owner", testOrg, source.ID)
 	require.NoError(t, err)
-	require.Len(t, store.delegations, 2, "the owner's own reference operation recorded nothing")
+	// One row: the executing module's. The two consuming modules get nothing
+	// from a backfill (issue #1121, N8).
+	require.Len(t, store.delegations, 1, "the owner's own reference operation recorded nothing")
+	require.NotNil(t, store.activeFor(source.ID, "runtime"))
 }
 
 // delegateTriggerStore is the datasource fake plus the delegation rows and the

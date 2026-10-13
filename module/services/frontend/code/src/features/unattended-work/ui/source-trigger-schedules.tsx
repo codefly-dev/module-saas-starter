@@ -50,11 +50,21 @@ import {
  * "next occurrence" that would never happen, which is the most misleading
  * thing a schedule panel can show.
  *
- * "Next" is computed from the declared cron and is what the declaration SAYS.
- * Once a composed module fires the trigger the authoritative cursor is that
- * module's and this host will not hold one; while the stopgap runs, the cron
- * and the stored instant it sweeps on are derived from the same interval, so
- * the two agree without either reading the other.
+ * "Next occurrence" is computed from the declared cron and is what the
+ * declaration SAYS. Once a composed module fires the trigger the authoritative
+ * cursor is that module's and this host will not hold one.
+ *
+ * WHILE THE STOPGAP RUNS, THAT IS NOT WHEN THE PASS HAPPENS (issue #1121, N6).
+ * The two share a period and not a phase: the declared cron for a sub-hourly
+ * interval steps by the minute inside the hour, due on the quarter or half
+ * hour, while the sweep
+ * fires on the source's stored instant, which every pass moves to
+ * `now + interval` — an arbitrary offset inside the period. This panel used to
+ * claim the two agreed "without either reading the other", which was wrong in
+ * the most misleading direction available: a reader was shown 14:30 for a pass
+ * that would happen at 14:07. So both are shown, each labelled with who acts
+ * on it, and the host's own row disappears when an operator turns the stopgap
+ * off.
  *
  * A person's "Sync now" is listed in the SAME table as those occurrences, and
  * that is the panel's claim rather than a convenience: both admit
@@ -89,9 +99,11 @@ export function SourceTriggerSchedules({ orgId }: { orgId: string }) {
 					Each connected source declares its reconcile schedule as a trigger an
 					executing module is meant to fire. Until a composed runtime consumes
 					that declaration, this host still fires the schedule itself, as a
-					stopgap. A person&apos;s &ldquo;Sync now&rdquo; admits the same
-					operation with an effect identity of its own, so it is listed beside
-					the occurrences rather than apart from them.
+					stopgap — and it fires on its own stored instant, not on the declared
+					cron, so the two rows below are two different facts. A person&apos;s
+					&ldquo;Sync now&rdquo; admits the same operation with an effect
+					identity of its own, so it is listed beside the occurrences rather
+					than apart from them.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
@@ -210,13 +222,38 @@ function SourceTriggerRow({
 							</TableRow>
 							<TableRow data-slot="scheduled-occurrence">
 								<TableCell className="text-sm">
-									Scheduled · next occurrence
+									Declared · next occurrence
 								</TableCell>
 								<TableCell className="text-sm text-muted-foreground">
 									{MINTED_BY_THE_FIRING_MODULE}
 								</TableCell>
 								<TableCell className="text-sm" data-slot="next-occurrence">
 									{instant(declaration?.nextOccurrenceAt)}
+								</TableCell>
+								<TableCell className="text-sm">—</TableCell>
+							</TableRow>
+							{/*
+							 * What will actually happen, while this host still fires the
+							 * schedule. It is a different instant from the row above, on
+							 * purpose: see the panel's note. With the stopgap switched off
+							 * the host takes no pass, so the row says that rather than
+							 * showing a time.
+							 */}
+							<TableRow data-slot="host-sweep">
+								<TableCell className="text-sm">
+									{declaration?.hostSweepEnabled
+										? "This host’s stopgap sweep · next pass"
+										: "This host’s stopgap sweep · off"}
+								</TableCell>
+								<TableCell className="text-sm text-muted-foreground">
+									{declaration?.hostSweepEnabled
+										? NO_EFFECT_IDENTITY
+										: "An executing module fires the declaration"}
+								</TableCell>
+								<TableCell className="text-sm" data-slot="host-sweep-due">
+									{declaration?.hostSweepEnabled
+										? instant(declaration?.hostSweepDueAt)
+										: "—"}
 								</TableCell>
 								<TableCell className="text-sm">—</TableCell>
 							</TableRow>
@@ -266,13 +303,16 @@ const RECONCILE_OPERATION =
  * minted by the module that fires the trigger, so this host never sees one and
  * has nothing to print. A dash would read as "it has none", which would make
  * the admission look unlike the manual pass beside it.
- *
- * The stopgap sweep is a third case and is deliberately claimed as neither: it
- * enqueues under a key derived from the schedule instant and admits no
- * operation at all, so it has no effect identity to show and appears here only
- * as a "last occurrence" moving.
  */
 const MINTED_BY_THE_FIRING_MODULE = "Minted by the firing module";
+
+/**
+ * The stopgap sweep is a third case and claims neither: it enqueues under a key
+ * derived from the schedule instant and admits no operation at all, so it has
+ * no effect identity, and its pass shows up in "last occurrence" rather than as
+ * an admission of its own.
+ */
+const NO_EFFECT_IDENTITY = "None — the sweep admits no operation";
 
 /**
  * One labelled fact. Exported because the playground renders the same
@@ -326,20 +366,25 @@ function useAdmittedPasses(): AdmittedReconcilePass[] {
  * state an installing module refuses rather than running the work as itself,
  * so it is said plainly instead of being left blank.
  *
- * The reference arm does NOT name which module's delegation it is (issue
- * #1112, m5). The reference value is the source id, so every delegation on one
- * source reads back the same and the host resolves whichever module holds an
- * active one at mint. Naming one here would be this page's own guess: an
- * operator whose executing module holds no delegation would read that a
- * reference is bound to it when another module's is. The references table
- * names each module, which is where that question is answerable.
+ * The reference arm does NOT name which module's delegation it is. The
+ * reference value is the source id, so every delegation on one source reads
+ * back the same value and the host resolves it afresh on every mint; the
+ * references table names each module, which is where that question is
+ * answerable.
+ *
+ * What it now says instead is that the delegation named is one the executing
+ * module can use (issue #1121, m5): the host only sets the arm for a delegation
+ * whose binding names its own module as the audience, which is the one shape a
+ * source-id reference can serve. Before that, an operator whose executing
+ * module held no delegation read "bound" because some other module's existed —
+ * and every occurrence was refused at the mint.
  */
 export function declaredIdentity(declaration?: {
 	identity?: { source: string; binding: string };
 }): string {
 	const identity = declaration?.identity;
 	if (identity?.source)
-		return "A delegation reference — whichever module holds an active one";
+		return "A delegation reference the executing module holds";
 	if (identity?.binding) return "An installation binding";
 	return "None — occurrences would be refused";
 }

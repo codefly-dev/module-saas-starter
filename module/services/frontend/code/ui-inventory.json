@@ -2498,7 +2498,7 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/app/admin/platform/unattended-work/page.tsx",
+      "source": "src/app/admin/unattended-work/page.tsx",
       "imports": [
         "@/components/auth/role-gate",
         "@/features/unattended-work"

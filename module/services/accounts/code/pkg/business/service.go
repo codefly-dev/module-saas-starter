@@ -94,7 +94,9 @@ type Service struct {
 	githubAppClientSecret     string                // its secret; without the pair, an installation cannot be attributed to a caller
 	//nolint:lll // the mount this mirrors is a single deployment switch; splitting the note loses the pairing
 	datasourceWebhookMounted bool                    // whether THIS deployment mounted the per-source push receiver; a stored per-source secret verifies nothing without it
-	datasourceTicketSigner   *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
+	//nolint:lll // one deployment switch; the stopgap it disables is named in datasource_deliveries.go
+	datasourceReconcileSweepOff bool                    // STOPGAP switch (#1121): true stops this host firing the reconcile schedule it DECLARES
+	datasourceTicketSigner      *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
 	newGitHubClient          func(token string) GitHubContentClient
 	newAPIClient             func(cfg APIDatasourceConfig, credential string) APIContentClient
 	newCrawlerClient         func(cfg CrawlerDatasourceConfig) CrawlerContentClient

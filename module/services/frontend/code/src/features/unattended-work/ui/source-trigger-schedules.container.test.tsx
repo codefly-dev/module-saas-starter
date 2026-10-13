@@ -43,6 +43,12 @@ const declared = {
 	digest: "4f1c",
 	lastOccurrenceAt: "2026-10-12T09:00:00Z",
 	nextOccurrenceAt: "2026-10-12T09:30:00Z",
+	// The host still fires the schedule itself, and NOT on the declared cron's
+	// instant: the sweep reads the source's stored instant, which every pass
+	// moves to `now + interval`. The two share a period and not a phase, which
+	// is why the fixture's two instants differ by more than a label.
+	hostSweepEnabled: true,
+	hostSweepDueAt: "2026-10-12T09:07:00Z",
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -69,7 +75,7 @@ async function admissions(): Promise<HTMLElement> {
 		expect(found).not.toBeNull();
 		return found as HTMLElement;
 	});
-	await within(table).findByText(/Scheduled · next occurrence/);
+	await within(table).findByText(/Declared · next occurrence/);
 	return table;
 }
 
@@ -197,5 +203,72 @@ describe("SourceTriggerSchedules", () => {
 				'[data-slot="scheduled-occurrence"]',
 			),
 		).toHaveLength(0);
+	});
+});
+
+// THE DECLARED OCCURRENCE AND THE PASS THAT WILL HAPPEN ARE TWO FACTS
+// (issue #1121, N6).
+//
+// The panel used to show the cron's instant alone and claim the stopgap agreed
+// with it. It does not: the cron comes due on the half hour while the sweep
+// fires on the stored instant, so a reader was shown 09:30 for a pass that
+// happens at 09:07. Both rows are here, and the host's row says what it is.
+describe("the host's own sweep", () => {
+	it("shows the instant it will sweep on, beside the declared occurrence", async () => {
+		serve({ declaration: declared, delegations: [], children: [] });
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		const table = await admissions();
+
+		const declaredRow = within(table).getByText(/Declared · next occurrence/);
+		const sweepRow = within(table).getByText(
+			/This host’s stopgap sweep · next pass/,
+		);
+		expect(declaredRow).toBeTruthy();
+		expect(sweepRow).toBeTruthy();
+		// The two instants are different, which is the whole finding. Compared
+		// as rendered rather than as ISO strings, because the cells are local
+		// time.
+		const declaredAt = new Date("2026-10-12T09:30:00Z").toLocaleString();
+		const sweepAt = new Date("2026-10-12T09:07:00Z").toLocaleString();
+		expect(declaredAt).not.toBe(sweepAt);
+		expect(
+			table.querySelector('[data-slot="next-occurrence"]')?.textContent,
+		).toBe(declaredAt);
+		expect(table.querySelector('[data-slot="host-sweep-due"]')?.textContent).toBe(
+			sweepAt,
+		);
+		// The sweep admits no operation, so it has no effect identity to show —
+		// said rather than left as a dash that would read as "it has none".
+		expect(
+			within(table).getByText(/None — the sweep admits no operation/),
+		).toBeTruthy();
+	});
+
+	it("says the host takes no pass when an operator turned the sweep off", async () => {
+		// The switch exists so the declaration's consumer and the stopgap can
+		// never both run. With it off there is no host pass at all, and showing
+		// an instant would be describing one.
+		serve({
+			declaration: { ...declared, hostSweepEnabled: false, hostSweepDueAt: undefined },
+			delegations: [],
+			children: [],
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		const table = await admissions();
+
+		expect(
+			within(table).getByText(/This host’s stopgap sweep · off/),
+		).toBeTruthy();
+		expect(
+			within(table).getByText(/An executing module fires the declaration/),
+		).toBeTruthy();
+		expect(table.querySelector('[data-slot="host-sweep-due"]')?.textContent).toBe(
+			"—",
+		);
+		// The declaration itself is unchanged by the switch: it is what the
+		// source declares, not what this host does about it.
+		expect(
+			table.querySelector('[data-slot="next-occurrence"]')?.textContent,
+		).toBe(new Date("2026-10-12T09:30:00Z").toLocaleString());
 	});
 });

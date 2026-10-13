@@ -25,9 +25,9 @@ test.describe("unattended work", () => {
 	test("the playground states whose authority an occurrence would run under", async ({
 		page,
 	}) => {
-		await page.goto("/admin/platform/unattended-work");
+		await page.goto("/admin/unattended-work");
 		await page.waitForURL(
-			(url) => url.pathname === "/admin/platform/unattended-work",
+			(url) => url.pathname === "/admin/unattended-work",
 			{ timeout: 15000 },
 		);
 		expect(page.url()).not.toContain("/auth/login");

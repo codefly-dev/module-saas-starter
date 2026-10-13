@@ -140,17 +140,17 @@ func TestTriggerScheduleSpellsOnlyTheIntervalsCronCanName(t *testing.T) {
 		15 * time.Minute: "*/15 * * * *",
 		time.Minute:      "*/1 * * * *",
 	} {
-		declared := business.DeclareSourceTrigger(source(interval), nil, nil)
+		declared := business.DeclareSourceTrigger(source(interval), nil, nil, true)
 		require.True(t, declared.Declarable(), "%s: %s", interval, declared.UndeclarableReason)
 		require.Equal(t, want, declared.Schedule.Cron, "interval %s", interval)
 	}
 	// A day, and a divisor of a day, are expressible; the minute (and hour) are
 	// derived from the source so every source of one provider does not come due
 	// in the same second.
-	daily := business.DeclareSourceTrigger(source(24*time.Hour), nil, nil)
+	daily := business.DeclareSourceTrigger(source(24*time.Hour), nil, nil, true)
 	require.True(t, daily.Declarable())
 	require.Regexp(t, `^\d+ \d+ \* \* \*$`, daily.Schedule.Cron)
-	twelveHourly := business.DeclareSourceTrigger(source(12*time.Hour), nil, nil)
+	twelveHourly := business.DeclareSourceTrigger(source(12*time.Hour), nil, nil, true)
 	require.True(t, twelveHourly.Declarable())
 	require.Regexp(t, `^\d+ \*/12 \* \* \*$`, twelveHourly.Schedule.Cron)
 
@@ -161,11 +161,11 @@ func TestTriggerScheduleSpellsOnlyTheIntervalsCronCanName(t *testing.T) {
 		5 * time.Hour,    // does not divide a day
 		48 * time.Hour,   // beyond a day, which cron names by date, not by period
 	} {
-		declared := business.DeclareSourceTrigger(source(interval), nil, nil)
+		declared := business.DeclareSourceTrigger(source(interval), nil, nil, true)
 		require.False(t, declared.Declarable(), "interval %s was spelled %q", interval, declared.Schedule.Cron)
 		require.Equal(t, business.TriggerUndeclarableInterval, declared.UndeclarableReason, "interval %s", interval)
 	}
-	disabled := business.DeclareSourceTrigger(&business.DatasourceSource{ID: "s", OrgID: "org", Status: "active"}, nil, nil)
+	disabled := business.DeclareSourceTrigger(&business.DatasourceSource{ID: "s", OrgID: "org", Status: "active"}, nil, nil, true)
 	require.Equal(t, business.TriggerUndeclarableNoSchedule, disabled.UndeclarableReason)
 }
 
@@ -179,20 +179,23 @@ func TestTriggerDeclarationPrefersTheReferenceArmAndFingerprintsItself(t *testin
 		ID: "2a3f5c1e-0000-4000-8000-000000000002", OrgID: "org",
 		Status: "active", ReconcileInterval: 30 * time.Minute, NextReconcileAt: &next,
 	}
-	live := []business.TriggerDelegationReference{{Reference: source.ID, DelegationID: "d1", Active: true}}
-	revoked := []business.TriggerDelegationReference{{Reference: source.ID, DelegationID: "d1", Active: false}}
+	// The executing module's own delegation: its binding names itself as the
+	// audience, which is the only shape a source-id reference can serve (see
+	// executorReference below).
+	live := []business.TriggerDelegationReference{executorReference(source.ID, true)}
+	revoked := []business.TriggerDelegationReference{executorReference(source.ID, false)}
 
-	referenced := business.DeclareSourceTrigger(source, live, nil)
+	referenced := business.DeclareSourceTrigger(source, live, nil, true)
 	require.Equal(t, source.ID, referenced.Identity.Source)
 	require.True(t, referenced.Identity.Reference())
 
 	// A revoked reference is not one: the declaration names no identity, which
 	// an installing module refuses rather than running the work as itself.
-	withoutIdentity := business.DeclareSourceTrigger(source, revoked, nil)
+	withoutIdentity := business.DeclareSourceTrigger(source, revoked, nil, true)
 	require.False(t, withoutIdentity.Identity.Declared())
 
 	source.ReconcileInterval = 15 * time.Minute
-	edited := business.DeclareSourceTrigger(source, live, nil)
+	edited := business.DeclareSourceTrigger(source, live, nil, true)
 	require.NotEqual(t, referenced.Digest, edited.Digest, "an interval edit re-declares the trigger")
 
 	// The next occurrence is computed from the declared cron, and nothing else:
@@ -200,6 +203,76 @@ func TestTriggerDeclarationPrefersTheReferenceArmAndFingerprintsItself(t *testin
 	require.NotNil(t, edited.NextOccurrenceAt)
 	require.True(t, edited.NextOccurrenceAt.After(time.Now()))
 	require.Zero(t, edited.NextOccurrenceAt.Minute()%15)
+}
+
+// executorReference is a delegation the module that FIRES the trigger can
+// actually use: it holds the delegation itself, its binding still confers
+// something, and that binding names its own module as the audience.
+func executorReference(sourceID string, active bool) business.TriggerDelegationReference {
+	return business.TriggerDelegationReference{
+		Reference: sourceID, DelegationID: "d1", Module: "runtime", Binding: "occurrences",
+		Audience: "runtime", Scopes: []string{"collections:write"}, Active: active,
+	}
+}
+
+// ONLY THE EXECUTING MODULE'S DELEGATION IS NAMED (issue #1121, m5).
+//
+// The reference arm is a source id, and a mint by source id resolves the
+// active delegation OF THE CALLING MODULE — so a delegation held by a module
+// that does not fire this trigger can never admit one of its occurrences. It
+// used to be taken anyway, as long as it was active and had a reference value,
+// which is the worst shape a declaration can be in: the page reads "bound" and
+// every occurrence is refused at the mint.
+//
+// Each case below is one of the three facts the resolution needs, removed on
+// its own, so no single assertion carries the test.
+func TestTriggerDeclarationNamesOnlyADelegationItsExecutorCanUse(t *testing.T) {
+	next := time.Now().Add(time.Hour)
+	source := &business.DatasourceSource{
+		ID: "2a3f5c1e-0000-4000-8000-000000000003", OrgID: "org",
+		Status: "active", ReconcileInterval: 30 * time.Minute, NextReconcileAt: &next,
+	}
+
+	usable := executorReference(source.ID, true)
+	require.Equal(t, source.ID, business.DeclareSourceTrigger(source, []business.TriggerDelegationReference{usable}, nil, true).Identity.Source)
+
+	// A delegation held by one module and addressed to another. It is a real,
+	// live delegation — the shape every consuming module's sync uses — and it
+	// is reachable only through the delegation-id exchange, which no reference
+	// this host declares can name.
+	addressedElsewhere := usable
+	addressedElsewhere.Audience = "somebody-else"
+
+	// A delegation whose binding the module no longer declares: the read
+	// resolves no scopes for it, and the next mint revokes it as
+	// binding_changed. "Active" is not the same as "usable".
+	bindingGone := usable
+	bindingGone.Scopes = nil
+
+	// And a delegation whose authority could not be resolved at all, which the
+	// read reports as an empty audience rather than by omitting the row.
+	unresolved := usable
+	unresolved.Audience = ""
+
+	for name, references := range map[string][]business.TriggerDelegationReference{
+		"another module's delegation":       {addressedElsewhere},
+		"a binding no longer declared":      {bindingGone},
+		"an authority that did not resolve": {unresolved},
+		// Several unusable ones do not add up to a usable one.
+		"all of them together": {addressedElsewhere, bindingGone, unresolved},
+	} {
+		t.Run(name, func(t *testing.T) {
+			declared := business.DeclareSourceTrigger(source, references, nil, true)
+			require.True(t, declared.Declarable(), "the schedule is still declared; only the identity is missing")
+			require.False(t, declared.Identity.Declared(),
+				"a declaration naming an identity its executor cannot mint reads as bound and refuses every occurrence")
+		})
+	}
+
+	// The usable one is found whatever order the read returns, and the
+	// unusable ones never shadow it.
+	mixed := business.DeclareSourceTrigger(source, []business.TriggerDelegationReference{addressedElsewhere, usable}, nil, true)
+	require.Equal(t, source.ID, mixed.Identity.Source)
 }
 
 // THE STOPGAP SWEEP IS CONFINED TO THE FILES THAT DELETE IT (issue #1112).
@@ -386,16 +459,91 @@ func TestStopgapSweepLeavesTheDeclarationUnchanged(t *testing.T) {
 
 	source := githubSource(t, svc, "main", nil, "")
 	setNextReconcile(t, store, source.ID, time.Now().Add(-time.Minute))
-	before := business.DeclareSourceTrigger(storedSource(t, store, source.ID), nil, nil)
+	before := business.DeclareSourceTrigger(storedSource(t, store, source.ID), nil, nil, true)
 	require.True(t, before.Declarable())
 
 	_, err := svc.RunDatasourceReconcile(t.Context())
 	require.NoError(t, err)
 
-	after := business.DeclareSourceTrigger(storedSource(t, store, source.ID), nil, nil)
+	after := business.DeclareSourceTrigger(storedSource(t, store, source.ID), nil, nil, true)
 	require.True(t, after.Declarable(), "the sweep took the source off its declared schedule")
 	require.Equal(t, before.Schedule.Cron, after.Schedule.Cron)
 	require.Equal(t, before.Digest, after.Digest, "the sweep moved the declaration an installation pinned")
+}
+
+// THE STOPGAP SWEEP HAS A SWITCH, AND IT IS ONE FACT (issue #1121, N7).
+//
+// The declaration's consumer and the sweep must never both run: they enqueue
+// under different idempotency keys, so nothing collapses them, and the
+// per-source FIFO key only makes the second serialise behind the first — a
+// second full re-send for a pull provider. Before this there was nothing to
+// turn off but a redeployed, patched host.
+//
+// The switch is read in two places and they must agree: the tick is not
+// installed AND the sweep itself refuses. A host that only dropped the tick
+// would still sweep from any other caller, and would still describe a sweep
+// that is not running.
+func TestTheStopgapSweepCanBeSwitchedOff(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
+
+	source := githubSource(t, svc, "main", nil, "")
+	due := time.Now().Add(-time.Minute)
+	setNextReconcile(t, store, source.ID, due)
+
+	// Default ON: that is what every deployment does today, and a default that
+	// silently stopped every scheduled reconcile is the outage #1090 caused.
+	require.True(t, svc.DatasourceReconcileSweepEnabled())
+
+	svc.SetDatasourceReconcileSweep(false)
+	require.False(t, svc.DatasourceReconcileSweepEnabled())
+	enqueued, err := svc.RunDatasourceReconcile(t.Context())
+	require.NoError(t, err, "a disabled sweep is not an error; it is a sweep that does not happen")
+	require.Zero(t, enqueued)
+	require.Empty(t, jobKeys(producer, source.ID), "a disabled sweep enqueued work")
+
+	// And it did not move the source's schedule either: a host that is not
+	// firing must not consume the instant something else fires on.
+	require.Equal(t, due.UTC().Truncate(time.Second),
+		storedSource(t, store, source.ID).NextReconcileAt.UTC().Truncate(time.Second),
+		"a disabled sweep bumped the schedule")
+
+	// The declaration says which of the two is acting, and the instant each
+	// acts on. They share a period and NOT a phase: the cron comes due on the
+	// half hour while the sweep fires on the stored instant.
+	off := business.DeclareSourceTrigger(storedSource(t, store, source.ID), nil, nil, false)
+	require.False(t, off.HostSweepEnabled)
+	require.Nil(t, off.HostSweepDueAt, "a host that takes no pass must not name an instant for one")
+	require.NotNil(t, off.NextOccurrenceAt, "the declaration is unchanged by the switch")
+
+	on := business.DeclareSourceTrigger(storedSource(t, store, source.ID), nil, nil, true)
+	require.True(t, on.HostSweepEnabled)
+	require.NotNil(t, on.HostSweepDueAt)
+	require.Equal(t, due.UTC().Truncate(time.Second), on.HostSweepDueAt.UTC().Truncate(time.Second),
+		"the sweep's instant is the stored one, not the cron's")
+	require.NotEqual(t, on.HostSweepDueAt.Truncate(time.Minute), on.NextOccurrenceAt.Truncate(time.Minute),
+		"fixture: the two instants must differ, which is the whole point of reporting both")
+
+	// Switched back on, the same due row is swept.
+	svc.SetDatasourceReconcileSweep(true)
+	enqueued, err = svc.RunDatasourceReconcile(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, enqueued)
+}
+
+// A parked source names no sweep instant either: the stored instant is cleared,
+// which is what the park and restore paths use as the switch, and there is then
+// no pass for this host to take.
+func TestAParkedSourceNamesNoSweepInstant(t *testing.T) {
+	parked := &business.DatasourceSource{
+		ID: "2a3f5c1e-0000-4000-8000-000000000004", OrgID: "org",
+		Status: "active", ReconcileInterval: 30 * time.Minute,
+	}
+	declared := business.DeclareSourceTrigger(parked, nil, nil, true)
+	require.False(t, declared.Declarable())
+	require.True(t, declared.HostSweepEnabled, "the switch is a deployment fact, not a per-source one")
+	require.Nil(t, declared.HostSweepDueAt)
 }
 
 // One occurrence's enqueue key names the ORGANIZATION and the SOURCE as well as

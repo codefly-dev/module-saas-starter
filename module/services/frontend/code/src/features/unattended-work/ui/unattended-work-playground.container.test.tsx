@@ -2,7 +2,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import Page from "@/app/admin/platform/unattended-work/page";
+import Page from "@/app/admin/unattended-work/page";
 import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
@@ -147,12 +147,13 @@ describe("UnattendedWorkPlayground", () => {
 		// Which arm it names, said in words: a declaration that named neither
 		// would have its occurrences refused, and the page says so rather than
 		// leaving the field blank.
-		// It does not claim WHICH module's reference: the reference value is the
-		// source id, so the host resolves whichever module holds an active one.
+		// It does not claim WHICH module's reference — the reference value is the
+		// source id and the references table answers that — but it does say the
+		// delegation is one the executing module can use, because the host sets
+		// the arm only for a delegation whose binding names its own module as
+		// the audience (issue #1121, m5).
 		expect(
-			screen.getByText(
-				"A delegation reference — whichever module holds an active one",
-			),
+			screen.getByText("A delegation reference the executing module holds"),
 		).toBeTruthy();
 
 		// The reference an operator bound, with whose authority it carries and

@@ -138,12 +138,6 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
-      "path": "/admin/platform/unattended-work",
-      "source_path": "src/app/admin/platform/unattended-work/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
-    },
-    {
       "path": "/admin/platform/waitlist",
       "source_path": "src/app/admin/platform/waitlist/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -190,6 +184,12 @@
       "source_path": "src/app/admin/teams/[teamId]/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/admin/unattended-work",
+      "source_path": "src/app/admin/unattended-work/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
       "path": "/admin/users",
@@ -722,6 +722,21 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 410
+    },
+    {
+      "id": "admin-unattended-work",
+      "plugin": "core-users",
+      "label": "Unattended work",
+      "path": "/admin/unattended-work",
+      "icon": "KeyRound",
+      "group": "Integrations",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 415
     },
     {
       "id": "admin-sso",

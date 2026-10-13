@@ -87,14 +87,18 @@ func TestTriggerOccurrenceMintsFromTheReferenceAndIsRefusedAfterRevocation(t *te
 	require.Len(t, audit.of(business.EventSourceDelegationUsed), 2, "a refused occurrence mints nothing and records no child")
 }
 
-// The installation-principal arm: a binding whose audience is the executing
-// module's own and which declares headless scopes mints a capability for an
-// occurrence with no person anywhere in it.
+// The headless mint a binding with its own audience and headless scopes
+// answers: a capability for work with no person anywhere in it.
 //
-// It is the first proof and not the contract, and the assertions say why: the
-// capability is owned and actored by the module's own principal, so there is
-// no delegation to revoke and no authority to outlive the token — the run is
-// bounded by the capability's own short lifetime.
+// IT IS NOT THE INSTALLATION-BINDING ARM OF A DECLARED TRIGGER, and calling it
+// "the first proof" of that arm was a leftover (issue #1112 M4, corrected in
+// #1121). No declaration this host builds sets `Identity.Binding`, and this
+// trigger cannot use one: the mint lives 60 seconds against a 10-minute
+// declared deadline, and the capability is the module's own principal while
+// ReconcileSource requires an organization member. What this test proves is the
+// mint itself — the capability is owned and actored by the module's own
+// principal, so there is no delegation to revoke and no authority to outlive
+// the token, and the run is bounded by the capability's own short lifetime.
 func TestTriggerOccurrenceMintsFromTheInstallationBinding(t *testing.T) {
 	store, audit := installModuleOperationContextService(t, executionPrincipals)
 	installModuleWorkContextAuthority(t)

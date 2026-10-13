@@ -291,6 +291,24 @@ navigation:
       - plugin_registry
       - sidebar
     order: 410
+  # The identity unattended work runs under, beside the sources it is bound to.
+  # Organization administrators own this: every RPC behind the page is org-scoped
+  # and ORG_ADMIN, so `access: admin` matches both the page's own gate and the
+  # boundary the route catalog derives from `/admin/` (issue #1121). While the
+  # page sat under /admin/platform/ the catalog derived `super_admin`, which
+  # disagreed with the gate and left org admins with no way to reach it.
+  - id: admin-unattended-work
+    plugin: core-users
+    label: Unattended work
+    path: /admin/unattended-work
+    icon: KeyRound
+    group: Integrations
+    access: admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 415
   - id: admin-sso
     plugin: core-users
     label: Single Sign-On

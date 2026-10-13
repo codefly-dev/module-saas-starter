@@ -1034,6 +1034,16 @@ message RevokeSourceDelegationResponse {
 //     the capability that admitted it and revoking the delegation refuses the
 //     next occurrence.
 //
+//     IT IS SET ONLY FOR A DELEGATION THE EXECUTING MODULE CAN USE. A mint by
+//     source id resolves the active delegation of the CALLING module, and the
+//     capability is addressed to the binding's declared audience, which the
+//     executing module must itself admit — so the one shape a declared
+//     reference can serve is a delegation whose binding names its own module
+//     as the audience. A delegation held by one module and addressed to
+//     another is reachable only through the delegation-id exchange, which no
+//     reference this host declares can name, and declaring it would read as
+//     bound while every occurrence was refused at the mint.
+//
 //     IT IS NOT OPAQUE, and revocation is therefore not permanent. The value
 //     is the source's own id, and a mint resolves whichever delegation of that
 //     source is active, so revoking one and then RECONNECTING the source
@@ -1048,11 +1058,15 @@ message RevokeSourceDelegationResponse {
 //     binding's headless scopes — an ordinary token admission, bounded by the
 //     capability's own short lifetime.
 //
-//     IT IS PLANNED, and no declaration this host builds has ever set it. It
-//     cannot serve the reconcile trigger: the headless mint lives 60 seconds
-//     against that trigger's 10-minute declared deadline, and the capability
-//     is the module's own principal while ReconcileSource requires an
-//     organization member.
+//     IT IS PLANNED, and no declaration this host builds has ever set it, so
+//     nothing anywhere has proved it against a trigger. It cannot serve the
+//     reconcile trigger: the headless mint lives 60 seconds against that
+//     trigger's 10-minute declared deadline, and the capability is the
+//     module's own principal while ReconcileSource requires an organization
+//     member. That mint IS the per-tenant module identity a module publishing
+//     for one tenant presents (PlatformAdminService.ResolveModuleTenantIdentity
+//     reads what it would assert); what it is not is an identity for this
+//     trigger's occurrences.
 //
 // THE NAMES ARE THE INSTALLATION DOCUMENT'S, not this host's and not the
 // executing module's read API's. That distinction is load-bearing: the module
@@ -1177,6 +1191,22 @@ message SourceTriggerDeclaration {
   // schedule is disabled, or its interval is not one a five-field cron can
   // express. Empty means the declaration above is complete.
   string undeclarable_reason = 8;
+  // host_sweep_enabled says whether THIS HOST still fires the schedule it
+  // declares, as a labelled stopgap for the absence of a module that consumes
+  // the declaration, and host_sweep_due_at the instant it will next sweep on.
+  //
+  // THAT INSTANT IS NOT next_occurrence_at, and the two are reported
+  // separately because they share a period and not a phase. The declared cron
+  // for a sub-hourly interval is `*/M * * * *`, which comes due on the quarter
+  // or half hour; the sweep fires on the source's stored instant, which every
+  // pass moves to `now + interval` — an arbitrary offset inside the period. A
+  // reader shown only the cron's instant was reading what the declaration
+  // SAYS while the pass that will actually happen was at another minute.
+  //
+  // host_sweep_due_at is unset when the sweep is off, or when the source is
+  // held off its schedule: then there is no pass this host will take.
+  bool host_sweep_enabled = 9;
+  google.protobuf.Timestamp host_sweep_due_at = 10;
 }
 
 message DelegateSourceTriggersRequest {
