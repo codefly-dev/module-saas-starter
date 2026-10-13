@@ -8,6 +8,7 @@ import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
 import {
 	mayKeepRetainedRows,
+	readHasNotAnswered,
 	readOutcome,
 	readOutcomeMessage,
 	staleReadNotice,
@@ -192,13 +193,13 @@ function TriggerIdentityPanel({
 	const declarationStale = declaration
 		? staleReadNotice(outcome, "this trigger")
 		: null;
-	// The same never-flashing wait the schedule row uses, so the pending window
-	// is a state of its own rather than the tail of the empty one — and on the
-	// same model as the source list beside it: pending with a non-idle fetch
-	// status is an answer still coming, whether a request is on the wire or
-	// PAUSED because the browser is offline. `isFetching` is false while paused,
-	// so a gate on it called a paused read finished (issue #1121).
-	const unanswered = read.isPending && read.fetchStatus !== "idle";
+	// ALL THREE CARDS BELOW READ THIS ONE RESPONSE, so they are classified
+	// once, here, from the read seam's own predicate. Every per-card flag I
+	// reached for was a near miss: `isFetching` is false while paused, and
+	// `isPending` is false in the state a refused refetch leaves behind —
+	// status `success`, the answer deleted, the retry paused (issue #1121,
+	// r24/r25).
+	const unanswered = readHasNotAnswered(read);
 	const declarationPhase = useLoadingPhase(unanswered);
 	const waiting =
 		unanswered || declarationPhase.indicator || declarationPhase.quiet;
@@ -334,15 +335,33 @@ function TriggerIdentityPanel({
 					</Button>
 				</CardHeader>
 				<CardContent>
+					{/*
+					 * `outcome === "empty"` means nothing has FAILED, not that the
+					 * read succeeded — so a read still in flight produced "No
+					 * reference is bound … an occurrence would be refused", which
+					 * is both an absence and a prediction, neither of them the
+					 * host's (issue #1121, r25). The sentence now waits for the
+					 * read that licenses it, exactly as the children card does.
+					 */}
+					<DelayedLoading
+						active={unanswered}
+						label="Reading the references bound to this source"
+					/>
 					{references.length === 0 ? (
-						<p
-							role="status"
-							className="py-6 text-center text-sm text-muted-foreground"
-						>
-							{outcome === "empty"
-								? "No reference is bound to this source's triggers. An occurrence would be refused."
-								: readOutcomeMessage(outcome, "this source's delegations", "")}
-						</p>
+						unanswered ? null : (
+							<p
+								role="status"
+								className="py-6 text-center text-sm text-muted-foreground"
+							>
+								{read.isSuccess
+									? "No reference is bound to this source's triggers. An occurrence would be refused."
+									: readOutcomeMessage(
+											outcome,
+											"this source's delegations",
+											"",
+										)}
+							</p>
+						)
 					) : (
 						<Table>
 							<TableHeader>

@@ -607,3 +607,124 @@ describe("the children card and the occurrence button on a read that has not ans
 		expect(screen.queryByText(CHILDREN_EMPTY)).toBeNull();
 	});
 });
+
+// ALL THREE CARDS READ ONE RESPONSE, SO ALL THREE ARE CLASSIFIED THE SAME WAY
+// (issue #1121, r24/r25). The references card was the third: it tested
+// `outcome === "empty"`, and `empty` from the classifier means "nothing has
+// failed", NOT "the read succeeded" — so a pending read said "No reference is
+// bound to this source's triggers. An occurrence would be refused."
+//
+// And the paused-RETRY state reaches these cards too: initial success, a
+// refetch refused (the query function deletes the answer), the retry paused
+// offline. Status `success`, fetchStatus `paused`, data undefined, error null.
+const REFERENCES_EMPTY =
+	"No reference is bound to this source's triggers. An occurrence would be refused.";
+
+describe("the cards on one response, in the states that are not an answer", () => {
+	afterEach(() => onlineManager.setOnline(true));
+
+	it("claims no absent reference while the read is still in flight", async () => {
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async () => {
+					await gate;
+					return HttpResponse.json({
+						declaration: declared,
+						delegations: [reference],
+						children: [child],
+					});
+				},
+			),
+		);
+		renderInApp(<Page />);
+		await screen.findByText("acme/handbook");
+
+		expect(screen.queryByText(REFERENCES_EMPTY)).toBeNull();
+
+		release?.();
+		await screen.findByText("saas_datasource_reconcile");
+	});
+
+	// The true empty is still said once a successful read says so.
+	it("reports no reference once a successful read says so", async () => {
+		serve({ declaration: declared, delegations: [], children: [] });
+		renderInApp(<Page />);
+
+		expect(await screen.findByText(REFERENCES_EMPTY)).toBeTruthy();
+	});
+
+	it("claims nothing in the state a refused refetch and a paused retry leave", async () => {
+		let call = 0;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				call++;
+				if (call === 1) {
+					return HttpResponse.json({
+						declaration: declared,
+						delegations: [reference],
+						children: [child],
+					});
+				}
+				if (call === 2) {
+					onlineManager.setOnline(false);
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}
+				return HttpResponse.json({
+					declaration: declared,
+					delegations: [reference],
+					children: [child],
+				});
+			}),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+		});
+		renderInApp(<Page />, client);
+		await screen.findByText("saas_datasource_reconcile");
+
+		const refetching = client
+			.refetchQueries({
+				queryKey: ["source-trigger-declaration", "org-1", SOURCE],
+				exact: true,
+			})
+			.catch(() => undefined);
+
+		await waitFor(() => {
+			const state = client.getQueryState([
+				"source-trigger-declaration",
+				"org-1",
+				SOURCE,
+			]);
+			expect(state?.status).toBe("success");
+			expect(state?.fetchStatus).toBe("paused");
+			expect(state?.data).toBeUndefined();
+			expect(state?.error).toBeNull();
+		});
+
+		// None of the three cards asserts an absence in this state.
+		expect(screen.queryByText(REFERENCES_EMPTY)).toBeNull();
+		expect(screen.queryByText(CHILDREN_EMPTY)).toBeNull();
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+		expect(screen.queryByTitle(NO_LIVE_REFERENCE)).toBeNull();
+
+		onlineManager.setOnline(true);
+		await act(async () => {
+			await refetching;
+		});
+		await screen.findByText("saas_datasource_reconcile");
+	});
+});

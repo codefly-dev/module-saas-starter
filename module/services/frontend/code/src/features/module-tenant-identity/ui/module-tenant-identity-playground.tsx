@@ -5,6 +5,7 @@ import { KeyRound } from "lucide-react";
 import { useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import {
+	readHasNotAnswered,
 	readOutcome,
 	readOutcomeMessage,
 	staleReadNotice,
@@ -72,16 +73,12 @@ export function ModuleTenantIdentityPlayground() {
 	// list here, so the only thing it is asked is whether the answer arrived.
 	const outcome = readOutcome(read.isError, read.error);
 	const answer = read.data;
-	// A disabled query is not a loading one: with a field empty it sits at
-	// isPending with an idle fetch status, and a wait for a read that was never
-	// issued is a spinner that never resolves. That rule was stated here and
-	// then read off the wrong flag: `isFetching` means "a request is on the
-	// wire", so a read PAUSED because the browser is offline — pending,
-	// fetchStatus `paused`, isFetching false — fell through to "Complete the
-	// selection above" with all three fields entered (issue #1121). Pending
-	// with a non-idle fetch status is an answer still coming; pending with an
-	// IDLE one is the genuine no-input case, and keeps that copy.
-	const unanswered = read.isPending && read.fetchStatus !== "idle";
+	// A disabled query is not a loading one, a paused one is not finished, and
+	// a refused refetch's paused retry is neither — asked once, in the read
+	// seam, rather than re-derived from whichever flag looked closest (issue
+	// #1121). A read that was never issued is idle, which is what keeps
+	// "complete the selection above" attached to an incomplete selection.
+	const unanswered = readHasNotAnswered(read);
 	const phase = useLoadingPhase(unanswered);
 	const waiting = unanswered || phase.indicator || phase.quiet;
 	const stale = answer

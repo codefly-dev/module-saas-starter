@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import {
 	mayKeepRetainedRows,
+	readHasNotAnswered,
 	readOutcome,
 	readOutcomeMessage,
 	staleReadNotice,
@@ -177,16 +178,12 @@ function SourceTriggerRow({
 	const outcome = readOutcome(read.isError, read.error);
 	const declaration = read.data?.declaration;
 	const stale = declaration ? staleReadNotice(outcome, "this trigger") : null;
-	// AN ANSWER IS STILL COMING, which is not the same as a request being on
-	// the wire. Offline, TanStack parks a cold query at status `pending` with
-	// fetchStatus `paused`, and `isFetching` is FALSE — so a gate on
-	// `isFetching` read a paused read as "finished, nothing came back" and the
-	// row stated this source declares no trigger about a read that never left
-	// the gate (issue #1121). The source list above already had the right
-	// model, and this is it: pending with a non-idle fetch status is a read
-	// still coming (fetching or paused); pending with an IDLE one is a read
-	// that was never issued, which is the genuine disabled case.
-	const unanswered = read.isPending && read.fetchStatus !== "idle";
+	// AN ANSWER IS STILL COMING, asked once in the read seam rather than
+	// re-derived here. `isPending && fetchStatus !== "idle"` was closer than
+	// `isFetching` and still missed the state a refused refetch leaves — status
+	// `success`, data deleted, retry paused — which is how this row said "no
+	// trigger is declared" a third time (issue #1121, r24).
+	const unanswered = readHasNotAnswered(read);
 	const phase = useLoadingPhase(unanswered);
 	const waiting = unanswered || phase.indicator || phase.quiet;
 	const identity = useMemo(() => declaredIdentity(declaration), [declaration]);

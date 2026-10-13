@@ -1345,3 +1345,146 @@ describe("a declaration read paused by the browser being offline", () => {
 		await screen.findByText("*/30 * * * *");
 	});
 });
+
+// THE STATE MY OWN DELETION CREATES (issue #1121, r24's paused-retry case).
+//
+// Initial success, then a refetch whose first attempt is refused: the query
+// function deletes the retained answer, correctly. The retry then PAUSES
+// because the browser is offline, and the query sits in a shape no single flag
+// describes — status `success` (it had data once), fetchStatus `paused`, data
+// undefined, error null (the fetch has not finished failing). `isPending` is
+// FALSE, so `isPending && fetchStatus !== "idle"` reads it as answered, and the
+// row said "This source declares no trigger" again.
+//
+// What is true of every one of these states is simpler than the states: there
+// is nothing in hand, nothing has failed yet, and a fetch is not idle. That is
+// the predicate, and it lives in the read seam beside the other three.
+describe("a refused refetch whose retry is paused offline", () => {
+	const KEY = ["source-trigger-declaration", "org-1", SOURCE] as const;
+
+	afterEach(() => onlineManager.setOnline(true));
+
+	it("claims nothing in the state the deletion leaves behind, and recovers", async () => {
+		let call = 0;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				call++;
+				if (call === 1) {
+					return HttpResponse.json({
+						declaration: declared,
+						delegations: [],
+						children: [],
+					});
+				}
+				if (call === 2) {
+					// The refusal lands and the browser drops offline with it, so
+					// the retry has to pause rather than race.
+					onlineManager.setOnline(false);
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}
+				return HttpResponse.json({
+					declaration: declared,
+					delegations: [],
+					children: [],
+				});
+			}),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+		await screen.findByText("*/30 * * * *");
+
+		// NOT awaited: a paused retry never settles, so awaiting the refetch
+		// here would hang rather than observe the state it produces.
+		const refetching = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+
+		// The premise, asserted exactly: this is the composite state, not a
+		// plain pending one.
+		await waitFor(() => {
+			const state = client.getQueryState([...KEY]);
+			expect(state?.status).toBe("success");
+			expect(state?.fetchStatus).toBe("paused");
+			expect(state?.data).toBeUndefined();
+			expect(state?.error).toBeNull();
+		});
+
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(screen.queryByText("*/30 * * * *")).toBeNull();
+
+		onlineManager.setOnline(true);
+		await act(async () => {
+			await refetching;
+		});
+		await screen.findByText("*/30 * * * *");
+	});
+
+	// r24 ALSO asks that an existing error survive a paused retry. In the
+	// installed TanStack it cannot, and the reason is worth recording where the
+	// next person will look: starting a refetch RESETS the query, so a refetch
+	// that then pauses leaves status `pending`, fetchStatus `paused`, data
+	// undefined and **error null** — the refusal is gone from the state, not
+	// hidden by a gate. Asserted below rather than described.
+	//
+	// So the row cannot keep showing a refusal it can no longer substantiate,
+	// and what matters is that it substitutes nothing: no "declares no
+	// trigger", no identity claim. The predicate's no-error clause stays as the
+	// guard for an error that IS in hand, which is unit-tested directly
+	// (`readHasNotAnswered` in shared/lib) because no app path reaches
+	// error-present with a non-idle fetch in this version.
+	it("claims nothing when an offline refetch resets a refusal to a paused read", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		onlineManager.setOnline(false);
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: KEY, exact: true })
+				.catch(() => undefined);
+		});
+		// What the library actually does with the refusal.
+		const state = client.getQueryState([...KEY]);
+		expect(state?.status).toBe("pending");
+		expect(state?.fetchStatus).toBe("paused");
+		expect(state?.error).toBeNull();
+
+		// And the row asserts nothing in its place.
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 60));
+		});
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+		// The manual-pass table is always there: it comes from this browser,
+		// not from the read.
+		expect(
+			document.querySelector('[data-slot="source-trigger"]'),
+		).not.toBeNull();
+	});
+});
