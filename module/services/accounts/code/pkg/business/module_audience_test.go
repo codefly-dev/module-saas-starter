@@ -29,18 +29,18 @@ func (s *liveDeclarationsStore) LiveDeclaredBindings(context.Context) ([]LiveDec
 func TestALiveDeclaredModuleAliasIsAnAudience(t *testing.T) {
 	service := &Service{store: &liveDeclarationsStore{bindings: []LiveDeclaredBinding{
 		{BindingID: "acme.test.documents", Kind: SolutionDeclaredKindModule, Alias: "documents"},
-		{BindingID: "acme.test.wiki", Kind: SolutionDeclaredKindSolution, Alias: "wiki"},
-		{BindingID: "acme.test.squatter", Kind: SolutionDeclaredKindModule, Alias: SolutionAudiencePrefix + "acme.test.wiki"},
+		{BindingID: "acme.test.notebook", Kind: SolutionDeclaredKindSolution, Alias: "notebook"},
+		{BindingID: "acme.test.squatter", Kind: SolutionDeclaredKindModule, Alias: SolutionAudiencePrefix + "acme.test.notebook"},
 	}}}
 	audiences, err := service.HostAudiences(context.Background())
 	require.NoError(t, err)
 	require.Contains(t, audiences, "documents")
 	require.Contains(t, audiences, SolutionAudience("acme.test.documents"))
-	require.Contains(t, audiences, SolutionAudience("acme.test.wiki"))
-	require.NotContains(t, audiences, "wiki", "a solution is addressed by its binding, never its alias")
+	require.Contains(t, audiences, SolutionAudience("acme.test.notebook"))
+	require.NotContains(t, audiences, "notebook", "a solution is addressed by its binding, never its alias")
 	require.Len(t, audiences, 6, "module-capabilities, source operations, three bindings and one module alias")
 	require.NoError(t, service.RequireHostAudience(context.Background(), "documents"))
-	require.ErrorIs(t, service.RequireHostAudience(context.Background(), "wiki"), ErrAudienceNotInHostVocabulary)
+	require.ErrorIs(t, service.RequireHostAudience(context.Background(), "notebook"), ErrAudienceNotInHostVocabulary)
 }
 
 // A declared module is active once its presence is applied: its address is
@@ -48,6 +48,6 @@ func TestALiveDeclaredModuleAliasIsAnAudience(t *testing.T) {
 func TestADeclaredModuleIsActiveWithNoReportedHalf(t *testing.T) {
 	module := &SolutionRegistration{SolutionID: "documents", Declared: &SolutionDeclaredBinding{BindingID: "acme.test.documents", Kind: SolutionDeclaredKindModule}}
 	require.Equal(t, SolutionRegistrationActive, module.Status())
-	solution := &SolutionRegistration{SolutionID: "wiki", Declared: &SolutionDeclaredBinding{BindingID: "acme.test.wiki", Kind: SolutionDeclaredKindSolution}}
+	solution := &SolutionRegistration{SolutionID: "notebook", Declared: &SolutionDeclaredBinding{BindingID: "acme.test.notebook", Kind: SolutionDeclaredKindSolution}}
 	require.Equal(t, SolutionRegistrationPending, solution.Status(), "a solution still waits for both of its halves")
 }

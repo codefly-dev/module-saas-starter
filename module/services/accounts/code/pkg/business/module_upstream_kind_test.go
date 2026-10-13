@@ -29,7 +29,9 @@ func (s *upstreamRecordStore) GetSolutionRegistrationForUpdate(context.Context, 
 	return &copied, nil
 }
 
-func (s *upstreamRecordStore) NextSolutionRegistryRevision(context.Context) (int64, error) { return 2, nil }
+func (s *upstreamRecordStore) NextSolutionRegistryRevision(context.Context) (int64, error) {
+	return 2, nil
+}
 
 func (s *upstreamRecordStore) SaveSolutionRegistration(_ context.Context, record *SolutionRegistration) error {
 	s.saves++
