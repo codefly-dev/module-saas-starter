@@ -3,5 +3,6 @@ export {
 	type TransportDemoRoute,
 	transportCarries,
 	transportDemoPlugin,
+	transportMutates,
 } from "./model/demo-plugin";
 export { PluginTransportPlayground } from "./ui/plugin-transport-playground";

@@ -716,11 +716,14 @@ plugin transport, at `/api/plugins/{plugin}/{alias}/{relative-path}`, under the
 viewer's forwarded credential. It carries what that module's bindings declare,
 in both shapes: safe path segments with a Google custom verb allowed on the
 **last** one, its colon forwarded literal (`records:recover`,
-`interactions/{id}:respond`), and Connect procedures, for a requirement that
-declares `/` as its route prefix — the origin root, where the Connect protocol
-and this contract's own capability handshake already put a procedure. A page is
-not restricted to REST bindings, and it never chooses a prefix: a route outside
-the alias its requirement declared is refused. The policy is
+`interactions/{id}:respond`), and Connect procedures of the services a
+requirement names. A `connect` requirement declares both halves — `routePrefix`
+is where its upstream mounts Connect (`/` is the origin root, where the protocol
+and this contract's own capability handshake already put a procedure), and
+`connectServices` is the bound, because a procedure's path carries its own
+service name and the caller therefore supplies it. A page is not restricted to
+REST bindings, and it never chooses a prefix or a service: a route outside the
+alias its requirement declared is refused. The policy is
 [docs/frontend-plugin-bff-contract.md](./module/docs/frontend-plugin-bff-contract.md);
 the playground that drives every shape is `/admin/platform/plugin-transport`.
 

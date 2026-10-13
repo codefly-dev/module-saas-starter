@@ -54,7 +54,8 @@ Google custom verb — `records:recover`,
 `records/record-1/interactions/interaction-1:respond` — whose colon reaches the
 upstream literal, because the colon separates the verb from the resource rather
 than naming one. A Connect alias is reached the same way, by passing one
-procedure path:
+procedure path — of a service that alias's requirement declared in its
+`connectServices`:
 
 ```tsx
 const records = usePluginService("example", "records");
@@ -68,12 +69,30 @@ await procedures.request("example.records.v1.RecordService/RecoverRecord", {
 });
 ```
 
-A colon before the last segment, two colons in one segment, a traversal, or an
-encoded separator throws `PluginTransportConfigurationError` with code
-`invalid_path` before any request leaves the browser. The rule is the host's,
-read from `@codefly-dev/saas-plugin-contract`'s `isFrontendServicePath` rather
-than restated here, so a route this client admits is one the host forwards. The
-full policy is in the module's
+A colon before the last segment, two colons in one segment, a traversal — bare
+or wearing a verb, as in `..:recover` — or an encoded separator throws
+`PluginTransportConfigurationError` with code `invalid_path` before any request
+leaves the browser. The rule is the host's, read from
+`@codefly-dev/saas-plugin-contract`'s `isFrontendServicePath` rather than
+restated here, so a route this client admits is one the host forwards.
+
+The host may also hand the runtime the installed requirements, and then the
+Connect rule runs in the browser too:
+
+```tsx
+const runtime = createPluginRuntime({
+  getAccessToken,
+  services: frontendConfig.services,
+});
+```
+
+With them, a procedure of a service the requirement never declared is refused
+here instead of costing a round trip — `resolveConnectProcedure` is the shared
+rule, and the host's BFF refuses it either way, so this half is agreement rather
+than authority. Without them the client applies the generic path rule alone, as
+before: a client that guessed would refuse routes a composition had
+legitimately installed. The requirements carry no address or credential, only
+what each plugin declared. The full policy is in the module's
 [BFF contract](../../../../docs/frontend-plugin-bff-contract.md).
 
 Failed service responses can be converted into the public, non-sensitive

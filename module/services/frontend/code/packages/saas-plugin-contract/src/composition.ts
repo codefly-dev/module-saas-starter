@@ -14,7 +14,10 @@ import {
 	type PluginRoute,
 	type PresentationRequirement,
 } from "./contracts.js";
-import { FRONTEND_SERVICE_ROOT_PREFIX } from "./transport.js";
+import {
+	FRONTEND_SERVICE_ROOT_PREFIX,
+	isConnectServiceName,
+} from "./transport.js";
 
 function assertContribution(
 	condition: unknown,
@@ -226,7 +229,7 @@ function validateServiceRequirement(
 	);
 	assertExactKeys(
 		service,
-		["alias", "protocol", "routePrefix", "compatibility"],
+		["alias", "protocol", "routePrefix", "connectServices", "compatibility"],
 		`plugin '${pluginName}' service requirement`,
 	);
 	assertContribution(
@@ -259,6 +262,31 @@ function validateServiceRequirement(
 					))),
 		`plugin '${pluginName}' service '${service.alias}' route prefix '${String(service.routePrefix)}' is unsafe`,
 	);
+	// On a Connect alias the caller supplies the service name in the path,
+	// because that is where the protocol puts it — so a requirement that
+	// declared only a prefix could reach EVERY service the upstream origin
+	// serves, under the viewer's own credential. `connectServices` is the bound,
+	// declared by the requirement rather than chosen by the caller, and a
+	// requirement reaching exactly one service (the shape a `/<pkg.Service>`
+	// prefix used to express) declares one entry. It is meaningless on a REST
+	// alias, whose prefix already bounds what the relative path can reach.
+	if (service.protocol === "connect") {
+		assertContribution(
+			Array.isArray(service.connectServices) &&
+				service.connectServices.length > 0 &&
+				service.connectServices.every((name) => isConnectServiceName(name)),
+			`plugin '${pluginName}' service '${service.alias}' must declare the fully qualified Connect services it may reach`,
+		);
+		assertContribution(
+			new Set(service.connectServices).size === service.connectServices.length,
+			`plugin '${pluginName}' service '${service.alias}' declares the same Connect service twice`,
+		);
+	} else {
+		assertContribution(
+			service.connectServices === undefined,
+			`plugin '${pluginName}' service '${service.alias}' declares connect services on a '${service.protocol}' requirement`,
+		);
+	}
 	assertContribution(
 		service.compatibility !== null &&
 			typeof service.compatibility === "object" &&
@@ -540,6 +568,14 @@ export function defineFrontend(definition: FrontendDefinition): FrontendConfig {
 						alias: service.alias,
 						protocol: service.protocol,
 						routePrefix: service.routePrefix,
+						// Carried into the installed inventory, and from there into the
+						// generated allowlist the BFF reads: dropping it here would
+						// leave every Connect alias reaching nothing at runtime.
+						...(service.connectServices
+							? {
+									connectServices: Object.freeze([...service.connectServices]),
+								}
+							: {}),
 						compatibility: Object.freeze({ ...service.compatibility }),
 					})),
 				)
