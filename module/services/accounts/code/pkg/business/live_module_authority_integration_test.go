@@ -30,7 +30,7 @@ func TestLiveModuleAuthorityOverARealInstallation(t *testing.T) {
 	ctx := testCtx
 	adminID, orgID := mustUserAndOrg(t, ctx, "liveauth@example.com", "liveauth", "LiveAuth Co")
 	roleID := seedInstallableRole(t, ctx, orgID)
-	targetID, _ := declarePresence(t, "liveauth-solution")
+	targetID, alias := declarePresence(t, "liveauth-solution")
 
 	installation, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
 		OrgID:           orgID,
@@ -41,21 +41,22 @@ func TestLiveModuleAuthorityOverARealInstallation(t *testing.T) {
 		AllowedScopes:   []string{"doc"},
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installation)
 
 	// A module principal, which is NOT the installation's agent principal. The
 	// regression assumed these were the same value.
-	modulePrincipal := business.ModulePrincipalID("liveauth")
+	modulePrincipal := business.ModulePrincipalID(alias)
 	require.NotEqual(t, installation.AgentPrincipalId, modulePrincipal,
 		"the fixture must exercise the two distinct identity spaces, or it cannot catch the regression")
 
-	// Naming NO installation must succeed and report the principal's epoch.
-	// The regression failed here, and failing here is what denied every real
-	// module caller: nothing relates a module principal to an installation, so
-	// "I could not find one" is not "it is revoked".
+	// An unsealed caller must still resolve its own organization's explicit
+	// registry association. The per-installation agent is a different identity.
 	live, err := testStore.LiveModuleAuthority(ctx, modulePrincipal, orgID, "")
-	require.NoError(t, err,
-		"a capability naming no installation must not be refused: the term is unanswerable, not failed")
-	require.Empty(t, live.InstallationID)
+	require.NoError(t, err)
+	require.Equal(t, installation.Id, live.InstallationID)
+	require.Equal(t, uint64(1), live.InstallationRevision)
+	_, err = testStore.LiveModuleAuthority(ctx, business.ModulePrincipalID("not-installed"), orgID, "")
+	require.ErrorIs(t, err, business.ErrModuleInstallationInactive)
 
 	// Naming a LIVE installation resolves it.
 	live, err = testStore.LiveModuleAuthority(ctx, modulePrincipal, orgID, installation.Id)
@@ -84,7 +85,7 @@ func TestLiveModuleAuthorityRefusesARevokedInstallation(t *testing.T) {
 	ctx := testCtx
 	adminID, orgID := mustUserAndOrg(t, ctx, "revoked@example.com", "revoked", "Revoked Co")
 	roleID := seedInstallableRole(t, ctx, orgID)
-	targetID, _ := declarePresence(t, "revoked-solution")
+	targetID, alias := declarePresence(t, "revoked-solution")
 
 	installation, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
 		OrgID:           orgID,
@@ -95,7 +96,8 @@ func TestLiveModuleAuthorityRefusesARevokedInstallation(t *testing.T) {
 		AllowedScopes:   []string{"doc"},
 	})
 	require.NoError(t, err)
-	modulePrincipal := business.ModulePrincipalID("revoked")
+	acknowledgeInstallation(t, installation)
+	modulePrincipal := business.ModulePrincipalID(alias)
 
 	// Live first, so the refusal below is the uninstall and not the fixture.
 	_, err = testStore.LiveModuleAuthority(ctx, modulePrincipal, orgID, installation.Id)

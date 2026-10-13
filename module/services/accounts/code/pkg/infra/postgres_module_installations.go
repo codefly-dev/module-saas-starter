@@ -55,7 +55,7 @@ func (s *PostgresStore) ReconcileModuleInstallation(ctx context.Context, p *busi
 		if owner != p.InstallerPrincipalID || existing.OwnerPrincipalId != p.OwnerPrincipalID {
 			return nil, installerConflict("installation belongs to another owner; automatic adoption is forbidden")
 		}
-		if existing.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+		if existing.Status == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED {
 			return nil, installerConflict("installation was revoked; explicit lifecycle action is required")
 		}
 		if err = reconcileExistingInstallation(ctx, executor, existing, p); err != nil {
@@ -98,7 +98,14 @@ func installerResult(ctx context.Context, executor QueryExecutor, i *gen.Install
 	if len(ids) != 1 || ids[0] == "" {
 		return nil, installerConflict("installation must have exactly one nonexpiring standing grant at its own root; unrelated grants require review")
 	}
-	return &business.ModuleInstallationResult{State: "ready", Changed: changed, OrganizationID: i.OrgId, PrincipalID: i.AgentPrincipalId, InstallationID: i.Id, ScopeNodeID: i.RootScopeNodeId, GrantID: ids[0]}, nil
+	state := "ready"
+	switch i.Status {
+	case gen.InstallationStatus_INSTALLATION_STATUS_PENDING:
+		state = "pending"
+	case gen.InstallationStatus_INSTALLATION_STATUS_FAILED:
+		state = "failed"
+	}
+	return &business.ModuleInstallationResult{State: state, Changed: changed, OrganizationID: i.OrgId, PrincipalID: i.AgentPrincipalId, InstallationID: i.Id, ScopeNodeID: i.RootScopeNodeId, GrantID: ids[0]}, nil
 }
 
 func lockSolutionInstallation(ctx context.Context, executor QueryExecutor, orgID, solution string) error {

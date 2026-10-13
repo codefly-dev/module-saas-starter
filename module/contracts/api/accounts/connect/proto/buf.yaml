@@ -6,10 +6,14 @@ modules:
     # duplicate Go/Connect/REST symbols.
     excludes:
       - codefly
+      - vendor
+  - path: vendor
 deps:
   - buf.build/bufbuild/protovalidate
   - buf.build/googleapis/googleapis
 lint:
+  ignore:
+    - vendor
   use:
     - COMMENTS
     - STANDARD
@@ -86,6 +90,12 @@ breaking:
       # SolutionBackendRegistration are the observations a deployment used to
       # submit. All four belong to the removed writer surface (#952).
       - saas/accounts/v1/solution_registry.proto
+      # ModuleMintRegistrationRequest/Response and
+      # SolutionMintRegistrationRequest/Response (#1056): the registration
+      # credentials and the secrets that minted them are deleted. Presence is
+      # delivered, so nothing registers at runtime and nothing verifies either
+      # credential.
+      - saas/accounts/v1/module_registration.proto
     # ListMyAccessibleScopes moved from PermissionService to the new
     # AccessibleScopeService in accessible_scopes.proto (issue #577), which changes
     # its Connect/gRPC procedure path. Its REST route (GET /v1/accessible-scopes) is
@@ -98,6 +108,10 @@ breaking:
       # (#952). No replacement RPC takes their place, so nothing moved — the
       # capability is gone.
       - saas/accounts/v1/solution_registry_service.proto
+      # MintModuleRegistration and MintSolutionRegistration (#1056): their
+      # secrets are deleted, so nothing can authenticate to them, and no
+      # gateway or frontend path accepts what they minted. Legacy means delete.
+      - saas/accounts/v1/module_capabilities.proto
     # target_collection (a free-text string that was neither resolvable nor
     # grantable) is replaced by a scope-node boundary binding across the three
     # datasource messages (issue #473). Waive only field deletion for this file;
@@ -125,3 +139,15 @@ breaking:
       # ModuleCurrentInstallationResponse.solution_identifier (3): a reusable
       # route alias, replaced by target_id and binding_id, which are identities.
       - saas/accounts/v1/module_capabilities.proto
+      # The `secret` (2) of the three module mint requests (#1056): a module
+      # proves which module it is with its pod's projected ServiceAccount token
+      # (`service_account_token`), held by accounts against the pod's running
+      # build. Reserved by number and name.
+      - saas/accounts/v1/module_registration.proto
+      # StartInstallationTaskRequest.session_id (4) and
+      # StartChildSessionWorkContextRequest.session_id (3) (#1082): the issuer
+      # assigns the session a capability opens and returns it in
+      # IssuedWorkContext. A session a caller could name is one it could name
+      # after another credential's, and a resource-confined credential is paired
+      # with a capability on the session alone. Reserved by number and name.
+      - saas/accounts/v1/work_contexts.proto

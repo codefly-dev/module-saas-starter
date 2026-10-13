@@ -12,7 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -36,15 +36,21 @@ type delegatedAudienceRequest struct {
 }
 
 func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context, encodedParent string, request delegatedAudienceRequest, resolve delegatedAudienceResolver) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get(workcontext.WorkContextHeaderName)) != 1 {
+	if len(md.Get(workContextHeader)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
 	}
 	authority := WorkContextSingleton()
-	if authority == nil || authority.verifier == nil || authority.configureErr != nil || authority.authority == nil {
+	if !authority.configured() || authority.authority == nil {
 		return nil, status.Error(codes.Unavailable, "work context authority unavailable")
 	}
 	caller, err := moduleCaller(ctx)
@@ -70,12 +76,41 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		}
 		return err
 	}
-	token, err := workcontext.ParseWorkContextToken(encodedParent)
-	if err != nil {
+	presented, err := authority.verifyIssued(ctx, encodedParent)
+	var verified *basev0.WorkContextV1
+	switch {
+	case err == nil:
+		verified = presented.Context()
+	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal):
+		// Refused for live state that moved since the mint. Core reaches those
+		// checks only after the signature, issuer, window and audience held, so
+		// the claims are the issuer's own and the refusal is attributed to the
+		// owner they name — it is not a probe.
+		decoded, decodeErr := workcontext.Decode(encodedParent)
+		if decodeErr != nil {
+			return nil, refuseUnidentifiedParent()
+		}
+		stale := decoded.Context()
+		staleErr := refusedReadBack(ctx, err, nil)
+		if service != nil {
+			service.ObserveDelegatedAudienceExchange(auth.WithVerifiedDatabaseIdentity(ctx, stale.OwnerPrincipalId, stale.TenantId),
+				business.DelegatedAudienceExchangeObservation{
+					Caller:      caller,
+					OwnerID:     stale.OwnerPrincipalId,
+					ActorID:     delegatedAudienceActorID(stale),
+					Tenant:      stale.TenantId,
+					BindingKind: request.kind,
+					BindingID:   request.bindingID,
+					Lookup:      request.lookup,
+					Outcome:     business.DelegatedAudienceExchangeRefused,
+					RefusalCode: delegatedAudienceRefusalCode(staleErr),
+				})
+		}
+		return nil, staleErr
+	default:
 		return nil, refuseUnidentifiedParent()
 	}
-	verified, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
-	if err != nil || verified.TenantId == "" || verified.OwnerPrincipalId == "" {
+	if verified.GetTenantId() == "" || verified.GetOwnerPrincipalId() == "" {
 		return nil, refuseUnidentifiedParent()
 	}
 	// Identity is sealed in the verified parent and bounded by the authenticated
@@ -109,7 +144,8 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 			return false, nil, nil
 		}
 		return service.ConfirmSourceDelegationParent(ctx, verified.TenantId, verified.OwnerPrincipalId,
-			verified.AuthorizationRevision, operationScopesFromCore(verified.AuthorityScopes), sourceDelegationHops(verified.ActorChain))
+			verified.AuthorizationRevision, operationScopesFromCore(verified.AuthorityScopes), sourceDelegationHops(verified.ActorChain),
+			verified.GetOperationBinding().GetBindingId())
 	}
 	delegated, delegation, err := confirmDelegation()
 	if err != nil {
@@ -117,22 +153,17 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, "", err)
 		return nil, err
 	}
-	var parentToken workcontext.WorkContextToken
-	if delegated {
-		parentToken = token
-	} else {
+	if !delegated {
 		if len(verified.ActorChain) > 0 && authority.journal == nil {
 			err = status.Error(codes.Unavailable, "delegation journal unavailable")
 			audit(business.DelegatedAudienceExchangeRefused, "", err)
 			return nil, err
 		}
-		var currentParent *basev0.WorkContextV1
-		parentToken, currentParent, actor, err = authority.verifyParent(ctx, verified.TenantId, verified.OwnerPrincipalId, encodedParent)
+		actor, err = authority.requireCurrentAuthority(ctx, verified.TenantId, verified)
 		if err != nil {
 			audit(business.DelegatedAudienceExchangeRefused, "", err)
 			return nil, err
 		}
-		parent = currentParent
 	}
 	binding, err := resolve(caller, parent.TenantId, parent.Audience, delegation)
 	if err != nil {
@@ -145,7 +176,14 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
 	}
-	issued, err := authority.exchangeVerifiedParent(ctx, parentToken, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)})
+	// Re-issued in a fresh session: the module exchanging it holds no session
+	// of its own to bind.
+	var issued *gen.IssuedWorkContext
+	if delegated {
+		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
+	} else {
+		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, workcontext.Execution{}, "")
+	}
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
@@ -199,15 +237,21 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 // authenticates the caller rather than the parent — a reference is an
 // identifier, not a credential, and on its own it authorizes nothing.
 func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Context, delegationID string, request delegatedAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get(workcontext.WorkContextHeaderName)) != 1 {
+	if len(md.Get(workContextHeader)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
 	}
 	authority := WorkContextSingleton()
-	if authority == nil || authority.signer == nil || authority.configureErr != nil {
+	if !authority.configured() {
 		return nil, status.Error(codes.Unavailable, "work context authority unavailable")
 	}
 	caller, err := moduleCaller(ctx)
@@ -242,7 +286,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 		audit(business.DelegatedAudienceExchangeRefused, err)
 		return nil, err
 	}
-	token, signed, err := authority.StartSourceOperationTask(granted)
+	token, signed, err := authority.StartSourceOperationTask(ctx, granted)
 	if err != nil {
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			err = status.Error(codes.Unavailable, "work context authority unavailable")
@@ -281,7 +325,7 @@ func delegationReferenceError(err error) error {
 		return status.Error(codes.PermissionDenied, "source delegation no longer authorizes this work")
 	case errors.Is(err, business.ErrSourceDelegationLookupUnauthorized):
 		return status.Error(codes.PermissionDenied, "source delegation does not authorize receipt lookup for this binding")
-	case errors.Is(err, business.ErrModuleRegistrationDenied):
+	case errors.Is(err, business.ErrModuleIdentityDenied):
 		return status.Error(codes.Unauthenticated, "module source operation context denied")
 	case status.Code(err) != codes.Unknown:
 		return err
@@ -311,6 +355,12 @@ func delegatedAudienceRefusalCode(err error) string {
 }
 
 func (s *ModuleCapabilitiesServer) ExchangeDelegatedReadAudience(ctx context.Context, req *gen.ModuleExchangeDelegatedReadAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -323,6 +373,12 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedReadAudience(ctx context.Con
 }
 
 func (s *ModuleCapabilitiesServer) ExchangeDelegatedOperationAudience(ctx context.Context, req *gen.ModuleExchangeDelegatedOperationAudienceRequest) (*gen.IssuedWorkContext, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -343,6 +399,11 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedOperationAudience(ctx contex
 		} else {
 			binding, err = service.ModuleOperationAudience(ctx, caller, tenant, parentAudience, req.BindingId)
 		}
+		// A binding that declares no lookup redeems none: refused by name rather
+		// than signed as a capability carrying no scope at all.
+		if err == nil && req.Lookup && len(binding.LookupScopes) == 0 {
+			err = status.Errorf(codes.PermissionDenied, "operation audience binding %q declares no lookup", req.BindingId)
+		}
 		return delegatedAudienceBinding{audience: binding.Audience, scopes: binding.WireScopes(req.Lookup), policy: binding}, err
 	})
 }
@@ -350,7 +411,7 @@ func (h *moduleCapabilitiesConnectHandler) ExchangeDelegatedReadAudience(ctx con
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.ExchangeDelegatedReadAudience(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -362,7 +423,7 @@ func (h *moduleCapabilitiesConnectHandler) ExchangeDelegatedOperationAudience(ct
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
+	md.Set(workContextHeader, req.Header().Values(workContextHeader)...)
 	out, err := h.inner.ExchangeDelegatedOperationAudience(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -401,4 +462,46 @@ func sourceDelegationHops(actors []*basev0.WorkActorV1) []business.SourceDelegat
 		})
 	}
 	return out
+}
+
+// exchangeDelegatedParent re-issues a parent minted from a source delegation for
+// the caller's own binding. The caller — the module the delegation's binding
+// names as its audience — is the module that USES what is issued, so the
+// capability is minted afresh: the person's session, then the caller's hop
+// exercising the delegation as its operation binding, attesting the build its
+// verified credential was sealed to. Core resolves that binding live and refuses
+// it for any module the delegation does not entitle.
+func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
+	ctx context.Context, caller business.ModuleCaller, parent *basev0.WorkContextV1,
+	delegation *business.SourceDelegation, binding delegatedAudienceBinding, ttl time.Duration,
+) (*gen.IssuedWorkContext, error) {
+	grant, declared := service.ModulePrincipals()[caller.PrincipalID]
+	if !declared || delegation == nil || caller.Sealed == nil || caller.Sealed.InstallationID == nil {
+		return nil, status.Error(codes.PermissionDenied, "the caller holds no installation this delegation can be exercised through")
+	}
+	actorScopes := make([]business.ModuleOperationScope, 0, len(binding.scopes))
+	for _, scope := range binding.scopes {
+		actorScopes = append(actorScopes, business.ModuleOperationScope{
+			ResourceKind: scope.GetResourceKind(),
+			Actions:      append([]string(nil), scope.GetActions()...),
+			ResourceIDs:  append([]string(nil), scope.GetResourceIds()...),
+		})
+	}
+	authority := business.SourceOperationContextAuthority{
+		ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{
+			PrincipalID: caller.PrincipalID, Tenant: parent.GetTenantId(),
+			InstallationID: *caller.Sealed.InstallationID, Execution: caller.SealedExecution(),
+		},
+		ModulePrefix:     grant.Prefix,
+		OwnerPrincipalID: parent.GetOwnerPrincipalId(),
+		Delegation:       *delegation,
+		Audience:         binding.audience,
+		Scopes:           operationScopesFromCore(parent.GetAuthorityScopes()),
+		ActorScopes:      actorScopes,
+	}
+	token, signed, err := s.startSourceOperation(ctx, authority, ttl)
+	if err != nil {
+		return nil, mapWorkContextError(err)
+	}
+	return issuedWorkContext(token, signed), nil
 }

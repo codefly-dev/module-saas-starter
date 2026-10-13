@@ -5,86 +5,83 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-// Federation registration credential exchange.
+// Module credential mints.
 //
 // These messages live in their own file, with deliberately minimal imports, so
 // the auth-gateway can generate the same types from the same source proto and
-// call MintModuleRegistration / MintSolutionRegistration / MintModuleWorkContext /
-// MintModuleOperationContext / MintSourceOperationContext (all declared on
-// ModuleCapabilitiesService) over the internal listener. Sharing the generated
-// definition rather than restating the wire shape is what keeps the two sides
-// from drifting.
+// call MintModuleWorkContext / MintModuleOperationContext /
+// MintSourceOperationContext (all declared on ModuleCapabilitiesService) over
+// the internal listener. Sharing the generated definition rather than restating
+// the wire shape is what keeps the two sides from drifting.
 //
-// Two registrant kinds, one issuer. A composed module federates a REST prefix;
-// a solution additionally registers a gateway upstream and a Module-Federation
-// remote that executes in the host origin. Their credentials are declared,
-// minted, and audience-scoped separately so holding one never confers the
-// other's authority — the solution credential is the strictly larger grant.
-
-// ModuleMintRegistrationRequest asks for the credential a module presents to
-// federate its REST prefix with the gateway. secret is the module's own
-// registration secret, provisioned by the composition; accounts compares it
-// against the digest declared for `prefix`, so the credential for one module
-// never yields a token for another.
-message ModuleMintRegistrationRequest {
-  string prefix = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 63
-    pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
-  }];
-  string secret = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 512
-  }];
-}
-
-message ModuleMintRegistrationResponse {
-  string token = 1;
-  google.protobuf.Timestamp expires_at = 2;
-}
-
-// SolutionMintRegistrationRequest asks for the credential a solution presents to
-// register — and later update or delete — its gateway upstream and its frontend
-// Module-Federation remote. secret is the solution's own registration secret,
-// provisioned by the composition; accounts compares it against the digest
-// declared for `solution_id`, so the credential for one solution never yields a
-// token for another.
-message SolutionMintRegistrationRequest {
-  string solution_id = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 63
-    pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
-  }];
-  string secret = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 512
-  }];
-}
-
-message SolutionMintRegistrationResponse {
-  string token = 1;
-  google.protobuf.Timestamp expires_at = 2;
-}
+// A module proves which module it is with the ServiceAccount token Kubernetes
+// projects into its pod for the `accounts` audience — never with a secret it was
+// handed. accounts reviews the token (TokenReview), reads the pod the token
+// names, and holds the image that pod is RUNNING against the build the
+// principal's authority document approves; a pod on any other build, a token
+// for another ServiceAccount or namespace than the principal declares, and a
+// token minted for another audience are each issued nothing. The prefix names
+// the principal the caller asks to act as; it is a claim the token must back,
+// never an identity by itself.
+//
+// The registration credentials this file used to carry (a module's REST prefix,
+// a solution's upstream and remote) are deleted with the secrets that minted
+// them: presence is delivered, so nothing registers at runtime (#952).
 
 // ModuleMintWorkContextRequest asks for the Work Context a composed module
-// presents to the module-facing capability surface. It carries the same
-// registration secret the credential exchange above uses: a module proves which
-// module it is once, with one credential, and the principal it acts as is
-// derived from that prefix rather than configured separately.
+// presents to the module-facing capability surface. The principal it acts as is
+// derived from `prefix`, and `service_account_token` must prove the caller is
+// the workload that principal declares, running the build its authority
+// document approves.
 //
-// The tenant the capability is bound to is not requested. It is the one declared
-// for that principal by the deployment, so a module cannot name a tenant by
-// asking, and the response reports which one was sealed.
+// A tenant-pinned principal keeps its declared tenant. A shared principal must
+// select an organization whose live installation consents to this principal;
+// requesting an organization is not authority over it.
 message ModuleMintWorkContextRequest {
+  // Field 2 was the module's identity secret, deleted with the secret (#1056).
+  reserved 2;
+  reserved "secret";
   string prefix = 1 [(buf.validate.field).string = {
     min_len: 1
     max_len: 63
     pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
   }];
-  string secret = 2 [(buf.validate.field).string = {
+  // service_account_token is the pod's projected ServiceAccount token, minted
+  // for the `accounts` audience and read from its projection on every mint
+  // (the kubelet rotates it under the running process).
+  string service_account_token = 3 [(buf.validate.field).string = {
     min_len: 1
-    max_len: 512
+    max_len: 65536
   }];
+  // Required for a shared principal with cross_tenant in its envelope. For a
+  // tenant-pinned principal, omit or match its tenant. Accounts validates the
+  // requested organization's live installation after authenticating execution.
+  string organization_id = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // upstream is where the minting workload serves its backend, as an absolute
+  // https origin with no path: the dynamic half of its registration, reported
+  // by the runtime that proved its identity with the token above (#952). The
+  // gateway reaches it only under the SVID the applied presence names for the
+  // workload, so a claimed origin that is not that workload serves nothing.
+  // Empty leaves the registration's backend half as it is.
+  string upstream = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string = {
+      max_len: 512
+      uri: true
+    }
+  ];
+  // manifest is the solution's frontend manifest as its runtime serves it: the
+  // other dynamic half of a solution's registration (a module has none), the
+  // document the host's frontend renders the solution's page from. Reported
+  // with the same proven identity as upstream. Empty leaves the frontend half
+  // as it is.
+  string manifest = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.max_len = 65536
+  ];
 }
 
 // ModuleMintWorkContextResponse carries the signed capability plus the identity
@@ -100,26 +97,38 @@ message ModuleMintWorkContextResponse {
 // the calling module's installed operation audiences, with no person present —
 // the capability background work (a journal replay, a scheduled refresh) uses to
 // call another module's service. It authenticates exactly like
-// ModuleMintWorkContextRequest, with the module's identity secret for `prefix`.
+// ModuleMintWorkContextRequest, with the pod's projected token for `prefix`.
 //
 // The caller names only the binding. Audience, scopes, tenant, actor and
 // lifetime are deployment policy: the binding's `headless_scopes`, the tenant
 // declared for the module principal, and a short fixed lifetime. A binding that
 // declares no headless scopes cannot be minted this way at all.
 message ModuleMintOperationContextRequest {
+  // Field 2 was the module's identity secret, deleted with the secret (#1056).
+  reserved 2;
+  reserved "secret";
   string prefix = 1 [(buf.validate.field).string = {
     min_len: 1
     max_len: 63
     pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
   }];
-  string secret = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 512
-  }];
   string binding = 3 [(buf.validate.field).string = {
     min_len: 1
     max_len: 128
   }];
+  // service_account_token is the pod's projected ServiceAccount token, as on
+  // ModuleMintWorkContextRequest.
+  string service_account_token = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 65536
+  }];
+  // Required for a shared principal with cross_tenant in its envelope. For a
+  // tenant-pinned principal, omit or match its tenant. Accounts validates the
+  // requested organization's live installation after authenticating execution.
+  string organization_id = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
 }
 
 // ModuleMintOperationContextResponse carries the signed capability and what it
@@ -136,7 +145,7 @@ message ModuleMintOperationContextResponse {
 // ModuleMintSourceOperationContextRequest asks for a Work Context that runs one
 // datasource source's sync with the authority a person delegated when they
 // connected (or reconnected) the source. It authenticates exactly like
-// ModuleMintWorkContextRequest, with the module's identity secret for `prefix`.
+// ModuleMintWorkContextRequest, with the pod's projected token for `prefix`.
 //
 // The caller names the delegation — by its id, or by the source whose active
 // delegation to this module is meant — and nothing else. Tenant, owner,
@@ -144,14 +153,19 @@ message ModuleMintOperationContextResponse {
 // names: the source's organization, the person who connected it, and exactly
 // that binding's `source_delegation_scopes`.
 message ModuleMintSourceOperationContextRequest {
+  // Field 2 was the module's identity secret, deleted with the secret (#1056).
+  reserved 2;
+  reserved "secret";
   string prefix = 1 [(buf.validate.field).string = {
     min_len: 1
     max_len: 63
     pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
   }];
-  string secret = 2 [(buf.validate.field).string = {
+  // service_account_token is the pod's projected ServiceAccount token, as on
+  // ModuleMintWorkContextRequest.
+  string service_account_token = 5 [(buf.validate.field).string = {
     min_len: 1
-    max_len: 512
+    max_len: 65536
   }];
   oneof delegation {
     option (buf.validate.oneof).required = true;

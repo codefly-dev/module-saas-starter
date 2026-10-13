@@ -27,7 +27,6 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -190,7 +189,7 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	require.NoError(t, err)
 	// Two composed modules whose content is governed by unrelated resource types:
 	// nothing this host authorizes may depend on which of them is calling.
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"documents"}},
 		business.ModulePrincipalID("rows"):      {Prefix: "rows", Resources: []string{"rows"}},
@@ -199,7 +198,9 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	workContextSingleton = &WorkContextAuthorityServer{}
-	workContextSingleton.Configure(WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "test-key", PrivateKey: key, Authority: sourceReadIdentityAuthority{facts}})
+	workContextSingleton.Configure(WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "test-key", PrivateKey: key, Authority: sourceReadIdentityAuthority{facts},
+		Seals: sourceReadSeals(facts)})
+	workContextSingleton.replay = &memoryReplay{}
 	SetInternalToken("source-read-test-perimeter")
 	internal := grpc.NewServer(grpc.UnaryInterceptor(grpcAuthInterceptor(nil, rpcExposureInternal)))
 	gen.RegisterModuleCapabilitiesServiceServer(internal, &ModuleCapabilitiesServer{})
@@ -215,17 +216,15 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 			resource, verb, _ := strings.Cut(permission, ":")
 			scopes = append(scopes, &basev0.WorkScopeV1{ResourceKind: resource, Actions: []string{verb}})
 		}
-		token, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: audience, TenantID: readOrg, OwnerPrincipalID: readOwner,
-			TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222", AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: workcontext.WorkContextReplayIdempotent,
-			AuthorityScopes: scopes})
-		require.NoError(t, err)
-		return token.Encoded()
+		token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: audience, Tenant: readOrg, Owner: readOwner,
+			Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222", Scopes: scopes})
+		return token
 	}
 	return store, facts, client, mint
 }
 func sourceReadRequest(token string) *connect.Request[gen.ListReadableSourceCollectionsRequest] {
 	r := connect.NewRequest(&gen.ListReadableSourceCollectionsRequest{PageSize: 1})
-	r.Header().Set(workcontext.WorkContextHeaderName, token)
+	r.Header().Set(workContextHeader, token)
 	r.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 	return r
 }
@@ -276,7 +275,7 @@ func TestSourceReadRejectsUntrustedAuthorityBeforeStorage(t *testing.T) {
 				r.Header().Del("x-codefly-internal-token")
 			}
 			if test.duplicate {
-				r.Header().Add(workcontext.WorkContextHeaderName, test.token)
+				r.Header().Add(workContextHeader, test.token)
 			}
 			r.Header().Set("x-tenant-id", readOrg)
 			r.Header().Set("x-user-id", readOwner)
@@ -389,7 +388,7 @@ func TestSourceReadRefusesAnEmptyDeclarationBeforeStorage(t *testing.T) {
 // rather than falling back to a resource type this host invented.
 func TestSourceReadDeniesModulesWithNoDeclaredResources(t *testing.T) {
 	store, _, client, mint := sourceReadFixture(t)
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {Prefix: "documents"},
 	})
@@ -515,4 +514,13 @@ func TestSourceReadNeverDisclosesMetadataForAnInaccessibleCollection(t *testing.
 			require.NotEqual(t, "Example Outsider", grant.SubjectLabel)
 		}
 	}
+}
+
+// sourceReadSeals answers the revision of the fixture's CURRENT facts, which a
+// test replaces to revoke or widen: a mint reads the revision live, as the host's
+// does, rather than one frozen when the server was built.
+func sourceReadSeals(facts *workContextAuthorityFake) *sealAnswersFake {
+	seals := newSealAnswersFake(0)
+	seals.revisionFrom = func() uint64 { return facts.facts.EffectiveRevision() }
+	return seals
 }

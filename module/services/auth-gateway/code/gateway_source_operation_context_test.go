@@ -96,10 +96,10 @@ func newSourceOperationContextHarness(t *testing.T) (*Gateway, *fakeAccountsSour
 	return gw, mint
 }
 
-func sourceOperationContextRequest(body, secret, internal string) *http.Request {
+func sourceOperationContextRequest(body, token, internal string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, moduleSourceOperationContextPath, strings.NewReader(body))
-	if secret != "" {
-		req.Header.Set(moduleSecretHeader, secret)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if internal != "" {
 		req.Header.Set("X-Codefly-Internal-Token", internal)
@@ -127,16 +127,16 @@ func TestGateway_ModuleSourceOperationContext_BrokersToAccounts(t *testing.T) {
 			gw, mint := newSourceOperationContextHarness(t)
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, sourceOperationContextRequest(test.body, "docstore-secret", "test-internal-token"))
+			gw.ServeHTTP(w, sourceOperationContextRequest(test.body, "docstore-projected-token", "test-internal-token"))
 
 			require.Equal(t, http.StatusOK, w.Code)
 			require.Equal(t, "no-store", w.Header().Get("cache-control"))
 			require.Equal(t, "application/json", w.Header().Get("content-type"))
 			// The gateway presents its OWN cluster credential and forwards the
-			// module's secret and the delegation it named; it decides nothing.
+			// module pod's token and the delegation it named; it decides nothing.
 			require.Equal(t, "test-internal-token", mint.lastInternal)
 			require.Equal(t, "docstore", mint.last.GetPrefix())
-			require.Equal(t, "docstore-secret", mint.last.GetSecret())
+			require.Equal(t, "docstore-projected-token", mint.last.GetServiceAccountToken())
 			test.check(t, mint.last)
 
 			var payload map[string]string
@@ -160,26 +160,26 @@ func TestGateway_ModuleSourceOperationContext_FailsClosed(t *testing.T) {
 	byDelegation := `{"prefix":"docstore","delegation_id":"` + testDelegationID + `"}`
 	tests := map[string]struct {
 		body     string
-		secret   string
+		token    string
 		internal string
 		want     int
 	}{
-		"no internal token":  {byDelegation, "docstore-secret", "", http.StatusUnauthorized},
-		"bad internal token": {byDelegation, "docstore-secret", "wrong", http.StatusUnauthorized},
-		"no module secret":   {byDelegation, "", "test-internal-token", http.StatusUnauthorized},
-		"path prefix":        {`{"prefix":"docstore/nested","source_id":"` + testSourceID + `"}`, "docstore-secret", "test-internal-token", http.StatusBadRequest},
-		"neither":            {`{"prefix":"docstore"}`, "docstore-secret", "test-internal-token", http.StatusBadRequest},
+		"no internal token":  {byDelegation, "docstore-projected-token", "", http.StatusUnauthorized},
+		"bad internal token": {byDelegation, "docstore-projected-token", "wrong", http.StatusUnauthorized},
+		"no projected token": {byDelegation, "", "test-internal-token", http.StatusUnauthorized},
+		"path prefix":        {`{"prefix":"docstore/nested","source_id":"` + testSourceID + `"}`, "docstore-projected-token", "test-internal-token", http.StatusBadRequest},
+		"neither":            {`{"prefix":"docstore"}`, "docstore-projected-token", "test-internal-token", http.StatusBadRequest},
 		"both": {`{"prefix":"docstore","delegation_id":"` + testDelegationID + `","source_id":"` + testSourceID + `"}`,
-			"docstore-secret", "test-internal-token", http.StatusBadRequest},
-		"oversized id": {`{"prefix":"docstore","source_id":"` + strings.Repeat("a", 65) + `"}`, "docstore-secret", "test-internal-token", http.StatusBadRequest},
-		"not json":     {`source_id=x`, "docstore-secret", "test-internal-token", http.StatusBadRequest},
+			"docstore-projected-token", "test-internal-token", http.StatusBadRequest},
+		"oversized id": {`{"prefix":"docstore","source_id":"` + strings.Repeat("a", 65) + `"}`, "docstore-projected-token", "test-internal-token", http.StatusBadRequest},
+		"not json":     {`source_id=x`, "docstore-projected-token", "test-internal-token", http.StatusBadRequest},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			gw, mint := newSourceOperationContextHarness(t)
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, sourceOperationContextRequest(test.body, test.secret, test.internal))
+			gw.ServeHTTP(w, sourceOperationContextRequest(test.body, test.token, test.internal))
 
 			require.Equal(t, test.want, w.Code)
 			require.Zero(t, mint.requestCount, "the perimeter rejects it before accounts is asked")
@@ -236,7 +236,7 @@ func TestGateway_ModuleSourceOperationContext_RelaysAccountsOutcome(t *testing.T
 			mint.err = test.err
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, sourceOperationContextRequest(`{"prefix":"docstore","source_id":"`+testSourceID+`"}`, "docstore-secret", "test-internal-token"))
+			gw.ServeHTTP(w, sourceOperationContextRequest(`{"prefix":"docstore","source_id":"`+testSourceID+`"}`, "docstore-projected-token", "test-internal-token"))
 
 			require.Equal(t, test.want, w.Code)
 			require.Equal(t, 1, mint.requestCount)

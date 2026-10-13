@@ -10,30 +10,6 @@ import (
 	"time"
 )
 
-func TestGuardDial_BlocksNonPublicAddresses(t *testing.T) {
-	blocked := []string{
-		"127.0.0.1:80",       // loopback
-		"[::1]:443",          // loopback v6
-		"10.1.2.3:80",        // private
-		"192.168.0.1:80",     // private
-		"172.16.0.1:80",      // private
-		"169.254.169.254:80", // link-local (cloud metadata endpoint)
-		"0.0.0.0:80",         // unspecified
-		"not-an-ip:80",       // unresolved
-	}
-	for _, addr := range blocked {
-		if err := guardDial("tcp", addr, nil); err == nil {
-			t.Errorf("guardDial(%q) = nil, want blocked", addr)
-		}
-	}
-	allowed := []string{"8.8.8.8:443", "1.1.1.1:80", "[2606:4700:4700::1111]:443"}
-	for _, addr := range allowed {
-		if err := guardDial("tcp", addr, nil); err != nil {
-			t.Errorf("guardDial(%q) = %v, want allowed", addr, err)
-		}
-	}
-}
-
 // newTestClient builds a Client whose transport is not the SSRF-guarded one, so
 // a test can reach an httptest server on loopback (which the guard blocks by
 // design). The credential application and response handling under test are

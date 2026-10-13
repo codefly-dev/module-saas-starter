@@ -64,7 +64,7 @@ handler in a consuming solution. Both the SDK graph and host dashboard DSL accep
 Accounts dispatch/validation events use row `resource="datasource"` and
 `resource_id=source.ID`. Ingestion workers emit through
 `ModuleCapabilitiesService.EmitAuditEvent`, authenticated by a module Work
-Context and the current tenant-bound `MODULE_PRINCIPALS` declaration. That RPC
+Context and the current tenant-bound module registry entry. That RPC
 writes row `resource=scope.solution`, `resource_id=scope.entry_id`, and payload
 `solution=scope.solution`; the actor is the attributed actor supplied by the
 emitter. `entry_id` is stored verbatim: it is a text column, so an entry id of
@@ -103,8 +103,9 @@ from that page's own budget so the page still honours its `page_size` — so a
 module's rows read as that module rather than as an unknown actor. Such an entry
 has no stored row: it carries no `created_at`, and `GetPrincipal` and
 `RevokePrincipal` answer `NotFound` for it, which is the fail-closed answer.
-Its authority comes from the `MODULE_PRINCIPALS` declaration, so that
-declaration is what removes it.
+Its authority comes from the module registry, derived from delivered authority
+inside the module envelope, so withdrawing the authority or narrowing the
+envelope is what removes it.
 Therefore source completion/failure producers must send
 `scope.solution="datasource"`, `scope.entry_id=<source-id>`. A different identity
 does not silently match this source filter. Document producers must send the
@@ -178,6 +179,98 @@ the two counts disagreeing means an incomplete operation, not a small one.
 
 A dry run, and a run the redrive left alone, record nothing.
 
+`saas.document.read_unscoped` and `saas.document.search_unscoped` are
+observational version-1 contracts for a read or a search that involved no
+collection: the caller could read none, or its request resolved to none.
+`saas.document.read` and
+`saas.document.search` each record one collection and require its boundary, so
+without these the refusal and the empty answer reached only the producer's own
+log. Neither requires an entry or an emission idempotency key. Their payload is:
+
+| Field | Kind | Required | Meaning |
+| --- | --- | --- | --- |
+| `solution` | string | no | Names the solution, as on every document event |
+| `actor_principal_id` | uuid | no | The acting principal |
+| `owner_principal_id` | uuid | no | The owning principal |
+| `initiator` | string | no | A provenance string, such as a webhook delivery id |
+| `correlation_id` | string | yes | Stable logical operation identity across transport retries |
+| `outcome` | enum | yes | `empty`, `denied`, or `failed` |
+| `duration_ms` | int | no | Observed elapsed milliseconds |
+
+They are types of their own rather than `saas.document.read` with an optional
+boundary, because the registry declares each field's requirement on its own and
+cannot state "boundary is required unless the outcome is denied, empty or
+failed". So `boundary` is not a field, and a payload naming a collection is
+refused as an unregistered field. `returned` is not an outcome, because evidence
+is always returned from some collection and belongs on the scoped type, and
+there is no `result_count`, because with no collection there is no result to
+count. Nor is there a `version`. A refusal is the outcome `denied`, never a type
+of its own. No field is bounded or marked PII; unknown payload fields are
+rejected, so there is no field to carry a query, a prompt or an excerpt.
+
+`saas.document.confirmed` records a person confirming the value a reference
+read at one version of a document: an append-only fact about that reference.
+It is a transactional version-1 contract recorded only when the confirmation
+commits — the module appends the event in the same transaction as its
+append-only confirmation row, and a refused confirmation writes nothing — so it
+carries no `outcome`. The entry is entry_id and the confirmation id is the
+emission idempotency key, so a retried emission collapses; the emission is
+refused without either. Its payload is:
+
+| Field | Kind | Required | Meaning |
+| --- | --- | --- | --- |
+| `solution` | string | no | Names the write, with `version` |
+| `version` | string | yes | The document version the reference was read at |
+| `boundary` | string | no | The data boundary (scope node) the write landed in |
+| `actor_principal_id` | uuid | no | The acting principal |
+| `owner_principal_id` | uuid | no | The owning principal |
+| `initiator` | string | no | A provenance string, such as a webhook delivery id |
+| `extractor` | string | yes | With the three rows below, names the reference confirmed |
+| `extractor_version` | string | yes | |
+| `field` | string | yes | |
+| `format` | string | yes | |
+| `address` | string | yes, at most 1024 bytes | The reference's position in its format's own notation |
+
+The version and every reference field are required: a confirmation that cannot
+say which version and which reference it confirmed is not one. The confirmed
+value is deliberately not a field — the spine records that a reference was
+confirmed, where, and by whom, never what it read — so a payload carrying it is
+refused as an unregistered field. No field is marked PII.
+
+`saas.document.extractor_revised` records an extractor attached to a document
+being revised: attached, corrected or retired. It is a transactional version-1
+contract. The entry is entry_id, and the emission is refused without it or
+without an emission idempotency key. The native extractor itself stays off the
+trail; its digest names it. Its payload is:
+
+| Field | Kind | Required | Meaning |
+| --- | --- | --- | --- |
+| `solution` | string | no | Names the write, with `version` |
+| `version` | string | yes | The document version the revision was derived from |
+| `boundary` | string | no | The data boundary (scope node) the write landed in |
+| `actor_principal_id` | uuid | no | The acting principal |
+| `owner_principal_id` | uuid | no | The owning principal |
+| `initiator` | string | no | A provenance string, such as a webhook delivery id |
+| `extractor_key` | string | yes, at most 128 bytes | The extractor's key |
+| `revision` | int | yes | The key's revision |
+| `digest` | string | yes, at most 64 bytes | The revision's digest, which names the native extractor |
+| `parent_digest` | string | no, at most 64 bytes | The parent revision's digest; a first attachment has none |
+| `retired` | bool | yes | Whether the revision retires the key |
+| `request_type` | string | yes, at most 128 bytes | The native request type |
+| `proposal_kind` | string | yes, at most 16 bytes | What proposed the revision |
+| `proposal_source` | string | no, at most 512 bytes; **PII** | The proposing run, receipt or derivation |
+
+Everything a revision always names is required. `proposal_source` names the
+proposing run, receipt or derivation, but nothing bounds it to an identifier: it
+is an unvalidated string, so it is marked PII and redacted from exports and
+webhooks. It is the only field of the four types so marked.
+
+On all four types, a required string, uuid or enum field means a nonempty,
+non-blank value, not merely a present key; a required int or bool is satisfied
+by `0` or `false`, which are values. The registry,
+`services/accounts/code/pkg/business/audit_registry.go`, is the source of these
+tables.
+
 ## Version acknowledgement
 
 Successful aggregate responses include `scope_contract_version: 1` (Connect JSON:
@@ -194,7 +287,8 @@ never the SDK binding input. Regenerate the export before generating the SDK.
 
 ## Unknown and partial results
 
-Empty queries have no points and render **No data yet**. Numeric sums with no
+Empty queries have no points and render as no data, in the form the widget's
+visualization has for it (see *How a resolved series is drawn*). Numeric sums with no
 numeric observations omit their value, just like averages/percentiles; an emitted
 zero stays zero. `samples[alias]` reports observations before reduction (so
 repeated logical IDs are not mistaken for missing telemetry). Fewer samples than
@@ -202,6 +296,35 @@ events means partial telemetry. Older servers without samples cannot establish
 numeric completeness.
 
 SDK series expose `coverage: complete | partial | empty` and nullable `total`.
+Time buckets are **UTC** days, weeks and months, whatever zone the database
+session runs in, and every key reads `YYYY-MM-DDT00:00:00+00`. Keyed in the
+session's zone, a key's offset would move across daylight saving, so neither a
+bucket the aggregate did not return nor the kit's UTC label could be placed.
+
+A count, distinct count or sum grouped by **time** is zero-filled where the series
+is produced, in the SDK's `runMetric`: every day (or week, or month) from the
+first bucket the aggregate returned through the end of the range — the bucket
+holding `to`, or today for an open-ended query — that it did not return gets a
+`0`, because no event matched there. Without it a chart spaces points by
+position, so a day with no events vanished and the line ran straight over it,
+and the days since the last event vanished too, so the newest point and the
+"vs previous bucket" delta read an old day as the latest. The current bucket is
+in progress, so its value is so far. An average, minimum, maximum or percentile
+has no value over no events and is not filled; a bucket the aggregate *did*
+return whose value was dropped as unknown stays out and keeps the series
+partial; days before the first bucket are not filled; returned keys that
+disagree about their offset are left as they are rather than given a guessed
+one; and a series made only of filled zeros has no total.
+
+A derived metric over such series reads a day an input has no bucket for as
+that input's `0`, wherever the day falls: a failure rate whose failures start
+after the requests, or never happen, reads `0` on those days and stays
+complete, rather than dropping them as missing telemetry. A day no input had
+events on has no ratio (0/0) and keeps the series complete; a sum or difference
+of such series is filled the same way and can feed another derived metric. An
+input that is partial, or whose aggregation has no value over no events, keeps
+a missing day unknown.
+
 Missing derived operands and zero denominators stay unknown. Partial series keep
 observed chart points with a visible label and withhold the total. Distinct
 counts, averages, percentiles and ratios have no scalar total across multiple
@@ -211,6 +334,74 @@ nested derived metrics.
 The host DSL also withholds totals after top-N truncation. Authorization/RPC
 errors remain errors, never empty successful results. Existing consumers of the
 SDK must handle `total: null` when adopting this contract.
+
+## How a resolved series is drawn
+
+Every dashboard built from these series — the host's own pages, a solution's
+declared dashboard, and a solution remote that mounts the kit itself — is drawn
+by one renderer, `<Dashboard>` from `@codefly-dev/ui/dashboard`, with the kit's
+**metric tier**. There is no second, plainer rendering: a consuming solution
+does not have to ask which half of the kit its dashboard will get.
+
+| Widget | Drawn as | Empty series | `coverage: "partial"` | `total: null` |
+| --- | --- | --- | --- | --- |
+| `number` | `StatTile`: the series total, in the widget's `format` and `unit`; a sparkline and a delta against the previous bucket when the metric is bucketed over **time** | `—` with a **No data** badge, never `0` | `—` with a **Partial data** badge | `—` with a **No total** badge when coverage is complete |
+| `line` / `area` / `bar` | the kit's metric chart over a `ChartSeries` — axes from the appearance palette, a crosshair readout, a legend for two or more series, and every exact value in a visually-hidden data table | the chart's own **No data** plot, plus a **No data** badge on the card | the observed points still plot, with a **Partial data** badge on the card | nothing: a series widget shows no total |
+| `table` | key/value rows | **No data yet.** | a **Partial data** badge on the card | — |
+
+A widget's `format` names how its values are written — a scalar's number, a
+chart's axis, readout and data table, and a table's values all write through the
+one function `StatTile` uses — and the view's `percent` takes a value that is
+**already a percentage**: 45 renders "45%". It is not a share — 0.4 renders
+"0.4%". A data graph's `format: "percent"` means the opposite, a share from 0 to
+1, because that is what a ratio metric produces. The two meet at exactly one
+place: `runDashboard` multiplies a percent metric's points and total by 100 on
+the widget it resolves (`byMetric` keeps the shares), so a declared 0.4 is drawn
+"40%" on every mark, and nothing after it scales again. A producer of its own
+with share semantics must do the same before the view.
+
+A view may group its widgets into **sections**: `sections` lists them in the
+order they are drawn (`id`, `title`, an optional `description`) and a widget's
+`section` names the one it is drawn in. Each section is headed by the kit's
+`DashboardSectionHeader`, whose title is an `<h3>`, and a widget inside a
+section is titled `<h4>`, so heading navigation reads it as the section's child;
+a declared section with no widgets is still drawn and says so; a widget naming
+no section is drawn first, untitled, and keeps its `<h3>`. A view without
+sections draws as it always has.
+
+Two of those cells are the contract, not presentation. A `null` total renders as
+a dash and never as `0`, because "cannot say" and "nothing happened" are
+different answers and only one of them is in the data; and a series with no
+points is no data rather than a zero, because the aggregate omits a bucket
+instead of emitting an empty one. A sparkline and a bucket delta are drawn
+**only** for a time-bucketed series: a line through counts grouped by event type
+or region would assert an order, and a delta between two of them a change over
+time, that a categorical grouping does not have. Both read the series in **time**
+order, taken from the parsed bucket keys rather than from the order the
+aggregate returned them in, so a series delivered newest-first reports the same
+change — a delta's sign is drawn as a colour, and getting it from an array
+position would paint a decline as a green rise.
+
+A widget whose resolution **failed** says so only when it has nothing else to
+say. With a series still in hand — a refresh that did not land — the tile draws
+that series and carries a **Stale** badge instead, because values that are old
+are still better than a blank card. Only a failure with nothing behind it reads
+as "Unable to load."
+
+A widget whose resolution was **refused** is the other case, and it keeps
+nothing. "No access" is drawn before the series is read, and the host that
+resolved the widget deletes the values it had cached — every revision of that
+widget's declaration, at the read that was refused rather than in the component
+displaying it, so a refusal arriving after the viewer moved on still lands.
+Numbers this viewer is no longer allowed to read are a wrong answer, not a stale
+one, and only a read that succeeds puts any back.
+
+A host composes its own features around that renderer — `<Dashboard>`'s slots
+take header actions, a layout (the host's solution dashboard passes a
+drag-to-reorder grid), a per-widget renderer for a host that resolves each
+widget in its own query, and an empty state. A consumer re-implementing any part
+of the drawing is refused by a gate: `src/components/__tests__/kit.test.ts` in
+the frontend.
 
 ## Independent validation
 

@@ -309,6 +309,23 @@ func workContextPermissionAllowed(
 	permission business.WorkContextPermission,
 	includeScopeGrants bool,
 ) (bool, error) {
+	// A source capability names a source, while host RBAC grants a datasource
+	// permission at its boundary node. Resolve that mapping on every mint and
+	// recheck, never treating a source UUID as a caller-chosen scope node.
+	if permission.ResourceKind == "datasource.sources" {
+		if permission.ResourceID == "" || (permission.Action != "read" && permission.Action != "invoke") {
+			return false, nil
+		}
+		var boundary, personal string
+		err := reader.QueryRow(ctx, `SELECT boundary_node_id::text, COALESCE(config->>'personal_owner_user_id','') FROM datasource_sources WHERE org_id=$1 AND id=$2`, orgID, permission.ResourceID).Scan(&boundary, &personal)
+		if err != nil {
+			return false, err
+		}
+		if includeTeamsAndOrgAdministration && personal != "" && personal != principalID {
+			return false, nil
+		}
+		permission.ResourceKind, permission.ResourceID = "datasource", boundary
+	}
 	var allowed bool
 	err := reader.QueryRow(ctx, `
 		SELECT

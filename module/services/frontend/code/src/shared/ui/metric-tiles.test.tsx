@@ -95,6 +95,49 @@ describe("StatTile", () => {
 		expect(screen.getByText("No data")).toBeTruthy();
 	});
 
+	it.each([
+		["StatTile", StatTile],
+		["MetricCard", MetricCard],
+	])(
+		"%s withholds everything derived from a forbidden value, not just the value",
+		(_name, Tile) => {
+			// "No access" beside "+170%" and a trend line publishes the figure
+			// twice over, in the two forms hardest to notice. The renderer
+			// builds a fresh metric and avoids this; a direct consumer of the
+			// exported primitive does not.
+			const { container } = render(
+				<Tile
+					metric={{
+						label: "Sign-ins",
+						value: 37,
+						state: "forbidden",
+						delta: 1.7,
+						series: [10, 27],
+					}}
+				/>,
+			);
+			expect(screen.getByText("No access")).toBeTruthy();
+			expect(screen.getByText("—")).toBeTruthy();
+			expect(screen.queryByText("37")).toBeNull();
+			expect(screen.queryByText(/170%/)).toBeNull();
+			expect(container.querySelector("svg")).toBeNull();
+		},
+	);
+
+	it("colours its trend from the chart token when asked, so an accent reaches it", () => {
+		// The sparkline strokes currentColor under a muted utility, so neither
+		// of a dashboard's accent overrides could reach it.
+		const { container } = render(
+			<StatTile
+				metric={{ label: "MAU", value: 5, series: [1, 3, 2, 5] }}
+				trend="accent"
+			/>,
+		);
+		const svg = container.querySelector("svg") as SVGElement;
+		expect(svg.style.color).toBe("var(--chart-1)");
+		expect(svg.getAttribute("class")).not.toContain("text-muted-foreground");
+	});
+
 	it("shows a skeleton instead of a value while loading", () => {
 		const { container } = render(
 			<StatTile metric={{ label: "Latency", value: 0, state: "loading" }} />,

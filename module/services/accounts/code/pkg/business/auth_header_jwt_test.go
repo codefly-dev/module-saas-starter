@@ -67,8 +67,9 @@ func wireHeaderJWTOnTestService(t *testing.T, fi *headerJWTIssuer, cfg headerjwt
 	cfg.Audience = "codefly-app"
 	v, err := headerjwt.New(cfg)
 	require.NoError(t, err)
-	testService.SetTokenValidator(v)
-	t.Cleanup(func() { testService.SetTokenValidator(nil) })
+	// The header-jwt validator, which is the only one this login path reads.
+	testService.SetHeaderJWTTokenValidator(v)
+	t.Cleanup(func() { testService.SetHeaderJWTTokenValidator(nil) })
 }
 
 func headerJWTRequest(token string) *gen.AuthenticateRequest {

@@ -78,6 +78,7 @@ describe("frozen public import map", () => {
 			"composition.ts",
 			"allowlist.ts",
 			"appearance.ts",
+			"transport.ts",
 			"index.ts",
 		]
 			.map((name) => readFileSync(join(packageDir, "src", name), "utf8"))

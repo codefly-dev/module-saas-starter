@@ -17,28 +17,38 @@ import (
 )
 
 func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T) {
-	org, owner, role, installation, _ := installFixture(t, "definitions", "configure")
-	// Sources names the BINDING the consented target records, not the route
-	// alias: an alias is reusable, so keying on one would let a replacement
-	// binding inherit this installation's approvals. Read it off the target the
-	// installation names rather than restating it, so the fixture and the policy
-	// cannot drift apart.
-	// On the control plane, like the service path: solution_targets is a
-	// global relation with exact grants, so a bare read is permission-denied
-	// (SQLSTATE 42501) — the binding the policy installs is only readable there.
-	var consented *business.SolutionTarget
-	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		var e error
-		consented, e = testStore.GetSolutionTarget(ctx, installation.TargetId)
-		return e
+	var policy business.ExecutableArtifactPolicy
+	var grant business.ModulePrincipalGrant
+	principal := business.ModulePrincipalID("example")
+	org, owner, role, installation, _ := installFixture(t, "definitions", "configure", func(p *business.InstallSolutionParams) {
+		// Consent records the caller's registry identity and policy at install,
+		// exactly as the production installer does; agent-only consent grants no
+		// module capability. The policy names the target's immutable binding.
+		policy = business.ExecutableArtifactPolicy{Schema: "example.artifact/v1", Sources: map[string]string{"acme.example.solution": p.RegistryBindingID}, Activate: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Run: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Contracts: []business.ArtifactContract{{Kind: "model", Name: "example/profile", Digest: "sha256:" + strings.Repeat("a", 64)}}, RequiredKinds: []string{"model"}}
+		grant = business.ModulePrincipalGrant{Prefix: "example", Tenant: p.OrgID, PresenceBinding: p.RegistryBindingID, ArtifactPolicies: map[string]business.ExecutableArtifactPolicy{"content": policy}}
+		scope := business.FullInstallationScope(grant)
+		p.RegistryPrincipalID, p.Scope = principal, &scope
 	})
-	require.NoError(t, err)
+	// Keep the independent persisted-target check: policy must name the
+	// immutable binding this installation actually consented to.
+	var consented *business.SolutionTarget
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		consented, err = testStore.GetSolutionTarget(ctx, installation.TargetId)
+		return err
+	}))
 	require.NotNil(t, consented, "the fixture's installation must name a live target")
-	policy := business.ExecutableArtifactPolicy{Schema: "example.artifact/v1", Sources: map[string]string{"acme.example.solution": consented.BindingID}, Activate: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Run: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Contracts: []business.ArtifactContract{{Kind: "model", Name: "example/profile", Digest: "sha256:" + strings.Repeat("a", 64)}}, RequiredKinds: []string{"model"}}
-	caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID("example"), BoundOrg: org}
+	require.Equal(t, consented.BindingID, policy.Sources["acme.example.solution"])
+	caller := business.ModuleCaller{PrincipalID: principal, BoundOrg: org}
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
-	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{caller.PrincipalID: {Prefix: "example", Tenant: org, ArtifactPolicies: map[string]business.ExecutableArtifactPolicy{"content": policy}}})
+	var envelope uint64
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		envelope, err = testStore.LatestModuleEnvelopeRevision(ctx)
+		return err
+	}))
+	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: grant}, envelope, nil)
 	request := business.ExecutableArtifactRequest{Installation: installation.Id, Policy: "content", Identity: business.ExecutableArtifactIdentity{Schema: policy.Schema, Source: "acme.example.solution", Subject: []byte(`{"version":9007199254740993,"dependencies":[]}`), Contracts: policy.Contracts, ExpectedRevision: 9007199254740993}}
 	decide := func(action string) (*business.ExecutableArtifactApproval, error) {
 		return svc.DecideExecutableArtifact(auth.WithVerifiedDatabaseIdentity(testCtx, owner, org), caller, org, owner, "example", action, request)
@@ -107,9 +117,11 @@ func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T)
 		return e
 	}))
 	// A removed policy and unhealthy installation must not trap old consent.
-	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{caller.PrincipalID: {Prefix: "example", Tenant: org}})
+	withoutPolicy := grant
+	withoutPolicy.ArtifactPolicies = nil
+	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: withoutPolicy}, envelope, nil)
 	_, _, err = svc.RevokeApprovedExecutableArtifact(auth.WithVerifiedDatabaseIdentity(testCtx, owner, org), caller, org, owner, "example", installation.Id, first.ID, func(business.ArtifactPermission) error { return nil })
-	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{caller.PrincipalID: {Prefix: "example", Tenant: org, ArtifactPolicies: map[string]business.ExecutableArtifactPolicy{"content": policy}}})
+	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{principal: grant}, envelope, nil)
 	require.NoError(t, err)
 	_, err = decide("authorize")
 	require.ErrorContains(t, err, "revoked")

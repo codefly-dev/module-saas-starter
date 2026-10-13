@@ -1,0 +1,40 @@
+{
+  "schema": "codefly/runnable-operations/v1",
+  "workspace": "saas-starter-dev",
+  "module": "saas-starter",
+  "operations": [
+    {
+      "name": "accounts-connect-invoke-source-operation",
+      "version": "0.2.0",
+      "digest": "c814b9dee9975938f0b905bede5ade004ca6f34fc1be10e8188d8962eb4dc700",
+      "service": "accounts",
+      "endpoint": "connect",
+      "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
+      "input_message": "saas.accounts.v1.InvokeSourceOperationRequest",
+      "output_message": "saas.accounts.v1.InvokeSourceOperationResponse",
+      "path": "contracts/runnables/accounts/connect/InvokeSourceOperation"
+    },
+    {
+      "name": "accounts-connect-prune-source-operation-receipts",
+      "version": "0.2.0",
+      "digest": "210889b481b442f6c497a245ebffea24ac3b85bdb0adffb8d061cc7236b6b39e",
+      "service": "accounts",
+      "endpoint": "connect",
+      "method": "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
+      "input_message": "saas.accounts.v1.PruneSourceOperationReceiptsRequest",
+      "output_message": "saas.accounts.v1.PruneSourceOperationReceiptsResponse",
+      "path": "contracts/runnables/accounts/connect/PruneSourceOperationReceipts"
+    },
+    {
+      "name": "accounts-connect-reconcile-source",
+      "version": "0.2.0",
+      "digest": "be1042c57da41fefb9931b166292704af8ad46f0894a57d32f9f46c88d871313",
+      "service": "accounts",
+      "endpoint": "connect",
+      "method": "/saas.accounts.v1.DatasourceService/ReconcileSource",
+      "input_message": "saas.accounts.v1.ReconcileSourceRequest",
+      "output_message": "saas.accounts.v1.ReconcileSourceResponse",
+      "path": "contracts/runnables/accounts/connect/ReconcileSource"
+    }
+  ]
+}

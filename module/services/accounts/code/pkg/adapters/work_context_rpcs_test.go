@@ -14,7 +14,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -150,6 +150,7 @@ func TestWorkContextConsumeSingleUseEnforcesReplayFailClosed(t *testing.T) {
 		KeyID:      "accounts-test-key",
 		PrivateKey: privateKey,
 		Authority:  replay,
+		Seals:      newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
 
@@ -196,6 +197,7 @@ func TestWorkContextConsumeSingleUseRejectsFarFutureExpiry(t *testing.T) {
 		KeyID:      "accounts-test-key",
 		PrivateKey: privateKey,
 		Authority:  replay,
+		Seals:      newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
 
@@ -226,6 +228,7 @@ func TestWorkContextConsumeSingleUseUnavailableWithoutReplayStore(t *testing.T) 
 		KeyID:      "accounts-test-key",
 		PrivateKey: privateKey,
 		Authority:  &workContextAuthorityFake{},
+		Seals:      newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
 	require.Nil(t, server.replay)
@@ -277,29 +280,25 @@ func TestWorkContextParentVerificationRejectsStaleAuthorization(t *testing.T) {
 		KeyID:      "accounts-test-key",
 		PrivateKey: privateKey,
 		Authority:  authority,
+		Seals:      newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
 
-	token, _, err := server.signer.StartTask(workcontext.StartTaskInput{
-		Audience:              "consumer.test",
-		TenantID:              "019f6bf7-5b4b-74e5-8c17-092259bb1661",
-		OwnerPrincipalID:      "019f6bf7-5b1c-730d-9687-fe6d4aff31ed",
-		TaskID:                "019f6bf7-1111-7111-8111-111111111111",
-		SessionID:             "019f6bf7-2222-7222-8222-222222222222",
-		AuthorizationRevision: 12,
-		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes: []*basev0.WorkScopeV1{{
-			ResourceKind: "evidence",
-			Actions:      []string{"append"},
-		}},
+	token, _ := mintTestCapability(t, server, testCapability{
+		Audience: "consumer.test",
+		Tenant:   "019f6bf7-5b4b-74e5-8c17-092259bb1661",
+		Owner:    "019f6bf7-5b1c-730d-9687-fe6d4aff31ed",
+		Task:     "019f6bf7-1111-7111-8111-111111111111",
+		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
 	})
-	require.NoError(t, err)
 
-	_, _, _, err = server.verifyParent(
+	// Core verifies the capability against the revision it was minted at (12);
+	// the host's own recheck finds the owner's authority moved to 13.
+	_, _, err = server.verifyParent(
 		context.Background(),
 		"019f6bf7-5b4b-74e5-8c17-092259bb1661",
 		"019f6bf7-5b1c-730d-9687-fe6d4aff31ed",
-		token.Encoded(),
+		token,
 	)
 	require.Error(t, err)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
@@ -309,9 +308,10 @@ func TestWorkContextAuthorityConfigurationFailsClosed(t *testing.T) {
 	server := &WorkContextAuthorityServer{}
 	server.Configure(WorkContextAuthorityConfiguration{})
 	require.Error(t, server.configureErr)
-	require.Nil(t, server.signer)
-	require.Nil(t, server.verifier)
+	require.Nil(t, server.key)
+	require.Nil(t, server.seals)
 	require.Nil(t, server.authority)
+	require.False(t, server.configured())
 }
 
 func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactFacts(t *testing.T) {
@@ -324,6 +324,7 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 		KeyID:      "accounts-test-key",
 		PrivateKey: privateKey,
 		Authority:  fake,
+		Seals:      newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
 
@@ -457,48 +458,34 @@ func newRenewTestServer(t *testing.T) *WorkContextAuthorityServer {
 			OrganizationRevision: 12,
 			Actor:                &business.Principal{ID: renewActorID, Kind: "agent"},
 		}},
+		Seals: newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
+	server.replay = &memoryReplay{}
 	return server
 }
 
 // mintDelegatedContext issues a Work Context whose current actor is renewActorID,
 // modelling a context an in-flight agent holds while acting for the owner.
-func mintDelegatedContext(t *testing.T, server *WorkContextAuthorityServer) workcontext.WorkContextToken {
+func mintDelegatedContext(t *testing.T, server *WorkContextAuthorityServer) string {
 	t.Helper()
-	token, _, err := server.signer.StartTask(workcontext.StartTaskInput{
-		Audience:              "tool.test",
-		TenantID:              renewOrgID,
-		OwnerPrincipalID:      renewOwnerID,
-		TaskID:                renewTaskID,
-		SessionID:             renewSession,
-		AuthorizationRevision: 12,
-		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes: []*basev0.WorkScopeV1{{
-			ResourceKind: "evidence",
-			Actions:      []string{"append", "read"},
-		}},
-		ActorChain: []*basev0.WorkActorV1{{
-			PrincipalId:   renewActorID,
-			PrincipalKind: "agent",
-			DelegationId:  "019f6bf7-3333-7333-8333-333333333371",
-			GrantedScopes: []*basev0.WorkScopeV1{{
-				ResourceKind: "evidence",
-				Actions:      []string{"append", "read"},
-			}},
-		}},
+	token, _ := mintTestCapability(t, server, testCapability{
+		Audience: "tool.test",
+		Tenant:   renewOrgID,
+		Owner:    renewOwnerID,
+		Task:     renewTaskID,
+		Session:  renewSession,
+		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append", "read"}}},
+		Actors: []delegationHop{agentHop(renewActorID, "019f6bf7-3333-7333-8333-333333333371",
+			&basev0.WorkScopeV1{ResourceKind: "evidence", Actions: []string{"append", "read"}})},
 	})
-	require.NoError(t, err)
 	return token
 }
 
 func TestRenewWorkContextExtendsDelegatedAuthorityForCurrentActor(t *testing.T) {
 	server := newRenewTestServer(t)
 	parent := mintDelegatedContext(t, server)
-	parentClaims, err := server.verifier.Verify(parent, workcontext.WorkContextExpectations{
-		Issuer:   "accounts.test",
-		TenantID: renewOrgID,
-	})
+	parentClaims, err := server.verifyIssued(context.Background(), parent)
 	require.NoError(t, err)
 
 	previous := service
@@ -511,32 +498,32 @@ func TestRenewWorkContextExtendsDelegatedAuthorityForCurrentActor(t *testing.T) 
 	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
 	issued, err := server.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
 		OrgId:                  renewOrgID,
-		ParentWorkContextToken: parent.Encoded(),
+		ParentWorkContextToken: parent,
 		TtlSeconds:             900,
 	})
 	require.NoError(t, err)
 
 	require.Equal(t, renewTaskID, issued.GetTaskId())
-	require.Equal(t, renewSession, issued.GetSessionId())
+	// A renewal opens a fresh Session: the caller is the actor, and a session
+	// this issuer did not authenticate the caller in is never carried over.
+	require.NotEqual(t, renewSession, issued.GetSessionId())
+	require.NotEmpty(t, issued.GetSessionId())
 	require.Equal(t, renewOwnerID, issued.GetOwnerPrincipalId())
 	require.Equal(t, renewActorID, issued.GetCurrentActorPrincipalId())
 	require.Equal(t, uint64(12), issued.GetAuthorizationRevision())
 	// The whole point of the RPC: the renewed capability outlives the parent's
 	// TTL cap without the owner present.
 	require.True(t,
-		issued.GetExpiresAt().AsTime().After(time.Unix(parentClaims.GetExpiresAtUnix(), 0)),
+		issued.GetExpiresAt().AsTime().After(time.Unix(parentClaims.Context().GetExpiresAtUnix(), 0)),
 		"renewed Work Context must expire later than its parent",
 	)
 
-	renewed, err := workcontext.ParseWorkContextToken(issued.GetToken())
+	renewed, err := server.verifyIssued(context.Background(), issued.GetToken())
 	require.NoError(t, err)
-	renewedClaims, err := server.verifier.Verify(renewed, workcontext.WorkContextExpectations{
-		Issuer:   "accounts.test",
-		TenantID: renewOrgID,
-	})
-	require.NoError(t, err)
-	require.Len(t, renewedClaims.GetActorChain(), 1)
-	require.Equal(t, "tool.test", renewedClaims.GetAudience())
+	require.Len(t, renewed.Context().GetActorChain(), 1)
+	require.Equal(t, "019f6bf7-3333-7333-8333-333333333371", renewed.Context().GetActorChain()[0].GetDelegationId(),
+		"the delegation the actor holds is the one re-derived, not a new one")
+	require.Equal(t, "tool.test", renewed.Context().GetAudience())
 }
 
 func TestRenewWorkContextRejectsScopeWidening(t *testing.T) {
@@ -553,7 +540,7 @@ func TestRenewWorkContextRejectsScopeWidening(t *testing.T) {
 	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
 	_, err = server.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
 		OrgId:                  renewOrgID,
-		ParentWorkContextToken: parent.Encoded(),
+		ParentWorkContextToken: parent,
 		AttenuatedScopes: []*gen.WorkContextScope{{
 			ResourceKind: "evidence",
 			Actions:      []string{"append", "read", "delete"},
@@ -583,6 +570,7 @@ func TestRenewWorkContextRejectsAudienceOutsideActorCeiling(t *testing.T) {
 				AllowedAudiences: []string{"tool.test"},
 			},
 		}},
+		Seals: newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
 	parent := mintDelegatedContext(t, server)
@@ -599,7 +587,7 @@ func TestRenewWorkContextRejectsAudienceOutsideActorCeiling(t *testing.T) {
 	forbidden := "forbidden.aud"
 	_, err = server.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
 		OrgId:                  renewOrgID,
-		ParentWorkContextToken: parent.Encoded(),
+		ParentWorkContextToken: parent,
 		Audience:               &forbidden,
 		TtlSeconds:             900,
 	})
@@ -609,7 +597,7 @@ func TestRenewWorkContextRejectsAudienceOutsideActorCeiling(t *testing.T) {
 	// Renewing without changing the audience (the parent's own, in-ceiling) works.
 	_, err = server.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
 		OrgId:                  renewOrgID,
-		ParentWorkContextToken: parent.Encoded(),
+		ParentWorkContextToken: parent,
 		TtlSeconds:             900,
 	})
 	require.NoError(t, err)
@@ -639,6 +627,7 @@ func TestRenewWorkContextRejectsScopeOutsideActorCeiling(t *testing.T) {
 					AllowedScopes: allowedScopes,
 				},
 			}},
+			Seals: newSealAnswersFake(12),
 		})
 		require.NoError(t, server.configureErr)
 		return server
@@ -657,7 +646,7 @@ func TestRenewWorkContextRejectsScopeOutsideActorCeiling(t *testing.T) {
 	capped := newServer([]string{"repo"})
 	_, err = capped.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
 		OrgId:                  renewOrgID,
-		ParentWorkContextToken: mintDelegatedContext(t, capped).Encoded(),
+		ParentWorkContextToken: mintDelegatedContext(t, capped),
 		AttenuatedScopes:       evidenceScope,
 		TtlSeconds:             900,
 	})
@@ -668,7 +657,7 @@ func TestRenewWorkContextRejectsScopeOutsideActorCeiling(t *testing.T) {
 	admits := newServer([]string{"evidence"})
 	_, err = admits.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
 		OrgId:                  renewOrgID,
-		ParentWorkContextToken: mintDelegatedContext(t, admits).Encoded(),
+		ParentWorkContextToken: mintDelegatedContext(t, admits),
 		AttenuatedScopes:       evidenceScope,
 		TtlSeconds:             900,
 	})
@@ -677,29 +666,16 @@ func TestRenewWorkContextRejectsScopeOutsideActorCeiling(t *testing.T) {
 
 func TestRenewWorkContextPreservesSingleUseReplayPolicy(t *testing.T) {
 	server := newRenewTestServer(t)
-	parent, _, err := server.signer.StartTask(workcontext.StartTaskInput{
-		Audience:              "tool.test",
-		TenantID:              renewOrgID,
-		OwnerPrincipalID:      renewOwnerID,
-		TaskID:                renewTaskID,
-		SessionID:             renewSession,
-		AuthorizationRevision: 12,
-		ReplayPolicy:          workcontext.WorkContextReplaySingleUse,
-		AuthorityScopes: []*basev0.WorkScopeV1{{
-			ResourceKind: "evidence",
-			Actions:      []string{"append"},
-		}},
-		ActorChain: []*basev0.WorkActorV1{{
-			PrincipalId:   renewActorID,
-			PrincipalKind: "agent",
-			DelegationId:  "019f6bf7-3333-7333-8333-333333333372",
-			GrantedScopes: []*basev0.WorkScopeV1{{
-				ResourceKind: "evidence",
-				Actions:      []string{"append"},
-			}},
-		}},
+	parent, _ := mintTestCapability(t, server, testCapability{
+		Audience: "tool.test",
+		Tenant:   renewOrgID,
+		Owner:    renewOwnerID,
+		Task:     renewTaskID,
+		Replay:   workcontext.ReplaySingleUse,
+		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
+		Actors: []delegationHop{agentHop(renewActorID, "019f6bf7-3333-7333-8333-333333333372",
+			&basev0.WorkScopeV1{ResourceKind: "evidence", Actions: []string{"append"}})},
 	})
-	require.NoError(t, err)
 
 	previous := service
 	svc, err := business.NewService(renewMembershipStore{})
@@ -713,57 +689,45 @@ func TestRenewWorkContextPreservesSingleUseReplayPolicy(t *testing.T) {
 	// silently drop to idempotent.
 	issued, err := server.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
 		OrgId:                  renewOrgID,
-		ParentWorkContextToken: parent.Encoded(),
+		ParentWorkContextToken: parent,
 	})
 	require.NoError(t, err)
 
-	renewed, err := workcontext.ParseWorkContextToken(issued.GetToken())
+	renewed, err := workcontext.Decode(issued.GetToken())
 	require.NoError(t, err)
-	renewedClaims, err := server.verifier.Verify(renewed, workcontext.WorkContextExpectations{
-		Issuer:   "accounts.test",
-		TenantID: renewOrgID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, workcontext.WorkContextReplaySingleUse, renewedClaims.GetReplayPolicy())
+	require.Equal(t, workcontext.ReplaySingleUse, renewed.Context().GetReplayPolicy())
 }
 
 func TestVerifyActorParentBindsCallerToCurrentActor(t *testing.T) {
 	server := newRenewTestServer(t)
 	parent := mintDelegatedContext(t, server)
 
-	_, claims, actor, err := server.verifyActorParent(
-		context.Background(), renewOrgID, renewActorID, parent.Encoded(),
+	verified, actor, err := server.verifyActorParent(
+		context.Background(), renewOrgID, renewActorID, parent,
 	)
 	require.NoError(t, err)
-	require.Equal(t, renewActorID, claims.GetActorChain()[0].GetPrincipalId())
+	require.Equal(t, renewActorID, verified.Context().GetActorChain()[0].GetPrincipalId())
 	require.NotNil(t, actor, "the resolved outermost actor must be threaded back for ceiling enforcement")
 	require.Equal(t, renewActorID, actor.ID)
 
-	_, _, _, err = server.verifyActorParent(
-		context.Background(), renewOrgID, renewOwnerID, parent.Encoded(),
+	_, _, err = server.verifyActorParent(
+		context.Background(), renewOrgID, renewOwnerID, parent,
 	)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
 func TestVerifyActorParentRejectsOwnerOnlyContext(t *testing.T) {
 	server := newRenewTestServer(t)
-	token, _, err := server.signer.StartTask(workcontext.StartTaskInput{
-		Audience:              "tool.test",
-		TenantID:              renewOrgID,
-		OwnerPrincipalID:      renewOwnerID,
-		TaskID:                renewTaskID,
-		SessionID:             renewSession,
-		AuthorizationRevision: 12,
-		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes: []*basev0.WorkScopeV1{{
-			ResourceKind: "evidence",
-			Actions:      []string{"append"},
-		}},
+	token, _ := mintTestCapability(t, server, testCapability{
+		Audience: "tool.test",
+		Tenant:   renewOrgID,
+		Owner:    renewOwnerID,
+		Task:     renewTaskID,
+		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
 	})
-	require.NoError(t, err)
 
-	_, _, _, err = server.verifyActorParent(
-		context.Background(), renewOrgID, renewOwnerID, token.Encoded(),
+	_, _, err := server.verifyActorParent(
+		context.Background(), renewOrgID, renewOwnerID, token,
 	)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
@@ -782,7 +746,6 @@ func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
 		return &gen.StartTaskWorkContextRequest{
 			OrgId:            renewOrgID,
 			TaskId:           renewTaskID,
-			SessionId:        sessionID,
 			ActorPrincipalId: renewActorID,
 			Audience:         "tool.test",
 			TtlSeconds:       900,
@@ -820,14 +783,17 @@ func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
 		require.Equal(t, renewSession, issued.GetSessionId())
 	})
 
-	// A service credential or an API key carries no session to derive, so the
-	// headless shape is preserved rather than failing closed on its absence.
-	t.Run("caller_without_a_session_keeps_the_requested_id", func(t *testing.T) {
+	// A caller with no verified session gets a FRESH one, never the id it named:
+	// a requested id signed as-is would let a caller mint a capability carrying
+	// another credential's session, and the gateway pairs a confined credential
+	// with a capability on the session alone.
+	t.Run("caller_without_a_session_gets_a_fresh_one_not_the_requested_id", func(t *testing.T) {
 		server := newRenewTestServer(t)
 
 		issued, err := server.StartTask(caller(), request(foreignSession))
 		require.NoError(t, err)
-		require.Equal(t, foreignSession, issued.GetSessionId())
+		require.NotEqual(t, foreignSession, issued.GetSessionId())
+		require.NotEmpty(t, issued.GetSessionId())
 	})
 }
 
@@ -835,22 +801,16 @@ func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
 // given Session — the capability a StartRootSession call derives from.
 func mintOwnedContext(
 	t *testing.T, server *WorkContextAuthorityServer, sessionID string,
-) workcontext.WorkContextToken {
+) string {
 	t.Helper()
-	token, _, err := server.signer.StartTask(workcontext.StartTaskInput{
-		Audience:              "tool.test",
-		TenantID:              renewOrgID,
-		OwnerPrincipalID:      renewActorID,
-		TaskID:                renewTaskID,
-		SessionID:             sessionID,
-		AuthorizationRevision: 12,
-		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes: []*basev0.WorkScopeV1{{
-			ResourceKind: "evidence",
-			Actions:      []string{"append", "read"},
-		}},
+	token, _ := mintTestCapability(t, server, testCapability{
+		Audience: "tool.test",
+		Tenant:   renewOrgID,
+		Owner:    renewActorID,
+		Task:     renewTaskID,
+		Session:  sessionID,
+		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append", "read"}}},
 	})
-	require.NoError(t, err)
 	return token
 }
 
@@ -864,10 +824,10 @@ func TestStartRootSessionGeneratesFreshRootSession(t *testing.T) {
 	declareTestAudiences(svc)
 	t.Cleanup(func() { service = previous })
 
-	request := func(parent workcontext.WorkContextToken, sessionID string) *gen.StartRootSessionWorkContextRequest {
+	request := func(parent string, sessionID string) *gen.StartRootSessionWorkContextRequest {
 		return &gen.StartRootSessionWorkContextRequest{
 			OrgId:                  renewOrgID,
-			ParentWorkContextToken: parent.Encoded(),
+			ParentWorkContextToken: parent,
 			SessionId:              sessionID,
 			Audience:               "tool.test",
 			TtlSeconds:             900,
@@ -944,8 +904,8 @@ func TestVerifyActorParentRejectsStaleRevision(t *testing.T) {
 	}}
 	parent := mintDelegatedContext(t, server)
 
-	_, _, _, err := server.verifyActorParent(
-		context.Background(), renewOrgID, renewActorID, parent.Encoded(),
+	_, _, err := server.verifyActorParent(
+		context.Background(), renewOrgID, renewActorID, parent,
 	)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 }

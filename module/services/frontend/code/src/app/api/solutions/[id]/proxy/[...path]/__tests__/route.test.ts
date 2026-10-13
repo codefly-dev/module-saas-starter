@@ -3,19 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 // The route resolves the gateway base (getEndpoints) and the first-party trust
-// context (getCurrentModule/getCurrentService/getWorkspaceSecret, via
-// resolveCodeflyGatewayContext). vi.mock is hoisted above module init, so the
-// stubs are created with vi.hoisted.
+// context (getCurrentModule/getCurrentService/getWorkspaceSecret/
+// getWorkspaceConfiguration, via resolveCodeflyGatewayContext). vi.mock is
+// hoisted above module init, so the stubs are created with vi.hoisted.
 const {
 	getEndpoints,
 	getCurrentModule,
 	getCurrentService,
 	getWorkspaceSecret,
+	getWorkspaceConfiguration,
 } = vi.hoisted(() => ({
 	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(),
 	getCurrentModule: vi.fn<() => string>(() => ""),
 	getCurrentService: vi.fn<() => string>(() => ""),
 	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
+	getWorkspaceConfiguration:
 		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
 vi.mock("codefly", () => ({
@@ -23,6 +26,7 @@ vi.mock("codefly", () => ({
 	getCurrentModule,
 	getCurrentService,
 	getWorkspaceSecret,
+	getWorkspaceConfiguration,
 }));
 
 // The registry is a durable, gateway-brokered record rather than a map in this
@@ -48,16 +52,19 @@ function withGateway() {
 	]);
 }
 
-// Resolve the first-party trust context the way a real runtime does: no
-// discoverable own endpoint, so resolveCodeflyGatewayContext falls back to the
-// request origin for the public origin and reads the internal token from config.
-function withTrustContext() {
+// Resolve the first-party trust context the way a real runtime does: the public
+// origin comes from the deployment's own configuration and from nothing else, so a
+// test that wants a different one configures it rather than sending a header.
+function withTrustContext(publicOrigin = "http://frontend") {
 	getCurrentModule.mockReturnValue("");
 	getCurrentService.mockReturnValue("");
 	getWorkspaceSecret.mockImplementation((name, key) =>
 		name === "internal-auth" && key === "CODEFLY_INTERNAL_TOKEN"
 			? INTERNAL_TOKEN
 			: undefined,
+	);
+	getWorkspaceConfiguration.mockImplementation((name, key) =>
+		name === "application" && key === "APP_BASE_URL" ? publicOrigin : undefined,
 	);
 }
 
@@ -113,6 +120,14 @@ beforeEach(() => {
 	getCurrentModule.mockReturnValue("");
 	getCurrentService.mockReturnValue("");
 	getWorkspaceSecret.mockReturnValue(undefined);
+	// The public origin is operator configuration, and the same-origin check is made
+	// against it, so every fixture pins the one these requests arrive on. A test
+	// about the origin itself overrides it (withTrustContext).
+	getWorkspaceConfiguration.mockImplementation((name, key) =>
+		name === "application" && key === "APP_BASE_URL"
+			? "http://frontend"
+			: undefined,
+	);
 	findSolution.mockResolvedValue(null);
 	fetchMock = vi.fn(
 		async () =>
@@ -128,6 +143,7 @@ afterEach(() => {
 	findSolution.mockReset();
 	getEndpoints.mockReset();
 	getCurrentModule.mockReset();
+	getWorkspaceConfiguration.mockReset();
 	getCurrentService.mockReset();
 	getWorkspaceSecret.mockReset();
 	vi.unstubAllGlobals();
@@ -354,10 +370,12 @@ describe("solution proxy passthrough", () => {
 
 	// Behind a TLS-terminating ingress the pod sees plaintext http and its own
 	// host, while the browser's Origin is the public https origin. A same-origin
-	// write (every Connect call and chat turn is a POST) must still pass.
+	// write (every Connect call and chat turn is a POST) must still pass — on the
+	// strength of the CONFIGURED origin, which is the only thing that knows what
+	// the browser sees.
 	it("allows a same-origin POST behind a TLS-terminating ingress", async () => {
 		withGateway();
-		withTrustContext();
+		withTrustContext("https://app.example.com");
 		registerAudit();
 
 		const res = await POST(
@@ -365,8 +383,6 @@ describe("solution proxy passthrough", () => {
 				authorization: "Bearer caller-token",
 				origin: "https://app.example.com",
 				"sec-fetch-site": "same-origin",
-				"x-forwarded-proto": "https",
-				"x-forwarded-host": "app.example.com",
 			}),
 			context("audit", ["records"]),
 		);
@@ -377,14 +393,53 @@ describe("solution proxy passthrough", () => {
 
 	it("rejects a cross-site Origin behind a TLS-terminating ingress", async () => {
 		withGateway();
-		withTrustContext();
+		withTrustContext("https://app.example.com");
+		registerAudit();
+
+		const res = await POST(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
+				origin: "https://evil.example",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(403);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	// A comparison is only a check when one side is not the caller's to choose: the
+	// origin compared against is the configured one, so supplying forwarding headers
+	// alongside an Origin changes nothing about the answer.
+	it("rejects a forged cross-site request that supplies its own forwarded host", async () => {
+		withGateway();
+		withTrustContext("https://app.example.com");
 		registerAudit();
 
 		const res = await POST(
 			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
 				origin: "https://evil.example",
 				"x-forwarded-proto": "https",
-				"x-forwarded-host": "app.example.com",
+				"x-forwarded-host": "evil.example",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(403);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	// And with no configured origin there is nothing to compare against, so the
+	// route refuses rather than admitting on an absent comparison.
+	it("refuses every request when the deployment has no configured public origin", async () => {
+		withGateway();
+		withTrustContext();
+		getWorkspaceConfiguration.mockReturnValue(undefined);
+		registerAudit();
+
+		const res = await POST(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
+				authorization: "Bearer caller-token",
+				"sec-fetch-site": "same-origin",
 			}),
 			context("audit", ["records"]),
 		);
@@ -411,8 +466,8 @@ describe("solution proxy passthrough", () => {
 
 		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
 		expect(forwarded.has("x-secret-smuggle")).toBe(false);
-		// x-forwarded-host is consumed to derive the public origin, never relayed
-		// to the upstream as a raw header.
+		// x-forwarded-host decides nothing here any more, and is never relayed to the
+		// upstream as a raw header either.
 		expect(forwarded.has("x-forwarded-host")).toBe(false);
 	});
 
@@ -437,15 +492,17 @@ describe("solution proxy passthrough", () => {
 
 	it("attaches the first-party trust headers resolved from config", async () => {
 		withGateway();
-		withTrustContext();
+		withTrustContext("https://app.example");
 		registerAudit();
 
 		await GET(
 			proxyRequest("http://frontend/api/solutions/audit/proxy/records", {
 				headers: {
 					authorization: "Bearer caller-token",
+					// Offered by the caller and ignored: the stamped origin is the
+					// configured one, whatever the request says.
 					"x-forwarded-proto": "https",
-					"x-forwarded-host": "app.example",
+					"x-forwarded-host": "evil.example",
 				},
 			}),
 			context("audit", ["records"]),
@@ -779,5 +836,180 @@ describe("solution proxy passthrough", () => {
 		expect(warn).not.toHaveBeenCalled();
 		warn.mockRestore();
 		error.mockRestore();
+	});
+});
+
+describe("solution proxy trace context", () => {
+	const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
+	const PARENT_ID = "00f067aa0ba902b7";
+	const TRACEPARENT = `00-${TRACE_ID}-${PARENT_ID}-01`;
+	// The route decides the forwarding policy from whether the caller presented
+	// a credential the gateway will verify, so every case states which it is.
+	const CREDENTIAL = { authorization: "Bearer caller-access-token" } as const;
+
+	async function forwarded(headers: Record<string, string>): Promise<Headers> {
+		withGateway();
+		registerAudit();
+		const res = await GET(
+			rawRequest(
+				"http://frontend/api/solutions/audit/proxy/records",
+				"GET",
+				headers,
+			),
+			context("audit", ["records"]),
+		);
+		expect(res.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		return fetchMock.mock.calls[0][1].headers as Headers;
+	}
+
+	it("forwards a credentialled caller's trace context, re-serialized", async () => {
+		const headers = await forwarded({
+			...CREDENTIAL,
+			traceparent: TRACEPARENT,
+			tracestate: " vendor=abc ,, other@sys=x y\t",
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.get("tracestate")).toBe("vendor=abc,other@sys=x y");
+	});
+
+	it("forwards the trace context of a caller holding only a session cookie", async () => {
+		const headers = await forwarded({
+			cookie: "codefly_session=present",
+			traceparent: TRACEPARENT,
+			tracestate: "vendor=abc",
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.get("tracestate")).toBe("vendor=abc");
+	});
+
+	// This route admits a request with neither Origin nor Sec-Fetch-Site and
+	// serves a solution's `.well-known` anonymously, on a request it has already
+	// stamped with the internal trust token. OpenTelemetry's default ParentBased
+	// sampler obeys an incoming sampled bit, so honouring one from a caller with
+	// no credential at all would let a stranger force 100% recording and export
+	// on the gateway and on every solution behind it.
+	it("links an anonymous caller's trace but strips its sampling decision", async () => {
+		const headers = await forwarded({
+			traceparent: TRACEPARENT,
+			tracestate: "ot=p:8;r:62,vendor=abc",
+		});
+
+		expect(headers.get("traceparent")).toBe(`00-${TRACE_ID}-${PARENT_ID}-00`);
+		// Vendors re-state the sampling decision in tracestate, so forwarding it
+		// would hand back what clearing the sampled bit just took away.
+		expect(headers.has("tracestate")).toBe(false);
+	});
+
+	it("keeps an anonymous caller's other flag bits while clearing sampled", async () => {
+		const headers = await forwarded({
+			traceparent: `00-${TRACE_ID}-${PARENT_ID}-03`,
+		});
+
+		expect(headers.get("traceparent")).toBe(`00-${TRACE_ID}-${PARENT_ID}-02`);
+	});
+
+	// A relay starts no span and assigns no parent id, so it has nothing to
+	// advertise: a later version travels as sent rather than being rewritten as
+	// version 00, which would assert a context nobody produced and destroy flag
+	// bits a newer upstream understands.
+	it.each([
+		["extra fields", `cc-${TRACE_ID}-${PARENT_ID}-03-future-field`],
+		["no extra fields", `cc-${TRACE_ID}-${PARENT_ID}-03`],
+	])(
+		"relays a later-version traceparent with %s unchanged",
+		async (_, value) => {
+			const headers = await forwarded({ ...CREDENTIAL, traceparent: value });
+
+			expect(headers.get("traceparent")).toBe(value);
+		},
+	);
+
+	it.each([
+		["malformed", "not-a-traceparent"],
+		["zero trace id", `00-${"0".repeat(32)}-${PARENT_ID}-01`],
+		["two values", `${TRACEPARENT}, 00-${TRACE_ID}-${PARENT_ID}-00`],
+	])("forwards no trace context for a %s traceparent", async (_, value) => {
+		const headers = await forwarded({
+			...CREDENTIAL,
+			traceparent: value,
+			tracestate: "vendor=abc",
+		});
+
+		expect(headers.has("traceparent")).toBe(false);
+		expect(headers.has("tracestate")).toBe(false);
+	});
+
+	it("drops tracestate without a traceparent", async () => {
+		const headers = await forwarded({
+			...CREDENTIAL,
+			tracestate: "vendor=abc",
+		});
+
+		expect(headers.has("traceparent")).toBe(false);
+		expect(headers.has("tracestate")).toBe(false);
+	});
+
+	it("merges multiple tracestate header values with a comma", async () => {
+		const incoming = new Headers(CREDENTIAL);
+		incoming.set("traceparent", TRACEPARENT);
+		incoming.append("tracestate", "a=1");
+		incoming.append("tracestate", "b=2,c=3");
+		withGateway();
+		registerAudit();
+
+		await GET(
+			{
+				method: "GET",
+				url: "http://frontend/api/solutions/audit/proxy/records",
+				headers: incoming,
+				arrayBuffer: async () => new ArrayBuffer(0),
+			} as unknown as Request,
+			context("audit", ["records"]),
+		);
+
+		const headers = fetchMock.mock.calls[0][1].headers as Headers;
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.get("tracestate")).toBe("a=1,b=2,c=3");
+	});
+
+	it("truncates an over-long tracestate rather than dropping it", async () => {
+		const members = Array.from({ length: 33 }, (_, i) => `k${i}=v`);
+		const headers = await forwarded({
+			...CREDENTIAL,
+			traceparent: TRACEPARENT,
+			tracestate: members.join(","),
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.get("tracestate")).toBe(members.slice(0, 32).join(","));
+	});
+
+	it("drops all of a tracestate whose member does not parse", async () => {
+		const headers = await forwarded({
+			...CREDENTIAL,
+			traceparent: TRACEPARENT,
+			tracestate: "a=1,b=2,a=3",
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.has("tracestate")).toBe(false);
+	});
+
+	it("never forwards baggage or other caller headers", async () => {
+		const headers = await forwarded({
+			...CREDENTIAL,
+			traceparent: TRACEPARENT,
+			baggage: "userId=alice",
+			"x-forwarded-for": "10.0.0.1",
+			"x-b3-traceid": TRACE_ID,
+		});
+
+		expect(headers.get("traceparent")).toBe(TRACEPARENT);
+		expect(headers.has("baggage")).toBe(false);
+		expect(headers.has("x-forwarded-for")).toBe(false);
+		expect(headers.has("x-b3-traceid")).toBe(false);
 	});
 });

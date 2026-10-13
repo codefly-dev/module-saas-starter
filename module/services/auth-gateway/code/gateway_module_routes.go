@@ -10,17 +10,8 @@ package main
 // at the head before this file a composed module was not reachable over REST at
 // all.
 //
-// This copies the solution shape rather than inventing a second one: the same
-// cache, the same single carried resolution, the same upstream policy, the same
-// tombstone semantics, the same 120 s revocation bound. What it deliberately does
-// NOT copy is per-viewer admission. A solution route resolves the viewer's
-// installation of the record's target; a module is part of the composition, not
-// something an organisation installs, so the ordinary authenticated pipeline is
-// the whole gate — exactly as main's federated route was.
-//
-// That asymmetry is why the registry must SAY which kind a record is, and why
-// neither surface guesses: routing a solution's upstream here would put it behind
-// no installation check at all.
+// Declaration supplies the destination; accounts supplies organization consent
+// and viewer exposure on every request. Neither fact substitutes for the other.
 
 import (
 	"net/http"
@@ -137,11 +128,25 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 		return true
 	}
 
-	// THE ROUTE IS RESOLVED, SO THE AUDIENCE IS KNOWN. A module route's target is
-	// the module capability surface, so that is what a capability presented here
-	// must name — the same derivation as a solution route, with the audience the
-	// host's vocabulary gives this kind.
-	if g.rejectInvalidWorkContext(w, r, moduleCapabilitiesAudience) {
+	// THE ROUTE IS RESOLVED, SO THE AUDIENCE IS KNOWN — and this route serves TWO
+	// kinds of consumer, so two audiences are permitted and no more.
+	//
+	//   - moduleCapabilitiesAudience: a declared module's OWN identity, minted by
+	//     accounts' StartModuleTask from the module's service credential.
+	//   - the alias: a VIEWER's delegated capability for this module. Accounts
+	//     refuses to mint the capability audience from any caller-supplied mint
+	//     (requireMintableAudience — a context addressed to it is read as a module
+	//     identity), so the audience a person's capability for this module can
+	//     carry is the module's own name, which is the name this route was
+	//     resolved on and the one a consuming runtime declares and asks for.
+	//
+	// Expecting ONLY the capability audience here was therefore an expectation no
+	// viewer capability could satisfy: with the edge verifier wired, every
+	// delegated capability presented at a declared module route was refused.
+	// Listing both is not a widening — a solution's audience is still refused
+	// here, which is the A-for-B rule this derivation exists for.
+	capability, rejected := g.verifiedWorkContext(w, r, moduleCapabilitiesAudience, alias)
+	if rejected {
 		return true
 	}
 
@@ -149,8 +154,16 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 	// identity, run ext_authz, require a valid credential. A bearer-less call is
 	// denied here, so a declared module adds a proxy target and never widens the
 	// authenticated surface.
+	//
+	// The verified capability is carried INTO the check, because it is what lets a
+	// resource-confined credential be admitted here at all: ext_authz pairs the
+	// two and refuses the credential when no capability of this person's accompanies
+	// it (gateway_module_capability.go carries the whole rule). A deployment with
+	// no edge verifier records nothing, so such a credential stays refused — the
+	// same direction as every other asymmetry between this path and Envoy's.
 	stripAllIdentityHeaders(r)
-	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
+	ctx := withPresentedModuleCapability(r.Context(), capability, alias)
+	checkResp, err := g.authz.Check(ctx, buildCheckRequest(r))
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "auth check failed")
 		return true
@@ -170,16 +183,43 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 
 	// Forward the full /v1/<alias>/... path unchanged: the module owns and serves
-	// its own /v1/<alias> surface. The caller's bearer is preserved so the module
-	// can call back through the gateway on the user's behalf, exactly as solution
-	// passthrough does.
+	// its own /v1/<alias> surface. The caller's bearer travels with it, because a
+	// declared upstream authenticates the request by it and the audience-bound
+	// capability that should replace it exists on neither side yet (SA-F-BEARER,
+	// open — see removePersonsSessionCredential in gateway.go). The caller's
+	// COOKIE does not travel, and a resource-bound token cannot be replayed off
+	// its own solution, so what an upstream holds is the person's host session
+	// and nothing wider.
 	//
-	// rateLimitThenProxy, not proxyTo: a module data endpoint must consume the
+	// A module data endpoint and its admission read must consume the
 	// same per-org/per-IP budget an equivalent catalog route does, or /v1/<alias>/*
 	// would be an unmetered proxy an authenticated caller could flood past the org
 	// budget.
 	entry := &RouteEntry{Service: moduleServicePrefix + alias, Protected: true}
-	g.rateLimitThenProxy(w, r, routing.Upstream, entry)
+	org, viewer := r.Header.Get("X-Org-Id"), effectiveViewer(r)
+	if org == "" || viewer == "" {
+		httpError(w, http.StatusForbidden, "no organization in this session")
+		return true
+	}
+	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, routing)
+		switch admission {
+		case viewerSolutionNotEntitled:
+			httpError(w, http.StatusForbidden, "module is not installed for this organization")
+			return
+		case viewerSolutionUndecidable:
+			httpError(w, http.StatusServiceUnavailable, "module installation authority unavailable")
+			return
+		}
+		// Which installation admitted this viewer, forwarded for the same reason
+		// it is forwarded to a solution: the consent is a fact about the request,
+		// and the upstream that serves it is the one that needs it. Gateway-owned
+		// and on untrustedAuthHeaders, so a caller's own value is already gone.
+		if installation != "" {
+			r.Header.Set(installationConfinementHeader, installation)
+		}
+		g.proxyTo(w, r, routing.Upstream, entry)
+	}))
 	return true
 }
 

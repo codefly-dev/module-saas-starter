@@ -52,6 +52,7 @@ func TestInstallationTargetCannotBeRepointed(t *testing.T) {
 		AllowedScopes:   []string{"doc"},
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installation)
 
 	// Repointing at ANOTHER live target is refused. The other target is live, so
 	// nothing here is explained by the liveness trigger below.

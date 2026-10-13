@@ -55,21 +55,6 @@ type Config struct {
 	// RFC 8414 metadata sets it to the same https URL the metadata names, which
 	// is what lets a client that discovered the metadata verify the token.
 	Issuer string
-	// RegistrationIssuer is the `iss` on the module- and solution-registration
-	// credentials, which is deliberately NOT Issuer.
-	//
-	// Those are internal cluster credentials with their own audiences and their
-	// own verifiers — in the gateway and in the frontend, each pinned to a
-	// literal. Access tokens had to move to an https URL because RFC 8414
-	// requires the published OAuth issuer to be one; registration credentials
-	// are not OAuth and publish nothing, so moving them with the access token
-	// bought nothing and broke every verifier that had not moved in the same
-	// release. A solution's gateway half would register while its frontend half
-	// was refused, and a registration needs both.
-	//
-	// Keeping it fixed means there is no migration: the verifiers are correct as
-	// they stand, including for credentials minted before and after the change.
-	RegistrationIssuer string
 	// AdditionalAcceptedIssuers are `iss` values VerifyAccess accepts besides
 	// Issuer. It exists for exactly one migration: a deployment moving from the
 	// pre-metadata literal issuer to its https URL keeps accepting the literal
@@ -115,9 +100,6 @@ func (c *Config) withDefaults() error {
 	if c.Audience == "" {
 		c.Audience = "saas-starter"
 	}
-	if c.RegistrationIssuer == "" {
-		c.RegistrationIssuer = "saas-starter"
-	}
 	if c.AccessTokenTTL == 0 {
 		c.AccessTokenTTL = 3 * time.Minute
 	}
@@ -142,6 +124,13 @@ type accessClaims struct {
 	ScopedRoles          map[string][]string `json:"sr,omitempty"`
 	ScopedRolesTruncated bool                `json:"srt,omitempty"`
 	SessionID            string              `json:"sid"`
+	// FamilyID is the refresh family this access token was minted under, and it
+	// is STABLE across rotation where `sid` is not: every refresh mints a new
+	// session id and keeps the family. A sign-out revokes the family, so without
+	// this claim the revocation had nothing to match an access token minted
+	// before the last refresh — one stolen then stayed usable until it expired,
+	// through a completed logout.
+	FamilyID string `json:"fid,omitempty"`
 	// AuthorizedParty is the registered client the token was issued to (OIDC
 	// `azp`). Absent on the host's own web session, so a consumer reads "no azp"
 	// as a first-party web session rather than as a missing value.
@@ -285,72 +274,6 @@ func (m *Minter) JWKS() (string, error) {
 	return string(buf), nil
 }
 
-// ModuleRegistrationAudience scopes a module-registration token to that single
-// purpose. Access tokens carry Config.Audience; registration tokens carry this,
-// so even though both are signed with the same key neither can stand in for the
-// other: a stolen access token cannot register a route prefix, and a
-// registration token cannot authenticate a user.
-const ModuleRegistrationAudience = "module-registration"
-
-// SolutionRegistrationAudience is the same separation for the solution
-// credential: it authorizes registering a gateway upstream and a host-origin
-// Module-Federation remote, which is strictly more authority than federating a
-// REST prefix, so a module-registration token must not be usable for it.
-const SolutionRegistrationAudience = "solution-registration"
-
-// registrationTTL keeps a registration credential alive just long enough for a
-// registrant to finish its startup handshake. It is presented once, to one
-// endpoint, immediately after it is issued.
-const registrationTTL = 5 * time.Minute
-
-// moduleRegistrationClaims binds a module identity (`sub`) to the single
-// catalog-identity segment it may claim at the gateway. The verifier reads
-// Prefix, not `sub`, when enforcing the binding; `sub` names the same module in
-// the conventional subject position.
-type moduleRegistrationClaims struct {
-	jwt.RegisteredClaims
-	Prefix string `json:"prefix"`
-}
-
-// MintModuleRegistration issues the short-lived credential a composed module
-// presents to federate its REST prefix with the gateway. The caller has already
-// authenticated the module; this signs the authorization decision so the
-// gateway can verify it without sharing a secret with every registrant.
-//
-// The token is signed with the access-token key, which the gateway already
-// holds through JWKS, and separated from access tokens by audience alone.
-func (m *Minter) MintModuleRegistration(prefix string) (string, time.Time, error) {
-	if prefix == "" {
-		return "", time.Time{}, fmt.Errorf("ed25519minter: module registration prefix required")
-	}
-	now := m.now()
-	expiresAt := now.Add(registrationTTL)
-	jti, err := randHex(16)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	claims := moduleRegistrationClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			// RegistrationIssuer, not Issuer: see the Config field's comment.
-			Issuer:    m.cfg.RegistrationIssuer,
-			Subject:   "module:" + prefix,
-			Audience:  jwt.ClaimStrings{ModuleRegistrationAudience},
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			ID:        jti,
-		},
-		Prefix: prefix,
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
-	token.Header["kid"] = m.keyID
-	signed, err := token.SignedString(m.privateKey)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	return signed, expiresAt, nil
-}
-
 // Mint implements auth.JWTMinter.Mint. It issues a fresh access token and
 // refresh token, persisting the session row with a new family_id. An identity
 // naming an impersonated user gets the access half only — see prepareMint.
@@ -399,7 +322,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 	}
 
 	// Access token
-	access, accessExpiresAt, err := m.signAccess(identity, sessionID, now)
+	access, accessExpiresAt, err := m.signAccess(identity, sessionID, familyID, now)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ed25519minter: sign access: %w", err)
 	}
@@ -600,7 +523,7 @@ func (m *Minter) SwitchOrganization(
 		if err != nil {
 			return err
 		}
-		accessToken, accessExpiresAt, err = m.signAccess(identity, current.ID, now)
+		accessToken, accessExpiresAt, err = m.signAccess(identity, current.ID, current.FamilyID, now)
 		return err
 	})
 	if err != nil {
@@ -676,6 +599,18 @@ func isMFAMethod(method string) bool {
 		method == auth.AuthenticationMethodWebAuthn
 }
 
+// familyAccessClaim renders the family id for the access token, and renders
+// NOTHING for the zero value. An access-only window (impersonation) has no
+// refresh family, and stamping the zero UUID would put one shared id on every
+// such token — a single marker would then revoke all of them at once, across
+// tenants.
+func familyAccessClaim(familyID uuid.UUID) string {
+	if familyID == uuid.Nil {
+		return ""
+	}
+	return familyID.String()
+}
+
 // Revoke implements auth.JWTMinter.Revoke by revoking the family backing the
 // given refresh token. Safe to call with an already-revoked token.
 func (m *Minter) Revoke(ctx context.Context, refreshToken string) error {
@@ -687,7 +622,23 @@ func (m *Minter) Revoke(ctx context.Context, refreshToken string) error {
 		}
 		return fmt.Errorf("ed25519minter: revoke lookup: %w", err)
 	}
-	return m.store.RevokeFamily(ctx, rec.FamilyID, "logout")
+	// The durable half: nothing in this family can be refreshed again.
+	if err := m.store.RevokeFamily(ctx, rec.FamilyID, "logout"); err != nil {
+		return err
+	}
+	// The access half, for the WHOLE family rather than one session of it.
+	//
+	// RevokeSessionAccess on the presented `sid` covers only the rotation the
+	// caller is holding. Every refresh mints a new session id, so a token minted
+	// before the last refresh carried a different one and matched no marker — a
+	// token stolen before a refresh survived the sign-out that followed it, until
+	// its natural expiry. The family id is on every access token in the chain
+	// (accessClaims.FamilyID), so one marker reaches all of them.
+	//
+	// Best-effort, exactly like the other access-marker writes: the durable
+	// revocation above is the authority, and a store outage bounds exposure to
+	// the access TTL. The caller is told, because Logout collects that.
+	return m.RevokeSessionAccess(ctx, rec.FamilyID.String())
 }
 
 // VerifyAccess parses and validates an access token minted by this Minter.
@@ -793,11 +744,23 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		}
 	}
 
-	// Session-scoped revocation (admin session-kill). A single marker keyed by
-	// the `sid` claim invalidates every access token in the session at once,
-	// covering the path where the killer never held the victim's token.
-	if claims.SessionID != "" {
-		revoked, err := m.revoker.IsSessionRevoked(context.Background(), claims.SessionID)
+	// Session- and family-scoped revocation. A single marker invalidates every
+	// access token it covers at once: the path where the killer never held the
+	// victim's token (admin session-kill), and the path where the token predates
+	// the last refresh (sign-out).
+	//
+	// Both keys are checked, because they answer different questions and the
+	// session one alone left a hole: `sid` changes on every refresh, so a
+	// sign-out that revoked the CURRENT session left an access token minted
+	// before it unmatched. The family does not change, so one marker covers the
+	// whole chain. They share the session-marker namespace — both are ids this
+	// host mints, and neither can collide with the other — so this needs no
+	// second store and no second TTL.
+	for _, key := range []string{claims.SessionID, claims.FamilyID} {
+		if key == "" {
+			continue
+		}
+		revoked, err := m.revoker.IsSessionRevoked(context.Background(), key)
 		switch {
 		case err != nil && !m.cfg.RevocationFailOpen:
 			return nil, fmt.Errorf("%w: %v", auth.ErrRevocationUnavailable, err)
@@ -927,6 +890,7 @@ func (m *Minter) accessTTL(identity *auth.Identity) time.Duration {
 func (m *Minter) signAccess(
 	identity *auth.Identity,
 	sessionID uuid.UUID,
+	familyID uuid.UUID,
 	now time.Time,
 ) (string, time.Time, error) {
 	jti, err := randHex(16)
@@ -959,6 +923,7 @@ func (m *Minter) signAccess(
 			ID:        jti,
 		},
 		SessionID:       sessionID.String(),
+		FamilyID:        familyAccessClaim(familyID),
 		AuthorizedParty: identity.ClientID,
 		Email:           identity.Email,
 		Name:            identity.DisplayName,
@@ -1074,56 +1039,6 @@ func GenerateKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 
 // Compile-time assertion that Minter satisfies the interface.
 var _ auth.JWTMinter = (*Minter)(nil)
-
-// solutionRegistrationClaims binds a solution identity (`sub`) to the single
-// solution id it may register, update, or delete at the gateway and at the
-// frontend. Both verifiers read Solution, not `sub`, when enforcing the binding;
-// `sub` names the same solution in the conventional subject position.
-type solutionRegistrationClaims struct {
-	jwt.RegisteredClaims
-	Solution string `json:"solution"`
-}
-
-// MintSolutionRegistration issues the short-lived credential a solution presents
-// to register, update, or delete its gateway upstream and its frontend
-// Module-Federation remote. The caller has already authenticated the solution;
-// this signs the authorization decision so both consumers can verify it without
-// sharing a secret with every registrant.
-//
-// It is signed with the access-token key, which the gateway already holds
-// through JWKS and the frontend fetches from the same published set, and
-// separated from access tokens — and from module-registration tokens — by
-// audience.
-func (m *Minter) MintSolutionRegistration(solutionID string) (string, time.Time, error) {
-	if solutionID == "" {
-		return "", time.Time{}, fmt.Errorf("ed25519minter: solution registration id required")
-	}
-	now := m.now()
-	expiresAt := now.Add(registrationTTL)
-	jti, err := randHex(16)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	claims := solutionRegistrationClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    m.cfg.RegistrationIssuer,
-			Subject:   "solution:" + solutionID,
-			Audience:  jwt.ClaimStrings{SolutionRegistrationAudience},
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			ID:        jti,
-		},
-		Solution: solutionID,
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
-	token.Header["kid"] = m.keyID
-	signed, err := token.SignedString(m.privateKey)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	return signed, expiresAt, nil
-}
 
 // MintForClient implements auth.JWTMinter.MintForClient. The authorizing host
 // session is resolved and locked by the store, which also decides whether it is

@@ -115,6 +115,56 @@ whether `/s/{id}` renders, and it stays installation-blind.
   observation speaks for the present is the host's to decide, and a copy of that
   window here would drift from it.
 
+## Drawing a solution's declared dashboard
+
+`src/solutions/SolutionDashboard.tsx` **mounts** the shared kit's
+`<Dashboard>` (`@codefly-dev/ui/dashboard`); it draws nothing itself. Which
+tier each widget and each coverage state is drawn with is the module's
+[AUDIT_METRICS.md](../../AUDIT_METRICS.md) ("How a resolved series is drawn") —
+one renderer for the host's pages, a declared solution dashboard and a solution
+remote alike.
+
+What this file owns is only what is the host's, composed through that
+renderer's slots:
+
+- **the audit queries**, one per widget, so a widget whose metric errors fails
+  alone instead of blanking its siblings. Each lives in its own component
+  (`SolutionWidget`) that resolves the series and then mounts the kit's
+  `DashboardWidget`, because React fixes the number of hooks a component may
+  call and a renderer taking the whole view cannot hold a varying number of
+  queries;
+- **the viewer's arrangement** — the declared sections, and within and between
+  them the tiles: reorder or move a tile by drag or arrow keys, remove one, add
+  it back from a +, rename, reorder or remove a section, add one of their own.
+  It is saved per viewer and organization (`dashboard-layout.ts`, version 2,
+  still the labelled browser-storage STOPGAP) and resolved here into the view
+  the kit draws — the viewer's sections, in the viewer's order, under the
+  viewer's titles, each widget in the section the viewer put it in. The
+  renderer's `layout` slot lays it out as the kit's `SortableBoard`, each
+  section headed by the kit's `DashboardSectionHeader` with the host's grip,
+  rename, + and options in it. Every + offers only the declared widgets the
+  viewer removed, asks each one's query only while it is open (the tile's own
+  query, so a tile added back draws from that answer), and says, muted, when
+  the tile would have nothing to show ("No data yet.", "Telemetry
+  incomplete."). A chart, bar or table tile spans two grid rows, so two number
+  tiles stack beside it;
+- **the ⓘ** that says what a tile counts, from which audit events, over what
+  range and who caused the newest ones (`metric-info.ts`, the principal
+  directory, the recent-events drill-down), handed to each widget as its
+  header actions.
+
+A widget's `format` comes from the same resolved answer as its series, because
+`runDashboard` is where a declared share became percentage points; binding it
+from the declaration instead would pair a percentage with a share's format.
+
+Re-implementing any part of the drawing is refused by
+`src/components/__tests__/kit.test.ts`: a declaration taking a name
+`@codefly-dev/ui` exports must render the kit's component of that name or carry
+a reviewed entry, `class-variance-authority` is not a dependency of this app so
+a kit-shaped primitive cannot be built here, and the two chart surfaces
+(`src/components/charts/chart.tsx`,
+`src/features/dashboard/ui/charts/line-chart.tsx`) stay re-exports.
+
 ## Loading a remote, and its CSP
 
 `/s/[solutionId]` (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the
@@ -144,6 +194,28 @@ so in the log.**
 A solution remote executes in the host origin with the viewer's credentials; the
 trust model and the registration/installation/entitlement boundary are in
 [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md).
+
+**Open, and recorded here so the next reader does not have to rediscover it.**
+Nothing pins what a cross-origin manifest serves. An absolute URL on any origin is
+accepted, admitting it adds that origin to the script source, and there is no
+integrity digest — so a holder of a solution's registration credential can point a
+registered remote at code of its choosing and have it execute in the host origin
+with the viewer's session. The audit raised this as a minor finding because the
+live policy lists no foreign origin and every deployed remote is same-origin today,
+which bounds it to the credential-to-code path.
+
+Closing it means one of two things, and both are decisions about the solution
+contract rather than a defect to repair:
+
+- **Accept only root-relative manifests.** This removes the cross-origin-remote
+  shape described above, and with it the runtime origin derivation in
+  `src/proxy.ts` — the listing fetch, its cache, its outage reporting and the
+  policy-size guard exist only to carry foreign origins.
+- **Pin each remote by a digest recorded when it was published.** This keeps the
+  shape and needs a publication-time provenance record the registration contract
+  does not have.
+
+Either is its own change, with the owner choosing which shape the contract keeps.
 
 ## The published client kit
 
@@ -218,3 +290,18 @@ failures part company here, which is what `mayKeepRetainedRows` and
 those very rows, so they go; a **transient failure** is not, so they stay with a
 note that they may be out of date. Blanking a good table because one request did
 not come back is worse than the staleness.
+
+**Where a refusal acts is the read, not the component.** Withholding rows at
+render answers for the error in hand and leaves the rows in the cache, so the
+next transient failure serves them again — authority is a property of the read,
+and so is what the read may leave behind. A refused read therefore deletes the
+retained snapshots for every cached key of what it was reading, in the query
+function where `readOutcome` classifies it, before the rejection reaches any
+component. `src/solutions/SolutionDashboard.tsx` is the worked example: one
+widget, several cached revisions of its declaration, and a refusal that may
+arrive after the viewer has navigated away or the page has unmounted, where no
+effect of theirs is left to run. Delete the data and nothing else: removing the
+entry cancels the read reporting the refusal and strands recovery, clearing it
+restarts every active read of it so a standing 403 never settles, and
+`setQueryData(key, undefined)` is a documented no-op. Recovery is then exactly
+one thing — a read that succeeds.

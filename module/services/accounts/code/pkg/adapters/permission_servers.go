@@ -44,10 +44,15 @@ func configurePermissionServerKeys() {
 	if service != nil {
 		authority, _ = service.Store().(business.WorkContextAuthorityStore)
 	}
+	var seals workContextSealAnswers
+	if service != nil {
+		seals = service
+	}
 	workContextSingleton.Configure(WorkContextAuthorityConfiguration{
 		Issuer:     plugin.WorkContextIssuer(),
 		KeyID:      plugin.WorkContextKeyID(),
 		PrivateKey: plugin.Ed25519Key(),
 		Authority:  authority,
+		Seals:      seals,
 	})
 }

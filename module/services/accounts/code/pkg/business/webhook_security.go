@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"accounts/pkg/auth"
 )
 
 const (
@@ -115,10 +117,10 @@ func validateWebhookHostname(host string) error {
 	if strings.Contains(host, "%") {
 		return errors.New("webhook host must not contain an IPv6 zone identifier")
 	}
-	if addr, err := netip.ParseAddr(host); err == nil {
-		if !isPublicWebhookAddress(addr) {
-			return fmt.Errorf("webhook address %s is not public", addr)
-		}
+	// An address literal is a well-formed host. Whether it is public is judged
+	// once, by resolvePublic, which the registration and every connection both
+	// run on it exactly as on a resolved name.
+	if _, err := netip.ParseAddr(host); err == nil {
 		return nil
 	}
 	if isAmbiguousNumericHost(host) {
@@ -152,57 +154,17 @@ func isAmbiguousNumericHost(host string) bool {
 	return true
 }
 
-var blockedWebhookPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("10.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("127.0.0.0/8"),
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.0.2.0/24"),
-	netip.MustParsePrefix("192.88.99.0/24"),
-	netip.MustParsePrefix("192.168.0.0/16"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("198.51.100.0/24"),
-	netip.MustParsePrefix("203.0.113.0/24"),
-	netip.MustParsePrefix("224.0.0.0/4"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("::/128"),
-	netip.MustParsePrefix("::1/128"),
-	netip.MustParsePrefix("64:ff9b:1::/48"),
-	netip.MustParsePrefix("100::/64"),
-	netip.MustParsePrefix("2001::/23"),
-	netip.MustParsePrefix("2001:db8::/32"),
-	netip.MustParsePrefix("2002::/16"),
-	netip.MustParsePrefix("fc00::/7"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("ff00::/8"),
-}
-
-func isPublicWebhookAddress(addr netip.Addr) bool {
-	if !addr.IsValid() {
-		return false
-	}
-	addr = addr.Unmap()
-	if !addr.IsGlobalUnicast() {
-		return false
-	}
-	for _, prefix := range blockedWebhookPrefixes {
-		if prefix.Contains(addr) {
-			return false
-		}
-	}
-	return true
-}
-
+// resolvePublic resolves host and requires every answer to be on the public
+// internet, as auth.IsPublicDestination judges it: the classifier the host's
+// guarded egress paths share (auth/public_address.go lists them, and the OIDC
+// clients that have no guard). An address literal is judged as
+// written, zone included, and only unmapped once it has been admitted.
 func (p *WebhookEndpointPolicy) resolvePublic(ctx context.Context, host string) ([]netip.Addr, error) {
 	if addr, err := netip.ParseAddr(host); err == nil {
-		addr = addr.Unmap()
-		if !isPublicWebhookAddress(addr) {
-			return nil, fmt.Errorf("webhook address %s is not public", addr)
+		if !auth.IsPublicDestination(addr) {
+			return nil, fmt.Errorf("webhook address %s is not public", addr.Unmap())
 		}
-		return []netip.Addr{addr}, nil
+		return []netip.Addr{addr.Unmap()}, nil
 	}
 	addresses, err := p.resolver.LookupNetIP(ctx, "ip", host)
 	if err != nil {
@@ -212,7 +174,7 @@ func (p *WebhookEndpointPolicy) resolvePublic(ctx context.Context, host string) 
 		return nil, errors.New("webhook host did not resolve to an address")
 	}
 	for _, addr := range addresses {
-		if !isPublicWebhookAddress(addr) {
+		if !auth.IsPublicDestination(addr) {
 			return nil, fmt.Errorf("webhook host resolves to non-public address %s", addr.Unmap())
 		}
 	}

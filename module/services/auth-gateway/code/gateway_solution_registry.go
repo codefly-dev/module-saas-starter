@@ -17,6 +17,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -38,11 +39,17 @@ const (
 	solutionRefreshFloor = 250 * time.Millisecond
 )
 
-// solutionRegistryClient is the registry surface the gateway consumes. The
-// interface exists so the cache and the HTTP handlers can be exercised without
-// an accounts process.
+// solutionRegistrySnapshot joins only matching applied generations. The compact
+// registration has no workload field; the host-binding read carries Core's
+// complete presence document. No new wire schema duplicates that contract.
+type solutionRegistrySnapshot struct {
+	*accountsv1.ListSolutionRegistrationsResponse
+	workloadIDs map[string]string
+}
+
+// solutionRegistryClient is the registry surface used by the cache and handlers.
 type solutionRegistryClient interface {
-	List(ctx context.Context, req *accountsv1.ListSolutionRegistrationsRequest) (*accountsv1.ListSolutionRegistrationsResponse, error)
+	List(ctx context.Context, req *accountsv1.ListSolutionRegistrationsRequest) (*solutionRegistrySnapshot, error)
 }
 
 // accountsSolutionRegistry invokes the registry by method name over the
@@ -62,9 +69,29 @@ func (c *accountsSolutionRegistry) invoke(ctx context.Context, method string, re
 	return c.conn.Invoke(ctx, method, req, resp)
 }
 
-func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.ListSolutionRegistrationsRequest) (*accountsv1.ListSolutionRegistrationsResponse, error) {
+func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.ListSolutionRegistrationsRequest) (*solutionRegistrySnapshot, error) {
 	resp := &accountsv1.ListSolutionRegistrationsResponse{}
-	return resp, c.invoke(ctx, listSolutionRegistrationsMethod, req, resp)
+	if err := c.invoke(ctx, listSolutionRegistrationsMethod, req, resp); err != nil {
+		return nil, err
+	}
+	bindings := &accountsv1.ListSolutionHostBindingsResponse{}
+	if err := c.invoke(ctx, "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings", &accountsv1.ListSolutionHostBindingsRequest{}, bindings); err != nil {
+		return nil, err
+	}
+	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, workloadIDs: make(map[string]string)}
+	for _, record := range resp.GetRegistrations() {
+		for _, binding := range bindings.GetBindings() {
+			// These reads may straddle reconciliation. Never attach a successor's
+			// identity to its predecessor's address, even within one generation.
+			if !proto.Equal(record, binding.GetRegistration()) {
+				continue
+			}
+			if id := appliedWorkloadSPIFFEID(binding); id != "" {
+				out.workloadIDs[record.GetSolutionId()] = id
+			}
+		}
+	}
+	return out, nil
 }
 
 // solutionResolution is why a solution is or is not routable right now. The
@@ -99,10 +126,11 @@ type solutionRegistryCache struct {
 	// it at time.Now.
 	now func() time.Time
 
-	mu       sync.RWMutex
-	records  map[string]*accountsv1.SolutionRegistration
-	revision int64
-	loaded   bool
+	mu          sync.RWMutex
+	records     map[string]*accountsv1.SolutionRegistration
+	workloadIDs map[string]string
+	revision    int64
+	loaded      bool
 	// attemptedAt is when a read was last ATTEMPTED, successfully or not. The
 	// refresh floor is measured from it rather than from the last SUCCESS: a
 	// failed read leaves the snapshot's age where it was, so measuring from that
@@ -182,6 +210,7 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 		records[record.GetSolutionId()] = record
 	}
 	c.records = records
+	c.workloadIDs = resp.workloadIDs
 	c.revision = resp.GetRegistryRevision()
 	c.loaded = true
 	c.lastErr = nil
@@ -210,11 +239,11 @@ func (c *solutionRegistryCache) reconcile(ctx context.Context) {
 }
 
 // lookup reads the cached record without touching the network.
-func (c *solutionRegistryCache) lookup(id string) (*accountsv1.SolutionRegistration, bool, bool) {
+func (c *solutionRegistryCache) lookup(id string) (*accountsv1.SolutionRegistration, string, bool, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	record, ok := c.records[id]
-	return record, ok, c.loaded
+	return record, c.workloadIDs[id], ok, c.loaded
 }
 
 func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
@@ -227,8 +256,9 @@ func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
 // a verdict must never be derived without: whether the registry could actually
 // be consulted about it.
 type solutionLookup struct {
-	record *accountsv1.SolutionRegistration
-	found  bool
+	record     *accountsv1.SolutionRegistration
+	workloadID string
+	found      bool
 	// loaded is false until a snapshot has ever loaded on this replica.
 	loaded bool
 	// undecidable is set when this alias had no conclusive record in the
@@ -273,17 +303,18 @@ func (c *solutionRegistryCache) conclusive(
 func (c *solutionRegistryCache) lookupFresh(
 	ctx context.Context, id string, surface routingSurface,
 ) solutionLookup {
-	record, found, loaded := c.lookup(id)
+	record, workloadID, found, loaded := c.lookup(id)
 	if c.conclusive(record, found, surface) {
-		return solutionLookup{record: record, found: found, loaded: loaded}
+		return solutionLookup{record: record, workloadID: workloadID, found: found, loaded: loaded}
 	}
 	refreshErr := c.refreshIfStale(ctx)
 	if refreshErr != nil {
 		log.Printf("solution registry: on-demand refresh for %q failed: %v", id, refreshErr)
 	}
-	record, found, loaded = c.lookup(id)
+	record, workloadID, found, loaded = c.lookup(id)
 	return solutionLookup{
 		record:      record,
+		workloadID:  workloadID,
 		found:       found,
 		loaded:      loaded,
 		undecidable: refreshErr != nil && !c.conclusive(record, found, surface),
@@ -310,6 +341,7 @@ func (c *solutionRegistryCache) lookupFresh(
 // that must refuse it is the one holding the viewer, and it refuses it as a
 // verdict rather than as a missing route.
 type solutionRouting struct {
+	WorkloadSPIFFEID string
 	// TargetID is the immutable solution target this alias resolves to, empty
 	// for a registration no declaration opened a target for.
 	TargetID string
@@ -376,24 +408,11 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	if !found || record.GetTombstonedAt() != nil {
 		return nil, solutionUnregistered
 	}
-	// The kind the record's DECLARATION states, before anything else about it is
-	// read. A record declared as the other kind is a verdict on this surface, not
-	// a missing route: the module surface carries no per-viewer admission, so
-	// serving a solution here would drop its installation check entirely, and
-	// serving a module on the solution surface would ask for a consent no
-	// organisation gives a composed module.
-	//
-	// UNSPECIFIED fails BOTH checks. It is not a third kind — it is what a reader
-	// decodes from a writer that did not set the field — so a record carrying it
-	// is served by neither surface rather than by the one that needs less
-	// authority. accounts and this gateway ship as one module package at one
-	// version, which is what makes that refusal a deployment invariant rather
-	// than an outage waiting for a rolling update.
+	// The declaration positively identifies the routing surface. Both kinds
+	// require organization consent; an unspecified kind is served by neither.
 	switch surface {
 	case moduleSurface:
-		// A record with NO declaration fails this too, and must: the module
-		// surface has no admission layer behind it, so the kind check is the only
-		// place such a record can be refused.
+		// A record with no declaration has no module routing identity.
 		if !declaredModuleKind(record) {
 			return nil, solutionWrongKind
 		}
@@ -422,10 +441,14 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 		log.Printf("solution registry: record %q has an unusable upstream", id)
 		return nil, solutionNotActive
 	}
+	if surface == solutionSurface {
+		upstream.Scheme = "https"
+	}
 	return &solutionRouting{
-		TargetID:  record.GetDeclared().GetTargetId(),
-		BindingID: record.GetDeclared().GetBindingId(),
-		Upstream:  &url.URL{Scheme: upstream.Scheme, Host: upstream.Host},
+		WorkloadSPIFFEID: read.workloadID,
+		TargetID:         record.GetDeclared().GetTargetId(),
+		BindingID:        record.GetDeclared().GetBindingId(),
+		Upstream:         &url.URL{Scheme: upstream.Scheme, Host: upstream.Host},
 	}, solutionRoutable
 }
 

@@ -66,6 +66,42 @@ components:
   there (on solution-runtime-go, `/modules/<as>` is a consumed module's
   passthrough). The bearer is stamped, requests go through `authedFetch`, and a
   refused authority is reported.
+- `installBrowserTracing({ allowedAttributeKeys, allowedSpanNames?, allowedEndpointOrigins?, endpoint?, serviceName?, resourceAttributes? })`
+  — registers the page's tracer provider once (the first caller on the page
+  wins, across every bundled copy of this package): W3C trace context as the
+  only propagator, never baggage; a sampler that always records a root; and,
+  only when an export destination resolves, an OTLP/HTTP exporter behind a
+  100 ms batch that flushes when the page is hidden or unloaded. The
+  destination is `options.endpoint`, else a `<meta name="trace-export"
+  content="…">` that is a direct child of `<head>` **and** names the page's own
+  origin or one in `allowedEndpointOrigins` (or the build-time
+  `PUBLIC_TRACE_EXPORT_ALLOWED_ORIGINS`), else a build-time
+  `PUBLIC_TRACE_EXPORT_URL`. A meta outside `<head>` or naming another origin
+  is ignored with one `console.warn`, and the browser only propagates.
+  - **Every span is sanitized before it is serialized.** Only the keys in
+    `allowedAttributeKeys`, plus the transport set (`http.request.method`,
+    `http.response.status_code`, `url.path` with its query cut,
+    `url.scheme`, `server.address`, `server.port`), are exported; full URLs,
+    queries, user agent, client and peer addresses, exception messages and
+    stack traces, request/response bodies, and any value over 256 characters
+    never are, even if listed. Status descriptions are emptied, exception
+    events keep only `exception.type`, and the resource is rebuilt to
+    `service.name`, `service.version`, `deployment.environment.name` and
+    `telemetry.sdk.*`. When `allowedSpanNames` is given, any other span name
+    that is not a bare HTTP method exports as `span`.
+  - The returned handle's `status` is `registered`, `reused` (a compatible
+    provider was already registered and is used as is), or `incompatible`
+    (the page's `@opentelemetry/api` is another version — the API refuses to
+    register across even a patch difference). `incompatible` warns once and
+    is not cached, so a later call retries. **Every bundle on a page must
+    resolve `@opentelemetry/api` to exactly `1.9.1`** (`OTEL_API_VERSION`).
+
+  `solutionTransport` then stamps `traceparent` from the active context on
+  same-origin requests that do not already carry one, and never on a request
+  to another origin. The OpenTelemetry packages are regular dependencies,
+  pinned exactly, because they are this installer's implementation rather than
+  a surface a consumer shares — except that the API version must match across
+  bundles, as above.
 - `useAccessibleScope(binding, orgId, resourceType, action)` — whether the
   viewer holds an action anywhere in the org (`loading | error | none | some`),
   from the host's accessible-scope API. It decides what a page offers; owners
@@ -170,9 +206,10 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues
-  (webhook delivery, periodic reconcile, or a tenant's "Sync now" forced
-  reconcile) — it never sets `last_synced_at`, so "Never" is dropped rather than
-  shown above live provenance. Loading/error/empty are first-class. Connect,
+  (a webhook delivery, or a reconcile pass — a declared schedule's occurrence or
+  a tenant's "Sync now", which are the same admission) — it never sets
+  `last_synced_at`, so "Never" is dropped rather than shown above live
+  provenance. Loading/error/empty are first-class. Connect,
   Sync, Reconnect, Use GitHub App and Delete are offered only to a viewer who
   may use them (`canManage`; with a `gateway`, read from the viewer's
   credential): anyone else keeps a row's History and is told who connects
@@ -258,7 +295,11 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
     offers so the consumer can show the ingesting module's progress.
   - **Error** — `DEGRADED` or `PAUSED`: the host's `status_reason` verbatim,
     and Reconnect, which asks for the credential again (a replacement PAT, or
-    nothing on the App and public paths) and enqueues a sync.
+    nothing on the App and public paths) and enqueues a sync. Reconnect needs
+    the client's `reconnectSource`: a reconnect rebinds whose authority the
+    source's syncs run under, which is not a reconcile and has no idempotent
+    form, so a client without it is told who reconnects rather than offered a
+    control that would do something else.
   There is no fourth state. A source whose status an **older host does not
   report** (the field decodes to its proto default, which the gateway maps to
   `unknown` rather than guessing) reads as **Connected** and says its state is
@@ -291,6 +332,26 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   Do not mount this and `<DatasourcesPanel>` on the same page: both redeem the
   GitHub App's single-use return state, and the loser reports a rejection for an
   installation that in fact succeeded.
+- **"Sync now" is an admission, not a request.** It runs
+  `DatasourceService/ReconcileSource` — the host operation a source's *declared*
+  reconcile schedule admits one occurrence of — under an **effect identity the
+  kit mints**, so a person's pass and a scheduled pass are one admission of one
+  shape and are indistinguishable in the host's receipts. `useReconcileSource`
+  owns the protocol: it presents an identity from a `ReconcilePassLedger` it
+  holds for the mounted surface (`createReconcilePassLedger`), and a
+  press that **repeats** the pass still being reported reads the original
+  receipt back through `LookupReconcileSource` and surfaces *that* — one receipt
+  and one job for two presses, rather than two full re-sends of the source. The
+  press after a repeat is a new pass (the ledger retires the identity); a press
+  after a *failure* re-presents the same identity, which makes a retry a
+  recovery. A lookup answering `"unknown"` is **inconclusive**, never "it did
+  not happen". The panel and `<DeclaredSourceCard>` render the outcome the
+  operation returned — the identity, the status and the job.
+  `onSourceReconcileAdmitted((pass) => …)` hears each one, which is how a host
+  surface shows a person's pass beside the declared schedule's occurrences.
+  There is **no `syncSource`**: it reached the same engines carrying no effect
+  identity, so two presses were two passes, and it is deleted rather than
+  deprecated.
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
@@ -298,7 +359,7 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   sync as typed phases (queued, fetching, compiled, handed off, done, failed) with a
   timestamp for each, the compiled change set, and a typed failure.
 - `onSourceSyncRequested((sourceId) => …)` — hears every sync the kit's client enqueues
-  (Sync now, a reconnect, the first sync a connect starts), so a view rendering a source's
+  (a reconcile pass, a reconnect, the first sync a connect starts), so a view rendering a source's
   progress in the panel's per-source slot can watch closely at once. It returns the
   unsubscribe. The registry lives on `globalThis`, so a remote's own copy of the kit hears
   the host panel.
@@ -414,7 +475,7 @@ solution.
 
 The collection panel reads its content resource from the `contentResource` on the
 gateway binding, and the server matches grants against the `resources` each composed
-module declares in `MODULE_PRINCIPALS`. Neither names a resource itself: this kit
+module's grant lists in the module envelope. Neither names a resource itself: this kit
 ships with the host, which holds no domain content. A deployment that declares none
 grants nothing, and its `listAccessibleScopes` rejects rather than resolving
 empty, so the panel reports the viewer's read access as unresolved. It does not

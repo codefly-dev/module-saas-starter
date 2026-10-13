@@ -34,7 +34,7 @@ const SolutionDeliveryPrefix = "/platform/_delivery/"
 
 // solutionDeliveryMaxBytes bounds a carrier body.
 //
-// A presence document is a few kilobytes and a Sigstore bundle is tens; 1 MiB is
+// A DSSE envelope carries the document again alongside its signature; 1 MiB is
 // far above both and far below anything that would cost the host to read. The
 // bound exists because this endpoint authenticates the caller only AFTER parsing
 // enough to know what was sent, so an unbounded read would be work an

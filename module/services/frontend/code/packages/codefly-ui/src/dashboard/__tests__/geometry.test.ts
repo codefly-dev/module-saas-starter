@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { areaPath, linearScale, linePath, niceTicks, scaleX, sparkPlot } from "../geometry.js";
+import {
+	areaPath,
+	linearScale,
+	linePath,
+	niceTicks,
+	scaleX,
+	sparkPlot,
+} from "../geometry.js";
 import type { SeriesPoint } from "../types.js";
 
 // Path coordinates are emitted as "M x y L x y …"; pull them out as alternating
@@ -12,7 +19,8 @@ function coords(d: string): { xs: number[]; ys: number[] } {
 	};
 }
 
-const pts = (...values: number[]): SeriesPoint[] => values.map((value, i) => ({ key: String(i), value }));
+const pts = (...values: number[]): SeriesPoint[] =>
+	values.map((value, i) => ({ key: String(i), value }));
 
 describe("linePath", () => {
 	// Regression: scaleY used to close over the constant full viewBox height, so a
@@ -118,7 +126,8 @@ describe("niceTicks", () => {
 		const ticks = niceTicks(0, 95);
 		expect(ticks[0]).toBe(0);
 		expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(95);
-		for (let i = 1; i < ticks.length; i++) expect(ticks[i]).toBeGreaterThan(ticks[i - 1]);
+		for (let i = 1; i < ticks.length; i++)
+			expect(ticks[i]).toBeGreaterThan(ticks[i - 1]);
 	});
 
 	// A degenerate span (all-zero series, or a single point anchored at its own

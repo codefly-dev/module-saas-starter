@@ -14,6 +14,7 @@ import {
 	type PluginRoute,
 	type PresentationRequirement,
 } from "./contracts.js";
+import { FRONTEND_SERVICE_ROOT_PREFIX } from "./transport.js";
 
 function assertContribution(
 	condition: unknown,
@@ -240,10 +241,22 @@ function validateServiceRequirement(
 		typeof service.routePrefix === "string"
 			? service.routePrefix.slice(1).split("/")
 			: [];
+	// The origin root is a prefix only a Connect requirement may declare, and
+	// declaring it is the only way to say what the Connect protocol already
+	// decides: a procedure's path is `/<fully.qualified.Service>/<Method>` from
+	// the origin, which is where this contract's own fixed capability handshake
+	// has always been probed. A REST requirement declaring the root would turn
+	// the alias into a prefix-less proxy of its whole upstream instead.
+	const rootPrefix =
+		service.protocol === "connect" &&
+		service.routePrefix === FRONTEND_SERVICE_ROOT_PREFIX;
 	assertContribution(
 		typeof service.routePrefix === "string" &&
-			SAFE_ROUTE_PREFIX.test(service.routePrefix) &&
-			routeSegments.every((segment) => segment !== "." && segment !== ".."),
+			(rootPrefix ||
+				(SAFE_ROUTE_PREFIX.test(service.routePrefix) &&
+					routeSegments.every(
+						(segment) => segment !== "." && segment !== "..",
+					))),
 		`plugin '${pluginName}' service '${service.alias}' route prefix '${String(service.routePrefix)}' is unsafe`,
 	);
 	assertContribution(

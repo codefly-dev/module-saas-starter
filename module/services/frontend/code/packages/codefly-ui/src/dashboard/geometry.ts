@@ -29,14 +29,29 @@ export interface Plot {
 
 // The axis-less sparkline gutter: a hair of padding on every side so a
 // non-scaling stroke isn't clipped at the frame, matching the pre-axis charts.
-export const SPARK_MARGIN: Margins = { top: PAD, right: PAD, bottom: PAD, left: PAD };
+export const SPARK_MARGIN: Margins = {
+	top: PAD,
+	right: PAD,
+	bottom: PAD,
+	left: PAD,
+};
 
 // Extra left/bottom gutter an axed chart needs so the y value labels and the x
 // time labels have room outside the plot; top/right stay tight.
-export const AXIS_MARGIN: Margins = { top: PAD, right: PAD, bottom: 22, left: 34 };
+export const AXIS_MARGIN: Margins = {
+	top: PAD,
+	right: PAD,
+	bottom: 22,
+	left: 34,
+};
 
 export function plot(width: number, height: number, m: Margins): Plot {
-	return { left: m.left, right: width - m.right, top: m.top, bottom: height - m.bottom };
+	return {
+		left: m.left,
+		right: width - m.right,
+		top: m.top,
+		bottom: height - m.bottom,
+	};
 }
 
 /** The full-width sparkline plot at a given height. */
@@ -47,7 +62,12 @@ export function sparkPlot(height: number): Plot {
 // The Scale atom: a pure linear map from a domain onto a pixel range. A
 // zero-width domain (a flat series) collapses to the range start instead of
 // dividing by zero, so it draws one line rather than NaNs.
-export function linearScale(d0: number, d1: number, r0: number, r1: number): (v: number) => number {
+export function linearScale(
+	d0: number,
+	d1: number,
+	r0: number,
+	r1: number,
+): (v: number) => number {
 	const span = d1 - d0 || 1;
 	return (v) => r0 + ((v - d0) / span) * (r1 - r0);
 }
@@ -96,7 +116,8 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
 	const end = Math.ceil(max / step) * step;
 	const ticks: number[] = [];
 	// `+ step / 2` absorbs float drift so the final tick isn't dropped.
-	for (let v = start; v <= end + step / 2; v += step) ticks.push(Number(v.toFixed(6)));
+	for (let v = start; v <= end + step / 2; v += step)
+		ticks.push(Number(v.toFixed(6)));
 	return ticks;
 }
 
@@ -111,7 +132,10 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
 export function linePath(
 	points: SeriesPoint[],
 	p: Plot,
-	y = scaleY(points.map((pt) => pt.value), p),
+	y = scaleY(
+		points.map((pt) => pt.value),
+		p,
+	),
 	singleY = (p.top + p.bottom) / 2,
 ): string {
 	if (points.length === 0) return "";
@@ -120,7 +144,10 @@ export function linePath(
 		return `M ${p.left.toFixed(1)} ${yy} L ${p.right.toFixed(1)} ${yy}`;
 	}
 	return points
-		.map((pt, i) => `${i === 0 ? "M" : "L"} ${scaleX(i, points.length, p).toFixed(1)} ${y(pt.value).toFixed(1)}`)
+		.map(
+			(pt, i) =>
+				`${i === 0 ? "M" : "L"} ${scaleX(i, points.length, p).toFixed(1)} ${y(pt.value).toFixed(1)}`,
+		)
 		.join(" ");
 }
 
@@ -130,12 +157,19 @@ export function linePath(
 export function areaPath(
 	points: SeriesPoint[],
 	p: Plot,
-	y = scaleY(points.map((pt) => pt.value), p),
+	y = scaleY(
+		points.map((pt) => pt.value),
+		p,
+	),
 	singleY = (p.top + p.bottom) / 2,
 ): string {
 	if (points.length === 0) return "";
 	const baseline = p.bottom.toFixed(1);
-	const left = (points.length === 1 ? p.left : scaleX(0, points.length, p)).toFixed(1);
-	const right = (points.length === 1 ? p.right : scaleX(points.length - 1, points.length, p)).toFixed(1);
+	const left = (
+		points.length === 1 ? p.left : scaleX(0, points.length, p)
+	).toFixed(1);
+	const right = (
+		points.length === 1 ? p.right : scaleX(points.length - 1, points.length, p)
+	).toFixed(1);
 	return `${linePath(points, p, y, singleY)} L ${right} ${baseline} L ${left} ${baseline} Z`;
 }

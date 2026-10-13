@@ -208,16 +208,24 @@ func (s *Service) ReconcileModuleInstallation(ctx context.Context, caller Module
 	if err := s.RequireHostAudiences(ctx, req.AllowedAudiences); err != nil {
 		return nil, err
 	}
+	params := &InstallSolutionParams{
+		OrgID: org.Id, AgentIdentifier: req.AgentIdentifier, TargetID: req.TargetID,
+		RoleID: req.RoleID, AllowedAudiences: req.AllowedAudiences, AllowedScopes: req.AllowedScopes,
+		DisplayName: req.DisplayName, RootScopeLabel: req.RootScopeLabel,
+		OwnerPrincipalID: delegation.OwnerPrincipalID, GrantedBy: delegation.OwnerPrincipalID,
+		InstallerPrincipalID: caller.PrincipalID,
+		// This delegation authorizes the agent ceiling, not module capabilities.
+		Scope: &InstallationScope{},
+	}
+	// All creation paths resolve the same declared binding before opening the
+	// tenant transaction. A pending job needs that identity to mint its context.
+	if _, err := s.prepareInstallation(ctx, params); err != nil {
+		return nil, err
+	}
 	var result *ModuleInstallationResult
 	err = s.store.WithOrgTx(ctx, org.Id, func(ctx context.Context) error {
 		var err error
-		result, err = store.ReconcileModuleInstallation(ctx, &InstallSolutionParams{
-			OrgID: org.Id, AgentIdentifier: req.AgentIdentifier, TargetID: req.TargetID,
-			RoleID: req.RoleID, AllowedAudiences: req.AllowedAudiences, AllowedScopes: req.AllowedScopes,
-			DisplayName: req.DisplayName, RootScopeLabel: req.RootScopeLabel,
-			OwnerPrincipalID: delegation.OwnerPrincipalID, GrantedBy: delegation.OwnerPrincipalID,
-			InstallerPrincipalID: caller.PrincipalID,
-		}, delegation.RolePermissions, apply)
+		result, err = store.ReconcileModuleInstallation(ctx, params, delegation.RolePermissions, apply)
 		if err != nil {
 			return err
 		}

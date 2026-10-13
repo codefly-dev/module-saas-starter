@@ -29,6 +29,7 @@ import type {
 	DatasourceStatusName,
 	DatasourceView,
 	DomainView,
+	SourceReconcileReceipt,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,
 	SourceSyncTriggerName,
@@ -286,14 +287,33 @@ export function datasourceClientOverTransport(
 		async migrateGitHubSourceToApp(orgId, id) {
 			await client.migrateGitHubSourceToApp({ orgId, id });
 		},
-		async syncSource(orgId, id, accessToken) {
-			const response = await client.syncSource({
+		async reconcileSource(orgId, id, effectId) {
+			// The identity travels in the request rather than only in the
+			// effect-id header: the host normalizes the two carriers into one
+			// before it hashes the request, and the body is the carrier a
+			// gateway hop cannot drop.
+			const response = await client.reconcileSource({
 				orgId,
-				id,
-				...(accessToken ? { accessToken } : {}),
+				sourceId: id,
+				effectId,
 			});
 			notifySourceSyncRequested(id);
-			return response.jobId;
+			return toReconcileReceipt(response);
+		},
+		async lookupReconcileSource(effectId) {
+			try {
+				return toReconcileReceipt(
+					await client.lookupReconcileSource({ effectId }),
+				);
+			} catch (error) {
+				// NotFound means the host holds no pass under this identity — the
+				// attempt row it would have read is the only thing that knows which
+				// source an effect names. That is an answer, so it resolves; it is
+				// NOT "the pass did not commit", which is what a committed receipt's
+				// absence under a known identity reads as ("unknown").
+				if (ConnectError.from(error).code === Code.NotFound) return undefined;
+				throw error;
+			}
 		},
 		async reconnectSource(orgId, id, accessToken) {
 			const response = await client.syncSource({
@@ -323,6 +343,24 @@ export function datasourceClientOverTransport(
 		async deleteSource(orgId, id) {
 			await client.deleteSource({ orgId, id });
 		},
+	};
+}
+
+/**
+ * One reconcile receipt out of protobuf. The status is a closed pair on the
+ * wire and is narrowed here rather than cast: an older or newer host sending a
+ * third word must not arrive in a view typed as one of two, so anything that is
+ * not "committed" reads as the inconclusive one.
+ */
+function toReconcileReceipt(response: {
+	effectId: string;
+	status: string;
+	jobId: string;
+}): SourceReconcileReceipt {
+	return {
+		effectId: response.effectId,
+		status: response.status === "committed" ? "committed" : "unknown",
+		jobId: response.jobId,
 	};
 }
 

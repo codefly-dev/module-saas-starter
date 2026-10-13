@@ -24,6 +24,10 @@ import {
   buildFrontendServiceAllowlist,
   defineFrontend,
   definePlugin,
+	encodeFrontendServicePath,
+	frontendServiceTargetPath,
+	isConnectProcedurePath,
+	isFrontendServicePath,
 	resolveFrontendAppearance,
 	type FrontendAppearanceDefinition,
   type FrontendPlugin,
@@ -220,8 +224,24 @@ deterministically ordered, immutable service inventory. Validation rejects
 unknown fields, unsafe identifiers or paths, unsupported protocols, missing or
 invalid compatibility metadata, duplicate aliases, and ambiguous routes.
 
+`routePrefix` is the absolute prefix the alias's relative paths land under. A
+`connect` requirement may instead declare `/`, the origin root, which is where
+the Connect protocol puts a procedure; a `rest` requirement declaring it is
+rejected.
+
 This metadata does not resolve Codefly bindings, grant network access, expose
 backend URLs, or make the frontend authoritative for backend compatibility.
+
+The four transport predicates are the relative-path rule itself, exported
+because both halves of the transport have to agree on it:
+`isFrontendServicePath` (safe segments, with a Google custom verb allowed on the
+last one), `isConnectProcedurePath` (one `<fully.qualified.Service>/<Method>`),
+`encodeFrontendServicePath` (percent-encoded segments with a custom verb's colon
+left literal) and `frontendServiceTargetPath` (where a declared prefix and a
+relative path land upstream). The browser transport in
+`@codefly-dev/saas-plugin-react` and the host's BFF both read them, so a route
+one admits is one the other forwards. See
+[the BFF contract](frontend-plugin-bff-contract.md).
 
 ## Logical application bindings and allowlist
 

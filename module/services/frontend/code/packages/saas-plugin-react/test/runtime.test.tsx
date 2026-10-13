@@ -227,6 +227,13 @@ describe("public plugin React runtime", () => {
 		"traffic%2fprivate",
 		"traffic?target=other",
 		"traffic#fragment",
+		// A colon separates a custom verb from its resource, so it is carried on
+		// the last segment and refused anywhere else.
+		"records:recover/commands",
+		"records:recover:again",
+		":recover",
+		"records:",
+		"records:Recover",
 	])("rejects an unsafe product path '%s'", async (path) => {
 		const service = createPluginRuntime({ getAccessToken: () => null }).service(
 			"example",
@@ -235,6 +242,61 @@ describe("public plugin React runtime", () => {
 		await expect(service.request(path)).rejects.toMatchObject({
 			code: "invalid_path",
 		});
+	});
+
+	it.each([
+		["records:recover", "/api/plugins/example/api/records:recover"],
+		[
+			"records/record-1/commands:recover",
+			"/api/plugins/example/api/records/record-1/commands:recover",
+		],
+		[
+			"records/record-1/interactions/interaction-1:respond",
+			"/api/plugins/example/api/records/record-1/interactions/interaction-1:respond",
+		],
+		["triggers/nightly:fire", "/api/plugins/example/api/triggers/nightly:fire"],
+	])(
+		"carries the custom-verb route '%s' with its colon literal",
+		async (path, expected) => {
+			// `encodeURIComponent` would spell the colon `%3A`, which is a
+			// different resource: the custom-verb form is only reachable with the
+			// separator literal.
+			const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+				void args;
+				return Response.json({ ok: true });
+			});
+			const service = createPluginRuntime({
+				getAccessToken: () => "host-token",
+				fetch: fetchMock as typeof fetch,
+			}).service("example", "api");
+
+			const response = await service.request(path, { method: "POST" });
+
+			expect(await response.json()).toEqual({ ok: true });
+			expect(fetchMock.mock.calls[0]?.[0]).toBe(expected);
+			expect(
+				new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("authorization"),
+			).toBe("Bearer host-token");
+		},
+	);
+
+	it("carries a connect procedure as two safe segments", async () => {
+		const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+			void args;
+			return Response.json({ ok: true });
+		});
+		const service = createPluginRuntime({
+			getAccessToken: () => "host-token",
+			fetch: fetchMock as typeof fetch,
+		}).service("example", "procedures");
+
+		await service.request("example.records.v1.RecordService/RecoverRecord", {
+			method: "POST",
+		});
+
+		expect(fetchMock.mock.calls[0]?.[0]).toBe(
+			"/api/plugins/example/procedures/example.records.v1.RecordService/RecoverRecord",
+		);
 	});
 
 	it("rejects unsafe plugin and alias identifiers before creating a transport", () => {

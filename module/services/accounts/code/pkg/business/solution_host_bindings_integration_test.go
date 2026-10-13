@@ -4,16 +4,16 @@ package business_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"accounts/internal/deliverytest"
+	"accounts/pkg/business"
+
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/google/uuid"
-
-	"accounts/pkg/business"
 )
 
 // The reconciler against Postgres. The row lock, the partial unique index on the
@@ -43,23 +43,11 @@ func (d *deliveredSet) put(t *testing.T, document *solutionhost.SolutionHostBind
 	}}
 }
 
-// The signer identity this test host attests delivery as. It is a keyless
-// certificate SAN in the shape a workflow identity takes, because that is what a
-// real BundleVerifier returns and what the host's signer policy is keyed by.
-const testSignerIdentity = "https://signer.example/acme-release@refs/heads/main"
-
-// testBundleVerifier stands in for sigstore-go. A real bundle needs a trust
-// root, a transparency-log entry and a certificate that expires, so what is
-// exercised here is the host's ORDERING — verify, then admit — rather than the
-// cryptography, which has its own unit tests at the seam.
-type testBundleVerifier struct{ signer string }
-
-func (v testBundleVerifier) VerifyBundle(context.Context, []byte, json.RawMessage) (string, error) {
-	return v.signer, nil
-}
+// Attribution uses the pinned key ID, independent of the host's label.
+const testSignerIdentity = "example-release"
 
 // testCarrier wraps a document in the signed carrier delivery ships: the
-// canonical bytes verbatim, plus a bundle over them. Admission takes only
+// canonical bytes verbatim, plus a DSSE envelope over them. Admission takes only
 // verified values, so a mount that handed over bare documents would be refused —
 // which is the behaviour TestSolutionHostBindingRefusesAnUnsignedDocument pins.
 func testCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []byte {
@@ -67,19 +55,11 @@ func testCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []byt
 	// CanonicalBytes, not Marshal: the signing input is the canonical JSON, and
 	// PresenceFromVerified refuses a payload that is not the canonical encoding
 	// of the document it decodes to.
-	canonical, err := document.CanonicalBytes()
+	canonical, err := solutionhost.SignedPayload(document)
 	if err != nil {
 		t.Fatalf("canonical bytes for %s: %v", document.Binding, err)
 	}
-	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-		Schema:   solutionhost.SchemaSignedV1,
-		Document: canonical,
-		Bundle:   json.RawMessage(solutionhost.FixtureBundle),
-	})
-	if err != nil {
-		t.Fatalf("marshal carrier for %s: %v", document.Binding, err)
-	}
-	return carrier
+	return deliverytest.Carrier(t, canonical, testSignerIdentity)
 }
 
 const testHostCoordinate = "acme/test/eu-west-1"
@@ -175,7 +155,7 @@ func newTestReconciler(t *testing.T, source business.SolutionHostBindingSource) 
 	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
 		business.SolutionHostBindingReconcilerConfig{
 			Source:          source,
-			Verifier:        testBundleVerifier{signer: testSignerIdentity},
+			Verifier:        deliverytest.Verifier(t, map[string][]string{testSignerIdentity: {testOwnershipDomain}}),
 			Coordinate:      testHostCoordinate,
 			Domains:         []string{testOwnershipDomain},
 			DomainsBySigner: map[string][]string{testSignerIdentity: {testOwnershipDomain}},
@@ -920,8 +900,10 @@ func testReconcilerAcceptingDomains(
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
 		business.SolutionHostBindingReconcilerConfig{
-			Source:          source,
-			Verifier:        testBundleVerifier{signer: testSignerIdentity},
+			Source: source,
+			// The key is pinned for every domain the host grants it, so only
+			// the rule under test can refuse.
+			Verifier:        deliverytest.Verifier(t, map[string][]string{testSignerIdentity: domains}),
 			Coordinate:      testHostCoordinate,
 			Domains:         domains,
 			DomainsBySigner: map[string][]string{testSignerIdentity: domains},

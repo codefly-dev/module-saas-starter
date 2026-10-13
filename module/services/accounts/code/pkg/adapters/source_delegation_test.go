@@ -10,10 +10,11 @@ import (
 	"connectrpc.com/connect"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -32,16 +33,15 @@ const (
 	delegationID     = "99999999-9999-4999-8999-999999999999"
 )
 
-// delegationPrincipals declares a module bound to another tenant, without
-// cross_tenant, whose "source-sync" binding accepts source delegations — the
-// delegation alone admits the delegation's organization — and a second module
-// without one.
-const delegationPrincipals = `{"docstore":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleWorkContextTenant + `","operation_audiences":{` +
+// The shared module permits installation in the delegation's organization.
+// The live-installation fixture supplies that organization's consent separately
+// from the person's source delegation.
+const delegationPrincipals = `{"docstore":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleWorkContextTenant + `","cross_tenant":true,"operation_audiences":{` +
 	`"source-sync":{"audience":"ingestservice",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 	`"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}},` +
-	`"reports":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + delegationOrg + `"}}`
+	`"reports":{"workload":{"service_account":"reports","namespace":"acme-prod","container":"app"},"tenant":"` + delegationOrg + `"}}`
 
 type sourceDelegationMemoryStore struct {
 	business.Store
@@ -52,6 +52,12 @@ type sourceDelegationMemoryStore struct {
 
 func (s *sourceDelegationMemoryStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
+}
+
+// OrganizationIDExists answers for the delegation's organization, the one tenant
+// a module identity is minted in here.
+func (s *sourceDelegationMemoryStore) OrganizationIDExists(_ context.Context, id string) (bool, error) {
+	return id == delegationOrg, nil
 }
 
 func (s *sourceDelegationMemoryStore) GetSourceDelegation(_ context.Context, orgID, id string) (*business.SourceDelegation, error) {
@@ -124,7 +130,7 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 	t.Helper()
 	previous := service
 	t.Cleanup(func() { service = previous })
-	registry, err := business.ParseModulePrincipalRegistry(delegationPrincipals)
+	registry, err := moduleregistrytest.Parse(delegationPrincipals)
 	require.NoError(t, err)
 	binding := registry[business.ModulePrincipalID("docstore")].OperationAudiences["source-sync"]
 	store := &sourceDelegationMemoryStore{
@@ -140,21 +146,21 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 	}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	secrets, err := business.ParseRegistrationSecrets("docstore:" + registrationDigest("docstore-secret") +
-		",reports:" + registrationDigest("reports-secret"))
-	require.NoError(t, err)
-	svc.SetModuleIdentitySecrets(secrets)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
+	bindModuleExecution(t, svc, registry)
 	audit := &validatingAudit{}
 	svc.SetAuditEmitter(audit)
 	WithService(svc)
 	installModuleWorkContextAuthority(t)
+	// The person's revision is the one the delegation's facts carry, read live,
+	// exactly as the host answers it from the same rows.
+	workContextSingleton.seals.(*sealAnswersFake).revisionFrom = func() uint64 { return store.facts.EffectiveRevision() }
 	return store, audit
 }
 
-func mintSourceContext(prefix, secret string, ref business.SourceDelegationRef) (*gen.ModuleMintSourceOperationContextResponse, error) {
-	req := &gen.ModuleMintSourceOperationContextRequest{Prefix: prefix, Secret: secret}
+func mintSourceContext(prefix, token string, ref business.SourceDelegationRef) (*gen.ModuleMintSourceOperationContextResponse, error) {
+	req := &gen.ModuleMintSourceOperationContextRequest{Prefix: prefix, ServiceAccountToken: token}
 	if ref.DelegationID != "" {
 		req.Delegation = &gen.ModuleMintSourceOperationContextRequest_DelegationId{DelegationId: ref.DelegationID}
 	} else {
@@ -165,14 +171,9 @@ func mintSourceContext(prefix, secret string, ref business.SourceDelegationRef) 
 
 func verifySourceContext(t *testing.T, token string) *basev0.WorkContextV1 {
 	t.Helper()
-	parsed, err := workcontext.ParseWorkContextToken(token)
+	verified, err := WorkContextSingleton().verifyFor(context.Background(), token, "ingestservice")
 	require.NoError(t, err)
-	verified, err := WorkContextSingleton().verifier.Verify(parsed, workcontext.WorkContextExpectations{
-		Issuer:   WorkContextSingleton().issuer,
-		Audience: "ingestservice",
-	})
-	require.NoError(t, err)
-	return verified
+	return verified.Context()
 }
 
 func requireRefusal(t *testing.T, err error, code codes.Code, reason string) {
@@ -200,7 +201,7 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			_, audit := installSourceDelegationService(t)
 			module := business.ModulePrincipalID("docstore")
 
-			resp, err := mintSourceContext("docstore", "docstore-secret", ref)
+			resp, err := mintSourceContext("docstore", moduleToken(t, "docstore"), ref)
 			require.NoError(t, err)
 			require.Equal(t, module, resp.GetPrincipalId())
 			require.Equal(t, delegationPerson, resp.GetOwnerPrincipalId())
@@ -226,7 +227,7 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			requireScopes(t, want, actor.GetGrantedScopes())
 
 			// Neither a module identity nor anything the capability surface accepts.
-			_, err = WorkContextSingleton().VerifyModuleWorkContext(resp.GetToken())
+			_, err = WorkContextSingleton().VerifyModuleWorkContext(context.Background(), resp.GetToken())
 			require.Equal(t, codes.Unauthenticated, status.Code(err))
 
 			used := audit.of(business.EventSourceDelegationUsed)
@@ -234,6 +235,13 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			require.Equal(t, module, used[0].ActorID)
 			require.Equal(t, delegationOrg, used[0].OrgID)
 			require.Equal(t, delegationSource, used[0].ResourceID)
+			payload := used[0].Payload
+			require.Equal(t, executiontest.Image("docstore"), payload["running_digest"],
+				"the mint names the build that obtained the delegated capability")
+			require.NotEmpty(t, payload["pod_uid"])
+			for _, key := range []string{"namespace", "service_account", "pod", "pod_uid", "container", "running_digest", "build_incarnation"} {
+				delete(payload, key)
+			}
 			require.Equal(t, map[string]any{
 				"delegation_id": delegationID, "source_id": delegationSource, "principal_id": delegationPerson,
 				"module": "docstore", "binding_id": "source-sync",
@@ -241,7 +249,7 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 				// A plain mint is never the receipt-lookup narrowing, and the
 				// trail says so rather than leaving it to be inferred.
 				"lookup": false,
-			}, used[0].Payload)
+			}, payload)
 		})
 	}
 }
@@ -254,26 +262,26 @@ func TestMintSourceOperationContextRefusals(t *testing.T) {
 	})
 	t.Run("another module's delegation", func(t *testing.T) {
 		installSourceDelegationService(t)
-		_, err := mintSourceContext("reports", "reports-secret", business.SourceDelegationRef{DelegationID: delegationID})
+		_, err := mintSourceContext("reports", moduleToken(t, "reports"), business.SourceDelegationRef{DelegationID: delegationID})
 		requireRefusal(t, err, codes.PermissionDenied, SourceDelegationInvalidReason)
 	})
 	t.Run("unknown delegation", func(t *testing.T) {
 		installSourceDelegationService(t)
-		_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{DelegationID: delegationSource})
+		_, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{DelegationID: delegationSource})
 		requireRefusal(t, err, codes.PermissionDenied, SourceDelegationInvalidReason)
 	})
 	t.Run("missing for a source", func(t *testing.T) {
 		installSourceDelegationService(t)
-		_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{SourceID: delegationPerson})
+		_, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{SourceID: delegationPerson})
 		requireRefusal(t, err, codes.FailedPrecondition, SourceDelegationMissingReason)
 	})
 	t.Run("revoked", func(t *testing.T) {
 		store, _ := installSourceDelegationService(t)
 		store.revoke(t)
-		_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{DelegationID: delegationID})
+		_, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{DelegationID: delegationID})
 		requireRefusal(t, err, codes.PermissionDenied, SourceDelegationRevokedReason)
 		// By source, a revoked delegation leaves the source with none.
-		_, err = mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{SourceID: delegationSource})
+		_, err = mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{SourceID: delegationSource})
 		requireRefusal(t, err, codes.FailedPrecondition, SourceDelegationMissingReason)
 	})
 }
@@ -293,7 +301,7 @@ func TestSourceDelegationReasonsAreTheWireContract(t *testing.T) {
 func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 	mint := func(t *testing.T) (*sourceDelegationMemoryStore, *gen.CheckAuthorizationRevisionRequest) {
 		store, _ := installSourceDelegationService(t)
-		resp, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{DelegationID: delegationID})
+		resp, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{DelegationID: delegationID})
 		require.NoError(t, err)
 		request := revisionRequestFromClaims(verifySourceContext(t, resp.GetToken()))
 		require.NoError(t, Validate(request))
@@ -329,6 +337,19 @@ func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
+	t.Run("refuses without the binding the context sealed", func(t *testing.T) {
+		_, request := mint(t)
+		request.OperationBindingId = nil
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses a binding naming another module", func(t *testing.T) {
+		_, request := mint(t)
+		other := business.SourceDelegationBindingID(delegationID, "reports")
+		request.OperationBindingId = &other
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
 	t.Run("refuses another tenant", func(t *testing.T) {
 		store, request := mint(t)
 		// The module's declared tenancy is never consulted, so the refusal is
@@ -359,7 +380,7 @@ func TestMintSourceOperationContextRevokesWhatNoLongerHolds(t *testing.T) {
 			store, audit := installSourceDelegationService(t)
 			test.mutate(store)
 
-			_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{SourceID: delegationSource})
+			_, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{SourceID: delegationSource})
 			requireRefusal(t, err, codes.PermissionDenied, SourceDelegationRevokedReason)
 
 			require.False(t, store.delegations[delegationID].Active())
@@ -377,27 +398,24 @@ func TestMintSourceOperationContextRevokesWhatNoLongerHolds(t *testing.T) {
 // bound to another tenant without cross_tenant cannot exchange a parent in this
 // one, and the same module declared cross_tenant can.
 func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *testing.T) {
-	_, facts, client, _ := sourceReadFixture(t)
-	parentToken, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{
-		Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
-		TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222",
-		AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
+	_, _, client, _ := sourceReadFixture(t)
+	parentToken, _ := mintTestCapability(t, workContextSingleton, testCapability{
+		Audience: "example", Tenant: readOrg, Owner: readOwner,
+		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
+		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
 	})
-	require.NoError(t, err)
 	exchange := func(crossTenant bool) error {
 		registry := installedOperationRegistry(true)
 		grant := registry[business.ModulePrincipalID("example")]
 		grant.Tenant, grant.CrossTenant = moduleWorkContextTenant, crossTenant
 		registry[business.ModulePrincipalID("example")] = grant
-		service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+		service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 		service.SetModuleCapabilities(nil, nil, registry)
-		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: moduleWorkContextTenant})
-		require.NoError(t, err)
-		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "generate", ParentWorkContextToken: parentToken.Encoded()})
-		req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
+		module := mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg)
+		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "generate", ParentWorkContextToken: parentToken})
+		req.Header().Set(workContextHeader, module)
 		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
-		_, err = client.ExchangeDelegatedOperationAudience(context.Background(), req)
+		_, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
 		return err
 	}
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(exchange(false)))

@@ -3,8 +3,10 @@ import {
 	Building2,
 	CreditCard,
 	Flag,
+	KeyRound,
 	Layers,
 	ListChecks,
+	Plug,
 	ShieldCheck,
 	Workflow,
 } from "lucide-react";
@@ -64,6 +66,20 @@ const sections = [
 			"Inspect the domain-event catalog, subscribers, relay lag, and dead letters.",
 		href: "/admin/platform/events",
 		icon: Workflow,
+	},
+	{
+		title: "Unattended Work",
+		description:
+			"Bind the identity work no person started runs under, and read the trigger each source declares.",
+		href: "/admin/platform/unattended-work",
+		icon: KeyRound,
+	},
+	{
+		title: "Plugin Transport",
+		description:
+			"Send each shape a module's bindings produce through the host's plugin transport, and read the answer.",
+		href: "/admin/platform/plugin-transport",
+		icon: Plug,
 	},
 ];
 

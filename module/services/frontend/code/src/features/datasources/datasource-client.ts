@@ -25,7 +25,7 @@ const teams = createClient(TeamService, apiTransport);
  * layout (see readPublicRuntimeConfig). The host holds no domain content, so it
  * has no noun of its own to fall back on: undefined means undeclared, and every
  * read and grant below refuses rather than guessing. It mirrors the `resources`
- * a module declares in MODULE_PRINCIPALS, which is what the server matches
+ * a module's grant lists in the module envelope, which is what the server matches
  * grants against.
  *
  * This used to be inlined from the build, which for a deployed image held

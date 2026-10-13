@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/codefly-dev/core/solutionhost"
 )
@@ -29,9 +30,9 @@ import (
 // read out of a document, because "an envelope a document carried would be a
 // document declaring its own ceiling" — and ValidateAgainst tests a document's
 // grants and approved build against the envelope's, so an envelope assembled
-// from the delivery tree answers itself. The host reads it from the trust anchor,
-// a platform-owned path neither delivery writer can write; see
-// infra.ReadSolutionAuthorityEnvelope.
+// from the delivery tree answers itself. The host reads the CURRENT module
+// envelope — the record a platform super_admin writes (module_envelope.go) —
+// on every call, and projects it for the document being judged.
 //
 // THIS HOST APPLIES AUTHORITY TO NOTHING, and that is stated rather than
 // defaulted. core's ActivationRequest requires either the applied authority
@@ -87,7 +88,9 @@ var (
 // of them is a second answer to "what does this host accept".
 type SolutionAuthorityActivation struct {
 	reconciler *SolutionHostBindingReconciler
-	envelope   solutionhost.Envelope
+	// envelopes is where the CURRENT ceiling is read from, on every call. Nil
+	// is a host with no ceiling: it activates nothing.
+	envelopes ModuleEnvelopeSource
 }
 
 // newSolutionAuthorityActivation builds the activation reader, which the
@@ -96,19 +99,35 @@ type SolutionAuthorityActivation struct {
 // reconciler's would be a second answer to what this host accepts. Reach it
 // through SolutionHostBindingReconciler.AuthorityActivation.
 //
-// A zero-revision envelope is accepted and makes every activation refuse with
-// ErrSolutionAuthorityCeilingUnavailable, rather than refusing at construction.
+// No envelope — no source, or none written yet — is accepted and makes every
+// activation refuse with ErrSolutionAuthorityCeilingUnavailable, rather than
+// refusing at construction.
 // The distinction matters: a host that reconciles presence and has no ceiling
 // delivered is a correct, complete deployment — authority is simply not a
 // question it can answer — while a host that refused to start would make the
 // presence half depend on the authority half being configured.
 func newSolutionAuthorityActivation(
-	reconciler *SolutionHostBindingReconciler, envelope solutionhost.Envelope,
+	reconciler *SolutionHostBindingReconciler, envelopes ModuleEnvelopeSource,
 ) (*SolutionAuthorityActivation, error) {
 	if reconciler == nil {
 		return nil, errors.New("solution authority activation requires the declared-presence reconciler, which holds this host's coordinate, domains, signer policy and verifier")
 	}
-	return &SolutionAuthorityActivation{reconciler: reconciler, envelope: envelope}, nil
+	return &SolutionAuthorityActivation{reconciler: reconciler, envelopes: envelopes}, nil
+}
+
+// currentEnvelope reads the ceiling as it stands now. Nil with no error is a
+// host with no ceiling — no source wired, or no revision written — which
+// activates and grants nothing; an error is a ceiling that could not be
+// established, which a caller must not read as "none".
+func (a *SolutionAuthorityActivation) currentEnvelope(ctx context.Context) (*ModuleEnvelope, error) {
+	if a == nil || a.envelopes == nil {
+		return nil, nil
+	}
+	envelope, err := a.envelopes.CurrentModuleEnvelope(ctx)
+	if errors.Is(err, ErrModuleEnvelopeUnavailable) {
+		return nil, nil
+	}
+	return envelope, err
 }
 
 // Activate reports whether the delivered authority over binding and the
@@ -125,13 +144,21 @@ func (a *SolutionAuthorityActivation) Activate(
 	if a == nil || a.reconciler == nil {
 		return solutionhost.Activation{}, ErrSolutionAuthorityCeilingUnavailable
 	}
-	if a.envelope.Revision == 0 {
+	envelope, err := a.currentEnvelope(ctx)
+	if err != nil {
+		return solutionhost.Activation{}, fmt.Errorf("read the authority ceiling for binding %q: %w", binding, err)
+	}
+	if envelope == nil {
 		return solutionhost.Activation{}, fmt.Errorf("%w: binding %q", ErrSolutionAuthorityCeilingUnavailable, binding)
 	}
 
 	authority, err := a.deliveredAuthority(ctx, binding)
 	if err != nil {
 		return solutionhost.Activation{}, err
+	}
+	authorityDocument, err := authority.Document()
+	if err != nil {
+		return solutionhost.Activation{}, fmt.Errorf("read delivered authority over binding %q: %w", binding, err)
 	}
 	presence, err := a.deliveredPresence(ctx, binding)
 	if err != nil {
@@ -147,7 +174,7 @@ func (a *SolutionAuthorityActivation) Activate(
 		Presence:        presence,
 		Coordinate:      host.Coordinate,
 		Build:           build,
-		Envelope:        a.envelope,
+		Envelope:        envelope.authorityEnvelopeFor(authorityDocument),
 		DomainsBySigner: host.DomainsBySigner,
 		// The ownership domains this host ACCEPTS, which is a different
 		// question from which signer may speak for one. Core requires it for
@@ -255,9 +282,21 @@ var _ solutionhost.AppliedStateReader = (*appliedSolutionState)(nil)
 func (a *SolutionAuthorityActivation) deliveredAuthority(
 	ctx context.Context, binding string,
 ) (*solutionhost.DeliveredAuthority, error) {
-	delivered, err := a.verifiedAuthority(ctx)
+	inputs, err := a.readRegistryInputs(ctx)
 	if err != nil {
 		return nil, err
+	}
+	delivered, err := a.verifiedAuthorityIn(ctx, inputs.newestAuthority)
+	if err != nil {
+		return nil, err
+	}
+	withdrawn, err := a.withdrawnIn(inputs)
+	if err != nil {
+		return nil, err
+	}
+	if authority, gone := withdrawn[binding]; gone {
+		return nil, fmt.Errorf("%w: authority %q withdrew binding %q, and a withdrawal is terminal for it — a later generation or a new authority id does not reinstate it",
+			ErrSolutionAuthorityWithdrawn, authority, binding)
 	}
 	var live []*solutionhost.DeliveredAuthority
 	for _, one := range delivered {
@@ -289,7 +328,7 @@ type verifiedAuthorityDocument struct {
 	document  *solutionhost.AuthorityDocument
 }
 
-// verifiedAuthority re-verifies EVERY newest-generation authority row and
+// verifiedAuthorityIn re-verifies EVERY newest-generation authority row and
 // returns what it read, tombstones included.
 //
 // FAIL CLOSED OVER THE WHOLE READ rather than skipping the row. The binding a
@@ -305,13 +344,9 @@ type verifiedAuthorityDocument struct {
 // approved-build view treats it as the removal of a principal's entry. A helper
 // that dropped them would silently give the second caller the first caller's
 // answer.
-func (a *SolutionAuthorityActivation) verifiedAuthority(
-	ctx context.Context,
+func (a *SolutionAuthorityActivation) verifiedAuthorityIn(
+	ctx context.Context, records []*SolutionDeliveryRecord,
 ) ([]verifiedAuthorityDocument, error) {
-	records, err := a.newestDelivered(ctx, SolutionDeliveryAuthority)
-	if err != nil {
-		return nil, err
-	}
 	read := make([]verifiedAuthorityDocument, 0, len(records))
 	for _, record := range records {
 		delivered, err := solutionhost.VerifyDeliveredAuthority(ctx, carrierOf(record), a.reconciler.verifier)
@@ -329,30 +364,219 @@ func (a *SolutionAuthorityActivation) verifiedAuthority(
 	return read, nil
 }
 
-// liveAuthorityDocuments returns the authority documents that are in force:
-// every re-verified document that is not a tombstone.
+// registryInputs is everything one decision about delivered authority reads
+// from the store: the applied presence (whose admitted owners decide which
+// tombstones count), the whole authority history, and the newest authority and
+// presence generations.
 //
-// A tombstone is DROPPED rather than reported, and that is the removal the
-// approved-build view needs — a withdrawn authority leaves its principals with
-// no entry, so they go back to being unknown and are refused. Reporting it as
-// an error instead would make one withdrawal stop the whole view from being
-// rebuilt, which keeps the withdrawn build serving: the opposite of what the
-// withdrawal asked for.
-func (a *SolutionAuthorityActivation) liveAuthorityDocuments(
-	ctx context.Context,
-) ([]*solutionhost.AuthorityDocument, error) {
-	read, err := a.verifiedAuthority(ctx)
-	if err != nil {
-		return nil, err
+// ONE SNAPSHOT. They are read in a single repeatable-read, read-only
+// transaction, and every answer the decision gives — which bindings are
+// withdrawn, which documents are in force, which workload a principal runs as —
+// is derived from that one read. Read separately, a binding first admitted on
+// another replica between the owner read and the presence read is derived from
+// its presence with a withdrawal map that skipped its tombstone (the binding had
+// no owner yet), resurrecting authority no committed state grants.
+type registryInputs struct {
+	applied          []*SolutionHostBindingRecord
+	authorityHistory []*SolutionDeliveryRecord
+	newestAuthority  []*SolutionDeliveryRecord
+	newestPresence   []*SolutionDeliveryRecord
+	// delivered is the inbox's size in this same snapshot, nil where the store
+	// cannot count: the marker a registry derived from these inputs carries.
+	delivered *uint64
+}
+
+func (a *SolutionAuthorityActivation) readRegistryInputs(ctx context.Context) (*registryInputs, error) {
+	service := a.reconciler.service
+	if service.deliveryStore == nil {
+		return nil, fmt.Errorf("%w: this host has no delivery inbox wired", ErrSolutionAuthorityCeilingUnavailable)
 	}
-	live := make([]*solutionhost.AuthorityDocument, 0, len(read))
-	for _, one := range read {
-		if one.document.Removed {
+	inputs := &registryInputs{}
+	if err := service.store.WithControlPlaneReadSnapshot(ctx, func(ctx context.Context) error {
+		var err error
+		if inputs.applied, err = service.store.ListSolutionHostBindings(ctx); err != nil {
+			return fmt.Errorf("the applied presence: %w", err)
+		}
+		if inputs.authorityHistory, err = service.deliveryStore.ListDeliveredDocuments(ctx, SolutionDeliveryAuthority); err != nil {
+			return fmt.Errorf("the authority history: %w", err)
+		}
+		if inputs.newestAuthority, err = service.deliveryStore.ListNewestDeliveredDocuments(ctx, SolutionDeliveryAuthority); err != nil {
+			return fmt.Errorf("the newest authority: %w", err)
+		}
+		if inputs.newestPresence, err = service.deliveryStore.ListNewestDeliveredDocuments(ctx, SolutionDeliveryPresence); err != nil {
+			return fmt.Errorf("the newest presence: %w", err)
+		}
+		if counter, counts := service.deliveryStore.(SolutionDeliveryCounter); counts {
+			delivered, err := counter.CountDeliveredDocuments(ctx)
+			if err != nil {
+				return fmt.Errorf("the inbox's size: %w", err)
+			}
+			inputs.delivered = &delivered
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("read the delivered authority's inputs in one snapshot: %w", err)
+	}
+	return inputs, nil
+}
+
+// withdrawnIn returns every presence binding an ADMITTED tombstone in the
+// snapshot's WHOLE authority history withdrew, with the authority that
+// withdrew it.
+//
+// The whole history, not the newest generation per authority id: a withdrawal
+// is terminal for the binding, and the newest-per-id read hides it as soon as a
+// later generation of the SAME id is delivered. Nothing deletes from the inbox,
+// so the tombstone is still there to be read.
+//
+// ADMITTED means the tombstone could speak for the binding it names: it targets
+// THIS host's coordinate, and it speaks for the binding's OWNER — the ownership
+// domain of the presence generation this host ADMITTED and applied, from the
+// SAME snapshot's applied state, which core's lifecycle admission then holds
+// every later generation to. A delivered row is never ownership: a presence
+// generation core refused sits in the inbox and establishes nothing. A
+// tombstone asserting another domain, or another host, withdraws nothing here.
+// A binding with no applied presence in the snapshot has no owner, and a
+// tombstone over it waits — it is re-judged on every read, against the same
+// snapshot the binding's presence is derived from.
+//
+// Rows are decoded rather than re-verified, and that is deliberate: this is
+// independent of whether the newest documents still verify, so a document that
+// can no longer be verified can never hide a withdrawal. Only the fact that a
+// row WITHDRAWS is taken from it, which can only remove authority; an admitted
+// withdrawal survives an authority rename and its signer's later removal.
+func (a *SolutionAuthorityActivation) withdrawnIn(inputs *registryInputs) (map[string]string, error) {
+	owners := ownersOf(inputs.applied)
+	coordinate := a.reconciler.host.Coordinate
+	withdrawn := map[string]string{}
+	for _, record := range inputs.authorityHistory {
+		document, err := solutionhost.AuthorityFromVerified(record.Payload)
+		if err != nil {
+			return nil, fmt.Errorf("read delivered authority %s generation %d: %w", record.DocumentID, record.Generation, err)
+		}
+		if !document.Removed || document.Host.Coordinate != coordinate {
 			continue
 		}
-		live = append(live, one.document)
+		if owner, known := owners[document.PresenceBinding]; !known || owner != document.OwnershipDomain {
+			continue
+		}
+		if _, already := withdrawn[document.PresenceBinding]; !already {
+			withdrawn[document.PresenceBinding] = document.Authority
+		}
 	}
-	return live, nil
+	return withdrawn, nil
+}
+
+// ownersOf is each presence binding's OWNER: the ownership domain of the
+// generation this host admitted and applied. Only an admitted generation is
+// ever written to the applied state — the reconcile pass writes it under the
+// binding row lock after core's lifecycle admission — so a delivered row core
+// refused can never move it.
+func ownersOf(records []*SolutionHostBindingRecord) map[string]string {
+	owners := make(map[string]string, len(records))
+	for _, record := range records {
+		if record.Applied != nil && record.Applied.Domain != "" {
+			owners[record.BindingID] = record.Applied.Domain
+		}
+	}
+	return owners
+}
+
+// admittedBindingOwners reads the admitted owners for a decision that needs
+// nothing else from the applied state (receipt).
+func (s *Service) admittedBindingOwners(ctx context.Context) (map[string]string, error) {
+	records, err := s.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read the admitted presence owners: %w", err)
+	}
+	return ownersOf(records), nil
+}
+
+// ErrSolutionAuthoritySignerNotGranted reports an authority document whose
+// signer the host's CURRENT policy no longer lets speak for its ownership
+// domain, or whose domain the host no longer accepts. The signature still
+// verifies; the policy that made it authoritative has moved.
+var ErrSolutionAuthoritySignerNotGranted = errors.New("the authority's signer may no longer speak for its ownership domain on this host")
+
+// ErrSolutionAuthorityUnverifiable reports a newest authority document this
+// host can no longer verify. It grants nothing; it does not stop the others.
+var ErrSolutionAuthorityUnverifiable = errors.New("the delivered authority no longer verifies")
+
+// liveVerifiedAuthority is one authority document in force, with the signer
+// that delivered it.
+type liveVerifiedAuthority struct {
+	document *solutionhost.AuthorityDocument
+	signer   string
+}
+
+// liveAuthorityIn returns the authority documents in force, and the reasons the
+// others are not.
+//
+// ORDER IS THE POINT. The caller derives the withdrawals FIRST (withdrawnIn,
+// from the same snapshot) and hands them in, independently of the newest documents,
+// so nothing about a newest document — not even its failure to verify — can
+// stop a withdrawal being honoured, and one pass judges every document against
+// one reading of it. Then each newest
+// document is judged on its own: a tombstone is dropped; a document that no
+// longer verifies, is over a withdrawn binding, or whose signer the host's
+// current policy no longer admits for its domain is REFUSED, by name, and grants
+// nothing — while the rest stay in force. The only error is a read the store
+// could not answer, and that is the snapshot read's (readRegistryInputs).
+func (a *SolutionAuthorityActivation) liveAuthorityIn(
+	ctx context.Context, inputs *registryInputs, withdrawn map[string]string,
+) ([]liveVerifiedAuthority, []error) {
+	records := inputs.newestAuthority
+	host := a.reconciler.host
+	var (
+		live     []liveVerifiedAuthority
+		refusals []error
+	)
+	for _, record := range records {
+		delivered, err := solutionhost.VerifyDeliveredAuthority(ctx, carrierOf(record), a.reconciler.verifier)
+		if err != nil {
+			refusals = append(refusals, fmt.Errorf("%w: %s generation %d: %w", ErrSolutionAuthorityUnverifiable, record.DocumentID, record.Generation, err))
+			continue
+		}
+		document, err := delivered.Document()
+		if err != nil {
+			refusals = append(refusals, fmt.Errorf("%w: %s generation %d: %w", ErrSolutionAuthorityUnverifiable, record.DocumentID, record.Generation, err))
+			continue
+		}
+		if document.Removed {
+			continue
+		}
+		if authority, gone := withdrawn[document.PresenceBinding]; gone {
+			refusals = append(refusals, fmt.Errorf("%w: authority %q generation %d is over binding %q, which authority %q withdrew",
+				ErrSolutionAuthorityWithdrawn, document.Authority, document.Generation, document.PresenceBinding, authority))
+			continue
+		}
+		signer := delivered.DeliveredBy()
+		if !slices.Contains(host.Domains, document.OwnershipDomain) || !slices.Contains(host.DomainsBySigner[signer], document.OwnershipDomain) {
+			refusals = append(refusals, fmt.Errorf("%w: authority %q generation %d, signer %q, domain %q",
+				ErrSolutionAuthoritySignerNotGranted, document.Authority, document.Generation, signer, document.OwnershipDomain))
+			continue
+		}
+		live = append(live, liveVerifiedAuthority{document: document, signer: signer})
+	}
+	return live, refusals
+}
+
+// withdrawnPresenceIn is the presence bindings whose NEWEST delivered
+// generation in the snapshot is a tombstone. It narrows the cached registry
+// when the envelope cannot be read. Decoded, not re-verified, for the reason
+// withdrawnIn gives.
+func withdrawnPresenceIn(inputs *registryInputs) (map[string]bool, error) {
+	removed := map[string]bool{}
+	for _, record := range inputs.newestPresence {
+		document, err := solutionhost.PresenceFromVerified(record.Payload)
+		if err != nil {
+			return nil, fmt.Errorf("read delivered presence %s generation %d: %w", record.DocumentID, record.Generation, err)
+		}
+		if document.Removed {
+			removed[document.Binding] = true
+		}
+	}
+	return removed, nil
 }
 
 // deliveredPresence reads the newest delivered presence document for one
@@ -404,8 +628,7 @@ func (a *SolutionAuthorityActivation) newestDelivered(
 // is refused by the same check that refuses one off the wire.
 func carrierOf(record *SolutionDeliveryRecord) *solutionhost.Signed {
 	return &solutionhost.Signed{
-		Schema:   solutionhost.SchemaSignedV1,
 		Document: record.Payload,
-		Bundle:   record.Bundle,
+		Envelope: record.Bundle,
 	}
 }

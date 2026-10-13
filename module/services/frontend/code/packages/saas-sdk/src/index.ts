@@ -6,6 +6,7 @@ export {
 	type MetricId,
 	type ResolvedWidget,
 	runDashboard,
+	type WidgetValueFormat,
 } from "./datagraph/dashboard.js";
 export {
 	assertAuditScopeContract,
@@ -72,6 +73,7 @@ export { WebhookService } from "../generated/typescript/src/gen/saas/accounts/v1
 export type {
 	Dashboard,
 	DashboardLayout,
+	DashboardSection,
 	DataGraph,
 	DerivedMetric,
 	EventDeclaration,
@@ -83,6 +85,7 @@ export type {
 	MetricFilter,
 	MetricGroupBy,
 	MetricOperation,
+	MetricValueFormat,
 	MetricWidget,
 	SourceMetric,
 	WidgetVisualization,

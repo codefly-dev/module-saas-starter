@@ -29,19 +29,23 @@ import (
 // Field names use short JSON keys matching the backend minter.
 type accessClaims struct {
 	jwt.RegisteredClaims
-	OrgID                 string              `json:"org,omitempty"`
-	OrgRole               string              `json:"or,omitempty"`
-	PlatformRole          string              `json:"pr,omitempty"`
-	ScopedRoles           map[string][]string `json:"sr,omitempty"`
-	ScopedRolesTruncated  bool                `json:"srt,omitempty"`
-	SessionID             string              `json:"sid"`
-	ActingAsUserID        string              `json:"acting,omitempty"`
-	MFASatisfied          bool                `json:"mfa,omitempty"`
-	AuthenticationMethods []string            `json:"amr,omitempty"`
-	AuthenticationTime    *jwt.NumericDate    `json:"auth_time,omitempty"`
-	AssuranceLevel        string              `json:"acr,omitempty"`
-	MFAVerifiedAt         *jwt.NumericDate    `json:"mfa_at,omitempty"`
-	Act                   *actorClaim         `json:"act,omitempty"`
+	OrgID                string              `json:"org,omitempty"`
+	OrgRole              string              `json:"or,omitempty"`
+	PlatformRole         string              `json:"pr,omitempty"`
+	ScopedRoles          map[string][]string `json:"sr,omitempty"`
+	ScopedRolesTruncated bool                `json:"srt,omitempty"`
+	SessionID            string              `json:"sid"`
+	// FamilyID is the refresh family, stable across the rotation that changes
+	// `sid`. A sign-out revokes it, so it is what matches an access token minted
+	// before the last refresh.
+	FamilyID              string           `json:"fid"`
+	ActingAsUserID        string           `json:"acting,omitempty"`
+	MFASatisfied          bool             `json:"mfa,omitempty"`
+	AuthenticationMethods []string         `json:"amr,omitempty"`
+	AuthenticationTime    *jwt.NumericDate `json:"auth_time,omitempty"`
+	AssuranceLevel        string           `json:"acr,omitempty"`
+	MFAVerifiedAt         *jwt.NumericDate `json:"mfa_at,omitempty"`
+	Act                   *actorClaim      `json:"act,omitempty"`
 	// AuthorizedParty is the registered client the token was issued to (OIDC
 	// `azp`). Absent on the host's own web sessions, which belong to no client.
 	AuthorizedParty string `json:"azp,omitempty"`
@@ -184,6 +188,22 @@ func (s *ExtAuthz) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3
 		token := strings.TrimPrefix(auth, "Bearer ")
 		if token != auth {
 			if strings.HasPrefix(token, "cfly_sk_") {
+				// A tool endpoint is an OAuth protected resource, and an API key
+				// cannot be bound to one: it carries no audience at all, so there
+				// is no resource for it to name and nothing for the confinement
+				// below to judge. Refused HERE, because this branch RETURNS — the
+				// resource rules live in checkJWT, so a key reached a tool path
+				// by never being asked the question.
+				//
+				// Answered like every other refusal at this endpoint: 401 with
+				// the challenge, so a client re-authorizes for the resource
+				// rather than reading "forbidden" and stopping.
+				if isSolutionToolRequestPath(httpReq.GetPath()) {
+					recordJWTRejection(ctx, jwtRejectionGenericAudience)
+					return deny(401, "this endpoint requires a token issued for its own "+
+						"resource; an API key names no resource. Authorize for this "+
+						"resource and retry"), nil
+				}
 				return s.checkAPIKey(ctx, token)
 			}
 			return s.checkJWT(ctx, token, httpReq.GetPath())
@@ -313,12 +333,21 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		}
 	}
 
-	// Session-scoped revocation (admin session-kill). A single marker keyed by
-	// the `sid` claim invalidates every access token in the session, covering
-	// the path where the admin never held the victim's token. Same fail-closed
-	// stance as the jti check.
-	if claims.SessionID != "" {
-		revoked, err := s.revoker.RevokedSession(ctx, claims.SessionID)
+	// Session- and family-scoped revocation. One marker invalidates every access
+	// token it covers, which is what the paths needing it have in common: the
+	// admin never held the victim's token (session-kill), and the token predates
+	// the last refresh (sign-out). Same fail-closed stance as the jti check.
+	//
+	// BOTH keys, because `sid` changes on every refresh and the family does not.
+	// Checking the session alone let an access token minted before the last
+	// refresh outlive the sign-out that revoked its family. accounts stamps the
+	// family on every access token in the chain and writes the same marker on
+	// logout; the two sides are held together by TestAccessClaimsMatchTheGateway.
+	for _, revocationKey := range []string{claims.SessionID, claims.FamilyID} {
+		if revocationKey == "" {
+			continue
+		}
+		revoked, err := s.revoker.RevokedSession(ctx, revocationKey)
 		switch {
 		case err != nil && !s.revocationFailOpen:
 			log.Printf("session revocation check failed, denying (fail-closed): %v", err)
@@ -353,7 +382,75 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		recordJWTRejection(ctx, jwtRejectionInvalidAudience)
 		return deny(401, "the token's audience does not name a single valid resource"), nil
 	}
-	if solutionID, isSolutionPath := solutionIDFromPath(path); isSolutionPath {
+	// CONFINEMENT, decided on every path and not only a solution's.
+	//
+	// A resource-bound token names two audiences: the resource, and this host.
+	// The host audience is there so the token VERIFIES — the minter's own
+	// VerifyAccess and this parser both check it, and a token lacking it would be
+	// refused by its issuer (see the minter's two-audience comment). It is a
+	// parser requirement, and it was being read as an authorization one: the
+	// confinement below ran only under a solution path, so a resource token was
+	// admitted, as a full session, at this host's own API, at another declared
+	// module's routes, and at the Work Context surface that mints further
+	// capabilities.
+	//
+	// That is the escape this is here to close. The party holding such a token is
+	// a third-party MCP client and, once forwarded, the solution runtime it
+	// dialled; a credential delivered to one resource must not act as the person
+	// anywhere else. The runtime's own calls to this host are made with the
+	// module credential it was provisioned (`/modules/_work-context` takes the
+	// internal token and the module secret, never a person's bearer), so nothing
+	// legitimate needs a resource token off its own solution's paths.
+	if binding == resourceBound && s.publicBase == "" {
+		// No configured public address, so this process cannot say what ANY
+		// resource identifier is and cannot compare one. It refuses the token
+		// either way — a bound token is not admitted on a guess — but it says
+		// which of the two it is, because an operator fixes the configuration and
+		// a client re-authorizes, and those are different actions. The tool
+		// path's own arm below words this for the endpoint that publishes
+		// metadata; this is the same refusal for every other path.
+		recordJWTRejection(ctx, jwtRejectionWrongResource)
+		return deny(401, "this host has no configured public address, so it cannot "+
+			"state the resource a token must name"), nil
+	}
+	resourceConfined := ""
+	if binding == resourceBound {
+		solutionID, isSolutionPath := solutionIDFromPath(path)
+		// The verified capability a declared module route established, if this
+		// request is on one. Read before the switch so the arm below does not
+		// resolve it twice, and nil on every other path and in Envoy mode.
+		pairing := presentedModuleCapability(ctx)
+		switch {
+		case isSolutionPath && resourceAudienceAdmits(resource, solutionID, s.publicBase):
+			// The solution its own resource names. Admitted, as before.
+		case pairing != nil:
+			// A DECLARED MODULE ROUTE, together with a verified capability for
+			// that module minted on this person's behalf in this session
+			// (gateway_module_capability.go carries the whole rule). This is the
+			// consumer's own work — the module its solution declared it consumes —
+			// and it is admitted only in that company.
+			if err := pairing.admitsConfinedCredential(claims); err != nil {
+				recordJWTRejection(ctx, jwtRejectionWrongResource)
+				return deny(401, err.Error()), nil
+			}
+			resourceConfined = resource
+		case isWorkContextMintPath(path):
+			// THE ONE HOST ROUTE (isWorkContextMintPath carries the reasoning).
+			//
+			// Admitted, and carried forward as a confinement rather than dropped:
+			// the resource travels to the mint in x-codefly-resource below, so what
+			// accounts issues is held to the consumer this credential was delivered
+			// to. Admitting the route without saying which resource asked would hand
+			// the mint a credential it could not tell from an unbound session, which
+			// is the confinement removed rather than relocated.
+			resourceConfined = resource
+		default:
+			recordJWTRejection(ctx, jwtRejectionWrongResource)
+			return deny(401, "the token presented was issued for a different "+
+				"resource than this endpoint"), nil
+		}
+	}
+	if _, isSolutionPath := solutionIDFromPath(path); isSolutionPath {
 		base := s.publicBase
 		switch {
 		case isSolutionToolRequestPath(path):
@@ -384,28 +481,14 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 					"resource; the token presented names only the host. Authorize for "+
 					"this resource and retry"), nil
 			}
-			if !resourceAudienceAdmits(resource, solutionID, base) {
-				recordJWTRejection(ctx, jwtRejectionWrongResource)
-				return deny(401, "the token presented was issued for a different "+
-					"resource than this endpoint"), nil
-			}
-		case binding == resourceBound:
-			// A solution's other routes are the product's own API surface,
-			// reached with an ordinary session. A resource-bound token is still
-			// confined to the solution it names, so one minted for solution A
-			// cannot read solution B's data either.
-			if !resourceAudienceAdmits(resource, solutionID, base) {
-				recordJWTRejection(ctx, jwtRejectionWrongResource)
-				return deny(401, "the token presented was issued for a different "+
-					"resource than this endpoint"), nil
-			}
+			// Which resource it must be is already settled: the confinement
+			// above admitted this token only at the solution its own resource
+			// names, so reaching here means the two agree. What is left for this
+			// arm is the rule confinement cannot express — that an UNBOUND
+			// credential is refused at a tool endpoint even though it is
+			// perfectly good everywhere else on this host.
 		}
 	}
-	// A resource-bound token still reaches the host's own API, which is not a
-	// solution path: the host is where a solution's runtime resolves the
-	// caller's authority, and the token names the host audience too for exactly
-	// that reason (see the minter's two-audience comment).
-
 	hdrs := []*corev3.HeaderValueOption{
 		hdr("x-user-id", claims.Subject),
 		hdr("x-org-id", claims.OrgID),
@@ -417,6 +500,27 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		// authorization artifact: scopes are an API key's ceiling, and a key
 		// carrying none would otherwise be indistinguishable from a session.
 		hdr("x-credential-kind", credentialKindSession),
+	}
+	if resourceConfined != "" {
+		// The resource this credential was issued for, stamped on the paths where
+		// a resource-bound credential is admitted AS a confined one: the
+		// delegation mint, and a declared module route reached in the company of
+		// this person's capability for that module. A solution's own paths do NOT
+		// stamp it — there the resource and the path already agree, and the
+		// upstream is the consumer the resource names.
+		//
+		// At the mint, accounts reads it as the ceiling: it resolves the installed
+		// consumer the resource names and refuses an organization other than this
+		// credential's, an audience that consumer does not declare, and scopes
+		// outside its installation's standing grants (StartTask). Empty is an
+		// ordinary unbound session, and allow() stamps the empty value rather
+		// than omitting the header, so the two are distinguishable without either
+		// being a missing-header inference.
+		//
+		// Gateway-owned, like every header beside it: the name is on
+		// untrustedAuthHeaders AND on canonicalUpstreamAuthHeaders, so a caller
+		// presenting it has its value replaced rather than forwarded.
+		hdrs = append(hdrs, hdr(resourceConfinementHeader, resourceConfined))
 	}
 	if claims.MFASatisfied {
 		hdrs = append(hdrs, hdr("x-mfa-satisfied", "true"))
@@ -644,6 +748,18 @@ var canonicalUpstreamAuthHeaders = []string{
 	"x-acting-as-user-id", "x-act", "x-scopes", "x-credential-kind", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	clientIDHeader,
+	// The resource a confined credential was issued for. ON THIS LIST, not only
+	// appended to the stamped set: allow() rebuilds the response from this list
+	// alone, so a header missing from it is silently dropped however carefully it
+	// was appended — which would have admitted the mint route with the
+	// confinement lost in transit, the one outcome worse than refusing it.
+	//
+	// Being here also means it is stamped on EVERY allow, empty when the
+	// credential names no resource. That is stronger than sending it only when
+	// confined: Envoy replaces a caller-supplied value even where the authenticated
+	// token has none, so a caller cannot assert a resource by arriving with one on
+	// a request that would otherwise carry no such header at all.
+	resourceConfinementHeader,
 }
 
 // clientIDHeader carries the registered client a request was made through, as

@@ -40,14 +40,11 @@ func (s *PostgresStore) WithSourceReadSnapshot(ctx context.Context, org string, 
 	if err := auth.RequireVerifiedDatabaseScope(ctx, org, owner); err != nil {
 		return err
 	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	tx, err := s.beginOrgReadSnapshot(ctx, org)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // committed transactions cannot roll back
-	if err := bindRequestScope(ctx, tx, org, ""); err != nil {
-		return err
-	}
 	ctx = context.WithValue(ctx, sourceReadSnapshotKey{}, sourceReadSnapshot{tx: tx, orgID: org})
 	if err := run(ctx); err != nil {
 		return err

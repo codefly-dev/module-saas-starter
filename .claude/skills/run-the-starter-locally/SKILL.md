@@ -15,6 +15,11 @@ codefly run service --fixture dev-admin
 - Agents resolve from their published GitHub releases by default; add
   `--local-agents` to resolve only from `~/.codefly/agents/` (offline, or when
   testing a local agent build).
+- To qualify published agent pins independently of a developer's populated
+  cache, use `codefly --plugin-path <empty-task-cache> ci run ...`. Codefly
+  downloads the selected release agents there. Preserve the shared cache;
+  a local development binary installed under a release filename is not proof
+  of the released image recipe.
 - No TTY (CI, pipes, MCP) auto-enables `--headless`.
 - Docker must be running. `codefly doctor` checks prerequisites; `codefly clear`
   reaps stray processes and containers between runs.

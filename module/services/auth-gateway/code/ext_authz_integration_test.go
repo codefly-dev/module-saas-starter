@@ -119,7 +119,7 @@ func runExtAuthzIntegrationTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "cache Redis connection not available\n")
 		return 1
 	}
-	revoker, err := newRevoker(redisURL, defaultRevocationCacheTTL)
+	revoker, err := newRevoker(redisURL, defaultRevocationCacheTTL, false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot build revoker: %v\n", err)
 		return 1

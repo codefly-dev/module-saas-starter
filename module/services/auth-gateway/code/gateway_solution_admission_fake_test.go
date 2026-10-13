@@ -56,8 +56,11 @@ func (a *installedEverythingRegistered) List(
 // organization and viewer the authority is asked about must be the ones
 // ext_authz verified.
 type entitledTo struct {
-	ids   []string
-	calls []*accountsv1.ListSolutionEntitlementsRequest
+	ids []string
+	// installations names a target's installation where the authority states
+	// one; any other is "install-<target>".
+	installations map[string]string
+	calls         []*accountsv1.ListSolutionEntitlementsRequest
 }
 
 func (a *entitledTo) List(
@@ -66,9 +69,13 @@ func (a *entitledTo) List(
 	a.calls = append(a.calls, req)
 	resp := &accountsv1.ListSolutionEntitlementsResponse{}
 	for _, id := range a.ids {
+		installation := "install-" + id
+		if named, ok := a.installations[id]; ok {
+			installation = named
+		}
 		resp.Entitlements = append(resp.Entitlements, &accountsv1.SolutionEntitlement{
 			TargetId:        id,
-			InstallationId:  "install-" + id,
+			InstallationId:  installation,
 			RootScopeNodeId: "node-" + id,
 			Healthy:         true,
 		})

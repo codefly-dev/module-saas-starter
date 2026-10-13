@@ -20,6 +20,57 @@ host, port, module, service, endpoint, or upstream prefix from a browser.
 4. The relative path is appended to the installed prefix one safe segment at a
    time. Dot segments, slashes, backslashes, control values, encoded separators,
    encoded percent signs, oversized segments, and empty segments fail closed.
+   The **last** segment may also carry a Google custom verb — `<resource>:<verb>`
+   with one colon and a lowerCamelCase verb — and its colon is forwarded
+   literal. A colon anywhere else in the path, a second colon in one segment, an
+   empty resource or verb, and a non-lowerCamelCase verb all fail closed.
+
+## Which bindings the transport carries
+
+A contributed page reaches exactly what the module's own bindings declare, in
+both shapes those bindings come in.
+
+**REST, including custom verbs.** A method that is not one of a resource's
+standard verbs is bound in the Google HTTP form as `…/<collection>:<verb>` —
+`records:recover`, `records/{record_id}/commands:recover`,
+`records/{record_id}/interactions/{interaction_id}:respond`,
+`triggers/{name}:fire`. The colon is what separates the verb from the resource,
+so percent-encoding it names a different resource and the binding is never hit.
+Before this rule, both halves of the transport — the browser client and this BFF
+— matched every segment against `[A-Za-z0-9._~-]+`, so those four routes were
+refused in the browser before a request left it, and a contributed page reached
+LESS than the module served: a binding written in that form was not available
+through the transport at all, and a composition had to reach it some other way.
+
+**Connect procedures.** They are carried, and a requirement says so by
+declaring `/` as its `routePrefix`. The Connect protocol puts a unary procedure
+at `/<fully.qualified.Service>/<Method>` from the origin, which is where this
+contract's own fixed capability handshake has always been probed — so a Connect
+backend serving where the protocol says had no prefix it could declare, and a
+composition had to take a second Connect transport from somewhere else. The root
+prefix is Connect-only: a REST requirement declaring it would turn its alias
+into a prefix-less proxy of the whole upstream. On a Connect alias the relative
+path must name exactly one procedure (a dotted proto full name, then a method
+name); any other shape is `400 invalid_path`, which is a narrowing — the
+protocol serves nothing else at that path — and never reaches the upstream.
+
+A contributed page is therefore *not* restricted to REST bindings. What it may
+not do is choose a prefix: both shapes are reachable only under the alias its
+own requirement declared, and a route outside that alias is still
+`404 plugin_service_not_found`.
+
+The **playground** for all of this is `/admin/platform/plugin-transport`
+(super-admin): it sends every shape through the real transport and shows which
+of the three answers came back — refused in the browser, a host problem, or the
+upstream's own forwarded answer. Its route list is
+`src/features/plugin-transport/model/demo-plugin.ts`, a demo plugin the
+canonical host declares and does not install, so every alias answers
+`plugin_service_not_found` here — which is already proof the shape was carried,
+because that refusal comes from resolution rather than from the path gate. The
+forwarded answer is proved by
+`src/features/plugin-transport/ui/plugin-transport-playground.container.test.tsx`,
+which drives the published client transport into this handler over a stub
+upstream.
 
 Concrete endpoint addresses remain in the server runtime. They never enter
 `frontend.config.ts`, plugin metadata, public environment variables, client
@@ -60,8 +111,8 @@ backend compatibility failure.
 | Authentication | Require one syntactically valid `Authorization: Bearer …` credential and forward it unchanged. The `codefly_session` presence cookie is never trusted. |
 | Identity and tenant | Never accept or forward caller `x-user-*`, `x-org-*`, `x-tenant-*`, role, session, gateway, internal-token, cookie, host, or forwarding headers. The downstream gateway/service validates the bearer and derives authoritative identity and tenant scope. |
 | Origin | If `Origin` is present it must equal the BFF origin. Browser `Sec-Fetch-Site` must be `same-origin` or `none`. No CORS permission is emitted. |
-| Methods | Product traffic: REST permits `GET`, `POST`, `PUT`, `PATCH`, `DELETE`; Connect permits `POST`. The reserved browser capability probe permits only `GET` and translates to the protocol-specific backend operation. `HEAD`, `OPTIONS`, trace/tunnel methods, and protocol mismatches return `405`. |
-| Request headers | Only bearer, accept, language, content type, conditional ETags, required Connect protocol/timeout headers, and a structurally valid non-zero W3C `traceparent` are forwarded. The host generates `x-request-id`; malformed trace context is dropped. |
+| Methods | Product traffic: REST permits `GET`, `POST`, `PUT`, `PATCH`, `DELETE`; Connect permits `POST` on a procedure path (the path is checked first, so a non-procedure path on a Connect alias is `400`, not `405`). The reserved browser capability probe permits only `GET` and translates to the protocol-specific backend operation. `HEAD`, `OPTIONS`, trace/tunnel methods, and protocol mismatches return `405`. |
+| Request headers | Only bearer, accept, language, content type, conditional ETags, required Connect protocol/timeout headers, and a structurally valid non-zero W3C `traceparent` are forwarded, through the frontend's one shared parser (`src/lib/trace-context.ts`), which requires the specification's lowercase hex and does not lowercase a value into validity. The host generates `x-request-id`; malformed trace context is dropped, and `tracestate` and `baggage` are not forwarded by this boundary. |
 | Request media | JSON and `+json`; Connect additionally permits protobuf media. Content encoding and form/multipart uploads are not supported in v1. |
 | Limits | Request body: 1 MiB. Response body: 5 MiB. Whole upstream operation: 10 seconds. Calls are unary and uncached. |
 | Redirects | Fetch uses manual redirects. Upstream redirects become a contained `502`; `Location` is never exposed or followed. |

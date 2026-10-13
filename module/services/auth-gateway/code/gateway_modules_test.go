@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -134,19 +136,47 @@ func mustHost(t *testing.T, rawURL string) string {
 	return u.Host
 }
 
-// The module secret is a credential the gateway consumes; like every other
-// codefly credential header it must never continue to an upstream.
+// The module secret header is gone with the secret (#1056) and nothing reads it,
+// but it stays on the strip list, like the other retired credential headers:
+// stripping it is what stops a caller supplying it to an upstream that might.
 func TestGateway_ModuleSecretHeaderStrippedFromProxiedRequests(t *testing.T) {
+	const retiredModuleSecretHeader = "X-Codefly-Module-Secret"
 	gw, apiFake, _, priv := newGatewayHarness(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
-	req.Header.Set(moduleSecretHeader, "documents-secret")
+	req.Header.Set(retiredModuleSecretHeader, "documents-secret")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Empty(t, apiFake.lastHeaders.Get(moduleSecretHeader))
+	require.Empty(t, apiFake.lastHeaders.Get(retiredModuleSecretHeader))
+}
+
+// A mint presents exactly one bearer, and the broker forwards nothing else: a
+// retired secret header, a second Authorization header or another scheme each
+// leave accounts unasked.
+func TestGateway_ModuleWorkContext_TakesOnlyTheProjectedTokenBearer(t *testing.T) {
+	for name, set := range map[string]func(h http.Header){
+		"the retired secret header": func(h http.Header) { h.Set("X-Codefly-Module-Secret", "documents-secret") },
+		"another scheme":            func(h http.Header) { h.Set("Authorization", "Basic ZG9jdW1lbnRzOnNlY3JldA==") },
+		"two bearers": func(h http.Header) {
+			h.Add("Authorization", "Bearer one")
+			h.Add("Authorization", "Bearer two")
+		},
+		"an empty bearer": func(h http.Header) { h.Set("Authorization", "Bearer   ") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			gw, mint := newWorkContextExchangeHarness(t)
+			req := workContextRequest("documents", "", "test-internal-token")
+			set(req.Header)
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusUnauthorized, w.Code)
+			require.Zero(t, mint.requestCount)
+		})
+	}
 }
 
 // ============================================================================
@@ -157,11 +187,15 @@ func TestGateway_ModuleSecretHeaderStrippedFromProxiedRequests(t *testing.T) {
 // registered under the real service and method name so the test exercises the
 // exact procedure string the generated mesh policy admits.
 type fakeAccountsWorkContextMint struct {
-	code         codes.Code
-	lastInternal string
-	lastPrefix   string
-	lastSecret   string
-	requestCount int
+	code             codes.Code
+	lastInternal     string
+	lastPeer         string
+	lastPrefix       string
+	lastUpstream     string
+	lastManifest     string
+	lastOrganization string
+	lastToken        string
+	requestCount     int
 }
 
 func (f *fakeAccountsWorkContextMint) handle(ctx context.Context, dec func(any) error) (any, error) {
@@ -171,8 +205,11 @@ func (f *fakeAccountsWorkContextMint) handle(ctx context.Context, dec func(any) 
 	}
 	f.requestCount++
 	f.lastPrefix = req.GetPrefix()
-	f.lastSecret = req.GetSecret()
+	f.lastUpstream, f.lastManifest = req.GetUpstream(), req.GetManifest()
+	f.lastOrganization = req.GetOrganizationId()
+	f.lastToken = req.GetServiceAccountToken()
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		f.lastPeer = strings.Join(md.Get(workloadSPIFFEHeader), ",")
 		if values := md.Get("x-codefly-internal-token"); len(values) > 0 {
 			f.lastInternal = values[0]
 		}
@@ -218,11 +255,11 @@ func newWorkContextExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsWorkCon
 	return gw, mint
 }
 
-func workContextRequest(prefix, secret, internal string) *http.Request {
+func workContextRequest(prefix, token, internal string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, moduleWorkContextPath,
 		strings.NewReader(fmt.Sprintf(`{"prefix":%q}`, prefix)))
-	if secret != "" {
-		req.Header.Set(moduleSecretHeader, secret)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if internal != "" {
 		req.Header.Set("X-Codefly-Internal-Token", internal)
@@ -234,15 +271,15 @@ func TestGateway_ModuleWorkContext_BrokersToAccounts(t *testing.T) {
 	gw, mint := newWorkContextExchangeHarness(t)
 
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, workContextRequest("documents", "documents-secret", "test-internal-token"))
+	gw.ServeHTTP(w, workContextRequest("documents", "documents-projected-token", "test-internal-token"))
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "no-store", w.Header().Get("cache-control"))
 	// The gateway presents its OWN cluster credential on the internal leg and
-	// forwards the module's secret for accounts to judge.
+	// forwards the module pod's projected token for accounts to judge.
 	require.Equal(t, "test-internal-token", mint.lastInternal)
 	require.Equal(t, "documents", mint.lastPrefix)
-	require.Equal(t, "documents-secret", mint.lastSecret)
+	require.Equal(t, "documents-projected-token", mint.lastToken)
 
 	var payload struct {
 		Token       string `json:"token"`
@@ -258,23 +295,23 @@ func TestGateway_ModuleWorkContext_BrokersToAccounts(t *testing.T) {
 func TestGateway_ModuleWorkContext_FailsClosed(t *testing.T) {
 	tests := map[string]struct {
 		prefix   string
-		secret   string
+		token    string
 		internal string
 		want     int
 	}{
-		"no internal token":  {"documents", "documents-secret", "", http.StatusUnauthorized},
-		"bad internal token": {"documents", "documents-secret", "wrong", http.StatusUnauthorized},
-		"no module secret":   {"documents", "", "test-internal-token", http.StatusUnauthorized},
-		"path prefix":        {"documents/nested", "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"wildcard prefix":    {"*", "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"empty prefix":       {"", "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"no internal token":  {"documents", "documents-projected-token", "", http.StatusUnauthorized},
+		"bad internal token": {"documents", "documents-projected-token", "wrong", http.StatusUnauthorized},
+		"no projected token": {"documents", "", "test-internal-token", http.StatusUnauthorized},
+		"path prefix":        {"documents/nested", "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"wildcard prefix":    {"*", "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"empty prefix":       {"", "documents-projected-token", "test-internal-token", http.StatusBadRequest},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			gw, mint := newWorkContextExchangeHarness(t)
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, workContextRequest(test.prefix, test.secret, test.internal))
+			gw.ServeHTTP(w, workContextRequest(test.prefix, test.token, test.internal))
 
 			require.Equal(t, test.want, w.Code)
 			// Nothing reached accounts: the perimeter rejected it first.
@@ -292,19 +329,125 @@ func TestGateway_ModuleWorkContext_RelaysAccountsOutcome(t *testing.T) {
 	}{
 		"refusal":          {codes.PermissionDenied, http.StatusUnauthorized},
 		"rejected request": {codes.InvalidArgument, http.StatusBadRequest},
-		"outage":           {codes.Internal, http.StatusBadGateway},
+		// accounts could not establish what the pod runs: retryable, not a verdict.
+		"execution unbound": {codes.Unavailable, http.StatusServiceUnavailable},
+		// Admitted and installed nowhere: its own answer, so the module serves
+		// its install endpoint and waits instead of stopping on a refusal.
+		"installed nowhere": {codes.FailedPrecondition, http.StatusPreconditionFailed},
+		"outage":            {codes.Internal, http.StatusBadGateway},
 	} {
 		t.Run(name, func(t *testing.T) {
 			gw, mint := newWorkContextExchangeHarness(t)
 			mint.code = test.code
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, workContextRequest("documents", "documents-secret", "test-internal-token"))
+			gw.ServeHTTP(w, workContextRequest("documents", "documents-projected-token", "test-internal-token"))
 
 			require.Equal(t, test.want, w.Code)
 			require.Equal(t, 1, mint.requestCount)
 		})
 	}
+}
+
+// asWorkload marks a request as arrived on the workload endpoint from peer, as
+// the mutual-TLS listener's middleware does once it has verified the peer.
+func asWorkload(req *http.Request, peer string) *http.Request {
+	return req.WithContext(context.WithValue(req.Context(), workloadPeerKey{}, peer))
+}
+
+const testWorkloadPeer = "spiffe://cluster.local/ns/cell-documents/sa/backend"
+
+// The dynamic half of a registration travels with the mint, to accounts, under
+// the projected token that proves who reports it. The gateway forwards it and
+// decides nothing about it beyond its shape.
+func TestGateway_ModuleWorkContext_ForwardsTheReportedOriginAndManifest(t *testing.T) {
+	gw, mint := newWorkContextExchangeHarness(t)
+
+	req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
+	req.Body = io.NopCloser(strings.NewReader(`{"prefix":"documents","upstream":"https://backend.cell-documents.svc.cluster.local:8080","manifest":"{\"id\":\"documents\"}"}`))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, asWorkload(req, testWorkloadPeer))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "https://backend.cell-documents.svc.cluster.local:8080", mint.lastUpstream)
+	require.Equal(t, `{"id":"documents"}`, mint.lastManifest)
+}
+
+// An origin that is not exactly an https host and port, or names a host no
+// registered upstream may name, is refused at the edge: accounts is never asked
+// to record it, and no credential is minted beside it.
+func TestGateway_ModuleWorkContext_RefusesAnOriginThatIsNotOne(t *testing.T) {
+	for name, upstream := range map[string]string{
+		"plaintext":       "http://backend.cell-documents.svc.cluster.local:8080",
+		"no port":         "https://backend.cell-documents.svc.cluster.local",
+		"a path":          "https://backend.cell-documents.svc.cluster.local:8080/api",
+		"a query":         "https://backend.cell-documents.svc.cluster.local:8080?x=1",
+		"userinfo":        "https://ops@backend.cell-documents.svc.cluster.local:8080",
+		"cloud metadata":  "https://169.254.169.254:443",
+		"a public host":   "https://example.com:443",
+		"not a URL":       "backend:8080",
+		"another scheme":  "ftp://backend.cell-documents.svc.cluster.local:8080",
+		"fragment":        "https://backend.cell-documents.svc.cluster.local:8080#x",
+		"only whitespace": " ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			gw, mint := newWorkContextExchangeHarness(t)
+			body, err := json.Marshal(map[string]string{"prefix": "documents", "upstream": upstream})
+			require.NoError(t, err)
+			req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
+			req.Body = io.NopCloser(bytes.NewReader(body))
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, asWorkload(req, testWorkloadPeer))
+
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Zero(t, mint.requestCount)
+		})
+	}
+}
+
+// On the plain endpoint the internal token is all that separates a caller from
+// a workload's projected token, so the dynamic half is not accepted there: a
+// holder of both could move that workload's recorded origin and manifest.
+func TestGateway_ModuleWorkContext_TheOriginIsReportedOnlyOnTheWorkloadEndpoint(t *testing.T) {
+	for name, body := range map[string]string{
+		"an origin":  `{"prefix":"documents","upstream":"https://backend.cell-documents.svc.cluster.local:8080"}`,
+		"a manifest": `{"prefix":"documents","manifest":"{}"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			gw, mint := newWorkContextExchangeHarness(t)
+			req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
+			req.Body = io.NopCloser(strings.NewReader(body))
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Zero(t, mint.requestCount)
+		})
+	}
+}
+
+// The body is bounded: the manifest is the only large field, and a request
+// past the bound is refused before accounts is asked anything.
+func TestGateway_ModuleWorkContext_BoundsTheRequest(t *testing.T) {
+	gw, mint := newWorkContextExchangeHarness(t)
+	body, err := json.Marshal(map[string]string{"prefix": "documents", "manifest": strings.Repeat("a", 81<<10)})
+	require.NoError(t, err)
+	req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, asWorkload(req, testWorkloadPeer))
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Zero(t, mint.requestCount)
+
+	body, err = json.Marshal(map[string]string{"prefix": "documents", "manifest": strings.Repeat("a", 60<<10)})
+	require.NoError(t, err)
+	req = workContextRequest("documents", "documents-projected-token", "test-internal-token")
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, asWorkload(req, testWorkloadPeer))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 1, mint.requestCount)
 }
 
 func TestGateway_ModuleWorkContext_MethodNotAllowed(t *testing.T) {
@@ -316,4 +459,14 @@ func TestGateway_ModuleWorkContext_MethodNotAllowed(t *testing.T) {
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestGateway_ModuleWorkContext_ForwardsOrganizationSelector(t *testing.T) {
+	gw, mint := newWorkContextExchangeHarness(t)
+	req := workContextRequest("example", "projected-token", "test-internal-token")
+	req.Body = io.NopCloser(strings.NewReader(`{"prefix":"example","organization_id":"11111111-1111-4111-8111-111111111111"}`))
+	recorder := httptest.NewRecorder()
+	gw.ServeHTTP(recorder, req)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "11111111-1111-4111-8111-111111111111", mint.lastOrganization)
 }

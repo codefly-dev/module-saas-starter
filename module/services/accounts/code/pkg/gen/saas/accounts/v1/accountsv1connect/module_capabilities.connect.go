@@ -108,12 +108,6 @@ const (
 	// ModuleCapabilitiesServiceFetchDatasourceFilesProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's FetchDatasourceFiles RPC.
 	ModuleCapabilitiesServiceFetchDatasourceFilesProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles"
-	// ModuleCapabilitiesServiceMintModuleRegistrationProcedure is the fully-qualified name of the
-	// ModuleCapabilitiesService's MintModuleRegistration RPC.
-	ModuleCapabilitiesServiceMintModuleRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
-	// ModuleCapabilitiesServiceMintSolutionRegistrationProcedure is the fully-qualified name of the
-	// ModuleCapabilitiesService's MintSolutionRegistration RPC.
-	ModuleCapabilitiesServiceMintSolutionRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
 	// ModuleCapabilitiesServiceMintModuleWorkContextProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's MintModuleWorkContext RPC.
 	ModuleCapabilitiesServiceMintModuleWorkContextProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
@@ -171,7 +165,10 @@ type ModuleCapabilitiesServiceClient interface {
 	// access oracles can resolve it. Bounded by the resource types the caller
 	// principal's grant declares.
 	PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error)
-	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+	// subject-scoped job whose subject is not a member of the tenant is
+	// FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+	// and key on the reason rather than the code.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(context.Context, *connect.Request[v1.ModuleClaimJobsRequest]) (*connect.Response[v1.ModuleClaimJobsResponse], error)
@@ -181,10 +178,17 @@ type ModuleCapabilitiesServiceClient interface {
 	AckJob(context.Context, *connect.Request[v1.ModuleAckJobRequest]) (*connect.Response[emptypb.Empty], error)
 	// NackJob fails a leased job as retryable or permanent.
 	NackJob(context.Context, *connect.Request[v1.ModuleNackJobRequest]) (*connect.Response[emptypb.Empty], error)
-	// NotifyUser delivers a notification subject to category policy.
+	// NotifyUser delivers a notification subject to category policy. A recipient
+	// who is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+	// already used for different content, and a host that cannot re-read live
+	// authority, are FAILED_PRECONDITION too under their own reasons, so the
+	// reason — not the code — says which happened; see REFUSALS.
 	NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error)
 	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-	// see the request.
+	// see the request. It names no recipient, so it has no non-member refusal; an
+	// idempotency_key already used for different content is FAILED_PRECONDITION
+	// with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
 	NotifyOrgAdmins(context.Context, *connect.Request[v1.ModuleNotifyOrgAdminsRequest]) (*connect.Response[v1.ModuleNotifyOrgAdminsResponse], error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error)
@@ -198,7 +202,11 @@ type ModuleCapabilitiesServiceClient interface {
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-	// whole set of other subjects whose rows that viewer may read.
+	// whole set of other subjects whose rows that viewer may read. A viewer who
+	// is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+	// FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+	// the reason tells a consumer which it got.
 	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
 	// FetchDatasourceBlob streams one datasource file blob to the module that
 	// resolves a change set's blob sha. Authorized by the caller principal's
@@ -216,24 +224,15 @@ type ModuleCapabilitiesServiceClient interface {
 	// metadata reset_at) and a RetryInfo; a batch past its limits is
 	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
 	FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceFilesFrame], error)
-	// MintModuleRegistration issues the signed, prefix-bound credential a composed
-	// module presents to the gateway to federate its REST surface. Authorized by
-	// the module's own registration secret, not the shared cluster token.
-	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
-	// MintSolutionRegistration issues the signed, solution-bound credential a
-	// solution presents to the gateway and to the frontend to register, update, or
-	// delete its upstream and its Module-Federation remote. Authorized by the
-	// solution's own registration secret, declared separately from the module
-	// secrets because a solution remote executes in the host origin.
-	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
 	// MintModuleWorkContext issues the Work Context a composed module presents to
 	// this surface: owner and sole actor are the module service principal derived
-	// from its registration prefix. Authorized by the module's own registration
-	// secret, like the credential exchange above.
+	// from its prefix. Authorized by the pod's projected ServiceAccount token, held
+	// against the workload the principal declares and the build the authority
+	// document approves; a pod running anything else is issued nothing.
 	MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error)
 	// MintModuleOperationContext issues, with no person present, a Work Context
 	// addressed to one of the calling module's installed operation audiences.
-	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// Authorized by the pod's projected token like MintModuleWorkContext; owner
 	// and sole actor are the module service principal, the tenant is the one its
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
@@ -242,7 +241,7 @@ type ModuleCapabilitiesServiceClient interface {
 	// sync runs with: owned by the person who connected the source, actored by
 	// the calling module's service principal, in the source's organization, with
 	// exactly the source_delegation_scopes of the binding the person delegated
-	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// to. Authorized by the pod's projected token like MintModuleWorkContext;
 	// every mint re-checks that the delegation is active, the source exists, the
 	// person is still an owner or admin of the organization, and the binding is
 	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
@@ -416,18 +415,6 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceFiles")),
 			connect.WithClientOptions(opts...),
 		),
-		mintModuleRegistration: connect.NewClient[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse](
-			httpClient,
-			baseURL+ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
-			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
-			connect.WithClientOptions(opts...),
-		),
-		mintSolutionRegistration: connect.NewClient[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse](
-			httpClient,
-			baseURL+ModuleCapabilitiesServiceMintSolutionRegistrationProcedure,
-			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
-			connect.WithClientOptions(opts...),
-		),
 		mintModuleWorkContext: connect.NewClient[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceMintModuleWorkContextProcedure,
@@ -505,8 +492,6 @@ type moduleCapabilitiesServiceClient struct {
 	listSubjectVisibility              *connect.Client[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse]
 	fetchDatasourceBlob                *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
 	fetchDatasourceFiles               *connect.Client[v1.FetchDatasourceFilesRequest, v1.FetchDatasourceFilesFrame]
-	mintModuleRegistration             *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
-	mintSolutionRegistration           *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
 	mintModuleWorkContext              *connect.Client[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse]
 	mintModuleOperationContext         *connect.Client[v1.ModuleMintOperationContextRequest, v1.ModuleMintOperationContextResponse]
 	mintSourceOperationContext         *connect.Client[v1.ModuleMintSourceOperationContextRequest, v1.ModuleMintSourceOperationContextResponse]
@@ -646,17 +631,6 @@ func (c *moduleCapabilitiesServiceClient) FetchDatasourceFiles(ctx context.Conte
 	return c.fetchDatasourceFiles.CallServerStream(ctx, req)
 }
 
-// MintModuleRegistration calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration.
-func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Context, req *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
-	return c.mintModuleRegistration.CallUnary(ctx, req)
-}
-
-// MintSolutionRegistration calls
-// saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration.
-func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.Context, req *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
-	return c.mintSolutionRegistration.CallUnary(ctx, req)
-}
-
 // MintModuleWorkContext calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext.
 func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Context, req *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error) {
 	return c.mintModuleWorkContext.CallUnary(ctx, req)
@@ -730,7 +704,10 @@ type ModuleCapabilitiesServiceHandler interface {
 	// access oracles can resolve it. Bounded by the resource types the caller
 	// principal's grant declares.
 	PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error)
-	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+	// subject-scoped job whose subject is not a member of the tenant is
+	// FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+	// and key on the reason rather than the code.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(context.Context, *connect.Request[v1.ModuleClaimJobsRequest]) (*connect.Response[v1.ModuleClaimJobsResponse], error)
@@ -740,10 +717,17 @@ type ModuleCapabilitiesServiceHandler interface {
 	AckJob(context.Context, *connect.Request[v1.ModuleAckJobRequest]) (*connect.Response[emptypb.Empty], error)
 	// NackJob fails a leased job as retryable or permanent.
 	NackJob(context.Context, *connect.Request[v1.ModuleNackJobRequest]) (*connect.Response[emptypb.Empty], error)
-	// NotifyUser delivers a notification subject to category policy.
+	// NotifyUser delivers a notification subject to category policy. A recipient
+	// who is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+	// already used for different content, and a host that cannot re-read live
+	// authority, are FAILED_PRECONDITION too under their own reasons, so the
+	// reason — not the code — says which happened; see REFUSALS.
 	NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error)
 	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-	// see the request.
+	// see the request. It names no recipient, so it has no non-member refusal; an
+	// idempotency_key already used for different content is FAILED_PRECONDITION
+	// with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
 	NotifyOrgAdmins(context.Context, *connect.Request[v1.ModuleNotifyOrgAdminsRequest]) (*connect.Response[v1.ModuleNotifyOrgAdminsResponse], error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error)
@@ -757,7 +741,11 @@ type ModuleCapabilitiesServiceHandler interface {
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-	// whole set of other subjects whose rows that viewer may read.
+	// whole set of other subjects whose rows that viewer may read. A viewer who
+	// is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+	// FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+	// the reason tells a consumer which it got.
 	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
 	// FetchDatasourceBlob streams one datasource file blob to the module that
 	// resolves a change set's blob sha. Authorized by the caller principal's
@@ -775,24 +763,15 @@ type ModuleCapabilitiesServiceHandler interface {
 	// metadata reset_at) and a RetryInfo; a batch past its limits is
 	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
 	FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest], *connect.ServerStream[v1.FetchDatasourceFilesFrame]) error
-	// MintModuleRegistration issues the signed, prefix-bound credential a composed
-	// module presents to the gateway to federate its REST surface. Authorized by
-	// the module's own registration secret, not the shared cluster token.
-	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
-	// MintSolutionRegistration issues the signed, solution-bound credential a
-	// solution presents to the gateway and to the frontend to register, update, or
-	// delete its upstream and its Module-Federation remote. Authorized by the
-	// solution's own registration secret, declared separately from the module
-	// secrets because a solution remote executes in the host origin.
-	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
 	// MintModuleWorkContext issues the Work Context a composed module presents to
 	// this surface: owner and sole actor are the module service principal derived
-	// from its registration prefix. Authorized by the module's own registration
-	// secret, like the credential exchange above.
+	// from its prefix. Authorized by the pod's projected ServiceAccount token, held
+	// against the workload the principal declares and the build the authority
+	// document approves; a pod running anything else is issued nothing.
 	MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error)
 	// MintModuleOperationContext issues, with no person present, a Work Context
 	// addressed to one of the calling module's installed operation audiences.
-	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// Authorized by the pod's projected token like MintModuleWorkContext; owner
 	// and sole actor are the module service principal, the tenant is the one its
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
@@ -801,7 +780,7 @@ type ModuleCapabilitiesServiceHandler interface {
 	// sync runs with: owned by the person who connected the source, actored by
 	// the calling module's service principal, in the source's organization, with
 	// exactly the source_delegation_scopes of the binding the person delegated
-	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// to. Authorized by the pod's projected token like MintModuleWorkContext;
 	// every mint re-checks that the delegation is active, the source exists, the
 	// person is still an owner or admin of the organization, and the binding is
 	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
@@ -971,18 +950,6 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceFiles")),
 		connect.WithHandlerOptions(opts...),
 	)
-	moduleCapabilitiesServiceMintModuleRegistrationHandler := connect.NewUnaryHandler(
-		ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
-		svc.MintModuleRegistration,
-		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
-		connect.WithHandlerOptions(opts...),
-	)
-	moduleCapabilitiesServiceMintSolutionRegistrationHandler := connect.NewUnaryHandler(
-		ModuleCapabilitiesServiceMintSolutionRegistrationProcedure,
-		svc.MintSolutionRegistration,
-		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
-		connect.WithHandlerOptions(opts...),
-	)
 	moduleCapabilitiesServiceMintModuleWorkContextHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceMintModuleWorkContextProcedure,
 		svc.MintModuleWorkContext,
@@ -1081,10 +1048,6 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceFetchDatasourceFilesProcedure:
 			moduleCapabilitiesServiceFetchDatasourceFilesHandler.ServeHTTP(w, r)
-		case ModuleCapabilitiesServiceMintModuleRegistrationProcedure:
-			moduleCapabilitiesServiceMintModuleRegistrationHandler.ServeHTTP(w, r)
-		case ModuleCapabilitiesServiceMintSolutionRegistrationProcedure:
-			moduleCapabilitiesServiceMintSolutionRegistrationHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleWorkContextProcedure:
 			moduleCapabilitiesServiceMintModuleWorkContextHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleOperationContextProcedure:
@@ -1204,14 +1167,6 @@ func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context
 
 func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest], *connect.ServerStream[v1.FetchDatasourceFilesFrame]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles is not implemented"))
-}
-
-func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration is not implemented"))
-}
-
-func (UnimplementedModuleCapabilitiesServiceHandler) MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error) {

@@ -125,4 +125,76 @@ func (s *PostgresStore) ListNewestDeliveredDocuments(
 	return records, rows.Err()
 }
 
+// ListDeliveredDocuments returns EVERY delivered generation of one kind, oldest
+// first. The desired set is the newest per document; this is the history, and
+// it is what a withdrawal is read from: a tombstone superseded by a later
+// generation of the same document is still a withdrawal that happened, and the
+// newest-per-document read would hide it.
+func (s *PostgresStore) ListDeliveredDocuments(
+	ctx context.Context, kind business.SolutionDeliveryKind,
+) ([]*business.SolutionDeliveryRecord, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+		SELECT `+solutionDeliveryColumns+`
+		  FROM public.solution_delivery_documents
+		 WHERE kind = $1
+		 ORDER BY document_id, generation`, string(kind))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := []*business.SolutionDeliveryRecord{}
+	for rows.Next() {
+		var (
+			record     business.SolutionDeliveryRecord
+			kindText   string
+			generation int64
+		)
+		if err := rows.Scan(&kindText, &record.DocumentID, &generation, &record.ContentHash,
+			&record.Payload, &record.Bundle, &record.SignerIdentity, &record.OwnershipDomain,
+			&record.ReceivedAt); err != nil {
+			return nil, err
+		}
+		record.Kind = business.SolutionDeliveryKind(kindText)
+		record.Generation = uint64(generation) //nolint:gosec // CHECKed positive
+		records = append(records, &record)
+	}
+	return records, rows.Err()
+}
+
 var _ business.SolutionDeliveryStore = (*PostgresStore)(nil)
+
+// CountDeliveredDocuments is how many documents the inbox holds, of every kind.
+//
+// The inbox is append-only — a generation is inserted once and never rewritten
+// or removed — so the count only grows, and it grows exactly when a document a
+// registry pass has not read yet arrives. That makes it the marker a registry
+// snapshot is compared with: see business.Service.deliveredSince.
+func (s *PostgresStore) CountDeliveredDocuments(ctx context.Context) (uint64, error) {
+	var count int64
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx,
+		`SELECT count(*) FROM public.solution_delivery_documents`).Scan(&count); err != nil {
+		return 0, err
+	}
+	return uint64(count), nil
+}
+
+// CountUnappliedPresence is how many presence documents the inbox holds at a
+// generation newer than the one their binding has applied, and that the host
+// has not refused. Each is a declaration the binding reconciler has yet to
+// apply: until it has, the registry cannot hold the principal it declares.
+func (s *PostgresStore) CountUnappliedPresence(ctx context.Context) (uint64, error) {
+	var count int64
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT count(*)
+		  FROM (SELECT document_id, max(generation) AS generation
+		          FROM public.solution_delivery_documents
+		         WHERE kind = $1
+		         GROUP BY document_id) newest
+		  LEFT JOIN public.solution_host_bindings binding ON binding.binding_id = newest.document_id
+		 WHERE COALESCE(binding.applied_generation, 0) < newest.generation
+		   AND binding.pending_reason IS NULL`,
+		string(business.SolutionDeliveryPresence)).Scan(&count); err != nil {
+		return 0, err
+	}
+	return uint64(count), nil
+}

@@ -23,6 +23,9 @@ interface:
         - service: auth-gateway
           endpoint: rest
           visibility: internal
+        - service: auth-gateway
+          endpoint: workload
+          visibility: internal
         - service: frontend
           endpoint: http
           visibility: public

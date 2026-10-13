@@ -217,11 +217,15 @@ export function activityGraph(graph: DataGraph, metricId: string): DataGraph {
 /**
  * From the per-day counts: the first and last day with events, and how many
  * events there are in all. Null when nothing matched.
+ *
+ * A day counted 0 had no events: the SDK puts a 0 on each day of the range the
+ * audit RPC returned no bucket for, through today, so a day that is only there
+ * as a 0 bounds neither the range nor the freshness.
  */
 export function activitySummary(
 	series: readonly { points: readonly { key: string; value: number }[] }[],
 ): { first: Date; last: Date; events: number } | null {
-	const points = series.flatMap((s) => s.points);
+	const points = series.flatMap((s) => s.points).filter((p) => p.value > 0);
 	const days = points
 		.map((p) => parseTimeKey(p.key))
 		.filter((day): day is Date => day !== null)

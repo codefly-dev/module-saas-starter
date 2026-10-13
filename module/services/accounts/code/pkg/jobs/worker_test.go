@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
@@ -427,20 +428,24 @@ func TestWorkerDoesNotBlameHandlerWhenLeaseIsLost(t *testing.T) {
 }
 
 func TestWorkerHeartbeatsLongRunningHandler(t *testing.T) {
-	store := &fakeWorkerStore{claims: []*jobsv1.ClaimJobsResponse{{Jobs: []*jobsv1.JobEnvelope{claimedJob()}}}}
-	worker := newTestWorker(t, store, func(context.Context, *jobsv1.JobEnvelope) error {
-		time.Sleep(18 * time.Millisecond)
-		return nil
+	// Virtual time exercises recurring ticks without depending on the host
+	// scheduling several goroutines inside an 18 ms wall-clock window.
+	synctest.Test(t, func(t *testing.T) {
+		store := &fakeWorkerStore{claims: []*jobsv1.ClaimJobsResponse{{Jobs: []*jobsv1.JobEnvelope{claimedJob()}}}}
+		worker := newTestWorker(t, store, func(context.Context, *jobsv1.JobEnvelope) error {
+			time.Sleep(18 * time.Millisecond)
+			return nil
+		})
+		if _, err := worker.RunOnce(context.Background()); err != nil {
+			t.Fatalf("RunOnce() error = %v", err)
+		}
+		store.mu.Lock()
+		heartbeats := len(store.heartbeats)
+		store.mu.Unlock()
+		if heartbeats < 2 {
+			t.Fatalf("heartbeat count = %d, want at least 2", heartbeats)
+		}
 	})
-	if _, err := worker.RunOnce(context.Background()); err != nil {
-		t.Fatalf("RunOnce() error = %v", err)
-	}
-	store.mu.Lock()
-	heartbeats := len(store.heartbeats)
-	store.mu.Unlock()
-	if heartbeats < 2 {
-		t.Fatalf("heartbeat count = %d, want at least 2", heartbeats)
-	}
 }
 
 func TestWorkerShutdownCancelsAfterGraceDeadline(t *testing.T) {

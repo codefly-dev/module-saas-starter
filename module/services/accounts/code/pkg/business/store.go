@@ -30,6 +30,12 @@ type Store interface {
 	// deliberate.
 	WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error
 
+	// WithControlPlaneReadSnapshot is WithControlPlane as one REPEATABLE READ,
+	// read-only transaction: every read fn makes sees the same committed
+	// state. For a decision that derives several answers from several
+	// relations and must not see one of them change between reads.
+	WithControlPlaneReadSnapshot(ctx context.Context, fn func(ctx context.Context) error) error
+
 	// As returns a Store handle bound to an identity (see Scoped). It is the
 	// identity-first entry point the With* wrappers collapse into: As(id).Within
 	// sets the same RLS context, but the identity is explicit and carried by the
@@ -139,12 +145,12 @@ type Store interface {
 	// ordinal. Strictly increasing is the guarantee, not density: a gap is expected
 	// and is not a dropped payload.
 	AllocateDatasourceOrdinal(ctx context.Context, sourceID string) (int64, error)
-	// ListDatasourceSourcesDueForReconcile returns active sources whose
-	// next_reconcile_at has elapsed, for the periodic reconcile sweep. Control-plane.
-	ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*DatasourceSource, error)
-	// BumpDatasourceReconcile pushes next_reconcile_at out by the source's
-	// reconcile interval without touching the cursor, so a reconcile that finds
-	// nothing to do still reschedules. Control-plane.
+	// BumpDatasourceReconcile moves the source's next-reconcile instant out by
+	// its interval without touching the cursor. There is no due query beside
+	// it and no sweep that would read one: the instant's PRESENCE is what the
+	// park and restore paths read as "this source is on its declared
+	// schedule", and one reconcile pass moves it so it does not drift
+	// arbitrarily far into the past. Control-plane.
 	BumpDatasourceReconcile(ctx context.Context, sourceID string) error
 	// MarkDatasourceSourceDegraded parks a source the compiler cannot make
 	// progress on (an oversized snapshot manifest), recording the reason and
@@ -325,13 +331,22 @@ type Store interface {
 	// ArchiveOrganization marks a live organization archived and releases its
 	// slug. Migration 16's trigger then refuses any membership into it.
 	ArchiveOrganization(ctx context.Context, orgID, actorID string) error
-	// RemoveAllOrgMembers deletes every membership of an organization.
+	// LockAllOrgMembers takes the administration lock and every canonical
+	// membership lock in sorted order without deleting. Keep this transaction
+	// open through RemoveLockedOrgMembers and acquire these before any writes.
+	LockAllOrgMembers(ctx context.Context, orgID string) ([]string, error)
+	// RemoveLockedOrgMembers deletes only the roster locked above in the same
+	// transaction. Organization deletion must lock and uninstall its installation
+	// batch before this write's authorization/session triggers run.
+	RemoveLockedOrgMembers(ctx context.Context, orgID string, members []string) (int64, error)
+	// RemoveAllOrgMembers locks and deletes every membership in one call.
 	RemoveAllOrgMembers(ctx context.Context, orgID string) (int64, error)
 	// RevokeOrgAPIKeys revokes every live API key of an organization.
 	RevokeOrgAPIKeys(ctx context.Context, orgID string) (int64, error)
 	// RevokeOrgPendingInvitations revokes every pending invitation.
 	RevokeOrgPendingInvitations(ctx context.Context, orgID string) (int64, error)
-	// ActiveInstallationIDs lists an organization's unrevoked installations.
+	// ActiveInstallationIDs locks all unrevoked installations in ID order before
+	// returning their IDs; the caller's transaction must enclose the whole batch.
 	ActiveInstallationIDs(ctx context.Context, orgID string) ([]string, error)
 	// CountOrgMembers counts an organization's memberships.
 	CountOrgMembers(ctx context.Context, orgID string) (int, error)
@@ -543,6 +558,11 @@ type Store interface {
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
 	ListAuditEventTypes(ctx context.Context) ([]AuditEventTypeRow, error)
 	EnsureAuditPartitions(ctx context.Context, months int) error
+	// DropAuditPartitionsBefore drops the audit partitions whose recorded range
+	// ends by `before`, which must be no later than the audit_events retention
+	// policy allows by the database's clock. It runs on a transaction already on
+	// ctx, which must be READ COMMITTED, or else in a control-plane transaction
+	// of its own at READ COMMITTED.
 	DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// Invitations
@@ -873,6 +893,9 @@ type Store interface {
 	// append-only trigger blocks that — but a partition drop; see
 	// DropAuditPartitionsBefore above.
 	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)
+	// DatabaseNow reads the database's clock. Retention counts every cutoff
+	// from it rather than from this process's clock, which may run ahead.
+	DatabaseNow(ctx context.Context) (time.Time, error)
 	DeleteOldSessions(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldNotifications(ctx context.Context, before time.Time) (int64, error)
