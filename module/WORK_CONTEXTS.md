@@ -306,7 +306,10 @@ or artifacts — is read back instead (core's `Authority.ReadBack`): every check
 verifier makes, against live state, but the replay store is never touched. A
 question is not a use, so the consumer that verified and consumed a single-use
 capability can still ask about it, on every page of a listing, and asking leaves
-an unconsumed one for its consumer.
+an unconsumed one for its consumer. A read-back trusts only the issuer's CURRENT
+signing key: during a key rotation, a capability signed under the previous key
+is refused by every read-back (fail closed) even while a consumer still accepts
+it, until its holder mints a new one.
 
 ## The reserved module audience
 

@@ -82,9 +82,14 @@ each invocation fresh database state. Do not opt into `WithSharedControlChannel`
 which is only for older CLIs and reuses fixed local database directories across
 otherwise independent runs and migration revisions.
 
-Core dependencies are pinned to released v0.18.0 in every owning Go module,
-including the module-authority qualification module. Run qualification with
-`GOWORK=off` so a developer workspace cannot mask the released dependency.
+Core is pinned per Go module. The host's services run core v0.19.x:
+auth-gateway, policy-log, store and telemetry pin released v0.19.2, and accounts
+pins core main's merge commit of codefly-dev/core#788 (the issuer-side
+`Authority.ReadBack`) by pseudo-version until v0.19.3 is released, when all five
+move to that tag. The module agent (the root module), `module/tools` and the
+module-authority qualification module stay on released v0.18.0. Never ship a
+host release on an untagged pseudo-version. Run qualification with `GOWORK=off`
+so a developer workspace cannot mask the pinned dependency.
 Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.54,
 whose builder uses Go 1.27.2 under `GOTOOLCHAIN=local`; CI uses the same patch.
 Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).

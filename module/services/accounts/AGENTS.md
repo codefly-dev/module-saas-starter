@@ -405,6 +405,29 @@ with: the `Mint*` exchanges' refusals carry theirs under
 [Source delegations](#source-delegations-a-sync-runs-with-the-connecting-persons-authority)),
 so matching on a bare reason across the whole service is wrong.
 
+## Reading back a capability this host issued
+
+A capability presented with a QUESTION is read back, never verified:
+`CheckWorkContextRecordAccess`, `ListReadableSourceCollections` and the
+module-parent reads (`GetCurrentInstallation`, the executable-artifact reads) go
+through `WorkContextAuthorityServer.readBack`, which is core's
+`Authority.ReadBack`. It makes every check a verifier makes against live state —
+signature, issuer, audience, window, revision, seal, epochs, binding — and never
+touches the replay store, so the consumer that verified and consumed a
+single-use capability can still ask about it, on every page of a listing. A path
+that ACTS on a capability or derives from it (an exchange, a renewal, a child)
+verifies and consumes with `verifyIssued`; do not move one onto `readBack`, and
+do not answer a question through `verifyIssued`.
+
+**A read-back trusts only the current signing key.** `Authority.ReadBack` checks
+the signature under the authority's own key id and nothing else, where a
+verifier holds a key map that can also carry a previous key. So during a key
+rotation, a capability signed under the PREVIOUS key is refused by every
+read-back — fail closed, as an invalid capability — while a consumer whose JWKS
+still lists that key accepts it. The capability's lifetime bounds the window:
+its holder mints a new one under the current key. Rotating the Work Context key
+therefore briefly refuses questions about capabilities already in flight.
+
 ## Minting a module Work Context
 
 The identity itself is a **Work Context**. The auth-gateway brokers the exchange
