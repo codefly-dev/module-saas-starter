@@ -351,6 +351,14 @@ on one of the `delivery_bindings` the caller names (both carry `binding_id`), or
 caller's own delivery footprint, which delivered as ordinary work would produce more
 of itself.
 
+`DeliverAuditEvents{from, to}` (an operation on `AuditService`, effect id
+`saas.audit.recorded.v1/<from>`) appends the `saas.audit.recorded.v1` records with a
+position in `(from, to]` to the audit storage. `from` is a position or `"start"`,
+never empty; the end must be below the oldest transaction still running and the range
+at most 500 records, or it is refused before anything is appended. Each record's
+organization is its row's, never the caller's. It writes no audit of its own, and one
+receipt per range is committed in the installation's tenant.
+
 ## Authority
 
 - **Publish** is allowed only for types in the caller principal's declared

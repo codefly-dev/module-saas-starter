@@ -80,14 +80,29 @@ tenant, and an `internal` type in it is never fanned out.
 3. **module-runtime reads the journal.** This module never calls module-runtime
    and mints no identity of its own. module-runtime, which holds a `cross_tenant`
    grant, reads the journal through a cross-tenant read RPC on
-   `ModuleCapabilitiesService` and starts one task per event. That task calls a
-   Runnable operation on this module, which reads the journal row by event id,
-   takes the organization from the row and never from the caller, and appends the
-   entry through `AuditStorage` to the warehouse. An entry with no organization
-   runs in the installation's tenant. Delivery is at-least-once and keyed by
-   event id; every read returns each entry once by id. The read RPC and the
-   Runnable operation are specified separately and are not part of this ADR's
-   first change.
+   `ModuleCapabilitiesService` (`ReadJournal`) and hands this module one range of
+   it at a time. The read serves rows in `(xact_id, seq)` order and only below the
+   oldest transaction still running (migration 37; [EVENTS.md](../../EVENTS.md)), so
+   a cursor never passes a row that can still commit; its positions are opaque,
+   and `"start"` is the position before the oldest retained entry. It marks the
+   entries that are the reader's own delivery footprint (`delivery_machinery`), so
+   the reader never parses this module's payloads, and so delivering the audit
+   trail does not feed itself. The reader then calls a Runnable operation on this
+   module, `DeliverAuditEvents{from, to}`, for the range `(from, to]`. The
+   operation refuses a range whose end is not yet visible or that holds more than
+   500 audit records, reads the range's records from the journal, takes each
+   record's organization from its row and never from the caller, and appends each
+   entry through `AuditStorage` to the warehouse. It emits no audit of its own.
+   Its receipt is one per range, effect id `saas.audit.recorded.v1/<from>`, in
+   the installation's tenant, so an entry with no organization needs no tenant of
+   its own. Delivery is at-least-once, and overlapping ranges append an entry
+   twice; every read returns each entry once by id.
+
+   *Revised 2026-10-13.* The first draft started one task per event and read the
+   journal row by event id. Delivering per event made each delivery's own audit (the
+   mint of its Work Context, its exchanges) an event to deliver, and so on without
+   end; a range, with the reader skipping pages that hold only that footprint, ends
+   it. The change is in this item only; the swap, the journal type and the other items stand.
 
 4. **Reads come from the warehouse.** The activity list, aggregation and export go
    through `AuditStorage`. A warehouse read names its scope (an organization, or
