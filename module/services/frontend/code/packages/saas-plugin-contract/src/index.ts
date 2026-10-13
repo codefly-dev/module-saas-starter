@@ -61,11 +61,16 @@ export {
 	DEFAULT_FRONTEND_SKIN_RULES,
 	resolveSkinRules,
 } from "./skin-rules.js";
+export type { ConnectProcedure } from "./transport.js";
 export {
+	connectProcedureTargetPath,
 	encodeFrontendServicePath,
+	FRONTEND_SERVICE_ROOT_PREFIX,
 	frontendServiceTargetPath,
 	isConnectProcedurePath,
+	isConnectServiceName,
 	isFrontendServicePath,
+	resolveConnectProcedure,
 } from "./transport.js";
 export type {
 	FrontendControlSize,

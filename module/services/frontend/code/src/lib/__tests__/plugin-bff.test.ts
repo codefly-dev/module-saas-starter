@@ -19,15 +19,27 @@ const capabilityParams: PluginBffParams = {
 	path: [".well-known", "capabilities"],
 };
 
+// A Connect requirement names the services it may reach, because a procedure's
+// path carries its own service name and the prefix therefore cannot bound it.
+const CONNECT_SERVICES = ["example.records.v1.RecordService"];
+
 function entry(
 	protocol: "connect" | "rest" = "rest",
 	routePrefix = "/api/v1/example",
+	// `undefined` takes the protocol's default; `null` is an entry that declares
+	// no services at all, which is the shape the runtime rule has to refuse.
+	connectServices?: readonly string[] | null,
 ): FrontendServiceAllowlistEntry {
+	const services =
+		connectServices === undefined && protocol === "connect"
+			? CONNECT_SERVICES
+			: connectServices;
 	return {
 		plugin: "example",
 		alias: "api",
 		protocol,
 		routePrefix,
+		...(services ? { connectServices: services } : {}),
 		compatibility: { contract: "example.api", major: 1 },
 		target: {
 			module: "example-module",
@@ -40,12 +52,15 @@ function entry(
 function resolved(
 	protocol: "connect" | "rest" = "rest",
 	routePrefix = "/api/v1/example",
+	// `undefined` takes the fixture default; `null` is an entry that declares no
+	// services at all, which is the shape the runtime rule has to refuse.
+	connectServices?: readonly string[] | null,
 ): Partial<PluginBffDependencies> {
 	return {
 		resolve: () => ({
 			ok: true,
 			value: {
-				entry: entry(protocol, routePrefix),
+				entry: entry(protocol, routePrefix, connectServices),
 				baseURL: "http://example-api.internal",
 			},
 		}),
@@ -877,6 +892,162 @@ describe("generic frontend plugin BFF", () => {
 			expect(fetchMock).not.toHaveBeenCalled();
 		},
 	);
+
+	it.each([
+		[
+			"a service the requirement never declared",
+			["example.secrets.v1.SecretService", "Read"],
+		],
+		[
+			"a service that only looks declared",
+			["example.records.v1.RecordServiceX", "Recover"],
+		],
+	])(
+		"refuses a procedure of %s, so a root-prefixed alias is not the whole origin",
+		async (_label, path) => {
+			// The defect this closes: with `routePrefix: "/"` the FIRST path
+			// segment is the service name, chosen by the caller, so a contributed
+			// page could POST any `<Service>/<Method>` the upstream origin serves
+			// under the viewer's own forwarded bearer. Only the requirement's
+			// declared list bounds it.
+			const fetchMock = vi.fn(async () => new Response("{}") as Response);
+			const response = await handlePluginBffRequest(
+				request(`/api/plugins/example/api/${path.join("/")}`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: "{}",
+				}),
+				{ ...params, path },
+				dependencies({
+					...resolved("connect", "/"),
+					fetch: fetchMock as typeof fetch,
+				}),
+			);
+			expect(response.status).toBe(400);
+			expect(await problemCode(response)).toBe("invalid_path");
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		["a connect alias declaring no services", "connect", "/", null],
+		["a connect alias declaring an empty list", "connect", "/", []],
+		[
+			"a connect alias declaring an unqualified service",
+			"connect",
+			"/",
+			["RecordService"],
+		],
+		["a REST alias declaring the origin root", "rest", "/", null],
+	])(
+		"refuses to proxy %s at all",
+		async (_label, protocol, routePrefix, connectServices) => {
+			// Both rules are the composition's, re-asserted at runtime because the
+			// BFF reads the GENERATED allowlist rather than the composition that
+			// validated it: a stale or hand-edited projection would otherwise make
+			// a Connect alias unbounded, or a REST alias a prefix-less proxy of its
+			// whole upstream. It is the alias that cannot be served, not the
+			// request, so it is 503 rather than a 4xx the caller could fix.
+			const fetchMock = vi.fn(async () => new Response("{}") as Response);
+			const response = await handlePluginBffRequest(
+				request("/api/plugins/example/api/traffic"),
+				params,
+				dependencies({
+					...resolved(
+						protocol as "connect" | "rest",
+						routePrefix,
+						connectServices as readonly string[] | null,
+					),
+					fetch: fetchMock as typeof fetch,
+				}),
+			);
+			expect(response.status).toBe(503);
+			expect(await problemCode(response)).toBe("backend_unavailable");
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
+
+	it("carries a connect procedure under the mount prefix its requirement declares", async () => {
+		// The non-root Connect prefix: the prefix says where the upstream mounts
+		// Connect, the declared list says which of its services the alias speaks
+		// to, and the two are independent. #1098 left this shape with no test, and
+		// the service-scoped form it replaced unreachable.
+		const fetchMock = vi.fn(
+			async (target: RequestInfo | URL, init?: RequestInit) => {
+				void target;
+				void init;
+				return new Response(JSON.stringify({ record: { id: "record-1" } }));
+			},
+		);
+		const response = await handlePluginBffRequest(
+			request(
+				"/api/plugins/example/api/example.records.v1.RecordService/RecoverRecord",
+				{
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"connect-protocol-version": "1",
+					},
+					body: "{}",
+				},
+			),
+			{
+				...params,
+				path: ["example.records.v1.RecordService", "RecoverRecord"],
+			},
+			dependencies({
+				...resolved("connect", "/v1/connect"),
+				fetch: fetchMock as typeof fetch,
+			}),
+		);
+
+		expect(response.status).toBe(200);
+		expect(String(fetchMock.mock.calls[0][0])).toBe(
+			"http://example-api.internal/v1/connect/example.records.v1.RecordService/RecoverRecord",
+		);
+	});
+
+	it("refuses an encoded colon in the raw path", async () => {
+		// `%3A` joins the separators that fail closed. The colon is forwarded
+		// LITERAL on a custom verb precisely because percent-encoding it names a
+		// different resource, so a request that spelled `%3A` must not be decoded
+		// into the verb form by the framework's catch-all and then admitted as
+		// one. Driven through the real route file in
+		// src/app/api/plugins/.../__tests__/route.raw-path.test.ts, where the
+		// decoding actually happens.
+		const fetchMock = vi.fn(async () => new Response("{}") as Response);
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/records%3Arecover", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "{}",
+			}),
+			{ ...params, path: ["records:recover"] },
+			dependencies({ fetch: fetchMock as typeof fetch }),
+		);
+		expect(response.status).toBe(400);
+		expect(await problemCode(response)).toBe("invalid_path");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("refuses a traversal wearing a custom verb", async () => {
+		// `..:recover` is neither "." nor "..", so the segment-level not-dot rule
+		// let it through while the custom-verb form matched it: the upstream
+		// binding would have received ".." as the resource.
+		const fetchMock = vi.fn(async () => new Response("{}") as Response);
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/..:recover", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "{}",
+			}),
+			{ ...params, path: ["..:recover"] },
+			dependencies({ fetch: fetchMock as typeof fetch }),
+		);
+		expect(response.status).toBe(400);
+		expect(await problemCode(response)).toBe("invalid_path");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
 
 	it("still probes the reserved capability path on a root-prefixed connect alias", async () => {
 		const fetchMock = vi.fn(async (target: RequestInfo | URL) => {

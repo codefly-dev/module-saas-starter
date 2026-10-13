@@ -73,6 +73,16 @@ export interface FrontendServiceRequirement {
 	protocol: FrontendServiceProtocol;
 	/** Absolute upstream path prefix that the generated host allowlist may expose. */
 	routePrefix: string;
+	/**
+	 * The fully qualified Connect services this alias may reach. Required, and
+	 * non-empty, on a `connect` requirement; rejected on a `rest` one.
+	 *
+	 * A Connect procedure's path carries its own service name, so the prefix
+	 * cannot bound which service the alias speaks to — only this list can. One
+	 * entry is the alias scoped to one service; several are several services of
+	 * one backend behind one alias and one capability handshake.
+	 */
+	connectServices?: readonly string[];
 	compatibility: FrontendServiceCompatibility;
 }
 

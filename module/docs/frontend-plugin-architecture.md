@@ -86,10 +86,19 @@ silently falls back to sample data.
 - The relative path a product may pass is one rule, stated once in the contract
   package and read by both the browser transport and the BFF: safe segments,
   with a Google custom verb allowed on the last one and its colon forwarded
-  literal, and a Connect procedure for a requirement that declares the origin
-  root as its prefix. Both REST and Connect bindings are therefore reachable
-  from a contributed page, and neither side can admit a shape the other
-  refuses.
+  literal, and a Connect procedure of a service the requirement declared. Both
+  REST and Connect bindings are therefore reachable from a contributed page, and
+  neither side can admit a shape the other refuses.
+- A `connect` requirement names the services it may reach, and the list is
+  required. The protocol puts the service name in the path, so the caller
+  supplies it and the route prefix cannot bound it: the prefix says where the
+  upstream mounts Connect (the origin root, or a product path), and
+  `connectServices` says which of its services the alias speaks to. Without
+  that split an alias reached every service its origin served, as the viewer.
+- The composition's rules on a service requirement are re-asserted at runtime,
+  because the BFF reads the generated allowlist rather than the composition that
+  validated it. A `rest` entry declaring the origin root and a `connect` entry
+  declaring no services are both refused as unserviceable aliases.
 - Failed BFF responses map to a safe public descriptor with only state, stable
   code, optional validated request ID, and optional bounded retry delay.
 - The protobuf-defined capability handshake is the only backend runtime

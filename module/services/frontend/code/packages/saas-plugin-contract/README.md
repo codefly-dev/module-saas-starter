@@ -57,18 +57,23 @@ One colon, on the last segment only, with a lowerCamelCase verb. A colon
 earlier in the path, a second colon in one segment, or an empty resource or
 verb is refused in the browser before a request leaves it —
 `isFrontendServicePath` is the exported predicate, and the host's BFF reads the
-same one, so the two halves cannot drift.
+same one, so the two halves cannot drift. The resource half is a segment like
+any other: `..:recover` is a traversal wearing a verb and is refused with it.
 
-**A Connect requirement declares the origin root.** The Connect protocol puts a
-unary procedure at `/<fully.qualified.Service>/<Method>` from the origin, which
-is also where the fixed capability handshake below is probed, so a Connect
-requirement says `routePrefix: "/"` and passes a procedure as its relative path:
+**A Connect requirement names its mount and its services.** The Connect
+protocol puts a unary procedure at `/<fully.qualified.Service>/<Method>` from
+the origin, which is also where the fixed capability handshake below is probed,
+so `routePrefix: "/"` is a backend serving Connect at its root — and a product
+path such as `/v1/connect` is the same backend mounted behind a path. Either
+way, `connectServices` is **required**: it lists the fully qualified services
+that alias may reach.
 
 ```ts
 const procedures = {
   alias: "procedures",
   protocol: "connect",
   routePrefix: "/",
+  connectServices: ["example.records.v1.RecordService"],
   compatibility: { contract: "example.procedures", major: 1 },
 } as const;
 
@@ -79,10 +84,19 @@ await service.request("example.records.v1.RecordService/RecoverRecord", {
 });
 ```
 
-The root prefix is Connect-only — a REST requirement declaring it would make
-its alias a prefix-less proxy of the whole upstream — and a Connect alias
-carries procedure paths only (`isConnectProcedurePath`); any other shape is
-refused. A route outside the alias a requirement declared is refused whatever
+The list is required because the protocol's path carries the service name, so
+the CALLER supplies it and the prefix cannot bound it: a requirement declaring
+only a prefix could reach every service its upstream origin serves, under the
+viewer's own credential. One entry is an alias scoped to one service; several
+are several services of one backend behind one alias and one handshake. The same
+name twice is refused, and so is `connectServices` on a `rest` requirement.
+
+`resolveConnectProcedure(services, segments)` is the exported rule — the
+procedure a declared list admits, or `null` — and the host's BFF reads the same
+one. A procedure of an undeclared service, a REST-shaped path, and a method with
+no service are all refused; the root prefix stays Connect-only, since a REST
+requirement declaring it would make its alias a prefix-less proxy of the whole
+upstream. A route outside the alias a requirement declared is refused whatever
 its shape.
 
 The application binds each installed requirement to a logical Codefly target

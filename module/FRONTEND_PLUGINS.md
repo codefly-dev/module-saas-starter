@@ -91,10 +91,14 @@ forwards the bearer so the backend remains the authorization authority.
 The relative path carries what a module's bindings declare, in both shapes:
 safe segments, a Google custom verb on the **last** segment with its colon
 literal (`records:recover`, `interactions/{id}:respond`), and — for a Connect
-requirement declaring `/` as its prefix — one Connect procedure at the origin
-root, where the protocol and this contract's own capability handshake already
-put it. A contributed page is not restricted to REST bindings. The rule itself
-lives once, in the contract package's `transport.ts`, and both halves read it.
+requirement — one procedure of a service that requirement named. Its
+`routePrefix` says where the upstream mounts Connect (`/` is the origin root,
+where the protocol and this contract's own capability handshake already put a
+procedure); its required `connectServices` says which services the alias may
+reach, because the procedure's path carries the service name and the caller
+therefore supplies it. A contributed page is not restricted to REST bindings.
+The rule itself lives once, in the contract package's `transport.ts`, and both
+halves read it.
 `/admin/platform/plugin-transport` is the playground that drives every shape
 and shows which of the three answers came back. Every
 product runs the canonical authentication/tenant matrix with two real tenants;
