@@ -93,18 +93,18 @@ type Service struct {
 	githubAppClientID         string                // the App's OAuth client, which identifies the person returning from an install
 	githubAppClientSecret     string                // its secret; without the pair, an installation cannot be attributed to a caller
 	//nolint:lll // the mount this mirrors is a single deployment switch; splitting the note loses the pairing
-	datasourceWebhookMounted bool                    // whether THIS deployment mounted the per-source push receiver; a stored per-source secret verifies nothing without it
+	datasourceWebhookMounted bool // whether THIS deployment mounted the per-source push receiver; a stored per-source secret verifies nothing without it
 	//nolint:lll // one deployment switch; the stopgap it disables is named in datasource_deliveries.go
 	datasourceReconcileSweepOff bool                    // STOPGAP switch (#1121): true stops this host firing the reconcile schedule it DECLARES
 	datasourceTicketSigner      *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
-	newGitHubClient          func(token string) GitHubContentClient
-	newAPIClient             func(cfg APIDatasourceConfig, credential string) APIContentClient
-	newCrawlerClient         func(cfg CrawlerDatasourceConfig) CrawlerContentClient
-	newUploadClient          func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
-	newOAuth2Refresh         OAuth2RefreshFunc // refreshes an OAuth 2.0 API source's access token
-	moduleProducer           jobs.Producer     // request-scoped, transactional outbox producer for the module-facing surface
-	moduleJobStore           jobs.Store        // privileged worker store (claim/finalize) for the module-facing surface
-	eventTransport           events.Transport  // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
+	newGitHubClient             func(token string) GitHubContentClient
+	newAPIClient                func(cfg APIDatasourceConfig, credential string) APIContentClient
+	newCrawlerClient            func(cfg CrawlerDatasourceConfig) CrawlerContentClient
+	newUploadClient             func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
+	newOAuth2Refresh            OAuth2RefreshFunc // refreshes an OAuth 2.0 API source's access token
+	moduleProducer              jobs.Producer     // request-scoped, transactional outbox producer for the module-facing surface
+	moduleJobStore              jobs.Store        // privileged worker store (claim/finalize) for the module-facing surface
+	eventTransport              events.Transport  // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
 
 	// Outbound API operation and OAuth provider dependencies.
 	newOAuth2AuthorizationCode func(context.Context, apisource.OAuth2Config, string, string, string, string) (*apisource.OAuth2Token, error)
