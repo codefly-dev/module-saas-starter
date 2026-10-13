@@ -193,9 +193,15 @@ function TriggerIdentityPanel({
 		? staleReadNotice(outcome, "this trigger")
 		: null;
 	// The same never-flashing wait the schedule row uses, so the pending window
-	// is a state of its own rather than the tail of the empty one.
-	const declarationPhase = useLoadingPhase(read.isFetching && !declaration);
-	const waiting = declarationPhase.indicator || declarationPhase.quiet;
+	// is a state of its own rather than the tail of the empty one — and on the
+	// same model as the source list beside it: pending with a non-idle fetch
+	// status is an answer still coming, whether a request is on the wire or
+	// PAUSED because the browser is offline. `isFetching` is false while paused,
+	// so a gate on it called a paused read finished (issue #1121).
+	const unanswered = read.isPending && read.fetchStatus !== "idle";
+	const declarationPhase = useLoadingPhase(unanswered);
+	const waiting =
+		unanswered || declarationPhase.indicator || declarationPhase.quiet;
 	const references = withheld ? [] : (read.data?.delegations ?? []);
 	const children = withheld ? [] : (read.data?.children ?? []);
 	const live = references.filter((reference) => reference.active);
@@ -222,7 +228,7 @@ function TriggerIdentityPanel({
 					 * prior answer under a stale notice.
 					 */}
 					<DelayedLoading
-						active={read.isFetching && !declaration}
+						active={unanswered}
 						label="Reading the declared trigger"
 					/>
 					{declarationStale && (

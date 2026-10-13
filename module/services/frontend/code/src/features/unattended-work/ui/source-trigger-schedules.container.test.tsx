@@ -1,5 +1,5 @@
 import { notifySourceReconcileAdmitted } from "@codefly-dev/saas-ui";
-import { QueryClient } from "@tanstack/react-query";
+import { onlineManager, QueryClient } from "@tanstack/react-query";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1282,5 +1282,66 @@ describe("the deletion under the lifecycle paths the harness hides", () => {
 		await screen.findByText("*/30 * * * *");
 		expect(attempts).toBe(2);
 		expect(client.getQueryData([...KEY])).toBeTruthy();
+	});
+});
+
+// A PAUSED READ HAS NOT ANSWERED (issue #1121, the read-lifecycle review).
+//
+// Offline, TanStack parks a cold query at status `pending` with fetchStatus
+// `paused` — and `isFetching` is FALSE, because that flag means "a request is
+// on the wire". Every gate in this file was written against `isFetching`, so a
+// paused read read as "finished, nothing came back" and the row stated "This
+// source declares no trigger" about a source nobody had asked the host about
+// yet. The source LIST beside it already had this right:
+// `sources.isPending && sources.fetchStatus !== "idle"`, which separates a read
+// still coming (fetching or paused) from a read that was never issued
+// (disabled, idle). That is the model these rows now reuse.
+describe("a declaration read paused by the browser being offline", () => {
+	afterEach(() => onlineManager.setOnline(true));
+
+	it("claims nothing while the read is paused, and recovers when online", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({
+					declaration: declared,
+					delegations: [],
+					children: [],
+				}),
+			),
+		);
+		// The list is already in the cache — the reported shape — so the panel
+		// renders its rows while the per-source read cannot leave the gate.
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		client.setQueryData(["unattended-sources", "org-1"], sources.datasources);
+		onlineManager.setOnline(false);
+
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+		await screen.findByText("acme/handbook");
+
+		// The premise, asserted rather than assumed.
+		await waitFor(() => {
+			const state = client.getQueryState([
+				"source-trigger-declaration",
+				"org-1",
+				SOURCE,
+			]);
+			expect(state?.fetchStatus).toBe("paused");
+			expect(state?.status).toBe("pending");
+		});
+
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+
+		// Back online, the read runs and the row fills in.
+		onlineManager.setOnline(true);
+		await screen.findByText("*/30 * * * *");
 	});
 });

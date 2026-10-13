@@ -177,8 +177,18 @@ function SourceTriggerRow({
 	const outcome = readOutcome(read.isError, read.error);
 	const declaration = read.data?.declaration;
 	const stale = declaration ? staleReadNotice(outcome, "this trigger") : null;
-	const phase = useLoadingPhase(read.isFetching);
-	const waiting = phase.indicator || phase.quiet;
+	// AN ANSWER IS STILL COMING, which is not the same as a request being on
+	// the wire. Offline, TanStack parks a cold query at status `pending` with
+	// fetchStatus `paused`, and `isFetching` is FALSE — so a gate on
+	// `isFetching` read a paused read as "finished, nothing came back" and the
+	// row stated this source declares no trigger about a read that never left
+	// the gate (issue #1121). The source list above already had the right
+	// model, and this is it: pending with a non-idle fetch status is a read
+	// still coming (fetching or paused); pending with an IDLE one is a read
+	// that was never issued, which is the genuine disabled case.
+	const unanswered = read.isPending && read.fetchStatus !== "idle";
+	const phase = useLoadingPhase(unanswered);
+	const waiting = unanswered || phase.indicator || phase.quiet;
 	const identity = useMemo(() => declaredIdentity(declaration), [declaration]);
 	// The operation is read off the declaration so the manual rows name the
 	// same string the scheduled ones do. A literal here would be this page's
@@ -205,7 +215,7 @@ function SourceTriggerRow({
 				) : null}
 			</div>
 			<DelayedLoading
-				active={read.isFetching && !declaration}
+				active={unanswered}
 				label={`Reading the trigger ${label} declares`}
 			/>
 			{stale && (

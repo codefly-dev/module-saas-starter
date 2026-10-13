@@ -74,9 +74,16 @@ export function ModuleTenantIdentityPlayground() {
 	const answer = read.data;
 	// A disabled query is not a loading one: with a field empty it sits at
 	// isPending with an idle fetch status, and a wait for a read that was never
-	// issued is a spinner that never resolves.
-	const phase = useLoadingPhase(read.isFetching);
-	const waiting = phase.indicator || phase.quiet;
+	// issued is a spinner that never resolves. That rule was stated here and
+	// then read off the wrong flag: `isFetching` means "a request is on the
+	// wire", so a read PAUSED because the browser is offline — pending,
+	// fetchStatus `paused`, isFetching false — fell through to "Complete the
+	// selection above" with all three fields entered (issue #1121). Pending
+	// with a non-idle fetch status is an answer still coming; pending with an
+	// IDLE one is the genuine no-input case, and keeps that copy.
+	const unanswered = read.isPending && read.fetchStatus !== "idle";
+	const phase = useLoadingPhase(unanswered);
+	const waiting = unanswered || phase.indicator || phase.quiet;
 	const stale = answer
 		? staleReadNotice(
 				outcome,
@@ -150,7 +157,7 @@ export function ModuleTenantIdentityPlayground() {
 					</div>
 
 					<DelayedLoading
-						active={read.isFetching}
+						active={unanswered}
 						label="Resolving the declared authority"
 					/>
 					{stale && (
@@ -192,7 +199,7 @@ export function ModuleTenantIdentityPlayground() {
 				</CardHeader>
 				<CardContent>
 					<DelayedLoading
-						active={read.isFetching}
+						active={unanswered}
 						label="Reading issued capabilities"
 					/>
 					{waiting ? null : !answer ? (

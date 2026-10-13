@@ -1,3 +1,4 @@
+import { onlineManager, QueryClient } from "@tanstack/react-query";
 import {
 	act,
 	cleanup,
@@ -390,6 +391,63 @@ describe("the playground's declaration card while the read is in flight", () => 
 		expect(within(card).queryByText("Identity")).toBeNull();
 
 		release?.();
+		await screen.findByText("saas_datasource_reconcile");
+	});
+});
+
+// AND THE SAME PAUSED READ IN THE PLAYGROUND'S CARD (issue #1121, the
+// read-lifecycle review). Offline, a cold query parks at status `pending` with
+// fetchStatus `paused`, and `isFetching` is FALSE — so the card's gate read it
+// as "finished, nothing came back" and said this source declares no trigger
+// about a read that never left the gate. The source list beside it already
+// distinguishes paused from disabled with `isPending && fetchStatus !== "idle"`.
+describe("the playground's declaration card when the read is paused", () => {
+	afterEach(() => onlineManager.setOnline(true));
+
+	it("claims nothing while paused, and recovers when online", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({
+					declaration: declared,
+					delegations: [reference],
+					children: [],
+				}),
+			),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		client.setQueryData(["unattended-sources", "org-1"], sources.datasources);
+		onlineManager.setOnline(false);
+
+		renderInApp(<Page />, client);
+		const card = await waitFor(() => {
+			const found = document.querySelector<HTMLElement>(
+				'[data-slot="declared-trigger"]',
+			);
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+		await waitFor(() => {
+			const state = client.getQueryState([
+				"source-trigger-declaration",
+				"org-1",
+				SOURCE,
+			]);
+			expect(state?.fetchStatus).toBe("paused");
+		});
+
+		expect(
+			within(card).queryByText("This source declares no trigger."),
+		).toBeNull();
+		expect(
+			within(card).queryByText("None — occurrences would be refused"),
+		).toBeNull();
+
+		onlineManager.setOnline(true);
 		await screen.findByText("saas_datasource_reconcile");
 	});
 });

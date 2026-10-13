@@ -1,9 +1,10 @@
-import { QueryClient } from "@tanstack/react-query";
+import { onlineManager, QueryClient } from "@tanstack/react-query";
 import {
 	act,
 	cleanup,
 	fireEvent,
 	screen,
+	waitFor,
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
@@ -531,5 +532,66 @@ describe("the identity deletion under the lifecycle paths the harness hides", ()
 		await screen.findByText("audit-1");
 		expect(attempts).toBe(2);
 		expect(client.getQueryData([...KEY])).toBeTruthy();
+	});
+});
+
+// A PAUSED READ IS NOT AN INCOMPLETE SELECTION (issue #1121, the read-lifecycle
+// review). Offline with all three fields entered, the query parks at status
+// `pending` / fetchStatus `paused` and `isFetching` is FALSE — so the page fell
+// through to "Complete the selection above to read issued capabilities" while
+// the selection was complete. Its own comment already stated the rule the code
+// did not follow: a disabled query sits at isPending with an IDLE fetch status,
+// which is the genuine no-input case and keeps that copy.
+describe("the identity read while paused by the browser being offline", () => {
+	afterEach(() => onlineManager.setOnline(true));
+
+	it("does not ask for a selection that is already complete, and recovers", async () => {
+		serve(minted);
+		onlineManager.setOnline(false);
+		const { client } = renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+
+		await waitFor(() => {
+			const state = client.getQueryState([
+				"module-tenant-identity",
+				"example",
+				"operate",
+				ORG,
+			]);
+			expect(state?.fetchStatus).toBe("paused");
+			expect(state?.status).toBe("pending");
+		});
+
+		expect(
+			screen.queryByText(
+				"Complete the selection above to read issued capabilities.",
+			),
+		).toBeNull();
+
+		onlineManager.setOnline(true);
+		await screen.findByText("audit-1");
+	});
+
+	// The genuine no-input case must keep its own copy: a query disabled by an
+	// empty field sits at isPending with an IDLE fetch status.
+	it("still asks for the selection when a field is empty", async () => {
+		serve(minted);
+		const { client } = renderInApp(<ModuleTenantIdentityPlayground />);
+		fireEvent.change(screen.getByLabelText("Module prefix"), {
+			target: { value: "example" },
+		});
+
+		const state = client.getQueryState([
+			"module-tenant-identity",
+			"example",
+			"",
+			"",
+		]);
+		expect(state?.fetchStatus ?? "idle").toBe("idle");
+		expect(
+			screen.getByText(
+				"Complete the selection above to read issued capabilities.",
+			),
+		).toBeTruthy();
 	});
 });
