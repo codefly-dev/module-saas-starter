@@ -1217,23 +1217,35 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
-		// There is deliberately NO datasource reconcile sweep here. A source's
-		// reconcile schedule is a trigger this host DECLARES and an executing
-		// module fires (business/datasource_trigger.go): the host that also
-		// fired it would be two schedules for one source, and the one nobody
-		// declared would win. The interval remains the source's configuration
-		// and re-declares the trigger; the occurrence admits
-		// DatasourceService/ReconcileSource, the same operation a person's
-		// manual pass does.
+		// Datasource reconcile (issue #487 §6): the production safety net for lost
+		// webhooks and for local development without a public tunnel. Each sweep
+		// enqueues a reconcile job for every active source whose schedule has
+		// elapsed; the job does no provider work in the sweep itself.
+		//
+		// STOPGAP (issue #1112). The schedule this fires is also DECLARED, as a
+		// trigger a composed module that executes declared work is meant to fire
+		// (business/datasource_trigger.go). Nothing consumes that declaration
+		// yet, so #1090's deletion of this sweep left no scheduled reconcile
+		// running anywhere. It is restored until a composed runtime consumes
+		// per-source triggers, and the deletion list is in
+		// business/datasource_deliveries.go beside RunDatasourceReconcile. One
+		// occurrence of the declared trigger admits
+		// DatasourceService/ReconcileSource, which reaches exactly the engines
+		// this sweep reaches.
+		sweepReconcile := func() {
+			if n, err := service.RunDatasourceReconcile(retentionCtx); err != nil {
+				rw.Warn("datasource reconcile sweep failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("enqueued datasource reconciles", wool.Field("count", n))
+			}
+		}
 
-		// GitHub App installation re-check (issue #691): the safety net for the
-		// half that webhooks alone cannot cover. Parking a source takes it off
-		// its declared reconcile schedule, so a restored installation whose
-		// `unsuspend` delivery GitHub failed to hand over would leave that
-		// source parked for good. This re-verifies installations that still
-		// hold one. It is a re-check of this host's OWN records against the
-		// provider, not work on a source's content, which is why it stays here
-		// while the reconcile schedule left. Each installation is only enqueued
+		// GitHub App installation re-check (issue #691): the same safety net, for
+		// the half that webhooks alone cannot cover. Parking a source removes it
+		// from the reconcile sweep above, so a restored installation whose
+		// `unsuspend` delivery GitHub failed to hand over would leave that source
+		// parked for good. This re-verifies installations that still hold one.
+		// The sweep runs on the same tick, but each installation is only enqueued
 		// once per re-check window, so the tick does not set the rate.
 		sweepInstallationRecheck := func() {
 			if n, err := service.RunGitHubInstallationRecheck(retentionCtx); err != nil {
@@ -1247,14 +1259,15 @@ func doWork(ctx context.Context) (Clean, error) {
 		runRetention()
 		sweepReplay()
 		sweepPrivacyArtifacts()
+		sweepReconcile()
 		sweepInstallationRecheck()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
 		replayTicker := time.NewTicker(time.Hour)
-		installationRecheckTicker := time.NewTicker(time.Minute)
+		reconcileTicker := time.NewTicker(time.Minute)
 		defer retentionTicker.Stop()
 		defer replayTicker.Stop()
-		defer installationRecheckTicker.Stop()
+		defer reconcileTicker.Stop()
 		for {
 			select {
 			case <-retentionCtx.Done():
@@ -1264,7 +1277,8 @@ func doWork(ctx context.Context) (Clean, error) {
 			case <-replayTicker.C:
 				sweepReplay()
 				sweepPrivacyArtifacts()
-			case <-installationRecheckTicker.C:
+			case <-reconcileTicker.C:
+				sweepReconcile()
 				sweepInstallationRecheck()
 			}
 		}

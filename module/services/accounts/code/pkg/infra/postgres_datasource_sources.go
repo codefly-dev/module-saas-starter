@@ -442,6 +442,45 @@ func (s *PostgresStore) SetDatasourceSourceGitHubInstallation(ctx context.Contex
 	return err
 }
 
+// ListDatasourceSourcesDueForReconcile returns active sources of every provider
+// whose reconcile is due, oldest schedule first. Runs under the caller's
+// WithControlPlane.
+//
+// STOPGAP (issue #1112), and the read half of one: this query exists only to
+// feed the host's own reconcile sweep, which is itself a stopgap for a
+// declared trigger nothing fires yet. It is deleted with the sweep — see
+// Service.RunDatasourceReconcile for the one condition that deletes both.
+//
+// It selects every provider on purpose. It used to filter provider = 'github'
+// which — together with a pull provider never being given a next_reconcile_at
+// at connect — put an api, crawler or object-storage source outside the safety
+// net twice over. The caller routes each row to the path its provider syncs on,
+// so selecting them all here is what makes the sweep the whole schedule rather
+// than GitHub's.
+func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*business.DatasourceSource, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx,
+		`SELECT `+datasourceSourceColumns+`
+		   FROM datasource_sources
+		  WHERE status = 'active'
+		    AND next_reconcile_at IS NOT NULL
+		    AND next_reconcile_at <= $1
+		  ORDER BY next_reconcile_at
+		  LIMIT $2`, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sources []*business.DatasourceSource
+	for rows.Next() {
+		source, err := scanDatasourceSource(rows)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, source)
+	}
+	return sources, rows.Err()
+}
+
 // ListDatasourceSources returns the org's Sources, newest first. Runs under the
 // caller's WithOrgTx.
 func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string) ([]*business.DatasourceSource, error) {

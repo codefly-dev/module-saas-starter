@@ -131,7 +131,16 @@ func (s *Service) ReconcileDatasourceSource(ctx context.Context, actor, org, sou
 // occurrence's provenance, so an operator reading the queue can tell a
 // declared schedule's pass from a person's.
 func (s *Service) enqueueReconcileOccurrence(ctx context.Context, source *DatasourceSource, effectID string) (string, error) {
-	key := "datasource.reconcile:" + effectID
+	// The key names the organization and the source as well as the effect
+	// (issue #1112, m2). An effect identity is the CALLER's to choose and the
+	// GitHub job's scope is Global, so a key of the effect alone put every
+	// tenant's reconciles in one namespace: a caller in one organization could
+	// pick an identity already pending for a source in another and have the
+	// platform collapse the two, suppressing that organization's reconcile
+	// with no refusal anywhere. Both idempotency guarantees the operation
+	// needs are unaffected — two attempts of one occurrence still agree on all
+	// three parts, and the next occurrence still differs in the effect.
+	key := "datasource.reconcile:" + source.OrgID + ":" + source.ID + ":" + effectID
 	if source.Provider == DatasourceProviderGitHub {
 		return s.enqueueJobID(ctx, &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,

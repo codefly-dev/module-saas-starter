@@ -242,3 +242,48 @@ func TestIntersectOperationScopesNarrowsAndNeverWidens(t *testing.T) {
 		})
 	}
 }
+
+// A binding MAY name its own module as the audience, and only when it declares
+// a grant for work with no person present (issue #1112, m1).
+//
+// The refusal side has always been covered; the accept side was reached only
+// through fixtures that happen to declare a self-audience, where a parse
+// passing says nothing about why. Both arms are asserted here, separately,
+// because they are separate grants: a trigger's reference arm needs
+// source_delegation_scopes and its installation-binding arm needs
+// headless_scopes, and a composition may declare either alone.
+func TestSelfAudienceIsAcceptedOnlyForWorkWithNoPersonPresent(t *testing.T) {
+	invoke := []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
+	headless := []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}}
+	delegated := []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"write"}}}
+
+	for name, binding := range map[string]ModuleOperationAudience{
+		"delegation scopes only": {Audience: "runtime", InvokeScopes: invoke, SourceDelegationScopes: delegated},
+		"headless scopes only":   {Audience: "runtime", InvokeScopes: invoke, HeadlessScopes: headless},
+		"both":                   {Audience: "runtime", InvokeScopes: invoke, HeadlessScopes: headless, SourceDelegationScopes: delegated},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.True(t, selfAdmittingBinding(binding))
+			require.NoError(t, validateOperationAudiences("runtime", map[string]ModuleOperationAudience{"occurrences": binding}))
+		})
+	}
+
+	// Neither grant: the binding describes calling another service, so naming
+	// itself is a capability addressed to nobody new and the declaration is
+	// refused. Accepted the moment it names any other audience, which is what
+	// makes this a narrowing of one guard rather than its removal.
+	ordinary := ModuleOperationAudience{Audience: "runtime", InvokeScopes: invoke}
+	require.False(t, selfAdmittingBinding(ordinary))
+	require.Error(t, validateOperationAudiences("runtime", map[string]ModuleOperationAudience{"occurrences": ordinary}))
+	ordinary.Audience = "ingestservice"
+	require.NoError(t, validateOperationAudiences("runtime", map[string]ModuleOperationAudience{"occurrences": ordinary}))
+
+	// The guard this narrowing does NOT touch is the one protecting this host's
+	// identity surface, and it is a different guard in a different place: a
+	// capability addressed to the module-capabilities audience is refused when
+	// it is SIGNED (requireMintableAudience, in the adapters), whatever any
+	// binding declares. So this function accepting a self-admitting binding is
+	// not the decision that lets a capability be issued, which is why the
+	// narrowing cannot become a second spelling of a module identity.
+	require.NotEqual(t, "runtime", ModuleCapabilitiesAudience)
+}

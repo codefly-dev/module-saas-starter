@@ -33,6 +33,8 @@ pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithContr
 pkg/business/current_installation.go: (*Service).ModuleCurrentInstallation: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Acquire: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Blocked: WithControlPlane
+pkg/business/datasource_deliveries.go: (*Service).RunDatasourceReconcile: WithControlPlane
+pkg/business/datasource_deliveries.go: (*Service).RunDatasourceReconcile: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).advanceCursor: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).allocateOrdinal: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).parkUnreadablePublicSource: WithControlPlane
