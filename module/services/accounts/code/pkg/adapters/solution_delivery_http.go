@@ -45,6 +45,7 @@ type solutionDeliveryService interface {
 	ReceiveSolutionDelivery(
 		ctx context.Context, carrier business.SolutionDeliveryCarrier, credential string,
 	) (business.SolutionDeliveryDisposition, *business.SolutionDeliveryRecord, error)
+	ReadSolutionDeliveryApplied(context.Context, string, string) (*business.SolutionDeliveryApplied, error)
 }
 
 // SolutionDeliveryHTTPHandler serves the two delivery paths.
@@ -71,6 +72,10 @@ type solutionDeliveryReceipt struct {
 }
 
 func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, SolutionDeliveryPrefix+"applied/") {
+		h.serveApplied(w, r)
+		return
+	}
 	// An unknown path under the reserved namespace is 404, never a fall-through.
 	kind := business.SolutionDeliveryKind(strings.TrimPrefix(r.URL.Path, SolutionDeliveryPrefix))
 	if !strings.HasPrefix(r.URL.Path, SolutionDeliveryPrefix) || !kind.Valid() {
@@ -116,6 +121,36 @@ func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 		ContentHash: record.ContentHash,
 		Signer:      record.SignerIdentity,
 	})
+}
+
+func (h *SolutionDeliveryHTTPHandler) serveApplied(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	binding := strings.TrimPrefix(r.URL.Path, SolutionDeliveryPrefix+"applied/")
+	if binding == "" || len(binding) > 128 || strings.ContainsAny(binding, "/\\") {
+		writeSolutionDeliveryError(w, http.StatusNotFound, "no such delivery endpoint")
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeSolutionDeliveryError(w, http.StatusMethodNotAllowed, "applied state is a GET")
+		return
+	}
+	if len(r.Header.Values("Authorization")) != 1 {
+		writeSolutionDeliveryError(w, http.StatusUnauthorized, "one observer credential is required")
+		return
+	}
+	applied, err := h.service.ReadSolutionDeliveryApplied(r.Context(), binding, r.Header.Get("Authorization"))
+	if errors.Is(err, business.ErrSolutionHostBindingNotDeclared) {
+		writeSolutionDeliveryError(w, http.StatusNotFound, "binding has no applied generation")
+		return
+	}
+	if err != nil {
+		status, message := solutionDeliveryStatus(err)
+		writeSolutionDeliveryError(w, status, message)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(applied)
 }
 
 // solutionDeliveryStatus maps a refusal onto its response code.

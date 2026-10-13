@@ -73,6 +73,30 @@ type SolutionDeliveryCarrierCheck struct {
 	kubernetes *KubernetesClient
 }
 
+// AuthorizeAppliedObserver checks the separate protected publisher identity.
+// The delivery writer cannot use this read, and the publisher cannot use the
+// document delivery write. Both reuse the accounts-audience TokenReview seam.
+func (c *SolutionDeliveryCarrierCheck) AuthorizeAppliedObserver(ctx context.Context, credential string) error {
+	if c == nil || c.kubernetes == nil {
+		return fmt.Errorf("%w: this host cannot review an observer's credential", ErrKubernetesUnavailable)
+	}
+	token := bearerToken(credential)
+	if token == "" {
+		return fmt.Errorf("%w: no bearer token was presented", ErrCarrierUnauthenticated)
+	}
+	reviewed, err := c.kubernetes.reviewToken(ctx, token, deliveryTokenAudience)
+	if err != nil {
+		if errors.Is(err, ErrTokenRejected) {
+			return fmt.Errorf("%w: %w", ErrCarrierUnauthenticated, err)
+		}
+		return err
+	}
+	if reviewed.Namespace != "istio-presenter" || reviewed.ServiceAccount != "endpoint-publisher" {
+		return fmt.Errorf("%w: caller is not the protected applied-state observer", ErrCarrierNotAuthorized)
+	}
+	return nil
+}
+
 // NewSolutionDeliveryCarrierCheck builds the carrier authorizer.
 func NewSolutionDeliveryCarrierCheck(kubernetes *KubernetesClient) *SolutionDeliveryCarrierCheck {
 	return &SolutionDeliveryCarrierCheck{kubernetes: kubernetes}
@@ -174,3 +198,4 @@ func bearerToken(credential string) string {
 }
 
 var _ business.SolutionDeliveryCarrierAuthorizer = (*SolutionDeliveryCarrierCheck)(nil)
+var _ business.SolutionDeliveryObserverAuthorizer = (*SolutionDeliveryCarrierCheck)(nil)

@@ -732,6 +732,7 @@ document, and every registrant hardcodes those paths today.
 | `POST /platform/_credential` | **Settled, NOT YET LIVE** | the module/solution credential mint. On the **gateway**, which forwards `Authorization` verbatim; accounts performs the `TokenReview` on the pod's own token. |
 | `POST /platform/_delivery/presence` | **LIVE** | a signed presence document, `{schema, document, bundle}` |
 | `POST /platform/_delivery/authority` | **LIVE** | a signed authority document, same carrier |
+| `GET /platform/_delivery/applied/{binding}` | Implemented; deployment qualification pending | committed APPLIED presence, readable only by the protected endpoint publisher |
 
 **The two delivery paths are now served by accounts**, which performs the
 `TokenReview` on the carrier's own token. The credential mint remains **NOT YET
@@ -739,6 +740,23 @@ LIVE** and is brokered by the gateway when it lands; a consumer calling it today
 gets a 404 on every deployment, not just one, which is the one mercy in the
 situation. Keep an override until this table says live for it, and do not treat
 a 404 as "my path is wrong".
+
+The applied-state read uses the same Accounts delivery listener and reviews an
+`accounts`-audience projected token. Only ServiceAccount `endpoint-publisher` in
+namespace `istio-presenter` may read it. The ordinary delivery writer cannot use
+that read; the publisher cannot write presence or authority. Mesh policy must
+independently admit only this GET from the protected publisher.
+
+A `200` read returns `{host: {coordinate, component}, binding, generation,
+presenceDigest, release, removed, appliedAt}`. The digest covers the complete
+canonical APPLIED presence; the time is RFC3339. Identity comes from the saved
+applied document, even when a newer desired generation is withheld. No applied
+generation is `404`, including a desired-only binding; a committed tombstone is
+`200` with `removed: true`. Missing/refused credentials are `401`, a different
+authenticated identity is `403`, and unavailable or inconsistent durable state
+is `503`. The response is never cached. A publisher must compare host, binding,
+generation, digest and removal with its expected declaration before publishing
+endpoints. Neither the write endpoint's `202` nor its replay `200` proves apply.
 
 Delivery answers on this taxonomy, and it is organised by **what a retry would
 change** rather than by severity:

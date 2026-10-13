@@ -5,6 +5,7 @@ package infra_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -69,11 +70,12 @@ type productionPathDelivery struct {
 	// the review are all real, and a fake check would let every one of them go
 	// untested while looking identical.
 	callerNamespace string
+	callerAccount   string
 }
 
 func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 	t.Helper()
-	delivery := &productionPathDelivery{callerNamespace: authorityWriterNamespace}
+	delivery := &productionPathDelivery{callerNamespace: authorityWriterNamespace, callerAccount: deliveryWriterAccount}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/apis/authentication.k8s.io/v1/tokenreviews" {
 			http.NotFound(w, r)
@@ -83,7 +85,7 @@ func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 			"authenticated": true,
 			"audiences":     []string{"accounts"},
 			"user": map[string]any{
-				"username": "system:serviceaccount:" + delivery.callerNamespace + ":" + deliveryWriterAccount,
+				"username": "system:serviceaccount:" + delivery.callerNamespace + ":" + delivery.callerAccount,
 			},
 		}}
 		w.Header().Set("Content-Type", "application/json")
@@ -284,9 +286,27 @@ func TestTombstoneIsAcceptedAndWithdrawsTheRegistrationEndToEnd(t *testing.T) {
 	present := productionPathBinding(t, solutionID, namespace, 1)
 
 	delivery := newProductionPathDelivery(t)
+	observe := func(want int) *business.SolutionDeliveryApplied {
+		previousNamespace, previousAccount := delivery.callerNamespace, delivery.callerAccount
+		delivery.callerNamespace, delivery.callerAccount = "istio-presenter", "endpoint-publisher"
+		defer func() { delivery.callerNamespace, delivery.callerAccount = previousNamespace, previousAccount }()
+		r := httptest.NewRequest(http.MethodGet, adapters.SolutionDeliveryPrefix+"applied/"+present.Binding, nil)
+		r.Header.Set("Authorization", "Bearer projected-observer-token")
+		w := httptest.NewRecorder()
+		delivery.handler.ServeHTTP(w, r)
+		require.Equal(t, want, w.Code, w.Body.String())
+		if want != http.StatusOK {
+			return nil
+		}
+		var receipt business.SolutionDeliveryApplied
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &receipt))
+		return &receipt
+	}
+	observe(http.StatusNotFound)
 	delivery.callerNamespace = namespace
 	requireDelivered(t, delivery.post(t, business.SolutionDeliveryPresence,
 		productionPathCarrier(t, present)))
+	observe(http.StatusNotFound) // The durable desired receipt has not applied.
 
 	reconciler := newProductionPathReconciler(t, delivery.service)
 	require.NoError(t, reconciler.RunOnce(testCtx))
@@ -296,6 +316,34 @@ func TestTombstoneIsAcceptedAndWithdrawsTheRegistrationEndToEnd(t *testing.T) {
 	require.Equal(t, uint64(1), applied.Applied.Generation)
 	require.Equal(t, solutionID, applied.Applied.SolutionID)
 	require.False(t, applied.Applied.Removed)
+	digest, err := present.Digest()
+	require.NoError(t, err)
+	require.Equal(t, digest, observe(http.StatusOK).PresenceDigest)
+	// A saved desired successor does not alter the reported committed identity.
+	desired := *present
+	desired.Generation = 99
+	desired.Host.Coordinate = "withheld-desired-host"
+	desiredDigest, err := desired.Digest()
+	require.NoError(t, err)
+	desiredBytes, err := solutionhost.Marshal(&desired)
+	require.NoError(t, err)
+	applied.Desired = &business.SolutionHostBindingGeneration{Generation: 99, Digest: desiredDigest, Document: string(desiredBytes), At: time.Now()}
+	applied.HostCoordinate = "withheld-desired-host"
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.SaveSolutionHostBinding(ctx, applied)
+	}))
+	require.Equal(t, present.Host, observe(http.StatusOK).Host)
+	// A transaction that writes an applied change then rolls back must remain
+	// invisible to an observer on another control-plane transaction.
+	rolledBack := errors.New("test rollback")
+	require.ErrorIs(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		applied.Applied.Generation++
+		if saveErr := testStore.SaveSolutionHostBinding(ctx, applied); saveErr != nil {
+			return saveErr
+		}
+		return rolledBack
+	}), rolledBack)
+	require.Equal(t, uint64(1), observe(http.StatusOK).Generation)
 
 	// THE POST THAT WAS IMPOSSIBLE. The tombstone declares no workload, so its
 	// carrier is authorised against the namespace generation 1 applied.
@@ -306,6 +354,7 @@ func TestTombstoneIsAcceptedAndWithdrawsTheRegistrationEndToEnd(t *testing.T) {
 			receipt.Body.String())
 	}
 	requireDelivered(t, receipt)
+	require.False(t, observe(http.StatusOK).Removed, "desired tombstone must not report committed removal")
 
 	// The inbox's desired set is the NEWEST generation per document, so the
 	// tombstone supersedes generation 1 without anything being deleted.
@@ -318,6 +367,9 @@ func TestTombstoneIsAcceptedAndWithdrawsTheRegistrationEndToEnd(t *testing.T) {
 	require.NotNil(t, withdrawn.Applied)
 	require.Equal(t, uint64(2), withdrawn.Applied.Generation)
 	require.True(t, withdrawn.Applied.Removed, "the tombstone generation did not apply")
+	observedRemoval := observe(http.StatusOK)
+	require.True(t, observedRemoval.Removed)
+	require.Equal(t, uint64(2), observedRemoval.Generation)
 	require.Equal(t, solutionID, withdrawn.Applied.SolutionID,
 		"a tombstone keeps the key it withdrew, so the removal stays attributable")
 

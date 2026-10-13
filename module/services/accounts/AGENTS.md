@@ -32,6 +32,13 @@ generations and pending reasons. Core owns document admission; each apply
 re-decides under the binding row lock. A refused or unreadable delivery does not
 withdraw the last applied generation. Withdrawal requires a tombstone generation.
 
+`GET /platform/_delivery/applied/{binding}` reads only that committed generation,
+including tombstones, after an accounts-audience TokenReview of the protected
+endpoint publisher. A desired delivery receipt is not proof of apply. The
+observer's identity has no delivery write permission; other delivery identities
+have no observer permission. The wire and response taxonomy are documented in
+[../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md).
+
 `solution_registrations` is the durable read projection, keyed by the route alias.
 Every row names its declared binding, generation, release and immutable target.
 A binding ID identifies a deployment instance, while an alias identifies a route;
