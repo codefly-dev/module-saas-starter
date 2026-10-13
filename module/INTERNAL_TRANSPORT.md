@@ -167,14 +167,17 @@ fail closed rather than fall back to another key when the set expires.
 
 ## The endpoint a composed module depends on: `accounts/authority`
 
-The module interface exports four endpoints with `visibility: internal` and
+The module interface exports five endpoints with `visibility: internal` and
 `allow-modules: ["*"]`. This explicitly preserves their reachability by every
 composed module; it grants neither public ingress nor application authority.
-The retired `module` spelling is refused by current Codefly. Three do not
+The retired `module` spelling is refused by current Codefly. Four do not
 carry this tier: `accounts/connect` and `auth-gateway/grpc` are tenant surfaces
-whose tiering interceptor refuses internal methods, and `auth-gateway/rest`
+whose tiering interceptor refuses internal methods, `auth-gateway/rest`
 carries the brokered bootstrap routes (registration, Work Context mints) and the
-key set. The fourth, `accounts/authority`, is a gRPC endpoint with a listener of
+key set, and `auth-gateway/workload` serves the same gateway routes over mutual
+TLS to workloads that present a platform-issued SVID listed in its
+allowed-callers file, where a module mint must also come from the SPIFFE ID its
+delivered presence declares. The fifth, `accounts/authority`, is a gRPC endpoint with a listener of
 its own, and it is the internal tier **narrowed**:
 
 - **Only the module surface is served.** `business.ModuleAuthorityProcedures`

@@ -572,7 +572,15 @@ could not run is `ErrExecutionUnbound`, not one.
   API server has just authenticated. A longer one, or one whose lifetime cannot
   be read, is refused.
 
-**Replay, stated precisely.** A projected ServiceAccount token is a BEARER
+**Workload listener binding.** The gateway's TLS listener forwards its verified
+SPIFFE peer on the authenticated internal mint RPC. `BindExecution` compares it
+to the namespace and ServiceAccount returned by TokenReview and the full SPIFFE
+ID retained from applied presence in `ModuleWorkload`. A mismatch follows the
+existing refused-identity log path and is returned as 403 on the workload
+endpoint, before signing or recording any credential. Plain module SDK mints
+continue on their existing endpoint without this additional TLS attestation.
+
+**Replay on the plain module endpoint, stated precisely.** A projected ServiceAccount token is a BEARER
 credential. TokenReview proves the cluster issued it to a named pod and that the
 pod still exists; it does not prove the pod is the party presenting it. So:
 

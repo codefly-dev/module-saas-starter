@@ -58,17 +58,20 @@ func installCapabilityFixture(t *testing.T, svc *business.Service, org, owner st
 		}
 		role := business.NewIDString()
 		scope := business.FullInstallationScope(grant)
+		var installed *gen.Installation
 		require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
 			if err := testStore.CreateRole(ctx, &gen.Role{Id: role, OrgId: org, Name: "Example role " + role, Permissions: []*gen.Permission{{Resource: "solution", Action: "use"}}}); err != nil {
 				return err
 			}
-			_, err := testStore.InstallSolution(ctx, &business.InstallSolutionParams{
+			var err error
+			installed, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
 				OrgID: org, OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role,
 				AgentIdentifier: "acme.example/" + alias + ":1.0.0", TargetID: target, Kind: "solution",
 				RegistryBindingID: grant.PresenceBinding, RegistryPrincipalID: principal, Scope: &scope, EnvelopeRevision: envelope,
 			})
 			return err
 		}))
+		acknowledgeInstallation(t, installed)
 		live, err = testStore.LiveModuleAuthority(testCtx, principal, org, "")
 		require.NoError(t, err)
 		require.Equal(t, grant.PresenceBinding, live.RegistryBindingID)
@@ -77,5 +80,5 @@ func installCapabilityFixture(t *testing.T, svc *business.Service, org, owner st
 		require.Equal(t, envelope, *live.EnvelopeRevision)
 		registry[principal] = grant
 	}
-	svc.InstallDerivedModulePrincipals(registry, envelope)
+	svc.InstallDerivedModulePrincipals(registry, envelope, nil)
 }

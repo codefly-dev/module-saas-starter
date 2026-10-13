@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/codefly-dev/core/solutionhost"
 )
@@ -75,6 +76,42 @@ type solutionHostBundleVerifierWithPolicy interface {
 // That is the property, and the constant is what makes it one.
 const SolutionHostTrustAnchorPath = "/etc/obin/delivery-trust"
 
+// LocalTrustAnchorEnvironment names the trust anchor's directory when this host
+// is NOT a pod — the same developer run LocalClusterEnvironment describes, which
+// writes the local profile there. The constant above stays the only place a pod
+// reads its anchor from, for the reason given above it: IN A POD THIS VARIABLE
+// IS REFUSED, so nothing a composition can set moves a cell's anchor. Outside a
+// pod, nobody mounts anything; the anchor it names is a local profile, which
+// the host accepts only after proving it runs in the cluster that profile is
+// bound to.
+const LocalTrustAnchorEnvironment = "SOLUTION_HOST_LOCAL_TRUST_ANCHOR"
+
+// ErrLocalTrustAnchorInAPod refuses a relocated anchor named inside a cluster.
+var ErrLocalTrustAnchorInAPod = errors.New("a pod may not relocate its delivery trust anchor")
+
+// solutionHostTrustAnchorDir is where this process reads its anchor from.
+func solutionHostTrustAnchorDir() (string, error) {
+	return trustAnchorDir(os.Getenv(LocalTrustAnchorEnvironment), InCluster())
+}
+
+// trustAnchorDir is solutionHostTrustAnchorDir over facts already read, so a
+// test drives the refusal through this code.
+func trustAnchorDir(local string, inPod bool) (string, error) {
+	local = strings.TrimSpace(local)
+	if local == "" {
+		return SolutionHostTrustAnchorPath, nil
+	}
+	if inPod {
+		return "", fmt.Errorf("%w: %s is set and this process carries what a kubelet puts in a pod; "+
+			"a pod reads its anchor from %s and from nowhere else",
+			ErrLocalTrustAnchorInAPod, LocalTrustAnchorEnvironment, SolutionHostTrustAnchorPath)
+	}
+	if !filepath.IsAbs(local) {
+		return "", fmt.Errorf("%w: %s must be an absolute directory, got %q", ErrSolutionHostTrustRootUnavailable, LocalTrustAnchorEnvironment, local)
+	}
+	return local, nil
+}
+
 // RequireSolutionHostTrustAnchor refuses when the trust anchor is not mounted.
 //
 // It exists so the ABSENCE OF THE ANCHOR IS A BOOT FAILURE THAT NAMES THE
@@ -90,7 +127,11 @@ const SolutionHostTrustAnchorPath = "/etc/obin/delivery-trust"
 // anyone's choice. A deployment that needs a different path changes the pod spec
 // that mounts it.
 func RequireSolutionHostTrustAnchor() error {
-	path := filepath.Join(SolutionHostTrustAnchorPath, verificationPolicyFileName)
+	dir, err := solutionHostTrustAnchorDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, verificationPolicyFileName)
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("%w: the delivery trust anchor %s is not mounted or readable: %w; "+

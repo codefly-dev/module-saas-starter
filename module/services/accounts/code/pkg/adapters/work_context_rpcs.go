@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -806,15 +807,85 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err != nil {
 		return nil, err
 	}
+	return s.signInstallationTask(ctx, req, facts, scopes)
+}
+
+// Shared by the ordinary headless mint and the leased install step. Only the
+// latter resolves pending consent; neither path changes ordinary use admission.
+func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
 	// An installation context is always agent-actored; a nil actor means the store
 	// broke its contract (a healthy resolve always names the agent). Fail closed
 	// rather than mint an unattributed token.
 	if facts.Actor == nil {
 		return nil, status.Error(codes.Internal, "installation authority resolved without an agent actor")
 	}
+	// The step's kind is the issuer's to stamp on every path, not only the
+	// one that stamps it: an ordinary task that could name it would carry a
+	// second spelling of "run this installation's install step".
+	if err := refuseInstallationStepKind(scopes); err != nil {
+		return nil, err
+	}
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
+	return s.mintInstallationTask(ctx, req, facts, scopes)
+}
+
+// InstallationStepResourceKind and InstallationStepAction name the one scope
+// every install step is delegated: to run THIS installation's install step. The
+// resource id is the installation's own id, so the scope reaches nothing else.
+const (
+	InstallationStepResourceKind = "installations"
+	InstallationStepAction       = "install"
+)
+
+// refuseInstallationStepKind refuses a caller-supplied scope that names the
+// install step's kind, however it is cased or padded.
+func refuseInstallationStepKind(scopes []*basev0.WorkScopeV1) error {
+	for _, scope := range scopes {
+		if strings.EqualFold(strings.TrimSpace(scope.GetResourceKind()), InstallationStepResourceKind) {
+			return status.Errorf(codes.InvalidArgument, "an installation's scope may not name %q: the install step's own scope is the host's to add", InstallationStepResourceKind)
+		}
+	}
+	return nil
+}
+
+// signInstallationStep signs the capability an install step is delivered
+// under: the installation's own scopes, held to the agent's ceiling exactly as
+// signInstallationTask holds them, plus the step's own scope.
+//
+// The step's scope is what keeps two rules true at once. An installation whose
+// role and grant intersect to nothing is valid — the solution then acts only as
+// its viewers, and its agent is delegated nothing — and it still has an install
+// step to acknowledge. Core refuses a delegation hop that grants no scope,
+// rightly: an empty grant is one consumer's "nothing" and another's "no
+// restriction". And an installation capability is never minted unattributed.
+// So the hop always grants the one thing the step is: this installation's
+// install. It is added after the ceiling, which governs the kinds an agent may
+// be delegated over a module's resources and has no say over the step itself.
+func (s *WorkContextAuthorityServer) signInstallationStep(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
+	if facts.Actor == nil {
+		return nil, status.Error(codes.Internal, "installation authority resolved without an agent actor")
+	}
+	// Before the ceiling, so the refusal names what is wrong with the scope
+	// rather than what the agent may not hold.
+	if err := refuseInstallationStepKind(scopes); err != nil {
+		return nil, err
+	}
+	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
+		return nil, err
+	}
+	step := append(cloneWorkScopes(scopes), &basev0.WorkScopeV1{
+		ResourceKind: InstallationStepResourceKind,
+		Actions:      []string{InstallationStepAction},
+		ResourceIds:  []string{req.GetInstallationId()},
+	})
+	sort.SliceStable(step, func(i, j int) bool { return step[i].GetResourceKind() < step[j].GetResourceKind() })
+	return s.mintInstallationTask(ctx, req, facts, step)
+}
+
+// mintInstallationTask signs resolved, ceiling-checked installation authority.
+func (s *WorkContextAuthorityServer) mintInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
 	// Sealed to the installation the authority is drawn from, owned by its owner
 	// of record and actored by its agent. The session is a fresh one: this
 	// caller holds a service credential, not a session, and a session id a

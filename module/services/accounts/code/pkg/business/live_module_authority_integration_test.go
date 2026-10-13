@@ -41,6 +41,7 @@ func TestLiveModuleAuthorityOverARealInstallation(t *testing.T) {
 		AllowedScopes:   []string{"doc"},
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installation)
 
 	// A module principal, which is NOT the installation's agent principal. The
 	// regression assumed these were the same value.
@@ -95,6 +96,7 @@ func TestLiveModuleAuthorityRefusesARevokedInstallation(t *testing.T) {
 		AllowedScopes:   []string{"doc"},
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installation)
 	modulePrincipal := business.ModulePrincipalID(alias)
 
 	// Live first, so the refusal below is the uninstall and not the fixture.

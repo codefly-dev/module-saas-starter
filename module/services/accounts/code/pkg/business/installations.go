@@ -66,7 +66,7 @@ type InstallationStore interface {
 	InstallSolution(ctx context.Context, params *InstallSolutionParams) (*gen.Installation, error)
 	GetInstallation(ctx context.Context, orgID, installationID string) (*gen.Installation, gen.InstallationHealth, error)
 	TransferInstallationOwnership(ctx context.Context, orgID, installationID, newOwnerPrincipalID string, coOwnerPrincipalIDs []string) (*gen.Installation, error)
-	// The bool reports whether this call actually flipped an active installation
+	// The bool reports whether this call actually flipped a nonrevoked installation
 	// to revoked, so the caller emits the audit event exactly once.
 	UninstallSolution(ctx context.Context, orgID, installationID string) (*gen.Installation, bool, error)
 	// ListInstallations returns one page of an org's installations with their live
@@ -309,7 +309,7 @@ func (s *Service) uninstallSolutionTx(ctx context.Context, actorID, actorType, o
 	if err != nil {
 		return err
 	}
-	// Only a real active→revoked transition is a fact worth publishing;
+	// Only a real transition to revoked is a fact worth publishing;
 	// an idempotent re-uninstall emits neither event nor audit. Publish in
 	// the same transaction (outbox) so the revoke and its event are atomic.
 	if !transitioned {

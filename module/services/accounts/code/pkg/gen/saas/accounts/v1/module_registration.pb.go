@@ -44,8 +44,21 @@ type ModuleMintWorkContextRequest struct {
 	// tenant-pinned principal, omit or match its tenant. Accounts validates the
 	// requested organization's live installation after authenticating execution.
 	OrganizationId string `protobuf:"bytes,4,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// upstream is where the minting workload serves its backend, as an absolute
+	// https origin with no path: the dynamic half of its registration, reported
+	// by the runtime that proved its identity with the token above (#952). The
+	// gateway reaches it only under the SVID the applied presence names for the
+	// workload, so a claimed origin that is not that workload serves nothing.
+	// Empty leaves the registration's backend half as it is.
+	Upstream string `protobuf:"bytes,5,opt,name=upstream,proto3" json:"upstream,omitempty"`
+	// manifest is the solution's frontend manifest as its runtime serves it: the
+	// other dynamic half of a solution's registration (a module has none), the
+	// document the host's frontend renders the solution's page from. Reported
+	// with the same proven identity as upstream. Empty leaves the frontend half
+	// as it is.
+	Manifest      string `protobuf:"bytes,6,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ModuleMintWorkContextRequest) Reset() {
@@ -95,6 +108,20 @@ func (x *ModuleMintWorkContextRequest) GetServiceAccountToken() string {
 func (x *ModuleMintWorkContextRequest) GetOrganizationId() string {
 	if x != nil {
 		return x.OrganizationId
+	}
+	return ""
+}
+
+func (x *ModuleMintWorkContextRequest) GetUpstream() string {
+	if x != nil {
+		return x.Upstream
+	}
+	return ""
+}
+
+func (x *ModuleMintWorkContextRequest) GetManifest() string {
+	if x != nil {
+		return x.Manifest
 	}
 	return ""
 }
@@ -575,11 +602,13 @@ var File_saas_accounts_v1_module_registration_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_module_registration_proto_rawDesc = "" +
 	"\n" +
-	"*saas/accounts/v1/module_registration.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe9\x01\n" +
+	"*saas/accounts/v1/module_registration.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbf\x02\n" +
 	"\x1cModuleMintWorkContextRequest\x12D\n" +
 	"\x06prefix\x18\x01 \x01(\tB,\xbaH)r'\x10\x01\x18?2!^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$R\x06prefix\x12?\n" +
 	"\x15service_account_token\x18\x03 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x04R\x13serviceAccountToken\x124\n" +
-	"\x0forganization_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x0eorganizationIdJ\x04\b\x02\x10\x03R\x06secret\"\xab\x01\n" +
+	"\x0forganization_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x0eorganizationId\x12*\n" +
+	"\bupstream\x18\x05 \x01(\tB\x0e\xbaH\v\xd8\x01\x01r\x06\x18\x80\x04\x88\x01\x01R\bupstream\x12(\n" +
+	"\bmanifest\x18\x06 \x01(\tB\f\xbaH\t\xd8\x01\x01r\x04\x18\x80\x80\x04R\bmanifestJ\x04\b\x02\x10\x03R\x06secret\"\xab\x01\n" +
 	"\x1dModuleMintWorkContextResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
 	"\n" +

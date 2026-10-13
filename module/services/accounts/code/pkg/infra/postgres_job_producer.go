@@ -184,6 +184,12 @@ func enqueuePreparedJob(
 			return nil, err
 		}
 	}
+	return insertPreparedJob(ctx, executor, job)
+}
+
+// insertPreparedJob shares the database enqueue and idempotency protocol. Its
+// caller must already hold the applicable producer authority lock.
+func insertPreparedJob(ctx context.Context, executor QueryExecutor, job preparedJobEnqueue) (*jobsv1.EnqueueJobResponse, error) {
 	var (
 		jobID             string
 		storedFingerprint []byte

@@ -210,6 +210,8 @@ func doWork(ctx context.Context) (Clean, error) {
 	// first pass installs what delivery and the envelope agree on. Nothing in
 	// this process's environment can name a module principal.
 	service.SetModuleCapabilities(store, jobStore, nil)
+	// codefly:gateway-route-exempt Internal install consumer protocol; only the gateway calls accounts directly with the internal credential.
+	adapters.RegisterHTTPRoute(adapters.InstallationStepPath, adapters.NewInstallationStepHandler(service))
 	// The envelope's persistence, wired whether or not this host receives
 	// deliveries: a platform super_admin can write the ceiling before the first
 	// document arrives.

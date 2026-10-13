@@ -190,9 +190,10 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		// strictly worse exposure than the authenticated path's.
 		removePersonsSessionCredential(r.Header)
 		entry := &RouteEntry{
-			Service:        "solution:" + id,
-			UpstreamPath:   publicPath,
-			RateLimitClass: edgeRateLimitClassPublic,
+			Service:          "solution:" + id,
+			WorkloadSPIFFEID: routing.WorkloadSPIFFEID,
+			UpstreamPath:     publicPath,
+			RateLimitClass:   edgeRateLimitClassPublic,
 		}
 		g.rateLimitThenProxy(w, r, routing.Upstream, entry)
 		return true
@@ -302,10 +303,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		class = edgeRateLimitClassStandardWrite
 	}
 	entry := &RouteEntry{
-		Service:        "solution:" + id,
-		UpstreamPath:   "/" + path,
-		Protected:      true,
-		RateLimitClass: class,
+		Service:          "solution:" + id,
+		WorkloadSPIFFEID: routing.WorkloadSPIFFEID,
+		UpstreamPath:     "/" + path,
+		Protected:        true,
+		RateLimitClass:   class,
 	}
 	// Metered FIRST, and the admission check runs inside the budget.
 	//

@@ -8,11 +8,11 @@ import {
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "@/app/admin/solutions/page";
-import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { FRONTEND_NAVIGATION } from "@/gen/saas/frontend/v1/plugin_catalog";
+import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { canPresent } from "@/lib/plugins/presentation";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
@@ -408,7 +408,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				screen.getByRole("table", { name: "Installed solutions" }),
 			).getByText("ledger"),
 		).toBeTruthy();
-		expect(toast.success).toHaveBeenCalledWith("ledger installed");
+		expect(toast.success).toHaveBeenCalledWith("ledger installation pending");
 	});
 
 	it("does not install without a role for the solution's agent", async () => {
@@ -1454,4 +1454,58 @@ describe("accessible validation and host text", () => {
 		expect(document.querySelector("img, script")).toBeNull();
 		expect(toast.success).not.toHaveBeenCalled();
 	});
+});
+
+// HOST-INST-002, HOST-INST-004, HOST-INST-005: no grants while unacknowledged;
+// a refusal remains visible and Retry reuses the same installation identity.
+it("shows pending and failed installations and retries the failed step", async () => {
+	let retried = false;
+	const failed = structuredClone(installations);
+	failed.installations[0].installation.status = "INSTALLATION_STATUS_FAILED";
+	Object.assign(failed.installations[0].installation, {
+		failureReason: "Example setup refused",
+	});
+	failed.installations[0].grantedTeams = [];
+	failed.installations[0].inheritedTeams = [];
+	server.use(
+		http.post(rpc("InstallationService", "ListAvailableSolutions"), () =>
+			HttpResponse.json(available),
+		),
+		http.post(
+			rpc("InstallationService", "ListOrganizationInstallations"),
+			() => {
+				if (retried) {
+					const pending = structuredClone(failed);
+					pending.installations[0].installation.status =
+						"INSTALLATION_STATUS_PENDING";
+					Object.assign(pending.installations[0].installation, {
+						failureReason: "",
+					});
+					return HttpResponse.json(pending);
+				}
+				return HttpResponse.json(failed);
+			},
+		),
+		http.post(
+			rpc("InstallationService", "RetryInstallation"),
+			async ({ request }) => {
+				await assertBody(request, {
+					orgId: "org-1",
+					installationId: EXPENSES_INSTALLATION,
+				});
+				retried = true;
+				return HttpResponse.json({
+					...failed.installations[0].installation,
+					status: "INSTALLATION_STATUS_PENDING",
+					failureReason: "",
+				});
+			},
+		),
+	);
+	renderInApp(<Page />);
+	expect(await screen.findByText("Example setup refused")).toBeTruthy();
+	expect(screen.queryByRole("button", { name: /grant.*team/i })).toBeNull();
+	fireEvent.click(screen.getByRole("button", { name: "Retry expenses" }));
+	expect(await screen.findByText("Pending")).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Retry expenses" })).toBeNull();
 });

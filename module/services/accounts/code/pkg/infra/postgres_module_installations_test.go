@@ -68,6 +68,7 @@ func TestModuleInstallationPostgresRepeatConcurrentAndLostResponse(t *testing.T)
 	firstID := ""
 	changes := 0
 	for out := range results {
+		require.Equal(t, "pending", out.State, "HOST-INST-002: a queued install is not ready")
 		if firstID == "" {
 			firstID = out.InstallationID
 		}
@@ -164,6 +165,23 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 		business.ModulePrincipalID("example.api"): {Prefix: "example.api"},
 	})
 	installCapabilityFixture(t, svc, p.OrgID, p.OwnerPrincipalID)
+	// The target being installed has its own declared identity; it has no
+	// installation yet and must not inherit the installer's capability fixture.
+	registry := svc.ModulePrincipals()
+	var envelope uint64
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		targets, err := testStore.ListAvailableSolutionTargets(ctx, business.AvailableSolutionQuery{TargetID: p.TargetID, Limit: 1})
+		if err != nil {
+			return err
+		}
+		require.Len(t, targets, 1)
+		registry[business.ModulePrincipalID("example-installed")] = business.ModulePrincipalGrant{
+			Prefix: "example-installed", Tenant: p.OrgID, PresenceBinding: targets[0].BindingID,
+		}
+		envelope, err = testStore.LatestModuleEnvelopeRevision(ctx)
+		return err
+	}))
+	svc.InstallDerivedModulePrincipals(registry, envelope, nil)
 	// The installer proves which module it is with its pod's projected token,
 	// bound to the build its authority approves (#1056).
 	cluster := executiontest.New()
@@ -321,6 +339,10 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &repeat))
 	require.False(t, repeat.Changed)
 	require.Equal(t, result.InstallationID, repeat.InstallationID)
+	post("verify", request, issued.Token, 409)
+	installed, _, err := svc.GetInstallation(testCtx, p.OrgID, result.InstallationID)
+	require.NoError(t, err)
+	acknowledgeInstallation(t, installed)
 	post("verify", request, issued.Token, 200)
 	require.Nil(t, result.AuthorityReference)
 	require.Nil(t, repeat.AuthorityReference)

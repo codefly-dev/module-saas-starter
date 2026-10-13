@@ -73,6 +73,7 @@ func installFixture(t *testing.T, resourceKind, action string, configure ...func
 		installation, err = testStore.InstallSolution(ctx, params)
 		return err
 	}))
+	acknowledgeInstallation(t, installation)
 	// The root path is derived server-side from the created node; read it back so
 	// descendant boundaries can be registered beneath the real authority root.
 	rootPath = scopeNodePath(t, orgID, installation.RootScopeNodeId)

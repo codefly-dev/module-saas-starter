@@ -98,7 +98,7 @@ func TestModuleMintFencesARevisionCommittedDuringReview(t *testing.T) {
 	registry := service.ModulePrincipals()
 	grant := registry["principal-1"]
 	registry = ModulePrincipalRegistry{ModulePrincipalID("worker"): grant}
-	service.InstallDerivedModulePrincipals(registry, 3)
+	service.InstallDerivedModulePrincipals(registry, 3, nil)
 	envelope := &fakeEnvelopeStore{latest: 3}
 	service.SetModuleEnvelopeStore(envelope)
 	reviewer := &replacingExecutionReviewer{fakeExecutionReviewer: fakeExecutionReviewer{reviewed: reviewedPod(), pod: runningPodWith()}, replace: func() { envelope.latest = 4 }}

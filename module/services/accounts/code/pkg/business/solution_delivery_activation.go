@@ -381,6 +381,9 @@ type registryInputs struct {
 	authorityHistory []*SolutionDeliveryRecord
 	newestAuthority  []*SolutionDeliveryRecord
 	newestPresence   []*SolutionDeliveryRecord
+	// delivered is the inbox's size in this same snapshot, nil where the store
+	// cannot count: the marker a registry derived from these inputs carries.
+	delivered *uint64
 }
 
 func (a *SolutionAuthorityActivation) readRegistryInputs(ctx context.Context) (*registryInputs, error) {
@@ -402,6 +405,13 @@ func (a *SolutionAuthorityActivation) readRegistryInputs(ctx context.Context) (*
 		}
 		if inputs.newestPresence, err = service.deliveryStore.ListNewestDeliveredDocuments(ctx, SolutionDeliveryPresence); err != nil {
 			return fmt.Errorf("the newest presence: %w", err)
+		}
+		if counter, counts := service.deliveryStore.(SolutionDeliveryCounter); counts {
+			delivered, err := counter.CountDeliveredDocuments(ctx)
+			if err != nil {
+				return fmt.Errorf("the inbox's size: %w", err)
+			}
+			inputs.delivered = &delivered
 		}
 		return nil
 	}); err != nil {

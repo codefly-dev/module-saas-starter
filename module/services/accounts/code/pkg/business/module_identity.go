@@ -98,6 +98,14 @@ func (s *Service) ModuleAuthorizeWorkContext(
 	}
 	installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: identity.PrincipalID, BoundOrg: identity.Tenant})
 	if err != nil {
+		if errors.Is(err, errModuleInstalledNowhere) {
+			// Proven, admitted, and installed nowhere: a precondition this
+			// workload waits on, not a judgement of it. Only here — a
+			// capability's use and a headless operation have no install step
+			// to wait for, and hear the refusal.
+			return ModuleWorkContextAuthority{}, wrapStatus(codes.FailedPrecondition, errModuleInstalledNowhere,
+				"principal %s in organization %s", identity.PrincipalID, identity.Tenant)
+		}
 		return ModuleWorkContextAuthority{}, err
 	}
 	identity.InstallationID, identity.InstallationRevision, identity.ProducerEpoch = installed.InstallationID, installed.InstallationRevision, installed.ProducerEpoch
@@ -119,6 +127,15 @@ func (s *Service) authorizeModuleIdentity(
 		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, err
 	}
 	if !registered {
+		// A workload that starts beside its own delivery asks before the pass
+		// that reads it has run. Only here — the mint that names a prefix — is
+		// that "not established yet": every other caller of the registry,
+		// a person's revision check among them, hears what it always did.
+		if s.deliveredSince(ctx, snapshot) {
+			s.requestRegistryPass()
+			return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
+				"principal %s: a document was delivered after the registry was derived", principalID)
+		}
 		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, fmt.Errorf("%w: %s is not a declared module principal",
 			ErrModuleIdentityDenied, prefix)
 	}

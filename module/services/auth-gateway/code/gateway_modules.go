@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -178,7 +179,8 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		return true
 	}
 
-	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+	_, workloadRequest := workloadPeer(r.Context())
+	if g.authz == nil || (!workloadRequest && !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token"))) {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
@@ -191,8 +193,16 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 	var payload struct {
 		Prefix         string `json:"prefix"`
 		OrganizationID string `json:"organization_id,omitempty"`
+		// Upstream is the origin the workload serves its backend at: the
+		// dynamic half of its registration, carried to accounts with the
+		// token that proves who reports it. Bounded here as every registered
+		// upstream was, before accounts bounds it again.
+		Upstream string `json:"upstream,omitempty"`
+		// Manifest is the solution's frontend manifest, the other dynamic
+		// half, bounded by accounts at 64 KiB.
+		Manifest string `json:"manifest,omitempty"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 80<<10)).Decode(&payload); err != nil {
 		httpError(w, http.StatusBadRequest, "invalid json")
 		return true
 	}
@@ -200,17 +210,42 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		httpError(w, http.StatusBadRequest, "invalid prefix")
 		return true
 	}
+	// The dynamic half is reported only where the reporter's identity is on
+	// the connection. On the plain endpoint the internal token is all that
+	// separates a caller from a workload's projected token, and a holder of
+	// both could move that workload's recorded origin and manifest.
+	if !workloadRequest && (payload.Upstream != "" || payload.Manifest != "") {
+		httpError(w, http.StatusBadRequest, "upstream and manifest are reported on the workload endpoint")
+		return true
+	}
+	if payload.Upstream != "" {
+		parsed, err := url.Parse(payload.Upstream)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.Port() == "" || parsed.User != nil ||
+			(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" ||
+			isDisallowedRegisteredUpstreamHost(parsed.Hostname()) {
+			httpError(w, http.StatusBadRequest, "invalid upstream")
+			return true
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
-	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, serviceAccountToken, payload.OrganizationID)
+	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, serviceAccountToken, payload.OrganizationID, payload.Upstream, payload.Manifest)
 	if err != nil {
 		logModuleExchangeRefusal("module-work-context", payload.Prefix, err)
 		switch status.Code(err) {
 		case codes.PermissionDenied:
-			httpError(w, http.StatusUnauthorized, "unauthorized")
+			if workloadRequest {
+				httpError(w, http.StatusForbidden, "forbidden")
+			} else {
+				httpError(w, http.StatusUnauthorized, "unauthorized")
+			}
 		case codes.InvalidArgument:
 			httpError(w, http.StatusBadRequest, "invalid request")
+		case codes.FailedPrecondition:
+			// accounts admits the workload but no organization has installed it
+			// yet: the module serves its install endpoint and waits.
+			httpError(w, http.StatusPreconditionFailed, "installation pending")
 		case codes.Unavailable:
 			// accounts could not establish what the caller is running: nothing
 			// was decided, so the module retries rather than stops.
@@ -336,15 +371,29 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 	return true
 }
 
+// moduleMintContext carries the listener attestation on every module mint.
+func (s *ExtAuthz) moduleMintContext(ctx context.Context) context.Context {
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	// Replace, never append to, caller metadata. Only the verified listener
+	// context may attest a workload to accounts' internal mint.
+	md, _ := metadata.FromOutgoingContext(ctx)
+	md = md.Copy()
+	md.Delete(workloadSPIFFEHeader)
+	if id, ok := workloadPeer(ctx); ok {
+		md.Set(workloadSPIFFEHeader, id)
+	}
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
 func (s *ExtAuthz) mintModuleWorkContext(
-	ctx context.Context, prefix, serviceAccountToken, organizationID string,
+	ctx context.Context, prefix, serviceAccountToken, organizationID, upstream, manifest string,
 ) (*accountsv1.ModuleMintWorkContextResponse, error) {
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	ctx = s.moduleMintContext(ctx)
 	response := &accountsv1.ModuleMintWorkContextResponse{}
-	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, OrganizationId: organizationID}
+	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, OrganizationId: organizationID, Upstream: upstream, Manifest: manifest}
 	if err := s.backendConn.Invoke(ctx, mintModuleWorkContextMethod, request, response); err != nil {
 		return nil, err
 	}
@@ -357,7 +406,7 @@ func (s *ExtAuthz) mintModuleOperationContext(
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	ctx = s.moduleMintContext(ctx)
 	response := &accountsv1.ModuleMintOperationContextResponse{}
 	request := &accountsv1.ModuleMintOperationContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, Binding: binding, OrganizationId: organizationID}
 	if err := s.backendConn.Invoke(ctx, mintModuleOperationContextMethod, request, response); err != nil {
@@ -529,7 +578,7 @@ func (s *ExtAuthz) mintSourceOperationContext(
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	ctx = s.moduleMintContext(ctx)
 	response := &accountsv1.ModuleMintSourceOperationContextResponse{}
 	if err := s.backendConn.Invoke(ctx, mintSourceOperationContextMethod, request, response); err != nil {
 		return nil, err

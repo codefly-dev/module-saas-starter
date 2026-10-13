@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -34,7 +35,7 @@ func (s *PostgresStore) AppendActorChainHop(
 		return nil, errors.New("actor chain hop requires id")
 	}
 	var stored *business.ActorChainHop
-	err := s.WithOrgTx(ctx, hop.OrgID, func(ctx context.Context) error {
+	appendHop := func(ctx context.Context) error {
 		q := s.getQueryExecutor(ctx)
 
 		prevHash := ""
@@ -88,7 +89,16 @@ func (s *PostgresStore) AppendActorChainHop(
 		}
 		stored = row
 		return nil
-	})
+	}
+	var err error
+	if storetx.Tx(ctx) != nil {
+		// The leased installation mint keeps its consent locks through signing
+		// and this append. Reuse that transaction instead of borrowing a pool
+		// connection while holding its locks. SQL remains explicitly org-bound.
+		err = appendHop(ctx)
+	} else {
+		err = s.WithOrgTx(ctx, hop.OrgID, appendHop)
+	}
 	if err != nil {
 		return nil, err
 	}

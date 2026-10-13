@@ -66,6 +66,15 @@ var ErrModuleAuthorityStale = errors.New("module capability authority has moved 
 // this organization, including credentials that do not yet carry a seal.
 var ErrModuleInstallationInactive = errors.New("the installation this capability names is not active in this organization")
 
+// errModuleInstalledNowhere is ErrModuleInstallationInactive for the one case
+// a module's own mint answers differently: the principal has no usable
+// installation in the organization at all. Every use of a capability hears it
+// as the refusal it is. The module's own mint hears "not yet", because a
+// solution nobody has installed still has an install step to answer — see
+// ModuleAuthorizeWorkContext. An installation that belongs to another binding
+// is not this: that one is a refusal on every path.
+var errModuleInstalledNowhere = fmt.Errorf("%w", ErrModuleInstallationInactive)
+
 // ErrModuleAuthorityUnreadable reports a malformed caller the live read refuses
 // before it reaches the database.
 //
@@ -225,7 +234,7 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 		ctx, caller.PrincipalID, caller.BoundOrg, sealedInstallation)
 	if err != nil {
 		if errors.Is(err, ErrModuleInstallationInactive) {
-			return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive,
+			return nil, nil, wrapStatus(codes.PermissionDenied, errModuleInstalledNowhere,
 				"principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
 		}
 		if errors.Is(err, ErrModuleAuthorityUnreadable) {
@@ -241,7 +250,7 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 	}
 
 	if live == nil || live.InstallationID == "" || !live.Scope.Capabilities {
-		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive, "principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
+		return nil, nil, wrapStatus(codes.PermissionDenied, errModuleInstalledNowhere, "principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
 	}
 	if live.RegistryBindingID != grant.PresenceBinding {
 		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive, "installation belongs to a different registry binding")

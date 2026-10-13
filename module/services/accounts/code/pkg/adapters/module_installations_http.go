@@ -135,6 +135,10 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 			installerError(w, http.StatusForbidden, "installer delegation denied")
 			return
 		}
+		if status.Code(err) == codes.PermissionDenied || status.Code(err) == codes.FailedPrecondition {
+			installerError(w, http.StatusForbidden, "installation declaration is not available to this organization")
+			return
+		}
 		var se *business.StoreError
 		if errors.As(err, &se) && (se.StoreErrorType == business.ErrTypeConflict || se.StoreErrorType == business.ErrTypeNotFound) {
 			installerError(w, http.StatusConflict, se.Error())
@@ -160,7 +164,13 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 		return
 	}
 	if mode == "verify" && result.State != "ready" {
-		installerError(w, http.StatusConflict, "installation is absent; apply the approved declaration")
+		reason := "installation is absent; apply the approved declaration"
+		if result.State == "pending" {
+			reason = "installation is pending acknowledgement"
+		} else if result.State == "failed" {
+			reason = "installation failed; an organization administrator must retry or uninstall it"
+		}
+		installerError(w, http.StatusConflict, reason)
 		return
 	}
 	installerJSON(w, http.StatusOK, result)

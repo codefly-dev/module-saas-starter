@@ -80,10 +80,10 @@ func (*fakeEnvelopeStore) AppendModuleEnvelopeRecord(context.Context, *ModuleEnv
 // load would see revision 4, pass, and hand out revision 3's queue.
 func TestTheFenceChecksTheSnapshotTheGrantCameFrom(t *testing.T) {
 	s := reviewService()
-	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}}, 3)
+	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}}, 3, nil)
 	store := &fakeEnvelopeStore{latest: 4}
 	s.SetModuleEnvelopeStore(store)
-	store.duringRead = func() { s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{}, 4) }
+	store.duringRead = func() { s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{}, 4, nil) }
 
 	authority, err := s.AuthorizeModuleCapability(context.Background(), reviewCaller())
 	require.ErrorIs(t, err, ErrModuleRegistryStale, "the grant's own registry predates the committed revision")
@@ -102,7 +102,7 @@ func TestTheFenceRefusesWhenTheCommittedRevisionCannotBeRead(t *testing.T) {
 // pays one revision read however many decisions it makes.
 func TestOneRequestReadsTheCommittedRevisionOnce(t *testing.T) {
 	s := reviewService()
-	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}}, 3)
+	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}}}, 3, nil)
 	store := &fakeEnvelopeStore{latest: 3}
 	s.SetModuleEnvelopeStore(store)
 	ctx := WithModuleEnvelopeRevisionMemo(context.Background())
@@ -123,7 +123,7 @@ func TestMintsAndRevisionConfirmationReadTheCommittedRevision(t *testing.T) {
 		s := &Service{store: reviewControlPlaneStore{}}
 		grant := parseTestEnvelope(t).Principals[testModulePrefix].Grant
 		grant.Workload = ModuleWorkload{Namespace: "acme-prod", ServiceAccount: "reports", Container: "app"}
-		s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID(testModulePrefix): grant}, 3)
+		s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID(testModulePrefix): grant}, 3, nil)
 		s.SetModuleEnvelopeStore(store)
 		return s, bindTestModule(s, testModulePrefix)
 	}
@@ -649,7 +649,7 @@ func referenceExchange(t *testing.T) (*Service, *referenceExchangeStore, *fakeEn
 	s.SetModuleAuthorityReads(reviewLiveAuthority{service: s}, nil)
 	envelopes := &fakeEnvelopeStore{latest: 3}
 	s.SetModuleEnvelopeStore(envelopes)
-	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID("worker"): worker}, 3)
+	s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID("worker"): worker}, 3, nil)
 	return s, store, envelopes, ModuleCaller{PrincipalID: ModulePrincipalID("worker"), BoundOrg: testEnvelopeTenant},
 		ModulePrincipalRegistry{ModulePrincipalID("worker"): narrowed, ModulePrincipalID("source"): source}
 }
@@ -666,7 +666,7 @@ func TestAReferenceExchangeReadsBothPrincipalsFromOneSnapshot(t *testing.T) {
 
 	store.duringGet = func() {
 		envelopes.latest = 4
-		s.InstallDerivedModulePrincipals(newer, 4)
+		s.InstallDerivedModulePrincipals(newer, 4, nil)
 	}
 	_, err = s.AuthorizeDelegationReferenceExchange(WithModuleEnvelopeRevisionMemo(context.Background()), caller, store.delegation.ID, "run", false)
 	require.ErrorIs(t, err, ErrSourceDelegationInvalid, "the delegator is read from the caller's snapshot, never a later install")

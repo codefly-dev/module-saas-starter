@@ -54,6 +54,7 @@ pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: W
 pkg/business/follow_fanout.go: (*Service).undeliveredFollowers: WithControlPlane
 pkg/business/gdpr.go: (*Service).PurgeExpiredPrivacyArtifacts: WithControlPlane
 pkg/business/installation_exposure.go: (*Service).ListOrganizationInstallations: WithControlPlane
+pkg/business/installation_jobs.go: (*Service).RetryInstallation: WithControlPlane
 pkg/business/installation_registry.go: (*Service).prepareInstallation: WithControlPlane
 pkg/business/installations.go: (*Service).ListAvailableSolutions: WithControlPlane
 pkg/business/installations.go: (*Service).resolveInstallableTarget: WithControlPlane
@@ -77,11 +78,15 @@ pkg/business/module_capabilities.go: (*Service).moduleAuditSubjectIsMemberOf: Wi
 pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControlPlane
 pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
+pkg/business/module_envelope.go: (*Service).PutModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
+pkg/business/module_envelope.go: (*Service).deliveredSince: WithControlPlane
+pkg/business/module_envelope.go: (*Service).moduleEnvelopeNarrows: WithControlPlane
 pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
+pkg/business/module_upstream.go: (*Service).RecordModuleUpstream: WithControlPlane
 pkg/business/notifications.go: (*Service).resolveNotificationUser: WithControlPlane
 pkg/business/onboarding.go: (*Service).organizationConfigured: WithControlPlane
 pkg/business/organization_lifecycle.go: (*Service).GetOrganizationRoster: WithControlPlane
@@ -171,6 +176,8 @@ pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthBootstrapTx: with
 pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthLookupTx: withControlPlaneTx
 pkg/infra/postgres_client_authorization.go: (*PostgresStore).ConsumeClientAuthorizationCode: WithControlPlane
 pkg/infra/postgres_datasource_sources.go: (*PostgresStore).GetDatasourceSourceByID: WithControlPlane
+pkg/infra/postgres_installation_jobs.go: (*PostgresStore).InstallationStepLeaseValid: WithControlPlane
+pkg/infra/postgres_installation_jobs.go: (*PostgresStore).WithInstallationStepAuthority: WithControlPlane
 pkg/infra/postgres_installations.go: (*PostgresStore).ResolveInstallationAuthority: WithControlPlane
 pkg/infra/postgres_keyservice_reseal.go: (*PostgresStore).organizationsWithForeignKeys: WithControlPlane
 pkg/infra/postgres_keyservice_reseal.go: (*PostgresStore).resealColumn: WithControlPlane

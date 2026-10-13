@@ -52,6 +52,9 @@ func consumerCeilingInstall(t *testing.T, installed business.ModulePrincipalGran
 			OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, Kind: "solution", RegistryBindingID: binding, RegistryPrincipalID: principal, Scope: &scope, EnvelopeRevision: revision})
 		return err
 	}))
+	// An installation is pending until its install step is acknowledged, and a
+	// ceiling is read for an installation in use.
+	acknowledgeInstallation(t, installation)
 	return dynamicInstall{org, owner, target, binding, principal, installation, installed, revision}
 }
 
@@ -60,7 +63,7 @@ func consumerCeilingService(t *testing.T, a dynamicInstall, current business.Mod
 	current.PresenceBinding, current.Tenant, current.CrossTenant = a.binding, a.org, true
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
-	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{a.principal: current}, a.envelope)
+	svc.InstallDerivedModulePrincipals(business.ModulePrincipalRegistry{a.principal: current}, a.envelope, nil)
 	svc.SetModuleAuthorityReads(testStore, nil)
 	return svc
 }
@@ -119,6 +122,9 @@ func TestConsumerInvokeCeilingDBRowWithoutDeliveredAuthorityIsRefusedByName(t *t
 			OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, Kind: "solution", RegistryBindingID: binding})
 		return err
 	}))
+	// In use, like every installation whose ceiling is read: the refusal under
+	// test is the missing delivered authority, not a step still pending.
+	acknowledgeInstallation(t, installation)
 	a := dynamicInstall{org: org, binding: binding, principal: business.ModulePrincipalID(alias), installation: installation}
 	svc := consumerCeilingService(t, a, grant)
 	_, err := svc.ConsumerInvokeCeiling(testCtx, a.org, a.installation.Id)

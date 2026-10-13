@@ -417,7 +417,11 @@ const claimJobsSQL = `
 		FROM job_messages message
 		WHERE message.queue = $1
 		  AND message.state IN ('pending', 'retrying')
-		  AND (NOT (message.attributes ? 'codefly.installation_id') OR public.module_job_authority_current(message.attributes))
+		  AND (CASE WHEN message.queue='installation-step' AND message.source='saas.installation'
+		                  AND message.topic='installation.step' AND message.scope_kind='tenant'
+		                  AND message.direction='outbox'
+		       THEN public.installation_step_job_current(message.id, message.attributes)
+		       ELSE NOT (message.attributes ? 'codefly.installation_id') OR public.module_job_authority_current(message.attributes) END)
           AND (message.consumer_authority IS NULL OR public.module_job_authority_current(message.consumer_authority))
 		  AND ($5::jsonb = 'null'::jsonb OR (
 		      public.module_job_authority_current($5::jsonb)
@@ -612,7 +616,10 @@ func cancelRevokedModuleJobs(ctx context.Context, tx pgx.Tx, queue string) error
  lease_owner=NULL, lease_token=NULL, lease_expires_at=NULL, heartbeat_at=NULL,
  last_error_code='revoked_authority', last_error_message='installation authority changed'
  WHERE queue=$1 AND state IN ('pending','processing','retrying')
- AND ((attributes ? 'codefly.installation_id' AND NOT public.module_job_authority_current(attributes))
+ AND ((CASE WHEN queue='installation-step' AND source='saas.installation'
+                 AND topic='installation.step' AND scope_kind='tenant' AND direction='outbox'
+       THEN NOT public.installation_step_job_current(id, attributes)
+       ELSE attributes ? 'codefly.installation_id' AND NOT public.module_job_authority_current(attributes) END)
       OR (consumer_authority IS NOT NULL AND NOT public.module_job_authority_current(consumer_authority)))
  RETURNING id)
  UPDATE public.job_attempts a SET finished_at=clock_timestamp(), outcome='canceled',
