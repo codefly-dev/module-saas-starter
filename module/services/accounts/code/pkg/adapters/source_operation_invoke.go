@@ -87,7 +87,7 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 	if err = requireOrgMember(ctx, actor, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	if err = requireSourceOperationScope(ctx, req.Msg.OrgId, req.Msg.SourceId, "invoke"); err != nil {
+	if err = h.requireAuditedSourceOperationScope(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, "invoke", effect); err != nil {
 		return nil, err
 	}
 	var declaration operations.Declaration
@@ -166,7 +166,7 @@ func (h *datasourceConnectHandler) LookupInvokeSourceOperation(ctx context.Conte
 	if attempt == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("source effect not found"))
 	}
-	if err = requireSourceOperationScope(ctx, org, attempt.SourceID, "read"); err != nil {
+	if err = h.requireAuditedSourceOperationScope(ctx, actor, org, attempt.SourceID, "read", effect); err != nil {
 		return nil, err
 	}
 	if _, _, err = h.svc.SourceOperationAuthority(ctx, actor, org, attempt.SourceID, attempt.Operation, effect, true); err != nil {

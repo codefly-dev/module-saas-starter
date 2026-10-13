@@ -163,6 +163,26 @@ Audit records actor, source, operation, effect, effect ID and the closed outcome
 vocabulary (`committed`, `refused`, `unresolved`, `rate_limited`), never input,
 output, tokens or URLs. Failed operation resolution uses an `UNKNOWN` effect.
 
+Once the caller and tenant membership are verified, a source scope or delegation
+mismatch on Invoke, Prune, or either receipt Lookup emits one
+`saas.datasource.operation.invoked` refusal through the existing owner emitter.
+It retains the verified person, tenant, requested source and effect ID. Lookup
+gets its source from the actor-owned attempt in that tenant. Because the scope
+refusal precedes declaration admission, its operation is `unknown` and its
+effect is `UNKNOWN`; no declaration, provider credential or receipt is read.
+The original refusal code is preserved, with no dispatch or prune. The audit
+write has an independent five-second deadline, so client cancellation does not
+cancel it. Foreign-tenant requests and lookups that cannot resolve an actor-owned
+attempt produce no source-operation audit row and disclose no receipt. Accepted
+calls retain their existing engine/replay auditing; this adds no second event to
+them. Reconcile uses its separate owner path and is outside this callable-source
+refusal change.
+
+`TestSourceOperationDelegatedRefusalAudited` drives the real mint and verifier
+with a binding scoped to two sources and authority borrowed from just one;
+`TestSourceOperationRefusalAuditPersists` exercises the same owner emitter and
+payload against the tenant database.
+
 ## Local egress
 
 A composition booted locally can prove an OAuth REST source end to end against a
