@@ -907,10 +907,12 @@ func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, 
 // switch whose default silently stopped every scheduled reconcile would be the
 // outage #1090 already caused once.
 //
-// It is read in two places and they are the same fact: the tick that fires the
-// sweep is not installed, and the sweep itself refuses — a host that only
-// dropped the tick would still sweep from any other caller, and the
-// declaration's own read would still describe a sweep that is not running.
+// The sweep itself refuses, which is where the guard belongs: a switch read
+// only where the ticker is installed would leave every other caller of
+// RunDatasourceReconcile unguarded, and the declaration's own read would still
+// describe a sweep that is not running. The one-minute tick in work.go goes on
+// firing and its callback goes on being called; what it finds is a sweep that
+// reads nothing and enqueues nothing.
 //
 // STOPGAP (issue #1112): deleted with RunDatasourceReconcile, and listed in the
 // block above.

@@ -1244,10 +1244,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		// DatasourceService/ReconcileSource, which reaches exactly the engines
 		// this sweep reaches.
 		// Off when the operator says something else fires it. The switch is
-		// read once here and told to the service, which refuses the sweep too
-		// (SetDatasourceReconcileSweep): the tick and the sweep are one fact,
-		// so a host that only dropped the tick would still sweep from any
-		// other caller and would still describe a sweep that is not running.
+		// read once at startup and told to the service; the refusal lives in
+		// RunDatasourceReconcile (SetDatasourceReconcileSweep), so this
+		// callback still runs on every tick and finds a sweep that reads
+		// nothing. Guarding the sweep rather than the ticker is deliberate: a
+		// host that only dropped the tick would still sweep from any other
+		// caller.
 		sweepReconcile := func() {
 			if n, err := service.RunDatasourceReconcile(retentionCtx); err != nil {
 				rw.Warn("datasource reconcile sweep failed", wool.ErrField(err))

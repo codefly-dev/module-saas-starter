@@ -235,12 +235,21 @@ func triggerDeclarationToProto(declaration business.SourceTriggerDeclaration) *g
 		Operation:          declaration.Operation,
 		Digest:             declaration.Digest,
 		UndeclarableReason: declaration.UndeclarableReason,
+		IdentityHolder:     declaration.IdentityHolder,
+		HostSweepEnabled:   declaration.HostSweepEnabled,
 	}
 	if declaration.LastOccurrenceAt != nil {
 		out.LastOccurrenceAt = timestamppb.New(*declaration.LastOccurrenceAt)
 	}
 	if declaration.NextOccurrenceAt != nil {
 		out.NextOccurrenceAt = timestamppb.New(*declaration.NextOccurrenceAt)
+	}
+	// Both halves of "what this host will do about the schedule", and they are
+	// set OUTSIDE the undeclarable return below: a source that declares no
+	// trigger is still swept while the stopgap runs, so a reader of a parked or
+	// uncron-able source must still be told whether this host is firing.
+	if declaration.HostSweepDueAt != nil {
+		out.HostSweepDueAt = timestamppb.New(*declaration.HostSweepDueAt)
 	}
 	if !declaration.Declarable() {
 		return out

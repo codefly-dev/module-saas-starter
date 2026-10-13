@@ -921,14 +921,27 @@ the values and records the other column beside them).
   revocation land on the NEXT occurrence rather than behind something held from
   the one before.
 
-  `DeclareSourceTrigger` sets it **only for a delegation the executing module
-  can use** (#1121): a mint by source id resolves the delegation of the CALLING
-  module and the capability is addressed to the binding's audience, which the
-  executing module must itself admit — so the one usable shape is a delegation
-  whose binding names its own module as the audience
-  (`TriggerDelegationReference.usableByExecutor`). It took the first active
-  reference from any module before, so a deployment whose executor held none
-  read as "bound" while every occurrence was refused at the mint.
+  `DeclareSourceTrigger` sets it only for a **self-addressed** delegation
+  (`TriggerDelegationReference.candidateForADeclaredExecutor`, #1121): a mint by
+  source id resolves the delegation of the CALLING module and the capability is
+  addressed to the binding's audience, which the executing module must itself
+  admit, so that is the one shape a source-id reference can serve. It took the
+  first active reference from any module before, which named delegations no
+  trigger could ever use.
+
+  **That is a shape, not an executor, and the read says so** (#1121, F1).
+  Nothing this host holds declares which module executes declared work:
+  self-addressed bindings are generic and a deployment may have several. So a
+  source whose only self-addressed delegation belongs to module A is a
+  *candidate* under A's name — `SourceTriggerDeclaration.IdentityHolder`, which
+  the arm itself cannot carry because its value is the source id — and if the
+  composed executor is B, holding none, B's mint resolves
+  `ActiveSourceDelegation(S, B)` and is refused with
+  `ErrSourceDelegationMissing`. Claiming "the executing module holds it" would
+  have told an operator a source was ready while every occurrence failed.
+  Resolving it properly needs the executing principal named by a contract that
+  does not exist yet; a sibling module's prefix is not that contract and is not
+  hard-coded here.
 - **`binding` is the installation-principal arm, and PLANNED.** It would name
   one of the release's bindings and mint from that binding's `headless_scopes`
   under the module's own principal (`MintModuleOperationContext`) — an ordinary
@@ -1035,9 +1048,12 @@ the values and records the other column beside them).
   alone, and a stored instant aligned to the cron would make every source of one
   provider come due in the same second. `DATASOURCE_RECONCILE_SWEEP_ENABLED`
   (application group, ON unless `false`) is what an operator turns off when a
-  composed module starts consuming the declaration; it is read in two places
-  that are one fact — the tick is not installed, and `RunDatasourceReconcile`
-  itself refuses.
+  composed module starts consuming the declaration. The refusal is in
+  `RunDatasourceReconcile` itself: the one-minute tick still fires and its
+  callback still runs, and the sweep returns having read nothing and enqueued
+  nothing. That is deliberate — a switch read only where the ticker is
+  installed would leave every other caller of the sweep unguarded — but it is a
+  sweep that does nothing, not a tick that was never scheduled.
 
 ## A module identity minted for one tenant
 

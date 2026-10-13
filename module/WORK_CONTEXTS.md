@@ -836,6 +836,16 @@ observe — hence `TestTriggerDeclarationMatchesTheContractFieldNames`, which
 pins the document's names *and values* and records the other column beside
 them.
 
+**A declared reference is a candidate, not a readiness claim** (#1121, F1). The
+host sets the reference arm for a self-addressed delegation — the only shape a
+source-id reference can serve — and reports whose delegation it is
+(`identity_holder`). It does **not** establish that the module which executes
+this release holds one: nothing the host has declares who that is, those
+bindings are generic, and a deployment may have several. A composed executor
+with no delegation on the source is refused at the mint
+(`ErrSourceDelegationMissing`), so the read names the holder and leaves executor
+readiness unverified rather than calling the source bound.
+
 **Exactly one identity, and the two are not alternatives of equal standing.**
 
 - `source` — **the grant reference, and the contract.** It names a

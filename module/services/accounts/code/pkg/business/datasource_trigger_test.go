@@ -205,13 +205,19 @@ func TestTriggerDeclarationPrefersTheReferenceArmAndFingerprintsItself(t *testin
 	require.Zero(t, edited.NextOccurrenceAt.Minute()%15)
 }
 
-// executorReference is a delegation the module that FIRES the trigger can
-// actually use: it holds the delegation itself, its binding still confers
-// something, and that binding names its own module as the audience.
+// executorReference is a delegation a declared executor COULD use: the module
+// holds it itself, its binding still confers something, and that binding names
+// its own module as the audience.
 func executorReference(sourceID string, active bool) business.TriggerDelegationReference {
+	return selfAddressedReference(sourceID, "runtime", active)
+}
+
+// selfAddressedReference is the same shape under a named holder, for the cases
+// that turn on WHICH module holds it.
+func selfAddressedReference(sourceID, module string, active bool) business.TriggerDelegationReference {
 	return business.TriggerDelegationReference{
-		Reference: sourceID, DelegationID: "d1", Module: "runtime", Binding: "occurrences",
-		Audience: "runtime", Scopes: []string{"collections:write"}, Active: active,
+		Reference: sourceID, DelegationID: "d-" + module, Module: module, Binding: "occurrences",
+		Audience: module, Scopes: []string{"collections:write"}, Active: active,
 	}
 }
 
@@ -469,6 +475,67 @@ func TestStopgapSweepLeavesTheDeclarationUnchanged(t *testing.T) {
 	require.True(t, after.Declarable(), "the sweep took the source off its declared schedule")
 	require.Equal(t, before.Schedule.Cron, after.Schedule.Cron)
 	require.Equal(t, before.Digest, after.Digest, "the sweep moved the declaration an installation pinned")
+}
+
+// A SELF-ADDRESSED DELEGATION DOES NOT IDENTIFY THE EXECUTOR (issue #1121, F1).
+//
+// The predicate above establishes the SHAPE a source-id reference can serve. It
+// cannot establish who will execute the release, because nothing this host
+// holds declares that: a self-addressed binding is generic and a deployment may
+// have several. So the counterexample the review built is real — module A holds
+// a self-addressed delegation on source S, the composed executor is B, which
+// holds none, and B's mint resolves ActiveSourceDelegation(S, B) and is refused.
+//
+// What this host must therefore NOT do is tell an operator that S is ready. It
+// names the candidate, reports WHOSE delegation it is, and claims nothing about
+// the executor. These cases vary the holder independently of any executor, which
+// is the axis the first version of this test did not vary at all.
+func TestTriggerDeclarationNamesTheHolderAndClaimsNoExecutor(t *testing.T) {
+	next := time.Now().Add(time.Hour)
+	source := &business.DatasourceSource{
+		ID: "2a3f5c1e-0000-4000-8000-000000000005", OrgID: "org",
+		Status: "active", ReconcileInterval: 30 * time.Minute, NextReconcileAt: &next,
+	}
+	// Two modules, each self-addressed, which the registry accepts generically:
+	// A holds a delegation on this source, B does not.
+	holderA := selfAddressedReference(source.ID, "module-a", true)
+
+	// A ONLY: the declaration names the candidate and says it is A's. It must
+	// not be read as "the executor holds one" — if the composed executor is B,
+	// every occurrence is refused at the mint, and this host cannot tell.
+	onlyA := business.DeclareSourceTrigger(source, []business.TriggerDelegationReference{holderA}, nil, true)
+	require.Equal(t, source.ID, onlyA.Identity.Source, "the candidate is still declared; it is the only shape a reference can take")
+	require.Equal(t, "module-a", onlyA.IdentityHolder, "a reader must be told whose delegation the reference resolves to")
+
+	// B's own current delegation yields the positive claim under B's name —
+	// the same declared reference value, a different holder, which is exactly
+	// the fact the arm cannot carry and the read must.
+	holderB := selfAddressedReference(source.ID, "module-b", true)
+	onlyB := business.DeclareSourceTrigger(source, []business.TriggerDelegationReference{holderB}, nil, true)
+	require.Equal(t, source.ID, onlyB.Identity.Source)
+	require.Equal(t, "module-b", onlyB.IdentityHolder)
+	require.Equal(t, onlyA.Identity.Source, onlyB.Identity.Source,
+		"the reference value is the source id, so A's and B's are indistinguishable in the arm — which is why the holder is reported beside it")
+
+	// Revoking B's delegation removes the claim entirely rather than falling
+	// back to A: a declaration is built from the references as they are.
+	revokedB := selfAddressedReference(source.ID, "module-b", false)
+	goneB := business.DeclareSourceTrigger(source, []business.TriggerDelegationReference{revokedB}, nil, true)
+	require.False(t, goneB.Identity.Declared(), "a revoked delegation is not a candidate")
+	require.Empty(t, goneB.IdentityHolder, "no identity means no holder to name")
+
+	// And a binding B's module no longer declares: the read resolves no scopes,
+	// so the next mint would revoke it as binding_changed.
+	staleB := selfAddressedReference(source.ID, "module-b", true)
+	staleB.Scopes = nil
+	changedB := business.DeclareSourceTrigger(source, []business.TriggerDelegationReference{staleB}, nil, true)
+	require.False(t, changedB.Identity.Declared())
+	require.Empty(t, changedB.IdentityHolder)
+
+	// With both present the holder named is one of the two that actually hold
+	// one — never a module that holds none.
+	both := business.DeclareSourceTrigger(source, []business.TriggerDelegationReference{holderA, holderB}, nil, true)
+	require.Contains(t, []string{"module-a", "module-b"}, both.IdentityHolder)
 }
 
 // THE STOPGAP SWEEP HAS A SWITCH, AND IT IS ONE FACT (issue #1121, N7).

@@ -87,6 +87,39 @@ func TestTriggerOccurrenceMintsFromTheReferenceAndIsRefusedAfterRevocation(t *te
 	require.Len(t, audit.of(business.EventSourceDelegationUsed), 2, "a refused occurrence mints nothing and records no child")
 }
 
+// A DELEGATION ONE MODULE HOLDS IS NOT A CAPABILITY ANOTHER CAN MINT
+// (issue #1121, F1), at the real mint route.
+//
+// This is the second half of the finding the declaration half corrects. The
+// counterexample: source S has a live delegation held by module A, and the
+// composed executor is module B. The declaration can only name S — the
+// reference value is the source id — so a host that called S "bound" would be
+// claiming readiness for B. It is not: a mint by source id resolves
+// ActiveSourceDelegation(S, caller) and B has none.
+//
+// Asserted here rather than reasoned about, because the whole correction rests
+// on the mint refusing B while admitting A.
+func TestAnotherModulesDelegationDoesNotMintForThisOne(t *testing.T) {
+	store, audit := installSourceDelegationService(t)
+
+	// A holds the delegation and mints from the source id.
+	held, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{SourceID: delegationSource})
+	require.NoError(t, err)
+	require.NotEmpty(t, held.GetToken())
+	require.Len(t, audit.of(business.EventSourceDelegationUsed), 1)
+
+	// B presents the same reference and is refused — as a decision, not an
+	// outage, so a module reading it does not retry it as transient. By source,
+	// "another module holds it" is indistinguishable from "nobody does", which
+	// is deliberate: B learns nothing about A's delegation.
+	_, err = mintSourceContext("reports", moduleToken(t, "reports"), business.SourceDelegationRef{SourceID: delegationSource})
+	requireRefusal(t, err, codes.FailedPrecondition, SourceDelegationMissingReason)
+	require.Len(t, audit.of(business.EventSourceDelegationUsed), 1,
+		"a refused mint issues nothing and records no child")
+	// The delegation A holds is untouched by B's attempt.
+	require.NotNil(t, store.delegations[delegationID])
+}
+
 // The headless mint a binding with its own audience and headless scopes
 // answers: a capability for work with no person anywhere in it.
 //

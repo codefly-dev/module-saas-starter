@@ -1034,15 +1034,23 @@ message RevokeSourceDelegationResponse {
 //     the capability that admitted it and revoking the delegation refuses the
 //     next occurrence.
 //
-//     IT IS SET ONLY FOR A DELEGATION THE EXECUTING MODULE CAN USE. A mint by
-//     source id resolves the active delegation of the CALLING module, and the
-//     capability is addressed to the binding's declared audience, which the
-//     executing module must itself admit — so the one shape a declared
-//     reference can serve is a delegation whose binding names its own module
-//     as the audience. A delegation held by one module and addressed to
-//     another is reachable only through the delegation-id exchange, which no
-//     reference this host declares can name, and declaring it would read as
-//     bound while every occurrence was refused at the mint.
+//     IT IS SET ONLY FOR A DELEGATION SOME DECLARED EXECUTOR COULD USE, which
+//     is weaker than naming the one that will. A mint by source id resolves
+//     the active delegation of the CALLING module, and the capability is
+//     addressed to the binding's declared audience, which the executing module
+//     must itself admit — so the one shape a declared reference can serve is a
+//     delegation whose binding names its own module as the audience. A
+//     delegation held by one module and addressed to another is reachable only
+//     through the delegation-id exchange, which no reference this host
+//     declares can name.
+//
+//     WHICH module that is, this host does not know: nothing it holds declares
+//     who executes declared work. `identity_holder` on the declaration read
+//     reports whose delegation the reference resolves to, and executor
+//     readiness is deliberately not claimed — a composed executor with no
+//     delegation on this source is refused at the mint
+//     (ErrSourceDelegationMissing), and a host that called the source "bound"
+//     would have been telling an operator the opposite.
 //
 //     IT IS NOT OPAQUE, and revocation is therefore not permanent. The value
 //     is the source's own id, and a mint resolves whichever delegation of that
@@ -1207,6 +1215,19 @@ message SourceTriggerDeclaration {
   // held off its schedule: then there is no pass this host will take.
   bool host_sweep_enabled = 9;
   google.protobuf.Timestamp host_sweep_due_at = 10;
+  // identity_holder is the module whose delegation the reference arm resolved
+  // to when this declaration was built. The arm cannot carry it — the
+  // reference value is the source id — so it is reported beside it.
+  //
+  // IT IS NOT THE EXECUTING MODULE. Nothing this host holds declares which
+  // module executes declared work: a self-addressed delegation binding is
+  // generic and a deployment may have several. So this says "a reference on
+  // this source would resolve to module A's self-addressed delegation", and
+  // whether A is the module that installs this release is unverified here. A
+  // reader that took it for executor readiness would be told a source was
+  // ready while every occurrence of another executor's trigger was refused at
+  // the mint. Empty when the arm names no identity.
+  string identity_holder = 11;
 }
 
 message DelegateSourceTriggersRequest {

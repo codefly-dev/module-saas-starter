@@ -59,6 +59,10 @@ const declared = {
 		inputJson: '{"org_id":"org-1","source_id":"' + SOURCE + '"}',
 	},
 	identity: { source: SOURCE },
+	// Whose delegation the reference resolves to. The arm cannot carry it (the
+	// value is the source id), and it is NOT a claim that this module executes
+	// the release — see declaredIdentity (issue #1121, F1).
+	identityHolder: "docstore",
 	digest: "4f1c",
 	nextOccurrenceAt: "2026-10-12T18:30:00Z",
 };
@@ -147,14 +151,16 @@ describe("UnattendedWorkPlayground", () => {
 		// Which arm it names, said in words: a declaration that named neither
 		// would have its occurrences refused, and the page says so rather than
 		// leaving the field blank.
-		// It does not claim WHICH module's reference — the reference value is the
-		// source id and the references table answers that — but it does say the
-		// delegation is one the executing module can use, because the host sets
-		// the arm only for a delegation whose binding names its own module as
-		// the audience (issue #1121, m5).
+		// It names the HOLDER, which the arm's own value cannot carry, and
+		// refuses to claim that the holder is the module which executes this
+		// release — nothing the host holds declares that, so a source whose
+		// only self-addressed delegation belongs to another module would read
+		// as ready while the composed executor's mint was refused
+		// (issue #1121, F1).
 		expect(
-			screen.getByText("A delegation reference the executing module holds"),
+			screen.getByText(/A delegation reference held by docstore/),
 		).toBeTruthy();
+		expect(screen.getByText(/unverified/)).toBeTruthy();
 
 		// The reference an operator bound, with whose authority it carries and
 		// exactly what it allows — never the module's own authority.

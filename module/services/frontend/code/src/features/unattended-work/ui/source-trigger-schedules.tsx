@@ -366,25 +366,30 @@ function useAdmittedPasses(): AdmittedReconcilePass[] {
  * state an installing module refuses rather than running the work as itself,
  * so it is said plainly instead of being left blank.
  *
- * The reference arm does NOT name which module's delegation it is. The
- * reference value is the source id, so every delegation on one source reads
- * back the same value and the host resolves it afresh on every mint; the
- * references table names each module, which is where that question is
- * answerable.
+ * The arm's own value cannot say whose delegation it is — it is the source id,
+ * so every delegation on one source reads back the same — so the declaration
+ * reports the holder beside it and this names that module.
  *
- * What it now says instead is that the delegation named is one the executing
- * module can use (issue #1121, m5): the host only sets the arm for a delegation
- * whose binding names its own module as the audience, which is the one shape a
- * source-id reference can serve. Before that, an operator whose executing
- * module held no delegation read "bound" because some other module's existed —
- * and every occurrence was refused at the mint.
+ * IT DOES NOT CLAIM THE EXECUTOR HOLDS IT (issue #1121, F1). The host sets the
+ * arm for a self-addressed delegation, which is the one shape a source-id
+ * reference can serve, but nothing it holds declares WHICH module executes the
+ * release: those bindings are generic and a deployment may have several. So a
+ * source whose only self-addressed delegation belongs to module A reads as a
+ * candidate under A's name, and if the composed executor is B — holding none —
+ * B's mint is refused and this page must not have said otherwise. Saying "the
+ * executing module holds it" was that claim, and it is withdrawn.
  */
 export function declaredIdentity(declaration?: {
 	identity?: { source: string; binding: string };
+	identityHolder?: string;
 }): string {
 	const identity = declaration?.identity;
-	if (identity?.source)
-		return "A delegation reference the executing module holds";
+	if (identity?.source) {
+		const holder = declaration?.identityHolder;
+		return holder
+			? `A delegation reference held by ${holder} — whether it executes this release is unverified`
+			: "A delegation reference — its holder was not reported";
+	}
 	if (identity?.binding) return "An installation binding";
 	return "None — occurrences would be refused";
 }

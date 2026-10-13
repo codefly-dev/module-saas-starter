@@ -196,8 +196,18 @@ type SourceTriggerDeclaration struct {
 	// on its schedule: then there is no pass this host will take.
 	//
 	// STOPGAP (issue #1112): both go with RunDatasourceReconcile.
-	HostSweepEnabled   bool
-	HostSweepDueAt     *time.Time
+	HostSweepEnabled bool
+	HostSweepDueAt   *time.Time
+	// IdentityHolder is the module whose delegation the reference arm resolved
+	// to when this declaration was built, and it is reported because the arm
+	// itself cannot carry it: the reference value is the source id.
+	//
+	// It is NOT the executing module (issue #1121, F1). Nothing declares who
+	// executes declared work, so this says "module A's self-addressed
+	// delegation is what a reference on this source would resolve to", and
+	// whether A is the module that installs this release is unverified here.
+	// Empty when the arm names no identity.
+	IdentityHolder     string
 	UndeclarableReason string
 }
 
@@ -229,12 +239,29 @@ type TriggerDelegationReference struct {
 	RevokedReason string
 }
 
-// usableByExecutor reports whether a declared trigger's reference arm can name
-// this delegation: it is live, it has a reference value, its binding still
-// confers something, and the module that holds it is the audience of its own
-// binding — the only shape the module that fires the trigger can both mint from
-// a source id and admit as its own execution context (DeclareSourceTrigger).
-func (r TriggerDelegationReference) usableByExecutor() bool {
+// candidateForADeclaredExecutor reports whether a declared trigger's reference
+// arm MAY name this delegation: it is live, it has a reference value, its
+// binding still confers something, and the module that holds it is the audience
+// of its own binding — the only shape a source-id reference can serve, because
+// a mint by source id resolves the delegation of the CALLING module and the
+// capability is addressed to the binding's audience.
+//
+// WHAT IT DOES NOT ESTABLISH, and the name says so on purpose (issue #1121,
+// F1): that the module holding it is the module which will execute this
+// release. Nothing in the envelope or the derived registry declares who
+// executes declared work — self-addressed bindings are generic, and a
+// deployment may have several — so "module A holds a self-addressed delegation
+// on source S" does not imply "the composed executor B can mint for S". B's
+// mint resolves ActiveSourceDelegation(S, B) and is correctly refused with
+// ErrSourceDelegationMissing; what would have been wrong is this host telling
+// an operator that S was ready.
+//
+// So the declaration names the candidate and the read reports WHICH module
+// holds it (SourceTriggerDeclaration.IdentityHolder), and neither claims
+// executor readiness. Resolving it properly needs the executing principal to be
+// named by a contract that does not exist yet; hard-coding a sibling module's
+// prefix here is not that contract.
+func (r TriggerDelegationReference) candidateForADeclaredExecutor() bool {
 	return r.Active && r.Reference != "" && len(r.Scopes) > 0 &&
 		r.Audience != "" && r.Audience == r.Module
 }
@@ -467,11 +494,15 @@ func DeclareSourceTrigger(
 		Deadline:  DatasourceTriggerDeadline,
 		Input:     datasourceTriggerInput(source.OrgID, source.ID),
 	}
-	// The executing module's own delegation, and nothing else — see the m5 note
-	// above for why that is the self-admitting one.
+	// A delegation a declared executor COULD use — the self-addressed one, for
+	// the reasons in candidateForADeclaredExecutor, which also says why this is
+	// not proof that the composed executor holds it. The holder travels with it
+	// so a reader is told whose delegation the reference resolves to today
+	// rather than being left to infer an executor.
 	for _, reference := range references {
-		if reference.usableByExecutor() {
+		if reference.candidateForADeclaredExecutor() {
 			declaration.Identity = DeclaredTriggerIdentity{Source: reference.Reference}
+			declaration.IdentityHolder = reference.Module
 			break
 		}
 	}
