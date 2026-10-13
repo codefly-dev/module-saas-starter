@@ -259,9 +259,15 @@ describe("the host's own sweep", () => {
 		expect(
 			within(table).getByText(/This host’s stopgap sweep · off/),
 		).toBeTruthy();
+		// NOT "an executing module fires the declaration", which asserted that
+		// something else does fire it — a readiness claim this host cannot make
+		// (issue #1121, F1). The switch says only that this host stopped.
 		expect(
-			within(table).getByText(/An executing module fires the declaration/),
+			within(table).getByText(/This host does not fire it/),
 		).toBeTruthy();
+		expect(
+			within(table).queryByText(/An executing module fires the declaration/),
+		).toBeNull();
 		expect(table.querySelector('[data-slot="host-sweep-due"]')?.textContent).toBe(
 			"—",
 		);
@@ -270,5 +276,113 @@ describe("the host's own sweep", () => {
 		expect(
 			table.querySelector('[data-slot="next-occurrence"]')?.textContent,
 		).toBe(new Date("2026-10-12T09:30:00Z").toLocaleString());
+	});
+});
+
+// TWO CLAIMS THE PANEL MADE THAT THIS HOST CANNOT BACK (issue #1121, the
+// final-amendment review).
+//
+// Both are about the host-sweep row, and both are render-side: the backend
+// already carries every fact either one needs.
+describe("what the panel says about this host's own sweep", () => {
+	// The sweep does not care whether the source DECLARES a trigger. Its due
+	// query selects active sources whose stored instant has elapsed, and
+	// `DeclareSourceTrigger` computes `hostSweepDueAt` before the cron check
+	// precisely so this case is reportable — `TestAnUndeclarableSourceStillReportsTheHostSweep`
+	// pins that in pkg/adapters. So a source whose interval no five-field cron
+	// can express is swept every interval while the panel showed "declares no
+	// trigger" and nothing else: the operator was told the host does nothing
+	// for a source it reconciles on a timer.
+	it("reports the sweep for a source that declares no trigger", async () => {
+		serve({
+			declaration: {
+				release: "saas_datasource_reconcile",
+				operation: "/saas.accounts.v1.DatasourceService/ReconcileSource",
+				undeclarableReason:
+					"the reconcile interval is not one a five-field cron expression can express",
+				hostSweepEnabled: true,
+				hostSweepDueAt: "2026-10-12T09:07:00Z",
+			},
+			delegations: [],
+			children: [],
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText(/not one a five-field cron expression can express/);
+		const table = await waitFor(() => {
+			const found = document.querySelector<HTMLElement>(
+				'[data-slot="admissions"]',
+			);
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+
+		await waitFor(() =>
+			expect(table.querySelector('[data-slot="host-sweep"]')).not.toBeNull(),
+		);
+		expect(table.querySelector('[data-slot="host-sweep-due"]')?.textContent).toBe(
+			new Date("2026-10-12T09:07:00Z").toLocaleString(),
+		);
+		// And the DECLARATION's own rows stay withheld, which was the half the
+		// old conditional had right: without a schedule there is no declared
+		// occurrence to show.
+		expect(
+			table.querySelectorAll('[data-slot="scheduled-occurrence"]'),
+		).toHaveLength(0);
+	});
+
+	// With the sweep off, "an executing module fires the declaration" asserts
+	// that something else does fire it. Nothing this host holds verifies that
+	// (issue #1121, F1): the switch says only that THIS host stopped, so a
+	// deployment that turned it off before a runtime consumed the declaration
+	// read as covered while nothing fired at all.
+	it("does not claim an executing module fires it when the sweep is off", async () => {
+		serve({
+			declaration: {
+				...declared,
+				identityHolder: "module-a",
+				hostSweepEnabled: false,
+				hostSweepDueAt: undefined,
+			},
+			delegations: [],
+			children: [],
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		const table = await admissions();
+
+		const sweep = table.querySelector<HTMLElement>('[data-slot="host-sweep"]');
+		expect(sweep).not.toBeNull();
+		expect((sweep as HTMLElement).textContent).not.toMatch(
+			/An executing module fires the declaration/,
+		);
+		expect((sweep as HTMLElement).textContent).toMatch(/unverified/);
+		// The holder is reported in the declared-identity row, so the two facts
+		// are not conflated into one claim.
+		expect(screen.getByText(/held by module-a/)).toBeTruthy();
+	});
+
+	// A declaration that has not arrived — a read still in flight, or one that
+	// failed — must not render a sweep row at all: "off" would be an answer
+	// about this host that nothing established.
+	it("says nothing about the sweep before the declaration lands", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({}, { status: 500 }),
+			),
+		);
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("acme/handbook");
+
+		await waitFor(() =>
+			expect(
+				document.querySelector('[data-slot="admissions"]'),
+			).not.toBeNull(),
+		);
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+		expect(
+			document.querySelector('[data-slot="scheduled-occurrence"]'),
+		).toBeNull();
 	});
 });

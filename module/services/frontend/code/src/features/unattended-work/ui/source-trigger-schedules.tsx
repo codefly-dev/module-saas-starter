@@ -96,14 +96,16 @@ export function SourceTriggerSchedules({ orgId }: { orgId: string }) {
 			<CardHeader>
 				<CardTitle>Reconcile schedules</CardTitle>
 				<CardDescription>
-					Each connected source declares its reconcile schedule as a trigger an
-					executing module is meant to fire. Until a composed runtime consumes
-					that declaration, this host still fires the schedule itself, as a
-					stopgap — and it fires on its own stored instant, not on the declared
-					cron, so the two rows below are two different facts. A person&apos;s
-					&ldquo;Sync now&rdquo; admits the same operation with an effect
-					identity of its own, so it is listed beside the occurrences rather
-					than apart from them.
+					Each connected source declares its reconcile schedule as a trigger
+					for a module that executes declared work. Whether one consumes that
+					declaration is not something this host can confirm, so nothing below
+					claims it: what is shown is what this host declares, and what this
+					host itself does about it — the stopgap sweep, which fires on the
+					source&apos;s own stored instant rather than on the declared cron, so
+					those two rows are two different facts. A person&apos;s &ldquo;Sync
+					now&rdquo; admits the same operation with an effect identity of its
+					own, so it is listed beside the occurrences rather than apart from
+					them.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
@@ -206,7 +208,22 @@ function SourceTriggerRow({
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{!declaration?.undeclarableReason && (
+					{/*
+					 * THREE SEPARATE CONDITIONS, because they answer three
+					 * questions and one flag answered them all wrongly
+					 * (issue #1121, the final-amendment review).
+					 *
+					 * The declaration's own rows need a declaration that
+					 * declares something. The host's sweep needs only a
+					 * declaration to have ARRIVED — it sweeps a source whose
+					 * interval no cron can express just the same. And neither
+					 * may render before the read lands: `!declaration?.x` is
+					 * true when `declaration` is undefined, so the old guard
+					 * rendered the whole block over a read that had failed,
+					 * reporting the sweep as "off" about a host nothing had
+					 * been established for.
+					 */}
+					{declaration && !declaration.undeclarableReason && (
 						<>
 							<TableRow data-slot="scheduled-occurrence">
 								<TableCell className="text-sm">
@@ -232,32 +249,37 @@ function SourceTriggerRow({
 								</TableCell>
 								<TableCell className="text-sm">—</TableCell>
 							</TableRow>
-							{/*
-							 * What will actually happen, while this host still fires the
-							 * schedule. It is a different instant from the row above, on
-							 * purpose: see the panel's note. With the stopgap switched off
-							 * the host takes no pass, so the row says that rather than
-							 * showing a time.
-							 */}
-							<TableRow data-slot="host-sweep">
-								<TableCell className="text-sm">
-									{declaration?.hostSweepEnabled
-										? "This host’s stopgap sweep · next pass"
-										: "This host’s stopgap sweep · off"}
-								</TableCell>
-								<TableCell className="text-sm text-muted-foreground">
-									{declaration?.hostSweepEnabled
-										? NO_EFFECT_IDENTITY
-										: "An executing module fires the declaration"}
-								</TableCell>
-								<TableCell className="text-sm" data-slot="host-sweep-due">
-									{declaration?.hostSweepEnabled
-										? instant(declaration?.hostSweepDueAt)
-										: "—"}
-								</TableCell>
-								<TableCell className="text-sm">—</TableCell>
-							</TableRow>
 						</>
+					)}
+					{/*
+					 * What this host will actually do, for ANY source whose
+					 * declaration has arrived — including one that declares no
+					 * trigger, which the sweep reconciles on its stored instant
+					 * every interval. Hiding it there told an operator this host
+					 * does nothing for a source it refreshes on a timer.
+					 *
+					 * The instant is a different one from the declared
+					 * occurrence above, on purpose: see the panel's note.
+					 */}
+					{declaration && (
+						<TableRow data-slot="host-sweep">
+							<TableCell className="text-sm">
+								{declaration.hostSweepEnabled
+									? "This host’s stopgap sweep · next pass"
+									: "This host’s stopgap sweep · off"}
+							</TableCell>
+							<TableCell className="text-sm text-muted-foreground">
+								{declaration.hostSweepEnabled
+									? NO_EFFECT_IDENTITY
+									: SWEEP_OFF_FIRES_NOTHING_HERE}
+							</TableCell>
+							<TableCell className="text-sm" data-slot="host-sweep-due">
+								{declaration.hostSweepEnabled
+									? instant(declaration.hostSweepDueAt)
+									: "—"}
+							</TableCell>
+							<TableCell className="text-sm">—</TableCell>
+						</TableRow>
 					)}
 					{passes.map((pass) => (
 						<TableRow key={pass.effectId} data-slot="manual-pass">
@@ -313,6 +335,19 @@ const MINTED_BY_THE_FIRING_MODULE = "Minted by the firing module";
  * an admission of its own.
  */
 const NO_EFFECT_IDENTITY = "None — the sweep admits no operation";
+
+/**
+ * What a switched-off sweep means, and the one thing it does not mean.
+ *
+ * It said "An executing module fires the declaration", which asserts that
+ * something else does — and nothing this host holds verifies that (issue
+ * #1121, F1). The switch says only that THIS host stopped sweeping, so a
+ * deployment that turned it off before a module consumed the declaration read
+ * as covered while nothing fired at all. The honest statement is the negative
+ * one plus the gap.
+ */
+const SWEEP_OFF_FIRES_NOTHING_HERE =
+	"This host does not fire it — whether an executing module does is unverified here";
 
 /**
  * One labelled fact. Exported because the playground renders the same

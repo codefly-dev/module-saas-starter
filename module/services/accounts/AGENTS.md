@@ -1048,8 +1048,25 @@ the values and records the other column beside them).
   alone, and a stored instant aligned to the cron would make every source of one
   provider come due in the same second. `DATASOURCE_RECONCILE_SWEEP_ENABLED`
   (application group, ON unless `false`) is what an operator turns off when a
-  composed module starts consuming the declaration. The refusal is in
-  `RunDatasourceReconcile` itself: the one-minute tick still fires and its
+  composed module starts consuming the declaration.
+
+  **Both facts are reported for a source that declares NO trigger, too**, and
+  the operator view shows them there: the sweep's due query selects an active
+  source whose stored instant has elapsed, which has nothing to do with whether
+  a cron could express its interval, so a source refused as undeclarable is
+  still reconciled every interval. `DeclareSourceTrigger` computes
+  `HostSweepDueAt` before the cron check for exactly that reason, and the
+  projection sets both before the undeclarable return
+  (`TestAnUndeclarableSourceStillReportsTheHostSweep`). A surface that hid the
+  sweep there told an operator this host does nothing for a source it refreshes
+  on a timer.
+
+  **And a disabled sweep claims nothing about anybody else.** "An executing
+  module fires the declaration" was a readiness claim this host cannot make
+  (#1121, F1); the switch says only that this host stopped. The view says that
+  and names the gap.
+
+  The refusal is in `RunDatasourceReconcile` itself: the one-minute tick still fires and its
   callback still runs, and the sweep returns having read nothing and enqueued
   nothing. That is deliberate — a switch read only where the ticker is
   installed would leave every other caller of the sweep unguarded — but it is a

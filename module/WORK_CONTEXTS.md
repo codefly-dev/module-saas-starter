@@ -836,6 +836,16 @@ observe — hence `TestTriggerDeclarationMatchesTheContractFieldNames`, which
 pins the document's names *and values* and records the other column beside
 them.
 
+**What the host does about a schedule is reported separately from what the
+schedule says, for every source.** The stopgap sweep reconciles an active source
+whose stored instant has elapsed, whether or not that source declares a trigger
+— an interval no five-field cron can express is undeclarable and still swept —
+so the declaration read carries `host_sweep_enabled` and `host_sweep_due_at`
+beside the cron for the undeclarable case as well. And a sweep that is switched
+off says only that this host stopped: whether a module consumes the declaration
+is not something this host verifies, so neither the read nor the operator view
+asserts it.
+
 **A declared reference is a candidate, not a readiness claim** (#1121, F1). The
 host sets the reference arm for a self-addressed delegation — the only shape a
 source-id reference can serve — and reports whose delegation it is
