@@ -251,6 +251,27 @@ describe("activitySummary", () => {
 	it("is null when nothing matched", () => {
 		expect(activitySummary([{ points: [] }, { points: [] }])).toBeNull();
 	});
+
+	it("reads a day counted 0 as a day with no events, which bounds nothing", () => {
+		const summary = activitySummary([
+			{
+				points: [
+					{ key: "2026-09-02T00:00:00+00", value: 0 },
+					{ key: "2026-09-03T00:00:00+00", value: 4 },
+					{ key: "2026-09-04T00:00:00+00", value: 0 },
+					{ key: "2026-09-05T00:00:00+00", value: 0 },
+				],
+			},
+		]);
+		expect(summary?.first.toISOString()).toBe("2026-09-03T00:00:00.000Z");
+		expect(summary?.last.toISOString()).toBe("2026-09-03T00:00:00.000Z");
+		expect(summary?.events).toBe(4);
+		expect(
+			activitySummary([
+				{ points: [{ key: "2026-09-02T00:00:00+00", value: 0 }] },
+			]),
+		).toBeNull();
+	});
 });
 
 describe("recentEventsQueries", () => {

@@ -46,8 +46,20 @@ export {
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
-	useSyncSource,
+	useReconcileSource,
 } from "./datasources/queries.js";
+// The effect identity a manual pass commits under, and the record of the
+// passes this browser admitted. Exported because the host's own
+// reconcile-schedules panel shows a person's pass beside the declared
+// schedule's occurrences, which it can only do if the identity leaves the kit.
+export {
+	type AdmittedReconcilePass,
+	createReconcilePassLedger,
+	notifySourceReconcileAdmitted,
+	onSourceReconcileAdmitted,
+	type ReconcilePassLedger,
+	type SourceReconcileStatus,
+} from "./datasources/reconcile-passes.js";
 export {
 	type ConnectGitHubValues,
 	connectGitHubSchema,
@@ -92,6 +104,7 @@ export type {
 	DatasourceView,
 	DomainView,
 	GroupBindingView,
+	SourceReconcileReceipt,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,
 	SourceSyncTriggerName,
@@ -105,16 +118,23 @@ export { parsePaths } from "./datasources/util.js";
 // package root" false for half a documented pair.
 export {
 	type AccessibleScopeState,
+	type BrowserTracing,
+	type BrowserTracingOptions,
+	type BrowserTracingStatus,
 	COLLECTION_ACCESS_PATH,
+	injectTraceContext,
+	installBrowserTracing,
 	type NameOf,
 	NoReadableCollection,
 	type NoReadableCollectionProps,
+	OTEL_API_VERSION,
 	PrincipalName,
 	type PrincipalDirectoryState,
 	type PrincipalNameProps,
 	PrincipalNamesProvider,
 	type PrincipalNamesProviderProps,
 	requestBinding,
+	resolveTraceExportEndpoint,
 	type SolutionBinding,
 	SolutionBindingError,
 	type SolutionCredential,
@@ -124,6 +144,15 @@ export {
 	solutionFetch,
 	solutionJson,
 	solutionTransport,
+	TRACE_ATTRIBUTE_VALUE_MAX_LENGTH,
+	TRACE_DENIED_ATTRIBUTE_KEYS,
+	TRACE_EXPORT_ALLOWED_ORIGINS_BUILD_ENV,
+	TRACE_EXPORT_BUILD_ENV,
+	TRACE_EXPORT_DELAY_MS,
+	TRACE_EXPORT_META_NAME,
+	TRACE_RESOURCE_ATTRIBUTE_KEYS,
+	TRACE_SPAN_NAME_PLACEHOLDER,
+	TRACE_STANDARD_ATTRIBUTE_KEYS,
 	useAccessibleScope,
 	useAccessToken,
 	useNameOf,

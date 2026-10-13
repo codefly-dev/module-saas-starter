@@ -73,6 +73,7 @@ func installSolutionTarget(t *testing.T, orgID, ownerID, roleID, label, targetID
 		})
 		return err
 	}))
+	acknowledgeInstallation(t, installation)
 	return installation
 }
 

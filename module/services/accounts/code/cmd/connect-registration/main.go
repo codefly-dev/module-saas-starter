@@ -14,6 +14,7 @@ func main() {
 	configPath := flag.String("config", "", "path to the Connect implementation bindings YAML")
 	outputPath := flag.String("output", "", "write generated Connect Go to this path (stdout when empty)")
 	grpcOutputPath := flag.String("grpc-output", "", "write generated raw-gRPC Go to this path (disabled when empty)")
+	surfacesOutputPath := flag.String("surfaces-output", "", "write generated endpoint API contract surfaces JSON to this path (disabled when empty)")
 	flag.Parse()
 
 	if *catalogPath == "" || *configPath == "" {
@@ -40,6 +41,11 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "compile gRPC registration: %v\n", err)
 		os.Exit(1)
 	}
+	surfacesDocument, err := cataloggen.RenderAPIContractSurfaces(catalog, config)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "compile API contract surfaces: %v\n", err)
+		os.Exit(1)
+	}
 	if *outputPath == "" {
 		_, _ = os.Stdout.Write(document)
 	} else {
@@ -47,6 +53,9 @@ func main() {
 	}
 	if *grpcOutputPath != "" {
 		writeDocument(*grpcOutputPath, grpcDocument, "gRPC")
+	}
+	if *surfacesOutputPath != "" {
+		writeDocument(*surfacesOutputPath, surfacesDocument, "API contract surfaces")
 	}
 }
 

@@ -23,6 +23,13 @@ export interface CardProps {
 	description?: ReactNode;
 	/** Trailing controls rendered opposite the title (buttons, menus). */
 	actions?: ReactNode;
+	/**
+	 * The title's heading element. `"h3"` by default; `"h4"` for a card that
+	 * sits under a heading of its own below the page's sections — a widget in
+	 * a dashboard section, say — so heading navigation reads it as that
+	 * heading's child rather than its peer.
+	 */
+	titleAs?: "h3" | "h4";
 	children?: ReactNode;
 	className?: string;
 }
@@ -32,6 +39,7 @@ export function Card({
 	title,
 	description,
 	actions,
+	titleAs: Title = "h3",
 	children,
 	className,
 }: CardProps) {
@@ -47,9 +55,9 @@ export function Card({
 				<div className="mb-3 flex items-start justify-between gap-4">
 					<div className="space-y-1">
 						{title != null && (
-							<h3 data-slot="card-heading" className="type-card-heading">
+							<Title data-slot="card-heading" className="type-card-heading">
 								{title}
-							</h3>
+							</Title>
 						)}
 						{description != null && (
 							<p

@@ -93,6 +93,14 @@ func platformAdminHandlers() []platformAdminHandler {
 			_, err := srv.ListPlatformAdmins(ctx, &gen.ListPlatformAdminsRequest{})
 			return err
 		}},
+		{"GetModuleEnvelope", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
+			_, err := srv.GetModuleEnvelope(ctx, &gen.GetModuleEnvelopeRequest{})
+			return err
+		}},
+		{"PutModuleEnvelope", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
+			_, err := srv.PutModuleEnvelope(ctx, &gen.PutModuleEnvelopeRequest{Document: `{"revision":1}`})
+			return err
+		}},
 		{"ListFeatureFlags", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
 			_, err := srv.ListFeatureFlags(ctx, &gen.ListFeatureFlagsRequest{})
 			return err
@@ -196,4 +204,37 @@ func TestRequirePlatformRoleHierarchy(t *testing.T) {
 			require.Equal(t, tc.wantCode, status.Code(err))
 		})
 	}
+}
+
+// unenrolledSuperAdminStore is a super_admin with no verified MFA factor: the
+// account an attacker holding a password-only session has.
+type unenrolledSuperAdminStore struct {
+	business.Store
+	mfaProbed bool
+}
+
+func (f *unenrolledSuperAdminStore) GetPlatformRole(context.Context, string) (string, error) {
+	return "super_admin", nil
+}
+
+func (f *unenrolledSuperAdminStore) WithUserTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (f *unenrolledSuperAdminStore) HasVerifiedMFA(context.Context, string) (bool, error) {
+	f.mfaProbed = true
+	return false, nil
+}
+
+// TestPutModuleEnvelopeRequiresFreshMFAEvenWhenUnenrolled: the envelope write
+// replaces host-wide module authority, so a super_admin with no recent
+// step-up is refused — including one with no enrolled factor, whom the
+// if-enrolled gate would wave through. The store behind the business layer is
+// never reached: its envelope methods are the nil embedded interface.
+func TestPutModuleEnvelopeRequiresFreshMFAEvenWhenUnenrolled(t *testing.T) {
+	installLayeredAuthzService(t, &unenrolledSuperAdminStore{})
+	ctx := stampVerifiedIdentity(context.Background(), platformActorID, "", auth.Assurance{})
+	_, err := (&PlatformAdminServer{}).PutModuleEnvelope(ctx, &gen.PutModuleEnvelopeRequest{Document: `{"revision":1}`})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "mfa_required")
 }

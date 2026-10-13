@@ -4,6 +4,7 @@ import (
 	"accounts/pkg/abuse"
 	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
+	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/datasource/connector"
 	"accounts/pkg/email"
 	"accounts/pkg/events"
@@ -19,15 +20,20 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/codefly-dev/sdk-go/receipts"
+
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
 )
 
 type Service struct {
+	sourceReceiptStore        receipts.Store
+	sourceReceiptGuard        *receipts.Interceptor
 	store                     Store
 	hasher                    KeyHasher
 	validator                 auth.TokenValidator // production: validates provider tokens after OAuth code exchange
+	headerJWTValidator        auth.TokenValidator // header-jwt mode only: validates the gateway-injected identity assertion
 	exchanger                 CodeExchanger       // production: exchanges OAuth codes for provider tokens
 	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
 	resolver                  auth.IdentityResolver
@@ -43,9 +49,6 @@ type Service struct {
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
 	oauthState                *auth.OAuthStateSigner
-	moduleRegistrar           *registrationAuthority
-	moduleIdentity            *registrationAuthority
-	solutionRegistrar         *registrationAuthority
 	oauthPolicy               *auth.OAuthRequestPolicy
 	clientRegistry            *auth.ClientRegistry
 	clientMetadata            *auth.ClientMetadataResolver
@@ -77,8 +80,9 @@ type Service struct {
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
 	datasourceSyncOperations  DatasourceSyncOperationStore
 	datasourceConnectors      *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
-	datasourceLinkKey         []byte              // signs account-link states; derived from the deployment's internal key
+	datasourceLinkKey         []byte              // signs account-link states; delivered as datasource-keys/DATASOURCE_ACCOUNT_LINK_KEY, not derived from any other credential
 	datasourceLinkers         map[string]DatasourceAccountLinker
+	datasourceOAuth           map[string]DatasourceOAuthProvider
 	datasourceTXTResolver     TXTResolver
 	datasourceBudgets         DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
 	githubBaseURL             string                // api.github.com override for the datasource connector
@@ -100,18 +104,20 @@ type Service struct {
 	moduleJobStore           jobs.Store        // privileged worker store (claim/finalize) for the module-facing surface
 	eventTransport           events.Transport  // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
 
+	// Outbound API operation and OAuth provider dependencies.
+	newOAuth2AuthorizationCode func(context.Context, apisource.OAuth2Config, string, string, string, string) (*apisource.OAuth2Token, error)
+	newAPIOperationClient      func(apisource.Config, string) APIOperationClient
+	newOAuth2ClientCredentials OAuth2RefreshFunc
+
 	// modulePrincipals holds the per-principal capability grants for the
 	// module-facing surface, behind an atomic pointer rather than as a bare
 	// field.
 	//
-	// It is replaced, not mutated: every writer swaps a whole registry. A bare
-	// field made that swap a data race against the eighteen authorization sites
-	// that read it — unsynchronized, and therefore undefined rather than merely
-	// stale. Nothing replaces it at runtime TODAY (work.go wires it once at
-	// boot), so the race is latent; it goes live the moment a platform
-	// administrator can narrow a module's ceiling without a redeploy, which is
-	// what the envelope record makes possible. Closing it before the writer
-	// exists is the cheap order.
+	// It is replaced, not mutated: the one production writer is the module
+	// principal reconciler (module_principal_reconcile.go), which derives the
+	// whole registry each pass from the live authority documents inside the
+	// current envelope and swaps it in. A bare field made that swap a data race
+	// against every authorization site that reads it.
 	//
 	// The pointed-to registry is the SERVICE'S OWN COPY, and that is the half
 	// that makes "replaced, not mutated" an enforced property rather than a
@@ -123,14 +129,19 @@ type Service struct {
 	// on read, so no map the service authorizes against is addressable by
 	// anything else.
 	//
-	// What this does NOT yet give is one immutable snapshot per REQUEST. Each
-	// read takes the registry as it is at that moment, so a request that
-	// consults it twice could still straddle a replacement. Threading a
-	// request-scoped snapshot is the other half, and it lands with the runtime
-	// writer that makes a mid-request replacement reachable at all — doing it
-	// now, against a registry nothing replaces, would be eighteen call sites no
-	// test could hold.
-	modulePrincipals atomic.Pointer[ModulePrincipalRegistry]
+	// Mint and authority decisions capture this pointer once, pass it through
+	// their resolvers, and fence that capture against the committed envelope.
+	// A mint also fences after signing and recording, with a fresh revision
+	// read, before releasing the capability.
+	modulePrincipals atomic.Pointer[installedModuleRegistry]
+
+	// envelopeRevisionSeen is the highest module envelope revision this
+	// replica has seen committed — by its own write, by a reconcile pass, or by
+	// the fence read every capability check makes. A registry derived from an
+	// older revision serves nothing (declaredModules), so a narrowing committed
+	// anywhere takes effect on this replica at the first check that sees it,
+	// not at its next pass.
+	envelopeRevisionSeen atomic.Uint64
 
 	// declaredAudienceBindings caches the DECLARED, NON-TOMBSTONED solution
 	// binding ids the host's audience vocabulary is derived from
@@ -148,10 +159,14 @@ type Service struct {
 	// The delivery inbox's wiring. All three or none: ReceiveSolutionDelivery
 	// fails closed and names the gap when any is absent, because a deployment
 	// that mounted the endpoint without a verifier must not accept documents.
-	deliveryVerifier        solutionhost.BundleVerifier
+	deliveryVerifier        *solutionhost.Verifier
 	deliveryStore           SolutionDeliveryStore
 	deliveryCarrier         SolutionDeliveryCarrierAuthorizer
 	deliveryDomainsBySigner map[string][]string
+	// deliveryCoordinate is this host's coordinate, so an authority document
+	// addressed to another host is refused at receipt. Empty skips that check
+	// (the reconcile pass still applies it).
+	deliveryCoordinate string
 
 	// The policy log's wiring: the external append-only record, this host's
 	// local receipts and cursor, and an overridable clock.
@@ -184,6 +199,19 @@ type Service struct {
 	// check.
 	executionReviewer  ExecutionReviewer
 	executionAuthority ExecutionAuthority
+
+	// workContextSeals answers the row-backed half of a Work Context's seal
+	// (work_context_seal.go). Unset answers no seal, so no capability is
+	// minted or verified rather than one sealed to nothing.
+	workContextSeals WorkContextSealStore
+
+	// moduleEnvelopes persists the module envelope, the ceiling a platform
+	// super_admin writes (module_envelope.go). Nil answers no question about
+	// the ceiling: the RPCs refuse and the reconcilers derive nothing.
+	moduleEnvelopes ModuleEnvelopeStore
+	// registryPassTrigger asks the reconciler for a pass now. Set once at boot,
+	// before the service listens; nil leaves the tick as the only pass.
+	registryPassTrigger func()
 }
 
 // SetModuleAuthorityReads wires the live reads every capability decision makes.
@@ -220,7 +248,7 @@ func (s *Service) SetPolicyLog(log PolicyLog, store PolicyLogStore) {
 // fields: an atomic that is only ever written once reads as a claim that
 // something might replace it.
 func (s *Service) SetSolutionDelivery(
-	verifier solutionhost.BundleVerifier,
+	verifier *solutionhost.Verifier,
 	store SolutionDeliveryStore,
 	carrier SolutionDeliveryCarrierAuthorizer,
 	domainsBySigner map[string][]string,
@@ -241,36 +269,71 @@ func (s *Service) SetSolutionDelivery(
 // unreachable from outside, and mutated by nothing. Callers index it and must
 // not write to it.
 func (s *Service) declaredModules() ModulePrincipalRegistry {
-	if registry := s.modulePrincipals.Load(); registry != nil {
-		return *registry
+	installed := s.modulePrincipals.Load()
+	if installed == nil {
+		return ModulePrincipalRegistry{}
 	}
-	return ModulePrincipalRegistry{}
+	// THE FENCE (moduleRegistryFenced). A registry derived from an envelope revision older than one
+	// this replica knows is committed may hold grants that revision withdrew,
+	// so it serves nothing until a pass derives one from the current ceiling.
+	// Only where an envelope store is wired: a registry stated directly (a
+	// test) carries no revision to compare.
+	if s.moduleEnvelopes != nil && s.envelopeRevisionSeen.Load() > installed.envelopeRevision {
+		return ModulePrincipalRegistry{}
+	}
+	return installed.registry
+}
+
+// moduleRegistryFenced reports whether this replica knows of a committed
+// envelope revision newer than the one its registry was derived from.
+func (s *Service) moduleRegistryFenced() bool {
+	if s.moduleEnvelopes == nil {
+		return false
+	}
+	installed := s.modulePrincipals.Load()
+	var derived uint64
+	if installed != nil {
+		derived = installed.envelopeRevision
+	}
+	return s.envelopeRevisionSeen.Load() > derived
+}
+
+// installedModuleRegistry is one published registry and the envelope revision
+// it was derived from. Published together through one pointer, so a reader can
+// never pair one pass's registry with another pass's revision.
+type installedModuleRegistry struct {
+	registry         ModulePrincipalRegistry
+	envelopeRevision uint64
+	// delivered is the size of the delivery inbox this registry was derived
+	// from, nil when it was not derived from a counted read of it. See
+	// deliveredSince.
+	delivered *uint64
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
 // a request-scoped transactional producer for tenant/subject enqueue, the
 // privileged worker store for claim/lease/finalize and global inbox enqueue,
-// and the per-principal registry declaring which queues each module service
-// principal may use and whether it may act across tenants. Leaving the registry
-// nil denies every caller (fail-closed).
+// and an initial registry. Production passes none: the registry is derived from
+// delivered authority inside the envelope by the module principal reconciler,
+// so a host serves no module until its first pass — a nil registry denies every
+// caller (fail-closed). Tests pass one to exercise a capability path directly.
 //
-// This is BOOT wiring and the only caller is work.go, which runs it once before
-// the service listens. The producer and the job store are therefore plain fields
-// written before any request can read them; they are deliberately not behind
-// atomics, because nothing replaces them at runtime and an atomic that is only
-// ever written once reads as a claim that something might. The registry is the
-// one thing a later writer replaces, which is why it alone is a pointer.
+// This is BOOT wiring and the only production caller is work.go, which runs it
+// once before the service listens. The producer and the job store are therefore
+// plain fields written before any request can read them; they are deliberately
+// not behind atomics, because nothing replaces them at runtime. The registry is
+// the one thing the reconciler replaces, which is why it alone is a pointer.
 func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store, registry ModulePrincipalRegistry) {
 	s.moduleProducer = producer
 	s.moduleJobStore = store
 	s.storeModulePrincipals(registry)
 }
 
-// ModulePrincipals returns the declared registry, and SetModulePrincipals
+// ModulePrincipals returns the current registry, and SetModulePrincipals
 // replaces it without disturbing the job wiring SetModuleCapabilities also owns.
-// The composition declares a module's vocabulary — including the permission
-// resources its content is governed by — so a caller that needs to read or
-// stand in for that declaration goes through here rather than re-deriving it.
+// The registry carries each module's vocabulary — including the permission
+// resources its content is governed by — so a caller that needs to read it goes
+// through here rather than re-deriving it.
 //
 // It returns a COPY. A caller that received the live registry could mutate the
 // map every authorization site is indexing, which would bypass the atomic
@@ -282,11 +345,35 @@ func (s *Service) ModulePrincipals() ModulePrincipalRegistry {
 	return maps.Clone(s.declaredModules())
 }
 
-// SetModulePrincipals replaces the registry at runtime. It clones, for the same
-// reason the accessor does: storing the caller's own map would leave the backing
-// map addressable by whoever passed it.
+// SetModulePrincipals replaces an unversioned registry. A registry derived from
+// a live envelope is published with InstallDerivedModulePrincipals instead.
+// It clones, for the same reason the accessor does: storing the caller's own
+// map would leave the backing map addressable by whoever passed it.
 func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 	s.storeModulePrincipals(registry)
+}
+
+// InstallDerivedModulePrincipals publishes a registry derived from one envelope
+// revision. Callers must derive the entries from that revision before publishing;
+// this operation does not infer or advance a revision from the current database.
+//
+// delivered is the size of the delivery inbox the registry was derived from,
+// read in the same snapshot as its inputs, or nil when it was not derived from
+// a counted read of the inbox. See deliveredSince.
+func (s *Service) InstallDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64) {
+	s.observeModuleEnvelopeRevision(envelopeRevision)
+	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision, delivered: delivered})
+}
+
+// observeModuleEnvelopeRevision records that a revision is committed. It only
+// grows, so a stale observation can never lift the fence.
+func (s *Service) observeModuleEnvelopeRevision(revision uint64) {
+	for {
+		seen := s.envelopeRevisionSeen.Load()
+		if revision <= seen || s.envelopeRevisionSeen.CompareAndSwap(seen, revision) {
+			return
+		}
+	}
 }
 
 // storeModulePrincipals publishes a registry the service alone can reach.
@@ -296,8 +383,7 @@ func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 // writer clearing the registry denies every module caller rather than leaving
 // the previous one serving.
 func (s *Service) storeModulePrincipals(registry ModulePrincipalRegistry) {
-	owned := maps.Clone(registry)
-	s.modulePrincipals.Store(&owned)
+	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry)})
 }
 
 // SetModuleEventTransport wires the domain-event pub/sub transport backing
@@ -370,8 +456,10 @@ func NewService(store Store) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	authority, _ := store.(ModuleAuthorityStore)
 	return &Service{
 		store:                     store,
+		moduleAuthority:           authority,
 		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
 		waitlistEmailVerification: true,
 		usageMeters:               usageMeters,
@@ -511,6 +599,25 @@ func (s *Service) SetTokenValidator(v auth.TokenValidator) {
 	s.validator = v
 }
 
+// SetHeaderJWTTokenValidator enables the header-jwt login path, where the
+// identity assertion arrives as a token the trusted gateway injected rather than
+// through an authorization-code exchange.
+//
+// It is a SEPARATE field from the code-exchange validator on purpose. Both are
+// built from the same configured provider's key set, so sharing one field made
+// the two paths indistinguishable: a body carrying `header_jwt` reached the
+// code-exchange validator, which checks a signature, an issuer, an audience and
+// an expiry — and no nonce, because a nonce is the code exchange's binding to a
+// single authorize request and lives in the state the exchange holds. The result
+// was an id_token admitted with no state, no proof-of-possession verifier and no
+// nonce: exactly the injection and replay the nonce exists to stop.
+//
+// Only work.go's header-jwt branch calls this, so in every other provider mode
+// the field is nil and the body credential is refused by name.
+func (s *Service) SetHeaderJWTTokenValidator(v auth.TokenValidator) {
+	s.headerJWTValidator = v
+}
+
 // SetDevelopmentTokenValidator explicitly enables fixture authentication.
 // The validator must resolve an opaque fixture token to allowlisted claims;
 // Authenticate never trusts provider identity fields supplied by the caller.
@@ -545,12 +652,15 @@ func (s *Service) SetEmailOutbox(outbox *email.Outbox, appBaseURL string) {
 // publicBaseURL is the origin baked into interactive links — magic-link,
 // invitation, and waitlist emails, and Stripe redirect targets. Those links are
 // delivered out of band and never re-validated downstream, so the origin must be
-// operator-trusted. A configured APP_BASE_URL wins; the frontend-supplied
-// verified public origin is a per-request, caller-influenced value (the frontend
-// derives it from the browser request when its own endpoint is a placeholder),
-// so it is only a fallback for deployments that have not pinned a canonical
-// origin. Without either, callers fail closed rather than mint a link on an
-// unverified host.
+// operator-trusted.
+//
+// A configured APP_BASE_URL wins, and outside local development boot requires one
+// (requireApplicationBaseURL). The verified public origin behind it is no longer a
+// caller-influenced value: a forwarded origin is recorded as verified only when it
+// equals the configured one (auth.WithVerifiedPublicOrigin), so where both exist
+// they are the same string and where only the second does, nothing is pinned and
+// the runtime is local. Without either, callers fail closed rather than mint a link
+// on an unverified host.
 func (s *Service) publicBaseURL(ctx context.Context) string {
 	if base := strings.TrimSuffix(strings.TrimSpace(s.appBaseURL), "/"); base != "" {
 		return base
@@ -1045,26 +1155,45 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 // RLS-protected (Phase 2E). Empty OrgId means a platform-level
 // assignment (super_admin etc.) — handler authz already required
 // platform_admin; the write goes through bypass.
+//
+// An organization assignment names a subject of that organization. The row's
+// RLS policy checks only the assignment's own organization and nothing ties
+// subject_id to a membership, so the subject is checked here, in the write's
+// transaction and under the membership lock a removal takes
+// (requireSubjectInOrgTx). The platform-level path names no organization and is
+// authorised separately, so it is not narrowed by this.
 func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*gen.AssignRoleResponse, error) {
+	orgID, subjectID := req.OrgId, req.SubjectId
+	var err error
+	if orgID != "" {
+		orgID, subjectID, err = canonicalSubjectTenancyIDs(orgID, subjectID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	assignment := &gen.RoleAssignment{
 		Id:          NewIDString(),
-		SubjectId:   req.SubjectId,
+		SubjectId:   subjectID,
 		SubjectKind: req.SubjectKind,
 		RoleId:      req.RoleId,
-		OrgId:       req.OrgId,
+		OrgId:       orgID,
 		Scope:       req.Scope,
 	}
 	wrap := func(ctx context.Context) error {
+		if orgID != "" {
+			if err := s.requireSubjectInOrgTx(ctx, orgID, subjectID, req.SubjectKind); err != nil {
+				return err
+			}
+		}
 		if err := s.store.AssignRole(ctx, assignment); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, req.SubjectId, "user", EventRoleAssigned, "role", req.RoleId, req.OrgId)
+		return s.emitTx(ctx, subjectID, "user", EventRoleAssigned, "role", req.RoleId, orgID)
 	}
-	var err error
-	if req.OrgId == "" {
+	if orgID == "" {
 		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
-		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
+		err = s.store.WithOrgTx(ctx, orgID, wrap)
 	}
 	if err != nil {
 		return nil, err

@@ -36,7 +36,22 @@ func (s *PostgresJobStore) Claim(
 	}
 
 	response := &jobsv1.ClaimJobsResponse{}
+	claim, module := jobs.ModuleClaim(ctx)
+	var stamp []byte
+	if module {
+		stamp, _ = json.Marshal(claim.Attributes())
+	} else {
+		stamp = []byte("null")
+	}
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if module {
+			if err := lockModuleJobAuthority(ctx, tx, stamp); err != nil {
+				return err
+			}
+		}
+		if err := cancelRevokedModuleJobs(ctx, tx, request.GetQueue()); err != nil {
+			return err
+		}
 		if err := recoverExpiredJobLeases(ctx, tx, request.GetQueue(), request.GetLimit()); err != nil {
 			return err
 		}
@@ -46,6 +61,7 @@ func (s *PostgresJobStore) Claim(
 			request.GetLimit(),
 			request.GetWorkerId(),
 			request.GetLeaseDuration().AsDuration().Seconds(),
+			stamp, claim.AllowsGlobal,
 		)
 		if err != nil {
 			return err
@@ -77,6 +93,11 @@ func (s *PostgresJobStore) Heartbeat(
 
 	var lease *jobsv1.JobLease
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, module := jobs.ModuleClaim(ctx); module {
+			if err := lockModuleJobAuthority(ctx, tx, moduleClaimStamp(ctx)); err != nil {
+				return err
+			}
+		}
 		ref := request.GetLease()
 		var owner, token string
 		var expiresAt, heartbeatAt time.Time
@@ -89,9 +110,10 @@ func (s *PostgresJobStore) Heartbeat(
 			  AND lease_owner = $2
 			  AND lease_token = $3::uuid
 			  AND lease_expires_at > NOW()
+              AND ($5::jsonb = 'null'::jsonb OR consumer_authority = $5::jsonb)
 			RETURNING lease_owner, lease_token::text, lease_expires_at, heartbeat_at`,
 			ref.GetJobId(), ref.GetWorkerId(), ref.GetLeaseToken(),
-			request.GetExtension().AsDuration().Seconds(),
+			request.GetExtension().AsDuration().Seconds(), moduleClaimStamp(ctx),
 		).Scan(&owner, &token, &expiresAt, &heartbeatAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return jobs.ErrLeaseLost
@@ -186,6 +208,11 @@ func (s *PostgresJobStore) finalizeRetry(
 ) (jobsv1.JobState, error) {
 	state := jobsv1.JobState_JOB_STATE_UNSPECIFIED
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, module := jobs.ModuleClaim(ctx); module {
+			if err := lockModuleJobAuthority(ctx, tx, moduleClaimStamp(ctx)); err != nil {
+				return err
+			}
+		}
 		attemptCount, maxAttempts, err := lockLiveJobLease(ctx, tx, request.GetLease())
 		if err != nil {
 			return err
@@ -214,6 +241,11 @@ func (s *PostgresJobStore) finalize(
 	finalization jobFinalization,
 ) error {
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, module := jobs.ModuleClaim(ctx); module {
+			if err := lockModuleJobAuthority(ctx, tx, moduleClaimStamp(ctx)); err != nil {
+				return err
+			}
+		}
 		if _, _, err := lockLiveJobLease(ctx, tx, lease); err != nil {
 			return err
 		}
@@ -239,8 +271,9 @@ func lockLiveJobLease(
 		  AND lease_owner = $2
 		  AND lease_token = $3::uuid
 		  AND lease_expires_at > NOW()
+          AND ($4::jsonb = 'null'::jsonb OR consumer_authority = $4::jsonb)
 		FOR UPDATE`,
-		lease.GetJobId(), lease.GetWorkerId(), lease.GetLeaseToken(),
+		lease.GetJobId(), lease.GetWorkerId(), lease.GetLeaseToken(), moduleClaimStamp(ctx),
 	).Scan(&attemptCount, &maxAttempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, 0, jobs.ErrLeaseLost
@@ -384,6 +417,26 @@ const claimJobsSQL = `
 		FROM job_messages message
 		WHERE message.queue = $1
 		  AND message.state IN ('pending', 'retrying')
+		  AND (CASE WHEN message.queue='installation-step' AND message.source='saas.installation'
+		                  AND message.topic='installation.step' AND message.scope_kind='tenant'
+		                  AND message.direction='outbox'
+		       THEN public.installation_step_job_current(message.id, message.attributes)
+		       ELSE NOT (message.attributes ? 'codefly.installation_id') OR public.module_job_authority_current(message.attributes) END)
+          AND (message.consumer_authority IS NULL OR public.module_job_authority_current(message.consumer_authority))
+		  AND ($5::jsonb = 'null'::jsonb OR (
+		      public.module_job_authority_current($5::jsonb)
+		      AND (
+                  -- Every tenant hint must agree. Global datasource deliveries
+                  -- predate the module stamp and carry datasource.org_id.
+                  (message.organization_id IS NULL OR message.organization_id::text = $5::jsonb->>'codefly.organization_id')
+                  AND (NULLIF(message.attributes->>'codefly.organization_id','') IS NULL OR message.attributes->>'codefly.organization_id' = $5::jsonb->>'codefly.organization_id')
+                  AND (NULLIF(message.attributes->>'datasource.org_id','') IS NULL OR message.attributes->>'datasource.org_id' = $5::jsonb->>'codefly.organization_id')
+                  AND (message.organization_id IS NOT NULL
+                    OR NULLIF(message.attributes->>'codefly.organization_id','') IS NOT NULL
+                    OR NULLIF(message.attributes->>'datasource.org_id','') IS NOT NULL
+                    OR (message.scope_kind = 'global' AND $6::boolean))
+              )
+		  ))
 		  AND message.available_at <= NOW()
 		  AND message.attempt_count < message.max_attempts
 		  AND (
@@ -403,6 +456,7 @@ const claimJobsSQL = `
 	), claimed AS (
 		UPDATE job_messages message
 		SET state = 'processing',
+            consumer_authority = CASE WHEN $5::jsonb = 'null'::jsonb THEN message.consumer_authority ELSE $5::jsonb END,
 		    attempt_count = message.attempt_count + 1,
 		    lease_owner = $3,
 		    lease_token = gen_random_uuid(),
@@ -552,4 +606,32 @@ func optionalTimestamp(value *time.Time) *timestamppb.Timestamp {
 		return nil
 	}
 	return timestamppb.New(*value)
+}
+
+// Unleased cancellation: stale work must release its ordering key even when no
+// worker may claim it. Revocation's trigger normally already did this.
+func cancelRevokedModuleJobs(ctx context.Context, tx pgx.Tx, queue string) error {
+	_, err := tx.Exec(ctx, `WITH canceled AS (
+ UPDATE public.job_messages SET state='canceled', completed_at=clock_timestamp(),
+ lease_owner=NULL, lease_token=NULL, lease_expires_at=NULL, heartbeat_at=NULL,
+ last_error_code='revoked_authority', last_error_message='installation authority changed'
+ WHERE queue=$1 AND state IN ('pending','processing','retrying')
+ AND ((CASE WHEN queue='installation-step' AND source='saas.installation'
+                 AND topic='installation.step' AND scope_kind='tenant' AND direction='outbox'
+       THEN NOT public.installation_step_job_current(id, attributes)
+       ELSE attributes ? 'codefly.installation_id' AND NOT public.module_job_authority_current(attributes) END)
+      OR (consumer_authority IS NOT NULL AND NOT public.module_job_authority_current(consumer_authority)))
+ RETURNING id)
+ UPDATE public.job_attempts a SET finished_at=clock_timestamp(), outcome='canceled',
+ error_code='revoked_authority', error_message='installation authority changed'
+ FROM canceled c WHERE a.job_id=c.id AND a.finished_at IS NULL`, queue)
+	return err
+}
+
+func moduleClaimStamp(ctx context.Context) []byte {
+	if authority, ok := jobs.ModuleClaim(ctx); ok {
+		stamp, _ := json.Marshal(authority.Attributes())
+		return stamp
+	}
+	return []byte("null")
 }

@@ -4,7 +4,7 @@
 	"packages": {
 		"@codefly-dev/saas-plugin-contract": {
 			"status": "active",
-			"packageVersion": "2.4.2",
+			"packageVersion": "2.4.4",
 			"entrypoints": [".", "./capabilities"],
 			"entrypointExports": {
 				".": [
@@ -14,6 +14,7 @@
 					"DEFAULT_TYPE_ROLES",
 					"DEFAULT_TYPE_SCALE",
 					"DEFAULT_TYPE_SLOTS",
+					"ConnectProcedure",
 					"DashboardWidget",
 					"FRONTEND_APPEARANCE_FIELD_NAMES",
 					"FRONTEND_APPEARANCE_TOKEN_NAMES",
@@ -21,6 +22,7 @@
 					"FRONTEND_OPTIONAL_APPEARANCE_FIELD_NAMES",
 					"FRONTEND_OPTIONAL_APPEARANCE_TOKEN_NAMES",
 					"FRONTEND_PLUGIN_CONTRACT_VERSION",
+					"FRONTEND_SERVICE_ROOT_PREFIX",
 					"FRONTEND_TYPE_FAMILIES",
 					"FRONTEND_TYPE_ROLE_NAMES",
 					"FRONTEND_TYPE_SCALE_STEPS",
@@ -83,8 +85,15 @@
 					"ResolvedTypeSlot",
 					"TypographyLayers",
 					"buildFrontendServiceAllowlist",
+					"connectProcedureTargetPath",
 					"defineFrontend",
 					"definePlugin",
+					"encodeFrontendServicePath",
+					"frontendServiceTargetPath",
+					"isConnectProcedurePath",
+					"isConnectServiceName",
+					"isFrontendServicePath",
+					"resolveConnectProcedure",
 					"resolveFrontendAppearance",
 					"resolveSkinRules",
 					"resolveTypeRole",
@@ -113,7 +122,7 @@
 		},
 		"@codefly-dev/saas-plugin-react": {
 			"status": "active",
-			"packageVersion": "0.4.3",
+			"packageVersion": "0.4.5",
 			"entrypoints": [".", "./runtime", "./ui"],
 			"entrypointExports": {
 				".": [

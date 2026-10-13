@@ -62,12 +62,14 @@ let refreshQueue: Array<() => Response>;
 let logoutCalls: number;
 let stopCalls: Array<string | null>;
 let stopResponse: () => Response;
+let logoutResponse: () => Response;
 
 async function renderAsAdmin() {
 	refreshQueue = [];
 	logoutCalls = 0;
 	stopCalls = [];
 	stopResponse = () => HttpResponse.json({ durationSeconds: "42" });
+	logoutResponse = () => HttpResponse.json({});
 	server.use(
 		http.post("/v1/auth/refresh", () => {
 			const next = refreshQueue.shift();
@@ -75,7 +77,7 @@ async function renderAsAdmin() {
 		}),
 		http.post("/v1/auth/logout", () => {
 			logoutCalls += 1;
-			return HttpResponse.json({});
+			return logoutResponse();
 		}),
 		// The bearer is recorded, not just the call: the stop has to be made by
 		// the impersonation session itself for the server to derive which window
@@ -296,6 +298,53 @@ describe("Impersonation session journey", () => {
 		expect(stopCalls).toHaveLength(1);
 		expect(screen.getByTestId("state").textContent).toBe("anon/self");
 		expect(getToken()).toBeNull();
+		expect(logoutCalls).toBe(1);
+	});
+
+	// THE SIGN-OUT'S OWN OUTCOME, read rather than discarded.
+	//
+	// Exiting tears the credentials down and tells the operator to sign in again.
+	// If the sign-out itself was not confirmed — the server answers 503 "logout
+	// incomplete, retry" — an already-issued access token stays valid until it
+	// expires, and local state is cleared either way, so saying nothing presents
+	// an unfinished sign-out as a finished one. That was the shape of the defect
+	// in every user-facing sign-out control; this is the same defect one layer
+	// down, and it is asserted on the message the operator is actually given.
+	it("reports an unconfirmed sign-out when leaving an impersonated session", async () => {
+		await renderAsAdmin();
+		act(() => enter(impersonationToken));
+		await waitFor(() =>
+			expect(screen.getByTestId("state").textContent).toBe(`authed/${TARGET}`),
+		);
+
+		// The teardown path is the one that signs out: a restore that SUCCEEDS
+		// keeps the admin's own session and never calls it. So the restore fails
+		// here, as in the test below, and the only difference between the two is
+		// whether the sign-out itself was confirmed.
+		logoutResponse = () => new HttpResponse(null, { status: 503 });
+		refreshQueue.push(() => new HttpResponse(null, { status: 503 }));
+		await act(async () => {
+			await expect(exit()).rejects.toThrow(/not confirmed/i);
+		});
+
+		expect(logoutCalls).toBe(1);
+		expect(getToken()).toBeNull();
+	});
+
+	// THE CONTROL: the same teardown with a CONFIRMED sign-out reports the
+	// restore failure instead, which is the message that path always gave. So
+	// the one above is about the sign-out's outcome and not about tearing down.
+	it("reports only the restore failure when the sign-out is confirmed", async () => {
+		await renderAsAdmin();
+		act(() => enter(impersonationToken));
+		await waitFor(() =>
+			expect(screen.getByTestId("state").textContent).toBe(`authed/${TARGET}`),
+		);
+
+		refreshQueue.push(() => new HttpResponse(null, { status: 503 }));
+		await act(async () => {
+			await expect(exit()).rejects.toThrow(/sign in again/i);
+		});
 		expect(logoutCalls).toBe(1);
 	});
 

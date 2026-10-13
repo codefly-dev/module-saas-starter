@@ -1,6 +1,7 @@
 package business
 
 import (
+	"accounts/pkg/jobs"
 	"context"
 	"errors"
 	"fmt"
@@ -61,14 +62,18 @@ import (
 // re-mint-once.
 var ErrModuleAuthorityStale = errors.New("module capability authority has moved since it was minted")
 
-// ErrModuleInstallationInactive reports that an installation the credential
-// NAMED is revoked, absent, or another organisation's.
-//
-// It is not returned for a credential that names no installation. That
-// distinction is the difference between a check and the regression this replaced:
-// nothing relates a module principal to an installation, so treating "I could
-// not find one" as "it is revoked" denied every real module caller.
+// ErrModuleInstallationInactive means no active consent for this principal in
+// this organization, including credentials that do not yet carry a seal.
 var ErrModuleInstallationInactive = errors.New("the installation this capability names is not active in this organization")
+
+// errModuleInstalledNowhere is ErrModuleInstallationInactive for the one case
+// a module's own mint answers differently: the principal has no usable
+// installation in the organization at all. Every use of a capability hears it
+// as the refusal it is. The module's own mint hears "not yet", because a
+// solution nobody has installed still has an install step to answer — see
+// ModuleAuthorizeWorkContext. An installation that belongs to another binding
+// is not this: that one is a refusal on every path.
+var errModuleInstalledNowhere = fmt.Errorf("%w", ErrModuleInstallationInactive)
 
 // ErrModuleAuthorityUnreadable reports a malformed caller the live read refuses
 // before it reaches the database.
@@ -123,28 +128,29 @@ type ModuleCapabilityAuthority struct {
 
 // ModuleAuthorityStore is the live authority read.
 //
-// One method, deliberately: the terms are read at ONE snapshot, because reading
-// them separately lets a revoke land between two reads and produce a decision
-// describing a state that never existed.
+// One live read supplies all terms at a single snapshot; the use span retains
+// its locks. Separate reads could combine states that never coexisted, and a
+// read without that span could be revoked before the capability takes effect.
 type ModuleAuthorityStore interface {
-	// LiveModuleAuthority reads the authority facts for one module principal.
-	//
-	// installationID is the installation the CREDENTIAL named, or empty when it
-	// names none. It is a parameter rather than something the implementation
-	// infers, because nothing relates a module principal to an installation: an
-	// installation is an organisation's consent to a solution TARGET and the
-	// module principal is not a party to it. An implementation that guessed
-	// would answer "revoked" for every legitimate caller — which is exactly what
-	// the first Postgres implementation did, joining the installation's
-	// per-install agent principal against the module's deterministic one.
-	//
-	// Returns ErrModuleInstallationInactive when a NAMED installation is
-	// revoked, absent, or another organisation's. Naming none is not an error.
+	// BeginModuleAuthorityUse holds authority locks until release. The context
+	// carries a separate lock transaction, never a tenant/RLS executor.
+	BeginModuleAuthorityUse(context.Context) (context.Context, func(), error)
+
+	// Resolve the exact (principal, organization) consent; when sealed, also
+	// require the named id. Installation, scope, epoch and envelope revision
+	// are read in ONE SQL snapshot. Absence always refuses.
 	LiveModuleAuthority(ctx context.Context, principalID, orgID, installationID string) (*LiveModuleAuthority, error)
 }
 
+// ErrModuleTenantNotCurrent reports a credential bound to a tenant its
+// principal's current grant no longer names.
+var ErrModuleTenantNotCurrent = errors.New("the credential's tenant is not the module principal's current tenant")
+
 // LiveModuleAuthority is what the live read answers.
 type LiveModuleAuthority struct {
+	RegistryBindingID    string
+	Scope                InstallationScope
+	EnvelopeRevision     *uint64
 	InstallationID       string
 	InstallationRevision uint64
 	ProducerEpoch        uint64
@@ -159,22 +165,62 @@ type LiveModuleAuthority struct {
 // that makes "every path" true rather than aspirational.
 //
 // The declared grant is resolved FIRST and the live read second. That order is
-// deliberate: an unknown principal must be refused without a database round
-// trip, both because it is cheaper and because an unauthenticated caller must
-// not be able to make this host do work.
+// deliberate: an unknown principal is refused before querying installation
+// authority. The outer use span reserves its connection before any effect
+// transaction so the two pools cannot deadlock while acquiring each other.
 func (s *Service) AuthorizeModuleCapability(
 	ctx context.Context, caller ModuleCaller,
 ) (*ModuleCapabilityAuthority, error) {
-	grant, err := s.moduleGrant(caller)
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
+	authority, _, err := s.authorizeModuleCapability(ctx, caller)
+	return authority, err
+}
+
+// authorizeModuleCapability is AuthorizeModuleCapability returning the fenced
+// registry snapshot the grant came from, for a decision that must read a
+// second principal's grant from the same registry.
+func (s *Service) authorizeModuleCapability(
+	ctx context.Context, caller ModuleCaller,
+) (*ModuleCapabilityAuthority, *installedModuleRegistry, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	return s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, caller)
+}
+
+func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, snapshot *installedModuleRegistry, caller ModuleCaller) (*ModuleCapabilityAuthority, *installedModuleRegistry, error) {
+	if caller.PrincipalID == "" {
+		return nil, nil, status.Error(codes.Unauthenticated, "module caller identity required")
+	}
+	// ONE SNAPSHOT: the grant this decision authorizes from is the grant of
+	// the registry the revision fence checks, read once — a registry installed
+	// between a grant read and a fence read can lend the fence its revision
+	// while the decision acts on the older grant.
+	grant, found, err := s.currentModuleGrantFromSnapshot(ctx, snapshot, caller.PrincipalID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if !found {
+		return nil, nil, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
+	}
+	// THE TENANT IS THE CURRENT GRANT'S. A credential seals the tenant it was
+	// minted for, and the envelope can move a principal to another tenant at
+	// runtime; a credential minted before the move would otherwise go on
+	// acting in the old tenant under the new grant. A cross-tenant principal
+	// names its tenant per mint, so for it the bound org is not compared.
+	if !moduleAvailableToOrganization(grant, caller.BoundOrg) {
+		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent,
+			"principal %s credential is bound to %s and its current tenant is %s", caller.PrincipalID, caller.BoundOrg, grant.Tenant)
 	}
 	if s.moduleAuthority == nil {
 		// Fail closed. A host with no live authority read cannot honour a
 		// narrowing, so it must not authorize capabilities at all rather than
 		// authorize them on the declared ceiling alone — which is the state this
 		// file exists to end.
-		return nil, status.Error(codes.FailedPrecondition,
+		return nil, nil, moduleRefusal(codes.FailedPrecondition, ModuleLiveAuthorityUnavailableReason,
 			"this host cannot re-read live module authority, so no capability may be exercised")
 	}
 
@@ -188,11 +234,11 @@ func (s *Service) AuthorizeModuleCapability(
 		ctx, caller.PrincipalID, caller.BoundOrg, sealedInstallation)
 	if err != nil {
 		if errors.Is(err, ErrModuleInstallationInactive) {
-			return nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive,
+			return nil, nil, wrapStatus(codes.PermissionDenied, errModuleInstalledNowhere,
 				"principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
 		}
 		if errors.Is(err, ErrModuleAuthorityUnreadable) {
-			return nil, wrapStatus(codes.InvalidArgument, ErrModuleAuthorityUnreadable,
+			return nil, nil, wrapStatus(codes.InvalidArgument, ErrModuleAuthorityUnreadable,
 				"principal %s", caller.PrincipalID)
 		}
 		// The live read failed. NOT a denial and NOT an allow: the host does not
@@ -200,9 +246,19 @@ func (s *Service) AuthorizeModuleCapability(
 		// Unavailable and the caller retries. Treating it as a denial would make
 		// a database blip look like mass revocation; as an allow, it would be
 		// the check not running.
-		return nil, status.Errorf(codes.Unavailable, "cannot re-read live module authority: %v", err)
+		return nil, nil, status.Errorf(codes.Unavailable, "cannot re-read live module authority: %v", err)
 	}
 
+	if live == nil || live.InstallationID == "" || !live.Scope.Capabilities {
+		return nil, nil, wrapStatus(codes.PermissionDenied, errModuleInstalledNowhere, "principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
+	}
+	if live.RegistryBindingID != grant.PresenceBinding {
+		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive, "installation belongs to a different registry binding")
+	}
+	if live.EnvelopeRevision != nil && *live.EnvelopeRevision != snapshot.envelopeRevision {
+		return nil, nil, wrapStatus(codes.Unavailable, ErrModuleRegistryStale, "installation decision observed envelope revision %d", *live.EnvelopeRevision)
+	}
+	grant = intersectInstallationScope(grant, live.Scope)
 	authority := &ModuleCapabilityAuthority{
 		Caller:               caller,
 		Grant:                grant,
@@ -211,9 +267,9 @@ func (s *Service) AuthorizeModuleCapability(
 		ProducerEpoch:        live.ProducerEpoch,
 	}
 	if err := authority.checkAgainstSealed(caller.Sealed); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return authority, nil
+	return authority, snapshot, nil
 }
 
 // checkAgainstSealed is the intersection: the live facts must still match what
@@ -272,6 +328,24 @@ type SealedModuleAuthority struct {
 	// scopes, which is what this host did and what must go.
 	BindingID       *string
 	BindingRevision *uint64
+	// ImageDigest and BuildIncarnation are the build the credential's pod was
+	// bound to at its mint, which core holds against the approved build on every
+	// verification. Set together or not at all.
+	ImageDigest      *string
+	BuildIncarnation *uint64
+}
+
+// SealedExecution is the execution a verified module credential was sealed to,
+// for a capability derived on that module's behalf without a fresh review of
+// its pod: the credential was minted from one, and core has just held its seal
+// against the approved build. Empty when the credential seals none.
+func (c ModuleCaller) SealedExecution() ExecutionIdentity {
+	if c.Sealed == nil || c.Sealed.ImageDigest == nil || c.Sealed.BuildIncarnation == nil {
+		return ExecutionIdentity{}
+	}
+	return ExecutionIdentity{
+		PrincipalID: c.PrincipalID, Running: RunningDigest(*c.Sealed.ImageDigest), Incarnation: *c.Sealed.BuildIncarnation,
+	}
 }
 
 // ExactOperationBinding resolves the one binding a credential named.
@@ -375,6 +449,12 @@ var ErrDeferredWorkRevoked = errors.New("deferred work was enqueued under author
 func (s *Service) AuthorizeDeferredWork(
 	ctx context.Context, stamp DeferredWorkAuthority,
 ) (*ModuleCapabilityAuthority, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	sealed := &SealedModuleAuthority{
 		InstallationID:       &stamp.InstallationID,
 		InstallationRevision: &stamp.InstallationRevision,
@@ -396,4 +476,22 @@ func (s *Service) AuthorizeDeferredWork(
 		return nil, err
 	}
 	return authority, nil
+}
+
+// JobAuthority uses only the facts this decision checked, never request data.
+func (a *ModuleCapabilityAuthority) JobAuthority() jobs.ModuleAuthority {
+	return jobs.ModuleAuthority{PrincipalID: a.Caller.PrincipalID, OrganizationID: a.Caller.BoundOrg,
+		InstallationID: a.InstallationID, InstallationRevision: a.InstallationRevision, BindingID: a.Grant.PresenceBinding, AllowsGlobal: a.Grant.CrossTenant}
+}
+
+// BeginModuleAuthorityUse spans a capability's decision and its effect, including
+// nested decisions and adapter signing. Callers must defer release until all
+// effects commit. The store keeps its lock transaction separate from RLS work.
+func (s *Service) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	if s == nil || s.moduleAuthority == nil {
+		// Non-module revision classifiers also enter here. A real module
+		// decision still refuses in authorizeModuleCapabilityFromSnapshot.
+		return ctx, func() {}, nil
+	}
+	return s.moduleAuthority.BeginModuleAuthorityUse(ctx)
 }

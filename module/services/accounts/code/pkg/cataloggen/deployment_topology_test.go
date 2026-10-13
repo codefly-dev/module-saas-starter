@@ -72,19 +72,17 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetServices(), 9)
-	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 6)
+	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 7)
 	require.Len(t, first.Catalog.GetPublicEgress(), 5)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 14, endpointCount)
+	require.Equal(t, 15, endpointCount)
 	require.Equal(t, 8, dependencyCount)
-	// The accounts REST surface is reachable only through the gateway; the
-	// gateway's REST surface is module-visible because composed modules and
-	// solutions use it (Work Context minting, solution registration) and the
-	// interface exports it to them.
+	// Accounts REST stays private. Gateway REST is exported for module mints;
+	// solutions resolve its separately exported workload listener.
 	restVisibility := map[string]catalogv1.EndpointVisibility{
 		"accounts":     catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_PRIVATE,
 		"auth-gateway": catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_MODULE,
@@ -739,8 +737,9 @@ func TestDeploymentTopologyAuthorityPortIsAllocatedAtRender(t *testing.T) {
 	require.NoError(t, err)
 	for _, service := range artifacts.Catalog.GetServices() {
 		for _, endpoint := range service.GetEndpoints() {
-			if service.GetName() == "accounts" && endpoint.GetName() == "authority" {
-				require.Zero(t, endpoint.GetPort(), "authority's pod port is allocated at render")
+			if (service.GetName() == "accounts" && endpoint.GetName() == "authority") ||
+				(service.GetName() == "auth-gateway" && (endpoint.GetName() == "rest" || endpoint.GetName() == "workload")) {
+				require.Zero(t, endpoint.GetPort(), "%s/%s is allocated at render", service.GetName(), endpoint.GetName())
 			} else {
 				require.NotZero(t, endpoint.GetPort(), "%s/%s declares its pod port", service.GetName(), endpoint.GetName())
 			}
@@ -773,7 +772,7 @@ func TestDeploymentTopologyPodPortIsTheAllocationUnlessDeclared(t *testing.T) {
 	}
 	for endpoint, want := range map[string]uint32{
 		"accounts/connect": 8081, "accounts/grpc": 9090, "accounts/rest": 8080, "accounts/authority": 0,
-		"auth-gateway/grpc": 9090, "auth-gateway/rest": 8080, "telemetry/grpc": 9090,
+		"auth-gateway/grpc": 9090, "auth-gateway/rest": 0, "auth-gateway/workload": 0, "telemetry/grpc": 9090,
 		"cache/read": 6379, "cache/write": 6379, "store/tcp": 5432, "vault/http": 8200,
 		"frontend/http": 3000, "marketing/http": 3000,
 	} {

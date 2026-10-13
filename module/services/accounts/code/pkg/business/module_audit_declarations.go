@@ -19,7 +19,7 @@ import (
 // declares only under its own name. The declarations are held to the same
 // rules (ValidateAuditEventTypeDeclarations), and admitted by the same code
 // under the same operator binding: a type is admitted only into a namespace
-// the module's MODULE_PRINCIPALS entry lists, owned as `solution:<prefix>`, and
+// the module's registry entry lists, owned as `solution:<prefix>`, and
 // a type may only grow. Emission then goes through EmitAuditEvent with
 // `solution` = prefix, and the declared type is resolved by the one lookup
 // every read, redaction, webhook and export path uses.
@@ -28,6 +28,12 @@ import (
 // a module may declare on every start. An admission that changed the registry
 // is audited with the write that made it.
 func (s *Service) ModuleDeclareAuditEventTypes(ctx context.Context, caller ModuleCaller, prefix string, declarations []AuditEventTypeDeclaration) ([]EventType, []string, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return nil, nil, err
 	}
@@ -79,7 +85,7 @@ func (s *Service) ModuleDeclareAuditEventTypes(ctx context.Context, caller Modul
 }
 
 // callerIsModulePrefix reports whether the authenticated principal is the one
-// derived from prefix — the same derivation the MODULE_PRINCIPALS registry is
+// derived from prefix — the same derivation the module principal registry is
 // indexed by — compared in canonical form.
 func callerIsModulePrefix(caller ModuleCaller, prefix string) bool {
 	if prefix == "" {

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"accounts/internal/deliverytest"
+
 	"github.com/codefly-dev/core/composition"
 	"github.com/codefly-dev/core/solutionhost"
 )
@@ -52,7 +54,15 @@ func TestSolutionHostBindingFixturesReachTheirRequiredOutcome(t *testing.T) {
 				}
 				return
 			}
-			admission := admitSolutionHostBindings(host, delivered(t, document))
+			verified, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(t),
+				[]SolutionHostBindingDocument{{Source: fixture.Name, Data: signedCarrier(t, document)}})
+			if len(problems) > 0 {
+				if fixture.Outcome != solutionhost.OutcomeRejected {
+					t.Fatalf("accepted fixture did not verify: %v", problems)
+				}
+				return
+			}
+			admission := admitSolutionHostBindings(host, verified)
 			switch fixture.Outcome {
 			case solutionhost.OutcomeAccepted:
 				if reason, withheld := admission.Withheld[document.Binding]; withheld {
@@ -398,7 +408,7 @@ func TestSolutionHostBindingRegistryKeyResolution(t *testing.T) {
 // belongs to, so an operator reads "delivery is shipping something unreadable"
 // beside the generation that is still running.
 func TestSolutionHostBindingAttributionOfAnUnparseableDocument(t *testing.T) {
-	_, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(),
+	_, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(t),
 		[]SolutionHostBindingDocument{{
 			Source: "mount/broken.codefly.yaml",
 			Data: carrierOver(t, []byte(`{"schema":"codefly/solution-host-binding/v1",`+
@@ -418,14 +428,14 @@ func TestSolutionHostBindingAttributionOfAnUnparseableDocument(t *testing.T) {
 // A payload with no readable binding field is reported without a binding rather
 // than attributed to a guess.
 func TestSolutionHostBindingAttributionOfUnreadableBytes(t *testing.T) {
-	_, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(),
+	_, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(t),
 		[]SolutionHostBindingDocument{{
 			Source: "mount/garbage.codefly.yaml",
 			// A JSON value that is not a document at all. The carrier itself is
 			// JSON, so bytes that are not even a JSON value are refused one
 			// layer earlier, by ParseSigned — which is what
 			// TestSolutionHostBindingRefusesAnUnsignedDocument covers.
-			Data: carrierOver(t, []byte(`"not a document"`)),
+			Data: []byte(`{"document":"not a document","envelope":{}}`),
 		}})
 	if len(problems) != 1 {
 		t.Fatalf("problems = %d, want 1", len(problems))
@@ -444,7 +454,7 @@ func TestSolutionHostBindingRefusesAnUnsignedDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	verified, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(),
+	verified, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(t),
 		[]SolutionHostBindingDocument{{Source: "mount/unsigned.codefly.yaml", Data: bare}})
 	if len(verified) != 0 {
 		t.Fatalf("verified %d unsigned documents, want none admitted without an attestation", len(verified))
@@ -466,7 +476,7 @@ func TestSolutionHostBindingRefusesAnUnsignedDocument(t *testing.T) {
 // attributed so an operator sees which binding delivery is failing for.
 func TestSolutionHostBindingRefusesACarrierWhoseBundleDoesNotVerify(t *testing.T) {
 	document := mustFixtureDocument(t, "valid")
-	refusing := &stubBundleVerifier{err: errors.New("no identity in the allowlist matched")}
+	refusing := deliverytest.Verifier(t, map[string][]string{"unlisted": {solutionhost.FixtureDomain}})
 	verified, problems := verifySolutionHostBindingDocuments(context.Background(), refusing,
 		[]SolutionHostBindingDocument{{
 			Source: "mount/forged.codefly.yaml",
@@ -492,17 +502,22 @@ func TestSolutionHostBindingVerifierSeesTheCarrierBytesVerbatim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canonical bytes: %v", err)
 	}
-	verifier := fixtureSigner()
+	verifier := fixtureSigner(t)
 	if _, problems := verifySolutionHostBindingDocuments(context.Background(), verifier,
 		[]SolutionHostBindingDocument{{Source: "mount/valid.codefly.yaml", Data: carrierOver(t, canonical)}},
 	); len(problems) != 0 {
 		t.Fatalf("problems = %v, want none", problems)
 	}
-	if len(verifier.payloads) != 1 {
-		t.Fatalf("verifier asked %d times, want 1", len(verifier.payloads))
+	// A change to the carrier's document leaves the envelope over the old
+	// bytes. Re-encoding or trusting the parsed document must not admit it.
+	raw := carrierOver(t, canonical)
+	raw = bytes.Replace(raw, []byte(`"generation":4`), []byte(`"generation":5`), 1)
+	if bytes.Equal(raw, carrierOver(t, canonical)) {
+		t.Fatal("fixture mutation changed no bytes")
 	}
-	if !bytes.Equal(verifier.payloads[0], canonical) {
-		t.Fatal("the verifier was asked about bytes other than the carrier's document")
+	if verified, problems := verifySolutionHostBindingDocuments(context.Background(), verifier,
+		[]SolutionHostBindingDocument{{Source: "mount/tampered.codefly.yaml", Data: raw}}); len(verified) != 0 || len(problems) != 1 {
+		t.Fatalf("tampered document: verified %d, problems %v", len(verified), problems)
 	}
 }
 
@@ -518,7 +533,8 @@ func TestSolutionHostBindingRefusesADomainTheSignerMayNotSpeakFor(t *testing.T) 
 	document := mustFixtureDocument(t, "valid")
 	// An identity the host's policy says nothing about, attesting a document
 	// whose domain the host does accept.
-	stranger := &stubBundleVerifier{signer: "https://signer.example/other-workflow@refs/heads/main"}
+	stranger := fixtureSigner(t)
+	host.DomainsBySigner = map[string][]string{solutionhost.FixtureDeliveredBy: {"other-domain"}}
 	admission := admitSolutionHostBindings(host, deliveredBy(t, stranger, document))
 	if len(admission.Accepted) != 0 {
 		t.Fatalf("accepted %v, want nothing from a signer with no domain policy", bindingsOf(admission.Accepted))
@@ -665,13 +681,12 @@ func TestSolutionHostBindingRefusesACarrierWithNoBundle(t *testing.T) {
 			// reached its mount, not what its own writer would produce.
 			field := ""
 			if one.bundle != "" {
-				field = `,"bundle":` + one.bundle
+				field = `,"envelope":` + one.bundle
 			}
-			raw := []byte(`{"schema":"` + solutionhost.SchemaSignedV1 +
-				`","document":` + string(canonical) + field + `}`)
+			raw := []byte(`{"document":` + string(canonical) + field + `}`)
 
 			verified, problems := verifySolutionHostBindingDocuments(
-				context.Background(), fixtureSigner(),
+				context.Background(), fixtureSigner(t),
 				[]SolutionHostBindingDocument{{Source: "unsigned.json", Data: raw}},
 			)
 			if len(verified) != 0 {

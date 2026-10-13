@@ -82,6 +82,13 @@ func TestGateway_UndeclaredModulePrefixIsNotServed(t *testing.T) {
 // upstream, with the ordinary authenticated pipeline in front of it — identity
 // projected from the validated token, caller-supplied identity stripped, the
 // caller's bearer preserved, and the gateway's own accounts credential withheld.
+//
+// The bearer is asserted PRESERVED, and that is the recorded state of SA-F-BEARER
+// rather than agreement with it. An earlier revision of this branch inverted this
+// assertion; the withholding is not enabled, because a declared upstream
+// authenticates by this header and the audience-bound capability that should
+// replace it exists on neither side. See removePersonsSessionCredential in
+// gateway.go. What IS asserted below is the cookie, which never travels.
 func TestGateway_DeclaredModuleIsRoutedThroughTheAuthenticatedPipeline(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	fake := declareModule(t, gw, "example-module")
@@ -149,8 +156,8 @@ func TestGateway_TombstonedModuleStopsRouting(t *testing.T) {
 // record declared as a MODULE is refused on the solution surface.
 //
 // Both halves, because the asymmetry is the point: the module surface carries no
-// per-viewer installation admission, so serving a solution there would drop its
-// installation check entirely. A 403 verdict rather than a 404 — the record is
+// a different path contract, so the surfaces must continue refusing the other
+// declared kind even though both now require installation admission. A 403 verdict rather than a 404 — the record is
 // here, and it is not what this surface serves.
 func TestGateway_ASurfaceRefusesTheOtherKindByName(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
@@ -179,7 +186,7 @@ func TestGateway_ASurfaceRefusesTheOtherKindByName(t *testing.T) {
 //
 // UNSPECIFIED is what a reader decodes from a writer that did not set the field,
 // and it is not a third kind. The permissive reading would be "module", because
-// that surface has no installation admission — so this asserts the refusal in
+// the declaration is required on both surfaces, so this asserts the refusal in
 // both directions rather than only the one the implementation happens to check
 // first.
 func TestGateway_ADeclarationWithNoKindIsServedByNeitherSurface(t *testing.T) {

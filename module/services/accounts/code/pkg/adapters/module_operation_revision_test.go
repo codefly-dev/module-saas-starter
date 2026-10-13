@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
@@ -41,7 +41,7 @@ func revisionScopes(scopes []*basev0.WorkScopeV1) []*gen.WorkContextScope {
 
 // revisionRequestFromClaims builds the request exactly as a consumer's SDK does:
 // the owner with the authority scopes, then every actor with its granted
-// scopes, and the revision the token carries.
+// scopes, the revision the token carries, and the operation binding it sealed.
 func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthorizationRevisionRequest {
 	subjects := []*gen.WorkContextRevisionSubject{{
 		PrincipalId: signed.GetOwnerPrincipalId(),
@@ -53,17 +53,21 @@ func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthoriza
 			Scopes:      revisionScopes(actor.GetGrantedScopes()),
 		})
 	}
-	return &gen.CheckAuthorizationRevisionRequest{
+	request := &gen.CheckAuthorizationRevisionRequest{
 		OrgId:                 signed.GetTenantId(),
 		OwnerPrincipalId:      signed.GetOwnerPrincipalId(),
 		AuthorizationRevision: signed.GetAuthorizationRevision(),
 		Subjects:              subjects,
 	}
+	if binding := signed.GetOperationBinding().GetBindingId(); binding != "" {
+		request.OperationBindingId = &binding
+	}
+	return request
 }
 
 func mintedOperationContextClaims(t *testing.T) *basev0.WorkContextV1 {
 	t.Helper()
-	resp, err := mintModuleOperationContext("documents", "documents-secret", "model")
+	resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
 	require.NoError(t, err)
 	return verifyOperationContext(t, resp.GetToken())
 }
@@ -72,7 +76,7 @@ func mintedOperationContextClaims(t *testing.T) *basev0.WorkContextV1 {
 // context against current authority was answered with an error that was not a
 // denial, and read it as an authority outage. The context must confirm.
 func TestCheckAuthorizationRevisionConfirmsAMintedModuleOperationContext(t *testing.T) {
-	installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	ctx := revisionTestContext(t)
 
@@ -86,7 +90,7 @@ func TestCheckAuthorizationRevisionConfirmsAMintedModuleOperationContext(t *test
 }
 
 func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *testing.T) {
-	installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	ctx := revisionTestContext(t)
 	signed := mintedOperationContextClaims(t)
@@ -99,9 +103,6 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 		"another revision": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.AuthorizationRevision++
 		},
-		"another actor": func(r *gen.CheckAuthorizationRevisionRequest) {
-			r.Subjects[1].PrincipalId = "019fec91-1000-7000-8000-000000000003"
-		},
 		"an extra actor": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.Subjects = append(r.Subjects, &gen.WorkContextRevisionSubject{PrincipalId: "019fec91-1000-7000-8000-000000000003"})
 		},
@@ -109,7 +110,7 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 			r.Subjects[0].Scopes[0].Actions = []string{"delete", "invoke"}
 		},
 		"a resource beyond headless": func(r *gen.CheckAuthorizationRevisionRequest) {
-			r.Subjects[1].Scopes[0].ResourceIds = []string{"other-profile"}
+			r.Subjects[0].Scopes[0].ResourceIds = []string{"other-profile"}
 		},
 		"kind-wide where headless pins a resource": func(r *gen.CheckAuthorizationRevisionRequest) {
 			r.Subjects[0].Scopes[0].ResourceIds = nil
@@ -133,11 +134,11 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 // A narrower subset of the headless grant still confirms: a consumer may check
 // only what it is about to use.
 func TestCheckAuthorizationRevisionAcceptsANarrowerModuleOperationSubject(t *testing.T) {
-	installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
 	ctx := revisionTestContext(t)
 	request := revisionRequestFromClaims(mintedOperationContextClaims(t))
-	request.Subjects[1].Scopes[0].Actions = []string{"invoke"}
+	request.Subjects[0].Scopes[0].Actions = []string{"invoke"}
 
 	_, err := WorkContextSingleton().CheckAuthorizationRevision(ctx, request)
 	require.NoError(t, err)
@@ -155,16 +156,16 @@ func TestCheckAuthorizationRevisionRevokesModuleOperationContextsOnConfigChange(
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.NotEqual(t, headlessPrincipals, changed)
-			installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+			installModuleOperationContextService(t, headlessPrincipals)
 			installModuleWorkContextAuthority(t)
 			ctx := revisionTestContext(t)
 			request := revisionRequestFromClaims(mintedOperationContextClaims(t))
 
 			// The deployment restarts with a changed declaration; the signing key
 			// is unchanged, so only the declaration can revoke the context.
-			registry, err := business.ParseModulePrincipalRegistry(changed)
+			registry, err := moduleregistrytest.Parse(changed)
 			require.NoError(t, err)
-			service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+			service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 			service.SetModuleCapabilities(nil, nil, registry)
 
 			_, err = WorkContextSingleton().CheckAuthorizationRevision(ctx, request)
@@ -183,13 +184,14 @@ func TestCheckAuthorizationRevisionRevokesModuleOperationContextsOnConfigChange(
 // Every other owner — a person, or an installation — keeps taking the
 // row-backed check, even while module principals are declared.
 func TestCheckAuthorizationRevisionLeavesNonModuleOwnersToTheStore(t *testing.T) {
-	installModuleOperationContextService(t, "documents:"+registrationDigest("documents-secret"), headlessPrincipals)
+	installModuleOperationContextService(t, headlessPrincipals)
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	fake := &workContextConsumerAuthorityFake{}
 	server := &WorkContextAuthorityServer{}
 	server.Configure(WorkContextAuthorityConfiguration{
 		Issuer: "accounts.test", KeyID: "accounts-test-key", PrivateKey: privateKey, Authority: fake,
+		Seals: newSealAnswersFake(7),
 	})
 	require.NoError(t, server.configureErr)
 	ctx := revisionTestContext(t)

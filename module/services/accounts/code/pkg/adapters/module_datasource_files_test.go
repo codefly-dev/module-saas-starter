@@ -47,7 +47,7 @@ func TestFetchDatasourceFiles_FramesEachFileBehindItsHeader(t *testing.T) {
 	installBlobStreamService(t, &blobStreamStore{source: source}, staticCipher{token: "gh-token"}, gh,
 		business.ModulePrincipalRegistry{blobStreamCallerID: {Queues: []string{"datasource"}, CrossTenant: true}})
 	installModuleWorkContextAuthority(t)
-	ctx := stampModuleWorkContext(t, blobStreamCallerID, blobStreamOrgID)
+	ctx := stampModuleWorkContext(t, blobStreamCallerID, blobStreamRepoOrg)
 
 	stream := &recordingFilesStream{}
 	err := streamDatasourceFiles(ctx, &gen.FetchDatasourceFilesRequest{

@@ -174,6 +174,22 @@ func enqueuePreparedJob(
 	executor QueryExecutor,
 	job preparedJobEnqueue,
 ) (*jobsv1.EnqueueJobResponse, error) {
+	// Serialize a module enqueue with revocation BEFORE taking any job lock.
+	var attributes map[string]string
+	if err := json.Unmarshal(job.attributes, &attributes); err != nil {
+		return nil, err
+	}
+	if attributes["codefly.installation_id"] != "" {
+		if err := lockModuleJobAuthority(ctx, executor, job.attributes); err != nil {
+			return nil, err
+		}
+	}
+	return insertPreparedJob(ctx, executor, job)
+}
+
+// insertPreparedJob shares the database enqueue and idempotency protocol. Its
+// caller must already hold the applicable producer authority lock.
+func insertPreparedJob(ctx context.Context, executor QueryExecutor, job preparedJobEnqueue) (*jobsv1.EnqueueJobResponse, error) {
 	var (
 		jobID             string
 		storedFingerprint []byte

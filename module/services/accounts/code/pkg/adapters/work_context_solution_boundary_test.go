@@ -17,7 +17,6 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -135,6 +134,7 @@ func newSolutionBoundaryServer(t *testing.T) (*WorkContextAuthorityServer, *solu
 		KeyID:      "accounts-test-key",
 		PrivateKey: privateKey,
 		Authority:  authority,
+		Seals:      newSealAnswersFake(12),
 	})
 	require.NoError(t, server.configureErr)
 	return server, authority
@@ -194,9 +194,8 @@ func boundaryCaller() context.Context {
 
 func boundaryMintRequest(audience string) *gen.StartTaskWorkContextRequest {
 	return &gen.StartTaskWorkContextRequest{
-		OrgId:     renewOrgID,
-		SessionId: renewSession,
-		Audience:  audience,
+		OrgId:    renewOrgID,
+		Audience: audience,
 		AuthorityScopes: []*gen.WorkContextScope{{
 			ResourceKind: "evidence",
 			Actions:      []string{"read"},
@@ -211,13 +210,9 @@ func boundaryOf(
 	t *testing.T, server *WorkContextAuthorityServer, audience string, issued *gen.IssuedWorkContext,
 ) string {
 	t.Helper()
-	token, err := workcontext.ParseWorkContextToken(issued.GetToken())
+	presented, err := server.verifyFor(context.Background(), issued.GetToken(), audience)
 	require.NoError(t, err)
-	verified, err := server.verifier.Verify(token, workcontext.WorkContextExpectations{
-		Issuer:   "accounts.test",
-		Audience: audience,
-	})
-	require.NoError(t, err)
+	verified := presented.Context()
 	// The response field and the signed claim must agree: a consumer reads the
 	// second, so an assertion about the first alone would prove nothing.
 	require.Equal(t, verified.GetTaskId(), issued.GetTaskId())
@@ -350,39 +345,37 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 		require.Contains(t, status.Convert(err).Message(), "task_id is required")
 	})
 
-	// A module mint takes no context at all — StartModuleTask and
-	// StartModuleOperationTask are called with an authority struct, so there is
-	// nothing for a verified solution to reach. What is worth pinning is that
+	// A module mint is called with an authority the business layer resolved and
+	// a context that carries no verified solution, so there is nothing for a
+	// verified solution to reach. What is worth pinning is that
 	// each still draws its own fresh Task and never a solution's boundary.
 	t.Run("module_mints_draw_their_own_fresh_task", func(t *testing.T) {
-		_, moduleFirst, err := server.StartModuleTask(business.ModuleWorkContextAuthority{
-			Tenant:      renewOrgID,
-			PrincipalID: renewOwnerID,
-		})
+		module := business.ModuleWorkContextAuthority{
+			Tenant:         renewOrgID,
+			PrincipalID:    renewOwnerID,
+			InstallationID: testInstallation("runtime.operations"),
+			Execution:      business.ExecutionIdentity{Running: business.RunningDigest(testBuildFor(renewOwnerID).ImageDigest), Incarnation: 1},
+		}
+		server.seals.(*sealAnswersFake).approve(renewOwnerID, testBuildFor(renewOwnerID))
+		_, moduleFirst, err := server.StartModuleTask(context.Background(), module)
 		require.NoError(t, err)
-		_, moduleSecond, err := server.StartModuleTask(business.ModuleWorkContextAuthority{
-			Tenant:      renewOrgID,
-			PrincipalID: renewOwnerID,
-		})
+		_, moduleSecond, err := server.StartModuleTask(context.Background(), module)
 		require.NoError(t, err)
 		require.NotEqual(t, moduleFirst.GetTaskId(), moduleSecond.GetTaskId())
 		require.NotEqual(t, derivedBoundary(t, boundarySeedA, renewOrgID), moduleFirst.GetTaskId())
 
 		operation := business.ModuleOperationContextAuthority{
-			ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{
-				Tenant:      renewOrgID,
-				PrincipalID: renewOwnerID,
-			},
-			Audience: "runtime.operations",
-			Revision: 12,
+			ModuleWorkContextAuthority: module,
+			Audience:                   "runtime.operations",
+			Revision:                   12,
 			Scopes: []business.ModuleOperationScope{{
 				ResourceKind: "evidence",
 				Actions:      []string{"read"},
 			}},
 		}
-		_, operationFirst, err := server.StartModuleOperationTask(operation)
+		_, operationFirst, err := server.StartModuleOperationTask(context.Background(), operation)
 		require.NoError(t, err)
-		_, operationSecond, err := server.StartModuleOperationTask(operation)
+		_, operationSecond, err := server.StartModuleOperationTask(context.Background(), operation)
 		require.NoError(t, err)
 		require.NotEqual(t, operationFirst.GetTaskId(), operationSecond.GetTaskId())
 		require.NotEqual(t, derivedBoundary(t, boundarySeedA, renewOrgID), operationFirst.GetTaskId())
@@ -562,7 +555,6 @@ func TestOrdinaryMintRefusesARegisteredSolutionsBoundary(t *testing.T) {
 			OrgId:          renewOrgID,
 			InstallationId: renewTaskID,
 			TaskId:         derivedBoundary(t, boundarySeedA, renewOrgID),
-			SessionId:      renewSession,
 			Audience:       "runtime.tasks",
 			AuthorityScopes: []*gen.WorkContextScope{{
 				ResourceKind: "evidence",

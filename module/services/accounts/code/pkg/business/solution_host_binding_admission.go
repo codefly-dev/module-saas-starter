@@ -22,7 +22,7 @@ import (
 //
 // core cd443989 narrowed the door further: Admit takes *solutionhost.Delivered,
 // which only VerifyDelivered constructs from a signed carrier and this host's
-// own BundleVerifier. So "this document was attested" is held by the compiler
+// pinned-key Verifier. So "this document was attested" is held by the compiler
 // rather than by a naming convention, and there is no sequence of calls that
 // reaches a judgement on bytes nobody verified.
 //

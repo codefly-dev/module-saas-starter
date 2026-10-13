@@ -1005,7 +1005,10 @@ runs. It carries no repository, revision, or Argo resource.
 
 `ModuleCapabilitiesService.CheckWorkContextRecordAccess` is the internal,
 read-only exact-record companion to the subject-taking administrative oracle.
-It verifies one signed viewer Work Context, derives tenant/owner/all actors,
+It reads back one signed viewer Work Context at full strength WITHOUT CONSUMING
+it (core's `Authority.ReadBack`), so it is read-only for the capability too: the
+consumer that verified and consumed a single-use capability can still ask about
+it, record after record. It derives tenant/owner/all actors,
 checks the audience's declared resource type and the SDK's attenuated
 kind/action/record scope, and rechecks current authorization revision and every
 actor-chain hop's revocation. Delegated calls require the durable chain journal.

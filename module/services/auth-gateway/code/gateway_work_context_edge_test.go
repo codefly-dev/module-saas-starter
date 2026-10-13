@@ -7,8 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,26 +23,9 @@ import (
 
 // mintWorkContextAudience signs a token for an arbitrary audience, which is what
 // an A-for-B test needs: the same key, the same window, a different consumer.
-func mintWorkContextAudience(t *testing.T, kid string, priv ed25519.PrivateKey, audience string) workcontext.WorkContextToken {
+func mintWorkContextAudience(t *testing.T, kid string, priv ed25519.PrivateKey, audience string) string {
 	t.Helper()
-	signer, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{
-		Issuer:     "saas-starter",
-		KeyID:      kid,
-		PrivateKey: priv,
-	})
-	require.NoError(t, err)
-	token, _, err := signer.StartTask(workcontext.StartTaskInput{
-		Audience:         audience,
-		TenantID:         "tenant-1",
-		OwnerPrincipalID: "user-1",
-		TaskID:           "task-1",
-		SessionID:        "session-1",
-		AuthorityScopes: []*basev0.WorkScopeV1{
-			{ResourceKind: "audit", Actions: []string{"read"}},
-		},
-	})
-	require.NoError(t, err)
-	return token
+	return mintCapability(t, kid, priv, edgeCapability{Audience: audience, Session: "session-1"})
 }
 
 // edgeHarness wires a gateway with a working Work Context verifier, and hands back
@@ -75,7 +57,7 @@ func TestGatewayEdge_ACapabilityForOneSolutionIsRefusedOnAnothers(t *testing.T) 
 		solutionRouteAudience("acme.test.example-go"))
 	req := httptest.NewRequest(http.MethodGet, "/solutions/other-solution/data", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, accessPriv))
-	req.Header.Set(workcontext.WorkContextHeaderName, foreign.Encoded())
+	req.Header.Set(carrier.HeaderName, foreign)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -89,12 +71,12 @@ func TestGatewayEdge_ACapabilityForOneSolutionIsRefusedOnAnothers(t *testing.T) 
 	own := registerSolutionUpstream(t, gw, "example-go")
 	ok := httptest.NewRequest(http.MethodGet, "/solutions/example-go/data", nil)
 	ok.Header.Set("authorization", "Bearer "+signValidToken(t, accessPriv))
-	ok.Header.Set(workcontext.WorkContextHeaderName, foreign.Encoded())
+	ok.Header.Set(carrier.HeaderName, foreign)
 	w = httptest.NewRecorder()
 	gw.ServeHTTP(w, ok)
 	require.Equal(t, http.StatusOK, w.Code,
 		"the same capability on its own binding's route must be accepted, or the test proves nothing about the audience")
-	require.Equal(t, foreign.Encoded(), own.lastHeaders.Get(workcontext.WorkContextHeaderName))
+	require.Equal(t, foreign, own.lastHeaders.Get(carrier.HeaderName))
 }
 
 // Rule 2: a path that resolves to NO route is answered as the unexposed path it
@@ -113,7 +95,7 @@ func TestGatewayEdge_AnUnresolvedRouteNeverReachesTheVerifier(t *testing.T) {
 	token := mintWorkContextAudience(t, kid, wcPriv, "solution:anything")
 	req := httptest.NewRequest(http.MethodGet, "/nothing/this/host/exposes", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, accessPriv))
-	req.Header.Set(workcontext.WorkContextHeaderName, token.Encoded())
+	req.Header.Set(carrier.HeaderName, token)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -133,7 +115,7 @@ func TestGatewayEdge_ACapabilityAddressedToTheGatewayIsRefused(t *testing.T) {
 	token := mintWorkContextAudience(t, kid, wcPriv, gatewayAudience)
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, accessPriv))
-	req.Header.Set(workcontext.WorkContextHeaderName, token.Encoded())
+	req.Header.Set(carrier.HeaderName, token)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -141,8 +123,8 @@ func TestGatewayEdge_ACapabilityAddressedToTheGatewayIsRefused(t *testing.T) {
 	require.Nil(t, apiFake.lastHeaders, "a capability addressed to the hop must not be forwarded")
 
 	// Directly, so the refusal is pinned to the rule and not to a routing accident.
-	err := gw.workContext.Verify(context.Background(), token, "")
-	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+	err := inspect(gw.workContext, context.Background(), token)
+	require.ErrorIs(t, err, errInvalidWorkContext)
 	require.Contains(t, err.Error(), "forwarding hop")
 }
 
@@ -155,7 +137,7 @@ func TestGatewayEdge_AModuleRouteExpectsTheModuleAudience(t *testing.T) {
 	solutionToken := mintWorkContextAudience(t, kid, wcPriv, solutionRouteAudience("acme.test.example-go"))
 	req := httptest.NewRequest(http.MethodGet, "/v1/example-module/things", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, accessPriv))
-	req.Header.Set(workcontext.WorkContextHeaderName, solutionToken.Encoded())
+	req.Header.Set(carrier.HeaderName, solutionToken)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
@@ -164,7 +146,7 @@ func TestGatewayEdge_AModuleRouteExpectsTheModuleAudience(t *testing.T) {
 	moduleToken := mintWorkContextAudience(t, kid, wcPriv, moduleCapabilitiesAudience)
 	ok := httptest.NewRequest(http.MethodGet, "/v1/example-module/things", nil)
 	ok.Header.Set("authorization", "Bearer "+signValidToken(t, accessPriv))
-	ok.Header.Set(workcontext.WorkContextHeaderName, moduleToken.Encoded())
+	ok.Header.Set(carrier.HeaderName, moduleToken)
 	w = httptest.NewRecorder()
 	gw.ServeHTTP(w, ok)
 	require.Equal(t, http.StatusOK, w.Code,

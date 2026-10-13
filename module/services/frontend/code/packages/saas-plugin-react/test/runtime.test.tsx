@@ -227,6 +227,18 @@ describe("public plugin React runtime", () => {
 		"traffic%2fprivate",
 		"traffic?target=other",
 		"traffic#fragment",
+		// A colon separates a custom verb from its resource, so it is carried on
+		// the last segment and refused anywhere else.
+		"records:recover/commands",
+		"records:recover:again",
+		":recover",
+		"records:",
+		"records:Recover",
+		// The resource half of a custom verb is a segment like any other: a
+		// traversal wearing a verb would bind ".." as the resource upstream.
+		"..:recover",
+		"records/..:recover",
+		".:recover",
 	])("rejects an unsafe product path '%s'", async (path) => {
 		const service = createPluginRuntime({ getAccessToken: () => null }).service(
 			"example",
@@ -234,6 +246,168 @@ describe("public plugin React runtime", () => {
 		);
 		await expect(service.request(path)).rejects.toMatchObject({
 			code: "invalid_path",
+		});
+	});
+
+	it.each([
+		["records:recover", "/api/plugins/example/api/records:recover"],
+		[
+			"records/record-1/commands:recover",
+			"/api/plugins/example/api/records/record-1/commands:recover",
+		],
+		[
+			"records/record-1/interactions/interaction-1:respond",
+			"/api/plugins/example/api/records/record-1/interactions/interaction-1:respond",
+		],
+		["triggers/nightly:fire", "/api/plugins/example/api/triggers/nightly:fire"],
+	])(
+		"carries the custom-verb route '%s' with its colon literal",
+		async (path, expected) => {
+			// `encodeURIComponent` would spell the colon `%3A`, which is a
+			// different resource: the custom-verb form is only reachable with the
+			// separator literal.
+			const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+				void args;
+				return Response.json({ ok: true });
+			});
+			const service = createPluginRuntime({
+				getAccessToken: () => "host-token",
+				fetch: fetchMock as typeof fetch,
+			}).service("example", "api");
+
+			const response = await service.request(path, { method: "POST" });
+
+			expect(await response.json()).toEqual({ ok: true });
+			expect(fetchMock.mock.calls[0]?.[0]).toBe(expected);
+			expect(
+				new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("authorization"),
+			).toBe("Bearer host-token");
+		},
+	);
+
+	it("carries a connect procedure as two safe segments", async () => {
+		const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+			void args;
+			return Response.json({ ok: true });
+		});
+		const service = createPluginRuntime({
+			getAccessToken: () => "host-token",
+			fetch: fetchMock as typeof fetch,
+		}).service("example", "procedures");
+
+		await service.request("example.records.v1.RecordService/RecoverRecord", {
+			method: "POST",
+		});
+
+		expect(fetchMock.mock.calls[0]?.[0]).toBe(
+			"/api/plugins/example/procedures/example.records.v1.RecordService/RecoverRecord",
+		);
+	});
+
+	describe("a connect alias the runtime was told about", () => {
+		// The host's own Connect rule, run in the browser. The BFF refuses a
+		// procedure outside the declared services either way; running the same
+		// rule here means the two halves cannot disagree about a shape, which is
+		// the whole reason the rule lives in one package. The requirement carries
+		// no address or credential — only what the plugin declared.
+		const services = [
+			{
+				plugin: "example",
+				alias: "procedures",
+				protocol: "connect" as const,
+				routePrefix: "/",
+				connectServices: ["example.records.v1.RecordService"],
+				compatibility: { contract: "example.api", major: 1 },
+			},
+		];
+
+		function connectService(fetchMock?: typeof fetch) {
+			return createPluginRuntime({
+				getAccessToken: () => "host-token",
+				services,
+				...(fetchMock ? { fetch: fetchMock } : {}),
+			}).service("example", "procedures");
+		}
+
+		it("carries a procedure of a declared service", async () => {
+			const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+				void args;
+				return Response.json({ ok: true });
+			});
+
+			await connectService(fetchMock as typeof fetch).request(
+				"example.records.v1.RecordService/RecoverRecord",
+				{ method: "POST" },
+			);
+
+			expect(fetchMock.mock.calls[0]?.[0]).toBe(
+				"/api/plugins/example/procedures/example.records.v1.RecordService/RecoverRecord",
+			);
+		});
+
+		it.each([
+			[
+				"a service the requirement never declared",
+				"example.secrets.v1.SecretService/Read",
+			],
+			["a REST-shaped path", "records/record-1"],
+			["a method with no service", "RecoverRecord"],
+		])(
+			"refuses %s before a request leaves the browser",
+			async (_label, path) => {
+				const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+					void args;
+					return Response.json({ ok: true });
+				});
+
+				await expect(
+					connectService(fetchMock as typeof fetch).request(path, {
+						method: "POST",
+					}),
+				).rejects.toMatchObject({ code: "invalid_path" });
+				expect(fetchMock).not.toHaveBeenCalled();
+			},
+		);
+
+		it("still probes the reserved capability path", async () => {
+			// The handshake is this contract's own, at a fixed path the host
+			// translates into the protocol's procedure. It is not caller-chosen,
+			// so the declared list does not bound it.
+			const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+				void args;
+				return Response.json({
+					schemaVersion: 1,
+					contract: "example.api",
+					contractMajor: 1,
+					capabilities: ["records.recover"],
+				});
+			});
+
+			await connectService(fetchMock as typeof fetch).capabilities();
+
+			expect(fetchMock.mock.calls[0]?.[0]).toBe(
+				"/api/plugins/example/procedures/.well-known/capabilities",
+			);
+		});
+
+		it("leaves the host the authority when it was told nothing", async () => {
+			// A runtime created without the installed requirements applies the
+			// generic path rule alone, as before: a client that guessed would
+			// refuse routes a composition had legitimately installed.
+			const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+				void args;
+				return Response.json({ ok: true });
+			});
+			const service = createPluginRuntime({
+				getAccessToken: () => "host-token",
+				fetch: fetchMock as typeof fetch,
+			}).service("example", "procedures");
+
+			await service.request("records/record-1", { method: "POST" });
+
+			expect(fetchMock.mock.calls[0]?.[0]).toBe(
+				"/api/plugins/example/procedures/records/record-1",
+			);
 		});
 	});
 

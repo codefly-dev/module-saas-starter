@@ -80,6 +80,7 @@ func scanDatasourceSourceInto(row pgx.Row, label *string) (*business.DatasourceS
 				return nil, err
 			}
 			d.API = &api
+			d.PersonalOwnerUserID = api.PersonalOwnerUserID
 		case business.DatasourceProviderCrawler:
 			var c business.CrawlerDatasourceConfig
 			if err := json.Unmarshal(config, &c); err != nil {
@@ -445,11 +446,17 @@ func (s *PostgresStore) SetDatasourceSourceGitHubInstallation(ctx context.Contex
 // whose reconcile is due, oldest schedule first. Runs under the caller's
 // WithControlPlane.
 //
-// It used to filter provider = 'github', which — together with a pull provider
-// never being given a next_reconcile_at at connect — meant an api, crawler or
-// object-storage source was outside the safety net twice over. The caller routes
-// each row to the path its provider syncs on, so selecting them all here is what
-// makes the sweep the whole schedule rather than GitHub's.
+// STOPGAP (issue #1112), and the read half of one: this query exists only to
+// feed the host's own reconcile sweep, which is itself a stopgap for a
+// declared trigger nothing fires yet. It is deleted with the sweep — see
+// Service.RunDatasourceReconcile for the one condition that deletes both.
+//
+// It selects every provider on purpose. It used to filter provider = 'github'
+// which — together with a pull provider never being given a next_reconcile_at
+// at connect — put an api, crawler or object-storage source outside the safety
+// net twice over. The caller routes each row to the path its provider syncs on,
+// so selecting them all here is what makes the sweep the whole schedule rather
+// than GitHub's.
 func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*business.DatasourceSource, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
 		`SELECT `+datasourceSourceColumns+`

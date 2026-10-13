@@ -262,12 +262,11 @@ func IsSolutionRuntimeBoundary(seeds []string, candidate, orgID string) bool {
 //
 // WHICH HALVES ARE REQUIRED DEPENDS ON THE KIND, and that is not a relaxation.
 // A solution serves a page and a backend, so both halves and agreeing contract
-// versions are what make it usable. A module has no browser remote at all: it is
-// reached at /v1/<alias>/*, nothing loads a manifest for it, and demanding a
-// frontend half would leave every module PENDING for ever — serving traffic the
-// gateway refuses while the registry reports it as waiting for a deployment that
-// is not coming. The incompatible case needs two contract versions to disagree,
-// so it cannot arise for a module either.
+// versions are what make it usable. A module has neither half: it is reached at
+// /v1/<alias>/*, nothing loads a manifest for it, and where it serves is not
+// reported but resolved — the gateway asks the Codefly SDK for the endpoint its
+// applied presence declares. The incompatible case needs two contract versions
+// to disagree, so it cannot arise for a module either.
 //
 // A record with no declaration keeps the solution reading. It is the stricter of
 // the two, and an undeclared record is withdrawn by the cutover's own constraint
@@ -276,10 +275,10 @@ func (r *SolutionRegistration) Status() SolutionRegistrationStatus {
 	if r.TombstonedAt != nil {
 		return SolutionRegistrationTombstoned
 	}
+	// A declared module is active once its presence is applied: the gateway
+	// resolves its address through the Codefly SDK from the endpoint that
+	// presence declares, so there is no reported half to wait for.
 	if r.Declared != nil && r.Declared.Kind == SolutionDeclaredKindModule {
-		if r.Backend == nil {
-			return SolutionRegistrationPending
-		}
 		return SolutionRegistrationActive
 	}
 	switch {

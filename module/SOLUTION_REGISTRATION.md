@@ -174,6 +174,29 @@ Four distinctions the projections keep:
   ancestor node (the organization root) does reach a solution node, because that is
   the scope tree's own hierarchical rule and the same union `CheckAccess` resolves
   — narrowing tighter here would hide what an authority check permits.
+- **An organization administrator writes that grant by installation and team**
+  (`InstallationService.GrantInstallationToTeam`, issue #1061), never by scope
+  path: the host resolves the installation's authority-root node in the same
+  transaction that writes the grant, refuses a team of another organization, and
+  refuses a role that does not permit `(solution, use)` — a grant of one would be
+  written and reveal nothing. That permission is the minimum, not a ceiling: the
+  team holds everything the role permits beneath the installation's root, as a
+  `GrantScope` of that role at that node would give it. The resolution holds a
+  share lock on the installation row to commit, and uninstall locks the same row
+  before it touches any grant, so both take the installation lock before any
+  trigger-acquired lock: a grant and an uninstall serialize, without a lock cycle,
+  and a grant never lands on an installation already uninstalled. The
+  write is `GrantScope`'s own body, so it emits the same `scope.granted` event
+  and audit record. `RevokeInstallationFromTeam`
+  is `RevokeScope` after the same resolution: a narrowing under the policy log,
+  refused in the host's words when the log cannot witness it.
+  `ListOrganizationInstallations` is the administrator's read of the same state —
+  each active installation with its health, installed target, authority-root path
+  and the teams granted there or inherited from above. It is org-admin and bound to
+  the caller's own organization (a platform super administrator, who passes
+  every organization-admin check, is the inherited exception), unlike the
+  internal `ListInstallations` the gateway reads for a projected tenant. It reads
+  the installations and their exposure on one repeatable-read snapshot.
 - An unreadable registry is still `503`, and a missing or malformed `client` still
   `400`. Neither ever renders as an empty list.
 
@@ -267,12 +290,43 @@ credential. The split is the point.
 | Which release runs | the declaration | `release`, recorded as `applied_release` |
 | Which route alias it answers on | the declaration | `routes[].alias` |
 | The workload identity to expect | the declaration | `workload` |
-| Resolved upstream and frontend | host reconciliation | `backend_upstream`, `frontend_manifest` |
+| Resolved upstream and frontend | the running workload, at its mint | `backend_upstream`, `frontend_manifest` |
 
 The document deliberately carries no upstream address and no manifest. An
 address written into a delivery document is a resolution result that was true on
 one cluster until something moved; a manifest is what the running build actually
-published. Both are observations that the host resolves under declared authority.
+published. Both are observations that the host records under declared authority.
+
+**The workload reports them with its mint.** `POST /modules/_work-context`
+carries two optional fields beside `prefix`: `upstream`, the https origin the
+gateway dials to reach the workload, and `manifest`, the frontend manifest it
+serves. Accounts records them (`RecordModuleUpstream`) only after the projected
+token and the running build have been bound exactly as for a mint, only onto the
+registration the applied presence already declares, and never onto the static
+half — the alias, the target and the workload identity stay the delivery's. No
+installation is required: a solution nobody has installed must still be reachable
+for its install step, which is delivered to the origin recorded here.
+
+The dynamic half is accepted only on the `workload` endpoint, where the
+reporter's identity is on the connection; on the plain endpoint the request is
+refused. The origin is bounded twice, at the gateway and again in accounts: `https`, a
+host and a port and nothing else, on a composition-local host (loopback or
+private address, a bare service name, or a cluster-local name). It cannot
+redirect a solution's traffic to another workload: the gateway reaches a
+recorded origin only over TLS to the SPIFFE identity the applied presence names.
+The request body is bounded at 80 KiB at the gateway. A report that is refused
+refuses the mint.
+
+**A module reports nothing.** A module has no reported half: its registration
+is active once its presence is applied, and the gateway resolves where it
+serves through the Codefly SDK: of the endpoints that presence declares for the
+service that runs it, the one the Codefly CLI handed the gateway an address for
+— the endpoint composed solutions consume through the host. The registry never
+holds a module address, and a module's mint may not record one. While a module's declaration is live its alias is also a member of the
+host's closed audience vocabulary, so a solution can mint a viewer's Work
+Context for it; the tombstone that withdraws the module withdraws the audience.
+Addressability is all a presence grants: authority for the module's own calls is
+still the authority document's alone.
 
 ### The registry key is the route alias
 
@@ -372,8 +426,8 @@ Every key is in the `federation` group.
 | --- | --- |
 | `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. It is also the one declaration that turns the surface **on**: empty means no reconciler and no delivery endpoint, and no new declared presence can be reconciled. |
 | `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the coordinate and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
-| *(no setting)* | WHERE the trust root and verification policy are read from is **not configurable**: it is a constant, `infra.SolutionHostTrustAnchorPath`. There is no environment value, no flag and no overridable default. Workspace environment is delivered by the **composition**, so an overridable path would let a composition point this verifier at a policy and root it wrote itself, sign its own presence documents, and pass every downstream check — against an anchor it chose. A deployment needing a different path changes the pod spec that mounts it, which the platform renders and the composition cannot supply. That document also carries the signer-to-domain mapping, which **replaced** an env var: a bare certificate SAN as the key is accepted from any issuer and the same workflow path exists in every fork, and the env var let whoever set it widen what an accepted signer speaks for without touching the independently-delivered policy. A signer granted a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
-| `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's bundle is checked. `keyless` is the only value. Required with the coordinate, with **no default** — every default is wrong somewhere. The trust anchor's **absence** is checked first and refuses the boot naming the anchor, so an unmounted anchor is never reported as a missing setting. |
+| *(no setting in a pod)* | WHERE the pinned-key verification policy is read from is **not configurable in a deployment**: it is a constant, `infra.SolutionHostTrustAnchorPath`. In a pod there is no environment value, no flag and no overridable default; the one relocation, for a host started as a process, is refused in a pod and described below. Workspace environment is delivered by the **composition**, so an overridable path would let a composition point this verifier at a policy it wrote itself, sign its own presence documents, and pass every downstream check — against an anchor it chose. A deployment needing a different path changes the pod spec that mounts it, which the platform renders and the composition cannot supply. That document also carries the signer-to-domain mapping, keyed by `keyId`, so workspace environment cannot widen a key's authority independently of its pin. A signer granted a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
+| `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's envelope is checked. `keys` is the only value. Required with the coordinate, with **no default** — every default is wrong somewhere. The trust anchor's **absence** is checked first and refuses the boot naming the anchor, so an unmounted anchor is never reported as a missing setting. |
 | `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the inbox is re-read. Empty uses 30s. |
 
 Declaring the coordinate without the ownership domains refuses to boot: this
@@ -383,6 +437,28 @@ So does declaring it with no trust anchor mounted at
 TokenReview can be performed — a delivered carrier is authorised by TokenReview,
 so a host that cannot reach its API server has no input at all and starting
 would leave it polling an inbox nothing can write to.
+
+**A process on a developer machine may relocate both, and a pod never can.**
+`codefly run` starts the host as a process, where the kubelet's paths do not
+exist and writing them needs root. Two settings name a local stand-in, and each
+is **refused at boot when the process runs in a pod** (`infra.InCluster()`), so
+neither is a way for a composition to move a deployed host's trust:
+
+- **`SOLUTION_HOST_LOCAL_CLUSTER`** — an absolute directory holding `server`
+  (the https origin of the local stand-in for the API server), `ca.crt`,
+  `token` and `namespace`. TokenReview and pod reads go there. It does not make
+  `InCluster()` true: the process is still not in a pod, and everything keyed
+  on that stays local.
+- **`SOLUTION_HOST_LOCAL_TRUST_ANCHOR`** — an absolute directory holding
+  `verification_policy.json`. A relocated anchor must be a **local** profile —
+  one bound to a cluster CA by its `local` block — so it can only ever admit a
+  developer's key for the one local cluster whose CA it names.
+
+Neither is a workspace setting and neither is in the table above: both are
+read from the process environment by the code that would otherwise read the
+kubelet's paths, never through a workspace configuration group.
+
+In a pod both constants stand exactly as described above.
 
 **There is no mount setting.** It was `SOLUTION_HOST_BINDINGS_DIR`, a projected
 ConfigMap volume, and both it and the directory reader are deleted. A mount is
@@ -421,17 +497,47 @@ no authority behind it activates nothing. The build is asked **about** rather
 than read out of either document — reading it out of the document that approves
 it would make the question answer itself.
 
-The **ceiling** is Core's `Envelope`: who may hold which binding, and which
-builds are approved, at one revision. It is read from the same platform-owned
-trust anchor as the trust root (`authority_envelope.json`), and never out of a
-delivered document — "an envelope a document carried would be a document
-declaring its own ceiling", and containment is tested against the envelope's own
-grants, so an envelope assembled from the delivery tree answers itself. Absence
-and damage are different answers: no envelope delivered is a complete deployment
-that answers no authority question, while an envelope that is delivered and
-cannot be read refuses the boot, because reading a damaged ceiling as "no
-ceiling" turns a corrupted file into a silently narrower system and reading it
-permissively turns it into a wider one.
+The **ceiling** is the module envelope: a durable, append-only, revisioned
+record (`module_envelopes`) a platform super_admin writes at runtime through
+`PlatformAdminService/PutModuleEnvelope`, audited and never through an
+impersonated session. Per module principal it admits whole authority units,
+the workload identities the principal may run as, scope ceilings and the grant
+ceiling, and lists the approved builds. Every reconcile
+pass and every activation reads the CURRENT revision and hands Core's
+`ValidateAgainst` its projection for the document being judged, so containment
+is Core's exact rule and a narrowing takes effect at the next check with no
+restart. It is never read out of a delivered document — "an envelope a document
+carried would be a document declaring its own ceiling".
+
+**Only a pure grant skips the policy-log witness.** A revision is a pure grant
+when, against the revision in force, every approved build is still approved,
+every principal is still there with a section that is the same JSON value,
+every other top-level key is the same value, and no installation loses its
+organization. What may differ is the revision, approved builds that were
+added, and whole principals that were added. Everything else is written under
+`WithPolicyLoggedNarrowing`, so a host restored from an older database cannot
+silently give it back.
+
+A principal's section is compared for equality and never for "at least as
+much", because in this schema more JSON does not mean more authority: a
+resource list that appears restricts an audience that was unrestricted, a
+required kind that appears refuses artifacts that passed, a tenant that is set
+removes every other organization, and a unit that gains a field is a different
+unit. So a changed section needs the witness, whatever changed. The
+classification reads installations on the control plane, and an apply that was
+classified a pure grant and then finds an installation to revoke stops and is
+taken again under the witness. A host with no witness configured therefore
+accepts pure grants and refuses everything else. Absence and damage are
+different answers: no revision written is a complete deployment that grants no
+module anything, while a revision that cannot be read leaves what the last pass
+installed serving, because reading a damaged ceiling as "no ceiling" withdraws
+every module on a transient error and reading it permissively widens them.
+
+The **module principal registry** every capability decision reads is derived
+from this ceiling each pass: for every live authority document inside it, each
+principal's entry is the envelope's grant bounded by what the document grants,
+with the workload read from the applied presence the document names
+([services/accounts/AGENTS.md](services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
 **This host applies authority to nothing**, and that is stated rather than
 defaulted. Core requires either the applied authority record or an explicit
@@ -452,7 +558,7 @@ resolved: whichever one a host picked would be a choice nobody reviewed.
 
 Core `cd443989` removed every path from unattested bytes to a host judgement.
 `Host.Admit` takes `*solutionhost.Delivered`, whose fields are unexported and
-whose only constructor is `VerifyDelivered(carrier, BundleVerifier)`. So "this
+whose only constructor is `VerifyDelivered(ctx, carrier, verifier)`. So "this
 document was attested" is held by the compiler rather than by a naming
 convention, and a host that forgot to verify cannot compile rather than
 discovering it in production.
@@ -464,7 +570,7 @@ stores the attested payload and re-derives per read.
 
 The host side of that:
 
-- **The mount carries signed carriers**, `{schema, document, bundle}`, not bare
+- **Delivery carries signed carriers**, `{document, envelope}`, not bare
   documents. A bare document is refused — it is not a carrier — and that refusal
   is pinned by a test.
 - **The signing input is the canonical JSON** (`CanonicalBytes()`), not the YAML
@@ -478,11 +584,11 @@ The host side of that:
   document states its own ownership domain: without the policy, any signer the
   host accepted at all could deliver under any domain it accepted and take over
   bindings in it.
-- **A bundle must be present and be a JSON object.** Core looks inside no
-  bundle, but "there is one" is checkable, and absent, empty or `null` is
-  refused as unsigned on the verify path — not only on the parse path, as it
-  was before `67ee7220`. A delivery that writes the field as `null` is refused
-  rather than admitted as a document nobody signed.
+- **An envelope must be present and be a JSON object.** Core verifies the DSSE
+  envelope with exactly one signature, a pinned `keyid`, a `payloadType` matching
+  the document's schema, and decoded payload bytes identical to `document`.
+  Missing, empty or `null` envelopes, extra signatures and carrier-supplied trust
+  material are refused. No carrier may nominate its own key.
 - **What the host stores is derived from the attested bytes**, every time, and
   never from a document the reconcile pass has been holding. The generation in a
   row and the digest beside it are therefore over the bytes the signature
@@ -494,37 +600,74 @@ The host side of that:
 
 | Policy | What it checks | Where it is usable |
 | --- | --- | --- |
-| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer. **Never a key.** | everywhere, including a laptop. **The trust root is not yet pushed to the config plane, so it refuses at boot**, see below. |
+| `keys` | a DSSE envelope over canonical document bytes, verified with the platform-owned pinned public key; core also checks the key's ownership domains. | deployed hosts and local clusters use the same verifier. A person key requires the cluster-bound local profile in §8. |
 
-There is no second row. `local` was deleted — §8 argues why at length — and this
-table listed it until the code had already stopped accepting it. A configuration
-table is the one place a reader goes to find out what a value may be, so a
-deleted value left in it is not a stale sentence but an instruction to write a
-host that refuses to boot.
+The former signing mechanism was removed under the handbook decision
+`delivery-signed-with-platform-owned-keys`. An obsolete policy value is refused
+at boot with the instruction to use `keys`; there is no fallback or default.
 
-**`keyless` refuses at boot, and that is deliberate.** Keyless verification needs
-a trust root and an identity allowlist provisioned **independently of both
-delivery writers** — a deployer who can edit the allowlist does not need to forge
-a signature, because it can replace the verifier. Nothing on this deployment
-provisions either yet. A verifier written against them could not be exercised
-against a single real bundle before shipping, in the one service that owns
-identity, so it is not written: the refusal names what is missing. It refuses at
-**boot rather than per document**, because "this host cannot perform its
-configured policy" and "delivery is shipping something bad" are different facts
-and only one of them is the operator's to fix.
+The anchor contains one document, **`verification_policy.json`**, provisioned
+independently of both delivery writers. A missing or invalid policy refuses boot:
+"this host cannot verify" and "delivery supplied an invalid signature" are
+separate facts an operator must be able to distinguish. The host never reads
+additional trust material beside this document.
+
+Each signer declares `name`, required `kind` (`release` or `person`), `keyId`,
+`publicKey` (PKIX PUBLIC KEY PEM, Ed25519 or ECDSA P-256), and `domains`. Names and
+key IDs are unique. Unknown fields are refused. Core validates the keys, kinds,
+IDs and domain lists; the host additionally requires a local profile for a person.
+The attested identity is **the key ID**, never the host's descriptive label.
 
 A refusal recorded against a binding is deliberately **coarse** — not a carrier,
-a bundle that did not verify, and a verified payload Core will not parse all read
+an envelope that did not verify, and a verified payload Core will not parse all read
 the same in the row. Which of the three it is tells an attacker which half of the
 door it got past; the full reason goes to the log.
 
-The host reads a **directory of files** and knows nothing about how they got
-there: a projected ConfigMap volume in a deployment, a plain directory under
-`codefly run` locally. Kubernetes' atomic writer is honoured — every dot-prefixed
-path element (`..data`, `..2026_…`) is skipped, so one document is never read
-twice under two names, which Core would refuse as a binding declared twice.
+The host reads delivery from its durable inbox, preserving the canonical payload
+and DSSE envelope for verification on every reconciliation. The existing `bundle`
+storage column holds the envelope; it does not change the carrier's wire shape.
 
 ## 7b. The host's own control paths, and which part a consumer may hardcode
+
+The current solution mint is `POST /modules/_work-context` on the gateway's
+`workload` endpoint (`api: http`, transported over TLS 1.3). Codefly resolves its
+address and port. A solution presents its X.509-SVID and projected ServiceAccount
+token as `Authorization: Bearer`; it needs no shared internal token on this
+listener. The gateway verifies the client chain and single SPIFFE URI SAN against
+`workload-identity/TRUST_BUNDLE_FILE` and `ALLOWED_CALLERS_FILE`. Accounts' existing
+TokenReview/BindExecution path requires that URI to equal both the reviewed
+namespace/ServiceAccount identity and the SPIFFE ID in applied presence. A
+mismatch returns 403, logs the mint refusal, and issues no credential.
+
+A principal the registry does not hold is refused, with one exception: while
+the delivery inbox holds a document the registry was derived without, the
+answer is `503` ("not established yet") and a pass is requested. A workload
+that starts beside its own delivery asks in exactly that moment. Once the pass
+has read the inbox, a principal it still does not hold is refused as before.
+
+A workload that is admitted and **installed nowhere** is answered `412`
+(`FailedPrecondition` from accounts, on the module's own mint only — a
+capability's use and a headless operation still hear the refusal), not `403`: nothing is wrong with the
+workload, there is simply no installation to seal a credential to. It serves
+its install endpoint and asks again. The origin and manifest it reported with
+that mint are recorded all the same, because the install step is delivered
+there.
+
+The `workload-identity` group supplies `CERT_FILE`, `KEY_FILE`,
+`TRUST_BUNDLE_FILE` and `ALLOWED_CALLERS_FILE` as readable paths;
+missing files fail startup with the key named. The SDK certificate reloader
+keeps the last good pair during rotation. Trust is reread for each handshake;
+caller admission rereads the newline-separated, `#`-commented allowlist for each
+handshake and request, so revocation also affects existing connections.
+
+Solution proxy traffic uses TLS 1.3, presents the gateway SVID, verifies the
+server chain, and requires exactly the SPIFFE URI declared by the applied
+presence. The registry read joins matching registration and applied-generation
+records; a missing, inconsistent or ambiguous workload identity is not proxied.
+Dial-time address revalidation still rejects off-mesh and metadata destinations.
+The plain `rest` endpoint retains its existing routes, including module-authority
+mints with the internal token and projected bearer. Those module mints and module
+upstreams retain their existing in-cluster transport contract.
 
 Three repositories independently invented the string `/platform/_credential`
 from a design note, and nothing failed at build time. This section exists so the
@@ -688,46 +831,17 @@ the one its delivery tree declares is refused by the delivery controller's own
 destination list, at apply. The host's SA-and-namespace check is the second
 layer. Both are worth having; neither is described as the only one.
 
-**Verification is OFFLINE, and there is no egress to a transparency log.** The
-delivered namespaces are default-deny egress, so an online Rekor or Fulcio lookup
-would **hang rather than fail fast** — the worst failure shape available, because
-it surfaces as a staging timeout instead of a permission error in a test. A
-bundle verifies offline because it carries its own evidence: the renderer signs
-with `sigstore-go` and the bundle carries **both** the signed entry timestamp
-(`inclusionPromise`) and the inclusion proof with its signed checkpoint
-(`inclusionProof`), media type
-`application/vnd.dev.sigstore.bundle.v0.3+json`. The host therefore verifies the
-SET and the inclusion proof against the Rekor key in a **mirrored trusted root**
-delivered from the config plane, with the transparency-log and observer-timestamp
-thresholds set and online verification deliberately off.
+**Verification is OFFLINE**, using core's standard-library cryptography and
+only the host's pinned public keys. The verifier has no HTTP client and calls no
+third-party signing service. That matters in default-deny namespaces: an external
+lookup would **hang rather than fail fast**, although the signature is entirely
+checkable from the local pins and envelope.
 
-The trusted root must carry the public-good Fulcio chain, the Rekor key and the
-CT log keys, because the signer is the public-good instance with no TSA — so the
-observer timestamp is the SET's integrated time, and a Rekor v2 log would
-additionally need its base URL on the log entry in that root.
-
-**A bundle with no transparency evidence is refused BY NAME**, distinct from a
-signature failure. The two have opposite causes — a signer configured without
-transparency logging is a misconfiguration to fix, and a bad signature is an
-attack to investigate — so collapsing them makes the first read as the second.
-Both this host and the renderer refuse it by name, so a refusal means the same
-thing wherever it is seen.
-
-**Check it BEFORE the verifier runs, on the decoded bundle, not by classifying
-the verifier's error.** This ordering is the whole of it, and the obvious
-implementation is the wrong one: the verifier reports a bundle with no log entry
-as *"not enough verified log entries from transparency log: 0 < 1"* — **the same
-words** it reports for a bundle whose log key the trusted root does not hold.
-One is a signer that never logged; the other is a root that cannot check the log
-it did. A classifier reading that string cannot tell them apart, so the test is
-`HasInclusionPromise() || HasInclusionProof()` on the decoded bundle, ahead of
-verification.
-
-**An RFC 3161 signed timestamp does not stand in for transparency evidence.** It
-attests *when* something was signed, not *that it was logged*, and a bundle
-carrying one still has nothing a mirrored root can check an inclusion against.
-The refusal must hold with a timestamp present, which is the case a "has it got
-any evidence at all?" check quietly admits.
+The release signer uses the platform's Vault Transit through the CLI; a developer
+uses an Ed25519 key held locally by the CLI. The host holds public keys only and
+never reaches either signer during verification. Rotation means pin the new key
+ID, deliver with it, then remove the old pin. Reconciliation verifies stored
+carriers under the current pins, so removing a pin also affects older deliveries.
 
 **The authenticating container is derived, not declared.** The renderer names the
 container matching the service, or the sole container, and refuses at render a
@@ -758,6 +872,13 @@ brokering pattern is the same one `GET /solutions/_entitlements` already uses.
 
 ## 8. Local runs: one attestation path, not a local mode
 
+Local solution traffic follows the same mutual-TLS contract as deployed traffic:
+the platform projects rotating SVIDs, trust and peer files, and the gateway uses
+its resolved `workload` endpoint for solution mints. Its solution proxy presents
+the gateway SVID and checks applied presence for the destination's SPIFFE ID.
+Plain-HTTP solution listeners and mints are not a supported local mode. Module
+SDK mints continue to use the plain in-cluster endpoint described in §7b.
+
 Binding a credential to an approved execution means reading what the workload
 actually runs: `TokenReview` on its projected service-account token, then the pod
 by the name that review returns, then the application container's `imageID`. That
@@ -765,84 +886,142 @@ is Kubernetes. `codefly run` on a laptop has none of it, and the adversarial
 review is right that the delivery API does not preserve the old laptop behaviour —
 a host that reads pods is not a Kubernetes-free host any more.
 
-Two paths were allowed: an equally authoritative local attestation the host
-verifies under a `local` trust policy, or Kubernetes locally. **This host takes
-Kubernetes locally, and ships no local attestation path at all** — and as of the
-keyless verifier landing, that is now true of the CODE and not only of this
-paragraph. The `local` trust policy is deleted.
+The `local` trust policy is deleted. A coordinate is an operator-declared
+string and cannot justify skipping a signature check. Local runs use Kubernetes
+and the same pinned-key verification as deployed hosts: one verifier, one policy
+shape, with a release key in a deployed policy and a person's key admitted only
+by a cluster-bound local policy.
 
-It is worth saying why it existed and why its deletion is a fix rather than a
-tightening. `local` performed no cryptography and attested every carrier as the
-identity `local`, gated on the host's own coordinate beginning `local/`. Both
-adversarial reviews named the same concrete failure: the gate was a string
-comparison against an **operator-declared** value, so a deployed host configured
-with a local coordinate admitted any file any mount writer dropped — and because
-the coordinate is self-asserted on both sides, the misconfiguration was not
-self-defeating. The rest of this section had already argued at length
-that there should be no local trust *mechanism*; §7 shipped one anyway, because
-keyless was unavailable and a laptop had to run. Keyless exists now, so the argument and the code agree:
-one verifier, one policy shape, two sets of listed identities.
+### The local profile's trust anchor
 
-### Why the local path is not built, rather than built carefully
+A local host reads **`verification_policy.json`** from the same constant anchor,
+`infra.SolutionHostTrustAnchorPath`. The CLI writes this local anchor with the
+cluster profile; the composition cannot redirect the verifier. A developer's
+private key stays in the OS keychain where available, otherwise in the CLI's
+restricted local key file. Only its public key is mounted into the host.
 
-A `local` trust policy can be made *argably* safe. Key it to a reserved coordinate
-namespace, refuse it whenever the host's own coordinate is not in that namespace,
-and the attack needs a deployed host configured with a local coordinate — which
-would also make it refuse every real presence document and serve nothing. The
-misconfiguration is self-defeating.
+```json
+{
+  "local": {
+    "clusterCertificateAuthoritySha256": "<lowercase hex SHA-256 of the cluster CA certificate's DER>"
+  },
+  "signers": [
+    {
+      "name": "developer",
+      "kind": "person",
+      "keyId": "dev-0123456789abcdef",
+      "publicKey": "-----BEGIN PUBLIC KEY-----\n<public key bytes>\n-----END PUBLIC KEY-----\n",
+      "domains": ["<host.domain>"]
+    }
+  ]
+}
+```
 
-That argument is sound and it is still the wrong thing to rely on, for three
-reasons that compound:
+A deployed policy omits `local` and lists `release` keys. A local policy may also
+list release keys. `kind` is required; a person without `local` refuses boot.
+`name` is a descriptive label, while `keyId` is the verified signer identity and
+the key of the signer → ownership-domain map. Each listed domain must also appear
+in `SOLUTION_HOST_OWNERSHIP_DOMAINS` or boot refuses the disagreement by name.
+Admitting a person changes which key is pinned, never how much is verified.
 
-1. **It is a property of configuration, not of the artifact.** "A local path must
-   not be usable against a deployed host" is a promise a check keeps, and a check
-   can be wrong. With no local path, the promise is kept by absence. Under the
-   maximum-security rule the structural answer wins and the resulting prerequisite
-   is a tool to build, never a reason to soften.
-2. **It is a second implementation of a trust decision**, which is the mistake the
-   Work Context single-implementation rule exists to stop, in a different place. A
-   wire contract has one implementation in the repo that owns the type; an
-   attestation contract is no different, and the second copy is what drifts.
-3. **It would put signing keys back on laptops** at exactly the moment delivery
-   went keyless to eliminate key custody. Whatever signs a local attestation is
-   material a host is configured to trust, held on every developer's machine. That
-   is a new custody problem adopted to avoid a dependency.
+**The `local` block binds the profile to one cluster**, by the SHA-256 of the
+certificate authority the cluster's API server serves under — the certificate
+Kubernetes projects into every pod as the service account's `ca.crt`. For a k3d
+cluster:
 
-There is also a gain, not only a cost. Under a local attestation the laptop
-exercises a path production never runs, so what a developer verifies is a
-simulation of the mechanism. Under Kubernetes locally, `codefly run` drives the
-real `TokenReview`, the real pod read, the real `imageID` comparison and the real
-incarnation record. The local run becomes a test of the thing that ships.
+```bash
+kubectl --context <cluster.context> -n default get configmap kube-root-ca.crt \
+  -o jsonpath='{.data.ca\.crt}' | openssl x509 -outform der | shasum -a 256
+```
 
-The cost is plain and is not hidden here: every developer needs a local cluster,
-and `codefly run` has to provision or attach one and run each service as a Pod
-with a projected service-account token for audience `accounts`. That is work for
-the tooling, which is where the rule puts it.
+At boot, before a carrier is read, the host proves it runs in that cluster, using
+only what the kubelet puts in its pod — the CA bundle and its own token:
 
-### The delivery signature has the same gap, and it closes without a local mode
+1. **The projected CA bundle is exactly the pinned certificate**: one
+   certificate, that fingerprint, nothing else. A bundle carrying any other root
+   is refused outright — the developer's authority beside a deployed cluster's
+   own is the shape every confusion between two clusters needs, so the case is
+   removed rather than argued with.
+2. **The API server authenticates this pod's own token.** Over a transport whose
+   only root is the pinned certificate and which follows no redirect, the host
+   submits a TokenReview of its own projected token and requires the answer to
+   name exactly this pod — the namespace, service account, pod name and pod UID
+   the token's own claims name (the namespace also matching the
+   kubelet-projected namespace file); an answer about any other identity, or a
+   token naming no pod, is refused. A genuine API server accepts
+   only tokens its own cluster minted, so a server that merely holds a
+   certificate under the pinned authority — the developer's real cluster, relayed
+   to a deployed pod — refuses the deployed pod's token.
+3. **The binding lasts for the life of the process.** That pinned,
+   redirect-refusing transport becomes the one the host's cluster client uses for
+   every later call — each TokenReview that authorises a delivery, each pod read.
+   A backend or DNS switch after boot to a server under any other authority breaks
+   authentication instead of continuing under a proof made against someone else.
 
-The options as posed cover the mint. They do not cover the other half: delivery
-documents are signed **keyless, over the CI provider's OIDC identity**, and a
-laptop has no such identity either. A local run therefore cannot produce a
-delivery signature any more than it can produce a pod.
+Until the proof succeeds a local profile admits nothing, so a boot path that
+skipped it would refuse developers rather than admit them elsewhere. A host that
+cannot prove it — a deployed host handed a local profile, or a local host whose
+cluster was recreated — refuses to start, naming the fingerprints its cluster does
+project. Every client this host has for the cluster follows no redirect, local or
+not.
 
-It does not need a second mechanism. Keyless signing is not limited to a CI
-workflow identity — a person has an OIDC identity too. So a local run signs with
-the **developer's own identity**, through the same Sigstore flow, verified by the
-same verifier against the same kind of policy. **What differs between local and
-deployed is the identity allowlist, which is data, not code.**
+**Why the cluster's authority and the pod's own token, and not anything
+simpler.** The decisive question is how a host that is not the developer's refuses
+a local profile **without trusting anything the composition controls** — and the
+composition delivers this process's workspace environment, which is why the
+anchor's path is a constant.
 
-That is what makes the boundary structural rather than promised. A deployed host's
-allowlist names the reviewed-change workflow identity and nothing else, so a
-locally signed document is refused there by the **ordinary** check that refuses any
-unlisted identity — not by a mode flag, not by a coordinate comparison, and not by
-a code path that exists only to be disabled. There is no `local` trust policy
-because there is no local trust *mechanism*: one verifier, one policy shape, two
-sets of listed identities.
+- *A setting, a coordinate prefix, any environment value* — refused. The
+  composition could declare itself local; the deleted `local` trust policy died of
+  exactly this, its gate a string an operator declared.
+- *A cluster's self-description* — a `+k3s` server version, a node's provider
+  ID — is a convention, not a property. A deployed cell may run k3s.
+- *The `kube-system` namespace UID* — unforgeable through an authenticated API
+  server, but it needs a cluster-scoped read this host does not otherwise hold,
+  and the own-token review already binds the pod to the cluster with the
+  TokenReview permission the host has.
+- ***The projected CA, held exactly and for the process lifetime, and the
+  cluster's acceptance of this pod's own token*** — chosen. Both are put in the
+  pod by the kubelet, not by the composition.
 
-A deployed host that somehow listed a developer identity would be misconfigured in
-exactly the way an allowlist is designed to make visible — it is a reviewable line
-in the policy, which is the property the signing decision was taken for.
+**What is guaranteed.** A host whose pod carries the CA bundle and the
+service-account token of any cluster other than the pinned one refuses the
+profile at boot — whatever its workspace environment, its coordinate or its
+`KUBERNETES_SERVICE_HOST`/`PORT` say. A steered API address does not change that:
+the server it reaches must present a chain to the pinned authority (which a
+deployed pod's own bundle does not even contain) and must accept a token only the
+pod's real cluster minted.
+
+**What is not guaranteed, precisely:**
+
+- *The binding is to one cluster, not to the word "local".* Nothing a host can
+  observe distinguishes a developer's cluster from a production one by kind, so
+  whoever writes a deployed host's trust anchor could deliberately pin *that*
+  cluster's authority and admit a person there. That grants nothing new — the
+  anchor's writer can already pin any signing key — and it cannot happen
+  by accident: a profile copied to another cluster names the wrong authority.
+- *An attacker holding three things at once defeats it:* the power to replace
+  this pod's projected CA bundle with exactly the pinned certificate (pod-spec
+  control, or a write to the namespace's `kube-root-ca.crt` ConfigMap the kubelet
+  projects, which the control plane reconciles back), the power to steer
+  `KUBERNETES_SERVICE_HOST`/`PORT`, **and** the pinned cluster's CA private key, to
+  run a fake API server that accepts any token. Such an attacker already decides
+  every Kubernetes answer this host relies on — every TokenReview, every pod
+  read — so the local profile gives it nothing it lacked. The composition holds
+  none of the three by itself: it delivers workspace environment, and neither the
+  pod spec, the projected CA nor the developer's cluster key.
+- *A CA is not a cluster boundary when it is shared or cloned.* Clusters sharing
+  one authority are one cluster to this check, and anyone holding that
+  authority's key can run a server the check accepts and answer its TokenReview
+  as it likes — whether or not the genuine servers accept each other's tokens.
+  The own-identity comparison checks that an honest API server answered about
+  this pod; it cannot stop a control plane that is itself hostile and copies the
+  expected claims back.
+
+**The cost:** a local profile is valid in exactly one cluster. Recreating the
+cluster mints a new authority and the profile must be rewritten — one copy of the
+fingerprint the boot refusal prints. And the host needs nothing new: it already
+creates TokenReviews.
 
 ### What a local run must therefore supply
 
@@ -852,11 +1031,12 @@ coordinate the local host is configured with; an `execution.image.manifest_diges
 read from the **locally built** image rather than a registry, which moves on every
 build and is fine because the generation moves with it; workloads running as Pods
 with projected service-account tokens for audience `accounts`; and the documents
-signed with the developer's keyless identity and POSTed to the same
+signed with the developer's pinned key and POSTed to the same
 `/platform/_delivery/*` endpoints. The local host is configured with its local
-coordinate and an allowlist containing that developer identity.
+coordinate and the local profile above: a policy bound to its cluster that lists that developer as a person.
 
-Nothing on the host is conditional on any of it. That is the point.
+Nothing on the host is conditional on any of it but the policy document on its
+trust anchor, which the composition does not write. That is the point.
 
 ### The three fields a local run looks unable to fill, and why it can
 
@@ -889,6 +1069,33 @@ So presence v2 **can** describe a local run honestly. What it cannot describe
 honestly is a run of bare *processes* — which is an argument for running pods
 locally, not an argument for a second trust model.
 
+### A run of processes: the CLI answers as the cluster
+
+The argument above ends at "run pods locally". A run of processes is still the
+first loop a developer has, so `codefly run` supplies what the host reads from
+Kubernetes instead of the host learning a second path. The host's code is the
+same in both: TokenReview on the projected token, the pod by the name the review
+returns, the build that pod runs, pinned-key verification of every delivered
+carrier, the envelope as an independent ceiling.
+
+What the CLI stands in for, per run:
+
+- **the API server** — TokenReview and pod reads over TLS under a CA created for
+  that run, with projected tokens issued for the same audiences. The host
+  reaches it through `SOLUTION_HOST_LOCAL_CLUSTER` (§7, Configuration).
+- **workload identity** — X.509-SVIDs under that same CA, named as a cell names
+  them from the namespace and service account.
+- **the trust anchor** — a local profile whose `local` block pins that run's CA,
+  read through `SOLUTION_HOST_LOCAL_TRUST_ANCHOR`.
+
+What is weaker than a cluster, stated rather than implied: the build a pod is
+said to run is the SHA-256 of the executable the CLI started, and the CLI is
+both the party that says so and the party that signs the presence naming it. No
+kubelet is a second witness. That is the authority a developer already has over
+their own machine, and it is bounded to it — the profile admits a person's key
+only for the one CA it names, and both relocations are refused in a pod, so no
+deployed host can be pointed at a stand-in.
+
 ### Two rules that do not bend locally
 
 **Absence is never removal, under any policy.** A local run makes this tempting in
@@ -904,17 +1111,19 @@ unreadable-mount sibling exist for that reason.
 envelope, and the tempting shortcut is to let the delivered authority *be* the
 ceiling. That collapses two of the three terms in `binding ∩ envelope ∩
 installation`, so a developer would exercise a different authorisation shape than
-production computes. A local envelope file in the host's `local` configuration
-profile — same schema as the reviewed one, authored by the developer — keeps the
-structure identical at the cost of one more file.
+production computes. A local run writes its own envelope revision through the same
+`PutModuleEnvelope` a deployed host uses — same schema as the reviewed one,
+authored by the developer — which keeps the structure identical at the cost of
+one more write.
 
 ### If the local-cluster requirement is judged too expensive
 
 The honest alternative is **not** a second trust model. It is **no capability
 surface locally**: a local run gets presence and routing so a developer sees their
 UI, and module credentials are simply not minted. This host already has that shape
-— an absent `MODULE_IDENTITY_SECRETS` denies every module identity exchange, and
-the fake-auth fixture is the established local-authority mechanism.
+— a host with no delivered authority wires no execution binding, so every module
+mint answers that the execution could not be established (#1056), and the
+fake-auth fixture is the established local-authority mechanism.
 
 That is a *reduction* in local capability, which is honest and leaves one trust
 path, rather than an *addition* of a parallel one. "Lighter laptop" against "two

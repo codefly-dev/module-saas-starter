@@ -52,6 +52,16 @@ const ROUTES: AdminRoute[] = [
 		heading: /Job operations/i,
 		platformGated: true,
 	},
+	{
+		path: "/admin/platform/unattended-work",
+		heading: /Unattended work/,
+		platformGated: true,
+	},
+	// Data sources had no smoke row of its own, and it is where a person's
+	// reconcile pass is both taken ("Sync now", the kit's panel) and listed
+	// beside the declared schedule's occurrences (the host's panel). It is an
+	// organization surface rather than a platform-gated one.
+	{ path: "/admin/datasources", heading: /^Data sources$/ },
 ];
 
 test.describe("admin route smoke", () => {

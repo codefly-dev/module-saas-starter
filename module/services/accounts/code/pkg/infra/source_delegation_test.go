@@ -4,14 +4,14 @@ package infra_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"strings"
 	"sync"
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
+	"accounts/pkg/business/moduleregistrytest"
 	"accounts/pkg/datasource/github"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
@@ -26,22 +26,38 @@ import (
 // check a consumer runs at every hop.
 
 const (
-	delegationModule       = "docstore"
-	delegationModuleSecret = "docstore-secret"
-	delegationBinding      = "source-sync"
-	otherModule            = "reports"
-	otherModuleSecret      = "reports-secret"
-	runtimeModule          = "runtime"
+	delegationModule = "docstore"
+	// delegationModuleToken and otherModuleToken are the projected
+	// ServiceAccount tokens of one pod of each module, running its approved
+	// build (#1056): a module proves which module it is with one.
+	delegationModuleToken = "projected.docstore"
+	delegationBinding     = "source-sync"
+	otherModule           = "reports"
+	otherModuleToken      = "projected.reports"
+	runtimeModule         = "runtime"
+	runtimeModuleToken    = "projected.runtime"
 )
 
-func delegationDigest(secret string) string {
-	sum := sha256.Sum256([]byte(secret))
-	return hex.EncodeToString(sum[:])
+// bindDelegationModules runs one pod per module that mints here, each on its
+// approved build, and binds svc's mints to that cluster.
+func bindDelegationModules(svc *business.Service, registry business.ModulePrincipalRegistry) {
+	cluster := executiontest.New()
+	svc.SetExecutionBinding(cluster, cluster)
+	for prefix, token := range map[string]string{delegationModule: delegationModuleToken, otherModule: otherModuleToken, runtimeModule: runtimeModuleToken} {
+		grant, declared := registry[business.ModulePrincipalID(prefix)]
+		if !declared {
+			continue
+		}
+		cluster.Approve(prefix, executiontest.Digest(prefix), 1)
+		cluster.RunWithToken(token, executiontest.Workload{
+			Namespace: grant.Workload.Namespace, ServiceAccount: grant.Workload.ServiceAccount, Container: grant.Workload.Container,
+		}, executiontest.Image(prefix))
+	}
 }
 
-// delegationRegistry declares three modules, every one bound to otherTenant and
-// none holding cross_tenant — the delegation, never the declared tenancy, is
-// what admits an organization:
+// delegationRegistry declares three modules inside the requested tenancy.
+// An empty tenant is shared: each organization supplies its own installation,
+// and a source delegation independently supplies the person's authority:
 //   - docstore, whose one binding accepts source delegations and is addressed
 //     to the runtime module;
 //   - reports, which accepts delegations too, so "another module's delegation"
@@ -59,17 +75,17 @@ func delegationRegistryWith(t *testing.T, otherTenant string, crossTenant bool) 
 	if crossTenant {
 		cross = `"cross_tenant":true,`
 	}
-	registry, err := business.ParseModulePrincipalRegistry(`{` +
+	registry, err := moduleregistrytest.Parse(`{` +
 		`"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read","write"]}]}}},` +
-		`"` + runtimeModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
+		`"` + runtimeModule + `":{"workload":{"service_account":"runtime","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
 		`"ingest":{"audience":"docstore-ingest",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}]}}},` +
-		`"` + otherModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `","operation_audiences":{` +
+		`"` + otherModule + `":{"workload":{"service_account":"reports","namespace":"acme-prod","container":"app"},"tenant":"` + otherTenant + `","operation_audiences":{` +
 		`"sync":{"audience":"reportservice",` +
 		`"invoke_scopes":[{"resource_kind":"reports","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"reports","actions":["read"]}],` +
@@ -160,7 +176,14 @@ func newDelegationWorld(t *testing.T) *delegationWorld {
 	seedOrgAdministrator(t, w.org, w.other)
 	w.otherOrg = seedOrg(t, w.other)
 	seedOrgAdministrator(t, w.otherOrg, w.other)
-	w.svc = w.service(t, delegationRegistry(t, w.otherOrg))
+	// Shared, so each organization's installation supplies its consent. The
+	// runtime acts in an organization through its own module identity, which a
+	// shared module can mint only when it is declared cross_tenant.
+	registry := delegationRegistry(t, "")
+	runtime := registry[business.ModulePrincipalID(runtimeModule)]
+	runtime.CrossTenant = true
+	registry[business.ModulePrincipalID(runtimeModule)] = runtime
+	w.svc = w.service(t, registry)
 	return w
 }
 
@@ -171,12 +194,12 @@ func (w *delegationWorld) service(t *testing.T, registry business.ModulePrincipa
 	// Revoking a principal or a delegation is a witnessed narrowing, so a
 	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
 	wireNarrowingPolicyLog(svc)
-	secrets, err := business.ParseRegistrationSecrets(delegationModule + ":" + delegationDigest(delegationModuleSecret) +
-		"," + otherModule + ":" + delegationDigest(otherModuleSecret))
-	require.NoError(t, err)
-	svc.SetModuleIdentitySecrets(secrets)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(testStore, nil)
+	svc.SetWorkContextSealStore(testStore)
 	svc.SetModuleCapabilities(nil, nil, registry)
+	installCapabilityFixture(t, svc, w.org, w.admin)
+	installCapabilityFixture(t, svc, w.otherOrg, w.other)
+	bindDelegationModules(svc, svc.ModulePrincipals())
 	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
 	svc.SetDatasourceConnector(delegationCipher{}, delegationProducer{}, "")
 	svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return delegationGitHub{} })
@@ -219,21 +242,33 @@ func (w *delegationWorld) only(t *testing.T, orgID, sourceID, module string) *bu
 	return found[0]
 }
 
-func (w *delegationWorld) mint(ref business.SourceDelegationRef) (business.SourceOperationContextAuthority, error) {
-	return w.svc.AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleSecret, ref)
+// minted is a mint's authority with the authorization revision the capability
+// signed from it carries: the person's, as the signer reads it at the mint.
+type minted struct {
+	business.SourceOperationContextAuthority
+	Revision uint64
+}
+
+func (w *delegationWorld) mint(ref business.SourceDelegationRef) (minted, error) {
+	authority, err := w.svc.AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, ref)
+	if err != nil {
+		return minted{}, err
+	}
+	revision, err := w.svc.WorkContextRevision(testCtx, authority.Tenant, authority.OwnerPrincipalID)
+	return minted{SourceOperationContextAuthority: authority, Revision: revision}, err
 }
 
 // subjects is what a consumer's SDK sends for a minted context: the owner with
 // the authority scopes, then the module actor with its granted scopes.
-func subjects(authority business.SourceOperationContextAuthority) []business.ModuleOperationRevisionSubject {
+func subjects(authority minted) []business.ModuleOperationRevisionSubject {
 	return []business.ModuleOperationRevisionSubject{
 		{PrincipalID: authority.OwnerPrincipalID, Scopes: authority.Scopes},
 		{PrincipalID: authority.PrincipalID, Scopes: authority.Scopes},
 	}
 }
 
-func (w *delegationWorld) confirm(authority business.SourceOperationContextAuthority) error {
-	handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant, authority.OwnerPrincipalID, authority.Revision, subjects(authority))
+func (w *delegationWorld) confirm(authority minted) error {
+	handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant, authority.OwnerPrincipalID, authority.Revision, subjects(authority), authority.BindingID())
 	if !handled {
 		return errors.New("revision check did not recognise a source delegation context")
 	}
@@ -258,9 +293,8 @@ func TestSourceDelegation_ConnectThenMint(t *testing.T) {
 	sourceID := w.connect(t, w.org, w.admin)
 
 	// Every module whose binding declares source_delegation_scopes receives one,
-	// though both are bound to another organization and neither holds
-	// cross_tenant; the runtime module declares no such binding and receives
-	// none.
+	// each has explicit consent in this organization; the runtime module
+	// declares no such binding and receives none.
 	require.Len(t, w.active(t, w.org, sourceID), 2)
 	delegation := w.only(t, w.org, sourceID, delegationModule)
 	require.Equal(t, delegationModule, delegation.ModulePrefix)
@@ -286,8 +320,10 @@ func TestSourceDelegation_ConnectThenMint(t *testing.T) {
 			require.Equal(t, []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}}, authority.Scopes)
 			require.Equal(t, delegation.ID, authority.Delegation.ID)
 			require.NotZero(t, authority.Revision)
+			require.Equal(t, business.SourceDelegationBindingID(delegation.ID, delegationModule), authority.BindingID(),
+				"the delegating module exercises its own delegation")
 
-			require.NoError(t, w.svc.RecordSourceOperationContextMint(testCtx, authority))
+			require.NoError(t, w.svc.RecordSourceOperationContextMint(testCtx, authority.SourceOperationContextAuthority))
 			require.NoError(t, w.confirm(authority))
 		})
 	}
@@ -315,7 +351,7 @@ func TestSourceDelegation_ExplicitRevoke(t *testing.T) {
 	_, err = w.mint(business.SourceDelegationRef{SourceID: sourceID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationMissing, "a source with no active delegation is DELEGATION_MISSING")
 	require.ErrorIs(t, w.confirm(authority), business.ErrSourceDelegationContextStale, "revocation invalidates an outstanding context")
-	require.ErrorIs(t, w.svc.RecordSourceOperationContextMint(testCtx, authority), business.ErrSourceDelegationRevoked,
+	require.ErrorIs(t, w.svc.RecordSourceOperationContextMint(testCtx, authority.SourceOperationContextAuthority), business.ErrSourceDelegationRevoked,
 		"a capability signed before the revocation committed is withheld")
 
 	events := w.audit.of(business.EventSourceDelegationRevoked, sourceID)
@@ -442,26 +478,26 @@ func TestSourceDelegation_CrossOrganizationAndCrossModule(t *testing.T) {
 
 	// Another module's delegation is refused, in both directions; by source,
 	// each module resolves only its own.
-	_, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{DelegationID: delegationA.ID})
+	_, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleToken, business.SourceDelegationRef{DelegationID: delegationA.ID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
 	_, err = w.mint(business.SourceDelegationRef{DelegationID: reportsA.ID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
-	bySource, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{SourceID: sourceA})
+	bySource, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleToken, business.SourceDelegationRef{SourceID: sourceA})
 	require.NoError(t, err)
 	require.Equal(t, reportsA.ID, bySource.Delegation.ID)
 	// ... and indistinguishable from one that does not exist.
-	_, err = w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{DelegationID: business.NewIDString()})
+	_, err = w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleToken, business.SourceDelegationRef{DelegationID: business.NewIDString()})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
 
-	// Both organizations are reached through their delegations alone.
-	authorityB, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{DelegationID: delegationB.ID})
+	// Each organization is reached through its own installation and delegation.
+	authorityB, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleToken, business.SourceDelegationRef{DelegationID: delegationB.ID})
 	require.NoError(t, err)
 	require.Equal(t, w.otherOrg, authorityB.Tenant)
 	require.Equal(t, "reportservice", authorityB.Audience)
 
 	// A cross-tenant grant adds nothing: another module's delegation stays
 	// refused however widely the caller is declared.
-	_, err = w.service(t, delegationRegistryWith(t, w.otherOrg, true)).AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{DelegationID: delegationA.ID})
+	_, err = w.service(t, delegationRegistryWith(t, w.otherOrg, true)).AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleToken, business.SourceDelegationRef{DelegationID: delegationA.ID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
 
 	// A context minted in one organization is not confirmed for another.
@@ -552,13 +588,13 @@ func TestSourceDelegation_BindingChanged(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
-	widened, err := business.ParseModulePrincipalRegistry(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + w.otherOrg + `","operation_audiences":{` +
+	widened, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`)
 	require.NoError(t, err)
-	_, err = w.service(t, widened).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleSecret, business.SourceDelegationRef{SourceID: sourceID})
+	_, err = w.service(t, widened).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{SourceID: sourceID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationRevoked)
 	require.Equal(t, business.SourceDelegationBindingChanged, w.only(t, w.org, sourceID, delegationModule).RevokedReason)
 }
@@ -608,4 +644,33 @@ func TestSourceDelegation_PublicSourceReconnectsWithoutACredential(t *testing.T)
 	authority, err := w.mint(business.SourceDelegationRef{SourceID: source.ID})
 	require.NoError(t, err)
 	require.Equal(t, w.other, authority.OwnerPrincipalID)
+}
+
+// An old cross-org delegation cannot bypass a dedicated envelope even when a
+// historical installation row still exists. No capability is minted.
+func TestSourceDelegation_DedicatedTenantCannotBorrowInstallation(t *testing.T) {
+	w := newDelegationWorld(t)
+	source := w.connect(t, w.org, w.admin)
+	registry := w.svc.ModulePrincipals()
+	principal := business.ModulePrincipalID(delegationModule)
+	grant := registry[principal]
+	grant.Tenant = w.otherOrg
+	registry[principal] = grant
+	var revision uint64
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		revision, err = testStore.LatestModuleEnvelopeRevision(ctx)
+		return err
+	}))
+	w.svc.InstallDerivedModulePrincipals(registry, revision, nil)
+	_, err := w.mint(business.SourceDelegationRef{SourceID: source})
+	require.ErrorIs(t, err, business.ErrModuleTenantNotCurrent)
+	grant.Tenant = ""
+	registry[principal] = grant
+	w.svc.InstallDerivedModulePrincipals(registry, revision, nil)
+	authority, err := w.mint(business.SourceDelegationRef{SourceID: source})
+	require.NoError(t, err)
+	require.NotEmpty(t, authority.InstallationID)
+	require.Equal(t, uint64(1), authority.InstallationRevision)
+	require.Equal(t, w.org, authority.Tenant)
 }

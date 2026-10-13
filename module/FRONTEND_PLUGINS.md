@@ -24,7 +24,9 @@ runtime-loaded JavaScript or make UI visibility an authorization boundary.
 | `services/frontend/code/server/plugin-service-dependency-policy.ts` | Node-only drift gate holding a manifest's external dependencies to the allowlist. |
 | `services/frontend/code/server/plugin-service-bindings.ts` | Exact server-only Codefly endpoint resolution for installed aliases. |
 | `services/frontend/code/server/plugin-bff.ts` | Product-neutral same-origin proxy policy, limits, header filtering, and stable failures. |
+| `services/frontend/code/packages/saas-plugin-contract/src/transport.ts` | The one relative-path rule — safe segments, the custom verb on the last one, the Connect procedure shape, and where a declared prefix lands — read by both the browser transport and the BFF. |
 | `services/frontend/code/src/app/api/plugins/[plugin]/[alias]/[...path]/route.ts` | The one browser-visible plugin backend route. |
+| `services/frontend/code/src/features/plugin-transport` | The transport playground at `/admin/platform/plugin-transport` and the demo plugin whose routes it drives. |
 | `docs/frontend-plugin-auth-tenant-matrix.md` | Canonical split and required evidence for host transport versus product authorization and tenant isolation. |
 | `docs/frontend-plugin-request-correlation.md` | Host-owned diagnostic request-ID lifecycle and separation from untrusted trace context. |
 | `services/accounts/code/pkg/cataloggen/frontend_plugins.go` | Filesystem-page inventory, joins, semantic validation, and deterministic renderers. |
@@ -84,7 +86,21 @@ application never edits `service.codefly.yaml` inline. Actual service location
 resolution is server-owned and the browser reaches it only through the
 constrained `/api/plugins/{plugin}/{alias}/{relative-path}` BFF. The BFF never
 trusts the frontend presence cookie or caller identity/tenant headers; it
-forwards the bearer so the backend remains the authorization authority. Every
+forwards the bearer so the backend remains the authorization authority.
+
+The relative path carries what a module's bindings declare, in both shapes:
+safe segments, a Google custom verb on the **last** segment with its colon
+literal (`records:recover`, `interactions/{id}:respond`), and — for a Connect
+requirement — one procedure of a service that requirement named. Its
+`routePrefix` says where the upstream mounts Connect (`/` is the origin root,
+where the protocol and this contract's own capability handshake already put a
+procedure); its required `connectServices` says which services the alias may
+reach, because the procedure's path carries the service name and the caller
+therefore supplies it. A contributed page is not restricted to REST bindings.
+The rule itself lives once, in the contract package's `transport.ts`, and both
+halves read it.
+`/admin/platform/plugin-transport` is the playground that drives every shape
+and shows which of the three answers came back. Every
 product runs the canonical authentication/tenant matrix with two real tenants;
 Starter-only BFF mocks do not certify product authorization or storage
 isolation.

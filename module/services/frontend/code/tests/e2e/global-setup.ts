@@ -67,7 +67,7 @@ async function globalSetup(): Promise<void> {
 	// depends on: every product API call the browser makes is forwarded there,
 	// and its /ready answers 200 only once every routed upstream is dialable AND
 	// it has loaded the access-token verification keys. Waiting on accounts
-	// instead let the suite start against a gateway that was still keyless, which
+	// instead let the suite start against a gateway that had not loaded its keys, which
 	// answers 503 to every authenticated request. The port is NOT hardcoded:
 	// `readyService` makes the SDK resolve the address from codefly, so this
 	// works in ANY consumer workspace — the port is a workspace hash and differs

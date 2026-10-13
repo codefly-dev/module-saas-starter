@@ -15,7 +15,8 @@ import (
 	"time"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/codefly-dev/core/workcontext"
+	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,27 +56,61 @@ func jwksServer(t *testing.T, document string, hits *int64) *httptest.Server {
 	return server
 }
 
-func mintWorkContext(t *testing.T, kid string, priv ed25519.PrivateKey, now func() time.Time) workcontext.WorkContextToken {
+// edgeCapability describes a capability an edge test presents, minted by core's
+// own Authority exactly as accounts mints one.
+type edgeCapability struct {
+	Audience string
+	Tenant   string
+	Owner    string
+	Session  string
+	Now      func() time.Time
+}
+
+// mintCapability signs c with core's Authority under kid/priv, sealed against
+// an in-memory seal source holding the owner as a person who bears no
+// execution. The edge consults no live state, so the source only has to let
+// the mint succeed.
+func mintCapability(t *testing.T, kid string, priv ed25519.PrivateKey, c edgeCapability) string {
 	t.Helper()
-	signer, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{
-		Issuer:     "saas-starter",
-		KeyID:      kid,
-		PrivateKey: priv,
-		Now:        now,
-	})
-	require.NoError(t, err)
-	token, _, err := signer.StartTask(workcontext.StartTaskInput{
-		Audience:         "solution:demo",
-		TenantID:         "tenant-1",
-		OwnerPrincipalID: "user-1",
-		TaskID:           "task-1",
-		SessionID:        "session-1",
-		AuthorityScopes: []*basev0.WorkScopeV1{
-			{ResourceKind: "audit", Actions: []string{"read"}},
-		},
+	if c.Tenant == "" {
+		c.Tenant = "tenant-1"
+	}
+	if c.Owner == "" {
+		c.Owner = "user-1"
+	}
+	seals := workcontext.NewMemorySealSource()
+	require.NoError(t, seals.Put(c.Owner, workcontext.Seal{InstallationID: "installation-1", InstallationRevision: 1}))
+	require.NoError(t, seals.PutEpoch(c.Owner, 1))
+	require.NoError(t, seals.PutBearsNoExecution(c.Owner))
+	authority := &workcontext.Authority{
+		Issuer: workContextIssuer, KeyID: kid, Key: priv,
+		Revisions: workcontext.FixedRevision(1), Seals: seals, Now: c.Now,
+	}
+	token, _, err := authority.Start(context.Background(), workcontext.StartInput{
+		TenantID:           c.Tenant,
+		OwnerPrincipalID:   c.Owner,
+		OwnerPrincipalKind: "human",
+		OrganizationID:     c.Tenant,
+		TaskID:             "task-1",
+		Audience:           c.Audience,
+		AuthorityScopes:    []*basev0.WorkScopeV1{{ResourceKind: "audit", Actions: []string{"read"}}},
+		InstallationID:     "installation-1",
+		SessionID:          c.Session,
+		TTL:                5 * time.Minute,
 	})
 	require.NoError(t, err)
 	return token
+}
+
+func mintWorkContext(t *testing.T, kid string, priv ed25519.PrivateKey, now func() time.Time) string {
+	t.Helper()
+	return mintCapability(t, kid, priv, edgeCapability{Audience: "solution:demo", Session: "session-1", Now: now})
+}
+
+// inspect is the edge check reduced to its verdict.
+func inspect(v *workContextVerifier, ctx context.Context, token string, permitted ...string) error {
+	_, err := v.Inspect(ctx, token, permitted...)
+	return err
 }
 
 func TestWorkContextVerifier_ValidTokenPasses(t *testing.T) {
@@ -84,7 +119,7 @@ func TestWorkContextVerifier_ValidTokenPasses(t *testing.T) {
 	server := jwksServer(t, jwksDocument(map[string]ed25519.PublicKey{kid: pub}), nil)
 
 	verifier := newWorkContextVerifier(server.URL)
-	err := verifier.Verify(context.Background(), mintWorkContext(t, kid, priv, nil), "solution:demo")
+	err := inspect(verifier, context.Background(), mintWorkContext(t, kid, priv, nil), "solution:demo")
 	require.NoError(t, err)
 }
 
@@ -96,8 +131,8 @@ func TestWorkContextVerifier_ForgedSignatureFailsClosed(t *testing.T) {
 
 	verifier := newWorkContextVerifier(server.URL)
 	// Claims the published key id but is signed by a key the JWKS never lists.
-	err := verifier.Verify(context.Background(), mintWorkContext(t, kid, attacker, nil), "solution:demo")
-	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+	err := inspect(verifier, context.Background(), mintWorkContext(t, kid, attacker, nil), "solution:demo")
+	require.ErrorIs(t, err, errInvalidWorkContext)
 }
 
 func TestWorkContextVerifier_ExpiredTokenFailsClosed(t *testing.T) {
@@ -107,8 +142,8 @@ func TestWorkContextVerifier_ExpiredTokenFailsClosed(t *testing.T) {
 
 	past := func() time.Time { return time.Now().Add(-time.Hour) }
 	verifier := newWorkContextVerifier(server.URL)
-	err := verifier.Verify(context.Background(), mintWorkContext(t, kid, priv, past), "solution:demo")
-	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+	err := inspect(verifier, context.Background(), mintWorkContext(t, kid, priv, past), "solution:demo")
+	require.ErrorIs(t, err, errInvalidWorkContext)
 }
 
 func TestWorkContextVerifier_JWKSUnreachableFailsClosed(t *testing.T) {
@@ -118,10 +153,10 @@ func TestWorkContextVerifier_JWKSUnreachableFailsClosed(t *testing.T) {
 	server.Close()
 
 	verifier := newWorkContextVerifier(url)
-	err := verifier.Verify(context.Background(), mintWorkContext(t, "key-1", priv, nil), "solution:demo")
+	err := inspect(verifier, context.Background(), mintWorkContext(t, "key-1", priv, nil), "solution:demo")
 	// An upstream outage must read as the same invalid sentinel, not a distinct
 	// transport error class that would leak the dependency being down.
-	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+	require.ErrorIs(t, err, errInvalidWorkContext)
 }
 
 func TestWorkContextVerifier_UnknownKeyIDDoesNotStampede(t *testing.T) {
@@ -133,8 +168,8 @@ func TestWorkContextVerifier_UnknownKeyIDDoesNotStampede(t *testing.T) {
 	verifier := newWorkContextVerifier(server.URL)
 	ctx := context.Background()
 	for i := 0; i < 5; i++ {
-		err := verifier.Verify(ctx, mintWorkContext(t, "rotated-away", other, nil), "solution:demo")
-		require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+		err := inspect(verifier, ctx, mintWorkContext(t, "rotated-away", other, nil), "solution:demo")
+		require.ErrorIs(t, err, errInvalidWorkContext)
 	}
 	// One warm fetch plus at most one unknown-key probe within the cache window.
 	require.LessOrEqual(t, atomic.LoadInt64(&hits), int64(2))
@@ -155,13 +190,13 @@ func TestWorkContextVerifier_PicksUpRotatedKey(t *testing.T) {
 
 	verifier := newWorkContextVerifier(server.URL)
 	ctx := context.Background()
-	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-1", currentPriv, nil), "solution:demo"))
+	require.NoError(t, inspect(verifier, ctx, mintWorkContext(t, "key-1", currentPriv, nil), "solution:demo"))
 
 	// Rotate: publish key-2 alongside key-1. The cache is still fresh, so the
 	// unknown-key probe — not a TTL refresh — must discover the new key.
 	rotated := jwksDocument(map[string]ed25519.PublicKey{"key-1": current, "key-2": next})
 	document.Store(&rotated)
-	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-2", nextPriv, nil), "solution:demo"))
+	require.NoError(t, inspect(verifier, ctx, mintWorkContext(t, "key-2", nextPriv, nil), "solution:demo"))
 }
 
 func TestWorkContextVerifier_ConcurrentColdRequestsShareOneFetch(t *testing.T) {
@@ -191,7 +226,7 @@ func TestWorkContextVerifier_ConcurrentColdRequestsShareOneFetch(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- verifier.Verify(context.Background(), token, "solution:demo")
+			errs <- inspect(verifier, context.Background(), token, "solution:demo")
 		}()
 	}
 	wg.Wait()
@@ -214,7 +249,7 @@ func TestWorkContextVerifier_RefreshWarmsKeys(t *testing.T) {
 	// Keys are warm, so a valid token verifies from cache even once the
 	// publisher is unreachable.
 	server.Close()
-	err := verifier.Verify(context.Background(), mintWorkContext(t, kid, priv, nil), "solution:demo")
+	err := inspect(verifier, context.Background(), mintWorkContext(t, kid, priv, nil), "solution:demo")
 	require.NoError(t, err)
 }
 
@@ -224,7 +259,7 @@ func TestWorkContextVerifier_RefreshFailsClosedWhenUnreachable(t *testing.T) {
 	server.Close()
 
 	verifier := newWorkContextVerifier(url)
-	require.ErrorIs(t, verifier.Refresh(context.Background()), workcontext.ErrWorkContextInvalid)
+	require.ErrorIs(t, verifier.Refresh(context.Background()), errInvalidWorkContext)
 }
 
 func TestParseJWKS_RejectsEmptyKeySet(t *testing.T) {
@@ -247,8 +282,8 @@ func TestWorkContextVerifier_MalformedJWKSFailsClosedAsInvalid(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			server := jwksServer(t, document, nil)
 			verifier := newWorkContextVerifier(server.URL)
-			err := verifier.Verify(context.Background(), mintWorkContext(t, "key-1", priv, nil), "solution:demo")
-			require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
+			err := inspect(verifier, context.Background(), mintWorkContext(t, "key-1", priv, nil), "solution:demo")
+			require.ErrorIs(t, err, errInvalidWorkContext)
 		})
 	}
 }
@@ -274,19 +309,19 @@ func TestWorkContextVerifier_UnknownKeyIDDoesNotBlockARotatedKey(t *testing.T) {
 	verifier := newWorkContextVerifier(server.URL)
 	advance := freezeClock(verifier.cache)
 	ctx := context.Background()
-	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-1", currentPriv, nil), "solution:demo"))
+	require.NoError(t, inspect(verifier, ctx, mintWorkContext(t, "key-1", currentPriv, nil), "solution:demo"))
 
 	// One presented capability names a key id nobody publishes.
 	_, attacker := mustEd25519(t)
-	require.ErrorIs(t, verifier.Verify(ctx, mintWorkContext(t, "rotated-away", attacker, nil), "solution:demo"),
-		workcontext.ErrWorkContextInvalid)
+	require.ErrorIs(t, inspect(verifier, ctx, mintWorkContext(t, "rotated-away", attacker, nil), "solution:demo"),
+		errInvalidWorkContext)
 
 	// The rotation lands while the cache is still fresh.
 	rotated := jwksDocument(map[string]ed25519.PublicKey{"key-1": current, "key-2": next})
 	document.Store(&rotated)
 
 	advance(jwksProbeInterval)
-	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-2", nextPriv, nil), "solution:demo"),
+	require.NoError(t, inspect(verifier, ctx, mintWorkContext(t, "key-2", nextPriv, nil), "solution:demo"),
 		"an unrecognised key id must not deny the probe to a genuinely rotated-in key")
 }
 
@@ -310,7 +345,7 @@ func TestGateway_InvalidWorkContextReturns401(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
-	req.Header.Set(workcontext.WorkContextHeaderName, "not-a-valid-work-context")
+	req.Header.Set(carrier.HeaderName, "not-a-valid-work-context")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -328,13 +363,13 @@ func TestGateway_ValidWorkContextForwards(t *testing.T) {
 	token := mintWorkContext(t, kid, wcPriv, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
-	req.Header.Set(workcontext.WorkContextHeaderName, token.Encoded())
+	req.Header.Set(carrier.HeaderName, token)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.NotNil(t, apiFake.lastHeaders)
-	require.Equal(t, token.Encoded(), apiFake.lastHeaders.Get(workcontext.WorkContextHeaderName),
+	require.Equal(t, token, apiFake.lastHeaders.Get(carrier.HeaderName),
 		"a verified Work Context is forwarded unchanged to the callee")
 }
 

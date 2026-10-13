@@ -37,6 +37,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterConsentServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service ConsentService: %w", err)
 	}
+	if err := gen.RegisterDatasourceServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service DatasourceService: %w", err)
+	}
 	if err := gen.RegisterDirectoryServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service DirectoryService: %w", err)
 	}
@@ -125,6 +128,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/collection-access":                {},
 	"GET /v1/consent/status":                   {},
 	"GET /v1/delegations:pending":              {},
+	"GET /v1/installations":                    {},
 	"GET /v1/installations:listAvailable":      {},
 	"GET /v1/invitations":                      {},
 	"GET /v1/mfa/devices":                      {},
@@ -138,6 +142,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/platform/feature-flags":           {},
 	"GET /v1/platform/jobs":                    {},
 	"GET /v1/platform/jobs/operations":         {},
+	"GET /v1/platform/module-envelope":         {},
 	"GET /v1/platform/sessions":                {},
 	"GET /v1/platform/users":                   {},
 	"GET /v1/platform/waitlist":                {},
@@ -206,6 +211,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/work-contexts:root-session":      {},
 	"POST /v1/work-contexts:task":              {},
 	"PUT /v1/consent/preferences":              {},
+	"PUT /v1/platform/module-envelope":         {},
 }
 
 type catalogRESTTemplateRoute struct {
@@ -228,6 +234,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/webhooks/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/approvals/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/billing/invoices/[^/]+$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/datasource-operation-receipts/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/delegations/[^/]+:wait$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/directory/organizations/[^/]+/members$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/directory/organizations/[^/]+/teams$")},
@@ -236,6 +243,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/export/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/installations/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/datasources/[^/]+/operations$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/generic-settings$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/members$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/settings$")},
@@ -257,10 +265,16 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "PATCH", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/approvals/[^/]+:decide$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+/teams$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+/teams/[^/]+:revoke$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:narrow$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:retry$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:transferOwnership$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:uninstall$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/invitations/[^/]+:resend$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/notifications/[^/]+:read$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/datasources/[^/]+/operations$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/datasources/[^/]+/operations/[^/]+:invoke$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/generic-settings$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/members$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/teams$")},

@@ -1,5 +1,15 @@
 import { toJsonString } from "@bufbuild/protobuf";
-import type { FrontendServiceProtocol } from "@codefly-dev/saas-plugin-contract";
+import {
+	type ConnectProcedure,
+	connectProcedureTargetPath,
+	FRONTEND_SERVICE_ROOT_PREFIX,
+	type FrontendServiceAllowlistEntry,
+	type FrontendServiceProtocol,
+	frontendServiceTargetPath,
+	isConnectServiceName,
+	isFrontendServicePath,
+	resolveConnectProcedure,
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	emptyFrontendPluginCapabilitiesRequest,
 	FRONTEND_PLUGIN_CAPABILITIES_BFF_PATH,
@@ -11,6 +21,8 @@ import {
 	supportsFrontendPluginContract,
 } from "@codefly-dev/saas-plugin-contract/capabilities";
 
+import { parseTraceparent, serializeTraceparent } from "@/lib/trace-context";
+
 import {
 	type PluginServiceResolution,
 	resolvePluginService,
@@ -20,9 +32,7 @@ const DEFAULT_REQUEST_LIMIT = 1024 * 1024;
 const DEFAULT_RESPONSE_LIMIT = 5 * 1024 * 1024;
 const CAPABILITY_RESPONSE_LIMIT = 16 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
-const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._~-]+$/;
 const BEARER = /^Bearer [A-Za-z0-9._~-]{16,8192}$/;
-const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
 const REST_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const CONNECT_METHODS = new Set(["POST"]);
 const REQUEST_HEADERS = [
@@ -120,14 +130,33 @@ function allowedMethods(protocol: FrontendServiceProtocol): Set<string> {
 
 function safePath(request: Request, segments: readonly string[]): boolean {
 	const rawPath = new URL(request.url).pathname;
-	if (/%(?:00|25|2f|5c)/i.test(rawPath)) return false;
-	return segments.every(
-		(segment) =>
-			segment !== "." &&
-			segment !== ".." &&
-			segment.length <= 256 &&
-			SAFE_PATH_SEGMENT.test(segment),
-	);
+	// The raw path, before the framework's catch-all decoding: a separator or a
+	// percent that arrived encoded fails closed rather than being decoded into
+	// a segment that looks safe. `%3a` is in the set for the same reason the
+	// colon is forwarded literal — an encoded colon names a resource whose own
+	// name carries one, not the custom verb the decoded form would read as, and
+	// admitting it would let a caller spell a verb the binding never declared.
+	if (/%(?:00|25|2f|3a|5c)/i.test(rawPath)) return false;
+	return isFrontendServicePath(segments);
+}
+
+/**
+ * Whether this host will proxy the resolved alias at all, independent of the
+ * path asked for. Both rules are the composition's, re-asserted here because
+ * the BFF reads the GENERATED allowlist rather than the composition that
+ * validated it: a build-time rule no runtime re-checks is one a stale or
+ * hand-edited projection walks straight past.
+ */
+function proxyableEntry(entry: FrontendServiceAllowlistEntry): boolean {
+	if (entry.protocol === "connect") {
+		// Connect without a declared service list reaches nothing: the path
+		// names the service, so an absent list is an unbounded alias.
+		const services = entry.connectServices ?? [];
+		return services.length > 0 && services.every(isConnectServiceName);
+	}
+	// The origin root is Connect-only. A REST alias declaring it would be a
+	// prefix-less proxy of its whole upstream.
+	return entry.routePrefix !== FRONTEND_SERVICE_ROOT_PREFIX;
 }
 
 function sameOrigin(request: Request): boolean {
@@ -214,10 +243,21 @@ function proxyRequestHeaders(request: Request, requestID: string): Headers {
 	}
 	headers.set("authorization", request.headers.get("authorization") ?? "");
 	headers.set("x-request-id", requestID);
-	const traceparent = request.headers.get("traceparent")?.toLowerCase();
-	const trace = traceparent ? TRACEPARENT.exec(traceparent) : null;
-	if (trace && !/^0+$/.test(trace[1]) && !/^0+$/.test(trace[2])) {
-		headers.set("traceparent", traceparent ?? "");
+	// One parser for every boundary in this service (src/lib/trace-context.ts),
+	// so the solution proxy and this BFF never answer the same header two ways.
+	// It is stricter than the inline check it replaces: the W3C value is
+	// lowercase hex, so an uppercase one is not "structurally valid" and is now
+	// dropped rather than lowercased into validity.
+	//
+	// handlePluginBffRequest rejects anything without a syntactically valid
+	// Bearer before it reaches here, so this caller has presented a credential
+	// the backend will verify and may set the sampling decision.
+	const trace = parseTraceparent(request.headers.get("traceparent"));
+	if (trace) {
+		headers.set(
+			"traceparent",
+			serializeTraceparent(trace, { honorSampledFlag: true }),
+		);
 	}
 	return headers;
 }
@@ -240,9 +280,16 @@ function targetURL(
 	routePrefix: string,
 	path: readonly string[],
 	search: string,
+	procedure?: ConnectProcedure,
 ) {
 	const target = new URL(baseURL);
-	target.pathname = `${routePrefix}${path.length ? `/${path.map(encodeURIComponent).join("/")}` : ""}`;
+	// One source for the upstream path: on a Connect alias it is built from the
+	// procedure that was ADMITTED, not from the segments as they arrived, so the
+	// bound and the destination cannot disagree about which service is spoken
+	// to. On a REST alias the relative path lands under the declared prefix.
+	target.pathname = procedure
+		? connectProcedureTargetPath(routePrefix, procedure)
+		: frontendServiceTargetPath(routePrefix, path);
 	target.search = search;
 	return target;
 }
@@ -295,9 +342,30 @@ export async function handlePluginBffRequest(
 			? problem("plugin_service_not_found", 404, requestID)
 			: problem("backend_unavailable", 503, requestID);
 	}
+	// A resolved entry the composition's own rules would have refused is a
+	// projection this host cannot serve, not a bad request: nothing the caller
+	// could have asked differently would make the alias proxyable.
+	if (!proxyableEntry(resolution.value.entry)) {
+		return problem("backend_unavailable", 503, requestID);
+	}
 
 	const method = request.method.toUpperCase();
 	const capabilityProbe = isCapabilityProbe(params.path);
+	// A Connect alias carries procedures of the services its requirement
+	// declared, and nothing else: the protocol's path is
+	// `/<fully.qualified.Service>/<Method>`, so the caller names the service and
+	// only the declared list bounds which one it may be. The reserved
+	// capability probe is exempt because its procedure is this contract's own
+	// fixed handshake at a fixed path — never caller-chosen.
+	let procedure: ConnectProcedure | undefined;
+	if (!capabilityProbe && resolution.value.entry.protocol === "connect") {
+		const resolved = resolveConnectProcedure(
+			resolution.value.entry.connectServices ?? [],
+			params.path,
+		);
+		if (!resolved) return problem("invalid_path", 400, requestID);
+		procedure = resolved;
+	}
 	const methods = capabilityProbe
 		? new Set(["GET"])
 		: allowedMethods(resolution.value.entry.protocol);
@@ -381,6 +449,7 @@ export async function handlePluginBffRequest(
 				resolution.value.entry.routePrefix,
 				params.path,
 				incomingURL.search,
+				procedure,
 			);
 		}
 		const upstream = await dependencies.fetch(upstreamTarget, {

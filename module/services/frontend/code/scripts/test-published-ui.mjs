@@ -80,7 +80,7 @@ import { DataTable } from "@codefly-dev/ui/table";
 import { Content } from "@codefly-dev/ui/content";
 import { Board } from "@codefly-dev/ui/board";
 import { ConnectGitHubForm, type DatasourceClient } from "@codefly-dev/saas-ui";
-const client: DatasourceClient = {listSources:async()=>[],addGitHubSource:async()=>{},syncSource:async()=>"example-job",deleteSource:async()=>{}};
+const client: DatasourceClient = {listSources:async()=>[],addGitHubSource:async()=>{},reconcileSource:async(_o,_i,effectId)=>({effectId,status:"committed",jobId:"example-job"}),lookupReconcileSource:async()=>undefined,deleteSource:async()=>{}};
 const html=renderToStaticMarkup(<SidebarProvider><PageHeader title="Example workspace" /><CardRoot><CardContent><Button>Save</Button></CardContent></CardRoot><TabsRoot defaultValue="one"><TabsList><TabsTrigger value="one">Overview</TabsTrigger></TabsList><TabsContent value="one">Workspace content</TabsContent></TabsRoot><MetricCard metric={{label:"Requests",value:3}} /><MetricLineChart title="Requests" series={[]} /><Content value={"**Rendered** answer"} /></SidebarProvider>);
 if (!html.includes("Workspace content") || !html.includes("Save") || !html.includes("<strong>Rendered</strong>")) throw new Error("Packed UI did not render");
 if (typeof DataTable !== "function" || typeof ConnectGitHubForm !== "function" || typeof Board !== "function") throw new Error("Missing public component export");

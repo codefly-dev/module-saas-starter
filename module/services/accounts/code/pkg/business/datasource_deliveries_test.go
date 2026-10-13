@@ -449,7 +449,7 @@ func TestCompileDelivery_LargeBlobCarriesContentTicket(t *testing.T) {
 	}
 	store := newDatasourceFakeStore()
 	svc, _ := newDatasourceService(store, producer, gh)
-	svc.SetDatasourceTicketKey([]byte("test-key"))
+	svc.SetDatasourceKeys([]byte("test-ticket-key"), []byte("test-link-key"))
 	source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 	if _, err := svc.CompileGitHubDelivery(context.Background(), source,
@@ -660,42 +660,47 @@ func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 	}
 }
 
-func TestRunDatasourceReconcile_SchedulesDueSourcesOnly(t *testing.T) {
+// A source declares a reconcile trigger only while it is actually on its
+// schedule. The stored next-reconcile instant's PRESENCE is that switch — the
+// same one the park and restore paths have always used — so a source whose
+// schedule was cleared declares nothing for an executing module to admit
+// occurrences from, and a source with a live schedule declares the cron its
+// interval spells.
+//
+// This replaces the sweep's "selects only the due rows": there is no due query
+// any more, and what used to be a selection is now a declaration.
+func TestSourceTriggerDeclaration_DeclaresOnlyASourceOnItsSchedule(t *testing.T) {
 	producer := &recordingProducer{}
 	store := newDatasourceFakeStore()
 	svc, _ := newDatasourceService(store, producer, &fakeGitHub{})
 
-	due := githubSource(t, svc, "main", nil, "")
+	scheduled := githubSource(t, svc, "main", nil, "")
 	disabled := githubSource(t, svc, "main", nil, "")
-	setNextReconcile(t, store, due.ID, time.Now().Add(-time.Minute))
-	setNextReconcile(t, store, disabled.ID, time.Time{}) // nil = reconcile disabled
+	setNextReconcile(t, store, disabled.ID, time.Time{}) // nil = not on its schedule
 
-	n, err := svc.RunDatasourceReconcile(context.Background())
+	on, err := svc.GetDatasourceSource(context.Background(), scheduled.OrgID, scheduled.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 || len(producer.jobs) != 1 {
-		t.Fatalf("enqueued %d reconciles, want exactly the due source", len(producer.jobs))
+	off, err := svc.GetDatasourceSource(context.Background(), disabled.OrgID, disabled.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	job := producer.jobs[0]
-	if job.GetQueue() != business.DatasourceDeliveryQueue || job.GetTopic() != "datasource.github.reconcile" {
-		t.Fatalf("reconcile job routing = %s/%s", job.GetQueue(), job.GetTopic())
+
+	declared := business.DeclareSourceTrigger(on, nil, nil)
+	if !declared.Declarable() {
+		t.Fatalf("a source on its schedule declares no trigger: %q", declared.UndeclarableReason)
 	}
-	if job.GetAttributes()["datasource.source_id"] != due.ID {
-		t.Fatalf("reconcile enqueued for %q, want the due source %q", job.GetAttributes()["datasource.source_id"], due.ID)
+	// A GitHub source's half hour, as a cron an executing module validates.
+	if declared.Schedule.Cron != "*/30 * * * *" {
+		t.Fatalf("declared cron = %q, want the 30-minute interval's", declared.Schedule.Cron)
 	}
-	// The periodic sweep builds its own job, and it is a message on exactly the
-	// same terms as the manual "Sync now" request: the platform validates
-	// content_type (min_len 1) on every enqueue. A sweep job that declares none
-	// is refused, and RunDatasourceReconcile logs and continues WITHOUT bumping
-	// the schedule — so the same due batch fails forever and nothing behind it is
-	// ever reconciled, at WARN level with no other symptom.
-	if job.GetContentType() != "application/json" || string(job.GetPayload()) != "{}" {
-		t.Fatalf("reconcile sweep body = %q/%q, want an empty JSON object; an undeclared content type is refused before the sweep can reschedule",
-			job.GetContentType(), job.GetPayload())
+	if declared.Operation != business.DatasourceReconcileOperation {
+		t.Fatalf("declared operation = %q", declared.Operation)
 	}
-	if job.GetSchemaVersion() != 1 {
-		t.Fatalf("schema version = %d, want the reconcile request's (1), not the change set's (2)", job.GetSchemaVersion())
+
+	if cleared := business.DeclareSourceTrigger(off, nil, nil); cleared.Declarable() {
+		t.Fatalf("a source off its schedule declared a trigger: %+v", cleared.Schedule)
 	}
 }
 

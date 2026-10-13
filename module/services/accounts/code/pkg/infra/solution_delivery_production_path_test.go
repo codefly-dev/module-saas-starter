@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"accounts/internal/deliverytest"
 	"accounts/pkg/adapters"
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
@@ -41,14 +42,9 @@ import (
 // None of the three is visible when the inbox and the carrier check are fakes.
 // So these drive the real ones.
 //
-// ONE FAKE REMAINS, deliberately and with a reason that is not convenience: the
-// BundleVerifier. core's signed fixtures carry `FixtureBundle`, a documented
-// PLACEHOLDER — core verifies no attestation and ships none, because a real
-// bundle needs a trust root, a transparency-log entry and a certificate that
-// expires. Real keyless verification is exercised against an in-process
-// Sigstore in solution_host_keyless_verifier_test.go, which is where the
-// cryptography belongs. What is under test here is the host's ordering,
-// dispatch, persistence and reconcile, all of which are real.
+// Signing and verification use real platform-key envelopes. The remaining
+// doubles model the cluster API and the external policy log, while persistence
+// and reconciliation exercise the production path.
 
 // The signer identity this host attests delivery as for the fixtures. It is
 // core's own, because the shipped documents are written against it.
@@ -106,7 +102,7 @@ func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 	// real Postgres store.
 	service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
 	service.SetSolutionDelivery(
-		productionPathVerifier{signer: productionPathSigner},
+		deliverytest.Verifier(t, map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}}),
 		testStore,
 		infra.NewSolutionDeliveryCarrierCheck(infra.NewKubernetesClientForTest(t, server)),
 		map[string][]string{
@@ -146,14 +142,6 @@ func inbox(t *testing.T, kind business.SolutionDeliveryKind) map[string]*busines
 		byID[record.DocumentID] = record
 	}
 	return byID
-}
-
-type productionPathVerifier struct{ signer string }
-
-func (v productionPathVerifier) VerifyBundle(
-	context.Context, []byte, json.RawMessage,
-) (string, error) {
-	return v.signer, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +342,7 @@ func newProductionPathReconciler(
 	reconciler, err := business.NewSolutionHostBindingReconciler(service,
 		business.SolutionHostBindingReconcilerConfig{
 			Source:          business.NewDeliveredSolutionHostBindings(service),
-			Verifier:        productionPathVerifier{signer: productionPathSigner},
+			Verifier:        deliverytest.Verifier(t, map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}}),
 			Coordinate:      productionPathCoordinate,
 			Domains:         []string{productionPathDomain},
 			DomainsBySigner: map[string][]string{productionPathSigner: {productionPathDomain}},
@@ -386,7 +374,7 @@ func productionPathBinding(
 ) *solutionhost.SolutionHostBinding {
 	t.Helper()
 	document := &solutionhost.SolutionHostBinding{
-		Schema:           solutionhost.SchemaPresenceV2,
+		Schema:           solutionhost.SchemaPresenceV1,
 		Kind:             solutionhost.KindSolution,
 		Binding:          "acme.test." + solutionID,
 		Generation:       generation,
@@ -445,15 +433,9 @@ func productionPathTombstone(
 // CANONICAL bytes, which are the signing input, plus a bundle over them.
 func productionPathCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []byte {
 	t.Helper()
-	canonical, err := document.CanonicalBytes()
+	canonical, err := solutionhost.SignedPayload(document)
 	require.NoError(t, err)
-	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-		Schema:   solutionhost.SchemaSignedV1,
-		Document: canonical,
-		Bundle:   json.RawMessage(solutionhost.FixtureBundle),
-	})
-	require.NoError(t, err)
-	return carrier
+	return deliverytest.Carrier(t, canonical, productionPathSigner)
 }
 
 // productionPathPolicyLog witnesses a narrowing, so a withdrawal can take
@@ -531,4 +513,9 @@ func (l *productionPathPolicyLog) Entries(
 func wireNarrowingPolicyLog(service *business.Service) *business.Service {
 	service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
 	return service
+}
+
+func productionVerifier(t *testing.T) *solutionhost.Verifier {
+	t.Helper()
+	return deliverytest.Verifier(t, map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}})
 }

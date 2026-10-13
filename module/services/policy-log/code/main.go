@@ -93,10 +93,14 @@ func run(ctx context.Context, stop func()) error {
 	if err != nil {
 		return err
 	}
-	port := codefly.For(ctx).WithDefaultNetwork().API(grpcEndpointName).NetworkInstance().Port
-	if port == 0 {
+	grpcNetwork, err := codefly.For(ctx).Endpoint(grpcEndpointName).API("grpc").ResolveNetworkInstance()
+	if err != nil {
+		return fmt.Errorf("resolve Codefly endpoint %q: %w", grpcEndpointName, err)
+	}
+	if grpcNetwork == nil || grpcNetwork.Port == 0 {
 		return fmt.Errorf("Codefly did not inject a port for the %q endpoint", grpcEndpointName)
 	}
+	port := grpcNetwork.Port
 	// The fixed path takes no argument and consults no override: a key this
 	// process chose would witness under an identity nobody pinned.
 	key, err := identity.LoadSigningKey()

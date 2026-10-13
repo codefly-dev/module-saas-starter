@@ -76,7 +76,10 @@ const (
 	changeTypeRenamed  = "renamed"
 
 	datasourceDeliveryMaxAttempts = 24
-	datasourceReconcileBatchSize  = 100
+
+	// datasourceReconcileBatchSize bounds one pass of the stopgap sweep.
+	// STOPGAP (issue #1112): deleted with RunDatasourceReconcile.
+	datasourceReconcileBatchSize = 100
 )
 
 // DeliveryDisposition is the outcome of compiling one delivery, for observability
@@ -854,6 +857,41 @@ func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, 
 	return ordinal, err
 }
 
+// ---------------------------------------------------------------------------
+// STOPGAP: the host's own reconcile sweep (issue #1112)
+// ---------------------------------------------------------------------------
+//
+// A source's reconcile schedule is DECLARED by this host (datasource_trigger.go)
+// and is meant to be FIRED by a composed module that executes declared work.
+// #1090 deleted this producer on the strength of that declaration. Nothing
+// consumes it: GetSourceTriggerDeclaration is a read, no host path installs a
+// release, and the module that fires triggers keys an installed trigger by its
+// release NAME while this host declares every source under one name
+// (DatasourceReconcileRelease) — so per-source triggers cannot be installed for
+// more than one source even once something tries. The result was that no
+// scheduled reconcile ran anywhere: a lost webhook became permanent and a pull
+// provider never refreshed without "Sync now".
+//
+// So the sweep is back, and it is labelled rather than quietly reinstated.
+//
+// DELETE IT WHEN, and only when, a composed runtime actually consumes
+// per-source triggers — which needs the runtime's own gap closed first, and
+// that gap is named in WORK_CONTEXTS.md § Triggers rather than worked around
+// here. What to delete, in one commit: RunDatasourceReconcile,
+// enqueueScheduledReconcile, enqueueScheduledPullSync, scheduledReconcileKey,
+// datasourceReconcileBatchSize, Store.ListDatasourceSourcesDueForReconcile and
+// its Postgres implementation, and the sweep's tick in work.go.
+//
+// WHILE IT IS HERE the two schedules are not equivalent and must not both run.
+// A declared occurrence and a sweep pass enqueue under different idempotency
+// keys — the occurrence's is the effect identity its firer chose, the sweep's
+// is the schedule instant below — so nothing collapses them into one job. The
+// per-source FIFO ordering key means the second one serialises behind the
+// first rather than running beside it, and for GitHub it then finds the head
+// unmoved; for a pull provider it is a second full re-send of the whole
+// source. That is the cost of a double fire, and it is why this is a stopgap
+// to delete and not a safety net to keep.
+
 // RunDatasourceReconcile is the periodic sweep: it enqueues reconcile work for
 // every active source whose schedule has elapsed and reschedules it. A GitHub
 // source gets a conditional reconcile on the delivery queue — the job resolves
@@ -867,6 +905,9 @@ func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, 
 // two replicas selecting the same row before either bumps it enqueue one job
 // between them rather than two. The bump that follows moves the schedule, so the
 // next sweep computes a different key.
+//
+// STOPGAP (issue #1112): see the block above for the one condition that
+// deletes this.
 func (s *Service) RunDatasourceReconcile(ctx context.Context) (int, error) {
 	w := wool.Get(ctx).In("RunDatasourceReconcile")
 	if s.datasourceJobs == nil {
@@ -900,7 +941,12 @@ func (s *Service) RunDatasourceReconcile(ctx context.Context) (int, error) {
 // enqueueScheduledReconcile dispatches one due source onto the path its provider
 // actually syncs on. GitHub is compiled by the change-set worker off the delivery
 // queue; every other provider is a full pull performed by the sync worker, which
-// is the only engine those connectors have (RunDatasourceSync).
+// is the only engine those connectors have (RunDatasourceSync). They are exactly
+// the two engines one declared occurrence hands the pass to
+// (enqueueReconcileOccurrence), which is what makes ReconcileSource the operation
+// both paths perform rather than two different reconciles.
+//
+// STOPGAP (issue #1112).
 func (s *Service) enqueueScheduledReconcile(ctx context.Context, source *DatasourceSource) error {
 	if source.Provider == DatasourceProviderGitHub {
 		return s.enqueueReconcile(ctx, source, reconcileModeConditional, scheduledReconcileKey(source))
@@ -922,6 +968,8 @@ func (s *Service) enqueueScheduledReconcile(ctx context.Context, source *Datasou
 // A source with no schedule cannot be selected by the due query, so the nil case
 // is unreachable there; it falls back to a fresh key rather than collapsing every
 // such source onto one shared key.
+//
+// STOPGAP (issue #1112).
 func scheduledReconcileKey(source *DatasourceSource) string {
 	if source.NextReconcileAt == nil {
 		return NewIDString()
@@ -967,6 +1015,8 @@ func (s *Service) enqueueFirstPullSync(ctx context.Context, source *DatasourceSo
 // enqueues, so one engine performs the pull and a scheduled sync cannot drift
 // from a manual one. Only its Source differs, so an operator reading a job can
 // tell the schedule's pass from a person's.
+//
+// STOPGAP (issue #1112).
 func (s *Service) enqueueScheduledPullSync(ctx context.Context, source *DatasourceSource) error {
 	return s.enqueuePullSync(ctx, source, DatasourceScheduledSyncSource, scheduledReconcileKey(source))
 }

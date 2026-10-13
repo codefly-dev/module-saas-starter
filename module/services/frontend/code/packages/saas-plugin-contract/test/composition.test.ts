@@ -219,6 +219,8 @@ describe("public frontend plugin composition", () => {
 			service({ protocol: "grpc" as "rest" }),
 			/unsupported protocol/,
 		],
+		// The origin root is a Connect-only prefix (see the acceptance below): a
+		// REST alias declaring it would be a prefix-less proxy of its upstream.
 		["root route", service({ routePrefix: "/" }), /route prefix.*unsafe/],
 		[
 			"traversal route",
@@ -266,6 +268,130 @@ describe("public frontend plugin composition", () => {
 			).toThrow(diagnostic);
 		},
 	);
+
+	it("accepts the origin root as a connect requirement's prefix", () => {
+		// Where the Connect protocol puts a procedure, and where this contract's
+		// own fixed capability handshake has always been probed. Without it a
+		// Connect backend serving at its root is unreachable through the
+		// transport, which is what made a composition take its Connect transport
+		// from somewhere else.
+		const config = defineFrontend({
+			branding: {
+				name: "Example",
+				mark: "E",
+				title: "Example",
+				description: "Example",
+			},
+			plugins: [
+				plugin({
+					services: [
+						service({
+							alias: "procedures",
+							protocol: "connect",
+							routePrefix: "/",
+							connectServices: ["example.records.v1.RecordService"],
+						}),
+					],
+				}),
+			],
+		});
+		// The declared services reach the installed inventory, and from there the
+		// generated allowlist the BFF reads: dropped here, every Connect alias
+		// would reach nothing at runtime.
+		expect(config.services[0]).toMatchObject({
+			alias: "procedures",
+			protocol: "connect",
+			routePrefix: "/",
+			connectServices: ["example.records.v1.RecordService"],
+		});
+	});
+
+	it.each([
+		[
+			"no declared services",
+			service({ alias: "procedures", protocol: "connect", routePrefix: "/" }),
+			/must declare the fully qualified Connect services/,
+		],
+		[
+			"an empty service list",
+			service({
+				alias: "procedures",
+				protocol: "connect",
+				routePrefix: "/",
+				connectServices: [],
+			}),
+			/must declare the fully qualified Connect services/,
+		],
+		[
+			"an unqualified service name",
+			service({
+				alias: "procedures",
+				protocol: "connect",
+				routePrefix: "/",
+				connectServices: ["RecordService"],
+			}),
+			/must declare the fully qualified Connect services/,
+		],
+		[
+			"a service name carrying a path separator",
+			service({
+				alias: "procedures",
+				protocol: "connect",
+				routePrefix: "/",
+				connectServices: ["example.records.v1.RecordService/Recover"],
+			}),
+			/must declare the fully qualified Connect services/,
+		],
+		[
+			"the same service twice",
+			service({
+				alias: "procedures",
+				protocol: "connect",
+				routePrefix: "/",
+				connectServices: [
+					"example.records.v1.RecordService",
+					"example.records.v1.RecordService",
+				],
+			}),
+			/declares the same Connect service twice/,
+		],
+		[
+			"declared services on a REST requirement",
+			service({ connectServices: ["example.records.v1.RecordService"] }),
+			/declares connect services on a 'rest' requirement/,
+		],
+	])(
+		"rejects a connect requirement with %s",
+		(_case, requirement, diagnostic) => {
+			// A Connect procedure's path carries its own service name, so the
+			// prefix cannot bound which service the alias speaks to. Only this list
+			// can, and a requirement that does not declare it reaches every service
+			// the upstream origin serves, as the viewer.
+			expect(() =>
+				validateFrontendPlugins([plugin({ services: [requirement] })]),
+			).toThrow(diagnostic);
+		},
+	);
+
+	it("accepts a connect requirement mounted under a path prefix", () => {
+		// The prefix says where the upstream mounts Connect; the service list says
+		// which of its services the alias may reach. The two are independent, so a
+		// Connect backend behind a product path prefix is reachable and bounded.
+		expect(() =>
+			validateFrontendPlugins([
+				plugin({
+					services: [
+						service({
+							alias: "procedures",
+							protocol: "connect",
+							routePrefix: "/v1/connect",
+							connectServices: ["example.records.v1.RecordService"],
+						}),
+					],
+				}),
+			]),
+		).not.toThrow();
+	});
 
 	it("accepts a safe product-owned REST capability probe path", () => {
 		const config = defineFrontend({

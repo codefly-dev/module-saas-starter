@@ -19,20 +19,51 @@ const capabilityParams: PluginBffParams = {
 	path: [".well-known", "capabilities"],
 };
 
+// A Connect requirement names the services it may reach, because a procedure's
+// path carries its own service name and the prefix therefore cannot bound it.
+const CONNECT_SERVICES = ["example.records.v1.RecordService"];
+
 function entry(
 	protocol: "connect" | "rest" = "rest",
+	routePrefix = "/api/v1/example",
+	// `undefined` takes the protocol's default; `null` is an entry that declares
+	// no services at all, which is the shape the runtime rule has to refuse.
+	connectServices?: readonly string[] | null,
 ): FrontendServiceAllowlistEntry {
+	const services =
+		connectServices === undefined && protocol === "connect"
+			? CONNECT_SERVICES
+			: connectServices;
 	return {
 		plugin: "example",
 		alias: "api",
 		protocol,
-		routePrefix: "/api/v1/example",
+		routePrefix,
+		...(services ? { connectServices: services } : {}),
 		compatibility: { contract: "example.api", major: 1 },
 		target: {
 			module: "example-module",
 			service: "example-api",
 			endpoint: protocol,
 		},
+	};
+}
+
+function resolved(
+	protocol: "connect" | "rest" = "rest",
+	routePrefix = "/api/v1/example",
+	// `undefined` takes the fixture default; `null` is an entry that declares no
+	// services at all, which is the shape the runtime rule has to refuse.
+	connectServices?: readonly string[] | null,
+): Partial<PluginBffDependencies> {
+	return {
+		resolve: () => ({
+			ok: true,
+			value: {
+				entry: entry(protocol, routePrefix, connectServices),
+				baseURL: "http://example-api.internal",
+			},
+		}),
 	};
 }
 
@@ -227,6 +258,67 @@ describe("generic frontend plugin BFF", () => {
 				new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("traceparent"),
 			).toBeNull();
 		}
+	});
+
+	// Both boundaries that forward trace context — this BFF and the solution
+	// proxy — now share src/lib/trace-context.ts, so the same header can never
+	// get two answers depending on which one a caller happens to reach. The
+	// inline check this replaced lowercased the value first, which forwarded an
+	// uppercase-hex traceparent the solution proxy dropped; the W3C value is
+	// lowercase hex, so the strict reading is the correct one.
+	it("drops an uppercase-hex traceparent, as the solution proxy does", async () => {
+		const fetchMock = vi.fn(
+			async (target: RequestInfo | URL, init?: RequestInit) => {
+				void target;
+				void init;
+				return new Response("{}");
+			},
+		);
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/traffic", {
+				headers: {
+					traceparent:
+						"00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01",
+				},
+			}),
+			params,
+			dependencies({ fetch: fetchMock as unknown as typeof fetch }),
+		);
+		expect(response.status).toBe(200);
+		expect(
+			new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("traceparent"),
+		).toBeNull();
+	});
+
+	// The frozen v1 contract forwards traceparent and nothing else of the trace
+	// context: tracestate, baggage and vendor trace headers stay behind, which
+	// is why this boundary calls parse/serialize rather than forwardTraceContext.
+	it("forwards traceparent without tracestate or baggage", async () => {
+		const fetchMock = vi.fn(
+			async (target: RequestInfo | URL, init?: RequestInit) => {
+				void target;
+				void init;
+				return new Response("{}");
+			},
+		);
+		const traceparent =
+			"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/traffic", {
+				headers: {
+					traceparent,
+					tracestate: "vendor=abc",
+					baggage: "userId=alice",
+				},
+			}),
+			params,
+			dependencies({ fetch: fetchMock as unknown as typeof fetch }),
+		);
+		expect(response.status).toBe(200);
+		const forwarded = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+		expect(forwarded.get("traceparent")).toBe(traceparent);
+		expect(forwarded.has("tracestate")).toBe(false);
+		expect(forwarded.has("baggage")).toBe(false);
 	});
 
 	it("requires a well-formed bearer without trusting the presence cookie", async () => {
@@ -552,18 +644,18 @@ describe("generic frontend plugin BFF", () => {
 		expect(rest.status).toBe(405);
 		expect(rest.headers.get("allow")).toBe("GET, POST, PUT, PATCH, DELETE");
 
+		// On a path the alias actually carries: a connect alias serves procedures,
+		// and the path check below runs before the method check, so a REST-shaped
+		// path would refuse here for the other reason and pin nothing.
 		const connect = await handlePluginBffRequest(
-			request(),
-			params,
-			dependencies({
-				resolve: () => ({
-					ok: true,
-					value: {
-						entry: entry("connect"),
-						baseURL: "http://example-api.internal",
-					},
-				}),
-			}),
+			request(
+				"/api/plugins/example/api/example.records.v1.RecordService/Recover",
+			),
+			{
+				...params,
+				path: ["example.records.v1.RecordService", "Recover"],
+			},
+			dependencies(resolved("connect")),
 		);
 		expect(connect.status).toBe(405);
 		expect(connect.headers.get("allow")).toBe("POST");
@@ -639,6 +731,347 @@ describe("generic frontend plugin BFF", () => {
 		);
 		expect(response.status).toBe(502);
 		expect(await problemCode(response)).toBe("upstream_response_too_large");
+	});
+
+	// Finding 4 of the contributed-board review: the transport refused every
+	// binding whose last segment carries a colon, so the three task procedures
+	// written in Google's custom-verb form were unreachable from a contributed
+	// page and a composition had to take a transport from somewhere else.
+	it.each([
+		[
+			["records:recover"],
+			"/api/plugins/example/api/records:recover",
+			"http://example-api.internal/api/v1/example/records:recover",
+		],
+		[
+			["records", "record-1", "commands:recover"],
+			"/api/plugins/example/api/records/record-1/commands:recover",
+			"http://example-api.internal/api/v1/example/records/record-1/commands:recover",
+		],
+		[
+			["records", "record-1", "interactions", "interaction-1:respond"],
+			"/api/plugins/example/api/records/record-1/interactions/interaction-1:respond",
+			"http://example-api.internal/api/v1/example/records/record-1/interactions/interaction-1:respond",
+		],
+		[
+			["triggers", "nightly:fire"],
+			"/api/plugins/example/api/triggers/nightly:fire",
+			"http://example-api.internal/api/v1/example/triggers/nightly:fire",
+		],
+	])(
+		"forwards the custom-verb route %j under the same bearer as every other call",
+		async (path, incoming, expected) => {
+			const fetchMock = vi.fn(
+				async (target: RequestInfo | URL, init?: RequestInit) => {
+					void target;
+					void init;
+					return new Response(JSON.stringify({ recovered: true }));
+				},
+			);
+			const response = await handlePluginBffRequest(
+				request(incoming, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ idempotency_key: "key-1" }),
+				}),
+				{ ...params, path },
+				dependencies({ fetch: fetchMock as typeof fetch }),
+			);
+
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual({ recovered: true });
+			const [target, init] = fetchMock.mock.calls[0];
+			// The colon stays literal: percent-encoding it names a different
+			// resource, and the binding is only reachable with the separator.
+			expect(String(target)).toBe(expected);
+			expect(new Headers(init?.headers).get("authorization")).toBe(TOKEN);
+			expect(init?.method).toBe("POST");
+		},
+	);
+
+	it.each([
+		[["records:recover", "commands"], "interior colon"],
+		[["records:recover:again"], "two colons"],
+		[[":recover"], "no resource"],
+		[["records:"], "no verb"],
+		[["records:Recover"], "upper-case verb"],
+	])("refuses a colon outside the custom-verb form (%j, %s)", async (path) => {
+		const response = await handlePluginBffRequest(
+			request(`/api/plugins/example/api/${path.join("/")}`),
+			{ ...params, path },
+			dependencies(),
+		);
+		expect(response.status).toBe(400);
+		expect(await problemCode(response)).toBe("invalid_path");
+	});
+
+	it("refuses a custom-verb route outside the declared alias as before", async () => {
+		const fetchMock = vi.fn(async () => new Response("{}") as Response);
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/other/api/records:recover", { method: "POST" }),
+			{ plugin: "other", alias: "api", path: ["records:recover"] },
+			dependencies({
+				fetch: fetchMock as typeof fetch,
+				resolve: () => ({ ok: false, reason: "not_installed" }),
+			}),
+		);
+		expect(response.status).toBe(404);
+		expect(await problemCode(response)).toBe("plugin_service_not_found");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("carries a connect procedure to the origin root its requirement declares", async () => {
+		// The Connect protocol puts a procedure at `/<Service>/<Method>` from the
+		// origin, which is where this contract's own capability handshake has
+		// always been probed. Until a requirement could declare that root, a
+		// Connect backend serving there was unreachable through the transport.
+		const fetchMock = vi.fn(
+			async (target: RequestInfo | URL, init?: RequestInit) => {
+				void target;
+				void init;
+				return new Response(JSON.stringify({ task: { id: "record-1" } }));
+			},
+		);
+		const response = await handlePluginBffRequest(
+			request(
+				"/api/plugins/example/api/example.records.v1.RecordService/RecoverRecord",
+				{
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"connect-protocol-version": "1",
+					},
+					body: "{}",
+				},
+			),
+			{
+				...params,
+				path: ["example.records.v1.RecordService", "RecoverRecord"],
+			},
+			dependencies({
+				...resolved("connect", "/"),
+				fetch: fetchMock as typeof fetch,
+			}),
+		);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ task: { id: "record-1" } });
+		const [target, init] = fetchMock.mock.calls[0];
+		expect(String(target)).toBe(
+			"http://example-api.internal/example.records.v1.RecordService/RecoverRecord",
+		);
+		expect(new Headers(init?.headers).get("connect-protocol-version")).toBe(
+			"1",
+		);
+		expect(new Headers(init?.headers).get("authorization")).toBe(TOKEN);
+	});
+
+	it.each([
+		[["traffic"], "a REST-shaped path"],
+		[["RecordService", "RecoverRecord"], "an unqualified service"],
+		[["example.records.v1.RecordService"], "a missing method"],
+		[["example.records.v1.RecordService", "records:recover"], "a custom verb"],
+	])(
+		"refuses %j on a connect alias (%s), which serves procedures only",
+		async (path) => {
+			const fetchMock = vi.fn(async () => new Response("{}") as Response);
+			const response = await handlePluginBffRequest(
+				request(`/api/plugins/example/api/${path.join("/")}`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: "{}",
+				}),
+				{ ...params, path },
+				dependencies({
+					...resolved("connect", "/"),
+					fetch: fetchMock as typeof fetch,
+				}),
+			);
+			expect(response.status).toBe(400);
+			expect(await problemCode(response)).toBe("invalid_path");
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		[
+			"a service the requirement never declared",
+			["example.secrets.v1.SecretService", "Read"],
+		],
+		[
+			"a service that only looks declared",
+			["example.records.v1.RecordServiceX", "Recover"],
+		],
+	])(
+		"refuses a procedure of %s, so a root-prefixed alias is not the whole origin",
+		async (_label, path) => {
+			// The defect this closes: with `routePrefix: "/"` the FIRST path
+			// segment is the service name, chosen by the caller, so a contributed
+			// page could POST any `<Service>/<Method>` the upstream origin serves
+			// under the viewer's own forwarded bearer. Only the requirement's
+			// declared list bounds it.
+			const fetchMock = vi.fn(async () => new Response("{}") as Response);
+			const response = await handlePluginBffRequest(
+				request(`/api/plugins/example/api/${path.join("/")}`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: "{}",
+				}),
+				{ ...params, path },
+				dependencies({
+					...resolved("connect", "/"),
+					fetch: fetchMock as typeof fetch,
+				}),
+			);
+			expect(response.status).toBe(400);
+			expect(await problemCode(response)).toBe("invalid_path");
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		["a connect alias declaring no services", "connect", "/", null],
+		["a connect alias declaring an empty list", "connect", "/", []],
+		[
+			"a connect alias declaring an unqualified service",
+			"connect",
+			"/",
+			["RecordService"],
+		],
+		["a REST alias declaring the origin root", "rest", "/", null],
+	])(
+		"refuses to proxy %s at all",
+		async (_label, protocol, routePrefix, connectServices) => {
+			// Both rules are the composition's, re-asserted at runtime because the
+			// BFF reads the GENERATED allowlist rather than the composition that
+			// validated it: a stale or hand-edited projection would otherwise make
+			// a Connect alias unbounded, or a REST alias a prefix-less proxy of its
+			// whole upstream. It is the alias that cannot be served, not the
+			// request, so it is 503 rather than a 4xx the caller could fix.
+			const fetchMock = vi.fn(async () => new Response("{}") as Response);
+			const response = await handlePluginBffRequest(
+				request("/api/plugins/example/api/traffic"),
+				params,
+				dependencies({
+					...resolved(
+						protocol as "connect" | "rest",
+						routePrefix,
+						connectServices as readonly string[] | null,
+					),
+					fetch: fetchMock as typeof fetch,
+				}),
+			);
+			expect(response.status).toBe(503);
+			expect(await problemCode(response)).toBe("backend_unavailable");
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
+
+	it("carries a connect procedure under the mount prefix its requirement declares", async () => {
+		// The non-root Connect prefix: the prefix says where the upstream mounts
+		// Connect, the declared list says which of its services the alias speaks
+		// to, and the two are independent. #1098 left this shape with no test, and
+		// the service-scoped form it replaced unreachable.
+		const fetchMock = vi.fn(
+			async (target: RequestInfo | URL, init?: RequestInit) => {
+				void target;
+				void init;
+				return new Response(JSON.stringify({ record: { id: "record-1" } }));
+			},
+		);
+		const response = await handlePluginBffRequest(
+			request(
+				"/api/plugins/example/api/example.records.v1.RecordService/RecoverRecord",
+				{
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"connect-protocol-version": "1",
+					},
+					body: "{}",
+				},
+			),
+			{
+				...params,
+				path: ["example.records.v1.RecordService", "RecoverRecord"],
+			},
+			dependencies({
+				...resolved("connect", "/v1/connect"),
+				fetch: fetchMock as typeof fetch,
+			}),
+		);
+
+		expect(response.status).toBe(200);
+		expect(String(fetchMock.mock.calls[0][0])).toBe(
+			"http://example-api.internal/v1/connect/example.records.v1.RecordService/RecoverRecord",
+		);
+	});
+
+	it("refuses an encoded colon in the raw path", async () => {
+		// `%3A` joins the separators that fail closed. The colon is forwarded
+		// LITERAL on a custom verb precisely because percent-encoding it names a
+		// different resource, so a request that spelled `%3A` must not be decoded
+		// into the verb form by the framework's catch-all and then admitted as
+		// one. Driven through the real route file in
+		// src/app/api/plugins/.../__tests__/route.raw-path.test.ts, where the
+		// decoding actually happens.
+		const fetchMock = vi.fn(async () => new Response("{}") as Response);
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/records%3Arecover", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "{}",
+			}),
+			{ ...params, path: ["records:recover"] },
+			dependencies({ fetch: fetchMock as typeof fetch }),
+		);
+		expect(response.status).toBe(400);
+		expect(await problemCode(response)).toBe("invalid_path");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("refuses a traversal wearing a custom verb", async () => {
+		// `..:recover` is neither "." nor "..", so the segment-level not-dot rule
+		// let it through while the custom-verb form matched it: the upstream
+		// binding would have received ".." as the resource.
+		const fetchMock = vi.fn(async () => new Response("{}") as Response);
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/..:recover", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "{}",
+			}),
+			{ ...params, path: ["..:recover"] },
+			dependencies({ fetch: fetchMock as typeof fetch }),
+		);
+		expect(response.status).toBe(400);
+		expect(await problemCode(response)).toBe("invalid_path");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("still probes the reserved capability path on a root-prefixed connect alias", async () => {
+		const fetchMock = vi.fn(async (target: RequestInfo | URL) => {
+			void target;
+			return Response.json({
+				schemaVersion: 1,
+				contract: "example.api",
+				contractMajor: 1,
+				capabilities: ["records.recover"],
+			});
+		});
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/.well-known/capabilities"),
+			capabilityParams,
+			dependencies({
+				...resolved("connect", "/"),
+				fetch: fetchMock as typeof fetch,
+			}),
+		);
+
+		expect(response.status).toBe(200);
+		expect(String(fetchMock.mock.calls[0][0])).toBe(
+			"http://example-api.internal/saas.frontend.plugin.v1.FrontendPluginCapabilityService/GetFrontendPluginCapabilities",
+		);
 	});
 
 	it("maps timeout, abort, and network failures to stable problems", async () => {

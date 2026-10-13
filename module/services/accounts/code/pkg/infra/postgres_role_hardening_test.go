@@ -58,6 +58,10 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// — no UPDATE and no DELETE, because an inbox that can be edited is not a
 	// record of what was received.
 	"solution_delivery_documents": {},
+	// The module envelope: the authority ceiling a platform super_admin
+	// writes. Request traffic has no access; the control plane appends a
+	// revision and never edits one.
+	"module_envelopes": {},
 	// The policy log's local half. Request traffic has no access at all: a
 	// receipt is evidence about authority, and the request path neither reads
 	// nor writes it.
@@ -80,6 +84,10 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"dashboards":                           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"installations":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_sources":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_source_operations":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_operation_attempts":        {selectRows: true, insertRows: true, deleteRows: true},
+	"codefly_effect_receipts":              {selectRows: true, insertRows: true, deleteRows: true},
+	"datasource_oauth_consumed_states":     {selectRows: true, insertRows: true, deleteRows: true},
 	"datasource_account_links":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_group_bindings":            {selectRows: true, insertRows: true, deleteRows: true},
 	"datasource_domains":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
@@ -363,6 +371,13 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "executable_artifact_approvals" {
 				want = relationPrivileges{}
 			}
+			// Callable-source declarations, OAuth state, attempts and receipts
+			// are tenant-only. The control plane must not read or mutate them.
+			switch relation {
+			case "datasource_source_operations", "datasource_oauth_consumed_states",
+				"datasource_operation_attempts", "codefly_effect_receipts":
+				want = relationPrivileges{}
+			}
 			if relation == "feature_flags" {
 				want = relationPrivileges{selectRows: true}
 			}
@@ -405,6 +420,13 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// which is only worth anything if nothing could have rewritten it.
 			// A correction is a new generation.
 			if relation == "solution_delivery_documents" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// module_envelopes is APPEND-ONLY for the same reason: each row is
+			// the whole ceiling at one revision, and a ceiling whose history can
+			// be rewritten cannot say who allowed what. A correction is a new
+			// revision.
+			if relation == "module_envelopes" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
 			// policy_log_commits and policy_log_cursor are read, inserted and

@@ -69,6 +69,46 @@ reference composition), for six in total; a consumer's root module is its own.
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.
 
+The recurring worker-heartbeat test uses Go's `testing/synctest` virtual clock;
+its assertions must not depend on wall-clock scheduling under parallel CI load.
+The module-authority qualification helper models both the declared cross-tenant
+ceiling and current installation consent; a person's source delegation alone
+must never substitute for either. Its runtime credential and delegated parent
+must also name the same installation organization.
+
+Dependency-backed tests use Core's default isolated control channel. With CLI
+v0.1.185, keep the SDK session suffix on each package's naming scope: it gives
+each invocation fresh database state. Do not opt into `WithSharedControlChannel`,
+which is only for older CLIs and reuses fixed local database directories across
+otherwise independent runs and migration revisions.
+
+Core is pinned per Go module. The host's five services (accounts, auth-gateway,
+policy-log, store, telemetry) run one core release, v0.19.3, which carries the
+issuer-side `Authority.ReadBack`. The module agent (the root module),
+`module/tools` and the module-authority qualification module stay on released
+v0.18.0. Never ship a host release on an untagged pseudo-version. Run
+qualification with `GOWORK=off` so a developer workspace cannot mask the pinned
+dependency.
+Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.54,
+whose builder uses Go 1.27.2 under `GOTOOLCHAIN=local`; CI uses the same patch.
+Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).
+A source audit under a newer compiler does not qualify the compiler used in the
+image: move the owning agent and image contract together, regenerate the recipe,
+and check the built executable's toolchain evidence. Never lower the accounts
+minimum to accommodate an older builder.
+CLI v0.1.185 requires an explicit run-level test outcome from every service
+agent. The cache, store and vault manifests pin released Redis 0.0.97,
+Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
+An empty legacy response is not evidence that tests passed; do not bypass that
+check or disable the service's test phase to accept it.
+
+Accounts, auth-gateway, policy-log, store and telemetry use released SDK v0.3.1;
+accounts must not retain the pre-release SDK SHA from the callable-source
+development branch. Their listeners resolve allocated
+endpoints through `ResolveNetworkInstance`, which selects the delivered or local
+endpoint from the runtime environment; the removed `WithDefaultNetwork` switch
+must not be replaced with a hard-coded address or port.
+
 ## Runtime composition seams
 
 Solutions and composed modules are independently deployed and **self-register at
@@ -93,20 +133,49 @@ Design records: [SOLUTION_REGISTRATION.md](./SOLUTION_REGISTRATION.md),
 ## Configuration
 
 `configurations/<env>/*` declares the groups composition provisions into a
-consumer workspace — `legal`, `identity`, `internal-auth`, `federation`,
-`module-capabilities`, and the rest. A consumer overrides a group only by
-declaring one of the same name.
+consumer workspace — `legal`, `identity`, `internal-auth`, `federation`, and
+the rest. A consumer overrides a group only by declaring one of the same name.
+No group declares module authority: the module principal registry is derived
+from delivered authority inside the module envelope a platform super_admin
+writes ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
-**Do not generalise about how an unset value behaves — read the group.** The three
-digest maps in `federation` (`MODULE_REGISTRATION_SECRETS`,
-`MODULE_IDENTITY_SECRETS`, `SOLUTION_REGISTRATION_SECRETS`) each fail closed when
-empty, and say so in the file: only the digest lives on this side, the plaintext
-goes to whoever presents it, and empty means nobody may register or obtain a Work
-Context. That is a property of those maps, not of configuration here.
+**A credential's blast radius is the set of services that DECLARE its group**, not
+the set that reads it: a declared group is injected whether anything reads it or
+not. So which group a credential lives in is the security decision, and
+`module/tools/credential_group_scope_test.go` holds both halves of it — which
+services may declare each credential-bearing group, and that the
+gateway-provenance key appears in no group but `gateway-trust`.
+
+That is why the identity provider's own credentials live in `identity-provider`
+rather than in `identity`: the frontend declares `identity` to render the login
+page from its public facts (issuer, client id, display name, scope), so a
+deployment putting the provider's client secret and management key there hands a
+public-facing process credentials it never reads. Only accounts declares
+`identity-provider`.
+
+**Do not generalise about how an unset value behaves — read the group.**
+`federation` fails closed when its declared-presence keys are empty: no
+coordinate means no delivery surface and no execution binding, so no module may
+obtain a Work Context. It declares no module or solution secret — those three
+digest maps are deleted (#1056); a module proves its identity with its pod's
+projected ServiceAccount token. That is a property of that group, not of
+configuration here.
 
 Other groups ship a **working default**, which is the opposite posture: `local`
 carries `CODEFLY_INTERNAL_TOKEN=local-dev-only-replace-me` in
 `internal-auth.secret.env` and `IDENTITY_SIGNUP_MODE=open` in `identity.env`.
-Nothing rejects a shipped placeholder that reaches a real deployment, so an
-unprovisioned group is not a denied one — it is a live credential with a value
-everybody knows.
+
+For the credentials that decide **perimeter membership** — the cluster-internal
+token and the gateway-provenance token — a shipped default no longer reaches a
+deployed runtime: accounts and `auth-gateway` each refuse to start when one
+carries a marker from the same list the shipping gate requires of every secret
+default, or is shorter than 32 characters, and the refusal names the
+group-qualified key. The marker lists and the length floor live in
+`shipped_placeholder.go` beside each service's entrypoint, and
+`module/tools/shipped_placeholder_lockstep_test.go` holds all three copies
+identical — one added on only one side leaves either a published value a cell
+accepts or a default that side can no longer boot on.
+
+Every **other** group still ships a working default that a deployed runtime will
+use: an unprovisioned optional group is not a denied one. Where that matters for a
+credential, the loader's own "is this required" check is the place to say so.

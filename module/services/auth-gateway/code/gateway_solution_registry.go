@@ -15,8 +15,10 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -38,11 +40,21 @@ const (
 	solutionRefreshFloor = 250 * time.Millisecond
 )
 
-// solutionRegistryClient is the registry surface the gateway consumes. The
-// interface exists so the cache and the HTTP handlers can be exercised without
-// an accounts process.
+// solutionRegistrySnapshot joins only matching applied generations. The compact
+// registration has no workload field; the host-binding read carries Core's
+// complete presence document. No new wire schema duplicates that contract.
+type solutionRegistrySnapshot struct {
+	*accountsv1.ListSolutionRegistrationsResponse
+	workloadIDs map[string]string
+	// moduleEndpoints is, per declared module alias, the endpoints its applied
+	// presence declares for the service that runs it (appliedModuleEndpoints):
+	// names, resolved by the Codefly SDK on refresh.
+	moduleEndpoints map[string][]moduleEndpoint
+}
+
+// solutionRegistryClient is the registry surface used by the cache and handlers.
 type solutionRegistryClient interface {
-	List(ctx context.Context, req *accountsv1.ListSolutionRegistrationsRequest) (*accountsv1.ListSolutionRegistrationsResponse, error)
+	List(ctx context.Context, req *accountsv1.ListSolutionRegistrationsRequest) (*solutionRegistrySnapshot, error)
 }
 
 // accountsSolutionRegistry invokes the registry by method name over the
@@ -62,9 +74,32 @@ func (c *accountsSolutionRegistry) invoke(ctx context.Context, method string, re
 	return c.conn.Invoke(ctx, method, req, resp)
 }
 
-func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.ListSolutionRegistrationsRequest) (*accountsv1.ListSolutionRegistrationsResponse, error) {
+func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.ListSolutionRegistrationsRequest) (*solutionRegistrySnapshot, error) {
 	resp := &accountsv1.ListSolutionRegistrationsResponse{}
-	return resp, c.invoke(ctx, listSolutionRegistrationsMethod, req, resp)
+	if err := c.invoke(ctx, listSolutionRegistrationsMethod, req, resp); err != nil {
+		return nil, err
+	}
+	bindings := &accountsv1.ListSolutionHostBindingsResponse{}
+	if err := c.invoke(ctx, "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings", &accountsv1.ListSolutionHostBindingsRequest{}, bindings); err != nil {
+		return nil, err
+	}
+	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, workloadIDs: make(map[string]string), moduleEndpoints: make(map[string][]moduleEndpoint)}
+	for _, record := range resp.GetRegistrations() {
+		for _, binding := range bindings.GetBindings() {
+			// These reads may straddle reconciliation. Never attach a successor's
+			// identity to its predecessor's address, even within one generation.
+			if !proto.Equal(record, binding.GetRegistration()) {
+				continue
+			}
+			if id := appliedWorkloadSPIFFEID(binding); id != "" {
+				out.workloadIDs[record.GetSolutionId()] = id
+			}
+			if endpoints := appliedModuleEndpoints(binding); len(endpoints) > 0 {
+				out.moduleEndpoints[record.GetSolutionId()] = endpoints
+			}
+		}
+	}
+	return out, nil
 }
 
 // solutionResolution is why a solution is or is not routable right now. The
@@ -99,10 +134,22 @@ type solutionRegistryCache struct {
 	// it at time.Now.
 	now func() time.Time
 
-	mu       sync.RWMutex
-	records  map[string]*accountsv1.SolutionRegistration
-	revision int64
-	loaded   bool
+	// resolveEndpoint answers where a module endpoint lives. Production asks
+	// the Codefly SDK, which holds every address the composition handed this
+	// gateway; the registry holds none.
+	resolveEndpoint func(context.Context, moduleEndpoint) (string, error)
+
+	mu          sync.RWMutex
+	records     map[string]*accountsv1.SolutionRegistration
+	workloadIDs map[string]string
+	// moduleUpstreams is each declared module's resolved address, taken on the
+	// same refresh as the record it routes, so a lookup never pairs one
+	// snapshot's record with another's address.
+	moduleUpstreams map[string]*url.URL
+	// moduleRefusals remembers which (alias, reason) was already logged.
+	moduleRefusals sync.Map
+	revision       int64
+	loaded         bool
 	// attemptedAt is when a read was last ATTEMPTED, successfully or not. The
 	// refresh floor is measured from it rather than from the last SUCCESS: a
 	// failed read leaves the snapshot's age where it was, so measuring from that
@@ -116,9 +163,10 @@ type solutionRegistryCache struct {
 
 func newSolutionRegistryCache(client solutionRegistryClient) *solutionRegistryCache {
 	return &solutionRegistryCache{
-		client:  client,
-		now:     time.Now,
-		records: map[string]*accountsv1.SolutionRegistration{},
+		client:          client,
+		now:             time.Now,
+		resolveEndpoint: moduleEndpointResolver,
+		records:         map[string]*accountsv1.SolutionRegistration{},
 	}
 }
 
@@ -182,6 +230,8 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 		records[record.GetSolutionId()] = record
 	}
 	c.records = records
+	c.workloadIDs = resp.workloadIDs
+	c.moduleUpstreams = c.resolveModuleUpstreams(ctx, resp.moduleEndpoints)
 	c.revision = resp.GetRegistryRevision()
 	c.loaded = true
 	c.lastErr = nil
@@ -209,12 +259,97 @@ func (c *solutionRegistryCache) reconcile(ctx context.Context) {
 	}
 }
 
+// resolveModuleUpstreams resolves each declared module to the one address this
+// gateway forwards /v1/<alias> to: of the endpoints its applied presence
+// declares, the one the composition handed this gateway an address for — the
+// Codefly CLI writes exactly the endpoints composed solutions consume through
+// the host. None leaves the module unrouted; two are refused as ambiguous
+// rather than chosen between; an address the upstream policy refuses is
+// refused. Each refusal is logged once per alias and reason, not on every
+// refresh.
+func (c *solutionRegistryCache) resolveModuleUpstreams(ctx context.Context, endpoints map[string][]moduleEndpoint) map[string]*url.URL {
+	upstreams := make(map[string]*url.URL, len(endpoints))
+	for alias, candidates := range endpoints {
+		var resolved []*url.URL
+		var named []string
+		refused := false
+		for _, endpoint := range candidates {
+			address, err := c.resolveEndpoint(ctx, endpoint)
+			if err != nil {
+				continue
+			}
+			upstream, ok := routableUpstream(address)
+			if !ok {
+				c.noteModuleRefusal(alias, fmt.Sprintf("endpoint %s resolves to an address the upstream policy refuses", endpoint))
+				refused = true
+				continue
+			}
+			resolved = append(resolved, upstream)
+			named = append(named, endpoint.String())
+		}
+		switch {
+		case refused:
+		case len(resolved) == 1:
+			upstreams[alias] = resolved[0]
+		case len(resolved) == 0:
+			c.noteModuleRefusal(alias, "the composition handed this gateway no address for any endpoint its presence declares")
+		default:
+			c.noteModuleRefusal(alias, fmt.Sprintf("the composition handed this gateway addresses for several endpoints (%v); which one /v1/%s forwards to has no single answer", named, alias))
+		}
+	}
+	return upstreams
+}
+
+// noteModuleRefusal logs why a declared module is not routed, once per alias
+// and reason.
+func (c *solutionRegistryCache) noteModuleRefusal(alias, reason string) {
+	key := alias + "\x00" + reason
+	if _, seen := c.moduleRefusals.LoadOrStore(key, struct{}{}); seen {
+		return
+	}
+	log.Printf("solution registry: module %q is not routed: %s", alias, reason)
+}
+
+// String spells the endpoint as Codefly references one: module/service/name::api.
+func (e moduleEndpoint) String() string {
+	return e.Module + "/" + e.Service + "/" + e.Name + "::" + e.API
+}
+
+// moduleEndpointResolver is the resolver every cache starts with. A test binary
+// replaces it with one standing in for the composition's carriers.
+var moduleEndpointResolver = sdkModuleEndpointAddress
+
+// sdkModuleEndpointAddress asks the Codefly SDK where a module endpoint lives.
+func sdkModuleEndpointAddress(_ context.Context, endpoint moduleEndpoint) (string, error) {
+	instance, err := codefly.For(codefly.Context()).
+		Module(endpoint.Module).Service(endpoint.Service).Endpoint(endpoint.Name).API(endpoint.API).
+		ResolveNetworkInstance()
+	if err != nil {
+		return "", err
+	}
+	return instance.Address, nil
+}
+
+// routableUpstream holds an address to the declared-upstream URL policy: http or
+// https, a host, and nothing but an origin, on a host the guard admits. It is
+// the one policy for a reported solution origin and a resolved module address.
+func routableUpstream(raw string) (*url.URL, bool) {
+	upstream, err := url.Parse(raw)
+	if err != nil || upstream.Host == "" ||
+		(upstream.Scheme != "http" && upstream.Scheme != "https") || upstream.User != nil ||
+		(upstream.Path != "" && upstream.Path != "/") || upstream.RawQuery != "" || upstream.ForceQuery || upstream.Fragment != "" ||
+		isDisallowedRegisteredUpstreamHost(upstream.Hostname()) {
+		return nil, false
+	}
+	return &url.URL{Scheme: upstream.Scheme, Host: upstream.Host}, true
+}
+
 // lookup reads the cached record without touching the network.
-func (c *solutionRegistryCache) lookup(id string) (*accountsv1.SolutionRegistration, bool, bool) {
+func (c *solutionRegistryCache) lookup(id string) (*accountsv1.SolutionRegistration, string, *url.URL, bool, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	record, ok := c.records[id]
-	return record, ok, c.loaded
+	return record, c.workloadIDs[id], c.moduleUpstreams[id], ok, c.loaded
 }
 
 func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
@@ -227,8 +362,12 @@ func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
 // a verdict must never be derived without: whether the registry could actually
 // be consulted about it.
 type solutionLookup struct {
-	record *accountsv1.SolutionRegistration
-	found  bool
+	record     *accountsv1.SolutionRegistration
+	workloadID string
+	// moduleUpstream is the resolved address of a declared module, from the
+	// same snapshot as record.
+	moduleUpstream *url.URL
+	found          bool
 	// loaded is false until a snapshot has ever loaded on this replica.
 	loaded bool
 	// undecidable is set when this alias had no conclusive record in the
@@ -273,20 +412,22 @@ func (c *solutionRegistryCache) conclusive(
 func (c *solutionRegistryCache) lookupFresh(
 	ctx context.Context, id string, surface routingSurface,
 ) solutionLookup {
-	record, found, loaded := c.lookup(id)
+	record, workloadID, moduleUpstream, found, loaded := c.lookup(id)
 	if c.conclusive(record, found, surface) {
-		return solutionLookup{record: record, found: found, loaded: loaded}
+		return solutionLookup{record: record, workloadID: workloadID, moduleUpstream: moduleUpstream, found: found, loaded: loaded}
 	}
 	refreshErr := c.refreshIfStale(ctx)
 	if refreshErr != nil {
 		log.Printf("solution registry: on-demand refresh for %q failed: %v", id, refreshErr)
 	}
-	record, found, loaded = c.lookup(id)
+	record, workloadID, moduleUpstream, found, loaded = c.lookup(id)
 	return solutionLookup{
-		record:      record,
-		found:       found,
-		loaded:      loaded,
-		undecidable: refreshErr != nil && !c.conclusive(record, found, surface),
+		record:         record,
+		workloadID:     workloadID,
+		moduleUpstream: moduleUpstream,
+		found:          found,
+		loaded:         loaded,
+		undecidable:    refreshErr != nil && !c.conclusive(record, found, surface),
 	}
 }
 
@@ -310,6 +451,7 @@ func (c *solutionRegistryCache) lookupFresh(
 // that must refuse it is the one holding the viewer, and it refuses it as a
 // verdict rather than as a missing route.
 type solutionRouting struct {
+	WorkloadSPIFFEID string
 	// TargetID is the immutable solution target this alias resolves to, empty
 	// for a registration no declaration opened a target for.
 	TargetID string
@@ -376,24 +518,11 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	if !found || record.GetTombstonedAt() != nil {
 		return nil, solutionUnregistered
 	}
-	// The kind the record's DECLARATION states, before anything else about it is
-	// read. A record declared as the other kind is a verdict on this surface, not
-	// a missing route: the module surface carries no per-viewer admission, so
-	// serving a solution here would drop its installation check entirely, and
-	// serving a module on the solution surface would ask for a consent no
-	// organisation gives a composed module.
-	//
-	// UNSPECIFIED fails BOTH checks. It is not a third kind — it is what a reader
-	// decodes from a writer that did not set the field — so a record carrying it
-	// is served by neither surface rather than by the one that needs less
-	// authority. accounts and this gateway ship as one module package at one
-	// version, which is what makes that refusal a deployment invariant rather
-	// than an outage waiting for a rolling update.
+	// The declaration positively identifies the routing surface. Both kinds
+	// require organization consent; an unspecified kind is served by neither.
 	switch surface {
 	case moduleSurface:
-		// A record with NO declaration fails this too, and must: the module
-		// surface has no admission layer behind it, so the kind check is the only
-		// place such a record can be refused.
+		// A record with no declaration has no module routing identity.
 		if !declaredModuleKind(record) {
 			return nil, solutionWrongKind
 		}
@@ -412,20 +541,29 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	if !solutionRecordActive(record, surface) {
 		return nil, solutionNotActive
 	}
-	upstream, err := url.Parse(record.GetBackend().GetUpstream())
-	if err != nil || upstream.Host == "" ||
-		(upstream.Scheme != "http" && upstream.Scheme != "https") || upstream.User != nil ||
-		(upstream.Path != "" && upstream.Path != "/") || upstream.RawQuery != "" || upstream.ForceQuery || upstream.Fragment != "" ||
-		isDisallowedRegisteredUpstreamHost(upstream.Hostname()) {
-		// The deleted write handlers enforced this URL policy. Enforce it at
-		// the read boundary before a declared observation becomes a proxy target.
-		log.Printf("solution registry: record %q has an unusable upstream", id)
-		return nil, solutionNotActive
+	var upstream *url.URL
+	if surface == moduleSurface {
+		// A module's address is RESOLVED, never recorded: the Codefly SDK
+		// answers for the endpoint its applied presence declares.
+		if upstream = read.moduleUpstream; upstream == nil {
+			return nil, solutionNotActive
+		}
+	} else {
+		reported, ok := routableUpstream(record.GetBackend().GetUpstream())
+		if !ok {
+			// The deleted write handlers enforced this URL policy. Enforce it at
+			// the read boundary before a declared observation becomes a proxy target.
+			log.Printf("solution registry: record %q has an unusable upstream", id)
+			return nil, solutionNotActive
+		}
+		upstream = reported
+		upstream.Scheme = "https"
 	}
 	return &solutionRouting{
-		TargetID:  record.GetDeclared().GetTargetId(),
-		BindingID: record.GetDeclared().GetBindingId(),
-		Upstream:  &url.URL{Scheme: upstream.Scheme, Host: upstream.Host},
+		WorkloadSPIFFEID: read.workloadID,
+		TargetID:         record.GetDeclared().GetTargetId(),
+		BindingID:        record.GetDeclared().GetBindingId(),
+		Upstream:         upstream,
 	}, solutionRoutable
 }
 
@@ -447,10 +585,12 @@ func solutionRecordActive(record *accountsv1.SolutionRegistration, surface routi
 		record.GetStatus() != accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE {
 		return false
 	}
-	if record.GetBackend() == nil {
-		return false
+	// A module's backend is resolved from its presence, not reported, so the
+	// record carries no half for it; a solution still needs both of its own.
+	if surface == moduleSurface {
+		return true
 	}
-	return surface == moduleSurface || record.GetFrontend() != nil
+	return record.GetBackend() != nil && record.GetFrontend() != nil
 }
 
 // snapshot returns the cached records ordered by id, along with the registry

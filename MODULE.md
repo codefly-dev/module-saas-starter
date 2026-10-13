@@ -156,6 +156,103 @@ which runtime behavior is rolled out. A flag may disable entitled behavior but
 must never grant an entitlement, raise a quota, or replace authorization. Each
 product path checks its entitlement independently from its flag evaluation.
 
+## Unattended work runs under a declared identity, and schedules leave this host
+
+Every admission here carries a signed Work Context, and work no person started
+has nobody to sign one from. This host does not answer that with an identity of
+its own. A release declares **whose** authority its occurrences borrow, and the
+host re-derives that authority from current facts on every single occurrence.
+
+Two arms, and they are not alternatives of equal standing. The names below are
+the **installation document's** — the module that fires triggers spells the same
+facts differently in the read API it answers an operator with, and only the
+document's spelling parses at install
+(`module/services/accounts/code/pkg/business/datasource_trigger.go`):
+
+| Declared identity | What it is | State |
+|---|---|---|
+| `source` | The grant reference, and the contract. It names a connected data source; the host resolves the live delegation from it on every mint, re-checking the source, the person's membership and role, and the binding. An identifier rather than a credential — which is what lets an occurrence's run outlive the capability that admitted it, and makes a revocation land on the next occurrence. | implemented, with the revocation limit below |
+| `binding` | The installation-principal arm. It would name one of the release's bindings and mint from that binding's headless scopes under the module's own principal — an ordinary token admission bounded by the capability's own short lifetime. | **planned.** It cannot serve this trigger: the headless mint's lifetime is 60 seconds against this trigger's 10-minute declared deadline, the capability is owned by the module's own principal while the reconcile operation requires an organization member, and nothing in the host ever emitted this field. Using it needs a lifetime policy for occurrences that the mint does not have. |
+
+**A revocation is not permanent while the reference is the source id.** The host
+resolves the active delegation from the source on every mint, so revoking one
+and then *reconnecting* the source records a new delegation that the same
+reference resolves to — an installed trigger re-arms with no explicit
+re-delegation. The durable shape is an opaque, delegation-level reference, and
+this host already accepts one (`MintSourceOperationContext`'s `delegation_id`,
+and the gateway field behind it). What is missing is on the caller's side: the
+module-authority client a firing module uses sends `source_id` only, and refuses
+any answer whose `source_id` differs from what it sent, so a delegation id in
+the declaration is rejected by that client rather than by this host. Named as
+that client's gap in
+[WORK_CONTEXTS.md § Triggers](./module/WORK_CONTEXTS.md#triggers-for-work-no-person-started).
+
+A composition must declare the grant for whichever arm it uses
+(`source_delegation_scopes`, `headless_scopes`) and the audience its executing
+module admits under; with neither declared, both arms have nowhere to mint and
+the host refuses rather than running the work as itself.
+`DatasourceService/DelegateSourceTriggers` binds a reference to an
+already-connected source without making an administrator reconnect it, which is
+otherwise the only way one is recorded.
+
+**The schedule is declared here, and — for now — also fired here.** Every
+connected source has a reconcile interval: the safety net for a lost webhook,
+and the only path to a new version of a source whose provider has no webhook
+receiver at all. That interval is the source's *configuration*, and what it
+produces is a **declaration**: a cron in UTC, the missed-run and overlap
+policies, a deadline, the input every occurrence is admitted with, and the
+identity above. One occurrence admits `DatasourceService/ReconcileSource`, the
+same host operation a person's manual pass takes.
+
+Nothing consumes that declaration yet. `GetSourceTriggerDeclaration` is a read,
+no path here installs a release, and the module that fires triggers keys an
+installed trigger by its release *name* while this host declares every source
+under one name — so per-source triggers cannot be installed for more than one
+source even once something tries. That is the firing module's gap to close
+(several triggers per release, or a release named per source), stated in
+[WORK_CONTEXTS.md § Triggers](./module/WORK_CONTEXTS.md#triggers-for-work-no-person-started)
+and not worked around here.
+
+So this host still runs the one-minute sweep that reads the due set and enqueues
+each source, as an **explicitly labelled stopgap** (issue #1112): deleting it on
+the declaration alone left no scheduled reconcile running anywhere, which made a
+lost webhook permanent and meant a pull provider never refreshed without "Sync
+now". The deletion list is one block beside `RunDatasourceReconcile` in
+`business/datasource_deliveries.go`, and a test keeps every one of its names
+inside the files that list names, so deleting it stays one commit. While both
+exist they must not both run: the two enqueue under different idempotency keys,
+so a double fire is a second pass that serialises behind the first — survivable
+for GitHub, a second full re-send for a pull provider. That is the cost, and it
+is why this is a stopgap rather than a belt-and-braces.
+
+**"Sync now" is that admission, not a request beside it** (issue #1094). The
+published kit points the button at `ReconcileSource` under an **effect identity
+the kit mints**, so a person's pass and a scheduled occurrence are one admission
+of one shape and the receipts cannot tell them apart. A press that repeats the
+pass still being reported reads the original receipt back through
+`LookupReconcileSource` and surfaces *that* — one receipt and one job for two
+presses, rather than two full re-sends of the source — and the press after that
+is a new pass. `syncSource`, which reached the same sync engines carrying no
+effect identity, is **deleted** from the kit rather than deprecated, and a
+TypeScript AST walk over this repository fails on any remaining caller
+(`src/features/datasources/__tests__/reconcile-is-the-only-manual-pass.test.ts`).
+The reconcile-schedules panel lists a person's pass in the **same table** as the
+declared schedule's last and next occurrence, with its effect identity beside
+them; the passes it can list are the ones this browser admitted, because a
+receipt is recovered by identity and never enumerated.
+
+**What is not proven:** no live occurrence exists. Nothing in this repository
+composes a module that executes declared work, so the declaration is built
+and held to the contract's field names by test, and the walk that has not been
+run is a *declared* schedule coming due in a composed environment. The reference
+arm is qualified at the route an executing module calls; the installation-binding
+arm is planned and has never been emitted.
+
+The depth is in
+[services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md#unattended-work-whose-authority-an-occurrence-runs-under)
+and [WORK_CONTEXTS.md](./module/WORK_CONTEXTS.md#triggers-for-work-no-person-started);
+the playground is `/admin/platform/unattended-work`.
+
 ## The host as an OAuth 2.1 authorization server
 
 The host signs people in for its own public clients — an add-in, a CLI, a mobile
@@ -251,7 +348,11 @@ Two client sources, which cannot collide — a registry slug can never spell
 - **Client ID Metadata Documents.** A `client_id` that is an https URL is
   fetched (bounded size and time, **no redirect at all** per CIMD draft-02 §5.1,
   and guarded at the dial against every non-public destination — the IANA
-  special-purpose registries for both families, not just loopback and RFC 1918),
+  special-purpose registries for both families, not just loopback and RFC 1918,
+  with IPv6 bounded to the `2000::/3` global unicast allocation; the other
+  guarded egress paths use the same classifier, and the paths it covers and the
+  OIDC clients it does not are listed in
+  [CALLABLE_SOURCES.md](./module/CALLABLE_SOURCES.md#oauth-and-disclosure)),
   validated, and used as a public client for that one flow. Failures and invalid
   documents are **not** cached (§5.2), so a publisher who fixes one is not made
   to wait out a window; the abuse a negative cache would have bounded is bounded
@@ -554,6 +655,7 @@ Every page lives under `frontend/code/src/app/admin/`:
 | `/admin/billing` | `OpenBillingPortal`, `ListInvoices` |
 | `/admin/platform/admins` | platform role grant/revoke |
 | `/admin/platform/organizations` | `ListAllOrganizations`, `GetOrganizationRoster`, `CreateOrganization` (with `owner_user_id`), `UpdateOrganization`, `AddMember`, `RemoveMember`, `DeleteOrganization` |
+| `/admin/platform/unattended-work` | `ListSources`, `GetSourceTriggerDeclaration`, `DelegateSourceTriggers`, `RevokeSourceDelegation`, `ReconcileSource` — the playground for whose authority work no person started runs under |
 
 Client-side gating uses `<RoleGate>` (`src/components/auth/role-gate.tsx`) — display-only; backend remains authoritative.
 
@@ -643,6 +745,22 @@ For the frontend product-plugin overlay specifically — package layout,
 generated projections, and gates — see
 [docs/frontend-plugin-installation.md](./module/docs/frontend-plugin-installation.md).
 
+A contributed page reaches its own module's backend only through this host's
+plugin transport, at `/api/plugins/{plugin}/{alias}/{relative-path}`, under the
+viewer's forwarded credential. It carries what that module's bindings declare,
+in both shapes: safe path segments with a Google custom verb allowed on the
+**last** one, its colon forwarded literal (`records:recover`,
+`interactions/{id}:respond`), and Connect procedures of the services a
+requirement names. A `connect` requirement declares both halves — `routePrefix`
+is where its upstream mounts Connect (`/` is the origin root, where the protocol
+and this contract's own capability handshake already put a procedure), and
+`connectServices` is the bound, because a procedure's path carries its own
+service name and the caller therefore supplies it. A page is not restricted to
+REST bindings, and it never chooses a prefix or a service: a route outside the
+alias its requirement declared is refused. The policy is
+[docs/frontend-plugin-bff-contract.md](./module/docs/frontend-plugin-bff-contract.md);
+the playground that drives every shape is `/admin/platform/plugin-transport`.
+
 ## How to extend the module
 
 ### Adding a new per-tenant table
@@ -730,3 +848,54 @@ Each package passes individually; the flake only appears when several processes 
 Editor diagnostics may flag `github.com/oklog/run`, `go.opentelemetry.io/proto/otlp`, etc. as "not in your go.mod file" on generated grpc-gateway files. Those deps ARE present (`go build ./...` succeeds — verify with `cd module/services/api/code && go build ./...`). The diagnostics are stale LSP cache from a previous proto-gen iteration; they clear after restarting `gopls` or running `go mod tidy` in the api/code dir. No real build issue.
 - Bump on proto-breaking changes (renamed RPCs, removed fields).
 - Compatible-additive (new RPC, new field, new built-in role): patch-bump.
+
+## Callable data sources
+
+An API source can be connected for declared operations independently of the
+connector's sync conformance. `accepts_new_sources` still describes sync;
+`accepts_operations` and `operations_gap` describe the call surface. New API
+connections are operation-only, with no automatic sync or reconcile schedule.
+Existing API sources retain sync. Calls and legacy sync spend the same
+credential budget, reserving capacity for interactive calls. New sources that
+share a credential share a deployment-keyed budget identifier; OAuth rotation
+preserves that identifier. Older source records retain their source-scoped key.
+
+OAuth supports the existing refresh-token grant and `client_credentials`.
+Unspecified grant means refresh-token behavior for compatibility. With client
+credentials, `credential` is the client secret and the envelope contains no
+refresh token. The existing source row lock serializes token exchanges and
+caches the token and expiry in that same envelope.
+
+Authorization-code sources use the host's deployment-wide
+[`datasource-oauth` group](module/configurations/README.md). An administrator
+creates an API source with the authorization-code grant and no credential, then
+passes its `source_id` to `BeginDatasourceAccountLink`. The same person completes
+the browser sign-in. PKCE uses S256; the state is consumed before token exchange
+and cannot be replayed, including after a lost exchange response. A fresh sign-in
+is needed after such a failure. Only the provider tokens and expiry are sealed; app credentials and endpoints
+are read from the current deployment registration at refresh. This version
+supports one `api` registration and refuses connector-linker overrides. The
+token set is committed alongside
+the account link and its audit event. The source is personal to that caller;
+other members cannot read it or its declarations. Generic OAuth alone does not
+attest a remote user identity: this link identifies a source authorization and
+is never used to infer a provider account from an email or grant provider ACLs.
+
+Administrators replace a source's complete declaration set through
+`DeclareSourceOperations`; boundary readers use `ListSourceOperations`.
+Declarations fix the method, path template, query fields, closed input-object
+schema, output-object schema, effect, and output byte cap. Their canonical digest
+covers every declaration field. Parameters fill percent-encoded path segments;
+query fields become query parameters; remaining fields form a JSON body and are
+refused for GET and DELETE. Headers are not input mappings. Schema references
+that could fetch another document are refused. The declaration audit contains
+operation names only, never schemas, input, output, or credentials.
+
+
+`InvokeSourceOperation` and `LookupInvokeSourceOperation` expose the bounded call
+and its durable receipt on the accounts Connect endpoint. Each wire JSON value
+is a string containing exactly one object; the host validates it against the
+admitted declaration. A repeated effect replays only after current source and
+delegated authority checks. An uncertain external mutation is retained as
+unknown and never sent again. [Callable sources](module/CALLABLE_SOURCES.md)
+describes the JSON limits, Runnable source slot, custody and recovery contract.

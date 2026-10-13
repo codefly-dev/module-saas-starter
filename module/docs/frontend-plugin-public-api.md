@@ -24,6 +24,14 @@ import {
   buildFrontendServiceAllowlist,
   defineFrontend,
   definePlugin,
+	connectProcedureTargetPath,
+	encodeFrontendServicePath,
+	FRONTEND_SERVICE_ROOT_PREFIX,
+	frontendServiceTargetPath,
+	isConnectProcedurePath,
+	isConnectServiceName,
+	isFrontendServicePath,
+	resolveConnectProcedure,
 	resolveFrontendAppearance,
 	type FrontendAppearanceDefinition,
   type FrontendPlugin,
@@ -220,8 +228,36 @@ deterministically ordered, immutable service inventory. Validation rejects
 unknown fields, unsafe identifiers or paths, unsupported protocols, missing or
 invalid compatibility metadata, duplicate aliases, and ambiguous routes.
 
+`routePrefix` is the absolute prefix the alias's relative paths land under. A
+`connect` requirement may instead declare `/`, the origin root, which is where
+the Connect protocol puts a procedure; a `rest` requirement declaring it is
+rejected.
+
+`connectServices` is required, and non-empty, on a `connect` requirement, and
+rejected on a `rest` one. It is the fully qualified Connect services that alias
+may reach. The prefix cannot carry that bound, because a procedure's path is
+`/<fully.qualified.Service>/<Method>` and the caller therefore supplies the
+service name: a requirement that declared only a prefix reached every service
+its upstream origin served. One entry is an alias scoped to one service;
+several are several services of one backend behind one alias.
+
 This metadata does not resolve Codefly bindings, grant network access, expose
 backend URLs, or make the frontend authoritative for backend compatibility.
+
+The transport exports are the relative-path rule itself, exported because both
+halves of the transport have to agree on it: `isFrontendServicePath` (safe
+segments, with a Google custom verb allowed on the last one, whose resource half
+obeys the same not-dot rule as any other segment), `isConnectProcedurePath` (one
+`<fully.qualified.Service>/<Method>`), `isConnectServiceName` (one fully
+qualified service name), `resolveConnectProcedure` (the procedure a declared
+service list admits, or `null`), `encodeFrontendServicePath` (percent-encoded
+segments with a custom verb's colon left literal), `frontendServiceTargetPath`
+and `connectProcedureTargetPath` (where a declared prefix and a relative path,
+or an admitted procedure, land upstream), and `FRONTEND_SERVICE_ROOT_PREFIX`
+(how the origin root is spelled). The browser transport in
+`@codefly-dev/saas-plugin-react` and the host's BFF both read them, so a route
+one admits is one the other forwards. See
+[the BFF contract](frontend-plugin-bff-contract.md).
 
 ## Logical application bindings and allowlist
 

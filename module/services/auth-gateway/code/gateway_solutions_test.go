@@ -22,7 +22,7 @@ import (
 func registerSolutionUpstream(t *testing.T, gw *Gateway, id string) *fakeUpstream {
 	t.Helper()
 	fake := &fakeUpstream{body: "solution-response"}
-	srv := httptest.NewServer(fake)
+	srv := newSolutionTestServer(t, gw, id, fake)
 	t.Cleanup(srv.Close)
 	registerSolutionHalves(t, gw, id, srv.URL)
 	return fake
@@ -211,7 +211,11 @@ func TestGateway_Solution_ValidJWT_ForwardsWithIdentity(t *testing.T) {
 	require.NotEmpty(t, fake.lastHeaders.Get("x-user-id"))
 	require.NotEmpty(t, fake.lastHeaders.Get("x-org-id"))
 	require.Equal(t, "admin", fake.lastHeaders.Get("x-org-role"))
-	// The caller's bearer is preserved for the solution's own downstream calls.
+	// The caller's bearer DOES travel to the solution, which is the recorded
+	// state of SA-F-BEARER and not agreement with it: the solution authenticates
+	// by it and nothing mints the audience-bound capability that should replace
+	// it. See removePersonsSessionCredential in gateway.go. The cookie does not
+	// travel, and TestSolutionUpstreamReceivesNoCookie asserts that.
 	require.Equal(t, "Bearer "+token, fake.lastHeaders.Get("authorization"))
 	// The gateway token is an accounts-only capability and must not leak to a
 	// solution upstream.
@@ -272,7 +276,7 @@ func TestGateway_Solution_MissingID_NotFound(t *testing.T) {
 func TestGateway_Solution_RateLimited(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 	fake := registerSolutionUpstream(t, gw, "audit")
 
 	// Reuse ONE token so every request keys on the same injected x-org-id.
@@ -301,7 +305,7 @@ func TestGateway_Solution_RateLimited(t *testing.T) {
 func TestGateway_Solution_PublicSurface_RateLimited(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / key / min.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 	fake := registerSolutionUpstream(t, gw, "audit")
 
 	got429 := false

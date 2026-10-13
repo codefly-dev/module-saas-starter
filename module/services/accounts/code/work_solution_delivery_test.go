@@ -51,7 +51,7 @@ func TestNoCoordinateMeansNoDeclaredPresenceSurface(t *testing.T) {
 	// Set everything else, including the deleted mount setting. None of it may
 	// bring the surface up on its own.
 	setSolutionHost(t, "SOLUTION_HOST_OWNERSHIP_DOMAINS", "acme")
-	setSolutionHost(t, "SOLUTION_HOST_TRUST_POLICY", "keyless")
+	setSolutionHost(t, "SOLUTION_HOST_TRUST_POLICY", "keys")
 	setSolutionHost(t, "SOLUTION_HOST_BINDINGS_DIR", t.TempDir())
 
 	reconciler, err := configuredSolutionHostBindingReconciler(nil, nil)
@@ -67,7 +67,7 @@ func TestNoCoordinateMeansNoDeclaredPresenceSurface(t *testing.T) {
 func TestACoordinateWithoutOwnershipDomainsRefusesToBoot(t *testing.T) {
 	clearSolutionHostEnvironment(t)
 	setSolutionHost(t, "SOLUTION_HOST_COORDINATE", "acme/prod/eu-west-1")
-	setSolutionHost(t, "SOLUTION_HOST_TRUST_POLICY", "keyless")
+	setSolutionHost(t, "SOLUTION_HOST_TRUST_POLICY", "keys")
 
 	_, err := configuredSolutionHostBindingReconciler(nil, nil)
 	require.Error(t, err)
@@ -103,7 +103,7 @@ func TestAnAbsentTrustAnchorRefusesTheBoot(t *testing.T) {
 
 	// And with the policy declared, the refusal is the same one: the anchor's
 	// absence is not something a configuration value can satisfy.
-	setSolutionHost(t, "SOLUTION_HOST_TRUST_POLICY", "keyless")
+	setSolutionHost(t, "SOLUTION_HOST_TRUST_POLICY", "keys")
 	_, err = configuredSolutionHostBindingReconciler(nil, nil)
 	require.ErrorIs(t, err, infra.ErrSolutionHostTrustRootUnavailable)
 	require.Contains(t, err.Error(), infra.SolutionHostTrustAnchorPath)
@@ -143,7 +143,7 @@ func TestTheBindingsMountSettingIsNotRead(t *testing.T) {
 // exercised here, and the present case is not, because the anchor's path is a
 // constant under /etc that a test must not be able to write — which is the
 // property that makes it a constant. The present path is exercised against an
-// in-process Sigstore in solution_host_keyless_verifier_test.go.
+// offline pinned-key verifier in solution_host_key_verifier_test.go.
 func requireTrustAnchorAbsent(t *testing.T) {
 	t.Helper()
 	if _, err := os.Stat(infra.SolutionHostTrustAnchorPath); err == nil {

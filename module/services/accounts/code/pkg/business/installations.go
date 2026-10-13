@@ -14,6 +14,11 @@ import (
 // solution scope node, standing grant, and installation row are created together
 // in one transaction; see InstallationStore.InstallSolution.
 type InstallSolutionParams struct {
+	Kind                string
+	RegistryBindingID   string
+	RegistryPrincipalID string
+	Scope               *InstallationScope
+	EnvelopeRevision    uint64
 	// InstallerPrincipalID records ownership for bounded nonhuman reconciliation.
 	InstallerPrincipalID string
 	OrgID                string
@@ -61,7 +66,7 @@ type InstallationStore interface {
 	InstallSolution(ctx context.Context, params *InstallSolutionParams) (*gen.Installation, error)
 	GetInstallation(ctx context.Context, orgID, installationID string) (*gen.Installation, gen.InstallationHealth, error)
 	TransferInstallationOwnership(ctx context.Context, orgID, installationID, newOwnerPrincipalID string, coOwnerPrincipalIDs []string) (*gen.Installation, error)
-	// The bool reports whether this call actually flipped an active installation
+	// The bool reports whether this call actually flipped a nonrevoked installation
 	// to revoked, so the caller emits the audit event exactly once.
 	UninstallSolution(ctx context.Context, orgID, installationID string) (*gen.Installation, bool, error)
 	// ListInstallations returns one page of an org's installations with their live
@@ -73,6 +78,18 @@ type InstallationStore interface {
 	// installations for the platform Catalogue (platform_catalogue.go). Unlike
 	// the methods above it runs under the control plane, not an org transaction.
 	ListCatalogueInstallations(ctx context.Context) ([]*CatalogueInstallationRecord, error)
+	// InstallationRootScopePath resolves one of orgID's ACTIVE installations to
+	// the scope path of its authority-root node; not found otherwise.
+	InstallationRootScopePath(ctx context.Context, orgID, installationID string) (string, error)
+	// ListInstallationExposure returns, per active installation of orgID among
+	// installationIDs, its root scope path and the team grants reaching it.
+	ListInstallationExposure(ctx context.Context, orgID string, installationIDs []string) (map[string]*InstallationExposure, error)
+	// RolePermits reports whether a role visible to the tenant permits
+	// (resource, action), directly or by wildcard.
+	RolePermits(ctx context.Context, roleID, resource, action string) (bool, error)
+	// WithOrgReadSnapshot runs fn on one read-only REPEATABLE READ snapshot
+	// bound to orgID, so several reads describe one moment.
+	WithOrgReadSnapshot(ctx context.Context, orgID string, fn func(ctx context.Context) error) error
 }
 
 func (s *Service) installationStore() InstallationStore {
@@ -114,11 +131,10 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	// `installations_target_live_on_insert`, where the insert and the target row
 	// are in one transaction. What this read is for is the route alias (a display
 	// label) and a refusal that names the problem instead of surfacing a trigger.
-	alias, err := s.resolveInstallableTarget(ctx, params.TargetID)
+	_, err := s.prepareInstallation(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	params.RouteAlias = alias
 	// The ceiling may only name audiences this host actually serves (issue #952).
 	// `allowed_audiences` used to be free text, so an installation could name a
 	// consumer that does not exist and then mint for it — the audience is what
@@ -293,7 +309,7 @@ func (s *Service) uninstallSolutionTx(ctx context.Context, actorID, actorType, o
 	if err != nil {
 		return err
 	}
-	// Only a real active→revoked transition is a fact worth publishing;
+	// Only a real transition to revoked is a fact worth publishing;
 	// an idempotent re-uninstall emits neither event nor audit. Publish in
 	// the same transaction (outbox) so the revoke and its event are atomic.
 	if !transitioned {
@@ -378,14 +394,32 @@ func (s *Service) ListAvailableSolutions(
 	if pageSize > listInstallationsMaxPageSize {
 		pageSize = listInstallationsMaxPageSize
 	}
-	var available []*AvailableSolutionTarget
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var err error
-		available, err = s.store.ListAvailableSolutionTargets(ctx,
-			AvailableSolutionQuery{OrgID: orgID, Cursor: pageToken, Limit: pageSize + 1})
-		return err
-	}); err != nil {
+	snapshot := s.moduleRegistrySnapshot()
+	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
 		return nil, "", err
+	}
+	var available []*AvailableSolutionTarget
+	// Filter before paginating. A page consisting only of forbidden tenants
+	// must not hide an eligible entry on a later page.
+	cursor := pageToken
+	for len(available) <= pageSize {
+		var batch []*AvailableSolutionTarget
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			batch, err = s.store.ListAvailableSolutionTargets(ctx, AvailableSolutionQuery{OrgID: orgID, Cursor: cursor, Limit: pageSize + 1})
+			return err
+		}); err != nil {
+			return nil, "", err
+		}
+		for _, target := range batch {
+			if _, _, err := installationRegistryEntry(snapshot, target.BindingID, orgID); err == nil {
+				available = append(available, target)
+			}
+		}
+		if len(batch) < pageSize+1 {
+			break
+		}
+		cursor = batch[len(batch)-1].TargetID
 	}
 	next := ""
 	if len(available) > pageSize {

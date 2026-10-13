@@ -22,6 +22,30 @@
       },
       "type": "object"
     },
+    "DatasourceServiceDeclareSourceOperationsBody": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DatasourceServiceInvokeSourceOperationBody": {
+      "description": "InvokeSourceOperationRequest carries exactly one JSON object in input_json.\neffect_id must match x-codefly-effect-id; either location may supply it.",
+      "properties": {
+        "effectId": {
+          "type": "string"
+        },
+        "inputJson": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "DelegationServiceDecideDelegationBody": {
       "properties": {
         "decision": {
@@ -33,6 +57,54 @@
         },
         "reason": {
           "description": "Reason: required when decision=denied; optional on approve.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceGrantInstallationToTeamBody": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "description": "The role the team holds at the installation's authority root. It must permit\nusing a solution (or carry the wildcard); a role that does not would expose\nnothing, and is refused rather than written. Everything else the role\npermits is granted too, beneath that root.",
+          "type": "string"
+        },
+        "teamId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceNarrowInstallationBody": {
+      "description": "An org administrator may only remove installed authority. The host reads\nthe current revision and serializes the narrowing with other lifecycle acts.",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "scope": {
+          "description": "Same JSON shape as InstallSolution.scope; {} removes all capability access.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceRetryInstallationBody": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InstallationServiceRevokeInstallationFromTeamBody": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "description": "The role of the grant being removed, as granted_teams reports it. A team may\nhold more than one role at the same node, and each is its own grant.",
           "type": "string"
         }
       },
@@ -209,6 +281,15 @@
         }
       },
       "type": "object"
+    },
+    "SourceOperationEffect": {
+      "default": "EFFECT_UNSPECIFIED",
+      "enum": [
+        "EFFECT_UNSPECIFIED",
+        "EFFECT_READ_ONLY",
+        "EFFECT_MUTATION"
+      ],
+      "type": "string"
     },
     "TeamServiceCreateTeamBody": {
       "properties": {
@@ -1490,6 +1571,18 @@
       },
       "type": "object"
     },
+    "v1DeclareSourceOperationsResponse": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "v1DelegationEvent": {
       "description": "DelegationEvent is one streaming event delivered to a\nsubscriber. The agent SDK reads exactly one event (the\nterminal decision) and disconnects.",
       "properties": {
@@ -1740,7 +1833,7 @@
       "type": "object"
     },
     "v1ExchangeWorkContextAudienceRequest": {
-      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task,\nSession, owner, and delegation lineage for another service boundary while\nattenuating the effective authority to the requested scopes.",
+      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer.",
       "properties": {
         "attenuatedScopes": {
           "items": {
@@ -2033,6 +2126,15 @@
       },
       "type": "object"
     },
+    "v1GetModuleEnvelopeResponse": {
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope",
+          "description": "The current revision. Absent when no envelope has been written, which\ngrants no module anything."
+        }
+      },
+      "type": "object"
+    },
     "v1GetOrgEntitlementsResponse": {
       "properties": {
         "entitlements": {
@@ -2160,6 +2262,14 @@
       },
       "type": "object"
     },
+    "v1GrantInstallationToTeamResponse": {
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
+        }
+      },
+      "type": "object"
+    },
     "v1GrantPlatformRoleRequest": {
       "properties": {
         "platformRole": {
@@ -2248,7 +2358,7 @@
           "type": "string"
         },
         "allowedAudiences": {
-          "description": "The agent's delegated-execution ceiling (migration 108): the Work Context\naudiences it may be minted for and the resource kinds it may ever touch.\nEmpty = unrestricted.",
+          "description": "The agent's delegated-execution ceiling (migration 108): the Work Context\naudiences it may be minted for and the resource kinds it may ever touch.\n\nEmpty = unrestricted FOR THIS INSTALLATION'S OWN WORK, which is what an\nadministrator consented to when they installed it.\n\nA mint made with a credential delivered to a THIRD PARTY on a person's\nbehalf — an MCP client the person authorized for this one solution — is not\nbounded by these lists. Its ceiling is the invoke bindings of the\nconsumer's delivered authority, as this installation's scope consented to\nthem when it was installed; a consumer with no delivered authority has no\nceiling, and such a mint is refused. These lists can only narrow that\nceiling: an empty list adds no bound, and a list naming more admits\nnothing extra.",
           "items": {
             "type": "string"
           },
@@ -2286,6 +2396,10 @@
           "description": "Human-readable display label for the solution's authority-root scope node\n(kind='solution'). The node's ltree path is derived server-side, not this.",
           "type": "string"
         },
+        "scope": {
+          "description": "Installed consent as JSON: capabilities, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences and\nartifact_policies, with the same shapes as the module envelope grant.\nMust be a subset of the current ceiling. Omitted selects that ceiling;\nan explicit {} grants nothing. Tenant and identity are never scope fields.",
+          "type": "string"
+        },
         "targetId": {
           "description": "The solution target being installed, from ListAvailableSolutions. Required.\n\nAn installer chooses an identity, never an address. The target must be LIVE\nand ACCEPTED when the install lands: installing a withdrawn target would\nrecord consent to a presence that already ended, and installing a target\nwhose newest generation was refused would record consent to a release this\nhost never admitted.",
           "type": "string"
@@ -2307,6 +2421,10 @@
         },
         "createdAt": {
           "format": "date-time",
+          "type": "string"
+        },
+        "failureReason": {
+          "description": "Why the install step failed: the solution's bounded refusal reason, or a\nfixed reason when it never answered. Empty unless status is FAILED.",
           "type": "string"
         },
         "id": {
@@ -2354,11 +2472,13 @@
     },
     "v1InstallationStatus": {
       "default": "INSTALLATION_STATUS_UNSPECIFIED",
-      "description": "InstallationStatus is the lifecycle of an installation row. An uninstall is a\nsoft delete (status=revoked, revoked_at set) so the agent, grants, and audit\ntrail remain resolvable.",
+      "description": "InstallationStatus is the lifecycle of an installation row. An uninstall is a\nsoft delete (status=revoked, revoked_at set) so the agent, grants, and audit\ntrail remain resolvable.\n\n - INSTALLATION_STATUS_PENDING: Installed, and waiting for the solution to acknowledge its standard install\nstep. Nothing can use a pending installation.\n - INSTALLATION_STATUS_FAILED: The solution refused its install step, or never answered within the\nattempt budget. Nothing can use it; an administrator may retry it.",
       "enum": [
         "INSTALLATION_STATUS_UNSPECIFIED",
         "INSTALLATION_STATUS_ACTIVE",
-        "INSTALLATION_STATUS_REVOKED"
+        "INSTALLATION_STATUS_REVOKED",
+        "INSTALLATION_STATUS_PENDING",
+        "INSTALLATION_STATUS_FAILED"
       ],
       "type": "string"
     },
@@ -2499,6 +2619,18 @@
         "status": {
           "title": "paid | open | void | uncollectible | draft",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1InvokeSourceOperationResponse": {
+      "properties": {
+        "outputJson": {
+          "description": "Exactly one JSON object; {} when unknown.",
+          "type": "string"
+        },
+        "receipt": {
+          "$ref": "#/definitions/v1SourceOperationReceipt"
         }
       },
       "type": "object"
@@ -3141,6 +3273,22 @@
       },
       "type": "object"
     },
+    "v1ListOrganizationInstallationsResponse": {
+      "properties": {
+        "installations": {
+          "items": {
+            "$ref": "#/definitions/v1OrganizationInstallation",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "nextPageToken": {
+          "description": "Set when more installations remain; pass it back as page_token.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1ListOrganizationsResponse": {
       "properties": {
         "canCreate": {
@@ -3269,6 +3417,18 @@
         "shares": {
           "items": {
             "$ref": "#/definitions/v1RecordShare",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListSourceOperationsResponse": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/definitions/v1SourceOperation",
             "type": "object"
           },
           "type": "array"
@@ -3435,6 +3595,29 @@
       "type": "string"
     },
     "v1MarkAllNotificationsReadRequest": {
+      "type": "object"
+    },
+    "v1ModuleEnvelope": {
+      "description": "ModuleEnvelope is one revision of the module envelope: the authority ceiling a\nplatform super_admin writes, which every module principal on this host is\nderived inside. Revisions are append-only; the current ceiling is the\nhighest.",
+      "properties": {
+        "document": {
+          "description": "The whole ceiling at this revision, as JSON: `revision`,\n`approved_builds`, and `principals` keyed by module prefix, each with the\nwhole authority units this host admits (`bindings`: id, revision, scope,\nqueue, namespace, binding_key, lookup_method), the workloads it may run as\n(`workload_identities`: spiffe_id, container), its `scope_ceilings` and its\n`grant` ceiling (tenant, cross_tenant, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences,\nartifact_policies).",
+          "type": "string"
+        },
+        "revision": {
+          "description": "The revision, from 1. A delivered authority document names the revision\nit was rendered against and is inside this one only.",
+          "format": "int64",
+          "type": "string"
+        },
+        "writtenAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "writtenBy": {
+          "description": "The platform administrator who wrote this revision.",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "v1Notification": {
@@ -3753,6 +3936,42 @@
       },
       "type": "object"
     },
+    "v1OrganizationInstallation": {
+      "description": "OrganizationInstallation is one active installation as its organisation's\nadministrator manages it.",
+      "properties": {
+        "grantedTeams": {
+          "description": "Teams an active grant reaches at this installation, in the two kinds the\nplatform Catalogue keeps apart: granted at its authority root, and inherited\nfrom a grant above it. Only the first is exposure granted to this\ninstallation; RevokeInstallationFromTeam removes those.",
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "health": {
+          "$ref": "#/definitions/v1InstallationHealth",
+          "description": "Resolved live, exactly as ListInstallations resolves it."
+        },
+        "inheritedTeams": {
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "installation": {
+          "$ref": "#/definitions/v1Installation"
+        },
+        "rootScopePath": {
+          "description": "The scope path of the installation's authority-root node: where a grant\nthat exposes it is written. Read from the node, never derived from its id.",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/definitions/v1AvailableSolution",
+          "description": "The catalogue row of the installed target, from the same accepted applied\nstate ListAvailableSolutions serves: its route alias, applied release and\ngenerations. Absent when this host no longer offers the target — the\ninstallation outlives the presence it was consented to, and an absent row\nsays so rather than naming a release the host does not apply."
+        }
+      },
+      "type": "object"
+    },
     "v1OrganizationServiceAddMemberBody": {
       "properties": {
         "role": {
@@ -3981,6 +4200,28 @@
       },
       "type": "object"
     },
+    "v1PutModuleEnvelopeRequest": {
+      "properties": {
+        "document": {
+          "description": "The whole ceiling, as JSON, carrying revision expected_revision + 1.",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "description": "The revision this write replaces: the one the caller read, 0 when none has\nbeen written. A write whose expected revision is not the current one is\nrefused with ABORTED, and nothing is written.",
+          "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1PutModuleEnvelopeResponse": {
+      "properties": {
+        "envelope": {
+          "$ref": "#/definitions/v1ModuleEnvelope"
+        }
+      },
+      "type": "object"
+    },
     "v1QueryAuditLogResponse": {
       "properties": {
         "events": {
@@ -4201,7 +4442,7 @@
       "type": "object"
     },
     "v1RenewWorkContextRequest": {
-      "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, Session, owner, and delegation lineage; it may attenuate but can never\nwiden the current actor's authority.",
+      "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, owner, and delegation lineage and opens a fresh Session assigned by the\nissuer; it may attenuate but can never widen the current actor's authority.",
       "properties": {
         "attenuatedScopes": {
           "description": "Optional narrowed scopes. Empty keeps the current actor's effective\nauthority unchanged; when present they must attenuate it.",
@@ -4755,7 +4996,73 @@
       ],
       "type": "string"
     },
+    "v1SourceOperation": {
+      "description": "DatasourceService is the tenant-facing surface a solution drives (directly or\nthrough the generated SDK) to declare and operate connected datasources.\nSourceOperation is an admitted route and bounded JSON contract, never a credential.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "effect": {
+          "$ref": "#/definitions/SourceOperationEffect"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "maxOutputBytes": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "outputSchema": {
+          "type": "object"
+        },
+        "path": {
+          "type": "string"
+        },
+        "query": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1SourceOperationReceipt": {
+      "description": "SourceOperationReceipt contains only the committed result and safe metadata.",
+      "properties": {
+        "committedAt": {
+          "description": "UTC RFC3339Nano, empty for an unknown outcome.",
+          "type": "string"
+        },
+        "effectId": {
+          "type": "string"
+        },
+        "outputJson": {
+          "description": "Exactly one JSON object; {} when unknown.",
+          "type": "string"
+        },
+        "providerStatus": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "description": "committed or unknown; unknown never authorizes redispatch.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1StartChildSessionWorkContextRequest": {
+      "description": "StartChildSessionWorkContextRequest delegates one more hop from a verified\nparent. The child Session is assigned by the issuer and returned in\nIssuedWorkContext (with the parent's as parent_session_id), never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone.",
       "properties": {
         "actorPrincipalId": {
           "type": "string"
@@ -4778,9 +5085,6 @@
         },
         "replayPolicy": {
           "$ref": "#/definitions/v1WorkContextReplayPolicy"
-        },
-        "sessionId": {
-          "type": "string"
         },
         "ttlSeconds": {
           "format": "int32",
@@ -4836,6 +5140,7 @@
       "type": "object"
     },
     "v1StartTaskWorkContextRequest": {
+      "description": "StartTaskWorkContextRequest mints a Task capability for the caller. Its Session\nis the one the caller authenticated with — or a fresh one when it has none —\nassigned by the issuer and returned in IssuedWorkContext, never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone.",
       "properties": {
         "actorPrincipalId": {
           "description": "Empty means a direct human-owned Task. Otherwise this must name an active,\nregistered agent Principal in org_id.",
@@ -4860,9 +5165,6 @@
         },
         "replayPolicy": {
           "$ref": "#/definitions/v1WorkContextReplayPolicy"
-        },
-        "sessionId": {
-          "type": "string"
         },
         "taskId": {
           "description": "The runtime boundary the capability is minted under. Required on an\nordinary mint, where the caller owns the Task it names.\n\nFORBIDDEN on a solution-scoped mint. The host assigns each registered\nsolution one opaque boundary at registration and seals that one, so a\nsolution never chooses the boundary its runs are visible under and can\nnever name another solution's (issue #1015). Which of the two a request is\ndepends on the credential it carries, which no schema rule can see, so the\nrule here is only \"a UUID when present\" and the handler refuses the wrong\nshape on either path: an absent boundary on an ordinary mint, a named one\non a solution-scoped mint.",
@@ -6829,6 +7131,37 @@
         ]
       }
     },
+    "/v1/datasource-operation-receipts/{effectId}": {
+      "get": {
+        "operationId": "DatasourceService_LookupInvokeSourceOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "effectId",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "LookupInvokeSourceOperation recovers a receipt without contacting the provider.\nNotFound \"source effect not found\" means there is no attempt marker; retrying\nthe same effect is safe. An unknown receipt never authorizes redispatch.\nOnce an attempt exists, retained receipt evidence survives declaration\nremoval or replacement. Current source read authority still applies.",
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
     "/v1/delegations": {
       "post": {
         "operationId": "DelegationService_RequestDelegation",
@@ -7216,6 +7549,51 @@
       }
     },
     "/v1/installations": {
+      "get": {
+        "description": "It is the org-admin companion to the internal ListInstallations, and it is a\nseparate method rather than a relaxed policy on that one: ListInstallations\nis read by the gateway for an organisation it projected from a verified\nidentity, and a bare tenant credential must never reach it. This one binds\nthe organisation to the caller's own admin membership, exactly as\nListAvailableSolutions does, so no organisation's administrator can read\nanother's. The one exception is inherited, not added here: a platform\nsuper administrator (not impersonating) passes the organisation-admin check\nfor every organisation, as on every other organisation-admin method, and so\nmay list any organisation's installations.",
+        "operationId": "InstallationService_ListOrganizationInstallations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "Page bound. 0 -> server default; capped as ListInstallations is.",
+            "format": "int32",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "description": "Opaque cursor from a previous response's next_page_token; empty for page one.",
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListOrganizationInstallationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListOrganizationInstallations is an organisation administrator's view of\nwhat that organisation has installed: each active installation with its live\nhealth, the catalogue row of the target it installed, the scope path of its\nauthority root, and the teams a grant reaches there.",
+        "tags": [
+          "InstallationService"
+        ]
+      },
       "post": {
         "operationId": "InstallationService_InstallSolution",
         "parameters": [
@@ -7280,6 +7658,170 @@
           }
         },
         "summary": "GetInstallation returns one installation plus its live health, so an admin UI\ncan see when an installation has gone unhealthy (owner offboarded, agent\ndisabled, grant expired) before the next headless task fails closed.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}/teams": {
+      "post": {
+        "operationId": "InstallationService_GrantInstallationToTeam",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceGrantInstallationToTeamBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GrantInstallationToTeamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "GrantInstallationToTeam exposes an installation to a team: a scope grant of\nthe given role to the team at the installation's authority-root node. The\nhost resolves that node from the installation, so a caller never names a\nscope path. The role must permit using a solution, or the grant would expose\nnothing; the team must belong to the organisation. Using a solution is the\nminimum the role must permit, not a ceiling: the team holds everything the\nrole permits beneath the installation's authority root, exactly as a\nGrantScope of that role at that node would give it. Emits scope.granted, the\nsame event and audit record as any other scope grant, because it is one.\nOrganisation-admin, with the same platform super administrator exception\nListOrganizationInstallations describes.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}/teams/{teamId}:revoke": {
+      "post": {
+        "operationId": "InstallationService_RevokeInstallationFromTeam",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "teamId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceRevokeInstallationFromTeamBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RevokeInstallationFromTeam removes one team grant at an installation's\nauthority-root node. It is a narrowing, so it runs under the policy log\nexactly as RevokeScope does: a host that cannot witness the narrowing refuses\nit, and says so, rather than revoking unwitnessed. It removes the one grant\nat the authority root that granted_teams reports; a team that also reaches\nthe installation from a grant above keeps that reach. Organisation-admin,\nwith the same platform super administrator exception.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:narrow": {
+      "post": {
+        "operationId": "InstallationService_NarrowInstallation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceNarrowInstallationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "Narrowing is witnessed in the policy log before commit, then atomically\nbumps the installation revision, cancels its org's work and records audit.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:retry": {
+      "post": {
+        "operationId": "InstallationService_RetryInstallation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceRetryInstallationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RetryInstallation runs a failed installation's install step again, at the\nsame revision. The installation is pending until the solution acknowledges.",
         "tags": [
           "InstallationService"
         ]
@@ -8116,6 +8658,137 @@
         },
         "tags": [
           "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/datasources/{sourceId}/operations": {
+      "get": {
+        "operationId": "DatasourceService_ListSourceOperations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSourceOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListSourceOperations reads the currently admitted declarations under source authority.",
+        "tags": [
+          "DatasourceService"
+        ]
+      },
+      "post": {
+        "operationId": "DatasourceService_DeclareSourceOperations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceDeclareSourceOperationsBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeclareSourceOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "DeclareSourceOperations atomically replaces the source operation set, as an administrator.",
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/datasources/{sourceId}/operations/{operation}:invoke": {
+      "post": {
+        "operationId": "DatasourceService_InvokeSourceOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "operation",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceInvokeSourceOperationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "InvokeSourceOperation calls an admitted operation under current authority.\nFailedPrecondition with ErrorInfo.reason SOURCE_OPERATION_OUTCOME_UNKNOWN\nmeans this effect will not be redispatched and its receipt stays unresolved.\nSOURCE_OPERATION_DECLARATION_REMOVED refuses a retained effect whose\ndeclaration was removed; ErrorInfo.metadata[\"receipt_status\"] is committed\nor unknown. Recover that same effect with Lookup; never choose a fresh ID.\nOther refusal reasons do not mean unknown. Provider refusals include the\ndecimal HTTP status in ErrorInfo.metadata[\"provider_status\"] when known.\nInvalidArgument carries BadRequest.FieldViolation.field as a JSON pointer.",
+        "tags": [
+          "DatasourceService"
         ]
       }
     },
@@ -9118,6 +9791,60 @@
             }
           }
         },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/module-envelope": {
+      "get": {
+        "operationId": "PlatformAdminService_GetModuleEnvelope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "GetModuleEnvelope reads the current module envelope: the authority ceiling\nevery module principal on this host is derived inside.",
+        "tags": [
+          "PlatformAdminService"
+        ]
+      },
+      "put": {
+        "operationId": "PlatformAdminService_PutModuleEnvelope",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PutModuleEnvelopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "PutModuleEnvelope writes the next revision of the module envelope. It takes\neffect at the next check with no restart: the module registry is derived\nagain from it, so a narrowing removes what the new ceiling no longer allows.",
         "tags": [
           "PlatformAdminService"
         ]
@@ -11372,6 +12099,7 @@
         "operationId": "WorkContextService_StartChildSession",
         "parameters": [
           {
+            "description": "StartChildSessionWorkContextRequest delegates one more hop from a verified\nparent. The child Session is assigned by the issuer and returned in\nIssuedWorkContext (with the parent's as parent_session_id), never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone.",
             "in": "body",
             "name": "body",
             "required": true,
@@ -11404,7 +12132,7 @@
         "operationId": "WorkContextService_ExchangeAudience",
         "parameters": [
           {
-            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task,\nSession, owner, and delegation lineage for another service boundary while\nattenuating the effective authority to the requested scopes.",
+            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer.",
             "in": "body",
             "name": "body",
             "required": true,
@@ -11438,7 +12166,7 @@
         "operationId": "WorkContextService_RenewWorkContext",
         "parameters": [
           {
-            "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, Session, owner, and delegation lineage; it may attenuate but can never\nwiden the current actor's authority.",
+            "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, owner, and delegation lineage and opens a fresh Session assigned by the\nissuer; it may attenuate but can never widen the current actor's authority.",
             "in": "body",
             "name": "body",
             "required": true,
@@ -11504,6 +12232,7 @@
         "operationId": "WorkContextService_StartTask",
         "parameters": [
           {
+            "description": "StartTaskWorkContextRequest mints a Task capability for the caller. Its Session\nis the one the caller authenticated with — or a fresh one when it has none —\nassigned by the issuer and returned in IssuedWorkContext, never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone.",
             "in": "body",
             "name": "body",
             "required": true,

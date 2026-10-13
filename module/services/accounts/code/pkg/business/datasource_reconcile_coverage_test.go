@@ -2,23 +2,29 @@
 
 package business_test
 
-// The periodic reconcile's coverage: which sources it selects, where it sends
-// each of them, and that sweeping the same due row twice does not do the work
-// twice.
+// The reconcile's coverage: what every provider is scheduled with at connect,
+// where one occurrence sends each of them, and that two attempts of one
+// occurrence do not do the work twice.
 //
-// Before this, the sweep was GitHub's alone — twice over. A pull source (api,
-// crawler, upload) was inserted with no next_reconcile_at, and the due-set query
-// filtered provider = 'github' on top of that. None of those three has a webhook
-// receiver either, so a connected source of them drifted from its source with
-// nothing anywhere noticing, forever, until a person pressed "Sync now".
+// Before the schedule covered every provider it was GitHub's alone, twice over:
+// a pull source (api, crawler, upload) was inserted with no schedule at all,
+// and the due-set query filtered provider = 'github' on top of that. None of
+// those three has a webhook receiver either, so a connected source of them
+// drifted from its source with nothing anywhere noticing, forever, until a
+// person pressed "Sync now". The schedule is now declared rather than swept
+// (datasource_trigger.go), and the coverage it must keep is the same.
 
 import (
 	"context"
+	"crypto/sha256"
 	"testing"
 	"time"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+
+	"github.com/codefly-dev/sdk-go/receipts"
 )
 
 // jobsFor returns every recorded job naming source.
@@ -83,27 +89,21 @@ func TestAddSource_SchedulesEveryProviderAndSyncsAtConnect(t *testing.T) {
 	}
 }
 
-// The sweep selects every provider and routes each to the engine that provider
-// actually syncs on: GitHub is compiled off the delivery queue, everything else
-// is pulled by the sync worker.
-func TestRunDatasourceReconcile_RoutesEachProviderToItsEngine(t *testing.T) {
+// The declared trigger's occurrence routes every provider to the engine that
+// provider actually syncs on: GitHub is compiled off the delivery queue,
+// everything else is pulled by the sync worker. This used to be the sweep's
+// coverage; the routing is unchanged and the caller is not.
+func TestReconcileSourceOperation_RoutesEachProviderToItsEngine(t *testing.T) {
 	producer := &recordingProducer{}
-	store := newDatasourceFakeStore()
+	store := newReconcileOperationStore()
 	svc, _ := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
 
 	gh := githubSource(t, svc, "main", nil, "")
 	crawler := newCrawlerSource(t, svc)
 	takeConnectSync(t, producer, crawler)
-	setNextReconcile(t, store, gh.ID, time.Now().Add(-time.Minute))
-	setNextReconcile(t, store, crawler.ID, time.Now().Add(-time.Minute))
 
-	n, err := svc.RunDatasourceReconcile(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 2 {
-		t.Fatalf("swept %d sources, want both the GitHub source and the pull source", n)
-	}
+	reconcileOnce(t, svc, gh.OrgID, gh.ID, "effect-github")
+	reconcileOnce(t, svc, crawler.OrgID, crawler.ID, "effect-crawler")
 
 	ghJobs := jobsFor(producer, gh.ID)
 	if len(ghJobs) != 1 || ghJobs[0].GetQueue() != business.DatasourceDeliveryQueue ||
@@ -111,77 +111,139 @@ func TestRunDatasourceReconcile_RoutesEachProviderToItsEngine(t *testing.T) {
 		t.Fatalf("github routing = %+v", ghJobs)
 	}
 	if mode := ghJobs[0].GetAttributes()["datasource.reconcile_mode"]; mode != "conditional" {
-		t.Fatalf("the periodic pass must be conditional, got %q", mode)
+		t.Fatalf("a reconcile pass must be conditional, got %q", mode)
+	}
+	// The job is a message on exactly the same terms as a manual "Sync now":
+	// the platform validates content_type (min_len 1) on every enqueue, and an
+	// operation whose job is refused must fail the occurrence rather than
+	// report a pass that enqueued nothing.
+	if ghJobs[0].GetContentType() != "application/json" || string(ghJobs[0].GetPayload()) != "{}" {
+		t.Fatalf("reconcile body = %q/%q, want an empty JSON object",
+			ghJobs[0].GetContentType(), ghJobs[0].GetPayload())
+	}
+	if ghJobs[0].GetSchemaVersion() != 1 {
+		t.Fatalf("schema version = %d, want the reconcile request's (1), not the change set's (2)", ghJobs[0].GetSchemaVersion())
 	}
 
 	pullJobs := jobsFor(producer, crawler.ID)
 	if len(pullJobs) != 1 || pullJobs[0].GetQueue() != business.DatasourceSyncRequestQueue {
 		t.Fatalf("pull routing = %+v", pullJobs)
 	}
-	// Provenance separates the schedule's pass from a person's "Sync now"; both
-	// are performed by the same worker, so nothing else distinguishes them.
+	// Provenance separates a declared schedule's pass from a person's "Sync
+	// now"; both are performed by the same worker, so nothing else
+	// distinguishes them.
 	if src := pullJobs[0].GetSource(); src != business.DatasourceScheduledSyncSource {
-		t.Fatalf("scheduled pull provenance = %q, want %q", src, business.DatasourceScheduledSyncSource)
+		t.Fatalf("reconcile pull provenance = %q, want %q", src, business.DatasourceScheduledSyncSource)
 	}
 	// And it carries the per-source FIFO key, so it cannot run beside a "Sync
 	// now" re-sending the same whole source.
 	if ordering := pullJobs[0].GetOrdering(); ordering.GetNamespace() != "datasource.sync" ||
 		len(ordering.GetComponents()) != 1 || ordering.GetComponents()[0] != crawler.ID {
-		t.Fatalf("scheduled pull ordering key = %+v", ordering)
+		t.Fatalf("reconcile pull ordering key = %+v", ordering)
 	}
 }
 
-// The sweep holds no lease and runs in every replica. Two replicas that select
-// the same due row before either reschedules it must enqueue the work once, not
-// once each: for a pull provider a duplicate is a second full re-send of the
-// whole source, with no cursor to make the second one cheap.
+// Two attempts of one occurrence are one job. The occurrence's effect identity
+// is what makes that true, and it replaces the schedule-derived key the sweep
+// needed while two replicas could both select one due row: for a pull provider
+// a duplicate is a second full re-send of the whole source, with no cursor to
+// make the second one cheap.
 //
-// What makes that true is the idempotency key, which is what this asserts. The
-// recording producer deliberately does not implement idempotency — the platform
-// does — so the test reads the keys the two sweeps produced rather than counting
-// jobs it would have collapsed.
-func TestRunDatasourceReconcile_TwoSweepsOfOneDueRowAreOneJob(t *testing.T) {
+// The recording producer deliberately does not implement idempotency — the
+// platform does — so the test reads the keys the attempts produced rather than
+// counting jobs it would have collapsed.
+func TestReconcileSourceOperation_TwoAttemptsOfOneOccurrenceAreOneJob(t *testing.T) {
 	producer := &recordingProducer{}
-	store := newDatasourceFakeStore()
+	store := newReconcileOperationStore()
 	svc, _ := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
 
 	source := newUploadSource(t, svc)
 	takeConnectSync(t, producer, source)
-	due := time.Now().Add(-time.Minute)
-	setNextReconcile(t, store, source.ID, due)
 
-	first := jobKeysAfterSweep(t, svc, producer, source.ID)
-	// The second replica read the row before the first rescheduled it, so it sees
-	// the same schedule instant and must derive the same key.
-	setNextReconcile(t, store, source.ID, due)
-	second := jobKeysAfterSweep(t, svc, producer, source.ID)
-
-	if len(first) != 1 || len(second) != 2 {
-		t.Fatalf("expected one job per sweep in the recording, got %d then %d", len(first), len(second))
+	reconcileOnce(t, svc, source.OrgID, source.ID, "occurrence-1")
+	reconcileOnce(t, svc, source.OrgID, source.ID, "occurrence-1")
+	keys := jobKeys(producer, source.ID)
+	if len(keys) != 2 {
+		t.Fatalf("expected one job per attempt in the recording, got %d", len(keys))
 	}
-	if first[0] != second[1] {
-		t.Fatalf("two sweeps of one due schedule produced different idempotency keys (%q, %q); the platform would run the pull twice",
-			first[0], second[1])
+	if keys[0] != keys[1] {
+		t.Fatalf("two attempts of one occurrence produced different idempotency keys (%q, %q); the platform would run the pull twice",
+			keys[0], keys[1])
 	}
 
-	// A later schedule is different work and must not be swallowed as a replay of
-	// the pass before it. (Set in the past so the row is due again; what the key
-	// distinguishes is the schedule instant, not how recent it is.)
-	setNextReconcile(t, store, source.ID, due.Add(-time.Hour))
-	later := jobKeysAfterSweep(t, svc, producer, source.ID)
-	if len(later) != 3 || later[2] == first[0] {
-		t.Fatalf("the next scheduled pass reused the previous pass's key %q", later[2])
+	// The next occurrence is different work and must not be swallowed as a
+	// replay of the one before it.
+	reconcileOnce(t, svc, source.OrgID, source.ID, "occurrence-2")
+	later := jobKeys(producer, source.ID)
+	if len(later) != 3 || later[2] == keys[0] {
+		t.Fatalf("the next occurrence reused the previous one's key %q", later[2])
 	}
 }
 
-func jobKeysAfterSweep(t *testing.T, svc *business.Service, p *recordingProducer, sourceID string) []string {
+// reconcileOnce runs one reconcile pass as one occurrence of the declared
+// trigger would: an effect identity in context, and the receipt committed by
+// the callback the operation hands it.
+func reconcileOnce(t *testing.T, svc *business.Service, orgID, sourceID, effect string) {
 	t.Helper()
-	if _, err := svc.RunDatasourceReconcile(context.Background()); err != nil {
-		t.Fatal(err)
+	digest := sha256.Sum256([]byte(effect))
+	ctx := receipts.WithEffect(t.Context(), receipts.Effect{
+		ID: effect, Tenant: orgID, Method: business.ReconcileSourceMethod, RequestDigest: digest[:],
+	})
+	if err := svc.ReconcileDatasourceSource(ctx, "actor", orgID, sourceID, func(context.Context, string) error { return nil }); err != nil {
+		t.Fatalf("reconcile %s: %v", effect, err)
 	}
+}
+
+func jobKeys(p *recordingProducer, sourceID string) []string {
 	var keys []string
 	for _, job := range jobsFor(p, sourceID) {
 		keys = append(keys, job.GetIdempotencyKey())
 	}
 	return keys
+}
+
+// reconcileOperationStore is the fake store the operation needs beyond the
+// datasource one: the membership it authorizes against and the durable attempt
+// row that binds one effect identity to one actor and source.
+type reconcileOperationStore struct {
+	*datasourceFakeStore
+	attempts map[string]business.SourceOperationAttempt
+}
+
+func newReconcileOperationStore() *reconcileOperationStore {
+	return &reconcileOperationStore{datasourceFakeStore: newDatasourceFakeStore(), attempts: map[string]business.SourceOperationAttempt{}}
+}
+
+func (s *reconcileOperationStore) GetOrgMembership(context.Context, string, string) (*gen.OrgMembership, error) {
+	return &gen.OrgMembership{Role: gen.OrgRole_ORG_ROLE_ADMIN}, nil
+}
+
+// The attempt row is keyed by (ORG, effect), as the real table is
+// (`datasource_operation_attempts` has a composite primary key on
+// `org_id, effect_id`). Keying the fake by the effect alone made one
+// organization's attempt row answer another's lookup — a cross-tenant
+// collision the real store cannot have, which would have refused a legitimate
+// call and masked the enqueue-key scoping this package tests.
+func attemptKey(org, effect string) string { return org + "\x00" + effect }
+
+func (s *reconcileOperationStore) GetSourceOperationAttempt(_ context.Context, org, id string) (*business.SourceOperationAttempt, error) {
+	attempt, ok := s.attempts[attemptKey(org, id)]
+	if !ok {
+		return nil, nil
+	}
+	return &attempt, nil
+}
+
+func (s *reconcileOperationStore) CreateSourceOperationAttempt(_ context.Context, attempt business.SourceOperationAttempt) (bool, error) {
+	key := attemptKey(attempt.OrgID, attempt.EffectID)
+	if _, ok := s.attempts[key]; ok {
+		return false, nil
+	}
+	s.attempts[key] = attempt
+	return true, nil
+}
+
+func (s *reconcileOperationStore) DeleteSourceOperationAttempt(_ context.Context, org, id string) error {
+	delete(s.attempts, attemptKey(org, id))
+	return nil
 }

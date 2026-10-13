@@ -47,6 +47,9 @@ type PostgresStore struct {
 	// the request login; a single-credential tooling store (NewPostgresStoreFromURL)
 	// points it at pool.
 	controlPlane *pgxpool.Pool
+	// Lock holders use a separate pool so concurrent requests cannot exhaust
+	// the control-plane connections needed to finish their effects.
+	authorityUse *pgxpool.Pool
 	database     *scopedpostgres.Factory
 }
 
@@ -178,14 +181,24 @@ func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, r
 		requestPool.Close()
 		return nil, w.Wrapf(err, "failed to open authenticated Postgres boundary")
 	}
+	authorityPool, err := pgxpool.NewWithConfig(ctx, controlPlaneConfig.Copy())
+	if err != nil {
+		controlPlanePool.Close()
+		requestPool.Close()
+		closeDatabase()
+		return nil, err
+	}
+
 	return &PostgresStore{
 		Close: func() {
+			authorityPool.Close()
 			controlPlanePool.Close()
 			requestPool.Close()
 			closeDatabase()
 		},
 		pool:         requestPool,
 		controlPlane: controlPlanePool,
+		authorityUse: authorityPool,
 		database:     database,
 	}, nil
 }
@@ -882,8 +895,14 @@ func newPostgresStoreFromConfig(ctx context.Context, poolConfig *pgxpool.Config)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to connect to database")
 	}
+	authorityPool, err := pgxpool.NewWithConfig(ctx, poolConfig.Copy())
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
 	return &PostgresStore{
-		Close:        pool.Close,
+		Close:        func() { authorityPool.Close(); pool.Close() },
+		authorityUse: authorityPool,
 		pool:         pool,
 		controlPlane: pool,
 	}, nil

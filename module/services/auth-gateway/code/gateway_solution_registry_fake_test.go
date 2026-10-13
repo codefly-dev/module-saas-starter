@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -141,7 +142,7 @@ func (f *fakeSolutionRegistry) undeclare(alias string) {
 
 func (f *fakeSolutionRegistry) List(
 	_ context.Context, req *accountsv1.ListSolutionRegistrationsRequest,
-) (*accountsv1.ListSolutionRegistrationsResponse, error) {
+) (*solutionRegistrySnapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listCalls++
@@ -157,7 +158,34 @@ func (f *fakeSolutionRegistry) List(
 		listed.Status = fakeSolutionStatus(listed, time.Now())
 		out.Registrations = append(out.Registrations, listed)
 	}
-	return out, nil
+	ids := make(map[string]string)
+	endpoints := make(map[string][]moduleEndpoint)
+	for _, record := range out.Registrations {
+		ids[record.GetSolutionId()] = "spiffe://acme.test/ns/acme-prod/sa/" + record.GetSolutionId()
+		if record.GetDeclared().GetKind() == accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE {
+			// What the applied presence would declare, and — standing in for the
+			// composition's carriers — the fixture's backend address as where the
+			// SDK resolves it.
+			endpoint := moduleEndpoint{Module: record.GetSolutionId(), Service: record.GetSolutionId(), Name: "rest", API: "rest"}
+			endpoints[record.GetSolutionId()] = []moduleEndpoint{endpoint}
+			testModuleAddresses.Store(endpoint, record.GetBackend().GetUpstream())
+		}
+	}
+	return &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: out, workloadIDs: ids, moduleEndpoints: endpoints}, nil
+}
+
+// testModuleAddresses is the test binary's stand-in for the composition's
+// endpoint carriers: where the SDK would resolve each module endpoint.
+var testModuleAddresses sync.Map
+
+func init() {
+	moduleEndpointResolver = func(_ context.Context, endpoint moduleEndpoint) (string, error) {
+		address, ok := testModuleAddresses.Load(endpoint)
+		if !ok || address.(string) == "" {
+			return "", fmt.Errorf("no carrier for %s/%s/%s::%s", endpoint.Module, endpoint.Service, endpoint.Name, endpoint.API)
+		}
+		return address.(string), nil
+	}
 }
 
 // fakeSolutionStatus mirrors business.(*SolutionRegistration).Status, ordering
@@ -174,9 +202,8 @@ func fakeSolutionStatus(record *accountsv1.SolutionRegistration, now time.Time) 
 	front, backend := record.GetFrontend(), record.GetBackend()
 	if record.GetTombstonedAt() == nil &&
 		record.GetDeclared().GetKind() == accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE {
-		if backend == nil {
-			return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
-		}
+		// A declared module is active once its presence is applied: its address
+		// is resolved, never reported, so no half is waited for.
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
 	}
 	switch {

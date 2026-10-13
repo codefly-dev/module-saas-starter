@@ -56,7 +56,8 @@ func (s *Service) newDatasourceConnectorRegistry() *connector.Registry {
 	must(r.Register(connector.Budgeted(github.NewFilesConnector(s.githubRemoteForSource), datasourceScheduler{s: s})))
 	must(r.RegisterNonConformant(connector.Descriptor{
 		Key: DatasourceProviderAPI, DisplayName: "HTTP API",
-		Description:     "An HTTP API with a stored credential; a configured resource is fetched on sync.",
+		Description:     "An HTTP API with a stored credential and declared operations called through the host.",
+		Budget:          apiOperationBudget,
 		Interface:       connector.InterfaceRecords,
 		CredentialModes: []connector.CredentialMode{connector.CredentialStaticSecret},
 		Gap:             gapAPIDatasource,
@@ -85,6 +86,9 @@ func (s *Service) DatasourceConnectors() *connector.Registry { return s.datasour
 // DatasourceCatalogEntry is one registered connector as the catalog serves it:
 // its descriptor, and whether a new source of it may be connected now.
 type DatasourceCatalogEntry struct {
+	AcceptsOperations bool
+	OperationsGap     string
+	OAuth             DatasourceOAuthProvider
 	Descriptor        connector.Descriptor
 	AcceptsNewSources bool
 	// LiveDeliveryConfigured is whether THIS deployment has wired the
@@ -104,8 +108,15 @@ func (s *Service) DatasourceCatalog() []DatasourceCatalogEntry {
 	}
 	var out []DatasourceCatalogEntry
 	for _, d := range s.datasourceConnectors.Descriptors() {
+		gap := "connector has no operations conformance record"
+		if d.Key == DatasourceProviderAPI {
+			gap = ""
+		}
 		out = append(out, DatasourceCatalogEntry{
 			Descriptor:             d,
+			AcceptsOperations:      d.Key == DatasourceProviderAPI,
+			OperationsGap:          gap,
+			OAuth:                  s.datasourceOAuth[d.Key],
 			AcceptsNewSources:      s.datasourceConnectors.AdmitNewSource(d.Key) == nil,
 			LiveDeliveryConfigured: s.DatasourceLiveDeliveryConfigured(d.Key),
 		})
@@ -147,7 +158,7 @@ func (s *Service) admitNewDatasource(provider string) error {
 // connectorSource is the envelope's view of a stored source: its identity and
 // tenancy, and — for GitHub — its repository, branch and the host's own scope.
 func connectorSource(source *DatasourceSource) connector.Source {
-	src := connector.Source{ID: source.ID, OrgID: source.OrgID, BoundaryNodeID: source.BoundaryNodeID, CredentialKey: datasourceCredentialKey(source)}
+	src := connector.Source{ID: source.ID, OrgID: source.OrgID, BoundaryNodeID: source.BoundaryNodeID, CredentialKey: datasourceCredentialKey(source), PersonalOwnerUserID: source.PersonalOwnerUserID}
 	if source.Provider == DatasourceProviderGitHub {
 		src.Config = github.SourceConfig{Repo: source.Repo, Branch: source.Branch, InScope: datasourceFileScope(source)}
 	}
@@ -180,4 +191,12 @@ func (r githubRemote) OpenMirror(ctx context.Context, ws github.Workspace, repo 
 		return nil, err
 	}
 	return m, nil
+}
+
+// Operations admission is independent of the sync envelope's conformance.
+func (s *Service) admitDatasourceConnection(provider string) error {
+	if provider == DatasourceProviderAPI && s.datasourceConnectors != nil {
+		return nil
+	}
+	return s.admitNewDatasource(provider)
 }

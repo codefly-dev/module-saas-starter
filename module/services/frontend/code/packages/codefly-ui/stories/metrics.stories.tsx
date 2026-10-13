@@ -1,12 +1,12 @@
-import { TrendLineChart } from "../src/dashboard/index.js";
 import {
-	MetricCard,
-	StatTile,
 	KPIRow,
 	MetricAreaChart,
 	MetricBarChart,
+	MetricCard,
 	MetricLineChart,
 	type MetricState,
+	StatTile,
+	TrendLineChart,
 } from "../src/dashboard/index.js";
 
 export default { title: "Shared UI/Metrics" };
@@ -56,6 +56,7 @@ export const Availability = {
 					"stale",
 					"provider_unavailable",
 					"not_configured",
+					"no_total",
 				] satisfies MetricState[]
 			).map((state) => (
 				<StatTile key={state} metric={{ label: state, value: 54, state }} />

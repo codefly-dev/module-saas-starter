@@ -37,7 +37,12 @@ func newPlacementService(t *testing.T, store business.Store, grant business.Modu
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
+	if grant.Tenant == "" {
+		// A registry entry always names its tenant; the capability check
+		// compares the credential's to it.
+		grant.Tenant = moduleTenantA
+	}
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{modulePrincSvc: grant})
 	return svc
 }
@@ -98,7 +103,7 @@ func TestModulePlaceRecord_UnregisteredPrincipalDenied(t *testing.T) {
 	requireCode(t, err, codes.PermissionDenied)
 }
 
-func TestModulePlaceRecord_OtherTenantRequiresCrossTenant(t *testing.T) {
+func TestModulePlaceRecord_CrossTenantStillRequiresTargetOrganizationConsent(t *testing.T) {
 	svc := newPlacementService(t, newPlacementStore(), business.ModulePrincipalGrant{Resources: []string{"documents"}})
 
 	_, err := placeRecord(t, svc, moduleTenantB, "space.doc_1", "documents", "doc-1")
@@ -106,9 +111,15 @@ func TestModulePlaceRecord_OtherTenantRequiresCrossTenant(t *testing.T) {
 
 	crossTenant := newPlacementService(t, newPlacementStore(),
 		business.ModulePrincipalGrant{Resources: []string{"documents"}, CrossTenant: true})
-	if _, err := placeRecord(t, crossTenant, moduleTenantB, "space.doc_1", "documents", "doc-1"); err != nil {
-		t.Fatalf("a cross-tenant principal may place on another tenant: %v", err)
+	_, err = placeRecord(t, crossTenant, moduleTenantB, "space.doc_1", "documents", "doc-1")
+	requireCode(t, err, codes.PermissionDenied)
+	// The fixture has consent in each org, but the decision must be bound to B.
+	_, err = crossTenant.ModulePlaceRecord(context.Background(), business.ModuleCaller{PrincipalID: moduleCaller().PrincipalID, BoundOrg: moduleTenantB},
+		moduleTenantB, "space.doc_1", "record", "Record", "documents", "doc-1")
+	if err != nil {
+		t.Fatal(err)
 	}
+
 }
 
 // The surface is at-least-once, so the same placement arriving twice must

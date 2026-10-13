@@ -1,7 +1,11 @@
 import { create } from "@bufbuild/protobuf";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AggregateAuditLogResponseSchema } from "../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
-import { describe, expect, it } from "vitest";
-import { runDataGraph, runMetric } from "../src/datagraph/run.js";
+import {
+	fillEmptyBuckets,
+	runDataGraph,
+	runMetric,
+} from "../src/datagraph/run.js";
 import type {
 	DataGraph,
 	MetricOperation,
@@ -703,4 +707,495 @@ describe("derived additive totals", () => {
 			}
 		});
 	}
+});
+
+// The audit RPC returns no bucket for a day with no events. Plotted as it came
+// back, a day with none vanished and the line ran straight over it.
+describe("a time series with days that have no events", () => {
+	// The clock stands before every day these tests return, so only the days
+	// between the first and the last are filled. The days since the last one,
+	// through the end of the range, have tests of their own below.
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2020-01-01T00:00:00Z"));
+	});
+	afterEach(() => vi.useRealTimers());
+
+	const day = (date: string) => `${date}T00:00:00+00`;
+	const perDay = (
+		aggregation: SourceMetric["aggregation"],
+		bucket: SourceMetric["bucket"] = "day",
+	): SourceMetric => ({
+		id: "per_day",
+		kind: "source",
+		filter: { event: "signed_in" },
+		groupBy: "time",
+		bucket,
+		aggregation,
+		...(aggregation === "count" ? {} : { field: "payload:amount" }),
+		...(aggregation === "percentile" ? { percentile: 0.5 } : {}),
+	});
+
+	it("puts a 0 at each day between the first and the last with none", async () => {
+		const { client } = fakeAuditClient(() => [
+			{ key: day("2026-09-02"), count: 1 },
+			{ key: day("2026-09-05"), count: 1 },
+			{ key: day("2026-09-06"), count: 2 },
+		]);
+
+		const series = await runMetric(client, perDay("count"), (n) => n, context);
+
+		expect(series.points).toEqual([
+			{ key: day("2026-09-02"), value: 1 },
+			{ key: day("2026-09-03"), value: 0 },
+			{ key: day("2026-09-04"), value: 0 },
+			{ key: day("2026-09-05"), value: 1 },
+			{ key: day("2026-09-06"), value: 2 },
+		]);
+		expect(series.total).toBe(4);
+		expect(series.coverage).toBe("complete");
+	});
+
+	it.each(["count_distinct", "sum"] as const)(
+		"fills a %s, which is 0 over no events",
+		async (aggregation) => {
+			const { client } = fakeAuditClient(() => [
+				{ key: day("2026-09-02"), count: 3, metrics: { value: 2 } },
+				{ key: day("2026-09-04"), count: 1, metrics: { value: 1 } },
+			]);
+
+			const series = await runMetric(
+				client,
+				perDay(aggregation),
+				(n) => n,
+				context,
+			);
+
+			expect(series.points.map((point) => point.value)).toEqual([2, 0, 1]);
+		},
+	);
+
+	it.each(["avg", "min", "max", "percentile"] as const)(
+		"leaves out a day with no events for a %s, which has no value then",
+		async (aggregation) => {
+			const { client } = fakeAuditClient(() => [
+				{ key: day("2026-09-02"), count: 3, metrics: { value: 2 } },
+				{ key: day("2026-09-04"), count: 1, metrics: { value: 1 } },
+			]);
+
+			const series = await runMetric(
+				client,
+				perDay(aggregation),
+				(n) => n,
+				context,
+			);
+
+			expect(series.points.map((point) => point.key)).toEqual([
+				day("2026-09-02"),
+				day("2026-09-04"),
+			]);
+		},
+	);
+
+	it("does not put a 0 where the RPC returned a day whose value is unknown", async () => {
+		const { client } = fakeAuditClient(() => [
+			{ key: day("2026-09-02"), count: 3, metrics: { value: 2 } },
+			// Events that day, none with the field: the RPC omits the value.
+			{ key: day("2026-09-03"), count: 2, samples: { value: BigInt(0) } },
+			{ key: day("2026-09-05"), count: 1, metrics: { value: 1 } },
+		]);
+
+		const series = await runMetric(client, perDay("sum"), (n) => n, context);
+
+		expect(series.points).toEqual([
+			{ key: day("2026-09-02"), value: 2 },
+			{ key: day("2026-09-04"), value: 0 },
+			{ key: day("2026-09-05"), value: 1 },
+		]);
+		expect(series.coverage).toBe("partial");
+	});
+
+	it("keeps the total unavailable when every day with events has an unknown value", async () => {
+		const { client } = fakeAuditClient(() => [
+			// Events on both days, none with the field: the RPC omits the value.
+			{ key: day("2026-09-02"), count: 2, samples: { value: BigInt(0) } },
+			{ key: day("2026-09-04"), count: 1, samples: { value: BigInt(0) } },
+		]);
+
+		const series = await runMetric(client, perDay("sum"), (n) => n, context);
+
+		// The day between gets its 0, but that 0 observed nothing, so the sum
+		// of what was observed is unavailable rather than 0.
+		expect(series.points).toEqual([{ key: day("2026-09-03"), value: 0 }]);
+		expect(series.total).toBeNull();
+		expect(series.coverage).toBe("partial");
+	});
+
+	it("steps a week and a month bucket by a week and a month", async () => {
+		const weeks = await runMetric(
+			fakeAuditClient(() => [
+				{ key: day("2026-08-31"), count: 1 },
+				{ key: day("2026-09-14"), count: 1 },
+			]).client,
+			perDay("count", "week"),
+			(n) => n,
+			context,
+		);
+		const months = await runMetric(
+			fakeAuditClient(() => [
+				{ key: day("2026-01-01"), count: 1 },
+				{ key: day("2026-04-01"), count: 1 },
+			]).client,
+			perDay("count", "month"),
+			(n) => n,
+			context,
+		);
+
+		expect(weeks.points.map((point) => point.key)).toEqual([
+			day("2026-08-31"),
+			day("2026-09-07"),
+			day("2026-09-14"),
+		]);
+		expect(months.points.map((point) => [point.key, point.value])).toEqual([
+			[day("2026-01-01"), 1],
+			[day("2026-02-01"), 0],
+			[day("2026-03-01"), 0],
+			[day("2026-04-01"), 1],
+		]);
+	});
+
+	it("leaves the points as they are when a key is off the bucket's step or not a date", async () => {
+		const offStep = await runMetric(
+			fakeAuditClient(() => [
+				{ key: day("2026-08-31"), count: 1 },
+				{ key: day("2026-09-10"), count: 1 },
+			]).client,
+			perDay("count", "week"),
+			(n) => n,
+			context,
+		);
+		const notADate = await runMetric(
+			fakeAuditClient(() => [
+				{ key: day("2026-09-02"), count: 1 },
+				{ key: "2026-02-30", count: 1 },
+			]).client,
+			perDay("count"),
+			(n) => n,
+			context,
+		);
+
+		expect(offStep.points).toHaveLength(2);
+		expect(notADate.points).toHaveLength(2);
+	});
+
+	// Before the zeros, a day no input had events on was a key no input
+	// returned, so a derived metric had nothing there to combine or miss.
+	it("does not call a derived metric partial over a day no input had events on", async () => {
+		const byActor = (
+			id: string,
+			aggregation: SourceMetric["aggregation"],
+		): SourceMetric => ({
+			...perDay(aggregation),
+			id,
+			filter: { event: "signed_in", actor: id },
+		});
+		const graph: DataGraph = {
+			events: [{ name: "signed_in", type: "user.signed_in.v1" }],
+			metrics: [
+				byActor("won", "count"),
+				byActor("all", "count"),
+				byActor("typical", "avg"),
+				{
+					id: "rate",
+					kind: "derived",
+					operation: "ratio",
+					inputs: ["won", "all"],
+				},
+				{
+					id: "spread",
+					kind: "derived",
+					operation: "difference",
+					inputs: ["all", "typical"],
+				},
+			],
+			dashboards: [],
+		};
+		// No events at all on 09-04; on 09-03 none won.
+		const { client } = fakeAuditClient((request) => {
+			if (request.actorId === "won")
+				return [
+					{ key: day("2026-09-02"), count: 1 },
+					{ key: day("2026-09-05"), count: 1 },
+				];
+			if (request.actorId === "all")
+				return [
+					{ key: day("2026-09-02"), count: 2 },
+					{ key: day("2026-09-03"), count: 4 },
+					{ key: day("2026-09-05"), count: 4 },
+				];
+			return [
+				{ key: day("2026-09-02"), count: 2, metrics: { value: 2 } },
+				{ key: day("2026-09-03"), count: 4, metrics: { value: 3 } },
+				{ key: day("2026-09-05"), count: 4, metrics: { value: 1 } },
+			];
+		});
+
+		const resolved = await runDataGraph(client, graph, context);
+
+		expect(resolved.rate.points).toEqual([
+			{ key: day("2026-09-02"), value: 0.5 },
+			{ key: day("2026-09-03"), value: 0 },
+			{ key: day("2026-09-05"), value: 0.25 },
+		]);
+		expect(resolved.rate.coverage).toBe("complete");
+		expect(resolved.spread.points.map((point) => point.value)).toEqual([
+			0, 1, 3,
+		]);
+		expect(resolved.spread.coverage).toBe("complete");
+	});
+});
+
+// A rate's inputs rarely start on the same day: failures begin later than
+// requests, or never happen at all. A day the numerator had no events on is a
+// 0, not missing telemetry, wherever it falls in the denominator's range.
+describe("a derived metric over inputs with different first and last days", () => {
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2020-01-01T00:00:00Z"));
+	});
+	afterEach(() => vi.useRealTimers());
+
+	const day = (date: string) => `${date}T00:00:00+00`;
+	const perDay = (id: string, actor: string): SourceMetric => ({
+		id,
+		kind: "source",
+		filter: { event: "signed_in", actor },
+		groupBy: "time",
+		bucket: "day",
+		aggregation: "count",
+	});
+	const graph = (...derived: DataGraph["metrics"][number][]): DataGraph => ({
+		events: [{ name: "signed_in", type: "user.signed_in.v1" }],
+		metrics: [perDay("failed", "failed"), perDay("all", "all"), ...derived],
+		dashboards: [],
+	});
+	const rate = {
+		id: "rate",
+		kind: "derived",
+		operation: "ratio",
+		inputs: ["failed", "all"],
+	} as const;
+
+	it("reads 0, and stays complete, on a denominator day before the numerator's first event", async () => {
+		const { client } = fakeAuditClient((request) =>
+			request.actorId === "failed"
+				? [{ key: day("2026-09-03"), count: 1 }]
+				: [
+						{ key: day("2026-09-02"), count: 2 },
+						{ key: day("2026-09-03"), count: 4 },
+						{ key: day("2026-09-04"), count: 4 },
+					],
+		);
+		const resolved = await runDataGraph(client, graph(rate), context);
+		expect(resolved.rate.points).toEqual([
+			{ key: day("2026-09-02"), value: 0 },
+			{ key: day("2026-09-03"), value: 0.25 },
+			{ key: day("2026-09-04"), value: 0 },
+		]);
+		expect(resolved.rate.coverage).toBe("complete");
+	});
+
+	it("reads 0% on every day of a ratio whose numerator has no events at all", async () => {
+		const { client } = fakeAuditClient((request) =>
+			request.actorId === "failed"
+				? []
+				: [
+						{ key: day("2026-09-02"), count: 2 },
+						{ key: day("2026-09-04"), count: 4 },
+					],
+		);
+		const resolved = await runDataGraph(client, graph(rate), context);
+		expect(resolved.rate.coverage).toBe("complete");
+		// 3 September had no requests either: a rate of nothing has no value.
+		expect(resolved.rate.points.map((point) => point.value)).toEqual([0, 0]);
+	});
+
+	it("puts the days of a later-starting input in time order, not first-seen order", async () => {
+		const { client } = fakeAuditClient((request) =>
+			request.actorId === "failed"
+				? [{ key: day("2026-09-01"), count: 1 }]
+				: [{ key: day("2026-09-03"), count: 2 }],
+		);
+		const resolved = await runDataGraph(
+			client,
+			graph({
+				id: "total",
+				kind: "derived",
+				operation: "sum",
+				inputs: ["all", "failed"],
+			}),
+			context,
+		);
+		expect(resolved.total.points).toEqual([
+			{ key: day("2026-09-01"), value: 1 },
+			{ key: day("2026-09-02"), value: 0 },
+			{ key: day("2026-09-03"), value: 2 },
+		]);
+		expect(resolved.total.coverage).toBe("complete");
+	});
+
+	it("reads a sum of no events as 0 when it feeds another derived metric", async () => {
+		const { client } = fakeAuditClient((request) =>
+			request.actorId === "failed"
+				? []
+				: [
+						{ key: day("2026-09-02"), count: 2 },
+						{ key: day("2026-09-03"), count: 4 },
+					],
+		);
+		const resolved = await runDataGraph(
+			client,
+			graph(
+				{
+					id: "failures",
+					kind: "derived",
+					operation: "sum",
+					inputs: ["failed", "failed"],
+				},
+				{
+					id: "rate",
+					kind: "derived",
+					operation: "ratio",
+					inputs: ["failures", "all"],
+				},
+			),
+			context,
+		);
+		expect(resolved.rate.coverage).toBe("complete");
+		expect(resolved.rate.points.map((point) => point.value)).toEqual([0, 0]);
+	});
+
+	it("still reads a missing operand as unknown when that input is partial", async () => {
+		const { client } = fakeAuditClient((request) =>
+			request.actorId === "failed"
+				? [{ key: "user.signed_in.v1", count: 1 }]
+				: [{ key: day("2026-09-02"), count: 2 }],
+		);
+		const resolved = await runDataGraph(
+			client,
+			{
+				...graph(rate),
+				metrics: [
+					{ ...perDay("failed", "failed"), groupBy: "time" },
+					perDay("all", "all"),
+					rate,
+				],
+			},
+			context,
+		);
+		// A key that is not a date is never read as a day with no events.
+		expect(resolved.rate.coverage).toBe("partial");
+	});
+});
+
+// The query is open-ended, so its range ends today: the days since the last
+// event are days with no events like the ones between, and the latest point is
+// the latest day, not the last day anything happened.
+describe("a time series whose range runs past its last event", () => {
+	afterEach(() => vi.useRealTimers());
+
+	const perDay = (bucket: SourceMetric["bucket"] = "day"): SourceMetric => ({
+		id: "per_day",
+		kind: "source",
+		filter: { event: "signed_in" },
+		groupBy: "time",
+		bucket,
+		aggregation: "count",
+	});
+	const days = (series: { points: { key: string }[] }) =>
+		series.points.map((point) => point.key.slice(0, 10));
+
+	it("reads 0 on each day since the last event, up to today", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-09-05T12:00:00Z"));
+		const { client } = fakeAuditClient(() => [
+			{ key: "2026-09-01T00:00:00+00", count: 3 },
+			{ key: "2026-09-02T00:00:00+00", count: 5 },
+		]);
+		const series = await runMetric(client, perDay(), (n) => `user.${n}.v1`, {
+			orgId: "org_1",
+		});
+		expect(days(series)).toEqual([
+			"2026-09-01",
+			"2026-09-02",
+			"2026-09-03",
+			"2026-09-04",
+			"2026-09-05",
+		]);
+		expect(series.points.slice(2).map((point) => point.value)).toEqual([
+			0, 0, 0,
+		]);
+		expect(series.total).toBe(8);
+	});
+
+	it("stops before an explicit end of range, which is exclusive", async () => {
+		const { client } = fakeAuditClient(() => [
+			{ key: "2026-09-01T00:00:00+00", count: 3 },
+		]);
+		const series = await runMetric(client, perDay(), (n) => `user.${n}.v1`, {
+			orgId: "org_1",
+			to: new Date("2026-09-04T00:00:00Z"),
+		});
+		expect(days(series)).toEqual(["2026-09-01", "2026-09-02", "2026-09-03"]);
+	});
+
+	it("runs a week bucket through the week holding today", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-09-16T12:00:00Z"));
+		const { client } = fakeAuditClient(() => [
+			{ key: "2026-08-31T00:00:00+00", count: 3 },
+		]);
+		const series = await runMetric(
+			client,
+			perDay("week"),
+			(n) => `user.${n}.v1`,
+			{ orgId: "org_1" },
+		);
+		expect(days(series)).toEqual(["2026-08-31", "2026-09-07", "2026-09-14"]);
+	});
+});
+
+// The RPC keys UTC buckets, so every key carries "+00" and a filled day copies
+// it. Keys that disagree about their offset leave a filled day with an offset
+// that cannot be known from them, so nothing is invented.
+describe("filling keys that carry different offsets", () => {
+	it("leaves the points as they came rather than give a filled day a guessed offset", () => {
+		const points = [
+			{ key: "2026-03-28T00:00:00+01", value: 1 },
+			{ key: "2026-04-01T00:00:00+02", value: 1 },
+		];
+		const filled = fillEmptyBuckets(
+			points,
+			points.map((point) => point.key),
+			"day",
+		);
+		expect(filled).toEqual(points);
+	});
+
+	it("fills keys that share one offset, copying it", () => {
+		const points = [
+			{ key: "2026-03-28T00:00:00+00", value: 1 },
+			{ key: "2026-03-30T00:00:00+00", value: 1 },
+		];
+		const filled = fillEmptyBuckets(
+			points,
+			points.map((point) => point.key),
+			"day",
+		);
+		expect(filled.map((point) => point.key)).toEqual([
+			"2026-03-28T00:00:00+00",
+			"2026-03-29T00:00:00+00",
+			"2026-03-30T00:00:00+00",
+		]);
+	});
 });

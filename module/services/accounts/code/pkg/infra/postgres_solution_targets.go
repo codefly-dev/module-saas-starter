@@ -167,11 +167,25 @@ func (s *PostgresStore) ListSolutionTargets(ctx context.Context) ([]*business.So
 func (s *PostgresStore) RevokeInstallationsOfTarget(
 	ctx context.Context, targetID, reason string, now time.Time,
 ) ([]business.RevokedInstallation, error) {
-	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+	executor := s.getQueryExecutor(ctx)
+	// Match organization deletion's lock order before changing any installation.
+	// Consume the whole result first, then update only the locked batch.
+	locked, err := executor.Query(ctx, `
+		SELECT id FROM public.installations
+		 WHERE target_id = $1::uuid AND status <> 'revoked'
+		 ORDER BY id FOR UPDATE`, targetID)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pgx.CollectRows(locked, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	rows, err := executor.Query(ctx, `
 		UPDATE public.installations
-		   SET status = 'revoked', revoked_at = $3, revoked_reason = $2
-		 WHERE target_id = $1::uuid AND status = 'active'
-		RETURNING id::text, org_id::text`, targetID, reason, now)
+		   SET status = 'revoked', revoked_at = $3, revoked_reason = $2, failure_reason = NULL
+		 WHERE target_id = $1::uuid AND status <> 'revoked' AND id = ANY($4::uuid[])
+		RETURNING id::text, org_id::text`, targetID, reason, now, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -212,22 +226,29 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 	if limit <= 0 {
 		limit = 1
 	}
+	// A nil slice binds as NULL, and cardinality(NULL) is NULL rather than 0.
+	targetIDs := query.TargetIDs
+	if targetIDs == nil {
+		targetIDs = []string{}
+	}
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
-		SELECT t.id::text, t.binding_id, t.solution_id,
+		SELECT t.id::text, t.binding_id, t.solution_id, r.declared_kind,
 		       b.applied_release, t.opened_generation, b.applied_generation,
 		       ($1 <> '' AND EXISTS (
 		           SELECT 1 FROM public.installations i
-		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.status = 'active'
+		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.status <> 'revoked'
 		       ))
 		  FROM public.solution_targets t
 		  JOIN public.solution_host_bindings b ON b.binding_id = t.binding_id
+		  JOIN public.solution_registrations r ON r.declared_target_id = t.id
 		 WHERE t.closed_generation IS NULL
 		   AND b.applied_generation IS NOT NULL
 		   AND b.applied_removed = FALSE
 		   AND ($4 = '' OR t.id::text = $4)
+		   AND (cardinality($5::text[]) = 0 OR t.id::text = ANY($5::text[]))
 		   AND ($2 = '' OR t.id::text > $2)
 		 ORDER BY t.id
-		 LIMIT $3`, query.OrgID, query.Cursor, limit, query.TargetID)
+		 LIMIT $3`, query.OrgID, query.Cursor, limit, query.TargetID, targetIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +261,7 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 			openedGeneration  int64
 			appliedGeneration int64
 		)
-		if err := rows.Scan(&entry.TargetID, &entry.BindingID, &entry.RouteAlias,
+		if err := rows.Scan(&entry.TargetID, &entry.BindingID, &entry.RouteAlias, &entry.Kind,
 			&release, &openedGeneration, &appliedGeneration, &entry.Installed); err != nil {
 			return nil, err
 		}

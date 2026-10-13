@@ -19,11 +19,13 @@ cannot write this projection. This first implementation relies on the
 operator's reviewed policy-delivery process to establish the organization's
 approval; it does not implement an organization-admin policy publication API.
 
-The operator also provisions a dedicated, create-once module identity secret.
-Its digest goes into `federation.MODULE_IDENTITY_SECRETS`, and the protected
-plaintext goes only to the installation Job. Declare the identity in
-`module-capabilities.MODULE_PRINCIPALS`, bound to the approved organization.
-It needs no queues, event namespaces, cross-tenant grant or administrator role.
+The installation Job proves which module it is like every module does: with its
+pod's projected ServiceAccount token (audience `accounts`). There is no installer
+secret — `MODULE_IDENTITY_SECRETS` is deleted (#1056). Declare the identity as a
+module principal allowed by the platform super_admin's module envelope, bound
+to the approved organization, with the Job's workload (ServiceAccount, namespace,
+container); its authority document must approve the build the Job runs, or it
+mints nothing. It needs no queues, event namespaces, cross-tenant grant or administrator role.
 The existing `ModulePrincipalID(prefix)` derives its system identity. This is
 separate from the module's application agent, and needs no agent registration
 or human API key to bootstrap itself.
@@ -81,11 +83,19 @@ nor a cloud workload identity alone authorizes installation.
 
 `POST /v1/module-installations/token`:
 
+`Authorization: Bearer <the Job pod's projected ServiceAccount token>`, and:
+
 ```json
-{"prefix":"example-installer","secret":"<protected dedicated identity secret>"}
+{"prefix":"example-installer"}
 ```
 
-This calls the existing module identity authorization and Work Context signer,
+A body naming any other field — a `secret` included — is refused as malformed.
+A missing bearer is `401`; a token refused by the API server, another workload's
+token, or a pod on an unapproved build is `403`; a host that could not establish
+the Job's execution is `503`.
+
+This calls the existing module identity authorization (which binds the token to
+the pod's running build) and Work Context signer,
 checks that a live delegation exists for that identity and tenant, verifies the
 tenant exists, and durably records issuance before returning the capability.
 Response fields are `token`, `expiresAt` (RFC3339), `principalId`, and `tenant`.
@@ -94,10 +104,9 @@ issuer, `module-capabilities` audience and existing maximum 15-minute lifetime
 (with the existing verifier's clock-skew allowance). Re-exchange after expiry;
 do not commit tokens or copy them into long-lived configuration.
 
-The secret itself is a protected bootstrap identity credential, not a personal
-key. It remains stable across repeated installation. Rotate it explicitly by
-replacing the protected plaintext and digest and restarting Accounts to load
-the digest. To revoke outstanding capabilities immediately at the request
+There is no stored credential to rotate: the kubelet rotates the projected
+token, and the Job re-reads it before each mint. To revoke outstanding
+capabilities immediately at the request
 boundary, remove the delegation from the projected policy or expire it.
 Revocation takes effect on each replica when its projection is updated. An
 already authorized transaction may finish; deleting policy is not cancellation
@@ -124,12 +133,18 @@ capability in `X-Codefly-Work-Context` and the same JSON body:
 Accounts resolves `organizationSlug` through its existing organization store,
 then compares the persisted ID with both token tenant and delegation. It
 checks the current owner's administrative eligibility and role permission
-contents before mutation. Inspect returns `state: absent` or `state: ready` and
-`changed: false`; apply returns `state: ready` and reports whether it created
-anything. Verify fails on an absent or incompatible installation. Ready responses
+contents before mutation. Inspect returns `state: absent`, `pending`, `failed`,
+or `ready` and `changed: false`; apply reports the current state and whether it
+created anything. Solution installations are pending until the workload install
+step acknowledges. Reapplying observes that run; it never restarts a failed run.
+An organization administrator retries failed consent through RetryInstallation.
+Verify refuses absent, pending, failed, and incompatible installations. Existing responses
 include `organizationId`, `principalId`, `installationId`, `scopeNodeId`, and
 `grantId`. Absent responses contain only `organizationId` alongside state and
 changed. IDs are always read from the server, including after a lost response.
+Only `ready` may carry a verified authority reference. Declaration resolution
+uses the same registry binding as InstallSolution; this delegated path grants
+only its approved agent ceiling, with empty module-capability consent.
 
 HTTP statuses: 400 invalid shape/unknown fields; 401 missing, expired, wrongly
 signed or wrong-audience capability; 403 missing/expired/revoked delegation or
@@ -169,9 +184,9 @@ keys and durable runs are retained. Changing a routing solution identifier merel
 to circumvent this conflict is not a supported upgrade procedure. A reviewed
 version transition and in-flight runtime qualification remain separate work.
 
-The solution registration secret/token, gateway upstream and frontend halves
-remain their existing owner-bound registration flow; the module Work Context
-is not a substitute for any of them.
+A solution's gateway upstream and frontend halves are delivered presence; there
+is no solution registration secret or credential any more (#1056), and the module
+Work Context is not a substitute for presence.
 
 ## Verification
 
@@ -299,7 +314,8 @@ and revocation require a person-present current organization administrator and
 the installed activation permission. A delegated actor may check a prior
 approval, but cannot turn the owner's identity into consent.
 
-The composition declares `MODULE_PRINCIPALS[<module>].artifact_policies[<id>]`:
+A platform super_admin declares `artifact_policies[<id>]` in the module's
+grant in the module envelope:
 
 ```json
 {

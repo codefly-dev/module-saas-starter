@@ -4,6 +4,7 @@ package infra_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -54,6 +55,29 @@ func TestActorChainJournal_AppendContentAddressesAndIsLive(t *testing.T) {
 	revoked, err := testStore.AnyActorChainHopRevoked(testCtx, orgID, []string{hop.ID})
 	require.NoError(t, err)
 	require.False(t, revoked)
+}
+
+func TestActorChainJournal_AppendRollsBackWithAuthorityTransaction(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	agent := seedAgentPrincipal(t, orgID, "acme.test/agent:0.1.0")
+	in := newRootHopInput(orgID, owner, agent.ID)
+	rejected := errors.New("authority changed before commit")
+	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		hop, err := testStore.AppendActorChainHop(ctx, in)
+		require.NoError(t, err)
+		require.Equal(t, in.ID, hop.ID)
+		return rejected
+	})
+	require.ErrorIs(t, err, rejected)
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		var exists bool
+		err := storetx.Tx(ctx).QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM actor_chain_journal WHERE org_id=$1 AND id=$2)`, orgID, in.ID).Scan(&exists)
+		require.NoError(t, err)
+		require.False(t, exists, "a rejected mint must not leave a journal hop")
+		return nil
+	}))
 }
 
 // A retried append of the SAME hop id is absorbed (crash-safety). This is

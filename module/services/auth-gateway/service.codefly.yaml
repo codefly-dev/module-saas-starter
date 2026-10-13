@@ -1,15 +1,16 @@
 name: auth-gateway
 version: 0.0.0
 description: |
-    Single ingress + auth brain. Hosts two listeners:
+    Single ingress + auth brain. Hosts three listeners:
       - gRPC ext_authz Check. Its answer carries identity but never the
         gateway credential, so an Envoy in front of accounts must stamp
         that credential itself.
       - private HTTP API gateway behind the frontend entry
+      - workload API gateway with TLS 1.3 and verified workload identities
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.53
+    version: 0.1.54
     publisher: codefly.dev
 service-dependencies:
     - name: accounts
@@ -35,10 +36,14 @@ workspace-configuration-dependencies:
     - internal-auth
     - observability
     - security
+    - workload-identity
 endpoints:
     - name: grpc
       visibility: internal
     - name: rest
+      visibility: internal
+    - name: workload
+      api: http
       visibility: internal
 spec:
     hot-reload: true
