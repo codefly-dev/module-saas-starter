@@ -1041,3 +1041,54 @@ describe("shared module frontend", () => {
   expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/v1/shared-example/records`);
  });
 });
+
+describe("versioned frontend assets", () => {
+	it("refuses a stale generation before sending a request", async () => {
+		withGateway();
+		registerAudit();
+		findSolution.mockResolvedValue({
+			id: "audit",
+			assetVersion: "b".repeat(64),
+			backend: { serviceAlias: "audit" },
+		});
+		const res = await GET(
+			proxyRequest("http://frontend/assets/mf-manifest.json"),
+			{
+				params: Promise.resolve({
+					id: "audit",
+					version: "a".repeat(64),
+					path: ["assets", "mf-manifest.json"],
+				}),
+			},
+		);
+		expect(res.status).toBe(410);
+		expect(res.headers.get("cache-control")).toBe("no-store");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+	it("asks the gateway to compare the generation again beside route resolution", async () => {
+		withGateway();
+		const version = "a".repeat(64);
+		findSolution.mockResolvedValue({
+			id: "audit",
+			assetVersion: version,
+			backend: { serviceAlias: "audit" },
+		});
+		await GET(
+			proxyRequest("http://frontend/assets/remoteEntry.js", {
+				headers: { "X-Codefly-Frontend-Version": "forged" },
+			}),
+			{
+				params: Promise.resolve({
+					id: "audit",
+					version,
+					path: ["assets", "remoteEntry.js"],
+				}),
+			},
+		);
+		expect(
+			(fetchMock.mock.calls[0][1].headers as Headers).get(
+				"X-Codefly-Frontend-Version",
+			),
+		).toBe(version);
+	});
+});

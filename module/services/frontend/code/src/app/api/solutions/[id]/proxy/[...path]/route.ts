@@ -15,7 +15,7 @@ const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
 const MAX_RESUME_BYTES = 1024;
 
 interface RouteContext {
-	params: Promise<{ id: string; path?: string[] }>;
+	params: Promise<{ id: string; path?: string[]; version?: string }>;
 }
 
 // This route forwards the caller's cookies to the gateway under a trusted
@@ -82,7 +82,7 @@ async function handler(
 	request: Request,
 	context: RouteContext,
 ): Promise<Response> {
-	const { id, path } = await context.params;
+	const { id, path, version } = await context.params;
 
 	// The origin is resolved on its own, not off the trust context: a deployment
 	// missing the internal token is a different condition from one with no verified
@@ -114,6 +114,15 @@ async function handler(
 	if (!solution) {
 		return new Response("solution not registered", { status: 404 });
 	}
+	if (
+		version !== undefined &&
+		(!/^[a-f0-9]{64}$/.test(version) || version !== solution.assetVersion)
+	) {
+		return new Response("frontend generation is no longer served", {
+			status: 410,
+			headers: { "cache-control": "no-store" },
+		});
+	}
 	const base = gatewayBase();
 	if (!base) {
 		return new Response("gateway unavailable", { status: 502 });
@@ -132,12 +141,16 @@ async function handler(
 	const publicAsset =
 		(request.method === "GET" || request.method === "HEAD") &&
 		/^(?:assets|\.well-known)(?:\/|$)/.test(suffix);
-	const routePrefix = solution.kind === "module" && !publicAsset ? "v1" : "solutions";
+	const routePrefix =
+		solution.kind === "module" && !publicAsset ? "v1" : "solutions";
 	const target = platformProcedure
 		? `${base}/${suffix}${search}`
 		: `${base}/${routePrefix}/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
 
 	const headers = new Headers();
+	// The gateway repeats this comparison against the same snapshot that chose
+	// the upstream, so an older frontend cache cannot relabel a newer generation.
+	if (version !== undefined) headers.set("X-Codefly-Frontend-Version", version);
 	// First-party trust headers, resolved server-side from Codefly config — the
 	// gateway rejects solution traffic that lacks them even with a valid user
 	// identity. Set from a fresh Headers so a caller can never spoof them.
@@ -315,6 +328,7 @@ function errorCategory(status: number): string {
 export {
 	handler as DELETE,
 	handler as GET,
+	handler as HEAD,
 	handler as PATCH,
 	handler as POST,
 	handler as PUT,

@@ -25,6 +25,21 @@ both kinds. Platform Connect procedures still reach the gateway root.
 These declarations grant no access to content. The solution page reads the full
 manifest in process; browser projections carry only the fields described below.
 
+
+The gateway stamps an opaque `assetVersion` from the applied binding, target,
+generation and release. Browser assets use
+`/api/solutions/<id>/versions/<assetVersion>/proxy/assets/...`; the manifest,
+remote entry and relative chunks share that directory. Remote builds must use
+`publicPath: "auto"` and relative asset paths. Both proxy layers refuse a stale
+version with 410; this is a cache identity, not an access credential. The shared
+viewer navigation poll carries it, removes withdrawn pages and refreshes an open
+page when the version changes. The old remote is unmounted during the change,
+and a previous loading failure cannot poison the new generation.
+
+This does not by itself make a rolling backend serve immutable assets: delivery
+must also bind the resolved endpoint and packaged frontend to the same build.
+The browser cache tests do not qualify that producer/deployment boundary.
+
 ## Three projections, deliberately separate
 
 Two of them are **per viewer** (issue #949): they answer the solutions the
@@ -32,7 +47,7 @@ caller's organization installed and the caller's teams were granted, not the
 deployment-wide registered set.
 
 - `GET /api/solutions` is **authenticated** and returns the navigation
-  projection — `{id, nav, available}` per entitled solution and nothing else. It is
+  projection — `{id, nav, available, assetVersion}` per entitled solution and nothing else. It is
   what the sidebar polls (through `authedFetch`, so a lapsed access token is
   exchanged and retried rather than emptying the menu). It answers `401` to an
   unauthenticated caller and `503` when the registry or the authority cannot be

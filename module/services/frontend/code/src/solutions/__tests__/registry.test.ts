@@ -544,6 +544,28 @@ describe("browserManifestUrl", () => {
     );
   });
 
+	it("gives an applied generation its own asset directory for the complete relative federation graph", () => {
+		const version = "a".repeat(64);
+		const manifest = {
+			...withManifestUrl("/assets/mf-manifest.json"),
+			assetVersion: version,
+		};
+		const url = browserManifestUrl(manifest);
+		expect(url).toBe(
+			`/api/solutions/audit/versions/${version}/proxy/assets/mf-manifest.json`,
+		);
+		const entry = new URL("remoteEntry.js", `https://host.example${url}`);
+		expect(entry.pathname).toBe(
+			`/api/solutions/audit/versions/${version}/proxy/assets/remoteEntry.js`,
+		);
+		expect(new URL("chunks/page.hash.js", entry).pathname).toBe(
+			`/api/solutions/audit/versions/${version}/proxy/assets/chunks/page.hash.js`,
+		);
+		expect(
+			parseManifest(baseManifest({ assetVersion: version }))?.assetVersion,
+		).toBeUndefined();
+	});
+
   it("takes the host-served form as registered", () => {
     expect(
       browserManifestUrl(

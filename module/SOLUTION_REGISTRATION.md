@@ -1136,3 +1136,19 @@ path, rather than an *addition* of a parallel one. "Lighter laptop" against "two
 trust models" is a false choice while "lighter laptop, less local capability"
 exists, and it is the option to weigh against this section rather than the local
 attestation.
+
+### Frontend generation changes
+
+The gateway stamps an opaque `assetVersion` from the applied binding, target,
+generation and release. Browser assets use
+`/api/solutions/<id>/versions/<assetVersion>/proxy/assets/...`; the manifest,
+remote entry and relative chunks share that directory. Remote builds must use
+`publicPath: "auto"` and relative asset paths. Both proxy layers refuse a stale
+version with 410; this is a cache identity, not an access credential. The shared
+viewer navigation poll carries it, removes withdrawn pages and refreshes an open
+page when the version changes. The old remote is unmounted during the change,
+and a previous loading failure cannot poison the new generation.
+
+This does not by itself make a rolling backend serve immutable assets: delivery
+must also bind the resolved endpoint and packaged frontend to the same build.
+The browser cache tests do not qualify that producer/deployment boundary.

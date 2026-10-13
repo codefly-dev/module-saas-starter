@@ -211,6 +211,7 @@ export function navProjection(
 	return {
 		id: manifest.id,
 		nav: { ...manifest.nav },
+		...(manifest.assetVersion ? { assetVersion: manifest.assetVersion } : {}),
 		available: entitlement.healthy,
 	};
 }

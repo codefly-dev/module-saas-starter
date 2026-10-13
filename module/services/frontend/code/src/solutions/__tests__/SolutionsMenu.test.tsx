@@ -155,4 +155,37 @@ describe("SolutionsMenu ownership (#949)", () => {
 		expect(screen.queryByText("AUDIT")).not.toBeNull();
 		expect(tokenState.fetch).toHaveBeenCalledTimes(1);
 	});
+	it("publishes a generation change even when navigation and availability are unchanged", async () => {
+		vi.useFakeTimers();
+		try {
+			const { useRegisteredSolutions } = await import("../SolutionsMenu");
+			function Version() {
+				return <span>{useRegisteredSolutions()[0]?.assetVersion}</span>;
+			}
+			const answer = (assetVersion: string) =>
+				Response.json({
+					solutions: [
+						{
+							id: "audit",
+							nav: { title: "Audit", path: "/s/audit" },
+							available: true,
+							assetVersion,
+						},
+					],
+				});
+			tokenState.fetch.mockResolvedValue(answer("old"));
+			render(<Version />);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(0);
+			});
+			expect(screen.queryByText("old")).not.toBeNull();
+			tokenState.fetch.mockResolvedValue(answer("new"));
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(10_000);
+			});
+			expect(screen.queryByText("new")).not.toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });

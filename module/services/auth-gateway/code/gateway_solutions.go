@@ -1,12 +1,16 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	stdpath "path"
 	"regexp"
 	"strings"
+
+	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
 	"google.golang.org/grpc/codes"
 )
@@ -15,6 +19,8 @@ import (
 // request uses the ordinary identity pipeline and per-viewer admission.
 
 const solutionPrefix = "/solutions/"
+
+const frontendVersionHeader = "X-Codefly-Frontend-Version"
 
 const (
 	solutionServicePrefix = "solution:"
@@ -168,6 +174,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// unauthenticated flood of this proxy is still capped. Leaving it on bare
 	// proxyTo would make it the one unmetered public proxy in the gateway (#513).
 	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
+		if requested := r.Header.Get(frontendVersionHeader); requested != "" && requested != routing.AssetVersion {
+			w.Header().Set("Cache-Control", "no-store")
+			httpError(w, http.StatusGone, "frontend generation is no longer served")
+			return true
+		}
 		if routing.TargetID == "" {
 			// Presence nothing declared. This fetch carries no credential, so
 			// there is no VIEWER to ask the authority about — but there is still
@@ -403,12 +414,25 @@ type solutionRegistryProjection struct {
 	Solutions []solutionRegistrationProjection `json:"solutions"`
 }
 
+// frontendAssetVersion is an opaque cache identity for one applied generation.
+// It is not authority: both the page read and the gateway compare it against
+// the current declaration. A rollback gets a new identity, as does alias reuse.
+func frontendAssetVersion(record *accountsv1.SolutionRegistration) string {
+	declared := record.GetDeclared()
+	if declared == nil {
+		return ""
+	}
+	identity, _ := json.Marshal([]any{declared.GetBindingId(), declared.GetTargetId(), declared.GetGeneration(), declared.GetRelease()})
+	return fmt.Sprintf("%x", sha256.Sum256(identity))
+}
+
 type solutionRegistrationProjection struct {
-	Kind      string `json:"kind,omitempty"`
-	ID        string `json:"id"`
-	Publisher string `json:"publisher"`
-	Revision  int64  `json:"revision"`
-	Status    string `json:"status"`
+	AssetVersion string `json:"assetVersion,omitempty"`
+	Kind         string `json:"kind,omitempty"`
+	ID           string `json:"id"`
+	Publisher    string `json:"publisher"`
+	Revision     int64  `json:"revision"`
+	Status       string `json:"status"`
 	// TargetID is the immutable solution target this record is declared under —
 	// the identity an installation names, and therefore the key a consumer joins
 	// its entitlements against. Empty for a record nothing declared, which no
@@ -465,6 +489,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 		}
 		if manifest, ok := solutionManifest(record); ok {
 			projection.Manifest = &manifest
+			projection.AssetVersion = frontendAssetVersion(record)
 		}
 		out.Solutions = append(out.Solutions, projection)
 	}

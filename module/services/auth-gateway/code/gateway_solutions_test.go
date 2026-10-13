@@ -724,3 +724,37 @@ func TestGateway_ModuleFrontendSnapshot(t *testing.T) {
 	require.NotNil(t, snapshot.Solutions[0].Manifest)
 	require.Contains(t, *snapshot.Solutions[0].Manifest, "/assets/mf-manifest.json")
 }
+
+func TestGateway_FrontendAssetsCannotChangeGenerationUnderAStableURL(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	upstream := registerSolutionUpstream(t, gw, "example")
+	registry := solutionRegistryFake(t, gw)
+	record := registry.records["example"]
+	original := frontendAssetVersion(record)
+	request := func(version string) int {
+		upstream.lastHeaders = nil
+		r := httptest.NewRequest(http.MethodGet, "/solutions/example/assets/remoteEntry.js", nil)
+		r.Header.Set(frontendVersionHeader, version)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			require.Nil(t, upstream.lastHeaders)
+		}
+		return w.Code
+	}
+	require.Equal(t, http.StatusOK, request(original))
+	record.Declared.Generation++
+	record.Declared.Release = "acme/example@2.0.0"
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	upgraded := frontendAssetVersion(record)
+	require.NotEqual(t, original, upgraded)
+	require.Equal(t, http.StatusGone, request(original), "a stale frontend replica must not serve new bytes under the previous URL")
+	require.Equal(t, http.StatusOK, request(upgraded))
+	record.Declared.Generation++
+	record.Declared.Release = "acme/example@1.0.0"
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	rolledBack := frontendAssetVersion(record)
+	require.NotEqual(t, original, rolledBack, "rollback is a new applied generation")
+	require.Equal(t, http.StatusGone, request(upgraded))
+	require.Equal(t, http.StatusOK, request(rolledBack))
+}
