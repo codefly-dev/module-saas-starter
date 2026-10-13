@@ -177,3 +177,24 @@ func (s *PostgresStore) CountDeliveredDocuments(ctx context.Context) (uint64, er
 	}
 	return uint64(count), nil
 }
+
+// CountUnappliedPresence is how many presence documents the inbox holds at a
+// generation newer than the one their binding has applied, and that the host
+// has not refused. Each is a declaration the binding reconciler has yet to
+// apply: until it has, the registry cannot hold the principal it declares.
+func (s *PostgresStore) CountUnappliedPresence(ctx context.Context) (uint64, error) {
+	var count int64
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT count(*)
+		  FROM (SELECT document_id, max(generation) AS generation
+		          FROM public.solution_delivery_documents
+		         WHERE kind = $1
+		         GROUP BY document_id) newest
+		  LEFT JOIN public.solution_host_bindings binding ON binding.binding_id = newest.document_id
+		 WHERE COALESCE(binding.applied_generation, 0) < newest.generation
+		   AND binding.pending_reason IS NULL`,
+		string(business.SolutionDeliveryPresence)).Scan(&count); err != nil {
+		return 0, err
+	}
+	return uint64(count), nil
+}

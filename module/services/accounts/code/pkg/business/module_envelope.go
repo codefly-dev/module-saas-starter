@@ -926,15 +926,23 @@ func (s *Service) deliveredSince(ctx context.Context, snapshot *installedModuleR
 	if !counts {
 		return false
 	}
-	var delivered uint64
+	var delivered, unapplied uint64
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
-		delivered, err = counter.CountDeliveredDocuments(ctx)
+		if delivered, err = counter.CountDeliveredDocuments(ctx); err != nil {
+			return err
+		}
+		unapplied, err = counter.CountUnappliedPresence(ctx)
 		return err
 	}); err != nil {
 		return false
 	}
-	return delivered > *snapshot.delivered
+	// A document the pass did not read, or a presence the pass read before the
+	// binding reconciler applied it: either way the registry is about to
+	// change. The second is the common one — the two reconcilers run apart,
+	// and a registry derived between them omits the principal whose presence
+	// was applied a moment later.
+	return delivered > *snapshot.delivered || unapplied > 0
 }
 
 // ModuleInstallationConsent identifies the rows a tenancy change may revoke.

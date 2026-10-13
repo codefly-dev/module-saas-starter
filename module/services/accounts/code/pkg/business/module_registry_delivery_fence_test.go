@@ -13,14 +13,19 @@ import (
 // countedInbox is a delivery inbox that can say how many documents it holds.
 type countedInbox struct {
 	SolutionDeliveryStore
-	count uint64
-	err   error
-	reads int
+	count     uint64
+	unapplied uint64
+	err       error
+	reads     int
 }
 
 func (c *countedInbox) CountDeliveredDocuments(context.Context) (uint64, error) {
 	c.reads++
 	return c.count, c.err
+}
+
+func (c *countedInbox) CountUnappliedPresence(context.Context) (uint64, error) {
+	return c.unapplied, c.err
 }
 
 // A prefix the registry does not hold is refused at its mint — unless the
@@ -50,6 +55,13 @@ func TestAnUndeclaredModuleIsNotRefusedWhileADeliveryIsUnread(t *testing.T) {
 	})
 	t.Run("a document delivered since: not established yet, and a pass is asked for", func(t *testing.T) {
 		s, passes := setup(marker(2), &countedInbox{count: 3})
+		err := mint(s)
+		require.ErrorIs(t, err, ErrModuleRegistryStale)
+		require.Equal(t, codes.Unavailable, status.Code(err))
+		require.Equal(t, 1, *passes)
+	})
+	t.Run("the pass read everything but a presence is not applied yet: not established yet", func(t *testing.T) {
+		s, passes := setup(marker(3), &countedInbox{count: 3, unapplied: 1})
 		err := mint(s)
 		require.ErrorIs(t, err, ErrModuleRegistryStale)
 		require.Equal(t, codes.Unavailable, status.Code(err))

@@ -155,6 +155,9 @@ type SolutionDeliveryCounter interface {
 	// CountDeliveredDocuments is the number of delivered documents of every
 	// kind. The inbox is append-only, so it never decreases.
 	CountDeliveredDocuments(ctx context.Context) (uint64, error)
+	// CountUnappliedPresence is the number of delivered presence documents
+	// newer than what their binding has applied and not refused.
+	CountUnappliedPresence(ctx context.Context) (uint64, error)
 }
 
 // SolutionDeliveryCarrierAuthorizer decides whether the CALLER may deliver this
