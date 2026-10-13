@@ -141,6 +141,12 @@ func (x *WorkContextScope) GetResourceIds() []string {
 	return nil
 }
 
+// StartTaskWorkContextRequest mints a Task capability for the caller. Its Session
+// is the one the caller authenticated with — or a fresh one when it has none —
+// assigned by the issuer and returned in IssuedWorkContext, never named by the
+// caller: a session a caller could name is one it could name after another
+// credential's, and a confined credential is paired with a capability on the
+// session alone.
 type StartTaskWorkContextRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -155,8 +161,7 @@ type StartTaskWorkContextRequest struct {
 	// rule here is only "a UUID when present" and the handler refuses the wrong
 	// shape on either path: an absent boundary on an ordinary mint, a named one
 	// on a solution-scoped mint.
-	TaskId    string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	SessionId string `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	TaskId string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// Empty means a direct human-owned Task. Otherwise this must name an active,
 	// registered agent Principal in org_id.
 	ActorPrincipalId string                  `protobuf:"bytes,4,opt,name=actor_principal_id,json=actorPrincipalId,proto3" json:"actor_principal_id,omitempty"`
@@ -213,13 +218,6 @@ func (x *StartTaskWorkContextRequest) GetOrgId() string {
 func (x *StartTaskWorkContextRequest) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
-	}
-	return ""
-}
-
-func (x *StartTaskWorkContextRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
 	}
 	return ""
 }
@@ -1184,12 +1182,10 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\rresource_kind\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\fresourceKind\x12/\n" +
 	"\aactions\x18\x02 \x03(\tB\x15\xbaH\x12\x92\x01\x0f\b\x01\x10@\x18\x01\"\ar\x05\x10\x01\x18\x80\x01R\aactions\x127\n" +
-	"\fresource_ids\x18\x03 \x03(\tB\x14\xbaH\x11\x92\x01\x0e\x10\x80\x02\x18\x01\"\ar\x05\x10\x01\x18\x80\x04R\vresourceIds\"\xbf\x04\n" +
+	"\fresource_ids\x18\x03 \x03(\tB\x14\xbaH\x11\x92\x01\x0e\x10\x80\x02\x18\x01\"\ar\x05\x10\x01\x18\x80\x04R\vresourceIds\"\xa8\x04\n" +
 	"\x1bStartTaskWorkContextRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12$\n" +
-	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12'\n" +
-	"\n" +
-	"session_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12,\n" +
+	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12,\n" +
 	"\x12actor_principal_id\x18\x04 \x01(\tR\x10actorPrincipalId\x12Y\n" +
 	"\x10authority_scopes\x18\x05 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\n" +
 	"\xbaH\a\x92\x01\x04\b\x01\x10@R\x0fauthorityScopes\x12&\n" +
@@ -1206,7 +1202,8 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	" \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x01R\tprojectId\x88\x01\x01B\x0f\n" +
 	"\r_workspace_idB\r\n" +
-	"\v_project_id\"\xab\x04\n" +
+	"\v_project_idJ\x04\b\x03\x10\x04R\n" +
+	"session_id\"\xab\x04\n" +
 	"\x1cStartInstallationTaskRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +

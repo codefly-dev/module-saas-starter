@@ -741,7 +741,15 @@ that authority (`pkg/business/source_delegation.go`):
   person-owned context with a module actor — takes the sealed binding id
   (`operation_binding_id`) and confirms it from the delegation rather than the
   row-backed agent path, so it stops confirming once the delegation, its binding,
-  the source, the person's role or their revision moves.
+  the source, the person's role or their revision moves. That revision is the
+  person's ordinary one — the higher of the organization's and the person's own —
+  so revocation is coarser than the delegation alone: ANY organization-wide
+  revision bump (a role or membership change anywhere in the organization)
+  revokes every delegated capability in flight. A verifier answers it as stale
+  (`FAILED_PRECONDITION`), and the consumer mints again; a delegation that has
+  itself ended then answers `PERMISSION_DENIED` (`DELEGATION_REVOKED`). The
+  lifetime is 60 seconds, so the cost is one extra round trip, not a stall — but
+  a consumer must not retry a stale capability as if the failure were transient.
 - **Delegation and installation are both required at use.** Minting, revision
   confirmation and exchange hold the actor's installation in the delegation's
   organization to the current envelope. `cross_tenant` permits consent in other

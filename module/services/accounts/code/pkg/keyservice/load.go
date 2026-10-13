@@ -98,15 +98,16 @@ func Selection(ctx context.Context, local bool) (Selected, error) {
 	}
 	if selection.SigningBackend == BackendKMS {
 		// Named here rather than discovered at the first request. Three
-		// consumers are handed the signing key and sign on their own — the Work
-		// Context signer and the delegation minter, which take an
-		// ed25519.PrivateKey in github.com/codefly-dev/sdk-go and
-		// github.com/codefly-dev/core, and the OAuth state signer's seed — so a
-		// key that cannot be exported leaves the Work Context authority
-		// answering every RPC with a configuration error and the delegation
-		// minter silently falling back to its v1 HMAC. Refusing the selection
-		// is the honest answer until those accept a crypto.Signer.
-		return Selected{}, fmt.Errorf("%s=%s is not supported yet: a Cloud KMS key cannot be exported, and the Work Context signer (github.com/codefly-dev/sdk-go/workcontext), the delegation minter (github.com/codefly-dev/core policy.MintEd25519) and the OAuth state signer are each HANDED the signing key rather than being given a signer to call, so each has to accept an injected crypto.Signer first. Use %s=%s to run with no secrets store today — the key is wrapped by a Cloud KMS key and unwrapped at boot, which is non-exportable at rest rather than in use — or %s=%s to keep it in Vault",
+		// consumers are handed the signing key and sign on their own: the Work
+		// Context authority (core's workcontext.Authority, which can take an
+		// injected crypto.Signer but is handed the key by this host), the
+		// delegation minter (core's policy.MintEd25519, which takes an
+		// ed25519.PrivateKey) and the OAuth state signer's seed. A key that
+		// cannot be exported leaves the Work Context authority answering every
+		// RPC with a configuration error and the delegation minter silently
+		// falling back to its v1 HMAC. Refusing the selection is the honest
+		// answer until each of the three is given a signer to call.
+		return Selected{}, fmt.Errorf("%s=%s is not supported yet: a Cloud KMS key cannot be exported, and three consumers are HANDED the signing key rather than given a signer to call: the Work Context authority (github.com/codefly-dev/core workcontext.Authority accepts an injected crypto.Signer, but this host does not wire one yet), the delegation minter (github.com/codefly-dev/core policy.MintEd25519) and the OAuth state signer. Use %s=%s to run with no secrets store today — the key is wrapped by a Cloud KMS key and unwrapped at boot, which is non-exportable at rest rather than in use — or %s=%s to keep it in Vault",
 			SigningBackendKey, BackendKMS, SigningBackendKey, BackendKMSWrapped, SigningBackendKey, BackendVault)
 	}
 	if named := groupValue(ctx, PreviousBackendKey); named != "" {

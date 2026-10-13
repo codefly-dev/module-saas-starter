@@ -136,10 +136,9 @@ const (
 // the narrowest authority the request shape accepts.
 func storyTaskRequest(orgID string) *gen.StartTaskWorkContextRequest {
 	return &gen.StartTaskWorkContextRequest{
-		OrgId:     orgID,
-		TaskId:    uuid.NewString(),
-		SessionId: uuid.NewString(),
-		Audience:  "documents",
+		OrgId:    orgID,
+		TaskId:   uuid.NewString(),
+		Audience: "documents",
 		AuthorityScopes: []*gen.WorkContextScope{{
 			ResourceKind: "evidence",
 			Actions:      []string{"read"},

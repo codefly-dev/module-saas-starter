@@ -39,11 +39,10 @@ func TestTheModuleReadThroughTheRealGatewayIsMintedByTheRealStartTask(t *testing
 	}
 
 	// 2. The mint, with the same credential, through the gateway to StartTask.
-	// The request names a session of its own; what is signed is the one the
-	// credential authenticated, which is the one the gateway pairs on.
+	// The request names no session: what is signed is the one the credential
+	// authenticated, which is the one the gateway pairs on.
 	mint := gatewayCall(t, h, http.MethodPost, "/saas.accounts.v1.WorkContextService/StartTask", map[string]any{
 		"orgId":           flow.Org,
-		"sessionId":       "019f6bf7-0000-7000-8000-000000000000",
 		"taskId":          "019f6bf7-1111-7111-8111-1111111111aa",
 		"audience":        flow.Module,
 		"ttlSeconds":      300,
@@ -95,7 +94,7 @@ func TestTheModuleReadThroughTheRealGatewayIsMintedByTheRealStartTask(t *testing
 		"outside the declared binding":     {flow.Module, flow.Module, []string{"read", "write"}, "outside what the consumer this credential was delivered to declares"},
 	} {
 		refused := gatewayCall(t, h, http.MethodPost, "/saas.accounts.v1.WorkContextService/StartTask", map[string]any{
-			"orgId": flow.Org, "sessionId": "019f6bf7-0000-7000-8000-000000000000",
+			"orgId":  flow.Org,
 			"taskId": "019f6bf7-1111-7111-8111-1111111111ab", "audience": ask.audience, "ttlSeconds": 300,
 			"authorityScopes": []map[string]any{{"resourceKind": ask.kind, "actions": ask.actions}},
 		}, nil)

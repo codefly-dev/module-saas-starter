@@ -297,10 +297,16 @@ live state. The seal is re-resolved too, never copied from the parent: a
 person's capability is sealed to the organization's installation of the
 audience it now addresses (an exchange into an audience the organization never
 installed is refused), and a module or installation principal's to its own
-installation. When this host reads back a capability it issued (a parent to derive
-from, a viewer's capability presented with a question), it verifies it at full
-strength for the audience the capability names; a single-use capability is
-consumed by that read, as it is by whichever consumer verifies it first.
+installation. A parent this host derives from is verified at full strength for
+the audience it names, and a single-use parent is consumed by the derivation, as
+by any consumer. A capability presented with a QUESTION — a viewer's capability
+asked what it may read (`CheckWorkContextRecordAccess`,
+`ListReadableSourceCollections`), a module's parent asked about its installation
+or artifacts — is read back instead (core's `Authority.ReadBack`): every check a
+verifier makes, against live state, but the replay store is never touched. A
+question is not a use, so the consumer that verified and consumed a single-use
+capability can still ask about it, on every page of a listing, and asking leaves
+an unconsumed one for its consumer.
 
 ## The reserved module audience
 

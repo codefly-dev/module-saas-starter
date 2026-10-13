@@ -44,9 +44,9 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	// module the capability was minted for, and that module's own declaration
 	// says which permission resource types its content is governed by. A host
 	// that spelled one here would answer "no access" for every other consumer.
-	verified, err := authority.verifyIssued(ctx, values[0])
+	verified, err := authority.readBack(ctx, values[0])
 	if err != nil {
-		return nil, refusedReadBack(err, status.Error(codes.Unauthenticated, "invalid viewer Work Context"))
+		return nil, refusedReadBack(ctx, err, status.Error(codes.Unauthenticated, "invalid viewer Work Context"))
 	}
 	claims := verified.Context()
 	// Both refusals answer identically. Telling "that audience declares no content"

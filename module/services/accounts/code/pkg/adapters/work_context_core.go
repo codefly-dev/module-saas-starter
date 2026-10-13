@@ -9,6 +9,7 @@ import (
 	"time"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/google/uuid"
@@ -231,6 +232,31 @@ func (s *WorkContextAuthorityServer) verifyIssued(ctx context.Context, encoded s
 	return s.coreVerifier(claims.GetTenantId(), claims.GetOwnerPrincipalId(), claims.GetAudience()).Verify(ctx, encoded)
 }
 
+// readBack answers a question a capability's holder asks about a capability
+// this host issued — what it may read, which collections it reaches, whether a
+// module's parent is still good — at full strength and WITHOUT SPENDING IT
+// (core's Authority.ReadBack).
+//
+// A question is not a use. Single-use bounds how often a capability is
+// presented and acted on, and its consumer — the holder that verified it first
+// and consumed it through ConsumeSingleUse — still has to be able to ask, on
+// every page of a paginated answer. So this never touches the replay store,
+// while revision, seal and grant are held against live state exactly as a
+// verifier holds them. It answers questions only: a path that acts on the
+// capability or derives from it verifies, and consumes, with verifyIssued.
+func (s *WorkContextAuthorityServer) readBack(ctx context.Context, encoded string) (*workcontext.ReadBackCapability, error) {
+	if !s.configured() {
+		return nil, ErrWorkContextAuthorityUnconfigured
+	}
+	decoded, err := workcontext.Decode(encoded)
+	if err != nil {
+		return nil, err
+	}
+	claims := decoded.Context()
+	return s.coreAuthority(claims.GetTenantId(), claims.GetOwnerPrincipalId()).ReadBack(ctx, encoded,
+		workcontext.ReadBackCheck{Audience: claims.GetAudience(), Grants: noApprovalGrants{}})
+}
+
 // delegationHop is one actor hop a mint appends after the owner's session.
 type delegationHop struct {
 	PrincipalID   string
@@ -437,7 +463,17 @@ func workContextGrants(claims *basev0.WorkContextV1, resourceKind, action, resou
 // moved seal or epoch — answers FailedPrecondition, the code the host's own
 // recheck has always answered a stale capability with and the one a consumer
 // re-mints on. Anything else answers invalid, with the site's own wording.
-func refusedReadBack(err error, invalid error) error {
+//
+// A capability in another encoding — one minted before this host signed with
+// core, which no verifier here can read — is logged with its cause, never its
+// token: the caller is told only that it is invalid, and the operator watching
+// a wall of refusals during a cutover is told why.
+func refusedReadBack(ctx context.Context, err error, invalid error) error {
+	if errors.Is(err, workcontext.ErrNotACoreToken) {
+		wool.Get(ctx).In("refusedReadBack").Warn(
+			"a Work Context in a pre-cutover encoding was presented; this host issues and reads only core/workcontext capabilities, so the caller must mint a new one",
+			wool.ErrField(err))
+	}
 	if errors.Is(err, workcontext.ErrRevoked) || errors.Is(err, workcontext.ErrNoSeal) {
 		return status.Error(codes.FailedPrecondition, "Work Context authorization revision is stale: its authority changed since it was minted")
 	}
