@@ -348,10 +348,10 @@ func (e moduleEndpoint) String() string {
 var moduleEndpointResolver = sdkModuleEndpointAddress
 
 // sdkModuleEndpointAddress asks the Codefly SDK where an endpoint lives.
-func sdkModuleEndpointAddress(_ context.Context, endpoint moduleEndpoint) (string, error) {
-	instance, err := codefly.For(codefly.Context()).
+func sdkModuleEndpointAddress(ctx context.Context, endpoint moduleEndpoint) (string, error) {
+	instance, err := codefly.For(ctx).
 		Module(endpoint.Module).Service(endpoint.Service).Endpoint(endpoint.Name).API(endpoint.API).
-		ResolveNetworkInstance()
+		ResolveDeliveredNetworkInstance(endpoint.applied)
 	if err != nil {
 		return "", err
 	}

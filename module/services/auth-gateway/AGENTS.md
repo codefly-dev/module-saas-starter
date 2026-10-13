@@ -78,13 +78,19 @@ same way. The registry holds no address. On each refresh the gateway reads the
 endpoints the APPLIED presence declares for the service that runs its workload
 (`appliedRouteEndpoints`: the presence's own HTTP-family endpoints, and only
 those) and asks the Codefly SDK
-(`codefly.For(...).Module().Service().Endpoint().API().ResolveNetworkInstance()`)
-for each (`resolveRouteUpstreams`): the Codefly CLI writes this gateway's
-`CODEFLY__ENDPOINT__…` variables for exactly the endpoints composed workloads
-are reached through, locally and in a render, so exactly one answers and that
+(`codefly.For(...).Module().Service().Endpoint().API().ResolveDeliveredNetworkInstance(applied)`)
+for each (`resolveRouteUpstreams`). The SDK reads the current CLI delivery
+projection and requires its complete presence digest to match this applied
+generation. The CLI selects exactly the endpoints composed workloads
+are reached through, so exactly one answers and that
 is where `/v1/<alias>` — and `/solutions/<alias>` — goes. None, or more than
 one, leaves the alias unrouted (`503 … registration not active`) and is logged
 once. In-cluster traffic after the gateway is plain HTTP; the mesh provides mTLS.
+
+A missing, withdrawn or mismatched projection never falls back to startup
+environment addresses. A stable projection directory can accept a new binding
+or generation without changing this process. The producer and protected mount
+must be supplied before deployment; reader tests alone do not qualify a cell.
 
 The two surfaces share one shape: the same cache, single carried resolution,
 upstream URL policy, guarded transport, tombstone rule and the 120 s

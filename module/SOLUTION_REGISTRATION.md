@@ -35,6 +35,23 @@ Three mechanisms are routinely mistaken for a sandbox. None of them is one:
   tenant and role. It cannot constrain in-origin code acting with the current
   user's own credentials, because that code is indistinguishable from the user.
 
+## Live route delivery
+
+The applied presence names the endpoints a component owns. Its addresses come
+from the Codefly SDK's `ResolveDeliveredNetworkInstance(applied)` accessor,
+which rereads a replaceable delivery projection and validates the complete
+presence digest. A component introduced after gateway startup can therefore
+receive an address through that input without changing the gateway environment.
+The same check refuses wrong-generation, missing and withdrawn projections,
+even when startup carriers still name an address. The existing registry refresh
+and guarded transport consume the result; there is no second routing registry.
+
+Deployment must supply the protected publisher and a stable directory mount.
+The reader tests exercise file replacement and refusal in a running resolver;
+they do not qualify the production publisher, unseen native graph extension,
+release-specific backends or frontend byte integrity. Generation-versioned asset
+URLs do not establish immutable JavaScript or lazy-loaded chunks.
+
 ## 2. Declared authority
 
 Only an admitted delivery declaration creates or removes solution presence.

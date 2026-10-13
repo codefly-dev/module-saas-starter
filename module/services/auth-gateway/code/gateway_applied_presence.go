@@ -42,6 +42,8 @@ var routeGatewayAPIs = map[string]bool{"rest": true, "http": true}
 // the Codefly module the service is composed under, which a solution is too.
 type moduleEndpoint struct {
 	Module, Service, Name, API string
+	// applied binds endpoint resolution to the same declaration as routing.
+	applied *solutionhost.SolutionHostBinding
 }
 
 // appliedRouteEndpoints are the endpoints an applied presence — a solution's
@@ -69,7 +71,7 @@ func appliedRouteEndpoints(binding *accountsv1.SolutionHostBindingState) []modul
 	var endpoints []moduleEndpoint
 	for _, endpoint := range document.Endpoints {
 		if serving[endpoint.Service] && endpoint.Module == alias && routeGatewayAPIs[endpoint.API] {
-			endpoints = append(endpoints, moduleEndpoint{Module: endpoint.Module, Service: endpoint.Service, Name: endpoint.Name, API: endpoint.API})
+			endpoints = append(endpoints, moduleEndpoint{Module: endpoint.Module, Service: endpoint.Service, Name: endpoint.Name, API: endpoint.API, applied: document})
 		}
 	}
 	return endpoints

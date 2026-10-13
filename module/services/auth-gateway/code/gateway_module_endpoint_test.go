@@ -63,20 +63,24 @@ func endpointOf(service, name, api string) solutionhost.Endpoint {
 func TestAModulePresenceOffersTheEndpointsOfTheServiceItRuns(t *testing.T) {
 	binding := modulePresenceBinding(t,
 		endpointOf("documents", "grpc", "grpc"), endpointOf("documents", "rest", "rest"), endpointOf("store", "rest", "rest"))
+	document, ok := appliedPresence(binding)
+	require.True(t, ok)
 	require.Equal(t, []moduleEndpoint{
-		{Module: "documents", Service: "documents", Name: "rest", API: "rest"},
+		{Module: "documents", Service: "documents", Name: "rest", API: "rest", applied: document},
 	}, appliedRouteEndpoints(binding), "only the serving service's HTTP-family endpoints: not grpc, not another service's")
 
 	foreign := modulePresenceBinding(t, solutionhost.Endpoint{Name: "rest", Service: "documents", Module: "accounts", API: "rest", Visibility: "internal"})
 	require.Empty(t, appliedRouteEndpoints(foreign), "a presence may not name another module's endpoint as its own surface")
 
-	var document solutionhost.SolutionHostBinding
-	require.NoError(t, json.Unmarshal([]byte(binding.Applied.Generation.Document), &document))
-	document.Kind = solutionhost.KindSolution
-	body, err := json.Marshal(&document)
+	var solutionDocument solutionhost.SolutionHostBinding
+	require.NoError(t, json.Unmarshal([]byte(binding.Applied.Generation.Document), &solutionDocument))
+	solutionDocument.Kind = solutionhost.KindSolution
+	body, err := json.Marshal(&solutionDocument)
 	require.NoError(t, err)
 	binding.Applied.Generation.Document = string(body)
-	require.Equal(t, []moduleEndpoint{{Module: "documents", Service: "documents", Name: "rest", API: "rest"}},
+	document, ok = appliedPresence(binding)
+	require.True(t, ok)
+	require.Equal(t, []moduleEndpoint{{Module: "documents", Service: "documents", Name: "rest", API: "rest", applied: document}},
 		appliedRouteEndpoints(binding), "a solution's presence offers its endpoints by the same rule")
 }
 
