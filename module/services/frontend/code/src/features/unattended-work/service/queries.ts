@@ -38,15 +38,21 @@ export function useSourceTriggerDeclaration(orgId: string, sourceId: string) {
 		queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
 		enabled: !!orgId && !!sourceId,
 		queryFn: async () => {
-			// What this fetch is reading, as the lifecycle already records it.
-			// A refusal may only delete the answer it was refused about; if a
-			// newer fetch has written one since, `dataUpdatedAt` has moved and
-			// this fetch's refusal is stale news (issue #1121).
-			const readingAnswerFrom =
+			// WHICH GENERATION OF THE ANSWER THIS FETCH IS READING. A refusal
+			// may only delete the answer it was refused about; if a newer fetch
+			// has written one since, this fetch's refusal is stale news (issue
+			// #1121).
+			//
+			// The field is `dataUpdateCount`, the lifecycle's own counter, and
+			// NOT `dataUpdatedAt`: that is a millisecond timestamp, so two
+			// successes in the same millisecond tie and the guard reads a newer
+			// answer as the one it was reading — at exactly the sub-millisecond
+			// spacing an overlapping refetch has. A generation cannot tie.
+			const readingGeneration =
 				client.getQueryCache().find({
 					queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
 					exact: true,
-				})?.state.dataUpdatedAt ?? 0;
+				})?.state.dataUpdateCount ?? 0;
 			try {
 				return await service.getSourceTriggerDeclaration({ orgId, sourceId });
 			} catch (error) {
@@ -89,7 +95,7 @@ export function useSourceTriggerDeclaration(orgId: string, sourceId: string) {
 						queryKey: unattendedWorkKeys.declaration(orgId, sourceId),
 						exact: true,
 					});
-					if (entry && entry.state.dataUpdatedAt <= readingAnswerFrom) {
+					if (entry && entry.state.dataUpdateCount <= readingGeneration) {
 						entry.setState({ data: undefined, dataUpdatedAt: 0 });
 					}
 				}

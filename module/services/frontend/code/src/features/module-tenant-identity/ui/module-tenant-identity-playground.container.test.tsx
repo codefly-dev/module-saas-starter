@@ -6,7 +6,7 @@ import {
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { ModuleTenantIdentityPlayground } from "./module-tenant-identity-playground";
@@ -361,5 +361,70 @@ describe("a superseded refusal in the identity read", () => {
 		});
 
 		expect(client.getQueryData([...KEY])).toBeUndefined();
+	});
+});
+
+// AND THE SAME FIELD CHOICE HERE (issue #1121, r23): the guard counts
+// generations, not milliseconds. `dataUpdatedAt` is a millisecond timestamp, so
+// two successes in one millisecond tie — the spacing an overlapping refetch
+// actually has — and the superseded refusal would delete the newer answer after
+// all. Only Date is faked, so promises and MSW keep working while every
+// `Date.now()` returns one instant.
+describe("a superseded refusal when both identity answers share a millisecond", () => {
+	const KEY = ["module-tenant-identity", "example", "operate", ORG] as const;
+
+	afterEach(() => vi.useRealTimers());
+
+	it("does not erase a newer success that landed in the same millisecond", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-10-13T12:00:00.000Z"));
+
+		let call = 0;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				async () => {
+					call++;
+					if (call === 1) return HttpResponse.json(minted);
+					if (call === 2) {
+						await held;
+						return HttpResponse.json(
+							{ code: "permission_denied", message: "refused" },
+							{ status: 403 },
+						);
+					}
+					return HttpResponse.json(minted);
+				},
+			),
+		);
+		const { client } = renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+		await screen.findByText("audit-1");
+
+		const stale = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: KEY, exact: true });
+		});
+
+		// The premise, asserted: one timestamp, two generations.
+		const after = client.getQueryState([...KEY]);
+		expect(after?.dataUpdatedAt).toBe(
+			new Date("2026-10-13T12:00:00.000Z").getTime(),
+		);
+		expect(after?.dataUpdateCount).toBeGreaterThan(1);
+
+		release403?.();
+		await act(async () => {
+			await stale;
+		});
+
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+		expect(client.getQueryState([...KEY])?.status).toBe("success");
 	});
 });

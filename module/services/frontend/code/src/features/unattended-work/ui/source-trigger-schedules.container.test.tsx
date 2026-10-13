@@ -1052,3 +1052,94 @@ describe("a superseded refusal", () => {
 		expect(client.getQueryData([...KEY])).toBeUndefined();
 	});
 });
+
+// THE GENERATION OF A SUCCESS IS NOT ITS CLOCK READING (issue #1121, r23).
+//
+// The first guard compared `dataUpdatedAt`, a MILLISECOND timestamp. Two
+// successes in the same millisecond carry the same value, so "has a newer
+// success replaced what I was reading?" answered no, and the superseded
+// refusal deleted the newer answer after all — the very bug the guard was
+// added for, surviving at sub-millisecond spacing, which is exactly the
+// spacing an overlapping refetch has.
+//
+// `dataUpdateCount` is the lifecycle's own generation counter: it increments on
+// every write and cannot tie. This test freezes the clock so both successes
+// share a timestamp, which is what makes it a test of the FIELD CHOICE rather
+// than of the comparison.
+describe("a superseded refusal when both answers share a millisecond", () => {
+	const KEY = ["source-trigger-declaration", "org-1", SOURCE] as const;
+
+	afterEach(() => vi.useRealTimers());
+
+	it("does not erase a newer success that landed in the same millisecond", async () => {
+		// Only Date is faked: timers, promises and MSW keep working, while
+		// every `Date.now()` TanStack takes returns one instant.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-10-13T12:00:00.000Z"));
+
+		let call = 0;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async () => {
+					call++;
+					if (call === 1) {
+						return HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						});
+					}
+					if (call === 2) {
+						await held;
+						return HttpResponse.json(
+							{ code: "permission_denied" },
+							{ status: 403 },
+						);
+					}
+					return HttpResponse.json({
+						declaration: {
+							...declared,
+							schedule: { ...declared.schedule, cron: "45 * * * *" },
+						},
+						delegations: [],
+						children: [],
+					});
+				},
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		const stale = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: KEY, exact: true });
+		});
+
+		// The premise of the test, asserted rather than assumed: the newer
+		// success carries the SAME timestamp as the answer the old fetch was
+		// reading, and a later generation.
+		const after = client.getQueryState([...KEY]);
+		expect(after?.dataUpdatedAt).toBe(
+			new Date("2026-10-13T12:00:00.000Z").getTime(),
+		);
+		expect(after?.dataUpdateCount).toBeGreaterThan(1);
+
+		release403?.();
+		await act(async () => {
+			await stale;
+		});
+
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+		expect(client.getQueryState([...KEY])?.status).toBe("success");
+	});
+});

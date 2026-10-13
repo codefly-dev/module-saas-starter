@@ -26,18 +26,20 @@ export function useModuleTenantIdentity(
 		queryKey: ["module-tenant-identity", prefix, binding, organizationId],
 		enabled: !!prefix && !!binding && !!organizationId,
 		queryFn: async () => {
-			// The answer this fetch is reading, so a superseded refusal cannot
-			// delete a newer one (issue #1121; the same guard the declaration
-			// read carries, for the same race).
+			// Which generation of the answer this fetch is reading, so a
+			// superseded refusal cannot delete a newer one (issue #1121; the
+			// same guard the declaration read carries, for the same race, on
+			// the same field — a generation counter rather than a millisecond
+			// timestamp, which two successes can share).
 			const key = [
 				"module-tenant-identity",
 				prefix,
 				binding,
 				organizationId,
 			] as const;
-			const readingAnswerFrom =
+			const readingGeneration =
 				client.getQueryCache().find({ queryKey: key, exact: true })?.state
-					.dataUpdatedAt ?? 0;
+					.dataUpdateCount ?? 0;
 			try {
 				return await service.resolveModuleTenantIdentity({
 					prefix,
@@ -57,7 +59,7 @@ export function useModuleTenantIdentity(
 					const entry = client
 						.getQueryCache()
 						.find({ queryKey: key, exact: true });
-					if (entry && entry.state.dataUpdatedAt <= readingAnswerFrom) {
+					if (entry && entry.state.dataUpdateCount <= readingGeneration) {
 						entry.setState({ data: undefined, dataUpdatedAt: 0 });
 					}
 				}
