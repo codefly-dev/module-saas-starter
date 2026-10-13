@@ -1,6 +1,7 @@
 import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { bindingBearer, type SolutionRequestBinding } from "./binding.js";
+import { injectTraceContext } from "./tracing.js";
 
 /**
  * A Connect transport over the host binding, for generated clients: the twin
@@ -13,6 +14,12 @@ import { bindingBearer, type SolutionRequestBinding } from "./binding.js";
  * `authedFetch` (refresh, then one retry) when the host provides one. A
  * refused authority (unauthenticated or permission denied) is reported to
  * `onUnauthorized` and still rejects.
+ *
+ * A request bound for this page's own origin that does not already carry a
+ * `traceparent` gets one from the active trace context, so a span the caller
+ * has open becomes the backend's parent. A caller that tracks its own context
+ * across awaits passes the header per call instead, and it is left as is.
+ * Without `installBrowserTracing` there is no active span and nothing is added.
  */
 export function solutionTransport(
 	binding: SolutionRequestBinding,
@@ -30,6 +37,7 @@ export function solutionTransport(
 			(next) => async (request) => {
 				const bearer = bindingBearer(binding);
 				if (bearer) request.header.set("authorization", `Bearer ${bearer}`);
+				injectTraceContext(request.header, request.url);
 				try {
 					return await next(request);
 				} catch (failure) {
