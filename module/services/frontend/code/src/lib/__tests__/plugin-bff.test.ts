@@ -529,6 +529,10 @@ describe("generic frontend plugin BFF", () => {
 				resolve: () => ({
 					ok: true,
 					value: {
+						// A Connect alias mounted under a path prefix, which is the
+						// fixture's default. The handshake is a procedure of that
+						// alias like any other, so it lands under the prefix
+						// (issue #1121); the root-prefixed form is beside it.
 						entry: entry("connect"),
 						baseURL: "http://example-api.internal",
 					},
@@ -539,7 +543,7 @@ describe("generic frontend plugin BFF", () => {
 		expect(response.status).toBe(200);
 		const [target, init] = fetchMock.mock.calls[0];
 		expect(String(target)).toBe(
-			"http://example-api.internal/saas.frontend.plugin.v1.FrontendPluginCapabilityService/GetFrontendPluginCapabilities",
+			"http://example-api.internal/api/v1/example/saas.frontend.plugin.v1.FrontendPluginCapabilityService/GetFrontendPluginCapabilities",
 		);
 		expect(init?.method).toBe("POST");
 		expect(init?.body).toBe("{}");
@@ -939,6 +943,22 @@ describe("generic frontend plugin BFF", () => {
 			["RecordService"],
 		],
 		["a REST alias declaring the origin root", "rest", "/", null],
+		// The whole prefix rule, not just the root (issue #1121). The empty
+		// string is NOT the root, so comparing against the root alone admitted
+		// it — and `frontendServiceTargetPath("", path)` lands every relative
+		// path on the upstream ORIGIN, under the viewer's forwarded bearer.
+		["a REST alias declaring no prefix", "rest", "", null],
+		["a REST alias declaring a relative prefix", "rest", "api/v1", null],
+		["a REST alias declaring a traversal", "rest", "/api/../private", null],
+		["a connect alias declaring no prefix", "connect", "", null],
+		// A non-array service list has a `length` and no `every`: the check that
+		// assumed an array threw out of the handler as a 500.
+		[
+			"a connect alias whose service list is a string",
+			"connect",
+			"/",
+			"example.records.v1.RecordService" as unknown as readonly string[],
+		],
 	])(
 		"refuses to proxy %s at all",
 		async (_label, protocol, routePrefix, connectServices) => {
@@ -966,6 +986,74 @@ describe("generic frontend plugin BFF", () => {
 			expect(fetchMock).not.toHaveBeenCalled();
 		},
 	);
+
+	it("refuses the review's whole-upstream probe on a prefix-less REST alias", async () => {
+		// The probe as the review ran it: `admin/secret` under an entry whose
+		// `routePrefix` is `""`. Before this it was forwarded to
+		// `http://example-api.internal/admin/secret` and answered 200 under the
+		// viewer's own bearer. The refusal is the alias's, so nothing is sent.
+		const fetchMock = vi.fn(async () => new Response("secret") as Response);
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/admin/secret"),
+			{ ...params, path: ["admin", "secret"] },
+			dependencies({
+				...resolved("rest", ""),
+				fetch: fetchMock as typeof fetch,
+			}),
+		);
+		expect(response.status).toBe(503);
+		expect(await problemCode(response)).toBe("backend_unavailable");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("probes the capability handshake under a connect mount prefix", async () => {
+		// The fixed handshake is a Connect procedure like any other, so on a
+		// mounted alias it lands under the mount prefix (issue #1121). It used
+		// to be sent to the origin root unconditionally: a backend mounting
+		// Connect under `/v1/connect` answered its own 404, the alias was
+		// reported incompatible, and the mounted form this host advertises
+		// could never complete a handshake.
+		const targets: string[] = [];
+		const fetchMock = vi.fn(async (target: RequestInfo | URL) => {
+			targets.push(String(target));
+			return new Response(
+				JSON.stringify({
+					schemaVersion: 1,
+					contract: "example.api",
+					contractMajor: 1,
+					capabilities: [],
+				}),
+				{ headers: { "content-type": "application/json" } },
+			);
+		});
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/.well-known/capabilities"),
+			capabilityParams,
+			dependencies({
+				...resolved("connect", "/v1/connect"),
+				fetch: fetchMock as typeof fetch,
+			}),
+		);
+		expect(response.status).toBe(200);
+		expect(targets).toEqual([
+			"http://example-api.internal/v1/connect/saas.frontend.plugin.v1.FrontendPluginCapabilityService/GetFrontendPluginCapabilities",
+		]);
+
+		// And a root-prefixed alias still probes the origin root, which is where
+		// the Connect protocol puts it.
+		targets.length = 0;
+		await handlePluginBffRequest(
+			request("/api/plugins/example/api/.well-known/capabilities"),
+			capabilityParams,
+			dependencies({
+				...resolved("connect", "/"),
+				fetch: fetchMock as typeof fetch,
+			}),
+		);
+		expect(targets).toEqual([
+			"http://example-api.internal/saas.frontend.plugin.v1.FrontendPluginCapabilityService/GetFrontendPluginCapabilities",
+		]);
+	});
 
 	it("carries a connect procedure under the mount prefix its requirement declares", async () => {
 		// The non-root Connect prefix: the prefix says where the upstream mounts

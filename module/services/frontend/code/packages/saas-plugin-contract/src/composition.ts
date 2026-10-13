@@ -15,8 +15,8 @@ import {
 	type PresentationRequirement,
 } from "./contracts.js";
 import {
-	FRONTEND_SERVICE_ROOT_PREFIX,
 	isConnectServiceName,
+	isFrontendServiceRoutePrefix,
 } from "./transport.js";
 
 function assertContribution(
@@ -240,26 +240,12 @@ function validateServiceRequirement(
 		service.protocol === "connect" || service.protocol === "rest",
 		`plugin '${pluginName}' service '${service.alias}' uses unsupported protocol '${String(service.protocol)}'`,
 	);
-	const routeSegments =
-		typeof service.routePrefix === "string"
-			? service.routePrefix.slice(1).split("/")
-			: [];
-	// The origin root is a prefix only a Connect requirement may declare, and
-	// declaring it is the only way to say what the Connect protocol already
-	// decides: a procedure's path is `/<fully.qualified.Service>/<Method>` from
-	// the origin, which is where this contract's own fixed capability handshake
-	// has always been probed. A REST requirement declaring the root would turn
-	// the alias into a prefix-less proxy of its whole upstream instead.
-	const rootPrefix =
-		service.protocol === "connect" &&
-		service.routePrefix === FRONTEND_SERVICE_ROOT_PREFIX;
+	// The prefix rule is `isFrontendServiceRoutePrefix` and is not restated
+	// here: the host's BFF re-checks the same rule at load and at request time,
+	// and the two readings drifting apart is what let a REST entry declaring
+	// `""` proxy its whole upstream (issue #1121).
 	assertContribution(
-		typeof service.routePrefix === "string" &&
-			(rootPrefix ||
-				(SAFE_ROUTE_PREFIX.test(service.routePrefix) &&
-					routeSegments.every(
-						(segment) => segment !== "." && segment !== "..",
-					))),
+		isFrontendServiceRoutePrefix(service.protocol, service.routePrefix),
 		`plugin '${pluginName}' service '${service.alias}' route prefix '${String(service.routePrefix)}' is unsafe`,
 	);
 	// On a Connect alias the caller supplies the service name in the path,

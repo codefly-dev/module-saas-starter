@@ -70,6 +70,8 @@ export {
 	isConnectProcedurePath,
 	isConnectServiceName,
 	isFrontendServicePath,
+	isFrontendServiceRoutePrefix,
+	isServiceableFrontendService,
 	resolveConnectProcedure,
 } from "./transport.js";
 export type {

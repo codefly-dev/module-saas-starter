@@ -37,7 +37,7 @@
 		"react": ">=19.2 <20"
 	},
 	"devDependencies": {
-		"@codefly-dev/saas-plugin-contract": "2.4.4",
+		"@codefly-dev/saas-plugin-contract": "2.5.0",
 		"@testing-library/react": "^16.1.0",
 		"@types/react": "19.2.17",
 		"happy-dom": "^20.8.9",

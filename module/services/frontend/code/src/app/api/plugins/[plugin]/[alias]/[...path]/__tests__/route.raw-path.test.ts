@@ -12,6 +12,17 @@ import { describe, expect, it } from "vitest";
 // the binding never declared, while the contract says the colon is literal
 // precisely because encoding it names a different resource. The raw path is the
 // only place that distinction still exists, so it is screened there.
+//
+// WHAT THIS FILE PROVES, AND WHAT IT ASSUMES (issue #1121, m3). The decoding is
+// the FRAMEWORK's, and these tests hand the route its already-decoded params
+// (`context(...)`) because that is the only way to call a route handler
+// directly — so the decoding is the premise here, not the finding. What is
+// proved is the half this repository owns: given a decoded param, the screen
+// reads the RAW url and refuses, which is what a sibling test with a literal
+// colon shows is a path refusal rather than an unrelated 400. The premise
+// itself is the framework's documented behaviour for a catch-all segment, and
+// nothing in this repository can hold it — a Next.js release that stopped
+// decoding would make these refusals unreachable rather than wrong.
 import { GET, POST } from "@/app/api/plugins/[plugin]/[alias]/[...path]/route";
 
 const TOKEN = `Bearer ${"a".repeat(32)}`;

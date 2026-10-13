@@ -1,6 +1,7 @@
-import type {
-	FrontendServiceAllowlist,
-	FrontendServiceAllowlistEntry,
+import {
+	type FrontendServiceAllowlist,
+	type FrontendServiceAllowlistEntry,
+	isServiceableFrontendService,
 } from "@codefly-dev/saas-plugin-contract";
 import { getEndpoints, type ServiceEndpoint } from "codefly";
 
@@ -69,10 +70,24 @@ export function resolvePluginServiceFrom(
 	plugin: string,
 	alias: string,
 ): PluginServiceResolution {
-	const entry = allowlist.entries.find(
-		(candidate) => candidate.plugin === plugin && candidate.alias === alias,
-	);
+	const entry = Array.isArray(allowlist?.entries)
+		? allowlist.entries.find(
+				(candidate) => candidate.plugin === plugin && candidate.alias === alias,
+			)
+		: undefined;
 	if (!entry) return { ok: false, reason: "not_installed" };
+	// The composition's own rules, re-checked against the GENERATED projection
+	// this server actually reads (issue #1121). The allowlist is a build
+	// artifact, so a build-time rule nothing re-checks is one a stale or
+	// hand-edited file walks straight past: a `rest` entry whose prefix is `""`
+	// is not the root the old check compared against, yet it lands every
+	// relative path on the upstream origin — `admin/secret` reaches
+	// `https://upstream/admin/secret` and is answered under the viewer's own
+	// bearer. An entry that cannot be served is `unavailable`, never
+	// `not_installed`: the alias IS installed, and this host cannot serve it.
+	if (!isServiceableFrontendService(entry)) {
+		return { ok: false, reason: "unavailable" };
+	}
 
 	const matches = endpoints.filter(
 		(endpoint) =>

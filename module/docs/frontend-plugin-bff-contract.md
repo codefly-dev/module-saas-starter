@@ -28,12 +28,23 @@ host, port, module, service, endpoint, or upstream prefix from a browser.
    `..:recover` is a traversal wearing a verb and would bind `..` as the
    resource upstream.
 5. The resolved allowlist entry is held to the composition's own rules a second
-   time, at runtime. The BFF reads the GENERATED allowlist rather than the
-   composition that validated it, so a build-time rule nothing re-checks is one
-   a stale or hand-edited projection walks straight past: a `rest` entry
-   declaring the origin root, and a `connect` entry declaring no services it may
-   reach, are both `503 backend_unavailable` — the alias cannot be served, and
-   no request the caller could phrase differently would change that.
+   time — at LOAD, where the generated allowlist is read, and again in the
+   handler. The BFF reads the GENERATED allowlist rather than the composition
+   that validated it, so a build-time rule nothing re-checks is one a stale or
+   hand-edited projection walks straight past, and the rule is the whole one
+   rather than part of it (`isServiceableFrontendService`): the prefix must be
+   an absolute path of safe, non-dot segments, with the origin root admitted
+   only on a `connect` entry; a `connect` entry must declare a non-empty list
+   of fully qualified services, as a list. Anything else is
+   `503 backend_unavailable` — the alias cannot be served, and no request the
+   caller could phrase differently would change that.
+
+   Checking only against the root was not enough, and `""` is why: it is not
+   the root, so it passed, and every relative path then landed on the upstream
+   ORIGIN — `admin/secret` reached `https://upstream/admin/secret` and was
+   answered under the viewer's own forwarded bearer. A `connectServices` that
+   was not a list has a `length` and no `every`, which threw out of the handler
+   as a `500` instead of refusing the alias.
 
 ## Which bindings the transport carries
 
@@ -57,11 +68,18 @@ two things: where its upstream mounts Connect, and which of that upstream's
 services the alias may reach.
 
 - `routePrefix` is the mount. `/` is the origin root, where the Connect protocol
-  puts a unary procedure and where this contract's own fixed capability
-  handshake has always been probed; a product path prefix such as `/v1/connect`
-  is a Connect mount behind a path, and the procedure lands under it. The root
-  is Connect-only: a REST requirement declaring it would turn its alias into a
+  puts a unary procedure; a product path prefix such as `/v1/connect` is a
+  Connect mount behind a path, and the procedure lands under it. The root is
+  Connect-only: a REST requirement declaring it would turn its alias into a
   prefix-less proxy of the whole upstream.
+
+  **The capability handshake is a procedure of the alias like any other, so it
+  is probed under the mount too.** It used to be sent to the origin root
+  whatever the prefix said, which is right only for a root-prefixed
+  requirement: a backend mounting Connect under `/v1/connect` answered the
+  probe with its own 404, the alias was reported incompatible, and the mounted
+  form this host advertises could never complete a handshake. (A REST alias's
+  probe path is declared absolute and is not relative to the prefix.)
 - `connectServices` is the bound, and it is **required** and non-empty. A
   Connect procedure's path is `/<fully.qualified.Service>/<Method>`, so the
   CALLER supplies the service name — which means the prefix cannot say which

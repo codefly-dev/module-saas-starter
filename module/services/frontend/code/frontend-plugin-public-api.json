@@ -4,7 +4,7 @@
 	"packages": {
 		"@codefly-dev/saas-plugin-contract": {
 			"status": "active",
-			"packageVersion": "2.4.4",
+			"packageVersion": "2.5.0",
 			"entrypoints": [".", "./capabilities"],
 			"entrypointExports": {
 				".": [
@@ -93,6 +93,8 @@
 					"isConnectProcedurePath",
 					"isConnectServiceName",
 					"isFrontendServicePath",
+					"isFrontendServiceRoutePrefix",
+					"isServiceableFrontendService",
 					"resolveConnectProcedure",
 					"resolveFrontendAppearance",
 					"resolveSkinRules",

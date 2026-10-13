@@ -87,8 +87,17 @@ silently falls back to sample data.
   package and read by both the browser transport and the BFF: safe segments,
   with a Google custom verb allowed on the last one and its colon forwarded
   literal, and a Connect procedure of a service the requirement declared. Both
-  REST and Connect bindings are therefore reachable from a contributed page, and
-  neither side can admit a shape the other refuses.
+  REST and Connect bindings are therefore reachable from a contributed page.
+  **The host is the authority and the client is agreement, so the two are not
+  symmetric.** The browser applies the Connect rule only when the runtime was
+  given the installed requirements (`createPluginRuntime({ services })`);
+  without them it applies the generic path rule alone, because a client that
+  guessed would refuse routes a composition had legitimately installed. It also
+  never applies the serviceability rules below, which are about the resolved
+  allowlist entry and not about the path. So the client can admit a shape the
+  BFF refuses, which is the direction that is safe; the reverse — the BFF
+  forwarding something the client would have refused — cannot happen, because
+  the one path rule is the host's and the host runs it on every request.
 - A `connect` requirement names the services it may reach, and the list is
   required. The protocol puts the service name in the path, so the caller
   supplies it and the route prefix cannot bound it: the prefix says where the
