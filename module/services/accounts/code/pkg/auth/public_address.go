@@ -10,7 +10,14 @@ import (
 // The invariant: a destination this host may be asked to fetch from reaches
 // only the public internet. This classifier is the single authority for that
 // question, and it enumerates the IANA special-purpose address registries for
-// both families.
+// both families. Every guard on a tenant-directed egress path answers through
+// it: callable sources (datasource/apisource), the crawler and object-store
+// connectors, outbound webhooks and the Slack notifier that shares their client
+// (business.WebhookEndpointPolicy), and Client ID Metadata Document fetches.
+// Each of those guards' tests holds the vectors in auth/egresstest. The
+// per-organization OIDC discovery, JWKS and token clients (auth/oidc) have no
+// guard: nothing exposes ConfigureOrgIdentityProvider over RPC, so no tenant
+// names their destination today.
 //
 // It does not compose Go's net.IP predicates, because they answer a different
 // question. net.IP.IsGlobalUnicast is not a public-routability test — it
@@ -21,9 +28,32 @@ import (
 // mean. The registries are the specification of "not the public internet", so
 // they are what this reads.
 //
-// It is deliberately a denylist of non-public space rather than an allowlist of
-// public space: ranges unassigned today become public assignments tomorrow, and
-// a deployment must not need a release to reach a newly assigned host.
+// Inside the space IANA allocates for global unicast it is deliberately a
+// denylist of non-public space rather than an allowlist of public space: ranges
+// unassigned today become public assignments tomorrow, and a deployment must
+// not need a release to reach a newly assigned host. For IPv6 that space is
+// 2000::/3 (the IANA IPv6 Address Space registry), and an IPv6 address outside
+// it is refused before the registries are read. Everything else there is
+// multicast, link-local, unique local or "Reserved by IETF" — space no public
+// route reaches, yet Go calls it global unicast. That includes the deprecated
+// IPv4-compatible form ::a.b.c.d (RFC 4291 §2.5.5.1), which embeds an IPv4
+// address exactly as NAT64 does, and deprecated site-local fec0::/10 (RFC 3879),
+// neither of which the special-purpose registry lists. IPv4 has no unallocated
+// remainder of that kind: its reserved block, 240.0.0.0/4, is in the registry.
+//
+// The IPv6 transition prefixes that embed an IPv4 address — NAT64
+// (64:ff9b::/96, 64:ff9b:1::/48), 6to4 (2002::/16) and Teredo (2001::/32,
+// inside 2001::/23) — are refused outright, not decoded and judged by the IPv4
+// address they carry. Decoding cannot be complete: RFC 6052 lets an operator
+// pick any network-specific NAT64 prefix, which is indistinguishable from
+// ordinary global unicast, and the local-use /48 admits any RFC 6052 layout.
+// Even a correctly decoded public address is reached through a translator or
+// relay that sits on the host's own network, so the first hop is not the
+// public internet. 6to4 is deprecated (RFC 7526) and Teredo obfuscates the
+// address it carries. Every public IPv4 destination stays reachable directly by
+// its own address, so refusing costs one known case: a host on an IPv6-only
+// network with DNS64 cannot reach an IPv4-only provider through a synthesized
+// NAT64 address.
 
 // specialUseIPv4 is the IANA IPv4 Special-Purpose Address Registry, minus the
 // ranges net.IP already answers for (loopback, link-local, multicast). Each
@@ -75,6 +105,12 @@ var specialUseIPv6 = []string{
 	"fe80::/10",     // link-local unicast
 }
 
+// globalUnicastIPv6 is the only IPv6 block IANA has allocated for global
+// unicast. The registry entries outside it (::/128, NAT64, fc00::/7 and the
+// rest) stay listed above so the inventory still reads as the registry, and so
+// either check alone refuses them.
+var globalUnicastIPv6 = netip.MustParsePrefix("2000::/3")
+
 // specialUsePrefixes is both registries, parsed once.
 var specialUsePrefixes = parseSpecialUsePrefixes()
 
@@ -120,6 +156,9 @@ func IsPublicDestination(address netip.Addr) bool {
 	// must be classified as such — comparing it against the v6 registry alone
 	// would find no match and admit it.
 	address = address.Unmap()
+	if address.Is6() && !globalUnicastIPv6.Contains(address) {
+		return false
+	}
 	if address.IsLoopback() || address.IsMulticast() ||
 		address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() ||
 		address.IsInterfaceLocalMulticast() || address.IsUnspecified() {

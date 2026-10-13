@@ -448,7 +448,14 @@ func auditDimensionExpr(dim, bucket string, addArg func(any) int) (string, error
 		case "week", "month", "day":
 			grain = bucket
 		}
-		return fmt.Sprintf("to_char(date_trunc('%s', created_at), 'YYYY-MM-DD\"T\"HH24:MI:SSOF')", grain), nil
+		// Buckets are UTC days, weeks and months, whatever zone the session
+		// runs in, so every key carries the same "+00" offset. In the session's
+		// own zone a key would carry that zone's offset, which changes across
+		// daylight saving: a client that has to name a bucket the aggregate did
+		// not return (the SDK's zero fill) could not know which offset it takes,
+		// and the kit labels keys in UTC, so a "+02" midnight already read as
+		// 22:00 the day before.
+		return fmt.Sprintf("to_char(date_trunc('%s', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD\"T\"HH24:MI:SS\"+00\"')", grain), nil
 	default:
 		return "", fmt.Errorf("audit: unhandled group dimension %q", dim)
 	}

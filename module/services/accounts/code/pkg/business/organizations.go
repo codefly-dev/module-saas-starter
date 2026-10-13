@@ -384,6 +384,10 @@ func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgM
 //     both are gated on current organization membership at read time, so they
 //     are already ineffective for a departed member.
 func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.RemoveOrgMemberRequest) error {
+	orgID, memberID, err := canonicalSubjectTenancyIDs(req.OrgId, req.UserId)
+	if err != nil {
+		return err
+	}
 	w := wool.Get(ctx).In("RemoveOrgMember")
 
 	// A NARROWING — the member loses the standing every grant inside the
@@ -400,7 +404,7 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// organization's, because the receipt relation is control-plane only and the
 	// receipt and the removal have to be atomic. What the tenant policy used to
 	// confine is confined by the statements instead: every call below names
-	// req.OrgId — the continuity count, both locks, the dependent-membership
+	// orgID — the continuity count, both locks, the dependent-membership
 	// delete, the membership delete and the delegation revoke — so none of them
 	// can reach another organization's rows.
 	//
@@ -411,12 +415,12 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// either commits before the dependent delete or waits behind this
 	// transaction, and can neither be missed by it nor land after it.
 	if err := s.WithPolicyLoggedNarrowing(ctx,
-		removeOrgMemberPolicyLogEntry(actorID, req.OrgId, req.UserId),
+		removeOrgMemberPolicyLogEntry(actorID, orgID, memberID),
 		func(ctx context.Context) error {
-			if err := s.removeOrgMembershipTx(ctx, actorID, req.OrgId, req.UserId); err != nil {
+			if err := s.removeOrgMembershipTx(ctx, actorID, orgID, memberID); err != nil {
 				return err
 			}
-			return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)
+			return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", orgID, orgID)
 		}); err != nil {
 		return w.Wrapf(err, "cannot remove member")
 	}
@@ -426,7 +430,7 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// cached entry is still "admin" or "member". The removal is committed by
 	// now, so a failure here is reported, not raised: turning it into an error
 	// would tell the caller the removal did not happen when it did.
-	_ = s.invalidateMembership(ctx, req.OrgId, req.UserId)
+	_ = s.invalidateMembership(ctx, orgID, memberID)
 
 	return nil
 }

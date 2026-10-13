@@ -132,6 +132,18 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
+      "path": "/admin/platform/plugin-transport",
+      "source_path": "src/app/admin/platform/plugin-transport/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
+      "path": "/admin/platform/unattended-work",
+      "source_path": "src/app/admin/platform/unattended-work/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
       "path": "/admin/platform/waitlist",
       "source_path": "src/app/admin/platform/waitlist/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -152,6 +164,12 @@
     {
       "path": "/admin/sessions",
       "source_path": "src/app/admin/sessions/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/solutions",
+      "source_path": "src/app/admin/solutions/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
@@ -673,6 +691,22 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 400
+    },
+    {
+      "id": "admin-solutions",
+      "plugin": "core-users",
+      "label": "Solutions",
+      "path": "/admin/solutions",
+      "icon": "Layers",
+      "group": "Integrations",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "roles:write",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 405
     },
     {
       "id": "admin-datasources",

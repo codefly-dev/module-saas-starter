@@ -146,8 +146,14 @@ func validateArtifactPolicies(policies map[string]ExecutableArtifactPolicy) erro
 	}
 	return nil
 }
-func (s *Service) ExecutableArtifactPolicyFor(caller ModuleCaller, tenant, audience, id string) (ExecutableArtifactPolicy, error) {
-	grant, err := s.moduleGrant(caller)
+func (s *Service) ExecutableArtifactPolicyFor(ctx context.Context, caller ModuleCaller, tenant, audience, id string) (ExecutableArtifactPolicy, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ExecutableArtifactPolicy{}, fenceErr
+	}
+	defer releaseAuthority()
+
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ExecutableArtifactPolicy{}, err
 	}
@@ -226,10 +232,16 @@ func artifactEnvelope(caller ModuleCaller, tenant string, req ExecutableArtifact
 // current parent Work Context. "approve" is explicit current-admin consent;
 // "authorize" cannot create or renew an approval. Revocation addresses a retained Ref.
 func (s *Service) DecideExecutableArtifact(ctx context.Context, caller ModuleCaller, tenant, actor, audience, action string, req ExecutableArtifactRequest) (*ExecutableArtifactApproval, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if action != "approve" && action != "authorize" {
 		return nil, status.Error(codes.InvalidArgument, "unknown artifact decision")
 	}
-	policy, err := s.ExecutableArtifactPolicyFor(caller, tenant, audience, req.Policy)
+	policy, err := s.ExecutableArtifactPolicyFor(ctx, caller, tenant, audience, req.Policy)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +355,13 @@ func (s *Service) requireConsentedBinding(ctx context.Context, targetID, install
 // Scope and permission come from that row's original host policy, never the
 // request. checkScope checks the verified parent's attenuated capability.
 func (s *Service) RevokeApprovedExecutableArtifact(ctx context.Context, caller ModuleCaller, tenant, actor, audience, installation, id string, checkScope func(ArtifactPermission) error) (*ExecutableArtifactApproval, int64, error) {
-	grant, err := s.moduleGrant(caller)
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, 0, fenceErr
+	}
+	defer releaseAuthority()
+
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, 0, err
 	}

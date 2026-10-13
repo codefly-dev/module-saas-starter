@@ -28,7 +28,7 @@ type fakeAccountsOperationContextMint struct {
 	code         codes.Code
 	requestCount int
 	lastPrefix   string
-	lastSecret   string
+	lastToken    string
 	lastBinding  string
 	lastInternal string
 	expiresAt    time.Time
@@ -41,7 +41,7 @@ func (f *fakeAccountsOperationContextMint) handle(ctx context.Context, dec func(
 	}
 	f.requestCount++
 	f.lastPrefix = req.GetPrefix()
-	f.lastSecret = req.GetSecret()
+	f.lastToken = req.GetServiceAccountToken()
 	f.lastBinding = req.GetBinding()
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if values := md.Get("x-codefly-internal-token"); len(values) > 0 {
@@ -91,10 +91,10 @@ func newOperationContextExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsOp
 	return gw, mint
 }
 
-func operationContextRequest(body, secret, internal string) *http.Request {
+func operationContextRequest(body, token, internal string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, moduleOperationContextPath, strings.NewReader(body))
-	if secret != "" {
-		req.Header.Set(moduleSecretHeader, secret)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if internal != "" {
 		req.Header.Set("X-Codefly-Internal-Token", internal)
@@ -110,16 +110,16 @@ func TestGateway_ModuleOperationContext_BrokersToAccounts(t *testing.T) {
 	gw, mint := newOperationContextExchangeHarness(t)
 
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, operationContextRequest(operationContextBody("documents", "model"), "documents-secret", "test-internal-token"))
+	gw.ServeHTTP(w, operationContextRequest(operationContextBody("documents", "model"), "documents-projected-token", "test-internal-token"))
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "no-store", w.Header().Get("cache-control"))
 	require.Equal(t, "application/json", w.Header().Get("content-type"))
 	// The gateway presents its OWN cluster credential and forwards the module's
-	// secret and chosen binding; it names no audience or scope of its own.
+	// projected token and chosen binding; it names no audience or scope of its own.
 	require.Equal(t, "test-internal-token", mint.lastInternal)
 	require.Equal(t, "documents", mint.lastPrefix)
-	require.Equal(t, "documents-secret", mint.lastSecret)
+	require.Equal(t, "documents-projected-token", mint.lastToken)
 	require.Equal(t, "model", mint.lastBinding)
 
 	var payload map[string]string
@@ -137,26 +137,26 @@ func TestGateway_ModuleOperationContext_BrokersToAccounts(t *testing.T) {
 func TestGateway_ModuleOperationContext_FailsClosed(t *testing.T) {
 	tests := map[string]struct {
 		body     string
-		secret   string
+		token    string
 		internal string
 		want     int
 	}{
-		"no internal token":  {operationContextBody("documents", "model"), "documents-secret", "", http.StatusUnauthorized},
-		"bad internal token": {operationContextBody("documents", "model"), "documents-secret", "wrong", http.StatusUnauthorized},
-		"no module secret":   {operationContextBody("documents", "model"), "", "test-internal-token", http.StatusUnauthorized},
-		"path prefix":        {operationContextBody("documents/nested", "model"), "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"empty prefix":       {operationContextBody("", "model"), "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"missing prefix":     {`{"binding":"model"}`, "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"empty binding":      {operationContextBody("documents", ""), "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"oversized binding":  {operationContextBody("documents", strings.Repeat("b", 129)), "documents-secret", "test-internal-token", http.StatusBadRequest},
-		"not json":           {`binding=model`, "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"no internal token":  {operationContextBody("documents", "model"), "documents-projected-token", "", http.StatusUnauthorized},
+		"bad internal token": {operationContextBody("documents", "model"), "documents-projected-token", "wrong", http.StatusUnauthorized},
+		"no projected token": {operationContextBody("documents", "model"), "", "test-internal-token", http.StatusUnauthorized},
+		"path prefix":        {operationContextBody("documents/nested", "model"), "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"empty prefix":       {operationContextBody("", "model"), "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"missing prefix":     {`{"binding":"model"}`, "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"empty binding":      {operationContextBody("documents", ""), "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"oversized binding":  {operationContextBody("documents", strings.Repeat("b", 129)), "documents-projected-token", "test-internal-token", http.StatusBadRequest},
+		"not json":           {`binding=model`, "documents-projected-token", "test-internal-token", http.StatusBadRequest},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			gw, mint := newOperationContextExchangeHarness(t)
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, operationContextRequest(test.body, test.secret, test.internal))
+			gw.ServeHTTP(w, operationContextRequest(test.body, test.token, test.internal))
 
 			require.Equal(t, test.want, w.Code)
 			require.Zero(t, mint.requestCount, "the perimeter rejects it before accounts is asked")
@@ -183,7 +183,7 @@ func TestGateway_ModuleOperationContext_RelaysAccountsOutcome(t *testing.T) {
 			mint.code = test.code
 
 			w := httptest.NewRecorder()
-			gw.ServeHTTP(w, operationContextRequest(operationContextBody("documents", "model"), "documents-secret", "test-internal-token"))
+			gw.ServeHTTP(w, operationContextRequest(operationContextBody("documents", "model"), "documents-projected-token", "test-internal-token"))
 
 			require.Equal(t, test.want, w.Code)
 			require.Equal(t, 1, mint.requestCount)

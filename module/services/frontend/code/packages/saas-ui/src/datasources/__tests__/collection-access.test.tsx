@@ -29,7 +29,12 @@ const collection: CollectionAccessView = {
 const client = (overrides: Partial<DatasourceClient>): DatasourceClient => ({
 	listSources: async () => [],
 	addGitHubSource: async () => {},
-	syncSource: async () => "job",
+	reconcileSource: async (_orgId, _id, effectId) => ({
+		effectId,
+		status: "committed" as const,
+		jobId: "job",
+	}),
+	lookupReconcileSource: async () => undefined,
 	deleteSource: async () => {},
 	...overrides,
 });

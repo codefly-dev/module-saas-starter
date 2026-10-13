@@ -52,6 +52,20 @@ func declarePresence(t *testing.T, label string) (string, string) {
 	t.Helper()
 	alias := uniqueAlias(label)
 	bindingID := "acme.test." + alias
+	targetID := declareCapabilityPresence(t, bindingID, alias)
+	previous := testService.ModulePrincipals()
+	registry := business.ModulePrincipalRegistry{}
+	for id, grant := range previous {
+		registry[id] = grant
+	}
+	registry[business.ModulePrincipalID(alias)] = business.ModulePrincipalGrant{Prefix: alias, PresenceBinding: bindingID, CrossTenant: true}
+	testService.SetModulePrincipals(registry)
+	t.Cleanup(func() { testService.SetModulePrincipals(previous) })
+	return targetID, alias
+}
+
+func declareCapabilityPresence(t *testing.T, bindingID, alias string) string {
+	t.Helper()
 	now := time.Now().UTC()
 	entry := business.SolutionHostBindingGeneration{
 		Generation: 1,
@@ -84,5 +98,15 @@ func declarePresence(t *testing.T, label string) (string, string) {
 			UpdatedAt: now,
 		})
 	}))
-	return targetID, alias
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		revision, err := testStore.NextSolutionRegistryRevision(ctx)
+		if err != nil {
+			return err
+		}
+		return testStore.SaveSolutionRegistration(ctx, &business.SolutionRegistration{
+			SolutionID: alias, Publisher: "solution:" + alias, Revision: revision, UpdatedAt: now,
+			Declared: &business.SolutionDeclaredBinding{BindingID: bindingID, TargetID: targetID, Generation: 1, Release: "acme/" + alias + "@1.0.0", Kind: business.SolutionDeclaredKindSolution},
+		})
+	}))
+	return targetID
 }

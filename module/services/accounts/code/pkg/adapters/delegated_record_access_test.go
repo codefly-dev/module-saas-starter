@@ -9,7 +9,6 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
@@ -50,7 +49,7 @@ func (s *exactRecordStore) CheckAccess(ctx context.Context, subject string, kind
 }
 func exactRequest(token, id string) *connect.Request[gen.CheckWorkContextRecordAccessRequest] {
 	r := connect.NewRequest(&gen.CheckWorkContextRecordAccessRequest{ResourceType: "rows", ResourceId: id, Action: "read"})
-	r.Header().Set(workcontext.WorkContextHeaderName, token)
+	r.Header().Set(workContextHeader, token)
 	r.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 	return r
 }
@@ -59,7 +58,7 @@ func TestExactRecordOracleRequiresSignedCurrentAttenuatedAuthority(t *testing.T)
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	declareTestAudiences(svc)
@@ -78,9 +77,9 @@ func TestExactRecordOracleRequiresSignedCurrentAttenuatedAuthority(t *testing.T)
 		require.Nil(t, out)
 		require.Len(t, store.subjects, before)
 	}
-	narrow, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "task-narrow", SessionID: "session-narrow", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-b"}}}})
-	require.NoError(t, err)
-	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(narrow.Encoded(), "record-a"))
+	narrow, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "rows", Tenant: readOrg, Owner: readOwner, Task: "task-narrow", Session: "session-narrow",
+		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-b"}}}})
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(narrow, "record-a"))
 	require.Error(t, err)
 	require.Nil(t, out)
 	store.after = func() { facts.facts.OrganizationRevision++ }
@@ -112,26 +111,24 @@ func TestExactRecordOracleIntersectsEveryAuthenticatedSubject(t *testing.T) {
 // refusal it must come from: a denial arriving from the other gate would mean the
 // one under test had stopped holding.
 func TestExactRecordOracleRefusesModuleIdentityCapability(t *testing.T) {
-	_, facts, client, _ := sourceReadFixture(t)
+	_, _, client, _ := sourceReadFixture(t)
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	declareTestAudiences(svc)
 	module := business.ModulePrincipalID("rows")
-	identity, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: module, Tenant: readOrg})
-	require.NoError(t, err)
+	identity := mintModuleIdentity(t, module, readOrg)
 	// The same identity re-minted at the module's own prefix, so the declared
 	// vocabulary gate passes and only the empty scope set can refuse it.
-	prefixed, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: module,
-		TaskID: "019f6bf7-3333-7333-8333-333333333333", SessionID: "019f6bf7-4444-7444-8444-444444444444", AuthorizationRevision: facts.facts.EffectiveRevision(),
-		ActorChain: []*basev0.WorkActorV1{{PrincipalId: module, PrincipalKind: "service", DelegationId: "install-hop"}}})
-	require.NoError(t, err)
+	prefixed, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "rows", Tenant: readOrg, Owner: module,
+		OwnerKind: business.PrincipalKindService, Task: "019f6bf7-3333-7333-8333-333333333333", Session: "019f6bf7-4444-7444-8444-444444444444",
+		Execution: testBuildFor(module)})
 	for _, capability := range []struct{ name, token, refusal string }{
-		{"module-capability audience", identity.Encoded(), "declared resource scope required"},
-		{"module's own prefix", prefixed.Encoded(), "record scope required"},
+		{"module-capability audience", identity, "declared resource scope required"},
+		{"module's own prefix", prefixed, "record scope required"},
 	} {
 		out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(capability.token, "record-a"))
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), capability.name)
@@ -152,7 +149,7 @@ func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	declareTestAudiences(svc)
@@ -167,7 +164,7 @@ func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
 	}
 	issued, err := workContextSingleton.StartInstallationTask(
 		metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "source-read-test-perimeter")),
-		&gen.StartInstallationTaskRequest{OrgId: readOrg, InstallationId: installID, TaskId: installTaskID, SessionId: installSession,
+		&gen.StartInstallationTaskRequest{OrgId: readOrg, InstallationId: installID, TaskId: installTaskID,
 			Audience:        "rows",
 			AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-a"}}}})
 	require.NoError(t, err)
@@ -203,7 +200,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, Resources: []string{"rows"},
 			ReadAudiences: map[string]business.ModuleReadAudience{
@@ -216,18 +213,14 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
 	workContextSingleton.journal = journal
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}}}
-	parent, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
-		TaskID: "exchange-task", SessionID: "exchange-session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes,
-		ActorChain: []*basev0.WorkActorV1{
-			{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes},
-			{PrincipalId: "actor-2", PrincipalKind: "service", DelegationId: "hop-2", GrantedScopes: scopes}}})
+	parent, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner,
+		Task: "exchange-task", Session: "exchange-session", Scopes: scopes,
+		Actors: []delegationHop{agentHop("actor-1", "hop-1", scopes...), agentHop("actor-2", "hop-2", scopes...)}})
+	exchanged, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
 	require.NoError(t, err)
-	exchanged, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent.Encoded()))
+	verified, err := workContextSingleton.verifyFor(context.Background(), exchanged.Msg.Token, "rows")
 	require.NoError(t, err)
-	issued, err := workcontext.ParseWorkContextToken(exchanged.Msg.Token)
-	require.NoError(t, err)
-	child, err := workContextSingleton.verifier.Verify(issued, workcontext.WorkContextExpectations{Audience: "rows"})
-	require.NoError(t, err)
+	child := verified.Context()
 	require.Empty(t, child.AuthorityScopes[0].ResourceIds, "the top-level scope stays at the parent's width")
 	require.Equal(t, []string{"record-a"}, child.ActorChain[len(child.ActorChain)-1].GrantedScopes[0].ResourceIds,
 		"the binding narrows the outermost hop, which is the scope the oracle actually enforces")
@@ -249,7 +242,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	require.ErrorContains(t, err, "record scope required")
 	require.Nil(t, out)
 	require.Len(t, store.subjects, before)
-	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(parent.Encoded(), "record-b"))
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(parent, "record-b"))
 	require.NoError(t, err)
 	require.False(t, out.Msg.Allowed)
 	require.Greater(t, len(store.subjects), before)
@@ -296,7 +289,7 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	declareTestAudiences(svc)
@@ -304,31 +297,31 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	journal := &exactChainJournal{}
 	workContextSingleton.journal = journal
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-a"}}}
-	token, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "chain-task", SessionID: "chain-session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes, ActorChain: []*basev0.WorkActorV1{{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes}, {PrincipalId: "actor-2", PrincipalKind: "service", DelegationId: "hop-2", GrantedScopes: scopes}}})
-	require.NoError(t, err)
-	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token.Encoded(), "record-a"))
+	token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "rows", Tenant: readOrg, Owner: readOwner, Task: "chain-task", Session: "chain-session", Scopes: scopes,
+		Actors: []delegationHop{agentHop("actor-1", "hop-1", scopes...), agentHop("actor-2", "hop-2", scopes...)}})
+	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))
 	require.NoError(t, err)
 	require.True(t, out.Msg.Allowed)
 	require.Equal(t, []string{readOwner, "actor-1", "actor-2"}, store.subjects)
 	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
 	store.deny = "actor-1"
-	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token.Encoded(), "record-a"))
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))
 	require.NoError(t, err)
 	require.False(t, out.Msg.Allowed)
 	store.deny = ""
 	journal.revoked = true
 	before := len(store.subjects)
-	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token.Encoded(), "record-a"))
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))
 	require.Error(t, err)
 	require.Nil(t, out)
 	require.Len(t, store.subjects, before)
 	journal.revoked = false
 	store.after = func() { journal.revoked = true }
-	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token.Encoded(), "record-a"))
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))
 	require.Error(t, err)
 	require.Nil(t, out)
 	workContextSingleton.journal = nil
-	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token.Encoded(), "record-a"))
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))
 	require.Error(t, err)
 	require.Nil(t, out)
 }

@@ -3,10 +3,12 @@
 package infra_test
 
 import (
-	"encoding/json"
+	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"accounts/internal/deliverytest"
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -26,58 +28,63 @@ import (
 // arrived" to "this tuple is active" — not a hand-assembled pair of documents
 // handed straight to core, which proves core.
 //
-// core's own fixtures are the documents, and here that is load-bearing rather
-// than tidy: the authority fixture, the presence fixture and FixtureEnvelope are
-// a matched tuple core ships BECAUSE getting one is fiddly — the approved build
-// must be the build the presence document's workload declares, both halves must
-// name the same envelope revision, and the authority must be effective from a
-// generation the presence document has reached. A tuple this repository invented
-// would agree with this repository's reading of those rules by construction.
+// The ceiling is the MODULE envelope, keyed by module principal and admitting
+// unit IDs in delivery's convention (<presence binding>:<binding>:<operation>),
+// so the documents here are built in that convention rather than taken from
+// core's fixtures, whose principals and unit IDs no module envelope can name.
+// The tuple still has to be core's: the approved build is the build the presence
+// document's workload declares, both halves name the same envelope revision, and
+// the authority is effective from a generation the presence has reached.
 
 // TestDeliveredAuthorityActivatesAgainstDeliveredPresence drives the whole
 // question through the host.
 func TestDeliveredAuthorityActivatesAgainstDeliveredPresence(t *testing.T) {
 	delivery := newProductionPathDelivery(t)
 
-	delivery.callerNamespace = fixturePresenceNamespace
-	requireDelivered(t, delivery.post(t, business.SolutionDeliveryPresence, signedFixture(t, "presence")))
+	solutionID := uniqueAlias("acv")
+	namespace := "ns-" + solutionID
+	presence := productionPathBinding(t, solutionID, namespace, 1)
+	build := presence.Builds()[0]
+	delivery.callerNamespace = namespace
+	requireDelivered(t, delivery.post(t, business.SolutionDeliveryPresence, productionPathCarrier(t, presence)))
+	authority := productionPathAuthority(t, solutionID, presence.Binding, "a", 1, build, false)
 	delivery.callerNamespace = authorityWriterNamespace
-	requireDelivered(t, delivery.post(t, business.SolutionDeliveryAuthority, signedFixture(t, "authority")))
+	requireDelivered(t, delivery.post(t, business.SolutionDeliveryAuthority, productionPathAuthorityCarrier(t, authority)))
 
-	activation := fixtureActivation(t, delivery.service, solutionhost.FixtureEnvelope())
+	// A second approved build the presence does not run, so the refusal below
+	// is about the tuple rather than about the ceiling.
+	other := solutionhost.FixtureEnvelope().ApprovedBuilds[1]
+	require.NotEqual(t, build, other)
+	activation := activationFor(t, delivery.service, productionPathCoordinate,
+		moduleCeiling(solutionhost.FixtureEnvelopeRevision, []solutionhost.ImageDigest{build, other},
+			solutionhost.EnvelopeGrant{Principal: productionPathPrincipal, Binding: authorityBindingFor(presence.Binding, namespace)}))
 	require.NotNil(t, activation, "the reconciler exposes no activation seam, so the authority inbox is unread again")
 
-	build := fixturePresenceBuild(t)
-	active, err := activation.Activate(testCtx, solutionhost.FixtureBindingID, build)
+	active, err := activation.Activate(testCtx, presence.Binding, build)
 	require.NoError(t, err)
-	require.Equal(t, fixtureAuthorityID, active.Authority)
-	require.Equal(t, solutionhost.FixtureBindingID, active.Binding)
+	require.Equal(t, authority.Authority, active.Authority)
+	require.Equal(t, presence.Binding, active.Binding)
 	require.Equal(t, build, active.Build)
-	require.Equal(t, uint64(4), active.Generation, "the activation names the PRESENCE generation that activated it")
+	require.Equal(t, uint64(1), active.Generation, "the activation names the PRESENCE generation that activated it")
 	require.Equal(t, uint64(solutionhost.FixtureEnvelopeRevision), active.EnvelopeRevision)
-	require.Equal(t, solutionhost.FixtureDomain, active.Domain)
-	require.Equal(t, solutionhost.FixtureCoordinate, active.Host.Coordinate,
+	require.Equal(t, productionPathDomain, active.Domain)
+	require.Equal(t, productionPathCoordinate, active.Host.Coordinate,
 		"an activation that did not say which host it was for could be read as an activation anywhere")
 
 	// ANOTHER BUILD ACTIVATES NOTHING. This is the acceptance case for the whole
 	// design: authority is held for the build that was reviewed, so shipping a
-	// new build does not carry the old build's authority forward. The second
-	// approved build in FixtureEnvelope is approved and is not the one the
-	// presence document runs, so the refusal is about the tuple rather than
-	// about the ceiling.
-	other := solutionhost.FixtureEnvelope().ApprovedBuilds[1]
-	require.NotEqual(t, build, other)
-	_, err = activation.Activate(testCtx, solutionhost.FixtureBindingID, other)
+	// new build does not carry the old build's authority forward.
+	_, err = activation.Activate(testCtx, presence.Binding, other)
 	require.ErrorIs(t, err, solutionhost.ErrNotActivated)
 
 	// PRESENCE ALONE GRANTS NOTHING. A binding delivered with no authority
 	// document over it is not a refusal of a grant — nothing was granted — and
 	// the two are distinct errors because an operator fixes them in different
 	// places.
-	solutionID := uniqueAlias("act")
-	namespace := "ns-" + solutionID
-	presenceOnly := productionPathBinding(t, solutionID, namespace, 1)
-	delivery.callerNamespace = namespace
+	onlyID := uniqueAlias("act")
+	onlyNamespace := "ns-" + onlyID
+	presenceOnly := productionPathBinding(t, onlyID, onlyNamespace, 1)
+	delivery.callerNamespace = onlyNamespace
 	requireDelivered(t, delivery.post(t, business.SolutionDeliveryPresence,
 		productionPathCarrier(t, presenceOnly)))
 	_, err = activation.Activate(testCtx, presenceOnly.Binding, build)
@@ -99,8 +106,9 @@ func TestWithoutAnEnvelopeTheHostActivatesNothing(t *testing.T) {
 	delivery.callerNamespace = authorityWriterNamespace
 	requireDelivered(t, delivery.post(t, business.SolutionDeliveryAuthority, signedFixture(t, "authority")))
 
-	// The zero envelope: what a host that was delivered no ceiling holds.
-	activation := fixtureActivation(t, delivery.service, solutionhost.Envelope{})
+	// No envelope: what a host whose platform administrator has written no
+	// ceiling holds.
+	activation := fixtureActivation(t, delivery.service, nil)
 	_, err := activation.Activate(testCtx, solutionhost.FixtureBindingID, fixturePresenceBuild(t))
 	require.ErrorIs(t, err, business.ErrSolutionAuthorityCeilingUnavailable)
 }
@@ -108,25 +116,71 @@ func TestWithoutAnEnvelopeTheHostActivatesNothing(t *testing.T) {
 // fixtureActivation builds the activation seam for a host that answers for the
 // FIXTURE coordinate and domain, which is what the shipped documents target.
 func fixtureActivation(
-	t *testing.T, service *business.Service, envelope solutionhost.Envelope,
+	t *testing.T, service *business.Service, envelope *business.ModuleEnvelope,
 ) *business.SolutionAuthorityActivation {
 	t.Helper()
 	return activationFor(t, service, solutionhost.FixtureCoordinate, envelope)
 }
 
+// staticCeiling serves one ceiling by value, the way the store serves the
+// current revision. A nil envelope is a host with no ceiling written.
+type staticCeiling struct{ envelope *business.ModuleEnvelope }
+
+func (c staticCeiling) CurrentModuleEnvelope(context.Context) (*business.ModuleEnvelope, error) {
+	return c.envelope, nil
+}
+
+// productionPathPrincipal is the module principal the production-path documents
+// grant to: a module's own name, which is what delivery writes.
+const productionPathPrincipal = "operator"
+
+// moduleCeiling is the module envelope that admits exactly the (principal,
+// unit) pairs given, whole, at one revision, approving the builds given. Each
+// unit's ID follows delivery's convention, and the principal's grant declares
+// the operation audience, queue and namespace the unit names. These tests read
+// activation and approved builds, which take no workload, so it allows none.
+func moduleCeiling(
+	revision uint64, builds []solutionhost.ImageDigest, grants ...solutionhost.EnvelopeGrant,
+) *business.ModuleEnvelope {
+	envelope := &business.ModuleEnvelope{
+		Revision:       revision,
+		ApprovedBuilds: builds,
+		Principals:     map[string]business.ModuleEnvelopePrincipal{},
+	}
+	for _, grant := range grants {
+		entry := envelope.Principals[grant.Principal]
+		// The whole unit is the envelope's own, so a document whose unit
+		// differs in any field is outside it.
+		entry.Units = append(entry.Units, grant.Binding)
+		parts := strings.Split(grant.Binding.ID, ":")
+		if entry.Grant.OperationAudiences == nil {
+			entry.Grant.OperationAudiences = map[string]business.ModuleOperationAudience{}
+		}
+		entry.Grant.OperationAudiences[parts[len(parts)-2]] = business.ModuleOperationAudience{Audience: grant.Binding.Audience}
+		if grant.Binding.Queue != "" {
+			entry.Grant.Queues = append(entry.Grant.Queues, grant.Binding.Queue)
+		}
+		if grant.Binding.Namespace != "" {
+			entry.Grant.Namespaces = append(entry.Grant.Namespaces, grant.Binding.Namespace)
+		}
+		envelope.Principals[grant.Principal] = entry
+	}
+	return envelope
+}
+
 func activationFor(
-	t *testing.T, service *business.Service, coordinate string, envelope solutionhost.Envelope,
+	t *testing.T, service *business.Service, coordinate string, envelope *business.ModuleEnvelope,
 ) *business.SolutionAuthorityActivation {
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(service,
 		business.SolutionHostBindingReconcilerConfig{
 			Source:          business.NewDeliveredSolutionHostBindings(service),
-			Verifier:        productionPathVerifier{signer: productionPathSigner},
+			Verifier:        deliverytest.Verifier(t, map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}}),
 			Coordinate:      coordinate,
 			Domains:         []string{solutionhost.FixtureDomain, productionPathDomain},
 			DomainsBySigner: map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}},
 			Interval:        time.Minute,
-			Envelope:        envelope,
+			Envelopes:       staticCeiling{envelope: envelope},
 		})
 	require.NoError(t, err)
 	return reconciler.AuthorityActivation()
@@ -189,7 +243,7 @@ func TestAWithdrawnAuthorityIsNotReinstatedUnderANewID(t *testing.T) {
 	renamed := productionPathAuthority(t, solutionID, presence.Binding, "b", 1, build, false)
 
 	activation := activationFor(t, delivery.service, productionPathCoordinate,
-		productionPathEnvelope(solutionID, namespace, build))
+		productionPathEnvelope(presence.Binding, namespace, build))
 
 	delivery.callerNamespace = authorityWriterNamespace
 	requireDelivered(t, delivery.post(t, business.SolutionDeliveryAuthority,
@@ -225,8 +279,8 @@ func productionPathAuthority(
 		Host:             solutionhost.HostTarget{Coordinate: productionPathCoordinate, Component: "saas-host"},
 		OwnershipDomain:  productionPathDomain,
 		EnvelopeRevision: solutionhost.FixtureEnvelopeRevision,
-		// The subject module's own declarations are written out, [] when it
-		// declares none (core#735): an omitted list is refused as a dropped one.
+		// This subject owns no queues, audit namespaces or scope vocabulary.
+		// Core requires explicit declarations, including on tombstones.
 		Queues:        []string{},
 		Namespaces:    []string{},
 		ScopeCeilings: []solutionhost.ScopeCeiling{},
@@ -235,8 +289,8 @@ func productionPathAuthority(
 		document.ApprovedBuild = build
 		document.EffectiveFrom = 1
 		document.Principals = []solutionhost.PrincipalAuthority{{
-			Principal: "principal:operator",
-			Bindings:  []solutionhost.AuthorityBinding{authorityBindingFor(solutionID, "ns-"+solutionID)},
+			Principal: productionPathPrincipal,
+			Bindings:  []solutionhost.AuthorityBinding{authorityBindingFor(binding, "ns-"+solutionID)},
 		}}
 	} else {
 		// A withdrawn generation names no principal, approves no build and is
@@ -252,24 +306,21 @@ func productionPathAuthority(
 // assembled by the TEST rather than read out of a document, which is the rule:
 // an envelope a document carried would be a document declaring its own ceiling.
 func productionPathEnvelope(
-	solutionID, namespace string, build solutionhost.ImageDigest,
-) solutionhost.Envelope {
-	return solutionhost.Envelope{
-		Revision: solutionhost.FixtureEnvelopeRevision,
-		Grants: []solutionhost.EnvelopeGrant{{
-			Principal: "principal:operator",
-			Binding:   authorityBindingFor(solutionID, namespace),
-		}},
-		ApprovedBuilds: []solutionhost.ImageDigest{build},
-	}
+	presenceBinding, namespace string, build solutionhost.ImageDigest,
+) *business.ModuleEnvelope {
+	return moduleCeiling(solutionhost.FixtureEnvelopeRevision, []solutionhost.ImageDigest{build},
+		solutionhost.EnvelopeGrant{Principal: productionPathPrincipal, Binding: authorityBindingFor(presenceBinding, namespace)})
 }
 
-func authorityBindingFor(solutionID, namespace string) solutionhost.AuthorityBinding {
+// authorityBindingFor is the one unit the production-path documents grant: the
+// invoke operation of a `reconcile` binding over the presence binding, named as
+// delivery names it.
+func authorityBindingFor(presenceBinding, namespace string) solutionhost.AuthorityBinding {
 	return solutionhost.AuthorityBinding{
-		ID:        "binding:" + solutionID + ":reconcile",
+		ID:        presenceBinding + ":reconcile:invoke",
 		Revision:  1,
 		Audience:  "https://test.acme.example/operations",
-		Scope:     "reconcile",
+		Scope:     "reconcile:run",
 		Queue:     "reconcile.default",
 		Namespace: namespace,
 	}
@@ -283,11 +334,5 @@ func productionPathAuthorityCarrier(t *testing.T, document *solutionhost.Authori
 	t.Helper()
 	payload, err := solutionhost.SignedPayloadFor(document)
 	require.NoError(t, err)
-	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-		Schema:   solutionhost.SchemaSignedV1,
-		Document: payload,
-		Bundle:   json.RawMessage(solutionhost.FixtureBundle),
-	})
-	require.NoError(t, err)
-	return carrier
+	return deliverytest.Carrier(t, payload, productionPathSigner)
 }

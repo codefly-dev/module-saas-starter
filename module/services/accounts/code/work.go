@@ -16,6 +16,7 @@ import (
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
 	"accounts/pkg/datasource"
+	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/email"
 	"accounts/pkg/eventcatalog"
 	policylogv1 "accounts/pkg/gen/saas/policylog/v1"
@@ -36,6 +37,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/codefly-dev/core/standards"
@@ -134,6 +136,16 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
+	effectReceipts, closeEffectReceipts, err := store.NewEffectReceipts()
+	if err != nil {
+		return nil, err
+	}
+	if err = service.ConfigureSourceOperationReceipts(effectReceipts); err != nil {
+		closeEffectReceipts()
+		return nil, err
+	}
+	// The pool is owned by the process; close the receipt handle at shutdown.
+	go func() { <-ctx.Done(); closeEffectReceipts() }()
 	abuseVerifier, err := configuredAbuseVerifier()
 	if err != nil {
 		return nil, err
@@ -192,15 +204,22 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetWebhookJobProducer(store)
 
 	// Module-facing capability surface (issue #463): a request-scoped
-	// transactional producer for tenant/subject enqueue, the privileged worker
-	// store for claim/lease/finalize and global inbox enqueue, and the registry
-	// declaring which queues each module service principal may use. The registry
-	// is deployment-provided; an unset value denies every caller (fail-closed).
-	modulePrincipals, err := business.ParseModulePrincipalRegistry(workspaceEnv("module-capabilities", "MODULE_PRINCIPALS"))
-	if err != nil {
-		return nil, fmt.Errorf("parse module principal registry: %w", err)
-	}
-	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
+	// transactional producer for tenant/subject enqueue and the privileged
+	// worker store for claim/lease/finalize and global inbox enqueue.
+	//
+	// NO REGISTRY IS READ HERE. The module principal registry is derived, each
+	// reconcile pass, from the delivered authority documents inside the module
+	// envelope a platform super_admin writes, and swapped in live — so the host
+	// starts with an empty registry, which denies every module caller until the
+	// first pass installs what delivery and the envelope agree on. Nothing in
+	// this process's environment can name a module principal.
+	service.SetModuleCapabilities(store, jobStore, nil)
+	// codefly:gateway-route-exempt Internal install consumer protocol; only the gateway calls accounts directly with the internal credential.
+	adapters.RegisterHTTPRoute(adapters.InstallationStepPath, adapters.NewInstallationStepHandler(service))
+	// The envelope's persistence, wired whether or not this host receives
+	// deliveries: a platform super_admin can write the ceiling before the first
+	// document arrives.
+	service.SetModuleEnvelopeStore(store)
 	// Explicit organization delegation is separate from module identity. A
 	// projected policy is refreshed by the delivery system and read per call.
 	installerHandler, err := configuredModuleInstaller(service)
@@ -354,6 +373,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		workspaceEnv("github-app", "GITHUB_APP_CLIENT_ID"),
 		workspaceEnv("github-app", "GITHUB_APP_CLIENT_SECRET"),
 	)
+	if err := service.ConfigureDatasourceOAuth(workspaceEnv("datasource-oauth", "providers"), workspaceEnv("datasource-oauth", "client_id"), workspaceEnv("datasource-oauth", "client_secret")); err != nil {
+		return nil, err
+	}
+
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(cipher, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
@@ -473,30 +496,14 @@ func doWork(ctx context.Context) (Clean, error) {
 		"/v1/auth/.well-known/jwks.json",
 		adapters.NewJWKSHTTPHandler(service),
 	)
-	// TODO(#952, Unit D): remove the registration-secret configuration together
-	// with the mint handlers in pkg/adapters/module_capabilities_server.go, which
-	// is protected from edits in this unit. Gateway token exchanges are deleted.
-	// The remaining mint RPC still consumes this declaration. Its credential has
-	// no gateway registration endpoint to admit it after the cold cutover.
-	moduleRegistrationSecrets, err := business.ParseRegistrationSecrets(
-		workspaceEnv("federation", "MODULE_REGISTRATION_SECRETS"))
-	if err != nil {
-		return nil, fmt.Errorf("read module registration secrets: %w", err)
-	}
-	service.SetModuleRegistrar(minter, moduleRegistrationSecrets)
-	if err := configureModuleIdentity(service); err != nil {
-		return nil, err
-	}
-
-	// Keep the remaining solution mint's reader until its protected handler is
-	// removed in the same change. Validate configuration before serving it.
-	solutionRegistrationSecrets := func() string {
-		return workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS")
-	}
-	if _, err := business.ParseRegistrationSecrets(solutionRegistrationSecrets()); err != nil {
-		return nil, fmt.Errorf("read solution registration secrets: %w", err)
-	}
-	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
+	// NO MODULE OR SOLUTION SECRET IS READ HERE (#1056). A module proves which
+	// module it is with its pod's projected ServiceAccount token, which
+	// BindExecution reviews and holds against the build the authority document
+	// approves; MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and
+	// SOLUTION_REGISTRATION_SECRETS are deleted with both registration mints.
+	// Execution binding is wired with delivery below, because its approved
+	// builds come from delivered authority: a host with no delivery mints for no
+	// module.
 
 	// Declared solution presence (issue #952). Delivery POSTs one signed
 	// SolutionHostBinding carrier per solution instance to the delivery
@@ -573,6 +580,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// that cannot re-read cannot honour a narrowing, so it must not fall back to
 	// the declared ceiling alone.
 	service.SetModuleAuthorityReads(store, nil)
+	// The row-backed half of every Work Context's seal: a person's held
+	// installation, epoch and revision. Minting and verifying both read it, so
+	// a host without it mints and verifies nothing.
+	service.SetWorkContextSealStore(store)
 
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is
@@ -657,7 +668,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		if !hasConfiguredValue(headerName) {
 			return nil, fmt.Errorf("identity provider header-jwt requires IDENTITY_HEADER_NAME")
 		}
-		service.SetTokenValidator(v)
+		service.SetHeaderJWTTokenValidator(v)
 		adapters.SetHeaderJWTLoginHeader(headerName)
 	default:
 		// user_identities.provider is a foreign key into the identity_providers
@@ -676,7 +687,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			// SSO administration is a WorkOS-specific optional adapter. Other
 			// identity providers cannot accidentally activate it by exposing a
 			// similarly named management credential.
-			service.SetSSOManagementAPIKey(identityEnv("IDENTITY_MANAGEMENT_API_KEY"))
+			service.SetSSOManagementAPIKey(identityProviderSecret("IDENTITY_MANAGEMENT_API_KEY"))
 		}
 		oauthPolicy, err := buildOAuthRequestPolicy(authProvider)
 		if err != nil {
@@ -855,6 +866,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// debugging; every deployed environment returns generic auth errors so the
 	// identity/enumeration oracle stays closed (#208).
 	adapters.SetExposeAuthErrorDetail(codefly.IsLocal())
+	// A browser discards a Secure cookie on a plaintext loopback origin, so local
+	// development needs the exemption; nothing else does, and the default keeps
+	// Secure.
+	adapters.SetAllowInsecureRefreshCookie(codefly.IsLocal())
 
 	// Separate shared-secret guards for internal RPC admission and forwarded
 	// gateway identity. Empty values fail closed; production deploys provide
@@ -875,10 +890,14 @@ func doWork(ctx context.Context) (Clean, error) {
 	adapters.SetGatewayToken(gatewayCredentials.current)
 	adapters.SetPreviousGatewayToken(gatewayCredentials.previous)
 	adapters.SetPreviousGatewayTokenExpiresAt(gatewayCredentials.previousExpiresAt)
-	// The datasource content-ticket signer is keyed from the same internal secret,
-	// domain-separated, so a change-set job's opaque content ticket verifies at
-	// redemption without a second key to provision.
-	service.SetDatasourceTicketKey([]byte(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN")))
+	// One delivered key per purpose, never derived from the perimeter credential:
+	// see business.SetDatasourceKeys. A key a deployed runtime may not use is
+	// passed as ABSENT, which leaves its purpose unavailable — the same answer as
+	// an unprovisioned key, and the reason the loader does not need a second one.
+	service.SetDatasourceKeys(
+		usableDatasourceKey("DATASOURCE_CONTENT_TICKET_KEY", codefly.IsLocal()),
+		usableDatasourceKey("DATASOURCE_ACCOUNT_LINK_KEY", codefly.IsLocal()),
+	)
 
 	centralEnforcement, err := configuredCentralEnforcement()
 	if err != nil {
@@ -930,6 +949,13 @@ func doWork(ctx context.Context) (Clean, error) {
 	appBase, err := configuredApplicationBaseURL()
 	if err != nil {
 		return nil, err
+	}
+	// The one origin this deployment treats as its own: what binds an OAuth
+	// redirect, an authenticator's relying party and every emailed link. From here
+	// on a forwarded origin is honoured only when it equals this one, so no hop can
+	// substitute a caller's choice (pkg/auth.WithVerifiedPublicOrigin).
+	if err := auth.SetConfiguredPublicOrigin(appBase); err != nil {
+		return nil, fmt.Errorf("application: APP_BASE_URL: %w", err)
 	}
 	var workerEmailOutbox *email.Outbox
 	var emailWorker *jobs.Worker
@@ -1174,21 +1200,17 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Start background data retention goroutine. Runs once on startup and
 	// then every 24 hours, deleting records older than their configured
-	// retention period.
+	// retention period. A run that fails in any part is an error, and sets
+	// saas.retention.failing, which the alert pack watches: nobody reads the
+	// log of a job that runs once a day.
+	retentionMetrics, err := newRetentionTelemetry(otel.Meter("github.com/codefly-dev/module-saas-starter/accounts"))
+	if err != nil {
+		return nil, fmt.Errorf("register retention metrics: %w", err)
+	}
 	retentionCtx, retentionCancel := context.WithCancel(ctx)
 	go func() {
 		rw := wool.Get(retentionCtx).In("retention")
-		runRetention := func() {
-			if deleted, err := service.RunRetention(retentionCtx); err != nil {
-				rw.Warn("scheduled run failed", wool.ErrField(err))
-			} else {
-				for k, v := range deleted {
-					if v > 0 {
-						rw.Info("deleted records", wool.Field("count", v), wool.Field("kind", k))
-					}
-				}
-			}
-		}
+		runRetention := func() { runScheduledRetention(retentionCtx, service, retentionMetrics) }
 		// Single-use replay markers expire with their token (≤ 15 min), so they
 		// are swept far more often than the daily retention pass or they would
 		// pile up for a day before reclamation.
@@ -1211,25 +1233,23 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
-		// Datasource reconcile (issue #487 §6): the production safety net for lost
-		// webhooks and for local development without a public tunnel. Each sweep
-		// enqueues a reconcile job for every active GitHub source whose schedule has
-		// elapsed; the job resolves the head and snapshots only if it moved, so the
-		// sweep does no GitHub work itself.
-		sweepReconcile := func() {
-			if n, err := service.RunDatasourceReconcile(retentionCtx); err != nil {
-				rw.Warn("datasource reconcile sweep failed", wool.ErrField(err))
-			} else if n > 0 {
-				rw.Info("enqueued datasource reconciles", wool.Field("count", n))
-			}
-		}
+		// There is deliberately NO datasource reconcile sweep here. A source's
+		// reconcile schedule is a trigger this host DECLARES and an executing
+		// module fires (business/datasource_trigger.go): the host that also
+		// fired it would be two schedules for one source, and the one nobody
+		// declared would win. The interval remains the source's configuration
+		// and re-declares the trigger; the occurrence admits
+		// DatasourceService/ReconcileSource, the same operation a person's
+		// manual pass does.
 
-		// GitHub App installation re-check (issue #691): the same safety net, for
-		// the half that webhooks alone cannot cover. Parking a source removes it
-		// from the reconcile sweep above, so a restored installation whose
-		// `unsuspend` delivery GitHub failed to hand over would leave that source
-		// parked for good. This re-verifies installations that still hold one.
-		// The sweep runs on the same tick, but each installation is only enqueued
+		// GitHub App installation re-check (issue #691): the safety net for the
+		// half that webhooks alone cannot cover. Parking a source takes it off
+		// its declared reconcile schedule, so a restored installation whose
+		// `unsuspend` delivery GitHub failed to hand over would leave that
+		// source parked for good. This re-verifies installations that still
+		// hold one. It is a re-check of this host's OWN records against the
+		// provider, not work on a source's content, which is why it stays here
+		// while the reconcile schedule left. Each installation is only enqueued
 		// once per re-check window, so the tick does not set the rate.
 		sweepInstallationRecheck := func() {
 			if n, err := service.RunGitHubInstallationRecheck(retentionCtx); err != nil {
@@ -1243,15 +1263,14 @@ func doWork(ctx context.Context) (Clean, error) {
 		runRetention()
 		sweepReplay()
 		sweepPrivacyArtifacts()
-		sweepReconcile()
 		sweepInstallationRecheck()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
 		replayTicker := time.NewTicker(time.Hour)
-		reconcileTicker := time.NewTicker(time.Minute)
+		installationRecheckTicker := time.NewTicker(time.Minute)
 		defer retentionTicker.Stop()
 		defer replayTicker.Stop()
-		defer reconcileTicker.Stop()
+		defer installationRecheckTicker.Stop()
 		for {
 			select {
 			case <-retentionCtx.Done():
@@ -1261,8 +1280,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			case <-replayTicker.C:
 				sweepReplay()
 				sweepPrivacyArtifacts()
-			case <-reconcileTicker.C:
-				sweepReconcile()
+			case <-installationRecheckTicker.C:
 				sweepInstallationRecheck()
 			}
 		}
@@ -1741,6 +1759,22 @@ func configuredApplicationBaseURL() (string, error) {
 	if parsed.Scheme != "https" && parsed.Hostname() != "localhost" && parsed.Hostname() != "127.0.0.1" {
 		return "", fmt.Errorf("application: APP_BASE_URL must use https outside local development")
 	}
+	// The value must also survive the function that will CANONICALIZE it at request
+	// time. The checks above are url.Parse plus field rules; pkg/auth uses IDNA. Two
+	// validators for one value meant an origin boot accepted and every request then
+	// refused — the cell started green and no authentication worked, because
+	// WithVerifiedPublicOrigin could not canonicalize what was configured
+	// (R1019-N12/f1). One validator decides.
+	if _, err := auth.CanonicalPublicOrigin(strings.TrimSuffix(raw, "/")); err != nil {
+		return "", fmt.Errorf(
+			"application: APP_BASE_URL is not an origin this service can use (%w): it is the "+
+				"value every OAuth redirect, relying-party origin, emailed link and same-origin "+
+				"comparison is bound to, so it has to be one this host can compare", err)
+	}
+	// The RAW value is returned, not the canonical one. It is also the token issuer and
+	// the published authorization-server metadata, where the spelling is part of the
+	// contract a verifier compares exactly — canonicalizing here would silently change
+	// `iss` for any deployment whose configured origin carries, say, an explicit :443.
 	return strings.TrimSuffix(raw, "/"), nil
 }
 
@@ -1934,7 +1968,32 @@ func configuredSolutionHostBindingReconciler(
 	if err != nil {
 		return nil, fmt.Errorf("the declared-presence surface has no input: a delivered carrier is authorised by TokenReview, and this host cannot reach its api server: %w", err)
 	}
-	service.SetSolutionDelivery(verifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	// A LOCAL PROFILE IS PROVEN AGAINST THIS CLUSTER BEFORE ANYTHING IS
+	// ADMITTED, and a host that cannot prove it does not start (issue #1063).
+	//
+	// A verification policy that declares itself local admits a developer's
+	// own identity, and it is bound to ONE cluster by that cluster's
+	// certificate authority. The proof uses only what the kubelet puts in this
+	// pod: the projected CA bundle must be exactly the pinned certificate, and
+	// the API server reached under that certificate alone must authenticate
+	// this pod's own token. On success the pinned, redirect-refusing transport
+	// becomes THIS client's for the life of the process, so the TokenReviews
+	// and pod reads wired below run under the same binding. A host in any other
+	// cluster fails here, by name. A deployed policy is bound to no cluster and
+	// this does nothing.
+	//
+	// Not left to this call alone: until it succeeds the verifier itself
+	// refuses every carrier under a local policy, so a boot path that forgot to
+	// ask would refuse developers, never admit them somewhere else.
+	if err := verifier.ProveLocalCluster(context.Background(), kubernetes); err != nil {
+		return nil, err
+	}
+	keyVerifier, err := verifier.Verifier()
+	if err != nil {
+		return nil, err
+	}
+	service.SetSolutionDelivery(keyVerifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	service.SetSolutionDeliveryCoordinate(coordinate)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
 	// the gateway because a solution runtime is an independently deployed
@@ -1946,33 +2005,25 @@ func configuredSolutionHostBindingReconciler(
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
-	// The AUTHORITY CEILING, from the same platform-owned anchor as the trust
-	// root and for the same two reasons: a document must never carry its own
-	// ceiling, and a ceiling the composition could point at is a ceiling the
-	// composition chose.
-	//
-	// Absence and damage are different answers. No envelope delivered is a
-	// complete deployment that answers no authority question — presence
-	// reconciles and every activation refuses by name — while an envelope that
-	// IS delivered and cannot be read refuses the boot, because reading a
-	// damaged ceiling as "no ceiling" turns a corrupted file into a silently
-	// narrower system and reading it permissively turns it into a wider one.
-	envelope, _, err := infra.ReadSolutionAuthorityEnvelope()
-	if err != nil {
-		return nil, err
-	}
+	// The AUTHORITY CEILING is the module envelope a platform super_admin
+	// writes at runtime, read by every pass and every activation from the
+	// store — never a file read once here, and never out of a delivered
+	// document, because a document must never carry its own ceiling.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:          business.NewDeliveredSolutionHostBindings(service),
-		Verifier:        verifier,
+		Verifier:        keyVerifier,
 		Coordinate:      coordinate,
 		Domains:         domains,
 		DomainsBySigner: domainsBySigner,
 		Interval:        interval,
-		Envelope:        envelope,
+		Envelopes:       service,
 	})
 	if err != nil {
 		return nil, err
 	}
+	// A delivery or an envelope write asks for a pass now, so what it changes
+	// is in force within one pass instead of one interval.
+	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
 
 	// EXECUTION-BOUND MINTING, wired here because this is where both of its
 	// independent sources exist.
@@ -2035,6 +2086,68 @@ func newDurableJobMetricsMonitor(metricsEnabled bool, source jobs.Operations) (*
 func identityEnv(key string) string {
 	value, _ := codefly.For(codefly.Context()).WorkspaceValue("identity", key)
 	return value
+}
+
+// identityProviderSecret reads a credential that authenticates THIS HOST to the
+// identity provider, from the `identity-provider` group only accounts declares.
+//
+// They used to live in `identity`, which the frontend declares too — it renders
+// the login page from that group's public facts, the issuer and the client id —
+// so a deployment putting the provider's credentials there delivered them to the
+// frontend as well, which reads neither. A public-facing process holding the
+// provider's administration credential widens what a frontend compromise is worth,
+// for nothing.
+//
+// The read falls back to `identity` while a deployment still holds them there, and
+// says so once per key: the group a value is delivered under is the composition's
+// to change, and a hard cutover here would take sign-in down on every cell between
+// this landing and that edit. The fallback goes when the cells have moved — until
+// then, the warning is how an operator knows one has not.
+func identityProviderSecret(key string) string {
+	destination, _ := codefly.For(codefly.Context()).WorkspaceValue("identity-provider", key)
+	legacy := identityEnv(key)
+
+	// A PROVISIONED destination value always wins.
+	//
+	// "Provisioned" has to exclude the placeholder this module ships in the new
+	// group's local defaults, and that is the whole of what this gets right:
+	// hasConfiguredValue rejects only the literal REPLACE_ME, so the shipped
+	// default read as configured and overrode a real value still delivered under
+	// `identity` — defeating the migration fallback precisely on the cells that
+	// have not migrated yet, which are the only ones that need it.
+	if isProvisionedCredential(destination) {
+		return destination
+	}
+	if isProvisionedCredential(legacy) {
+		reportIdentityProviderSecretStillInIdentityGroup(key)
+		return legacy
+	}
+	// Neither group holds a provisioned value: local development, where the
+	// shipped placeholder IS the intended value. Prefer the destination group so a
+	// developer edits the group this service now declares.
+	if strings.TrimSpace(destination) != "" {
+		return destination
+	}
+	return legacy
+}
+
+// isProvisionedCredential reports whether a value is one an operator supplied, as
+// opposed to a placeholder this module ships or an unset key. It is the selection
+// rule for a credential that is moving between configuration groups: a shipped
+// default must not count as the destination being ready.
+func isProvisionedCredential(value string) bool {
+	return hasConfiguredValue(value) && !looksLikeShippedPlaceholder(value)
+}
+
+var identityProviderSecretWarned sync.Map
+
+func reportIdentityProviderSecretStillInIdentityGroup(key string) {
+	if _, loaded := identityProviderSecretWarned.LoadOrStore(key, true); loaded {
+		return
+	}
+	wool.Get(context.Background()).In("identityProviderSecret").Warn(
+		"an identity-provider credential is still delivered under the `identity` group, which the frontend also declares; move it to `identity-provider`, which only this service declares",
+		wool.Field("key", key))
 }
 
 // applicationEnv is also Codefly-only. Local product origins and bootstrap
@@ -2155,7 +2268,7 @@ func buildGenericOIDCStack(provider string) (auth.TokenValidator, business.CodeE
 // two can never disagree at login.
 func discoverOIDCValidator(provider string, defaultAudienceToClientID bool) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
 	clientID = identityEnv("IDENTITY_CLIENT_ID")
-	clientSecret = identityEnv("IDENTITY_CLIENT_SECRET")
+	clientSecret = identityProviderSecret("IDENTITY_CLIENT_SECRET")
 	issuer := identityEnv("IDENTITY_ISSUER")
 	if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
 		return nil, "", "", "", fmt.Errorf(
@@ -2259,7 +2372,7 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		domain := identityEnv("IDENTITY_DOMAIN")
 		audience := identityEnv("IDENTITY_AUDIENCE")
 		clientID := identityEnv("IDENTITY_CLIENT_ID")
-		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+		clientSecret := identityProviderSecret("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) || !hasConfiguredValue(audience) {
 			return nil, nil, fmt.Errorf("identity provider auth0 requires IDENTITY_DOMAIN, IDENTITY_AUDIENCE, IDENTITY_CLIENT_ID, and IDENTITY_CLIENT_SECRET")
 		}
@@ -2279,7 +2392,7 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 
 	case "google":
 		clientID := identityEnv("IDENTITY_CLIENT_ID")
-		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+		clientSecret := identityProviderSecret("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
 			return nil, nil, fmt.Errorf("identity provider google requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET")
 		}
@@ -2576,11 +2689,136 @@ func loadSigningKey(
 // deployment can still be fixed rather than discovered from a crash loop — and
 // so a test can reach all of them with nothing running.
 func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
+	// First, so a deployed composition that sets the allowance is told so before
+	// any other refusal can answer in its place.
+	if err := configureLocalEgress(isLocal, infra.InCluster()); err != nil {
+		return err
+	}
 	selection, err := keyservice.Selection(ctx, isLocal)
 	if err != nil {
 		return err
 	}
-	return requireKeyCustody(selection.SigningBackend, isLocal)
+	if err := requireKeyCustody(selection.SigningBackend, isLocal); err != nil {
+		return err
+	}
+	if err := requirePerimeterCredentials(isLocal); err != nil {
+		return err
+	}
+	return requireApplicationBaseURL(isLocal)
+}
+
+// configureLocalEgress installs the callable-source local egress allowance
+// (`datasource-oauth/local_egress`, apisource/local_egress.go), or refuses to
+// start when it is set on a runtime that is not local.
+//
+// "Local" here is two facts the host already has, and both must hold:
+//
+//   - the Codefly environment is local (codefly.IsLocal) — the one environment
+//     identity every other local-only exemption in this file reads;
+//   - the process is not in a Kubernetes pod (infra.InCluster) — the kubelet's
+//     own projection, which the solution host already treats as its in-cluster
+//     identity.
+//
+// The environment alone is one variable, delivered by whatever renders the
+// deployment, so a deployment could name itself local. The pod fact is put
+// there by the kubelet, and no configuration value can set or clear it. A
+// Codefly-rendered pod mounts no service-account token by default, so there the
+// fact is KUBERNETES_SERVICE_HOST alone: defeating both checks takes the pod
+// spec — CODEFLY__ENVIRONMENT=local and an explicit override clearing that
+// variable — never a configuration value. A deployment that can name itself
+// local has already lifted the refusals of the dev identity provider and the
+// ephemeral signing key, both worse than this allowance. A local runtime started by
+// `codefly run` has neither fact, so the allowance works exactly where it is
+// meant to: on a developer's machine. A local Kubernetes cluster is refused
+// too, by the same rule; it is not where a stub provider runs "beside" the host.
+//
+// Even past both checks the allowance admits only explicit loopback ip:port
+// entries, so it never reaches beyond the host's own network namespace. In a
+// pod that namespace is shared with every container in the pod, sidecars
+// included (a mesh proxy's admin port is on loopback); on a developer's machine
+// it is every local listener, chosen by the developer who lists the port.
+func configureLocalEgress(isLocal, inCluster bool) error {
+	value := workspaceEnv("datasource-oauth", "local_egress")
+	err := apisource.ConfigureLocalEgress(value, isLocal && !inCluster)
+	switch {
+	case err == nil:
+		if strings.TrimSpace(value) != "" {
+			wool.Get(context.Background()).In("configureLocalEgress").Warn(
+				"callable sources may dial these loopback addresses past the public-address guard (local runtime only)",
+				wool.Field("datasource-oauth/local_egress", value))
+		}
+		return nil
+	case errors.Is(err, apisource.ErrLocalEgressOutsideLocal):
+		return fmt.Errorf("datasource-oauth/local_egress is set, but this runtime is not local (local environment: %t, in a Kubernetes pod: %t): "+
+			"remove it from this composition. The allowance exists only so a host booted on a developer's machine can reach a stub provider beside it; "+
+			"a deployed host reaches public addresses only: %w", isLocal, inCluster, err)
+	default:
+		return fmt.Errorf("datasource-oauth/local_egress: %w", err)
+	}
+}
+
+// requireApplicationBaseURL refuses to start a deployed runtime without the
+// origin it treats as its own.
+//
+// It is the value that binds an OAuth redirect, an authenticator's relying party
+// and every emailed link. Unset, each of those was bound to whatever origin the
+// request's trusted hop forwarded — which that hop derived from the caller's own
+// forwarding header — so a caller chose the host a sign-in returned to and the host
+// an emailed link pointed at. A cell without it is a cell whose verified origin is
+// a request parameter, so it refuses here, where a deployment can still be fixed,
+// rather than serving a sign-in bound to somewhere else.
+// usableDatasourceKey resolves one datasource message-authentication key, or nil
+// when a deployed runtime may not use what is configured.
+//
+// The shipped local defaults for this group carry placeholder markers, exactly as
+// every other secret group's do, and this module's repository is public. A deployed
+// runtime holding one would be signing with a published value, so it is treated as
+// ABSENT rather than refused at boot: unlike a perimeter credential, a datasource
+// key is not required for the service to serve, and the purpose it signs for
+// already has a defined unavailable state. Refusing to start would turn an
+// unprovisioned optional purpose into an outage.
+//
+// Local development uses the shipped default, which is its intended value.
+func usableDatasourceKey(key string, isLocal bool) []byte {
+	value := strings.TrimSpace(workspaceEnv("datasource-keys", key))
+	if value == "" {
+		return nil
+	}
+	if isLocal {
+		return []byte(value)
+	}
+	if looksLikeShippedPlaceholder(value) {
+		wool.Get(context.Background()).In("usableDatasourceKey").Warn(
+			"a datasource key carries a placeholder this module ships in its public local defaults; "+
+				"the purpose it signs for is unavailable until the key is provisioned for this cell",
+			wool.Field("key", "datasource-keys/"+key))
+		return nil
+	}
+	if len(value) < minimumPerimeterCredentialLength {
+		wool.Get(context.Background()).In("usableDatasourceKey").Warn(
+			"a datasource key is shorter than the minimum for a signing key; "+
+				"the purpose it signs for is unavailable until it is replaced",
+			wool.Field("key", "datasource-keys/"+key),
+			wool.Field("minimum", minimumPerimeterCredentialLength))
+		return nil
+	}
+	return []byte(value)
+}
+
+func requireApplicationBaseURL(isLocal bool) error {
+	if isLocal {
+		return nil
+	}
+	configured, err := configuredApplicationBaseURL()
+	if err != nil {
+		return err
+	}
+	if configured == "" {
+		return fmt.Errorf("application: APP_BASE_URL is required outside the local environment: " +
+			"set it in the `application` configuration group to this cell's public origin, which is " +
+			"what binds an OAuth redirect, the authenticator relying-party origin and every emailed link")
+	}
+	return nil
 }
 
 // requireKeyCustody refuses to start outside the local environment without the
@@ -2679,15 +2917,6 @@ func (n *billingNotifier) CreateBillingNotification(
 		IdempotencyKey: message.DeliveryKey,
 	})
 	return err
-}
-
-func configureModuleIdentity(service *business.Service) error {
-	secrets, err := business.ParseRegistrationSecrets(workspaceEnv("federation", "MODULE_IDENTITY_SECRETS"))
-	if err != nil {
-		return fmt.Errorf("read module identity secrets: %w", err)
-	}
-	service.SetModuleIdentitySecrets(secrets)
-	return nil
 }
 
 // registerMembershipCacheHealth makes a store-only membership cache visible

@@ -112,6 +112,26 @@ jobs:
         run: node module/tools/migration-pairing-gate.mjs check
       - name: Validate every service test-target catalog
         run: node module/tools/test-targets-gate.mjs check
+      # The alert pack is PromQL that no service runs, so an alert that cannot
+      # fire goes unnoticed until the failure it was for. promtool evaluates
+      # each alert in slo_pack.json, as the Prometheus rule its id and
+      # expression make, over the series the pack's rule tests feed it.
+      - name: Test the alert pack's rules with promtool
+        env:
+          PROMETHEUS_VERSION: "3.15.0"
+          PROMETHEUS_SHA256: 2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0
+        run: |
+          work="$(mktemp -d)"
+          archive="prometheus-${PROMETHEUS_VERSION}.linux-amd64"
+          curl -fsSL -o "${work}/${archive}.tar.gz" \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${archive}.tar.gz"
+          echo "${PROMETHEUS_SHA256}  ${work}/${archive}.tar.gz" | sha256sum -c -
+          tar -xzf "${work}/${archive}.tar.gz" -C "${work}" --strip-components=1 "${archive}/promtool"
+          pack=module/services/accounts/code/pkg/metrics
+          jq '{groups: [{name: "slo_pack", rules: [.alerts[] | {alert: .id, expr: .expression}]}]}' \
+            "${pack}/slo_pack.json" > "${work}/slo_pack.rules.json"
+          cp "${pack}/slo_pack_test.yml" "${work}/"
+          "${work}/promtool" test rules "${work}/slo_pack_test.yml"
       # The author and committer email are the half of the naming boundary the tree scan cannot
       # see, and the half that cannot be scrubbed: they are part of the commit object, so
       # changing one rewrites every descendant hash. Scoped to the commits this change proposes
@@ -423,8 +443,15 @@ jobs:
             codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
-      - name: Check exported API contracts are in sync with the proto
+      - name: Check endpoint procedure inventories against their listener owners
+        working-directory: module/services/accounts/code
+        env:
+          GOWORK: "off"
+        run: go test -tags pure ./pkg/cataloggen -run '^TestAPIContractSurfaces' -count=1
+      - name: Check exported API contracts are in sync with the proto and endpoint inventories
         run: codefly generate contracts saas-starter --check
+      - name: Check derived source operations
+        run: codefly generate runnables saas-starter --check
 
   module-package:
     name: Immutable module package
@@ -471,12 +498,41 @@ jobs:
         shell: bash
         run: |
           baseline="$(mktemp -d)"
-          git fetch --no-tags origin \
-            refs/heads/main:refs/remotes/origin/main
-          git archive origin/main module/services/accounts/proto | tar -x -C "${baseline}"
-          buf breaking module/services/accounts/proto \
-            --against "${baseline}/module/services/accounts/proto" \
-            --exclude-imports
+          # Compare this tree against the base it was MERGED WITH, not against
+          # main as it stands right now. On a pull_request the checkout is the
+          # merge ref, whose first parent is that base -- and GitHub recomputes
+          # merge refs lazily, so a tree merged with an older main, diffed
+          # against live main, reports every message main has gained since as a
+          # deletion. Measured on #1051's own merge ref: 47 violations against
+          # live main, 0 against its first parent, from a diff that touches no
+          # proto at all. Those reds read exactly like a real contract break and
+          # cost a day of merging main into PRs to chase.
+          #
+          # This does not weaken the gate. A proto change that only breaks the
+          # contract once a concurrent change lands is caught where it has to
+          # be: the merge queue builds main + the PR afresh, so there HEAD^1 IS
+          # current main.
+          if git rev-parse --verify -q HEAD^2 >/dev/null; then
+            baseline_rev="HEAD^1"
+          else
+            git fetch --no-tags origin \
+              refs/heads/main:refs/remotes/origin/main
+            baseline_rev="origin/main"
+          fi
+          echo "proto baseline: ${baseline_rev} ($(git rev-parse --short "${baseline_rev}"))"
+          git archive "${baseline_rev}" module/services/accounts/proto | tar -x -C "${baseline}"
+          # Compare the owned module as one Buf image; the vendored option
+          # closure is a separate module, not a second public API to compare.
+          # Both sides are built with the same --path filter. The proto
+          # directory holds two buf modules (the owned API and the vendored
+          # option closure under vendor/), so an unfiltered baseline yields two
+          # images against the filtered input's one and buf refuses to compare.
+          buf build module/services/accounts/proto --path module/services/accounts/proto/saas -o "${baseline}/current.binpb"
+          buf build "${baseline}/module/services/accounts/proto" \
+            --path "${baseline}/module/services/accounts/proto/saas" -o "${baseline}/against.binpb"
+          buf breaking "${baseline}/current.binpb" \
+            --against "${baseline}/against.binpb" \
+            --config module/services/accounts/proto/buf.yaml --exclude-imports
       - name: Execute declared generators and reject drift
         working-directory: module/tools
         env:

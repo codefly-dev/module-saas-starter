@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { signOutAndLeave } from "@/lib/sign-out-journey";
 import {
 	Button,
 	Card,
@@ -323,12 +324,17 @@ export function InvitationAcceptance() {
 						<Button
 							variant="outline"
 							className="w-full"
-							onClick={async () => {
-								await logout();
-								router.replace(
-									`/auth/login?next=${encodeURIComponent(returnPath)}`,
-								);
-							}}
+							onClick={() =>
+								void signOutAndLeave(logout, {
+									// Signed into the wrong account for this invitation, so a
+									// completed sign-out returns here. An INCOMPLETE one does
+									// not: it takes the retry journey, because offering the
+									// invitation again under a session the server could not
+									// revoke is the wrong-account problem restated.
+									completeDestination: `/auth/login?next=${encodeURIComponent(returnPath)}`,
+									navigate: (destination) => router.replace(destination),
+								})
+							}
 						>
 							<UserRoundCog className="mr-2 h-4 w-4" />
 							Switch account

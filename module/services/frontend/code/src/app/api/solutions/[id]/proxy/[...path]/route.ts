@@ -1,8 +1,11 @@
 import { getEndpoints } from "codefly";
 
-import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
+import {
+	resolveCodeflyGatewayContext,
+	resolveVerifiedPublicOrigin,
+} from "@/lib/codefly-gateway-context";
 import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
-import { requestPublicOrigin } from "@/lib/public-origin";
+import { forwardTraceContext } from "@/lib/trace-context";
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -19,14 +22,21 @@ interface RouteContext {
 // internal token, so it must reject cross-site requests itself — cookies ride
 // along automatically on a forged cross-origin call, and the gateway cannot tell
 // a CSRF-driven request from a legitimate one once the internal token is
-// attached. The browser's Origin is compared with the request's PUBLIC origin:
-// behind a TLS-terminating ingress the pod-local request URL is plaintext http,
-// so comparing with it rejected every same-origin write a deployed cell served.
-function sameOrigin(request: Request): boolean {
+// attached.
+//
+// The browser's Origin is compared with this deployment's CONFIGURED public
+// origin, which comes from operator configuration. The comparison is only a check
+// when one side is not the caller's to choose, so the side it compares against is
+// never taken from the request.
+//
+// A deployment with no verified public origin refuses: there is nothing to compare
+// against, and admitting on that basis is the same defect by omission.
+function sameOrigin(request: Request, hostOrigin: string | undefined): boolean {
+	if (!hostOrigin) return false;
 	const origin = request.headers.get("origin");
 	if (origin) {
 		try {
-			if (new URL(origin).origin !== requestPublicOrigin(request)) return false;
+			if (new URL(origin).origin !== hostOrigin) return false;
 		} catch {
 			return false;
 		}
@@ -74,7 +84,11 @@ async function handler(
 ): Promise<Response> {
 	const { id, path } = await context.params;
 
-	if (!sameOrigin(request)) {
+	// The origin is resolved on its own, not off the trust context: a deployment
+	// missing the internal token is a different condition from one with no verified
+	// origin, and refusing a same-origin request for the first would be answering a
+	// question nobody asked.
+	if (!sameOrigin(request, resolveVerifiedPublicOrigin())) {
 		return new Response("cross-origin request rejected", { status: 403 });
 	}
 
@@ -119,9 +133,7 @@ async function handler(
 	// First-party trust headers, resolved server-side from Codefly config — the
 	// gateway rejects solution traffic that lacks them even with a valid user
 	// identity. Set from a fresh Headers so a caller can never spoof them.
-	const gatewayContext = resolveCodeflyGatewayContext(
-		requestPublicOrigin(request),
-	);
+	const gatewayContext = resolveCodeflyGatewayContext();
 	if (gatewayContext) {
 		headers.set(INTERNAL_TOKEN_HEADER, gatewayContext.internalToken);
 		headers.set(PUBLIC_ORIGIN_HEADER, gatewayContext.publicOrigin);
@@ -144,6 +156,26 @@ async function handler(
 	headers.set("accept", request.headers.get("accept") ?? "application/json");
 
 	if (resume !== null) headers.set("last-event-id", resume);
+	// Continue the caller's W3C trace so the solution's spans join it. Only a
+	// strictly valid traceparent (and the tracestate riding with it) travels,
+	// re-serialized rather than copied; baggage is never forwarded.
+	//
+	// The sampled flag is an instruction to the upstream's sampler, not inert
+	// metadata: OpenTelemetry's default ParentBased sampler records whatever an
+	// incoming traceparent declares sampled. This route admits a request that
+	// carries neither Origin nor Sec-Fetch-Site, and it serves a solution's
+	// `.well-known` anonymously (MODULE.md), on a request it has already
+	// stamped with the internal trust token — so honouring that bit for a
+	// caller who presented no credential at all would let a stranger force 100%
+	// recording and export on the gateway and on every solution behind it.
+	//
+	// A caller that did present one keeps the decision: the gateway verifies the
+	// credential, so a forged one costs a single rejected request rather than an
+	// open lever. The trace still links either way; only the instruction is
+	// withheld.
+	forwardTraceContext(request.headers, headers, {
+		honorSampledFlag: authorization !== null || cookie !== null,
+	});
 
 	// Preserve the browser connection lifetime and avoid cached observations or
 	// forwarding its credentials through a gateway redirect. Never retry here.

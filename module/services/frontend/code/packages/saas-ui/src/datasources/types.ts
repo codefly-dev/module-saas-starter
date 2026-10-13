@@ -4,6 +4,8 @@
  * this shape, so the package carries no transport and no generated protobuf.
  */
 
+import type { SourceReconcileStatus } from "./reconcile-passes.js";
+
 export type DatasourceProviderName = "github" | "unknown";
 
 export type DatasourceStatusName = "active" | "paused" | "degraded" | "unknown";
@@ -84,10 +86,11 @@ export interface DatasourceView {
 	lastSyncedAt: string | undefined;
 	/**
 	 * When the change-set compiler last durably enqueued a change set — advanced
-	 * by a webhook delivery, the periodic reconcile, or a tenant's "Sync now"
-	 * (which for a github source dispatches a forced reconcile rather than a
-	 * pull). A separate clock from `lastSyncedAt`, which only the pulled
-	 * providers advance; at most one of the two ever ticks for a given source.
+	 * by a webhook delivery or by a reconcile pass — a declared schedule's
+	 * occurrence or a person's "Sync now", which are the same admission and
+	 * reach a github source as a conditional reconcile rather than a pull. A
+	 * separate clock from `lastSyncedAt`, which only the pulled providers
+	 * advance; at most one of the two ever ticks for a given source.
 	 *
 	 * Optional so that a consumer adapting its own client to `DatasourceClient`
 	 * — the pattern this file's header documents — keeps compiling without them.
@@ -260,6 +263,25 @@ export interface SourceSyncView {
 	maxAttempts: number;
 }
 
+/**
+ * The receipt one reconcile effect carries, as `ReconcileSource` and
+ * `LookupReconcileSource` both return it.
+ *
+ * `status` is "committed" when the pass is recorded, and "unknown" when a
+ * recovery found no receipt for the identity. "unknown" is INCONCLUSIVE, never
+ * "it did not happen": a caller that read it as a refusal would start a second
+ * pass over work that may well be running.
+ */
+export interface SourceReconcileReceipt {
+	effectId: string;
+	status: SourceReconcileStatus;
+	/**
+	 * The job the pass handed to the source's own sync engine, which is what
+	 * traces it. Empty when the pass committed nothing to trace.
+	 */
+	jobId: string;
+}
+
 export interface DatasourceClient {
 	listCollections?(orgId: string): Promise<CollectionAccessView[]>;
 	listGrantSubjects?(orgId: string): Promise<CollectionGrantSubject[]>;
@@ -276,15 +298,46 @@ export interface DatasourceClient {
 	listActivity?(orgId: string, sourceId: string): Promise<SourceActivity[]>;
 	listSources(orgId: string): Promise<DatasourceView[]>;
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
-	/** Enqueues an async pull; resolves to the durable job id. */
-	syncSource(orgId: string, id: string, accessToken?: string): Promise<string>;
+	/**
+	 * Admits one reconcile pass over one source under `effectId` — the same host
+	 * operation (`DatasourceService/ReconcileSource`) a declared reconcile
+	 * schedule's occurrence admits, so a person's pass and a scheduled pass are
+	 * one admission of one shape rather than two.
+	 *
+	 * The identity is the caller's, not the host's, and the kit mints it
+	 * (a `ReconcilePassLedger`): two calls under one identity are one pass and
+	 * one job, which is what makes a double press cost one re-send of the
+	 * source rather than two. Resolves to the receipt the operation returns.
+	 */
+	reconcileSource(
+		orgId: string,
+		id: string,
+		effectId: string,
+	): Promise<SourceReconcileReceipt>;
+	/**
+	 * Reads back the receipt of one reconcile effect, starting nothing. Resolves
+	 * `undefined` when the host knows no pass under that identity.
+	 *
+	 * Required rather than optional because it is the other half of the
+	 * operation: an effect whose outcome cannot be recovered is not idempotent
+	 * in any way a caller can use, so a client that offers the pass must offer
+	 * the lookup.
+	 */
+	lookupReconcileSource(
+		effectId: string,
+	): Promise<SourceReconcileReceipt | undefined>;
 	/**
 	 * Reconnects a source as the viewer and enqueues a sync; resolves to the
 	 * durable job id. From then on the source's syncs run on behalf of the
 	 * viewer, as after a connect. With `accessToken` the saved PAT is replaced;
 	 * without one only a source that holds no credential (a public repository)
-	 * reconnects. Optional so a consumer adapting its own client keeps
-	 * compiling: without it, a reconnect needs a replacement PAT.
+	 * reconnects.
+	 *
+	 * Optional, and without it the surfaces offer no Reconnect control at all.
+	 * It used to fall back to a plain sync carrying a replacement credential,
+	 * which the host reads as a reconnect; that path went with `syncSource`, and
+	 * a reconnect is not a reconcile — it rebinds whose authority the source's
+	 * syncs run under, which no effect identity makes idempotent.
 	 */
 	reconnectSource?(
 		orgId: string,
@@ -292,10 +345,10 @@ export interface DatasourceClient {
 		accessToken?: string,
 	): Promise<string>;
 	/**
-	 * Reads one sync of a source — the job `syncSource` returned, or with no job
-	 * id the source's latest, whatever started it. Resolves `undefined` when the
-	 * source has no sync yet. Optional so a consumer adapting its own client
-	 * keeps compiling without it.
+	 * Reads one sync of a source — the job a reconcile pass or a reconnect
+	 * returned, or with no job id the source's latest, whatever started it.
+	 * Resolves `undefined` when the source has no sync yet. Optional so a
+	 * consumer adapting its own client keeps compiling without it.
 	 */
 	getSourceSync?(
 		orgId: string,

@@ -58,6 +58,10 @@
 			"type": "string",
 			"pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z0-9_]+)+$"
 		},
+		"metricValueFormat": {
+			"description": "How a metric's value is written: `number` (the default) as it is, or `percent`, a share from 0 to 1 written times 100 with a percent sign (0.4 reads 40%).",
+			"enum": ["number", "percent"]
+		},
 		"declaredEventType": {
 			"description": "A type a solution declares: <namespace>.<aggregate>.<event>, each segment starting with a letter, outside the reserved `saas` namespace.",
 			"type": "string",
@@ -291,7 +295,8 @@
 										"type": "number",
 										"exclusiveMinimum": 0,
 										"maximum": 1
-									}
+									},
+									"format": { "$ref": "#/$defs/metricValueFormat" }
 								},
 								"allOf": [
 									{
@@ -347,7 +352,8 @@
 										"type": "array",
 										"minItems": 2,
 										"items": { "$ref": "#/$defs/logicalId" }
-									}
+									},
+									"format": { "$ref": "#/$defs/metricValueFormat" }
 								},
 								"if": {
 									"required": ["operation"],
@@ -370,6 +376,20 @@
 							"id": { "$ref": "#/$defs/logicalId" },
 							"title": { "$ref": "#/$defs/description" },
 							"layout": { "enum": ["grid", "stack"] },
+							"sections": {
+								"type": "array",
+								"minItems": 1,
+								"items": {
+									"type": "object",
+									"additionalProperties": false,
+									"required": ["id", "title"],
+									"properties": {
+										"id": { "$ref": "#/$defs/logicalId" },
+										"title": { "$ref": "#/$defs/description" },
+										"description": { "$ref": "#/$defs/description" }
+									}
+								}
+							},
 							"widgets": {
 								"type": "array",
 								"minItems": 1,
@@ -383,9 +403,21 @@
 										"visualization": {
 											"enum": ["line", "bar", "area", "number", "table"]
 										},
-										"title": { "$ref": "#/$defs/description" }
+										"title": { "$ref": "#/$defs/description" },
+										"section": { "$ref": "#/$defs/logicalId" }
 									}
 								}
+							}
+						},
+						"if": { "required": ["sections"] },
+						"then": {
+							"properties": {
+								"widgets": { "items": { "required": ["section"] } }
+							}
+						},
+						"else": {
+							"properties": {
+								"widgets": { "items": { "not": { "required": ["section"] } } }
 							}
 						}
 					}

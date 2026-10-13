@@ -106,10 +106,9 @@ func runBusinessTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
-	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 5*time.Minute)
+	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 10*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithSharedControlChannel(),
 		sdk.WithExcludedDependencies("cache", "telemetry"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
@@ -119,7 +118,7 @@ func runBusinessTests(m *testing.M) int {
 		// A clean machine may need to pull Postgres and Vault
 		// before the first integration test. Keep the dependency-start budget
 		// separate from individual test timeouts so cold CI is deterministic.
-		sdk.WithTimeout(5*time.Minute),
+		sdk.WithTimeout(10*time.Minute),
 		sdk.WithSilence("store"),
 	)
 	setupDone(err)
@@ -209,6 +208,8 @@ func runBusinessTests(m *testing.M) int {
 	}
 
 	testStore = store
+	service.SetModuleAuthorityReads(testStore, nil)
+	service.SetWorkContextSealStore(testStore)
 	testService = service
 	testCtx = ctx
 
@@ -543,7 +544,9 @@ func TestLogout(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken}, "")
+	// No access token and no verified session: the body's refresh credential alone
+	// must still end the family, which is what a non-browser caller presents.
+	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken}, "", "")
 	require.NoError(t, err)
 
 	_, err = testService.RefreshToken(testCtx, &gen.RefreshTokenRequest{

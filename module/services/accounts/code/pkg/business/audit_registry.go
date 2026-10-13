@@ -251,6 +251,30 @@ func strs(name string) PayloadField {
 }
 func uid(name string) PayloadField     { return PayloadField{Name: name, Kind: FieldUUID} }
 func boolean(name string) PayloadField { return PayloadField{Name: name, Kind: FieldBool} }
+
+// optionalFields relaxes every field to optional, for a type whose emitters do
+// not all carry them.
+func optionalFields(fields []PayloadField) []PayloadField {
+	relaxed := slices.Clone(fields)
+	for i := range relaxed {
+		relaxed[i].Required = false
+	}
+	return relaxed
+}
+
+// mintExecutionFields is the execution a module mint record names (#1056),
+// declared once so the mints that carry it cannot drift apart.
+func mintExecutionFields() []PayloadField {
+	return []PayloadField{
+		{Name: "namespace", Kind: FieldString, Required: true},
+		{Name: "service_account", Kind: FieldString, Required: true},
+		{Name: "pod", Kind: FieldString, Required: true},
+		{Name: "pod_uid", Kind: FieldString, Required: true},
+		{Name: "container", Kind: FieldString, Required: true},
+		{Name: "running_digest", Kind: FieldString, Required: true},
+		{Name: "build_incarnation", Kind: FieldInt, Required: true},
+	}
+}
 func enum(name string, values ...string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldEnum, Enum: values}
 }
@@ -310,7 +334,6 @@ const (
 	EventConsentPrefs    EventType = "saas.consent.preferences_updated"
 
 	EventAPIKeyCreated              EventType = "saas.api_key.created"
-	EventModuleRegistrationMint     EventType = "saas.module.registration_minted"
 	EventModuleWorkContextMint      EventType = "saas.module.work_context_minted"
 	EventModuleOperationContextMint EventType = "saas.module.operation_context_minted"
 	EventExecutableArtifactDecision EventType = "saas.module.executable_artifact_decision"
@@ -319,7 +342,6 @@ const (
 	EventModuleAuditTypesDeclared EventType = "saas.module.audit_types_declared"
 	// A composed module notified a tenant's administrators (NotifyOrgAdmins).
 	EventModuleOrgAdminsNotified     EventType = "saas.module.org_admins_notified"
-	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
 	// EventSolutionHostBindingApplied records that this host reconciled a
 	// declared generation (issue #952). It is emitted by the reconcile pass, not
@@ -360,6 +382,8 @@ const (
 	EventRecordShareRevoked  EventType = "saas.record.share_revoked"
 
 	EventInstallationCreated              EventType = "saas.installation.created"
+	EventInstallationNarrowed             EventType = "saas.installation.narrowed"
+	EventInstallationRetried              EventType = "saas.installation.retried"
 	EventInstallationRevoked              EventType = "saas.installation.revoked"
 	EventInstallationOwnershipTransferred EventType = "saas.installation.ownership_transferred"
 
@@ -388,6 +412,12 @@ const (
 	EventPlatformRoleRevoked        EventType = "saas.platform.role_revoked"
 	EventPlatformImpersonated       EventType = "saas.platform.user_impersonated"
 	EventPlatformImpersonationEnded EventType = "saas.platform.user_impersonation_ended"
+	// EventModuleEnvelopeWritten records that a platform super_admin wrote a
+	// new revision of the module envelope — the ceiling every module principal
+	// is derived inside. Widening and narrowing are both this one event: the
+	// revision names the whole ceiling at that point, and the row it points at
+	// is the record of what changed.
+	EventModuleEnvelopeWritten EventType = "saas.platform.module_envelope_written"
 
 	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
 	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
@@ -431,6 +461,9 @@ const (
 	EventWebhookSecretRotated EventType = "saas.webhook.secret_rotated"
 	EventJobReplayed          EventType = "saas.job.replayed"
 
+	EventDatasourceReceiptsPruned       EventType = "saas.datasource.receipts.pruned"
+	EventDatasourceOperationDeclared    EventType = "saas.datasource.operation.declared"
+	EventDatasourceOperationInvoked     EventType = "saas.datasource.operation.invoked"
 	EventDatasourceSourceAdded          EventType = "saas.datasource.source.added"
 	EventDatasourceSyncCompleted        EventType = "saas.datasource.sync.completed"
 	EventDatasourceCredentialUpdated    EventType = "saas.datasource.credential.updated"
@@ -522,6 +555,24 @@ const (
 	// is who-did-what-to-which-resource (the entry is re-derived on an operator's
 	// say-so), not pipeline bookkeeping, so it has a type of its own.
 	EventDocumentDeadLetterRedriven EventType = "saas.document.dead_letter_redriven"
+
+	// A document module's own facts, reported through the module-facing
+	// EmitAuditEvent. The `saas` namespace is the host's, so a module cannot
+	// declare a type here through DeclareAuditEventTypes: the host registers
+	// each one, with the shape the emitting module sends.
+	//
+	// A read or search that involved no collection: the caller could read none,
+	// or its request resolved to none. saas.document.read / search each record
+	// one collection and require its boundary, so without these the refusal and
+	// the empty answer reached only the producer's own log.
+	EventDocumentReadUnscoped   EventType = "saas.document.read_unscoped"
+	EventDocumentSearchUnscoped EventType = "saas.document.search_unscoped"
+	// A person confirmed the value a reference reads at one version of a
+	// document: an append-only fact about that reference.
+	EventDocumentConfirmed EventType = "saas.document.confirmed"
+	// An extractor attached to a document was revised: attached, corrected or
+	// retired.
+	EventDocumentExtractorRevised EventType = "saas.document.extractor_revised"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -542,16 +593,21 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventConsentPrefs, CategoryIdentity, "A user updated their consent preferences."),
 
 	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
-	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
 	observation(EventModuleOrgAdminsNotified, CategorySystem, "A composed module notified a tenant's administrators; the host resolved the recipients.",
 		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, str("category"), str("type"),
 		PayloadField{Name: "recipients", Kind: FieldInt, Required: true}, PayloadField{Name: "delivered", Kind: FieldInt, Required: true},
 		str("idempotency_key")),
 	mutation(EventModuleAuditTypesDeclared, CategorySystem, "A composed module declared audit event types of its own, or took a namespace over from the producer the operator unbound.",
 		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, strs("event_types"), strs("namespaces_taken_over")),
-	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
-	mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
-		str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")),
+	// v2 (#1056) names the execution the mint was bound to: the pod the
+	// projected ServiceAccount token named, its namespace and ServiceAccount,
+	// the authenticating container, the image it was RUNNING and the approved
+	// build's incarnation. A module mint is authenticated by that execution and
+	// nothing else, so the record of one says which execution it was.
+	revised(mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.",
+		append([]PayloadField{str("prefix"), str("tenant")}, mintExecutionFields()...)...), 2),
+	revised(mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
+		append([]PayloadField{str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")}, mintExecutionFields()...)...), 2),
 	// v2 adds `delegation_id` and stops requiring `owner_principal_id`.
 	//
 	// The exchange now has two arms. One presents a live parent capability, and
@@ -578,7 +634,6 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{DelegatedAudienceExchangeIssued, DelegatedAudienceExchangeRefused}},
 		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}), 2),
 	mutation(EventExecutableArtifactDecision, CategoryAccess, "An administrator approved or revoked an exact executable artifact identity.", str("action"), uid("installation_id"), str("policy_id"), str("subject_digest"), str("module_principal_id")),
-	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
 	mutation(EventSolutionHostBindingApplied, CategoryAccess,
 		"The host reconciled a declared SolutionHostBinding generation.",
@@ -618,6 +673,8 @@ var auditEventCatalog = []AuditEventDefinition{
 		uid("agent_principal_id"), uid("target_id"), uid("role_id"), uid("owner_principal_id"), str("allowed_audiences"), str("allowed_scopes")),
 	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled, or the presence it was installed from was withdrawn: its agent principal and standing grant were revoked and its scope node soft-deleted.",
 		uid("target_id"), str("binding_id"), str("generation"), str("revoked_reason")),
+	mutation(EventInstallationNarrowed, CategoryAccess, "An installation scope was narrowed and its affected work canceled.", str("scope"), str("revision"), str("binding_id")),
+	mutation(EventInstallationRetried, CategoryAccess, "A failed installation's install step was requested again.", str("revision")),
 	mutation(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
 		uid("owner_principal_id")),
 	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
@@ -645,6 +702,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventMFADeviceRevoked, CategorySecurity, "An MFA device was revoked."),
 	mutation(EventPlatformRoleGranted, CategorySecurity, "A platform role was granted."),
 	mutation(EventPlatformRoleRevoked, CategorySecurity, "A platform role was revoked."),
+	mutation(EventModuleEnvelopeWritten, CategorySecurity, "A platform super_admin wrote a new revision of the module envelope.",
+		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "principals", Kind: FieldInt, Required: true}),
 	// The operator's justification is part of the record, not an optional
 	// enrichment: who and whom are already implied by the actor/resource pair,
 	// and why is the only thing this event can carry that the pair cannot.
@@ -711,6 +772,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
 		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2),
 	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
+	mutation(EventDatasourceReceiptsPruned, CategorySystem, "Expired source receipt responses were pruned.", str("effect_id"), PayloadField{Name: "receipts", Kind: FieldInt}),
+	mutation(EventDatasourceOperationDeclared, CategorySystem, "A source operation set was declared.", strs("operations")),
+	observation(EventDatasourceOperationInvoked, CategorySystem, "A source operation was invoked.", str("operation"), enum("effect", "READ_ONLY", "MUTATION", "UNKNOWN"), enum("outcome", "committed", "refused", "unresolved", "rate_limited"), str("effect_id")),
 	observation(EventDatasourceAccountLinkStarted, CategorySystem, "A person started linking a provider account.", str("connector")),
 	mutation(EventDatasourceAccountLinked, CategorySystem, "A person linked a provider account they signed in as.",
 		str("connector"), str("provider_account_id")),
@@ -731,8 +795,13 @@ var auditEventCatalog = []AuditEventDefinition{
 	// capability narrowed to recovering a receipt carries strictly less than
 	// one that may produce the effect. A trail that cannot tell the two apart
 	// cannot answer what a module was actually let do.
+	//
+	// v3 (#1056) adds the execution a MINT was bound to — pod, ServiceAccount,
+	// running image, approved incarnation — optional because the reference
+	// exchange records this event too, and its caller authenticated with a
+	// module Work Context rather than a projected token.
 	revised(mutation(EventSourceDelegationUsed, CategoryAccess, "A module was issued an operation context from a person's source delegation.",
-		append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup"))...), 2),
+		append(append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup")), optionalFields(mintExecutionFields())...)...), 3),
 	mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
 		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
@@ -856,6 +925,65 @@ var auditEventCatalog = []AuditEventDefinition{
 			PayloadField{Name: "producer", Kind: FieldString, Required: true, MaxLen: 128},
 			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true,
 				Enum: []string{"permanent", "exhausted", "cancelled", "unknown"}})...))),
+	observation(EventDocumentReadUnscoped, CategoryAccess, "A document read that involved no collection ended with an explicit outcome: it was denied, found nothing the caller may read, or failed before any collection was resolved.", documentUnscopedReadFields...),
+	observation(EventDocumentSearchUnscoped, CategoryAccess, "A search that involved no collection ended with an explicit outcome: it was denied, the caller may read no collection it names, or it failed before any collection was resolved.", documentUnscopedReadFields...),
+	// A confirmation is recorded only when it commits: the module appends the
+	// event in the same transaction as its append-only confirmation row, and a
+	// refused confirmation writes nothing, so the type carries no `outcome`. The
+	// entry is the resource and the confirmation id is the idempotency key, so a
+	// retried emission collapses. The confirmed value is deliberately not a
+	// field: the spine records that a reference was confirmed, where, and by
+	// whom, never what it read. The version and every reference field are
+	// required: a confirmation that cannot say which version and which reference
+	// it confirmed is not one. `address` is the reference's position in its
+	// format's own notation, bounded in bytes like the module's request.
+	requiresIdempotencyKey(requiresEntry(mutation(EventDocumentConfirmed, CategoryLifecycle,
+		"A person confirmed the value a reference read at one version of a document.",
+		append(required(documentFields, "version"),
+			PayloadField{Name: "extractor", Kind: FieldString, Required: true},
+			PayloadField{Name: "extractor_version", Kind: FieldString, Required: true},
+			PayloadField{Name: "field", Kind: FieldString, Required: true},
+			PayloadField{Name: "format", Kind: FieldString, Required: true},
+			PayloadField{Name: "address", Kind: FieldString, Required: true, MaxLen: 1024})...))),
+	// The native extractor itself stays off the trail; its digest names it.
+	// Everything a revision always names is required: the version it was
+	// derived from, the key and revision, its digest, whether it retires the
+	// key, the native request type and what proposed it. `proposal_source`
+	// names the proposing run, receipt or derivation, but nothing bounds it to
+	// an identifier: it is an unvalidated string of up to 512 bytes, so it is
+	// marked PII and redacted from exports and webhooks.
+	requiresIdempotencyKey(requiresEntry(mutation(EventDocumentExtractorRevised, CategoryLifecycle,
+		"An extractor attached to a document was revised: attached, corrected or retired.",
+		append(required(documentFields, "version"),
+			PayloadField{Name: "extractor_key", Kind: FieldString, Required: true, MaxLen: 128},
+			PayloadField{Name: "revision", Kind: FieldInt, Required: true},
+			PayloadField{Name: "digest", Kind: FieldString, Required: true, MaxLen: 64},
+			PayloadField{Name: "parent_digest", Kind: FieldString, MaxLen: 64},
+			PayloadField{Name: "retired", Kind: FieldBool, Required: true},
+			PayloadField{Name: "request_type", Kind: FieldString, Required: true, MaxLen: 128},
+			PayloadField{Name: "proposal_kind", Kind: FieldString, Required: true, MaxLen: 16},
+			pii(PayloadField{Name: "proposal_source", Kind: FieldString, MaxLen: 512}))...))),
+}
+
+// documentUnscopedReadFields is the shape of a read or search that involved no
+// collection. It is a type of its own, not saas.document.read with an optional
+// boundary, because the registry declares each field's requirement on its own:
+// "boundary is required unless the outcome is denied, empty or failed" is a
+// conditional the registry and its JSON Schema projection cannot state, so it
+// would be enforced nowhere. Here the rule is mechanical: `boundary` is not a
+// field, so a payload naming a collection is refused as an unregistered field;
+// `returned` is not an outcome, because evidence is always returned from some
+// collection and belongs on the scoped type; and `result_count` is absent,
+// because with no collection there is no result to count. A refusal is the
+// outcome `denied`, never a type of its own.
+var documentUnscopedReadFields = []PayloadField{
+	str("solution"),
+	uid("actor_principal_id"),
+	uid("owner_principal_id"),
+	str("initiator"),
+	{Name: "correlation_id", Kind: FieldString, Required: true},
+	{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{"empty", "denied", "failed"}},
+	{Name: "duration_ms", Kind: FieldInt},
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the

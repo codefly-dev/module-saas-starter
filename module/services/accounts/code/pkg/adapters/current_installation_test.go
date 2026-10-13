@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/installationtest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -56,6 +56,7 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 	require.NoError(t, err)
 	registry := business.ModulePrincipalRegistry{business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg}}
 	service.SetModuleCapabilities(nil, nil, registry)
+	installCurrentInstallationCaller(t, service, readOrg)
 	parent := mint("example", "definitions", "read")
 	request := func(token string) *connect.Request[gen.ModuleCurrentInstallationRequest] {
 		r := connect.NewRequest(&gen.ModuleCurrentInstallationRequest{InstallationId: id, ParentWorkContextToken: token})
@@ -91,13 +92,13 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 			r.Header().Del("x-codefly-internal-token")
 		}},
 		{"no module", func(r *connect.Request[gen.ModuleCurrentInstallationRequest]) {
-			r.Header().Del(workcontext.WorkContextHeaderName)
+			r.Header().Del(workContextHeader)
 		}},
 		{"viewer parent is not module", func(r *connect.Request[gen.ModuleCurrentInstallationRequest]) {
-			r.Header().Set(workcontext.WorkContextHeaderName, parent)
+			r.Header().Set(workContextHeader, parent)
 		}},
 		{"duplicate module", func(r *connect.Request[gen.ModuleCurrentInstallationRequest]) {
-			r.Header().Add(workcontext.WorkContextHeaderName, r.Header().Get(workcontext.WorkContextHeaderName))
+			r.Header().Add(workContextHeader, r.Header().Get(workContextHeader))
 		}},
 		{"forged parent", func(r *connect.Request[gen.ModuleCurrentInstallationRequest]) {
 			r.Msg.ParentWorkContextToken = "forged"
@@ -131,6 +132,9 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 		{"wrong tenant", func(i *gen.Installation) { i.OrgId = uuid.NewString() }},
 		{"wrong installation", func(i *gen.Installation) { i.Id = uuid.NewString() }},
 		{"revoked", func(i *gen.Installation) { i.RevokedAt = timestamppb.Now() }},
+		// HOST-INST-002, HOST-INST-004: unacknowledged consent is absent.
+		{"pending", func(i *gen.Installation) { i.Status = gen.InstallationStatus_INSTALLATION_STATUS_PENDING }},
+		{"failed", func(i *gen.Installation) { i.Status = gen.InstallationStatus_INSTALLATION_STATUS_FAILED }},
 		{"inactive", func(i *gen.Installation) { i.Status = gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED }},
 		{"no consented target", func(i *gen.Installation) { i.TargetId = "" }},
 	} {
@@ -163,17 +167,17 @@ func TestCurrentInstallationDelegationCurrentChecks(t *testing.T) {
 	service, err = business.NewService(store)
 	require.NoError(t, err)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg}})
+	installCurrentInstallationCaller(t, service, readOrg)
 	authority := &readExchangeAuthority{facts: facts.facts}
 	workContextSingleton.authority = authority
 	journal := &readExchangeJournal{}
 	workContextSingleton.journal = journal
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "definitions", Actions: []string{"read"}}}
-	actors := []*basev0.WorkActorV1{{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes}}
-	token, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes, ActorChain: actors})
-	require.NoError(t, err)
+	actors := []delegationHop{agentHop("actor-1", "hop-1", scopes...)}
+	token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner, Task: "task", Session: "session", Scopes: scopes, Actors: actors})
 	invoke := func() error {
-		req := connect.NewRequest(&gen.ModuleCurrentInstallationRequest{InstallationId: id, ParentWorkContextToken: token.Encoded()})
-		for k, v := range readExchangeRequest(t, token.Encoded()).Header() {
+		req := connect.NewRequest(&gen.ModuleCurrentInstallationRequest{InstallationId: id, ParentWorkContextToken: token})
+		for k, v := range readExchangeRequest(t, token).Header() {
 			req.Header()[k] = v
 		}
 		_, e := client.GetCurrentInstallation(context.Background(), req)
@@ -193,4 +197,19 @@ func TestCurrentInstallationDelegationCurrentChecks(t *testing.T) {
 	facts.facts.OrganizationRevision++
 	require.Error(t, invoke())
 	require.Equal(t, before, store.reads)
+}
+
+func installCurrentInstallationCaller(t *testing.T, svc *business.Service, org string) {
+	t.Helper()
+	installations := &installationtest.Store{}
+	registry := svc.ModulePrincipals()
+	for principal, grant := range registry {
+		grant.PresenceBinding = "acme.test." + grant.Prefix
+		registry[principal] = grant
+		scope := business.FullInstallationScope(grant)
+		_, err := installations.InstallSolution(context.Background(), &business.InstallSolutionParams{OrgID: org, RegistryPrincipalID: principal, RegistryBindingID: grant.PresenceBinding, Scope: &scope})
+		require.NoError(t, err)
+	}
+	svc.SetModulePrincipals(registry)
+	svc.SetModuleAuthorityReads(installations, nil)
 }

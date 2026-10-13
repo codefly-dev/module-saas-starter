@@ -144,8 +144,6 @@ spec:
             matchLabels:
               app: frontend
       ports:
-        - protocol: TCP
-          port: 8080
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -337,8 +335,6 @@ spec:
             matchLabels:
               app: auth-gateway
       ports:
-        - protocol: TCP
-          port: 8080
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

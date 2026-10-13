@@ -66,6 +66,12 @@ func validateReadAudiences(prefix string, bindings map[string]ModuleReadAudience
 // ctx is a parameter for the same reason ModuleOperationAudience's is: this
 // path re-reads live authority, and it previously could not.
 func (s *Service) ModuleReadAudience(ctx context.Context, caller ModuleCaller, tenant, parentAudience, bindingID string) (ModuleReadAudience, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleReadAudience{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleReadAudience{}, err

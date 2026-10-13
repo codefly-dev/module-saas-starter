@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"accounts/pkg/auth"
@@ -10,13 +11,11 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 )
 
 func installReadBinding() {
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, ReadAudiences: map[string]business.ModuleReadAudience{
 			"proof": {Audience: "example-producer", Scopes: []business.ModuleReadScope{{ResourceKind: "results"}}},
@@ -45,10 +44,9 @@ func installedOperationRegistry(includeGenerate bool) business.ModulePrincipalRe
 }
 func readExchangeRequest(t *testing.T, parent string) *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest] {
 	t.Helper()
-	token, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
-	require.NoError(t, err)
+	token := mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg)
 	req := connect.NewRequest(&gen.ModuleExchangeDelegatedReadAudienceRequest{BindingId: "proof", ParentWorkContextToken: parent})
-	req.Header().Set(workcontext.WorkContextHeaderName, token.Encoded())
+	req.Header().Set(workContextHeader, token)
 	req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 	return req
 }
@@ -58,14 +56,14 @@ func TestDelegatedReadExchangeOwnerAndDenials(t *testing.T) {
 	parent := mint("example", "results", "read", "unrelated:write")
 	out, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
 	require.NoError(t, err)
-	token, err := workcontext.ParseWorkContextToken(out.Msg.Token)
+	verified, err := workContextSingleton.verifyFor(context.Background(), out.Msg.Token, "example-producer")
 	require.NoError(t, err)
-	child, err := workContextSingleton.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: "accounts.test", Audience: "example-producer"})
-	require.NoError(t, err)
+	child := verified.Context()
 	require.Equal(t, readOwner, child.OwnerPrincipalId)
 	require.Equal(t, readOrg, child.TenantId)
 	require.Equal(t, "019f6bf7-1111-7111-8111-111111111111", child.TaskId)
-	require.Equal(t, "019f6bf7-2222-7222-8222-222222222222", child.SessionId)
+	// Re-issued by a module, so in a fresh session: never the parent's copied.
+	require.NotEqual(t, "019f6bf7-2222-7222-8222-222222222222", child.SessionId)
 	require.Len(t, child.AuthorityScopes, 1)
 	require.Equal(t, []string{"read"}, child.AuthorityScopes[0].Actions)
 	for _, tc := range []struct {
@@ -76,13 +74,13 @@ func TestDelegatedReadExchangeOwnerAndDenials(t *testing.T) {
 			r.Header().Del("x-codefly-internal-token")
 		}},
 		{"forged module", func(r *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest]) {
-			r.Header().Set(workcontext.WorkContextHeaderName, "forged")
+			r.Header().Set(workContextHeader, "forged")
 		}},
 		{"parent is not module credential", func(r *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest]) {
-			r.Header().Set(workcontext.WorkContextHeaderName, parent)
+			r.Header().Set(workContextHeader, parent)
 		}},
 		{"duplicate carrier", func(r *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest]) {
-			r.Header().Add(workcontext.WorkContextHeaderName, r.Header().Get(workcontext.WorkContextHeaderName))
+			r.Header().Add(workContextHeader, r.Header().Get(workContextHeader))
 		}},
 		{"forged parent", func(r *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest]) {
 			r.Msg.ParentWorkContextToken = "forged"
@@ -110,74 +108,67 @@ func TestDelegatedReadExchangeOwnerAndDenials(t *testing.T) {
 }
 
 func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *testing.T) {
-	_, facts, client, _ := sourceReadFixture(t)
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	_, _, client, _ := sourceReadFixture(t)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
-	parentToken, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{
-		Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
-		TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222",
-		AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: workcontext.WorkContextReplayIdempotent,
-		AuthorityScopes: []*basev0.WorkScopeV1{
+	parent, _ := mintTestCapability(t, workContextSingleton, testCapability{
+		Audience: "example", Tenant: readOrg, Owner: readOwner,
+		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
+		Scopes: []*basev0.WorkScopeV1{
 			{ResourceKind: "receipts", Actions: []string{"append", "read"}},
 			{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}},
 		},
 	})
-	require.NoError(t, err)
-	parent := parentToken.Encoded()
 	exchange := func(binding string, lookup bool) (*basev0.WorkContextV1, error) {
-		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
-		if err != nil {
-			return nil, err
-		}
+		module := mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg)
 		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: lookup})
-		req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
+		req.Header().Set(workContextHeader, module)
 		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 		out, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
 		if err != nil {
 			return nil, err
 		}
-		token, err := workcontext.ParseWorkContextToken(out.Msg.Token)
+		verified, err := workContextSingleton.verifyIssued(context.Background(), out.Msg.Token)
 		if err != nil {
 			return nil, err
 		}
-		return workContextSingleton.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: "accounts.test"})
+		return verified.Context(), nil
 	}
 
 	invoked, err := exchange("generate", false)
 	require.NoError(t, err)
 	require.Equal(t, "example-producer", invoked.Audience)
-	require.NoError(t, workcontext.RequireWorkContextScope(invoked, workcontext.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
+	require.True(t, grantsExplicitly(invoked, "results", "write", "result-1"))
 
 	lookup, err := exchange("generate", true)
 	require.NoError(t, err)
-	require.Error(t, workcontext.RequireWorkContextScope(lookup, workcontext.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
-	require.NoError(t, workcontext.RequireWorkContextScope(lookup, workcontext.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "read", RequireExplicitResource: true}))
+	require.False(t, grantsExplicitly(lookup, "results", "write", "result-1"))
+	require.True(t, grantsExplicitly(lookup, "results", "read", "result-1"))
 
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(false))
 	_, err = exchange("generate", false)
 	require.Error(t, err)
 	recorded, err := exchange("record", false)
 	require.NoError(t, err)
 	require.Equal(t, "example-receipts", recorded.Audience)
-	require.NoError(t, workcontext.RequireWorkContextScope(recorded, workcontext.WorkContextScopeRequirement{ResourceKind: "receipts", ResourceID: "any", Action: "append"}))
+	require.True(t, workContextGrants(recorded, "receipts", "append", "any"))
 }
 
 func TestDelegatedOperationExchangeAuditsVerifiedAttributionAndOutcome(t *testing.T) {
 	_, facts, client, mint := sourceReadFixture(t)
-	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
 	audit := &recordingAuditEmitter{}
 	service.SetAuditEmitter(audit)
 	parent := mint("example", "results", "read")
 
 	exchange := func(binding string) error {
-		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
-		require.NoError(t, err)
+		module := mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg)
 		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: true})
-		req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
+		req.Header().Set(workContextHeader, module)
 		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
-		_, err = client.ExchangeDelegatedOperationAudience(context.Background(), req)
+		_, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
 		return err
 	}
 
@@ -251,21 +242,24 @@ func TestDelegatedReadExchangePreservesChainAndRechecksAuthority(t *testing.T) {
 	journal := &readExchangeJournal{}
 	workContextSingleton.journal = journal
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}}}
-	actors := []*basev0.WorkActorV1{{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes}, {PrincipalId: "actor-2", PrincipalKind: "service", DelegationId: "hop-2", GrantedScopes: scopes}}
-	token, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes, ActorChain: actors})
-	require.NoError(t, err)
+	actors := []delegationHop{agentHop("actor-1", "hop-1", scopes...), agentHop("actor-2", "hop-2", scopes...)}
+	token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner, Task: "task", Session: "session", Scopes: scopes, Actors: actors})
 	invoke := func() (*connect.Response[gen.IssuedWorkContext], error) {
-		return client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, token.Encoded()))
+		return client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, token))
 	}
 	out, err := invoke()
 	require.NoError(t, err)
-	childToken, err := workcontext.ParseWorkContextToken(out.Msg.Token)
+	verified, err := workContextSingleton.verifyFor(context.Background(), out.Msg.Token, "example-producer")
 	require.NoError(t, err)
-	child, err := workContextSingleton.verifier.Verify(childToken, workcontext.WorkContextExpectations{Audience: "example-producer"})
-	require.NoError(t, err)
+	child := verified.Context()
 	require.Len(t, child.ActorChain, 2)
+	// The chain is re-derived hop by hop, so each hop is the same delegation —
+	// principal, kind, delegation id — carrying its live epoch.
 	for i, actor := range actors {
-		require.True(t, proto.Equal(actor, child.ActorChain[i]))
+		require.Equal(t, actor.PrincipalID, child.ActorChain[i].GetPrincipalId())
+		require.Equal(t, actor.PrincipalKind, child.ActorChain[i].GetPrincipalKind())
+		require.Equal(t, actor.DelegationID, child.ActorChain[i].GetDelegationId())
+		require.NotZero(t, child.ActorChain[i].GetPrincipalEpoch())
 	}
 	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
 	for _, hop := range journal.ids {
@@ -288,7 +282,7 @@ func TestDelegatedReadExchangePreservesChainAndRechecksAuthority(t *testing.T) {
 }
 
 func TestDelegatedReadExchangeModuleAndParentBinding(t *testing.T) {
-	_, facts, client, _ := sourceReadFixture(t)
+	_, _, client, _ := sourceReadFixture(t)
 	installReadBinding()
 	for _, tc := range []struct {
 		name, owner, tenant, audience, module, moduleTenant string
@@ -311,12 +305,11 @@ func TestDelegatedReadExchangeModuleAndParentBinding(t *testing.T) {
 			if kind == "" {
 				kind = "results"
 			}
-			parent, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: tc.audience, TenantID: tc.tenant, OwnerPrincipalID: tc.owner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: tc.ids}}})
-			require.NoError(t, err)
-			module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID(tc.module), Tenant: tc.moduleTenant})
-			require.NoError(t, err)
-			req := readExchangeRequest(t, parent.Encoded())
-			req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
+			parent, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: tc.audience, Tenant: tc.tenant, Owner: tc.owner, Task: "task", Session: "session",
+				Scopes: []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: tc.ids}}})
+			module := mintModuleIdentity(t, business.ModulePrincipalID(tc.module), tc.moduleTenant)
+			req := readExchangeRequest(t, parent)
+			req.Header().Set(workContextHeader, module)
 			out, err := client.ExchangeDelegatedReadAudience(context.Background(), req)
 			require.Error(t, err)
 			require.Nil(t, out)
@@ -335,4 +328,20 @@ func TestDelegatedReadExchangeRechecksInstalledBinding(t *testing.T) {
 	out, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
 	require.Error(t, err)
 	require.Nil(t, out)
+}
+
+// grantsExplicitly reports whether claims' effective authority names resourceID
+// explicitly for action — a wildcard over the kind does not count.
+func grantsExplicitly(claims *basev0.WorkContextV1, resourceKind, action, resourceID string) bool {
+	effective := claims.GetAuthorityScopes()
+	if chain := claims.GetActorChain(); len(chain) > 0 {
+		effective = chain[len(chain)-1].GetGrantedScopes()
+	}
+	for _, scope := range effective {
+		if scope.GetResourceKind() == resourceKind && slices.Contains(scope.GetActions(), action) &&
+			slices.Contains(scope.GetResourceIds(), resourceID) {
+			return true
+		}
+	}
+	return false
 }

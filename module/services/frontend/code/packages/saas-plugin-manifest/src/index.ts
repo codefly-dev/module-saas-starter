@@ -32,6 +32,7 @@ export {
 export type {
 	Dashboard,
 	DashboardLayout,
+	DashboardSection,
 	DataGraph,
 	DerivedMetric,
 	EventDeclaration,
@@ -43,6 +44,7 @@ export type {
 	MetricFilter,
 	MetricGroupBy,
 	MetricOperation,
+	MetricValueFormat,
 	MetricWidget,
 	SourceMetric,
 	WidgetVisualization,

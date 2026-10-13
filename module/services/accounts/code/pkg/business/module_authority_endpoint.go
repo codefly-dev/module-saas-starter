@@ -22,8 +22,9 @@ const ModuleAuthorityEndpoint = "authority"
 // — its module Work Context, or a viewer Work Context whose audience names it —
 // before it decides anything. Its Mint* methods are the exception: they are
 // where a module obtains a capability in the first place, so they authenticate
-// with the identity secret its composition provisioned, and the gateway brokers
-// them. ValidateModuleAuthorityProcedures refuses them here.
+// with the module pod's projected ServiceAccount token, bound to its running
+// build, and the gateway brokers them. ValidateModuleAuthorityProcedures refuses
+// them here.
 const moduleAuthorityCapabilityService = "/saas.accounts.v1.ModuleCapabilitiesService/"
 
 // moduleAuthorityReadOracles are the only procedures admitted on the endpoint
@@ -58,7 +59,7 @@ var moduleAuthorityReadOracles = map[string]struct{}{
 //
 //   - authenticates the calling module from a signed Work Context and
 //     authorizes it against the grant its composition declared
-//     (MODULE_PRINCIPALS) — the whole module capability surface does this; or
+//     (the module principal registry) — the whole module capability surface does this; or
 //   - is one of the read-only oracles named in moduleAuthorityReadOracles.
 //
 // Deliberately absent, and reachable only on the private listener:
@@ -181,7 +182,7 @@ func ValidateModuleAuthorityProcedures() error {
 			return fmt.Errorf("module authority procedure %s neither authenticates the calling module from its Work Context (it is not on %s) nor is a declared read-only oracle; a method that authorizes on the shared perimeter credential alone must not be served on the %q endpoint", procedure, strings.TrimSuffix(strings.TrimPrefix(moduleAuthorityCapabilityService, "/"), "/"), ModuleAuthorityEndpoint)
 		}
 		if strings.HasPrefix(policy.Method, "Mint") {
-			return fmt.Errorf("module authority procedure %s authenticates with the module identity secret, not a Work Context; the gateway brokers it and it must not be served on the %q endpoint", procedure, ModuleAuthorityEndpoint)
+			return fmt.Errorf("module authority procedure %s authenticates with the module pod's projected ServiceAccount token, not a Work Context; the gateway brokers it and it must not be served on the %q endpoint", procedure, ModuleAuthorityEndpoint)
 		}
 	}
 	for procedure := range moduleAuthorityReadOracles {

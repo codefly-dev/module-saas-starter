@@ -2,53 +2,21 @@ package business
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
+
+	"accounts/internal/deliverytest"
 
 	"github.com/codefly-dev/core/solutionhost"
 )
 
-// Admission takes *solutionhost.Delivered, which has unexported fields and no
-// constructor but solutionhost.VerifyDelivered. That is deliberate on core's
-// part — it is how "this document was attested" becomes a compiler fact rather
-// than a naming convention — and it means a test cannot fabricate one. So these
-// helpers build a real carrier and run it through a real VerifyDelivered with a
-// stub attestation check, which is also the only way a test can exercise the
-// refusal paths the host must record.
-
-// stubBundleVerifier is a BundleVerifier that attests whatever it is told to.
-// It stands in for sigstore-go, which cannot be exercised here: a real bundle
-// would need a trust root, a transparency-log entry and a certificate that
-// expires, none of which belong in a unit test.
-type stubBundleVerifier struct {
-	// signer is the identity attested for any bundle. Empty means refuse.
-	signer string
-
-	// err, when set, is the refusal — a bundle that does not verify.
-	err error
-
-	// payloads records the exact bytes each call was asked about, so a test can
-	// assert the verifier saw the carrier's document verbatim rather than a
-	// re-encoding of a parsed form.
-	payloads [][]byte
-}
-
-func (v *stubBundleVerifier) VerifyBundle(_ context.Context, payload []byte, _ json.RawMessage) (string, error) {
-	v.payloads = append(v.payloads, payload)
-	if v.err != nil {
-		return "", v.err
-	}
-	return v.signer, nil
-}
-
-// fixtureSigner attests every carrier as core's own fixture signer identity,
-// which solutionhost.FixtureHost's DomainsBySigner policy is written against.
-func fixtureSigner() *stubBundleVerifier {
-	return &stubBundleVerifier{signer: solutionhost.FixtureDeliveredBy}
+// Every admission fixture is signed and verified, because core's Delivered
+// values can only be constructed by checking the envelope and ownership domain.
+func fixtureSigner(t *testing.T) *solutionhost.Verifier {
+	return deliverytest.Verifier(t, map[string][]string{solutionhost.FixtureDeliveredBy: {solutionhost.FixtureDomain}})
 }
 
 // signedCarrier wraps one document in the carrier delivery would ship: the
-// canonical bytes verbatim, plus a bundle over them.
+// canonical bytes verbatim, plus a DSSE envelope over them.
 //
 // CanonicalBytes, not Marshal. Marshal renders YAML for a delivery repository;
 // the SIGNING input is the canonical JSON, and PresenceFromVerified refuses a
@@ -58,11 +26,11 @@ func fixtureSigner() *stubBundleVerifier {
 // what was approved.
 func signedCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []byte {
 	t.Helper()
-	canonical, err := document.CanonicalBytes()
+	canonical, err := solutionhost.SignedPayload(document)
 	if err != nil {
 		t.Fatalf("canonical bytes for %q: %v", document.Binding, err)
 	}
-	return carrierOver(t, canonical)
+	return deliverytest.Carrier(t, canonical, solutionhost.FixtureDeliveredBy)
 }
 
 // carrierOver wraps arbitrary payload bytes, so a test can deliver bytes that
@@ -71,11 +39,8 @@ func signedCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []b
 // the refusal a test about unreadable bytes is asserting.
 func carrierOver(t *testing.T, payload []byte) []byte {
 	t.Helper()
-	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-		Schema:   solutionhost.SchemaSignedV1,
-		Document: payload,
-		Bundle:   json.RawMessage(solutionhost.FixtureBundle),
-	})
+	envelope := deliverytest.Envelope(t, payload, solutionhost.FixtureDeliveredBy)
+	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{Document: payload, Envelope: envelope})
 	if err != nil {
 		t.Fatalf("marshal carrier: %v", err)
 	}
@@ -86,10 +51,10 @@ func carrierOver(t *testing.T, payload []byte) []byte {
 // signer, producing the values admission takes.
 func delivered(t *testing.T, documents ...*solutionhost.SolutionHostBinding) []deliveredSolutionHostBinding {
 	t.Helper()
-	return deliveredBy(t, fixtureSigner(), documents...)
+	return deliveredBy(t, fixtureSigner(t), documents...)
 }
 
-// deliveredBy is delivered with a named attestation check, for a test about who
+// deliveredBy is delivered with a pinned-key verifier, for a test about who
 // signed rather than about what was signed.
 //
 // It pairs each carrier with the document re-derived from its attested bytes,
@@ -97,7 +62,7 @@ func delivered(t *testing.T, documents ...*solutionhost.SolutionHostBinding) []d
 // a helper that returned the caller's own pointer would let a test assert
 // against a value admission never reads. See deliveredSolutionHostBinding.
 func deliveredBy(
-	t *testing.T, verifier solutionhost.BundleVerifier, documents ...*solutionhost.SolutionHostBinding,
+	t *testing.T, verifier *solutionhost.Verifier, documents ...*solutionhost.SolutionHostBinding,
 ) []deliveredSolutionHostBinding {
 	t.Helper()
 	out := make([]deliveredSolutionHostBinding, 0, len(documents))

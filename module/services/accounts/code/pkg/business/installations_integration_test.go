@@ -8,6 +8,7 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/stretchr/testify/require"
 )
@@ -41,9 +42,9 @@ func TestInstallSolutionEmitsAuditWithGrantorAndCeiling(t *testing.T) {
 	// member a forwarded viewer context names — declared here the way a
 	// composition declares it, through the principal registry.
 	previousPrincipals := testService.ModulePrincipals()
-	testService.SetModulePrincipals(business.ModulePrincipalRegistry{
-		business.ModulePrincipalID("acme.collection"): {Prefix: "acme.collection"},
-	})
+	registry := testService.ModulePrincipals()
+	registry[business.ModulePrincipalID("acme.collection")] = business.ModulePrincipalGrant{Prefix: "acme.collection"}
+	testService.SetModulePrincipals(registry)
 	t.Cleanup(func() { testService.SetModulePrincipals(previousPrincipals) })
 
 	installation, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
@@ -72,6 +73,26 @@ func TestInstallSolutionEmitsAuditWithGrantorAndCeiling(t *testing.T) {
 	require.Equal(t, roleID, entry.Payload["role_id"])
 	require.Equal(t, targetID, entry.Payload["target_id"],
 		"the audit trail names the immutable target, not a reusable route alias")
+
+	// HOST-INST-002, HOST-INST-005: the business mutation returns pending;
+	// retrying failed consent records one audit fact and keeps its revision.
+	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_PENDING, installation.Status)
+	require.NoError(t, testStore.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		_, err := storetx.Tx(ctx).Exec(ctx, `UPDATE installations SET status='failed',failure_reason='Example refusal' WHERE org_id=$1 AND id=$2`, orgID, installation.Id)
+		return err
+	}))
+	retried, err := testService.RetryInstallation(ctx, adminID, orgID, installation.Id)
+	require.NoError(t, err)
+	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_PENDING, retried.Status)
+	require.Empty(t, retried.FailureReason)
+	_, err = testService.RetryInstallation(ctx, adminID, orgID, installation.Id)
+	require.Error(t, err)
+	events, _, _, err = testService.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgID, EventType: string(business.EventInstallationRetried), PageSize: 10})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, "1", events[0].Payload["revision"])
+	require.Equal(t, adminID, events[0].ActorID)
+	require.Equal(t, installation.Id, events[0].ResourceID)
 }
 
 // A malformed agent identifier is a boundary input: it must be rejected as a

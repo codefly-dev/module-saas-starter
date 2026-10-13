@@ -34,6 +34,57 @@ Service requirements contain logical and API compatibility metadata only.
 Deployment URLs, credentials, resolved Codefly bindings, and browser transport
 configuration are host-owned and never enter the plugin contract.
 
+## What the transport carries
+
+A contributed page reaches what the module's bindings declare, in both shapes
+those bindings come in. **Both REST and Connect are carried** — a page is not
+restricted to REST bindings.
+
+**A custom verb is carried on the last segment.** A method that is not one of a
+resource's standard verbs is bound in the Google HTTP form as
+`…/<collection>:<verb>` (AIP-136), and the colon is the separator rather than
+part of a name, so it reaches the upstream literal:
+
+```ts
+await service.request("records:recover", { method: "POST", body });
+await service.request("records/record-1/interactions/interaction-1:respond", {
+  method: "POST",
+  body,
+});
+```
+
+One colon, on the last segment only, with a lowerCamelCase verb. A colon
+earlier in the path, a second colon in one segment, or an empty resource or
+verb is refused in the browser before a request leaves it —
+`isFrontendServicePath` is the exported predicate, and the host's BFF reads the
+same one, so the two halves cannot drift.
+
+**A Connect requirement declares the origin root.** The Connect protocol puts a
+unary procedure at `/<fully.qualified.Service>/<Method>` from the origin, which
+is also where the fixed capability handshake below is probed, so a Connect
+requirement says `routePrefix: "/"` and passes a procedure as its relative path:
+
+```ts
+const procedures = {
+  alias: "procedures",
+  protocol: "connect",
+  routePrefix: "/",
+  compatibility: { contract: "example.procedures", major: 1 },
+} as const;
+
+await service.request("example.records.v1.RecordService/RecoverRecord", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: "{}",
+});
+```
+
+The root prefix is Connect-only — a REST requirement declaring it would make
+its alias a prefix-less proxy of the whole upstream — and a Connect alias
+carries procedure paths only (`isConnectProcedurePath`); any other shape is
+refused. A route outside the alias a requirement declared is refused whatever
+its shape.
+
 The application binds each installed requirement to a logical Codefly target
 and generates its server-only routing inventory:
 

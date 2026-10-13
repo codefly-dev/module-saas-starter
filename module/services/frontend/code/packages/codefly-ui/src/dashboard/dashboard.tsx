@@ -6,13 +6,41 @@
 // solution's Module-Federation remote render identical dashboards from the same
 // package instance. Data resolution (metric → audit query) is the job of
 // `@codefly-dev/saas-sdk`'s `runDashboard`; use `fromDashboardData` to bridge.
+//
+// It paints with the kit's METRIC tier — `StatTile`/`KPIRow` for scalars,
+// `metric-chart`'s line/area/bar over `ChartSeries` for series — which is the
+// tier the host's own operations pages are drawn with. Before, this renderer
+// and the host's solution dashboard both used the older `charts.tsx` tier, so a
+// solution's Dashboard tab read plainer than the host's own pages from the same
+// kit, and there were two renderers to keep in step rather than one.
 
 import type * as React from "react";
+import { Fragment, type ReactNode } from "react";
 import { Card } from "../layout/card.js";
 import { Section } from "../layout/page.js";
-import { AreaChart, BarList, LineChart, StatChart } from "./charts.js";
+import { Skeleton } from "../layout/skeleton.js";
 import { cn } from "./cn.js";
-import type { DashboardView, DashboardWidgetView } from "./types.js";
+import { parseTimeKey } from "./format.js";
+import {
+	AreaChart as MetricAreaChart,
+	BarChart as MetricBarChart,
+	LineChart as MetricLineChart,
+} from "./metric-chart.js";
+import type { ChartSeries } from "./metric-geometry.js";
+import { type MetricState, MetricStateBadge } from "./metric-state.js";
+import {
+	formatMetricValue,
+	KPIRow,
+	type Metric,
+	StatTile,
+} from "./metric-tiles.js";
+import type {
+	DashboardSectionView,
+	DashboardView,
+	DashboardWidgetView,
+	SeriesPoint,
+	WidgetSeries,
+} from "./types.js";
 
 // Column-span utility classes, matching the responsive grid below so a spanning
 // card widens in step with it. A span is clamped to the grid's column count by
@@ -24,6 +52,19 @@ const COL_SPAN: Record<1 | 2 | 3 | 4, string> = {
 	4: "sm:col-span-2 lg:col-span-4",
 };
 
+// The KPI row's own column count, capped at the dashboard's DECLARED one.
+// `KPIRow` is four across, which is what headline numbers want; a dashboard
+// that declared fewer columns did not ask for more, and one that declared none
+// did not ask for two either — so this is applied only when there is a
+// declaration to honour. `cn` resolves these against the row's own defaults
+// per breakpoint.
+const KPI_COLS: Record<1 | 2 | 3 | 4, string> = {
+	1: "grid-cols-1 sm:grid-cols-1 lg:grid-cols-1",
+	2: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2",
+	3: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+	4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+};
+
 const GRID_COLS: Record<1 | 2 | 3 | 4, string> = {
 	1: "grid-cols-1",
 	2: "grid-cols-1 sm:grid-cols-2",
@@ -31,55 +72,605 @@ const GRID_COLS: Record<1 | 2 | 3 | 4, string> = {
 	4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
 };
 
-function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
-	const { series, visualization } = widget;
-	if (series.points.length === 0) {
-		return <div className="py-6 type-body text-muted-foreground">No data yet.</div>;
+/** The widget's own title, or its id when the declaration gave none. */
+function widgetTitle(widget: DashboardWidgetView): string {
+	return widget.title ?? widget.id;
+}
+
+/**
+ * The series' values in time order, or `null` when it is not a trend at all.
+ *
+ * Only a series whose every key is a time bucket earns a sparkline and a
+ * bucket-over-bucket delta: drawing a line through counts grouped by event type
+ * or region would assert an order and a direction the data does not have.
+ *
+ * The order comes from the parsed timestamps rather than from the array,
+ * because nothing guarantees the array is chronological — the resolver appends
+ * one point per bucket in whatever order the aggregate returned them, and
+ * `ChartSeries` documents x-order as the producer's responsibility. Reading
+ * "previous" and "latest" off the last two positions would, for a series
+ * delivered newest-first, report the change with the wrong sign — and a delta's
+ * sign is drawn as a colour, so a decline would read as a green rise.
+ */
+function trendValues(points: SeriesPoint[]): number[] | null {
+	if (points.length < 2) return null;
+	const dated: { at: number; value: number }[] = [];
+	for (const point of points) {
+		const at = parseTimeKey(point.key);
+		if (at === null) return null;
+		dated.push({ at: at.getTime(), value: point.value });
 	}
-	switch (visualization) {
+	dated.sort((a, b) => a.at - b.at);
+	return dated.map((point) => point.value);
+}
+
+/**
+ * The badge a resolved series earns, or `undefined` when it is simply ready.
+ *
+ * `partial` outranks a withheld total because it is the *reason* the total is
+ * withheld (a partial series keeps its observed points and gives up its total),
+ * and a reader who sees "No total" alone learns less than one who sees
+ * "Partial data". An empty series is `no_data`, never a zero: the audit
+ * aggregate omits a bucket rather than emitting one, so no points means nothing
+ * matched.
+ */
+function seriesState(series: WidgetSeries): MetricState | undefined {
+	if (series.coverage === "partial") return "partial";
+	if (series.coverage === "empty" || series.points.length === 0) {
+		return "no_data";
+	}
+	if (series.total === null) return "no_total";
+	return undefined;
+}
+
+/**
+ * Change from the second-latest bucket to the latest, as the signed fraction
+ * `StatTile` renders. A change from zero is not a percentage, so it is no
+ * delta at all rather than an infinite one.
+ */
+function lastBucketDelta(trend: number[]): number | undefined {
+	if (trend.length < 2) return undefined;
+	const previous = trend[trend.length - 2];
+	const latest = trend[trend.length - 1];
+	if (previous === 0) return undefined;
+	return (latest - previous) / Math.abs(previous);
+}
+
+/**
+ * Whether this series has a single number to show. An empty result and a
+ * withheld total are both "no number"; an emitted zero is a number.
+ */
+function hasScalar(series: WidgetSeries): boolean {
+	return (
+		series.total !== null &&
+		series.points.length > 0 &&
+		series.coverage !== "empty"
+	);
+}
+
+/** A resolved scalar widget as the `Metric` a tile binds to. */
+function widgetMetric(
+	widget: DashboardWidgetView,
+	series: WidgetSeries,
+): Metric {
+	const trend = trendValues(series.points);
+	const delta = trend ? lastBucketDelta(trend) : undefined;
+	return {
+		id: widget.id,
+		label: widgetTitle(widget),
+		// Whether a number exists is read off the SERIES, never off the badge.
+		// The badge is one slot and freshness can take it (a failed refresh
+		// says "Stale"), so deriving the value's presence from the state made
+		// an empty series render its 0 the moment it also went stale. The two
+		// are different questions about the same tile and are answered apart.
+		value: hasScalar(series) ? series.total : null,
+		format: widget.format,
+		unit: widget.unit,
+		higherIsBetter: widget.higherIsBetter,
+		series: trend ?? undefined,
+		delta,
+		// Only named when there is a delta: `MetricDelta` reads a label with no
+		// delta as "no data <label>", which is a different (and here untrue)
+		// statement about the comparison period.
+		deltaLabel: delta === undefined ? undefined : "vs previous bucket",
+		state: seriesState(series),
+	};
+}
+
+/**
+ * How a widget's chart and table write a value, or `undefined` for a plain
+ * number, so each mark keeps its own default.
+ *
+ * This is the one place a widget's `format` reaches a chart or a table, and it
+ * writes through `formatMetricValue` — the function a scalar's `StatTile`
+ * writes its number with — so a widget reads the same wherever its value is
+ * drawn. It does no scaling: a `percent` value is already a percentage here
+ * (see `DashboardWidgetView.format`).
+ */
+function widgetValueFormat(
+	widget: DashboardWidgetView,
+): ((value: number) => string) | undefined {
+	const { format } = widget;
+	if (format === undefined || format === "number") return undefined;
+	return (value) => formatMetricValue(value, format);
+}
+
+/** One series on the shared label axis the metric charts consume. */
+function chartSeries(
+	widget: DashboardWidgetView,
+	series: WidgetSeries,
+): ChartSeries[] {
+	return [
+		{
+			name: widgetTitle(widget),
+			data: series.points.map((p) => ({ label: p.key, value: p.value })),
+		},
+	];
+}
+
+/** The resolved series drawn the way the widget's visualization asks. */
+function WidgetBody({
+	widget,
+	series,
+}: {
+	widget: DashboardWidgetView;
+	series: WidgetSeries;
+}) {
+	const title = widgetTitle(widget);
+	const formatValue = widgetValueFormat(widget);
+	switch (widget.visualization) {
 		case "line":
-			return <LineChart points={series.points} className="text-primary" axes />;
-		case "area":
-			return <AreaChart points={series.points} className="text-primary" axes />;
-		case "bar":
-			return <BarList points={series.points} />;
-		case "number":
-			return series.total === null ? (
-				<p className="type-body text-muted-foreground">Total unavailable</p>
-			) : (
-				<StatChart total={series.total} points={series.points} />
-			);
-		case "table":
 			return (
+				<MetricLineChart
+					series={chartSeries(widget, series)}
+					title={title}
+					formatValue={formatValue}
+				/>
+			);
+		case "area":
+			return (
+				<MetricAreaChart
+					series={chartSeries(widget, series)}
+					title={title}
+					formatValue={formatValue}
+				/>
+			);
+		case "bar":
+			return (
+				<MetricBarChart
+					series={chartSeries(widget, series)}
+					title={title}
+					formatValue={formatValue}
+				/>
+			);
+		case "number":
+			// A scalar is drawn as a tile by DashboardWidget, never as a card
+			// body. The case is here so the switch stays exhaustive.
+			return null;
+		case "table":
+			return series.points.length === 0 ? (
+				<p className="py-6 type-body text-muted-foreground">No data yet.</p>
+			) : (
 				<div className="overflow-x-auto">
 					<table className="w-full type-body">
+						<caption className="sr-only">{title}</caption>
 						<tbody>
 							{series.points.map((p) => (
 								<tr key={p.key} className="border-b last:border-0">
 									<td className="py-1 pr-4 text-muted-foreground">{p.key}</td>
-									<td className="py-1 text-right tabular-nums">{p.value.toLocaleString()}</td>
+									<td className="py-1 text-right tabular-nums">
+										{formatValue
+											? formatValue(p.value)
+											: p.value.toLocaleString()}
+									</td>
 								</tr>
 							))}
 						</tbody>
 					</table>
 				</div>
 			);
-		default:
-			return null;
+		default: {
+			// Compile-time exhaustiveness: a new WidgetVisualization must be
+			// handled here or this assignment fails to type-check. Without it a
+			// visualization the metric tier has no mark for draws a titled card
+			// with an empty body, which is indistinguishable from a widget whose
+			// query returned nothing.
+			const unhandled: never = widget.visualization;
+			return unhandled;
+		}
 	}
 }
 
-function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns: 1 | 2 | 3 | 4 }) {
-	const span = widget.span ? (Math.min(widget.span, columns) as 1 | 2 | 3 | 4) : 1;
+export interface DashboardWidgetProps {
+	widget: DashboardWidgetView;
+	/**
+	 * Controls for this widget's header, opposite its title — a drag handle, a
+	 * remove button, a panel that says where the number comes from. The
+	 * renderer never invents them; a dashboard with nothing to do to a tile
+	 * passes none.
+	 */
+	actions?: ReactNode;
+	/**
+	 * The widget title's heading level: `"h3"` under the dashboard's own
+	 * `<h2>`, `"h4"` inside a section, whose own title is the `<h3>`. A
+	 * `renderWidget` slot is told which (see {@link DashboardSlots}).
+	 */
+	heading?: WidgetHeading;
+	className?: string;
+}
+
+/** The heading element a widget's title is drawn as. */
+export type WidgetHeading = "h3" | "h4";
+
+/**
+ * One widget of a dashboard, drawn with the metric tier: a scalar as a
+ * `StatTile` (value, format, a sparkline and a bucket delta when the metric is
+ * bucketed over time, and a `MetricStateBadge` from the series' coverage), a
+ * series as a metric chart inside a `Card`.
+ *
+ * Exported, and not merely an internal of {@link Dashboard}, because a host
+ * that resolves each widget through its own query — so one widget's failure
+ * cannot blank its siblings — must render each widget in its own component.
+ * React fixes the number of hooks a component may call, so those queries
+ * cannot be hoisted into one renderer that takes the whole view. Compose this
+ * from such a component; never redraw it.
+ */
+export function DashboardWidget({
+	widget,
+	actions,
+	heading = "h3",
+	className,
+}: DashboardWidgetProps) {
+	const title = widgetTitle(widget);
+
+	// A refusal is answered BEFORE the series is looked at, in every branch
+	// below. The host classifies its own transport and is expected to withhold
+	// the values too, but a number this viewer may not see is a wrong answer
+	// rather than an old one, so the renderer that owns what a refusal looks
+	// like fails closed as well: a caller that forwards retained values by
+	// mistake cannot get them drawn through this. Testing the series first
+	// here — the ordering that reads more naturally — is exactly what would
+	// put them back on screen.
+	const refused = widget.failure === "refused";
+	const { series } = widget;
+	// Otherwise three outcomes, not two. A failure with nothing behind it is a
+	// failure; a failure with a series still in hand is a refresh that did not
+	// land, and blanking the tile would throw away values that are still the
+	// best available. `stale` is the kit's own word for that.
+	const lost = widget.failure === "failed" && series === null;
+	const stale = widget.failure === "failed" && series !== null;
+
+	if (widget.visualization === "number") {
+		const metric: Metric = refused
+			? { id: widget.id, label: title, value: null, state: "forbidden" }
+			: lost
+				? {
+						id: widget.id,
+						label: title,
+						value: null,
+						state: "provider_unavailable",
+					}
+				: series === null
+					? { id: widget.id, label: title, value: null, state: "loading" }
+					: {
+							...widgetMetric(widget, series),
+							...(stale && { state: "stale" }),
+						};
+		return (
+			<StatTile
+				metric={metric}
+				actions={actions}
+				labelAs={widget.title != null ? heading : "span"}
+				trend="accent"
+				className={className}
+			/>
+		);
+	}
+
+	// A chart or table card carries its coverage badge in the card's own
+	// description slot — the line under the title that says what this card is —
+	// so a reader meets "Partial data" where they meet the title, as they do on
+	// a tile, instead of as a sentence pushed above the geometry.
+	const state: MetricState | undefined = refused
+		? "forbidden"
+		: series === null
+			? undefined
+			: stale
+				? "stale"
+				: seriesState(series);
 	return (
-		<Card title={widget.title} className={COL_SPAN[span]}>
-			{widget.series.coverage === "partial" && (
-				<p role="status" className="type-body text-muted-foreground">
-					Partial telemetry
+		<Card
+			title={title}
+			description={state ? <MetricStateBadge state={state} /> : undefined}
+			actions={actions}
+			titleAs={heading}
+			className={className}
+		>
+			{refused ? (
+				<p className="py-6 type-body text-muted-foreground">
+					You don&apos;t have permission to see this.
 				</p>
+			) : lost ? (
+				<p className="py-6 type-body text-destructive">Unable to load.</p>
+			) : series === null ? (
+				<Skeleton className="h-24 w-full" />
+			) : (
+				<WidgetBody widget={widget} series={series} />
 			)}
-			<WidgetBody widget={widget} />
 		</Card>
+	);
+}
+
+/** A widget and the node drawn for it, for a caller laying the tiles out itself. */
+export interface DashboardTile {
+	id: string;
+	/**
+	 * The widget this tile draws. A layout that needs a second copy of a tile —
+	 * a drag overlay, say — draws it from here rather than reusing the node,
+	 * which is already mounted in the grid.
+	 */
+	widget: DashboardWidgetView;
+	/** The widget as drawn: the kit's card, or `slots.renderWidget`'s. */
+	node: ReactNode;
+}
+
+/**
+ * Where a host composes its own features *around* this renderer, without
+ * taking over the drawing. Every slot is optional; a dashboard that needs none
+ * of them passes no `slots` at all and gets the full default rendering.
+ */
+export interface DashboardSlots {
+	/** Controls in the dashboard's own header, opposite its title. */
+	actions?: ReactNode;
+	/**
+	 * Draws one widget in place of {@link DashboardWidget}. For a host that
+	 * resolves each widget in its own query: return a component that resolves
+	 * the series and then mounts `DashboardWidget` with it, passing on
+	 * `heading` — the level this widget's title takes where the dashboard
+	 * draws it (`"h4"` inside a section).
+	 */
+	renderWidget?: (
+		widget: DashboardWidgetView,
+		context: { heading: WidgetHeading },
+	) => ReactNode;
+	/**
+	 * Lays the tiles out in place of the default grid or stack — for a grid
+	 * whose tiles the viewer can reorder. Tiles arrive in the view's order,
+	 * each with its widget's `section`; a layout that draws the view's
+	 * sections heads each with {@link DashboardSectionHeader}.
+	 */
+	layout?: (tiles: DashboardTile[]) => ReactNode;
+	/**
+	 * Shown in place of the layout when the view holds no widgets and no
+	 * sections. A view with sections goes to the layout even with no widgets,
+	 * because its sections are still drawn.
+	 */
+	empty?: ReactNode;
+}
+
+/**
+ * Runs of adjacent widgets that are laid out together: consecutive scalars
+ * become one `KPIRow`, everything else a grid of cards.
+ *
+ * Declared order is never rearranged — only adjacent scalars are gathered — so
+ * the page shows what the declaration says, in the order it says it. Hoisting
+ * every scalar to the top would read better on some dashboards and would also
+ * silently overrule a declaration the renderer does not own.
+ */
+function layoutRuns(tiles: DashboardTile[]): DashboardTile[][] {
+	const runs: DashboardTile[][] = [];
+	for (const tile of tiles) {
+		const previous = runs[runs.length - 1];
+		if (previous && inKpiRow(previous[0].widget) === inKpiRow(tile.widget)) {
+			previous.push(tile);
+		} else {
+			runs.push([tile]);
+		}
+	}
+	return runs;
+}
+
+/**
+ * Whether this widget belongs in a KPI row rather than in the card grid.
+ *
+ * A scalar that declares a `span` is asking for a card's width, which the KPI
+ * row's own geometry cannot give it, so it stays a grid item and keeps its
+ * span. Only a scalar that asked for nothing becomes a headline number.
+ */
+function inKpiRow(widget: DashboardWidgetView): boolean {
+	return widget.visualization === "number" && !widget.span;
+}
+
+function Tiles({ tiles }: { tiles: DashboardTile[] }) {
+	return (
+		<>
+			{tiles.map((tile) => (
+				<Fragment key={tile.id}>{tile.node}</Fragment>
+			))}
+		</>
+	);
+}
+
+function DefaultLayout({
+	tiles,
+	columns,
+	declaredColumns,
+	grid,
+}: {
+	tiles: DashboardTile[];
+	columns: 1 | 2 | 3 | 4;
+	/** `data.columns` as declared, or undefined when the view named none. */
+	declaredColumns?: 1 | 2 | 3 | 4;
+	grid: boolean;
+}) {
+	if (!grid) {
+		return (
+			<div className="flex flex-col gap-4">
+				<Tiles tiles={tiles} />
+			</div>
+		);
+	}
+	return (
+		<div className="space-y-4">
+			{layoutRuns(tiles).map((run) =>
+				inKpiRow(run[0].widget) ? (
+					<KPIRow
+						key={run[0].id}
+						className={declaredColumns && KPI_COLS[declaredColumns]}
+					>
+						<Tiles tiles={run} />
+					</KPIRow>
+				) : (
+					<div key={run[0].id} className={cn("grid gap-4", GRID_COLS[columns])}>
+						<Tiles tiles={run} />
+					</div>
+				),
+			)}
+		</div>
+	);
+}
+
+export interface DashboardSectionHeaderProps {
+	/** The section's title, drawn as its heading. */
+	title: ReactNode;
+	/**
+	 * The heading's accessible name, for a `title` that carries a control —
+	 * a button that renames the section, say — whose own name would otherwise
+	 * name the heading.
+	 */
+	label?: string;
+	/** What the section is for, under its title. */
+	description?: ReactNode;
+	/**
+	 * Drawn in place of the heading while the viewer edits the title — a field,
+	 * say. The heading goes meanwhile, so a field is never inside a heading.
+	 */
+	editing?: ReactNode;
+	/** Before the title: a handle the section is dragged by. */
+	leading?: ReactNode;
+	/** Controls opposite the title. */
+	actions?: ReactNode;
+	/** Under the title and description: a note about the section's contents. */
+	children?: ReactNode;
+	className?: string;
+}
+
+/**
+ * The heading of one section of a dashboard: its title, what it is for, and
+ * whatever controls a host puts beside it. {@link Dashboard} draws a declared
+ * section with it; a host that lays the sections out itself — so a viewer can
+ * drag tiles between them — draws each one's heading with it too, so a section
+ * reads the same with and without the host's controls.
+ *
+ * The title is an `<h3>`, one level under the dashboard's own `<h2>`.
+ */
+export function DashboardSectionHeader({
+	title,
+	label,
+	description,
+	editing,
+	leading,
+	actions,
+	children,
+	className,
+}: DashboardSectionHeaderProps) {
+	return (
+		<div
+			data-slot="dashboard-section-header"
+			className={cn("flex items-start gap-2", className)}
+		>
+			{leading}
+			<div className="min-w-0 flex-1 space-y-1">
+				{editing ?? (
+					<h3
+						data-slot="dashboard-section-title"
+						aria-label={label}
+						className="type-card-heading break-words"
+					>
+						{title}
+					</h3>
+				)}
+				{description != null && (
+					<p className="type-body text-muted-foreground">{description}</p>
+				)}
+				{children}
+			</div>
+			{actions != null && (
+				<div className="flex shrink-0 items-center gap-1">{actions}</div>
+			)}
+		</div>
+	);
+}
+
+/** The tiles of one section, or of the untitled group above every section. */
+interface TileGroup {
+	/** Undefined for the untitled group. */
+	section?: DashboardSectionView;
+	tiles: DashboardTile[];
+}
+
+/**
+ * The tiles in their sections, in the order the view lists the sections, each
+ * section's tiles in the view's order. A tile naming no section, or one the
+ * view does not hold, goes in an untitled group drawn first; that group is
+ * left out when it is empty and there are sections, and a declared section
+ * with no tiles is kept, because the declaration says it is there.
+ */
+function groupTiles(
+	tiles: DashboardTile[],
+	sections: readonly DashboardSectionView[],
+): TileGroup[] {
+	const declared = new Set(sections.map((section) => section.id));
+	const untitled = tiles.filter(
+		(tile) =>
+			tile.widget.section === undefined || !declared.has(tile.widget.section),
+	);
+	return [
+		...(untitled.length > 0 || sections.length === 0
+			? [{ tiles: untitled }]
+			: []),
+		...sections.map((section) => ({
+			section,
+			tiles: tiles.filter((tile) => tile.widget.section === section.id),
+		})),
+	];
+}
+
+function SectionedLayout({
+	groups,
+	...layout
+}: {
+	groups: TileGroup[];
+	columns: 1 | 2 | 3 | 4;
+	declaredColumns?: 1 | 2 | 3 | 4;
+	grid: boolean;
+}) {
+	return (
+		<div className="space-y-6">
+			{groups.map(({ section, tiles }) =>
+				section ? (
+					<section
+						key={section.id}
+						data-slot="dashboard-section"
+						className="space-y-3"
+					>
+						<DashboardSectionHeader
+							title={section.title}
+							description={section.description}
+						/>
+						{tiles.length === 0 ? (
+							<p className="type-body text-muted-foreground">
+								No widgets in this section.
+							</p>
+						) : (
+							<DefaultLayout tiles={tiles} {...layout} />
+						)}
+					</section>
+				) : (
+					<DefaultLayout key="" tiles={tiles} {...layout} />
+				),
+			)}
+		</div>
 	);
 }
 
@@ -88,18 +679,90 @@ function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns:
  * `fromDashboardData(runDashboard(...))`). `accent` overrides the `--primary`
  * token for this dashboard's subtree only, so every chart picks it up.
  */
-export function Dashboard({ data, className }: { data: DashboardView; className?: string }) {
+export function Dashboard({
+	data,
+	className,
+	slots,
+}: {
+	data: DashboardView;
+	className?: string;
+	slots?: DashboardSlots;
+}) {
 	const columns = data.columns ?? 2;
-	const style = data.accent ? ({ "--primary": data.accent } as React.CSSProperties) : undefined;
+	// The accent overrides BOTH tokens the marks paint from, because the tier
+	// change moved where the colour comes from: the metric charts colour a
+	// series from the categorical palette (`chartSeriesColor(0)` is
+	// `--chart-1`), while `BarList` and the sparkline still use `--primary`.
+	// Setting only `--primary`, as the basic tier needed, left a declared
+	// accent with no effect on the charts it exists to colour. A dashboard's
+	// accent is its FIRST series' colour; a chart with more keeps the rest of
+	// the palette so two series never collapse to one hue.
+	const style = data.accent
+		? ({
+				"--primary": data.accent,
+				"--chart-1": data.accent,
+			} as React.CSSProperties)
+		: undefined;
 	const isGrid = (data.layout ?? "grid") === "grid";
+	const sections = data.sections ?? [];
+	const sectionIds = new Set(sections.map((section) => section.id));
+	// A widget in a section is titled one level under the section's <h3>; a
+	// widget drawn above every section stays under the dashboard's <h2>.
+	const headingOf = (widget: DashboardWidgetView): WidgetHeading =>
+		widget.section !== undefined && sectionIds.has(widget.section)
+			? "h4"
+			: "h3";
+
+	const tiles: DashboardTile[] = data.widgets.map((widget) => ({
+		id: widget.id,
+		widget,
+		node: slots?.renderWidget?.(widget, { heading: headingOf(widget) }) ?? (
+			// A span is a request for grid width, so it applies to anything the
+			// grid lays out. A scalar that declares one is kept out of the KPI
+			// row for exactly that reason — see `inKpiRow`.
+			<DashboardWidget
+				widget={widget}
+				heading={headingOf(widget)}
+				className={
+					isGrid && widget.span
+						? COL_SPAN[Math.min(widget.span, columns) as 1 | 2 | 3 | 4]
+						: undefined
+				}
+			/>
+		),
+	}));
 
 	return (
-		<Section title={data.title} description={data.description} className={className} style={style}>
-			<div className={isGrid ? cn("grid gap-4", GRID_COLS[columns]) : "flex flex-col gap-4"}>
-				{data.widgets.map((widget) => (
-					<WidgetCard key={widget.id} widget={widget} columns={columns} />
-				))}
-			</div>
+		<Section
+			title={data.title}
+			description={data.description}
+			actions={slots?.actions}
+			className={className}
+			style={style}
+		>
+			{/* A view with sections is never "no widgets": its sections are still
+			    there to be drawn, each saying it is empty. */}
+			{tiles.length === 0 && sections.length === 0 ? (
+				(slots?.empty ?? (
+					<p className="type-body text-muted-foreground">No widgets.</p>
+				))
+			) : slots?.layout ? (
+				slots.layout(tiles)
+			) : sections.length > 0 ? (
+				<SectionedLayout
+					groups={groupTiles(tiles, sections)}
+					columns={columns}
+					declaredColumns={data.columns}
+					grid={isGrid}
+				/>
+			) : (
+				<DefaultLayout
+					tiles={tiles}
+					columns={columns}
+					declaredColumns={data.columns}
+					grid={isGrid}
+				/>
+			)}
 		</Section>
 	);
 }

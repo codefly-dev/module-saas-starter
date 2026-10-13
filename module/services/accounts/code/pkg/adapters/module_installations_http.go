@@ -12,13 +12,16 @@ import (
 
 	"accounts/pkg/business"
 
-	"github.com/codefly-dev/sdk-go/workcontext"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const moduleInstallationPrefix = "/v1/module-installations/"
 
 type moduleInstallationService interface {
-	ModuleAuthorizeWorkContext(string, string) (business.ModuleWorkContextAuthority, error)
+	BeginModuleAuthorityUse(context.Context) (context.Context, func(), error)
+	FenceModuleMint(context.Context, business.ModuleWorkContextAuthority) error
+	ModuleAuthorizeWorkContext(context.Context, string, string, ...string) (business.ModuleWorkContextAuthority, error)
 	VerifyModuleTenant(context.Context, business.ModuleWorkContextAuthority) error
 	RecordModuleWorkContextMint(context.Context, string, business.ModuleWorkContextAuthority) error
 	ReconcileModuleInstallation(context.Context, business.ModuleCaller, *business.InstallerPolicy, business.ModuleInstallationRequest, bool) (*business.ModuleInstallationResult, error)
@@ -27,12 +30,13 @@ type moduleInstallationService interface {
 type ModuleInstallationHTTPHandler struct {
 	service moduleInstallationService
 	policy  func() (*business.InstallerPolicy, error)
-	verify  func(string) (business.ModuleCaller, error)
-	mint    func(business.ModuleWorkContextAuthority) (string, time.Time, error)
+	verify  func(context.Context, string) (business.ModuleCaller, error)
+	mint    func(context.Context, business.ModuleWorkContextAuthority) (string, time.Time, error)
 }
 
 // NewModuleInstallationHTTPHandler uses the existing module identity issuer and
-// verifier. The root-owned projected policy is reread per request, so expiry,
+// verifier; its token route authenticates the installer's pod like every other
+// module mint. The root-owned projected policy is reread per request, so expiry,
 // deletion and narrowing revoke even a previously minted Work Context.
 func NewModuleInstallationHTTPHandler(service *business.Service, policyPath string) (http.Handler, error) {
 	load := func() (*business.InstallerPolicy, error) {
@@ -47,15 +51,15 @@ func NewModuleInstallationHTTPHandler(service *business.Service, policyPath stri
 		return nil, err
 	}
 	return &ModuleInstallationHTTPHandler{service: service, policy: load,
-		verify: func(token string) (business.ModuleCaller, error) {
-			return WorkContextSingleton().VerifyModuleWorkContext(token)
+		verify: func(ctx context.Context, token string) (business.ModuleCaller, error) {
+			return WorkContextSingleton().VerifyModuleWorkContext(ctx, token)
 		},
-		mint: func(a business.ModuleWorkContextAuthority) (string, time.Time, error) {
-			token, claims, err := WorkContextSingleton().StartModuleTask(a)
+		mint: func(ctx context.Context, a business.ModuleWorkContextAuthority) (string, time.Time, error) {
+			token, claims, err := WorkContextSingleton().StartModuleTask(ctx, a)
 			if err != nil {
 				return "", time.Time{}, err
 			}
-			return token.Encoded(), time.Unix(claims.GetExpiresAtUnix(), 0).UTC(), nil
+			return token, time.Unix(claims.GetExpiresAtUnix(), 0).UTC(), nil
 		},
 	}, nil
 }
@@ -103,12 +107,12 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 		h.token(w, r, policy)
 		return
 	}
-	headers := r.Header.Values(workcontext.WorkContextHeaderName)
+	headers := r.Header.Values(workContextHeader)
 	if len(headers) != 1 || headers[0] == "" {
 		installerError(w, http.StatusUnauthorized, "module work context required")
 		return
 	}
-	caller, err := h.verify(headers[0])
+	caller, err := h.verify(r.Context(), headers[0])
 	if err != nil {
 		installerError(w, http.StatusUnauthorized, "invalid or expired module work context")
 		return
@@ -129,6 +133,10 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 		}
 		if errors.Is(err, business.ErrInstallerDenied) {
 			installerError(w, http.StatusForbidden, "installer delegation denied")
+			return
+		}
+		if status.Code(err) == codes.PermissionDenied || status.Code(err) == codes.FailedPrecondition {
+			installerError(w, http.StatusForbidden, "installation declaration is not available to this organization")
 			return
 		}
 		var se *business.StoreError
@@ -156,20 +164,57 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 		return
 	}
 	if mode == "verify" && result.State != "ready" {
-		installerError(w, http.StatusConflict, "installation is absent; apply the approved declaration")
+		reason := "installation is absent; apply the approved declaration"
+		if result.State == "pending" {
+			reason = "installation is pending acknowledgement"
+		} else if result.State == "failed" {
+			reason = "installation failed; an organization administrator must retry or uninstall it"
+		}
+		installerError(w, http.StatusConflict, reason)
 		return
 	}
 	installerJSON(w, http.StatusOK, result)
 }
+
+// installerTokenScheme is how the installer presents its pod's projected
+// ServiceAccount token: as the bearer of the request, exactly as a delivery
+// carrier does. It is the only credential this route reads.
+const installerTokenScheme = "Bearer "
+
+// token mints the installer's module Work Context. The installer proves which
+// module it is with its pod's projected ServiceAccount token, held — like every
+// module mint — against the workload its principal declares and the build its
+// authority document approves; the installer policy then decides whether that
+// proven identity may install at all.
 func (h *ModuleInstallationHTTPHandler) token(w http.ResponseWriter, r *http.Request, policy *business.InstallerPolicy) {
+	authorization := r.Header.Values("Authorization")
+	if len(authorization) != 1 || !strings.HasPrefix(authorization[0], installerTokenScheme) ||
+		strings.TrimSpace(strings.TrimPrefix(authorization[0], installerTokenScheme)) == "" {
+		installerError(w, http.StatusUnauthorized, "projected service account token required")
+		return
+	}
+	serviceAccountToken := strings.TrimSpace(strings.TrimPrefix(authorization[0], installerTokenScheme))
 	var req struct {
-		Prefix string `json:"prefix"`
-		Secret string `json:"secret"`
+		Prefix         string `json:"prefix"`
+		OrganizationID string `json:"organization_id,omitempty"`
 	}
 	if !installerDecode(w, r, &req) {
 		return
 	}
-	authority, err := h.service.ModuleAuthorizeWorkContext(req.Prefix, req.Secret)
+	ctx, releaseAuthority, err := h.service.BeginModuleAuthorityUse(r.Context())
+	if err != nil {
+		installerError(w, http.StatusServiceUnavailable, "module authority fence unavailable")
+		return
+	}
+	defer releaseAuthority()
+	r = r.WithContext(ctx)
+	authority, err := h.service.ModuleAuthorizeWorkContext(r.Context(), req.Prefix, serviceAccountToken, req.OrganizationID)
+	if errors.Is(err, business.ErrExecutionUnbound) || status.Code(err) == codes.Unavailable {
+		// The host could not establish what the caller is running. Not a
+		// verdict, so not a 403: an installer that retries may succeed.
+		installerError(w, http.StatusServiceUnavailable, "installer execution could not be established")
+		return
+	}
 	if err != nil || !policy.AllowsIdentity(business.ModuleCaller{PrincipalID: authority.PrincipalID, BoundOrg: authority.Tenant}, time.Now()) {
 		installerError(w, http.StatusForbidden, "installer identity denied")
 		return
@@ -178,13 +223,17 @@ func (h *ModuleInstallationHTTPHandler) token(w http.ResponseWriter, r *http.Req
 		installerError(w, http.StatusServiceUnavailable, "installer organization prerequisite unavailable")
 		return
 	}
-	token, expires, err := h.mint(authority)
+	token, expires, err := h.mint(r.Context(), authority)
 	if err != nil {
 		installerError(w, http.StatusServiceUnavailable, "installer identity issuer unavailable")
 		return
 	}
 	if err = h.service.RecordModuleWorkContextMint(r.Context(), req.Prefix, authority); err != nil {
 		installerError(w, http.StatusServiceUnavailable, "installer audit unavailable")
+		return
+	}
+	if err = h.service.FenceModuleMint(r.Context(), authority); err != nil {
+		installerError(w, http.StatusServiceUnavailable, "installer authority changed during mint")
 		return
 	}
 	installerJSON(w, http.StatusOK, map[string]any{"token": token, "expiresAt": expires, "principalId": authority.PrincipalID, "tenant": authority.Tenant})

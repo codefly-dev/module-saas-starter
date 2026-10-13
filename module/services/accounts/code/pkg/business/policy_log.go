@@ -50,6 +50,7 @@ const (
 	PolicyLogInstallation   PolicyLogSubjectKind = "installation"
 	PolicyLogTeamMembership PolicyLogSubjectKind = "team_membership"
 	PolicyLogScopeGrant     PolicyLogSubjectKind = "scope_grant"
+	PolicyLogModuleEnvelope PolicyLogSubjectKind = "module_envelope"
 
 	// PolicyLogOrganization is the organization itself, for the one narrowing
 	// whose subject is not a grant hanging off it: archiving it, which ends
@@ -73,7 +74,7 @@ const (
 func (kind PolicyLogSubjectKind) Valid() bool {
 	switch kind {
 	case PolicyLogPrincipal, PolicyLogBinding, PolicyLogInstallation,
-		PolicyLogTeamMembership, PolicyLogScopeGrant, PolicyLogOrganization:
+		PolicyLogTeamMembership, PolicyLogScopeGrant, PolicyLogOrganization, PolicyLogModuleEnvelope:
 		return true
 	}
 	return false

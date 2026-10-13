@@ -184,11 +184,9 @@ type SolutionHostBindingReconciler struct {
 	source  SolutionHostBindingSource
 	host    solutionhost.Host
 
-	// verifier is this host's attestation check. core holds no verifier and
-	// never will: signing is keyless over a workload identity, so verifying is
-	// a trust root and an identity policy that belong to the deployment, not to
-	// a library every binary imports.
-	verifier solutionhost.BundleVerifier
+	// verifier uses the platform's pins; core checks the envelope and the
+	// signer's ownership domains before returning an admitted document.
+	verifier *solutionhost.Verifier
 
 	interval time.Duration
 	now      func() time.Time
@@ -212,6 +210,15 @@ type SolutionHostBindingReconciler struct {
 	// pass.
 	approvedBuilds *ApprovedBuildReconciler
 
+	// modulePrincipals derives the module registry every capability decision
+	// reads, from the live authority inside the current envelope and the
+	// applied presence it names, and swaps it into the service each pass.
+	modulePrincipals *ModulePrincipalReconciler
+
+	// trigger asks the loop for a pass now. Buffered by one: a request made
+	// while a pass is pending is already satisfied by that pass.
+	trigger chan struct{}
+
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -229,7 +236,7 @@ type SolutionHostBindingReconcilerConfig struct {
 	// required: without one there is no way to construct the verified value
 	// core's Admit takes, so a host with no verifier admits nothing at all
 	// rather than falling back to admitting everything.
-	Verifier solutionhost.BundleVerifier
+	Verifier *solutionhost.Verifier
 
 	// Coordinate is the host this reconciler answers for.
 	Coordinate string
@@ -247,24 +254,22 @@ type SolutionHostBindingReconcilerConfig struct {
 	// Interval between passes. Zero takes the default.
 	Interval time.Duration
 
-	// Envelope is the AUTHORITY CEILING delivered to this host: who may hold
-	// which binding, and which builds are approved, at one revision.
+	// Envelopes is where the AUTHORITY CEILING is read from — the module
+	// envelope a platform super_admin writes — on every pass and every
+	// activation, so a narrowing takes effect at the next check with no
+	// restart.
 	//
-	// Optional, and its absence is not a weaker ceiling. A zero revision means
-	// no ceiling is delivered, and every activation then refuses with
-	// ErrSolutionAuthorityCeilingUnavailable — the host has decided nothing
-	// rather than decided that a grant is absent. A host that reconciles
-	// presence with no ceiling delivered is a correct, complete deployment:
-	// authority is simply not a question it can answer, and making the presence
-	// half depend on the authority half being configured would be the wrong
-	// coupling.
+	// Optional, and its absence is not a weaker ceiling. No source, or no
+	// revision written, means no ceiling: every activation refuses with
+	// ErrSolutionAuthorityCeilingUnavailable and the module registry is empty —
+	// the host has decided nothing rather than decided that a grant is absent.
+	// A host that reconciles presence with no ceiling is a correct, complete
+	// deployment: making the presence half depend on the authority half would be
+	// the wrong coupling.
 	//
 	// It is never read out of a delivered document. core: "an envelope a
-	// document carried would be a document declaring its own ceiling", and
-	// ValidateAgainst tests a document's grants and approved build against the
-	// envelope's — so an envelope assembled from the delivery tree answers
-	// itself for every document in it.
-	Envelope solutionhost.Envelope
+	// document carried would be a document declaring its own ceiling".
+	Envelopes ModuleEnvelopeSource
 }
 
 // NewSolutionHostBindingReconciler builds the reconciler for one host
@@ -316,7 +321,7 @@ func NewSolutionHostBindingReconciler(
 		interval: interval,
 		now:      func() time.Time { return time.Now().UTC() },
 	}
-	activation, err := newSolutionAuthorityActivation(reconciler, config.Envelope)
+	activation, err := newSolutionAuthorityActivation(reconciler, config.Envelopes)
 	if err != nil {
 		return nil, err
 	}
@@ -326,6 +331,12 @@ func NewSolutionHostBindingReconciler(
 		return nil, err
 	}
 	reconciler.approvedBuilds = approvedBuilds
+	modulePrincipals, err := NewModulePrincipalReconciler(activation)
+	if err != nil {
+		return nil, err
+	}
+	reconciler.modulePrincipals = modulePrincipals
+	reconciler.trigger = make(chan struct{}, 1)
 	return reconciler, nil
 }
 
@@ -446,6 +457,15 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 		}
 	}
 
+	// THE MODULE REGISTRY, last: it reads the presence this pass just applied
+	// and the same authority inbox, so deriving it before the applies would
+	// serve the previous generation's workload for one whole interval.
+	if r.modulePrincipals != nil {
+		if err := r.modulePrincipals.RunOnce(ctx); err != nil {
+			failures = append(failures, fmt.Errorf("derive the module principal registry: %w", err))
+		}
+	}
+
 	// A document core refused to parse still gets its refusal recorded against
 	// the binding it names, so "delivery is shipping something this host cannot
 	// read" is visible beside the generation it last applied rather than only in
@@ -464,9 +484,33 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-// Start runs a pass now and then on every interval until Shutdown. A failing
-// pass is logged and the loop continues: the mount is re-read every interval, so
-// a transient failure resolves itself and a persistent one keeps saying so.
+// Trigger asks for a pass now instead of at the next tick, without waiting for
+// it. A delivery and an envelope write call it, so what they change is in force
+// within one pass rather than one interval. Never blocks: a request made while
+// one is already pending is satisfied by that one.
+func (r *SolutionHostBindingReconciler) Trigger() {
+	if r == nil || r.trigger == nil {
+		return
+	}
+	select {
+	case r.trigger <- struct{}{}:
+	default:
+	}
+}
+
+// ModulePrincipals is the reconciler that derives the module registry, exposed
+// so a caller can run or inspect that one step.
+func (r *SolutionHostBindingReconciler) ModulePrincipals() *ModulePrincipalReconciler {
+	if r == nil {
+		return nil
+	}
+	return r.modulePrincipals
+}
+
+// Start runs a pass now and then on every interval until Shutdown, and also
+// whenever Trigger asks. A failing pass is logged and the loop continues: the
+// inbox is re-read every interval, so a transient failure resolves itself and a
+// persistent one keeps saying so.
 func (r *SolutionHostBindingReconciler) Start(parent context.Context) {
 	r.mu.Lock()
 	if r.cancel != nil {
@@ -495,6 +539,8 @@ func (r *SolutionHostBindingReconciler) Start(parent context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				run()
+			case <-r.trigger:
 				run()
 			}
 		}
@@ -541,7 +587,7 @@ func (r *SolutionHostBindingReconciler) Shutdown(ctx context.Context) error {
 // misleading reason string on a row whose applied generation is untouched, which
 // is why the attribution is kept and why the reason is coarse.
 func verifySolutionHostBindingDocuments(
-	ctx context.Context, verifier solutionhost.BundleVerifier, documents []SolutionHostBindingDocument,
+	ctx context.Context, verifier *solutionhost.Verifier, documents []SolutionHostBindingDocument,
 ) ([]deliveredSolutionHostBinding, []unparsedSolutionHostBinding) {
 	verified := make([]deliveredSolutionHostBinding, 0, len(documents))
 	var problems []unparsedSolutionHostBinding

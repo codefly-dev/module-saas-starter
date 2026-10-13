@@ -275,6 +275,23 @@ func (s *apiKeyMintStore) GetOrgMembership(context.Context, string, string) (*ge
 	return &gen.OrgMembership{UserId: scopeAdmissionUserID.String(), Role: gen.OrgRole_ORG_ROLE_ADMIN}, nil
 }
 
+// The factor lookup. Credential issuance sits behind a recent second factor like
+// every other privilege-changing mutation, so the handler consults the actor's
+// enrolment after the authorization gates — and this fake has to answer it or
+// the handler panics on the embedded nil interface before reaching the domain.
+//
+// Not enrolled, which is the state that PROCEEDS for an ordinary org admin: the
+// gate is fail-closed only for a privileged actor (a platform role, or the
+// organization's owner), and this membership is an admin. That keeps these cases
+// asserting what they are about — the admission gates — rather than the factor.
+func (s *apiKeyMintStore) WithUserTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *apiKeyMintStore) HasVerifiedMFA(context.Context, string) (bool, error) {
+	return false, nil
+}
+
 // Only an interactive session creates API keys. A key that could would mint a
 // copy of itself with no expiry — accounts cannot even see the calling key's
 // own — so CreateAPIKey declares no API-key scope, and the handler refuses a key
@@ -380,7 +397,12 @@ func TestAPIKeyCannotCreateAPIKeys(t *testing.T) {
 			reads, err := create(tc.caller, requesting(tc.requested...))
 			require.Error(t, err)
 			require.NotEqual(t, codes.PermissionDenied, status.Code(err), "%v", err)
-			require.Equal(t, 1, reads)
+			// The organization WAS consulted, which is the property here. Not how
+			// many times: the handler reads the membership for the admin gate and
+			// again for the factor gate's privileged-role check, and pinning the
+			// count made this assert an implementation detail instead. The
+			// refusal cases above carry the other half with require.Zero.
+			require.NotZero(t, reads, "the organization-admin gate must have run")
 		})
 	}
 }

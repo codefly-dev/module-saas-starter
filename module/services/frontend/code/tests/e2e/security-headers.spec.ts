@@ -11,6 +11,9 @@ function cspOf(response: Awaited<ReturnType<Page["goto"]>>): string {
 	const headers = response?.headers() ?? {};
 	expect(headers["x-frame-options"]).toBe("DENY");
 	expect(headers["x-content-type-options"]).toBe("nosniff");
+	// The edge's plaintext redirect protects the redirect and nothing before it, so
+	// the origin pins the browser itself.
+	expect(headers["strict-transport-security"]).toContain("max-age=");
 	const csp = headers["content-security-policy"];
 	expect(csp, "response is missing a CSP").toBeDefined();
 	return csp as string;

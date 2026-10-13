@@ -76,7 +76,6 @@ const (
 	changeTypeRenamed  = "renamed"
 
 	datasourceDeliveryMaxAttempts = 24
-	datasourceReconcileBatchSize  = 100
 )
 
 // DeliveryDisposition is the outcome of compiling one delivery, for observability
@@ -854,80 +853,23 @@ func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, 
 	return ordinal, err
 }
 
-// RunDatasourceReconcile is the periodic sweep: it enqueues reconcile work for
-// every active source whose schedule has elapsed and reschedules it. A GitHub
-// source gets a conditional reconcile on the delivery queue — the job resolves
-// the head and snapshots only if it moved — and a pull source (api, crawler,
-// upload) gets the same sync request "Sync now" produces. Either way the sweep
-// itself does no provider work, so it cannot be slowed by one unreachable
-// source.
+// There is no periodic reconcile sweep in this host.
 //
-// The sweep runs in every replica and holds no lease. That is safe because each
-// source's job is keyed by the schedule it is due on (scheduledReconcileKey), so
-// two replicas selecting the same row before either bumps it enqueue one job
-// between them rather than two. The bump that follows moves the schedule, so the
-// next sweep computes a different key.
-func (s *Service) RunDatasourceReconcile(ctx context.Context) (int, error) {
-	w := wool.Get(ctx).In("RunDatasourceReconcile")
-	if s.datasourceJobs == nil {
-		return 0, w.NewError("datasource connector is not configured")
-	}
-	var due []*DatasourceSource
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		found, err := s.store.ListDatasourceSourcesDueForReconcile(ctx, time.Now().UTC(), datasourceReconcileBatchSize)
-		due = found
-		return err
-	}); err != nil {
-		return 0, w.Wrapf(err, "list due sources")
-	}
-	enqueued := 0
-	for _, source := range due {
-		if err := s.enqueueScheduledReconcile(ctx, source); err != nil {
-			w.Warn("enqueue reconcile failed", wool.Field("source", source.ID),
-				wool.Field("provider", source.Provider), wool.ErrField(err))
-			continue
-		}
-		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			return s.store.BumpDatasourceReconcile(ctx, source.ID)
-		}); err != nil {
-			return enqueued, w.Wrapf(err, "reschedule reconcile")
-		}
-		enqueued++
-	}
-	return enqueued, nil
-}
-
-// enqueueScheduledReconcile dispatches one due source onto the path its provider
-// actually syncs on. GitHub is compiled by the change-set worker off the delivery
-// queue; every other provider is a full pull performed by the sync worker, which
-// is the only engine those connectors have (RunDatasourceSync).
-func (s *Service) enqueueScheduledReconcile(ctx context.Context, source *DatasourceSource) error {
-	if source.Provider == DatasourceProviderGitHub {
-		return s.enqueueReconcile(ctx, source, reconcileModeConditional, scheduledReconcileKey(source))
-	}
-	return s.enqueueScheduledPullSync(ctx, source)
-}
-
-// scheduledReconcileKey is the durable identity of one scheduled pass over one
-// source: the source, paired with the schedule instant that selected it.
+// A source's reconcile schedule is a trigger this host declares and an
+// executing module fires (datasource_trigger.go). What used to be here was
+// RunDatasourceReconcile: a one-minute tick that read every source whose
+// stored instant had elapsed and enqueued a job for each. It went with
+// enqueueScheduledReconcile, enqueueScheduledPullSync, scheduledReconcileKey
+// and the due query they read — the whole producer, not just its caller,
+// because a sweep nothing calls is a schedule waiting to be re-enabled by
+// someone who did not know a declared one exists.
 //
-// Both halves matter. The source alone would make every future pass an
-// idempotent replay of the first and the source would reconcile exactly once,
-// ever; a fresh key per attempt (which is what this path used before) lets two
-// replicas sweeping the same due row before either bumps it enqueue the same
-// work twice. For GitHub that was survivable — the per-source FIFO key serialises
-// the pair and the second finds the head unmoved — but a pull provider has no
-// cursor at all, so a duplicate is a second full re-send of the whole source.
-//
-// A source with no schedule cannot be selected by the due query, so the nil case
-// is unreachable there; it falls back to a fresh key rather than collapsing every
-// such source onto one shared key.
-func scheduledReconcileKey(source *DatasourceSource) string {
-	if source.NextReconcileAt == nil {
-		return NewIDString()
-	}
-	return "datasource.scheduled:" + source.ID + ":" + source.NextReconcileAt.UTC().Format(time.RFC3339Nano)
-}
+// One occurrence of the declared trigger admits
+// DatasourceService/ReconcileSource, which hands the pass to exactly the
+// engines below (datasource_reconcile_operation.go). The enqueue is keyed by
+// the occurrence's effect identity rather than by a schedule instant, which is
+// what the key here had to stand in for while two replicas could both sweep
+// one due row.
 
 func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource, mode, idempotencyKey string) error {
 	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
@@ -960,15 +902,6 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 // must not be dropped as a replay of the first one's schedule.
 func (s *Service) enqueueFirstPullSync(ctx context.Context, source *DatasourceSource) error {
 	return s.enqueuePullSync(ctx, source, datasourceSyncRequestSource, NewIDString())
-}
-
-// enqueueScheduledPullSync is the periodic reconcile for a provider the host
-// pulls rather than receives: it enqueues exactly the sync request "Sync now"
-// enqueues, so one engine performs the pull and a scheduled sync cannot drift
-// from a manual one. Only its Source differs, so an operator reading a job can
-// tell the schedule's pass from a person's.
-func (s *Service) enqueueScheduledPullSync(ctx context.Context, source *DatasourceSource) error {
-	return s.enqueuePullSync(ctx, source, DatasourceScheduledSyncSource, scheduledReconcileKey(source))
 }
 
 // enqueuePullSync enqueues one pull-provider sync request, the job the leased

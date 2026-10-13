@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -50,16 +49,13 @@ func (kind SolutionDeliveryKind) Valid() bool {
 // SolutionDeliveryCarrier is one received carrier: the canonical payload and the
 // attestation over exactly those bytes.
 //
-// The two travel together and are stored together. A payload without its bundle
+// The two travel together and are stored together. A payload without its envelope
 // is a document nobody can re-verify, which is the state that made a restore
 // unable to re-check what it had accepted.
 type SolutionDeliveryCarrier struct {
 	Kind SolutionDeliveryKind
-	// Raw is the carrier exactly as delivered — `{schema, document, bundle}` —
-	// parsed by core's ParseSigned rather than unmarshalled here. Core's
-	// Signed.validate checks the carrier's own schema, which an ad-hoc
-	// two-field unmarshal skips: a hand-built carrier claiming any schema used
-	// to reach the bundle verifier.
+	// Raw is the delivered {document, envelope} carrier. Core's strict parser
+	// refuses unknown fields and missing envelopes before verification.
 	Raw []byte
 }
 
@@ -71,7 +67,9 @@ type SolutionDeliveryRecord struct {
 	// ContentHash is sha256 of the canonical payload, `sha256:<64 hex>`.
 	ContentHash string
 	Payload     []byte
-	Bundle      []byte
+	// Bundle retains its storage name, but holds the DSSE envelope verbatim
+	// so reconciliation can verify the same bytes under the current pins.
+	Bundle []byte
 	// SignerIdentity is what the verifier attested, and OwnershipDomain is what
 	// the document asserts. Both recorded at receipt so an operator can see who
 	// delivered what without re-running verification — and so a later narrowing
@@ -142,6 +140,24 @@ type SolutionDeliveryStore interface {
 	// ListNewestDeliveredDocuments returns the newest generation per document
 	// for one kind — the desired set.
 	ListNewestDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
+
+	// ListDeliveredDocuments returns every delivered generation of one kind:
+	// the history a terminal withdrawal is read from.
+	ListDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
+}
+
+// SolutionDeliveryCounter is the inbox's size, where the store can answer it.
+//
+// Optional, and asked for by assertion: a store that cannot count leaves the
+// registry with no marker, and a mint then answers exactly as it did before
+// the marker existed.
+type SolutionDeliveryCounter interface {
+	// CountDeliveredDocuments is the number of delivered documents of every
+	// kind. The inbox is append-only, so it never decreases.
+	CountDeliveredDocuments(ctx context.Context) (uint64, error)
+	// CountUnappliedPresence is the number of delivered presence documents
+	// newer than what their binding has applied and not refused.
+	CountUnappliedPresence(ctx context.Context) (uint64, error)
 }
 
 // SolutionDeliveryCarrierAuthorizer decides whether the CALLER may deliver this
@@ -170,9 +186,8 @@ type SolutionDeliveryCarrierAuthorizer interface {
 //
 // The ORDER is the contract, and it is signature-first:
 //
-//  1. parse the carrier (core's ParseSigned, so the carrier's own schema is
-//     checked);
-//  2. verify the bundle against the trust root and the identity allowlist,
+//  1. parse the carrier with core's strict ParseSigned;
+//  2. verify the envelope against the pinned keys and their ownership domains,
 //     WITH THE READER FOR THE KIND THE PATH NAMES;
 //  3. check the attested signer may speak for the domain the document asserts;
 //  4. authorise the CALLER as a carrier for this kind;
@@ -216,6 +231,12 @@ func (s *Service) ReceiveSolutionDelivery(
 			ErrSolutionDeliveryDomainNotGranted, received.signer, received.ownershipDomain)
 	}
 
+	if carrier.Kind == SolutionDeliveryAuthority {
+		if err := s.admitAuthorityTarget(ctx, received.payload); err != nil {
+			return "", nil, err
+		}
+	}
+
 	if err := s.deliveryCarrier.AuthorizeCarrier(
 		ctx, credential, carrier.Kind, received.carrierNamespaces); err != nil {
 		return "", nil, err
@@ -227,7 +248,7 @@ func (s *Service) ReceiveSolutionDelivery(
 		Generation:      received.generation,
 		ContentHash:     solutionDeliveryContentHash(received.payload),
 		Payload:         received.payload,
-		Bundle:          signed.Bundle,
+		Bundle:          signed.Envelope,
 		SignerIdentity:  received.signer,
 		OwnershipDomain: received.ownershipDomain,
 		ReceivedAt:      time.Now().UTC(),
@@ -242,9 +263,49 @@ func (s *Service) ReceiveSolutionDelivery(
 		return "", nil, err
 	}
 	if inserted {
+		// A new document changes what the host should apply and which module
+		// principals the registry holds, so a pass is requested now rather than
+		// at the next tick. An exact replay changes nothing and asks for none.
+		s.requestRegistryPass()
 		return SolutionDeliveryAccepted, record, nil
 	}
 	return SolutionDeliveryReplayed, record, nil
+}
+
+// admitAuthorityTarget refuses an authority document — a grant or a tombstone —
+// that cannot speak for the binding it names: one addressed to another host,
+// or one asserting an ownership domain other than the binding's OWNER (the
+// domain of the presence generation this host admitted and applied — never a
+// delivered row core refused). The signer
+// check above only proves the signer may speak for the domain the document
+// ASSERTS; without this, an accepted signer for one domain could deliver a
+// tombstone naming another domain's binding and withdraw it permanently.
+// Reconciliation applies the same rule to what is already stored.
+func (s *Service) admitAuthorityTarget(ctx context.Context, payload []byte) error {
+	document, err := solutionhost.AuthorityFromVerified(payload)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
+	}
+	if s.deliveryCoordinate != "" && document.Host.Coordinate != s.deliveryCoordinate {
+		return fmt.Errorf("%w: authority %q targets host %q, and this host is %q",
+			ErrSolutionDeliveryDomainNotGranted, document.Authority, document.Host.Coordinate, s.deliveryCoordinate)
+	}
+	owners, err := s.admittedBindingOwners(ctx)
+	if err != nil {
+		return err
+	}
+	if domain, known := owners[document.PresenceBinding]; known && domain != document.OwnershipDomain {
+		return fmt.Errorf("%w: authority %q speaks for domain %q over binding %q, which domain %q owns",
+			ErrSolutionDeliveryDomainNotGranted, document.Authority, document.OwnershipDomain, document.PresenceBinding, domain)
+	}
+	return nil
+}
+
+// SetSolutionDeliveryCoordinate names the host coordinate this host answers
+// for, so delivery refuses an authority document addressed to another host at
+// receipt. Boot wiring, beside SetSolutionDelivery.
+func (s *Service) SetSolutionDeliveryCoordinate(coordinate string) {
+	s.deliveryCoordinate = coordinate
 }
 
 // receivedSolutionDelivery is one verified document read into the shape the
@@ -361,15 +422,18 @@ func (s *Service) receiveDeliveredAuthority(
 // "the bytes are wrong", because the two have different response codes and a
 // caller acts differently on each.
 //
-// core's VerifyDelivered does two things behind one error: it hands the payload
-// and bundle to this host's verifier, and it then reads the attested bytes with
-// the reader for the kind. Only the first is about the SIGNER. A schema
+// Core verifies the envelope, reads the canonical document of the requested
+// kind, then checks the pinned key's ownership domains. Signature and domain
+// refusals are about the SIGNER. A schema
 // mismatch, a payload that is not its own canonical encoding, or a document
 // core will not parse are all facts about the bytes — which is why a genuine
 // authority document POSTed to /presence is 400 rather than 403. Answering 403
 // would send an operator to look at the signing identity for a delivery that
 // was signed perfectly well and simply sent to the wrong path.
 func classifySolutionDeliveryVerification(err error) error {
+	if errors.Is(err, solutionhost.ErrWrongDomain) {
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryDomainNotGranted, err)
+	}
 	if errors.Is(err, solutionhost.ErrUnsigned) {
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryUnattested, err)
 	}
@@ -456,34 +520,15 @@ func declaredNamespaces(document *solutionhost.SolutionHostBinding) []string {
 	seen := map[string]bool{}
 	var namespaces []string
 	for _, workload := range document.Workloads {
-		namespace := spiffeNamespace(workload.Identity.SPIFFEID)
-		if namespace == "" || seen[namespace] {
+		identity, err := ParseKubernetesSPIFFEID(workload.Identity.SPIFFEID)
+		namespace := identity.Namespace
+		if err != nil || seen[namespace] {
 			continue
 		}
 		seen[namespace] = true
 		namespaces = append(namespaces, namespace)
 	}
 	return namespaces
-}
-
-// spiffeNamespace reads the namespace out of `spiffe://<trust domain>/ns/<ns>/sa/<account>`.
-//
-// It returns empty rather than guessing when the shape is not that: core
-// validates the SPIFFE ID's form, so an ID reaching here in another shape is one
-// core accepted and this host does not understand — and inventing a namespace
-// from it would authorise a carrier against a name nobody wrote.
-func spiffeNamespace(id string) string {
-	_, path, found := strings.Cut(id, "://")
-	if !found {
-		return ""
-	}
-	segments := strings.Split(path, "/")
-	for index := 0; index+1 < len(segments); index++ {
-		if segments[index] == "ns" {
-			return segments[index+1]
-		}
-	}
-	return ""
 }
 
 // solutionDeliveryContentHash is the idempotency key's content half: sha256 over
@@ -532,9 +577,8 @@ func (d *DeliveredSolutionHostBindings) Documents(ctx context.Context) ([]Soluti
 	documents := make([]SolutionHostBindingDocument, 0, len(records))
 	for _, record := range records {
 		carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-			Schema:   solutionhost.SchemaSignedV1,
 			Document: record.Payload,
-			Bundle:   record.Bundle,
+			Envelope: record.Bundle,
 		})
 		if err != nil {
 			// A row that cannot be put back into a carrier is a defect in what

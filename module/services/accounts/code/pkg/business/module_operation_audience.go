@@ -118,13 +118,49 @@ func operationValuesSubset(subset, superset []string) bool {
 	return true
 }
 
+// selfAdmittingBinding reports whether a binding exists for work with NO
+// PERSON PRESENT — it declares headless scopes, delegation scopes, or both.
+//
+// It is the one case in which a binding may name its own module as the
+// audience, and the reason is structural rather than a relaxation. Every other
+// operation binding describes calling ANOTHER service, so a module naming
+// itself would be minting a capability addressed to nobody new, and the
+// declaration is refused. Unattended work inverts that: a release's trigger
+// declares whose authority an occurrence runs under, and the capability is
+// admitted by the module that executes the release — itself. The module
+// attaches it as its own incoming execution context and verifies it against
+// its own admission audience, which is its declared name. So a composition
+// that could not name its own prefix here would have to configure its
+// executing module to admit a second audience it does not accept, and neither
+// arm of a declared trigger would have anywhere to mint at all.
+//
+// The guard it narrows is not the one that protects this host's identity
+// surface: a capability addressed to "module-capabilities" is refused at
+// signing by requireMintableAudience, whatever a binding declares, so self
+// admission can never become a second spelling of a module identity.
+func selfAdmittingBinding(binding ModuleOperationAudience) bool {
+	return binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil
+}
+
 func validateOperationAudiences(prefix string, bindings map[string]ModuleOperationAudience) error {
 	if len(bindings) > 32 {
 		return fmt.Errorf("module operation audience bindings exceed limit")
 	}
 	for id, binding := range bindings {
-		if !validOperationValue(id, 128) || !validOperationValue(binding.Audience, 512) || binding.Audience == prefix || !validOperationScopes(binding.InvokeScopes, false) || !validOperationScopes(binding.LookupScopes, true) || !operationScopesSubset(binding.LookupScopes, binding.InvokeScopes) {
+		if !validOperationValue(id, 128) || !validOperationValue(binding.Audience, 512) ||
+			(binding.Audience == prefix && !selfAdmittingBinding(binding)) ||
+			!validOperationScopes(binding.InvokeScopes, false) {
 			return fmt.Errorf("invalid installed module operation audience binding")
+		}
+		// Lookup is OPTIONAL, like headless: a binding that declares only invoke
+		// redeems no lookup, and that is a whole declaration — a module verifying
+		// citations as the asking person has nothing to look up. Absent is "this
+		// binding redeems no lookup" and a lookup exchange under it is refused;
+		// present but empty is a misconfiguration, not a second spelling of absent.
+		// Requiring it dropped every invoke-only binding a module declared, and the
+		// binding then read as never declared at all.
+		if binding.LookupScopes != nil && (!validOperationScopes(binding.LookupScopes, true) || !operationScopesSubset(binding.LookupScopes, binding.InvokeScopes)) {
+			return fmt.Errorf("invalid installed module operation audience lookup scopes")
 		}
 		// Absent is the fail-closed default (no headless mint); present but empty
 		// is a misconfiguration rather than a second spelling of absent.
@@ -156,6 +192,12 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 // that took none could not. It had none, which is why it was one of the paths
 // deciding on the declared ceiling alone.
 func (s *Service) ModuleOperationAudience(ctx context.Context, caller ModuleCaller, tenant, parentAudience, bindingID string) (ModuleOperationAudience, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleOperationAudience{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleOperationAudience{}, err
@@ -173,17 +215,22 @@ func (s *Service) ModuleOperationAudience(ctx context.Context, caller ModuleCall
 	return binding, nil
 }
 
-// ModuleOperationAudienceForDelegation resolves the calling module's operation
-// binding for a parent whose tenant a source delegation authorizes. It is
-// ModuleOperationAudience without the tenant check: the caller has already
-// re-checked the delegation (ConfirmSourceDelegationParent) — active, in the
-// parent's tenant, from the parent's owner — and that delegation, not the
-// caller's declared tenant or cross_tenant grant, is what admits the tenant.
-// The parent must still be addressed to the caller, and the binding must still
-// be one the caller declares.
+// ModuleOperationAudienceForDelegation resolves the caller's installed binding
+// after its parent delegation was confirmed. The delegation and caller must
+// belong to the same organization; neither delegation nor cross_tenant bypasses
+// that organization's installation and the current envelope.
 func (s *Service) ModuleOperationAudienceForDelegation(ctx context.Context, caller ModuleCaller, delegation *SourceDelegation, parentAudience, bindingID string) (ModuleOperationAudience, error) {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return ModuleOperationAudience{}, fenceErr
+	}
+	defer releaseAuthority()
+
 	if !delegation.Active() {
 		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "source delegation is not active")
+	}
+	if delegation.OrgID != caller.BoundOrg {
+		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "delegation belongs to a different installation organization")
 	}
 	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
