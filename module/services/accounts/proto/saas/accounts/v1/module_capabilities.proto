@@ -355,6 +355,69 @@ message ModuleEmitAuditEventRequest {
   string idempotency_key = 7 [(buf.validate.field).string.max_len = 255];
 }
 
+// ModuleReadJournalRequest reads the platform journal across every tenant. Only a
+// module principal whose grant is cross_tenant may call it, the gate a
+// system-scoped EmitAuditEvent has; any other caller is PermissionDenied.
+message ModuleReadJournalRequest {
+  // after is the position the previous page ended at (a page's next_after). The
+  // literal "start" is a valid position meaning "before the oldest retained
+  // entry", and the empty string is accepted as an alias of it; so a reader with
+  // nothing read yet has a non-empty position to correlate its first page on.
+  // Positions are opaque: store one and hand it back unread. No entry's position
+  // is ever "start". A value this host did not issue is InvalidArgument.
+  string after = 1 [(buf.validate.field).string.max_len = 64];
+  // limit is the page size: 0 is 100, and more than 500 is served as 500. A
+  // page is also bounded to 2 MiB of event data, though the first entry is always
+  // served.
+  int32 limit = 2 [(buf.validate.field).int32.gte = 0];
+  // types are the event types to read, exactly (no pattern). At least one is
+  // required, so no caller reads every tenant's every event by leaving the
+  // filter out.
+  repeated string types = 3 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 16
+    items: {string: {min_len: 1, max_len: 256}}
+  }];
+  // delivery_bindings are the binding ids the caller's own delivery of the journal
+  // runs under. They decide which entries are marked delivery_machinery.
+  repeated string delivery_bindings = 4 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {string: {min_len: 1, max_len: 256}}
+  }];
+}
+
+// ModuleJournalEntry is one journal row. Rows are served in the order their
+// writing transactions are final (see ModuleReadJournalRequest), so a reader that
+// resumes from the last position it was given skips nothing.
+message ModuleJournalEntry {
+  // position is where the row sits in the read order: opaque, and the value a
+  // reader passes as after to resume past it.
+  string position = 1;
+  string event_id = 2;
+  string type = 3;
+  // organization_id is the row's tenant, empty for a row that has none.
+  string organization_id = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+  // data is the event's JSON object; empty when the event's data is not one.
+  google.protobuf.Struct data = 6;
+  // delivery_machinery is true when the entry the row carries is the footprint of
+  // the caller's own delivery of the journal: the host computes it, so a caller
+  // never parses this module's payloads. It is true for a
+  // saas.module.operation_context_minted or
+  // saas.module.delegated_audience_exchange entry whose binding_id is one of the
+  // request's delivery_bindings, and for a saas.module.work_context_minted entry
+  // of the caller's own module principal.
+  bool delivery_machinery = 7;
+}
+
+// ModuleReadJournalResponse is one page and where to resume.
+message ModuleReadJournalResponse {
+  repeated ModuleJournalEntry entries = 1;
+  // next_after is the last entry's position, or the request's after when the page
+  // is empty.
+  string next_after = 2;
+}
+
 // ModuleAuditFieldKind is the kind of one declared audit payload field: the
 // same kinds a solution may declare in its manifest.
 enum ModuleAuditFieldKind {
@@ -1636,6 +1699,23 @@ service ModuleCapabilitiesService {
   }
   // EmitAuditEvent records a registered audit event on the tenant's spine.
   rpc EmitAuditEvent(ModuleEmitAuditEventRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ReadJournal serves the platform journal across every tenant, and the rows with
+  // no tenant, to a module principal whose grant is cross_tenant. Rows are served
+  // in the order their writing transactions are final, so a reader that resumes
+  // from next_after skips nothing; it enqueues nothing and is not a replay.
+  rpc ReadJournal(ModuleReadJournalRequest) returns (ModuleReadJournalResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE
