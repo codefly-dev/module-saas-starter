@@ -4,6 +4,12 @@
 // one shared package instance. Pair with `@codefly-dev/saas-sdk`'s `runDashboard`
 // for data resolution and `fromDashboardData` to bridge its result into the
 // view model.
+//
+// The vocabulary these components draw is published, not just implemented:
+// `catalog.ts` is the A2UI catalog naming them and the data model they bind to,
+// and `@codefly-dev/ui/dashboard-catalog.json` is the exact document a consumer
+// freezes. A visualization added to `WidgetVisualization` without a catalog entry
+// does not compile.
 
 export { Axis, Gridline, Svg, type XAxis, type YAxis } from "./atoms.js";
 export {
@@ -23,6 +29,24 @@ export {
 	type DashboardWidgetProps,
 	type WidgetHeading,
 } from "./dashboard.js";
+export {
+	DASHBOARD_CATALOG,
+	DASHBOARD_CATALOG_ID,
+	DASHBOARD_CATALOG_PROTOCOL_VERSION,
+	DASHBOARD_COMPONENT,
+	DASHBOARD_DATA_SCHEMA,
+	DASHBOARD_DATA_SCHEMA_ID,
+	DASHBOARD_GRID_COMPONENT,
+	DASHBOARD_VISUALIZATIONS,
+	DASHBOARD_WIDGET_COMPONENT_BY_VISUALIZATION,
+	type DashboardCatalogComponent,
+	dashboardCatalogComponents,
+	type JsonSchemaNode,
+	METRIC_AREA_CHART_COMPONENT,
+	METRIC_BAR_CHART_COMPONENT,
+	METRIC_LINE_CHART_COMPONENT,
+	STAT_TILE_COMPONENT,
+} from "./catalog.js";
 export { formatAxisKey, formatAxisValue, parseTimeKey } from "./format.js";
 export {
 	linearScale,

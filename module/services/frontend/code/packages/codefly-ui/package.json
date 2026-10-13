@@ -45,6 +45,8 @@
 		"./type-slots.css": "./src/skin/type-slots.generated.css",
 		"./theme.css": "./src/skin/theme.css",
 		"./preview.css": "./src/skin/preview.generated.css",
+		"./dashboard-catalog.json": "./src/dashboard/dashboard.catalog.generated.json",
+		"./dashboard-data.schema.json": "./src/dashboard/dashboard-data.schema.generated.json",
 		"./dashboard": {
 			"types": "./dist/dashboard/index.d.ts",
 			"import": "./dist/dashboard/index.js",
@@ -85,7 +87,9 @@
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run --config vitest.config.ts",
 		"generate:type-utilities": "node scripts/generate-type-utilities.mjs",
-		"generate:preview-stylesheet": "node scripts/generate-preview-stylesheet.mjs"
+		"generate:preview-stylesheet": "node scripts/generate-preview-stylesheet.mjs",
+		"generate:dashboard-catalog": "node scripts/generate-dashboard-catalog.mjs",
+		"check:dashboard-catalog": "node scripts/generate-dashboard-catalog.mjs --check"
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.3.0",

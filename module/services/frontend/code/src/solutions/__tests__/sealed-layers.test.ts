@@ -106,11 +106,21 @@ it("shares every exported kit subpath", () => {
 	const manifest = JSON.parse(
 		readFileSync("packages/codefly-ui/package.json", "utf8"),
 	);
-	for (const path of Object.keys(manifest.exports)) {
-		// A stylesheet export is not a runtime module: whoever compiles the kit
-		// imports it into their Tailwind entry, and the host's one stylesheet is
-		// what a remote renders under. There is nothing to share as a singleton.
-		if (path.endsWith(".css")) continue;
+	for (const [path, target] of Object.entries(manifest.exports)) {
+		// Only a runtime module can be a share-scope singleton, so the rule is
+		// read off the export's TARGET: an entry point resolves to built
+		// JavaScript, and an asset export does not. A stylesheet is imported into
+		// whoever compiles the kit (the host's one stylesheet is what a remote
+		// renders under), and a published document — the dashboard catalog and
+		// its data model — is bytes a consumer reads or freezes. Neither has an
+		// instance to dedupe.
+		const file =
+			typeof target === "string"
+				? target
+				: ((target as Record<string, string>)?.import ??
+					(target as Record<string, string>)?.default ??
+					"");
+		if (!file.endsWith(".js")) continue;
 		expect(SEALED_PACKAGES).toContain(
 			path === "." ? "@codefly-dev/ui" : `@codefly-dev/ui${path.slice(1)}`,
 		);
