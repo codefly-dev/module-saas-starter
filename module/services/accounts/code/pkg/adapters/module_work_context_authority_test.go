@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -27,31 +28,31 @@ import (
 // composed module builds — sdk-go/workcontext's PinnedVerifier, which is core's
 // Verifier with its configuration settled — back its seal, revision and grant
 // sources with the served RPC, and then move the issuer's live state under a
-// capability that is already signed, in each of the three ways a revocation
-// reaches one:
+// capability that is already signed, in each way a revocation reaches one: the
+// installation stops being held, an epoch advances, the tenant's authorization
+// revision advances, the owner stops being a member, an approved build is
+// replaced, a binding is withdrawn.
 //
-//   - the installation it is sealed to stops being held;
-//   - the owner's epoch advances;
-//   - the tenant's authorization revision advances.
-//
-// Each must be REFUSED, because the alternative is what this host shipped
-// before: a module running a forwarding hop's inspection, which accepts all
-// three until the capability expires.
+// Each must be REFUSED, because the alternative is what a module had before:
+// a forwarding hop's inspection, which accepts all of them until the capability
+// expires.
 //
 // Nothing here fakes the surface under test. The verifier is the published one,
 // the answers come out of the real RPC handler — authentication, live grant
-// re-read and all — and the sources are as narrow as core's interfaces, so a
-// test that passes proves the wire carries what a verifier needs.
+// re-read, capability inspection and all — and the sources are as narrow as
+// core's interfaces, so a test that passes proves the wire carries what a
+// verifier needs.
 
 const (
-	authorityOrg          = "66666666-6666-4666-8666-666666666666"
-	authorityPerson       = "77777777-7777-4777-8777-777777777777"
-	authorityInstallation = "88888888-8888-4888-8888-888888888888"
-	authorityOtherOrg     = "99999999-9999-4999-8999-999999999999"
+	authorityOrg          = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	authorityPerson       = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	authorityInstallation = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	authorityStranger     = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+	authorityOtherOrg     = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
-	// Two declared modules, each a possible callee. documents is the one every
-	// capability below is addressed to; reports is the one that must not be able
-	// to resolve authority for documents' capabilities.
+	// Two declared modules, each a possible callee. documents is the one the
+	// capability below is addressed to; reports is the one that must not be
+	// able to resolve the authority behind it.
 	authorityPrincipals = `{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},"tenant":"` +
 		authorityOrg + `"},` +
 		`"reports":{"workload":{"service_account":"reports","namespace":"acme-prod","container":"app"},"tenant":"` +
@@ -59,26 +60,23 @@ const (
 )
 
 // servedSources is the composed module's side: core's three sources, each one
-// RPC call to the host's module authority endpoint.
+// RPC call to the host's module authority endpoint, each carrying the capability
+// being verified.
 //
 // It is as narrow as the interfaces it implements, and that is the point of
 // those interfaces being narrow. It makes no decision — every answer is
 // translated, never interpreted — and it refuses anything it does not
-// understand: an answer on another arm than the question, a state the host did
-// not set, or an answer about a principal, installation or binding other than
-// the one asked about. A client that read an unexpected answer as a permissive
-// one would turn the strongest check in the model into the easiest to defeat.
+// understand: an answer on another arm than the question, an answer about
+// another principal, installation or binding, or a state the host did not set.
+// A client that read an unexpected answer as a permissive one would turn the
+// strongest check in the model into the easiest to defeat.
 //
 // `owner` is bound at construction, exactly as this host binds it on its own
 // revision source: core's RevisionSource is keyed by tenant alone, and this
-// host's revision is the greater of the organization's and the owner's own. The
-// owner comes off the capability under verification, which is safe because a
-// verifier consults no source until the signature over those very bytes has
-// checked out.
+// host's revision is the greater of the organization's and the owner's own.
 type servedSources struct {
 	t          *testing.T
-	tenant     string
-	audience   string
+	token      string
 	owner      string
 	credential string
 }
@@ -87,10 +85,7 @@ func (s servedSources) ask(
 	ctx context.Context, question any,
 ) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
 	s.t.Helper()
-	request := &gen.ModuleResolveWorkContextAuthorityRequest{
-		OrganizationId: s.tenant,
-		Audience:       s.audience,
-	}
+	request := &gen.ModuleResolveWorkContextAuthorityRequest{WorkContext: s.token}
 	switch asked := question.(type) {
 	case *gen.WorkContextSealQuestion:
 		request.Question = &gen.ModuleResolveWorkContextAuthorityRequest_Seal{Seal: asked}
@@ -207,11 +202,9 @@ func (s servedSources) OperationBinding(ctx context.Context, bindingID string) (
 	}
 }
 
-func (s servedSources) AuthorizationRevision(ctx context.Context, tenantID string) (uint64, error) {
-	if tenantID != s.tenant {
-		return 0, fmt.Errorf("this source answers tenant %q, the capability names %q", s.tenant, tenantID)
-	}
-	response, err := s.ask(ctx, &gen.WorkContextAuthorizationRevisionQuestion{OwnerPrincipalId: s.owner})
+func (s servedSources) AuthorizationRevision(_ context.Context, _ string) (uint64, error) {
+	response, err := s.ask(context.Background(),
+		&gen.WorkContextAuthorizationRevisionQuestion{OwnerPrincipalId: s.owner})
 	if err != nil {
 		return 0, err
 	}
@@ -243,8 +236,45 @@ var (
 	_ workcontext.GrantSource    = servedSources{}
 )
 
-// localRun is the transport posture a module's key-set admission reads. The
-// key set here is served over loopback, which sdk-go admits on a local run and
+// inactiveModuleAuthority is a live-authority read reporting that the caller's
+// module is installed nowhere any more — the narrowing or uninstall every
+// capability path on this surface has to re-read.
+type inactiveModuleAuthority struct{}
+
+func (inactiveModuleAuthority) LiveModuleAuthority(
+	context.Context, string, string, string,
+) (*business.LiveModuleAuthority, error) {
+	return nil, business.ErrModuleInstallationInactive
+}
+
+func (inactiveModuleAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}
+
+// narrowedModuleAuthority answers a live authority whose installation and
+// counters still MATCH the caller's credential — so the credential itself
+// verifies — but whose scope no longer carries the capability surface. It is the
+// narrowing only the grant re-read can catch.
+type narrowedModuleAuthority struct{ service *business.Service }
+
+func (f narrowedModuleAuthority) LiveModuleAuthority(
+	_ context.Context, principal, _, _ string,
+) (*business.LiveModuleAuthority, error) {
+	grant := f.service.ModulePrincipals()[principal]
+	scope := business.FullInstallationScope(grant)
+	scope.Capabilities = false
+	return &business.LiveModuleAuthority{
+		InstallationID: "installation-current", InstallationRevision: 1, ProducerEpoch: 1,
+		RegistryBindingID: grant.PresenceBinding, Scope: scope,
+	}, nil
+}
+
+func (f narrowedModuleAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}
+
+// localRun is the transport posture a module's key-set admission reads. The key
+// set here is served over loopback, which sdk-go admits on a local run and
 // refuses in a deployment — so this is the test's own posture and never a
 // relaxation of the rule.
 type localRun struct{}
@@ -297,14 +327,33 @@ func serveKeySet(t *testing.T) sdk.KeySet {
 	return keys
 }
 
+// verifierOver is the verifier a composed module builds: issuer and audience
+// pinned, keys from an admitted endpoint, every source backed by the host, and a
+// replay store of its own — single-use consumption is the consumer's, never the
+// issuer's to do on its behalf, and a deployment with more than one replica
+// needs that store to be durable and shared.
+func verifierOver(t *testing.T, audience string, sources servedSources) *sdk.PinnedVerifier {
+	t.Helper()
+	verifier, err := sdk.NewVerifier(sdk.VerifierSettings{
+		Issuer:    "accounts.test",
+		Audience:  audience,
+		Revisions: sources,
+		Replay:    &workcontext.MemoryReplayStore{},
+		Grants:    sources,
+		Seals:     sources,
+	}, serveKeySet(t))
+	require.NoError(t, err)
+	return verifier
+}
+
 // authorityFixture is one host with two declared modules installed, a person's
-// capability addressed to one of them, and that module's own credential.
+// capability addressed to one of them, and both modules' own credentials.
 type authorityFixture struct {
-	answers    *sealAnswersFake
-	token      string
-	owner      string
-	credential string
-	other      string
+	answers *sealAnswersFake
+	token   string
+	owner   string
+	caller  string
+	other   string
 }
 
 func installWorkContextAuthorityFixture(t *testing.T) *authorityFixture {
@@ -323,11 +372,11 @@ func installWorkContextAuthorityFixture(t *testing.T) *authorityFixture {
 	require.NoError(t, err)
 
 	return &authorityFixture{
-		answers:    answers,
-		token:      token,
-		owner:      authorityPerson,
-		credential: mintModuleIdentity(t, business.ModulePrincipalID("documents"), authorityOrg),
-		other:      mintModuleIdentity(t, business.ModulePrincipalID("reports"), authorityOrg),
+		answers: answers,
+		token:   token,
+		owner:   authorityPerson,
+		caller:  mintModuleIdentity(t, business.ModulePrincipalID("documents"), authorityOrg),
+		other:   mintModuleIdentity(t, business.ModulePrincipalID("reports"), authorityOrg),
 	}
 }
 
@@ -335,30 +384,12 @@ func installWorkContextAuthorityFixture(t *testing.T) *authorityFixture {
 // about a whole verification.
 func (f *authorityFixture) sources(t *testing.T, credential string) servedSources {
 	t.Helper()
-	return servedSources{
-		t: t, tenant: authorityOrg, audience: "documents", owner: f.owner, credential: credential,
-	}
+	return servedSources{t: t, token: f.token, owner: f.owner, credential: credential}
 }
 
-// verifier is the one a composed module builds: issuer and audience pinned, keys
-// from an admitted endpoint, every source backed by the host, and a replay store
-// of its own — single-use consumption is the consumer's, never the issuer's to
-// do on its behalf.
 func (f *authorityFixture) verifier(t *testing.T, credential string) *sdk.PinnedVerifier {
 	t.Helper()
-	sources := servedSources{
-		t: t, tenant: authorityOrg, audience: "documents", owner: f.owner, credential: credential,
-	}
-	verifier, err := sdk.NewVerifier(sdk.VerifierSettings{
-		Issuer:    "accounts.test",
-		Audience:  "documents",
-		Revisions: sources,
-		Replay:    &workcontext.MemoryReplayStore{},
-		Grants:    sources,
-		Seals:     sources,
-	}, serveKeySet(t))
-	require.NoError(t, err)
-	return verifier
+	return verifierOver(t, "documents", f.sources(t, credential))
 }
 
 // The headline: a module verifies a host-minted capability at full strength
@@ -368,22 +399,29 @@ func (f *authorityFixture) verifier(t *testing.T, credential string) *sdk.Pinned
 func TestAComposedModuleVerifiesAHostCapabilityAgainstTheServedSources(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
 
-	verified, err := fixture.verifier(t, fixture.credential).Verify(context.Background(), fixture.token)
+	verified, err := fixture.verifier(t, fixture.caller).Verify(context.Background(), fixture.token)
 
 	require.NoError(t, err)
 	require.Equal(t, authorityOrg, verified.Context().GetTenantId())
 	require.Equal(t, authorityPerson, verified.Context().GetOwnerPrincipalId())
 	require.Equal(t, authorityInstallation, verified.Context().GetSeal().GetInstallationId())
+	// Every answer was asked for the capability's own tenant, which is the
+	// caller's. A serving path that dropped the tenant would answer another
+	// organization's state for these same identifiers.
+	asked := fixture.answers.askedTenants()
+	require.NotEmpty(t, asked)
+	for _, tenant := range asked {
+		require.Equal(t, authorityOrg, tenant)
+	}
 }
 
 // A revoked installation: the capability is signed, unexpired and addressed
 // here, and the organization no longer holds the installation it is sealed to.
-// Before the sources were served this verified anywhere for its whole lifetime.
 func TestAnUnheldInstallationIsRefusedThroughTheServedSources(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
-	verifier := fixture.verifier(t, fixture.credential)
+	verifier := fixture.verifier(t, fixture.caller)
 	require.NoError(t, mustVerify(t, verifier, fixture.token))
-	sources := fixture.sources(t, fixture.credential)
+	sources := fixture.sources(t, fixture.caller)
 
 	fixture.answers.unheld[authorityInstallation] = true
 
@@ -402,10 +440,9 @@ func TestAnUnheldInstallationIsRefusedThroughTheServedSources(t *testing.T) {
 // every capability sealed to the previous one stops verifying.
 func TestAStalePrincipalEpochIsRefusedThroughTheServedSources(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
-	verifier := fixture.verifier(t, fixture.credential)
+	verifier := fixture.verifier(t, fixture.caller)
 	require.NoError(t, mustVerify(t, verifier, fixture.token))
-
-	sources := fixture.sources(t, fixture.credential)
+	sources := fixture.sources(t, fixture.caller)
 
 	fixture.answers.epochs[authorityPerson] = 2
 
@@ -421,10 +458,9 @@ func TestAStalePrincipalEpochIsRefusedThroughTheServedSources(t *testing.T) {
 // capability of the tenant minted before it moved.
 func TestAStaleAuthorizationRevisionIsRefusedThroughTheServedSources(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
-	verifier := fixture.verifier(t, fixture.credential)
+	verifier := fixture.verifier(t, fixture.caller)
 	require.NoError(t, mustVerify(t, verifier, fixture.token))
-
-	sources := fixture.sources(t, fixture.credential)
+	sources := fixture.sources(t, fixture.caller)
 
 	fixture.answers.setRevision(13)
 
@@ -434,6 +470,62 @@ func TestAStaleAuthorizationRevisionIsRefusedThroughTheServedSources(t *testing.
 
 	_, err = verifier.Verify(context.Background(), fixture.token)
 	require.ErrorIs(t, err, workcontext.ErrRevoked)
+}
+
+// THE REVISION IS ANSWERED FOR THE CAPABILITY'S OWNER, not for the tenant alone.
+//
+// Core's RevisionSource is keyed by tenant and this host's revision is the
+// greater of the organization's and the owner's own, so an answer that ignored
+// the owner would be a different number from the one the mint stamped — and a
+// capability would be refused, or accepted, on somebody else's counter.
+func TestTheServedRevisionIsTheCapabilityOwnersOwn(t *testing.T) {
+	fixture := installWorkContextAuthorityFixture(t)
+	fixture.answers.revisions[authorityPerson] = 12
+	fixture.answers.setRevision(99)
+
+	revision, err := fixture.sources(t, fixture.caller).
+		AuthorizationRevision(context.Background(), authorityOrg)
+
+	require.NoError(t, err)
+	require.Equal(t, uint64(12), revision, "the owner's own revision, not the organization's")
+	require.NoError(t, mustVerify(t, fixture.verifier(t, fixture.caller), fixture.token))
+}
+
+// A REMOVED MEMBER IS A DECISION, NOT AN OUTAGE — and it is the first question
+// core asks, so nothing downstream can catch it.
+//
+// The row-backed revision read answers "this principal has no authorization
+// record in this organization" for a person whose membership is gone. That is a
+// verdict: the capability is revoked and its holder must mint again. Answering
+// UNAVAILABLE instead — which an earlier revision of this surface did for every
+// plain error — tells a callee "nothing was decided", so a retry policy retries
+// it forever while a cache of the last good verdict keeps admitting the removed
+// person.
+func TestARemovedOwnerIsRefusedAsADecisionNotAnOutage(t *testing.T) {
+	fixture := installWorkContextAuthorityFixture(t)
+	require.NoError(t, mustVerify(t, fixture.verifier(t, fixture.caller), fixture.token))
+
+	fixture.answers.refuseRevision(authorityPerson)
+
+	_, err := fixture.sources(t, fixture.caller).AuthorizationRevision(context.Background(), authorityOrg)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err),
+		"a removed member is a refusal the caller must not retry")
+
+	_, err = fixture.verifier(t, fixture.caller).Verify(context.Background(), fixture.token)
+	require.Error(t, err, "and the capability does not verify")
+}
+
+// A lookup that FAILED is the other answer, and it must stay distinguishable
+// from the decision above or the two become one.
+func TestAFailedLookupIsUnavailableNotARefusal(t *testing.T) {
+	fixture := installWorkContextAuthorityFixture(t)
+	fixture.answers.revisionErr[authorityPerson] = fmt.Errorf("the database is unreachable")
+
+	_, err := fixture.sources(t, fixture.caller).AuthorizationRevision(context.Background(), authorityOrg)
+
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.NotContains(t, err.Error(), "database is unreachable",
+		"the cause is logged, never returned: these answers are about a third party")
 }
 
 // A principal the organization has no authorization record for is refused, and
@@ -446,14 +538,18 @@ func TestAStaleAuthorizationRevisionIsRefusedThroughTheServedSources(t *testing.
 // would mint an unbound capability for an identity the host has never heard of.
 func TestAnUnknownPrincipalIsRefusedThroughTheServedSources(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
-	verifier := fixture.verifier(t, fixture.credential)
+	verifier := fixture.verifier(t, fixture.caller)
 	require.NoError(t, mustVerify(t, verifier, fixture.token))
-	sources := fixture.sources(t, fixture.credential)
+	sources := fixture.sources(t, fixture.caller)
 
 	fixture.answers.unknown[authorityPerson] = true
 
 	_, err := sources.PrincipalEpoch(context.Background(), authorityPerson)
 	require.ErrorIs(t, err, workcontext.ErrNoSeal)
+
+	_, _, err = sources.ApprovedBuild(context.Background(), authorityPerson)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err),
+		"an unknown principal is a decision, and not 'bears no execution'")
 
 	_, err = verifier.Verify(context.Background(), fixture.token)
 	require.Error(t, err)
@@ -461,46 +557,156 @@ func TestAnUnknownPrincipalIsRefusedThroughTheServedSources(t *testing.T) {
 		"an unknown principal must not read as one that bears no execution")
 }
 
-// The one authorization this surface adds: a module resolves live authority for
-// capabilities addressed to IT, and for nobody else's.
-//
-// Both halves are asserted, because each stands alone. Another module's audience
-// is refused however legitimate the caller is; and the caller's own audience is
-// refused in a tenant its credential is not bound to.
-func TestAModuleCannotResolveAnotherModulesAuthority(t *testing.T) {
+// A person's session bears no execution, which is the answer and not a failure.
+func TestAPersonBearsNoExecutionThroughTheServedSources(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
 
-	// reports is a declared, installed, running module with a valid credential
-	// of its own. It may not resolve the authority behind documents' audience.
-	foreign := servedSources{
-		t: t, tenant: authorityOrg, audience: "documents", owner: fixture.owner, credential: fixture.other,
-	}
+	_, _, err := fixture.sources(t, fixture.caller).ApprovedBuild(context.Background(), authorityPerson)
+
+	require.ErrorIs(t, err, workcontext.ErrNoApprovedBuild)
+}
+
+// THE CAPABILITY IS THE AUTHORIZATION. A module may resolve the live authority
+// behind capabilities addressed to IT, and behind no others — and presenting the
+// capability is what makes that a property rather than a label on a request.
+//
+// reports is a declared, installed, running module with a valid credential of
+// its own. Presenting documents' capability, it is refused: the host inspects
+// the capability against the names the CALLER holds, so there is nothing for
+// reports to assert about what it is asking.
+func TestAModuleCannotResolveAuthorityForACapabilityAddressedElsewhere(t *testing.T) {
+	fixture := installWorkContextAuthorityFixture(t)
+
+	foreign := fixture.sources(t, fixture.other)
 	_, err := foreign.Seal(context.Background(), authorityPerson, authorityInstallation)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	// No answer leaks through another question either.
+	_, err = foreign.PrincipalEpoch(context.Background(), authorityPerson)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	_, _, err = foreign.ApprovedBuild(context.Background(), authorityPerson)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	_, err = foreign.AuthorizationRevision(context.Background(), authorityOrg)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 
 	// And the whole verification fails rather than degrading: a module that
 	// cannot resolve the live state refuses the capability.
-	verifier := fixture.verifier(t, fixture.other)
-	_, err = verifier.Verify(context.Background(), fixture.token)
+	_, err = verifierOver(t, "documents", foreign).Verify(context.Background(), fixture.token)
 	require.Error(t, err)
+}
 
-	// Its own audience, another organization: refused on the tenant.
-	elsewhere := servedSources{
-		t: t, tenant: authorityOtherOrg, audience: "reports", owner: fixture.owner, credential: fixture.other,
+// A capability addressed to this module IN ANOTHER ORGANIZATION resolves
+// nothing. The audience alone does not bound the tenant: a module installed in
+// several organizations is addressed by the same name in each, and every answer
+// here is per organization. Serving one tenant's state for another's capability
+// would compare the capability's sealed values against counters that belong to
+// a different organization — which can refuse a good capability as easily as it
+// can admit a revoked one.
+//
+// A module that legitimately acts in several asks with the credential it minted
+// for the organization in question.
+func TestACapabilityInAnotherOrganizationResolvesNothing(t *testing.T) {
+	fixture := installWorkContextAuthorityFixture(t)
+	elsewhere, _, err := tryMintTestCapability(workContextSingleton, testCapability{
+		Audience:     "documents",
+		Tenant:       authorityOtherOrg,
+		Owner:        authorityPerson,
+		Installation: authorityInstallation,
+	})
+	require.NoError(t, err)
+	foreign := servedSources{
+		t: t, token: elsewhere, owner: authorityPerson, credential: fixture.caller,
 	}
-	_, err = elsewhere.PrincipalEpoch(context.Background(), authorityPerson)
+
+	_, err = foreign.PrincipalEpoch(context.Background(), authorityPerson)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	_, err = foreign.Seal(context.Background(), authorityPerson, authorityInstallation)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+// A question must be about the capability presented with it. A client asking
+// about a principal, installation, binding or grant the capability does not name
+// is told so — never quietly answered about the capability's own values, which
+// would make a client bug look like a working check.
+func TestAQuestionMustBeAboutThePresentedCapability(t *testing.T) {
+	fixture := installWorkContextAuthorityFixture(t)
+	sources := fixture.sources(t, fixture.caller)
+
+	// A principal that is neither the owner nor a hop: the membership oracle
+	// this surface must not be.
+	_, err := sources.PrincipalEpoch(context.Background(), authorityStranger)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, _, err = sources.ApprovedBuild(context.Background(), authorityStranger)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// Another installation, and another owner's revision.
+	_, err = sources.Seal(context.Background(), authorityPerson, authorityStranger)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	stranger := servedSources{t: t, token: fixture.token, owner: authorityStranger, credential: fixture.caller}
+	_, err = stranger.AuthorizationRevision(context.Background(), authorityOrg)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// A binding and a grant this capability does not carry. This host mints no
+	// grant hop, so the grant question is unaddressable for every capability it
+	// issues — which is why NOT_RECORDED is unreachable through this surface
+	// rather than merely unused.
+	_, err = sources.OperationBinding(context.Background(), "source-delegation/guessed/documents")
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = sources.Grant(context.Background(), "an-approval-nobody-made")
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+// The caller's live grant is re-read on every question, like every other path on
+// this surface: a module whose installation is no longer active resolves nothing,
+// at its next question rather than at its credential's expiry.
+func TestAWithdrawnCallerInstallationStopsResolvingAuthority(t *testing.T) {
+	fixture := installWorkContextAuthorityFixture(t)
+	sources := fixture.sources(t, fixture.caller)
+	_, err := sources.PrincipalEpoch(context.Background(), authorityPerson)
+	require.NoError(t, err)
+
+	service.SetModuleAuthorityReads(inactiveModuleAuthority{}, nil)
+
+	// Unauthenticated, and from one step further back than the grant read: the
+	// caller's OWN credential is sealed to an installation the host no longer
+	// holds, so verifying it already fails. That is the refusal this surface
+	// wants — it never reaches a source — and it is a decision, not an outage.
+	_, err = sources.PrincipalEpoch(context.Background(), authorityPerson)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+// A NARROWED caller resolves nothing either, and the installation it is sealed
+// to does not move: the capability surface is taken out of its installed scope
+// while every counter the credential carries stays as it was.
+//
+// The refusal lands at Unauthenticated rather than PermissionDenied, and where
+// it lands is worth recording. A module principal's authorization revision IS
+// its installed grant, so verifying the caller's own credential already reads
+// that grant — the narrowing stops the credential before the surface's own
+// grant read is reached. The live re-read in the authorization path is
+// therefore the second of two, not the only one, and this test pins the
+// behaviour rather than the layer.
+func TestANarrowedCallerGrantStopsResolvingAuthority(t *testing.T) {
+	fixture := installWorkContextAuthorityFixture(t)
+	sources := fixture.sources(t, fixture.caller)
+	_, err := sources.PrincipalEpoch(context.Background(), authorityPerson)
+	require.NoError(t, err)
+
+	service.SetModuleAuthorityReads(narrowedModuleAuthority{service: service}, nil)
+
+	_, err = sources.PrincipalEpoch(context.Background(), authorityPerson)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
 // The identity comes from the signed capability, never from the request, so a
 // caller that reaches this listener with no credential resolves nothing.
 func TestResolvingAuthorityWithoutAModuleCredentialIsUnauthenticated(t *testing.T) {
-	installWorkContextAuthorityFixture(t)
+	fixture := installWorkContextAuthorityFixture(t)
 
 	_, err := ModuleCapabilitiesSingleton().ResolveWorkContextAuthority(context.Background(),
 		&gen.ModuleResolveWorkContextAuthorityRequest{
-			OrganizationId: authorityOrg,
-			Audience:       "documents",
+			WorkContext: fixture.token,
 			Question: &gen.ModuleResolveWorkContextAuthorityRequest_PrincipalEpoch{
 				PrincipalEpoch: &gen.WorkContextPrincipalEpochQuestion{PrincipalId: authorityPerson},
 			},
@@ -509,52 +715,40 @@ func TestResolvingAuthorityWithoutAModuleCredentialIsUnauthenticated(t *testing.
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
-// A request that asks nothing is refused by the schema. The oneof is required
-// because an empty question has no safe default: answering the first arm would
-// resolve something the caller never asked about.
-func TestResolvingAuthorityWithNoQuestionIsInvalid(t *testing.T) {
+// A request that asks nothing, or asks about nothing, is refused by the schema.
+// The oneof is required because an empty question has no safe default, and the
+// capability is required because it is the whole of the authorization.
+func TestResolvingAuthorityNeedsAQuestionAndACapability(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
-
 	ctx := metadata.NewIncomingContext(context.Background(),
-		metadata.Pairs(workContextHeader, fixture.credential))
-	_, err := ModuleCapabilitiesSingleton().ResolveWorkContextAuthority(ctx,
-		&gen.ModuleResolveWorkContextAuthorityRequest{
-			OrganizationId: authorityOrg,
-			Audience:       "documents",
-		})
+		metadata.Pairs(workContextHeader, fixture.caller))
 
+	_, err := ModuleCapabilitiesSingleton().ResolveWorkContextAuthority(ctx,
+		&gen.ModuleResolveWorkContextAuthorityRequest{WorkContext: fixture.token})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	_, err = ModuleCapabilitiesSingleton().ResolveWorkContextAuthority(ctx,
+		&gen.ModuleResolveWorkContextAuthorityRequest{
+			Question: &gen.ModuleResolveWorkContextAuthorityRequest_PrincipalEpoch{
+				PrincipalEpoch: &gen.WorkContextPrincipalEpochQuestion{PrincipalId: authorityPerson},
+			},
+		})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
-// This host records no approval grants, and it SAYS so rather than leaving a
-// client to assume it: a capability carrying a grant hop names a decision the
-// issuer never made, and its verifier refuses it.
-func TestTheServedGrantSourceRecordsNoApprovals(t *testing.T) {
+// A capability this issuer did not sign is refused, whatever it claims. The host
+// authenticates what it is asked about: that is what makes every identifier it
+// then reads off the capability the issuer's own statement rather than a
+// caller's.
+func TestAForeignCapabilityResolvesNothing(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
-	sources := fixture.sources(t, fixture.credential)
+	forged := servedSources{
+		t: t, token: fixture.token + "x", owner: authorityPerson, credential: fixture.caller,
+	}
 
-	response, err := sources.ask(context.Background(),
-		&gen.WorkContextApprovalGrantQuestion{GrantId: "an-approval-nobody-made"})
-	require.NoError(t, err)
-	require.Equal(t,
-		gen.WorkContextApprovalGrantState_WORK_CONTEXT_APPROVAL_GRANT_STATE_NOT_RECORDED,
-		response.GetApprovalGrant().GetState())
+	_, err := forged.PrincipalEpoch(context.Background(), authorityPerson)
 
-	grant, err := sources.Grant(context.Background(), "an-approval-nobody-made")
-	require.Error(t, err, "a grant this issuer never recorded is a refusal, not an empty grant")
-	require.Nil(t, grant)
-}
-
-// An operation binding id that names nothing is ABSENT, which a verifier turns
-// into a refusal rather than an outage. An id is a pointer and never authority,
-// so guessing one lands here.
-func TestAnUnknownOperationBindingIsAbsentThroughTheServedSources(t *testing.T) {
-	fixture := installWorkContextAuthorityFixture(t)
-	sources := fixture.sources(t, fixture.credential)
-
-	_, err := sources.OperationBinding(context.Background(), "source-delegation/guessed/documents")
-
-	require.ErrorIs(t, err, workcontext.ErrNoBinding)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
 // The served answers are the ISSUER'S OWN. Not an equivalent read, not a second
@@ -566,7 +760,7 @@ func TestAnUnknownOperationBindingIsAbsentThroughTheServedSources(t *testing.T) 
 // read would pass every test above and still drift from issuance.
 func TestTheServedAnswersAreTheIssuersOwnSources(t *testing.T) {
 	fixture := installWorkContextAuthorityFixture(t)
-	sources := fixture.sources(t, fixture.credential)
+	sources := fixture.sources(t, fixture.caller)
 	issuerSeals, issuerRevisions, _ := workContextSingleton.moduleAuthoritySources(authorityOrg, fixture.owner)
 
 	served, err := sources.Seal(context.Background(), authorityPerson, authorityInstallation)
@@ -581,21 +775,109 @@ func TestTheServedAnswersAreTheIssuersOwnSources(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, directEpoch, servedEpoch)
 
+	// And the move is visible through both at once, so the equality above is not
+	// two constants agreeing.
+	fixture.answers.setRevision(21)
 	servedRevision, err := sources.AuthorizationRevision(context.Background(), authorityOrg)
 	require.NoError(t, err)
 	directRevision, err := issuerRevisions.AuthorizationRevision(context.Background(), authorityOrg)
 	require.NoError(t, err)
 	require.Equal(t, directRevision, servedRevision)
-
-	// And the move is visible through both at once, so the equality above is not
-	// two constants agreeing.
-	fixture.answers.setRevision(21)
-	servedRevision, err = sources.AuthorizationRevision(context.Background(), authorityOrg)
-	require.NoError(t, err)
-	directRevision, err = issuerRevisions.AuthorizationRevision(context.Background(), authorityOrg)
-	require.NoError(t, err)
-	require.Equal(t, directRevision, servedRevision)
 	require.Equal(t, uint64(21), servedRevision)
+}
+
+// delegationSources is a module's own execution and the binding it exercises,
+// over the delegation fixture: a capability owned by the person who connected a
+// source, carrying the using module's hop, sealed to that module's installation
+// and to the delegation as its operation binding. reports is its audience, so
+// reports is the callee that verifies it.
+func delegationSources(t *testing.T) (servedSources, string) {
+	t.Helper()
+	issued, err := exchangeByDelegation(presentedAs(t, identityOf(t, "ingestservice")), "ingest")
+	require.NoError(t, err)
+	return servedSources{
+		t: t, token: issued.GetToken(), owner: delegationPerson,
+		credential: identityOf(t, "reports"),
+	}, business.SourceDelegationBindingID(delegationID, "ingestservice")
+}
+
+// The resolved binding carries every field a verifier compares, and each one is
+// read from the issuer's records rather than echoed from the question: the
+// binding is granted to the module that uses it, within that module's
+// installation, at its revision and incarnation.
+func TestAResolvedOperationBindingCarriesEveryFieldAVerifierCompares(t *testing.T) {
+	installDelegationBindingService(t)
+	sources, bindingID := delegationSources(t)
+
+	binding, err := sources.OperationBinding(context.Background(), bindingID)
+
+	require.NoError(t, err)
+	require.Equal(t, bindingID, binding.ID)
+	require.Equal(t, business.ModulePrincipalID("ingestservice"), binding.PrincipalID,
+		"granted to the module that exercises it")
+	require.Equal(t, "installation-current", binding.InstallationID)
+	require.Equal(t, uint64(1), binding.Revision)
+	require.Equal(t, uint64(1), binding.Incarnation)
+	require.False(t, binding.Revoked)
+
+	require.NoError(t, mustVerify(t, verifierOver(t, "reports", sources), sources.token))
+}
+
+// A WITHDRAWN BINDING is refused, which is the third revocation the issue names.
+// The delegation is revoked after the capability was minted; the served binding
+// says so, and the verifier refuses.
+func TestAWithdrawnOperationBindingIsRefusedThroughTheServedSources(t *testing.T) {
+	store := installDelegationBindingService(t)
+	sources, bindingID := delegationSources(t)
+	verifier := verifierOver(t, "reports", sources)
+	require.NoError(t, mustVerify(t, verifier, sources.token))
+
+	store.revoke(t)
+
+	binding, err := sources.OperationBinding(context.Background(), bindingID)
+	require.NoError(t, err)
+	require.True(t, binding.Revoked, "the served binding says it was withdrawn")
+
+	_, err = verifier.Verify(context.Background(), sources.token)
+	require.ErrorIs(t, err, workcontext.ErrRevoked)
+}
+
+// A module principal's APPROVED BUILD, the arm a person's capability never
+// reaches: the answer is the digest and incarnation the issuer approves for the
+// hop's principal, which is what core holds the sealed execution against.
+func TestAModulePrincipalsApprovedBuildIsServed(t *testing.T) {
+	installDelegationBindingService(t)
+	sources, _ := delegationSources(t)
+	using := business.ModulePrincipalID("ingestservice")
+
+	digest, incarnation, err := sources.ApprovedBuild(context.Background(), using)
+
+	require.NoError(t, err)
+	require.Equal(t, executiontest.Digest("ingestservice"), digest)
+	require.Equal(t, uint64(1), incarnation)
+}
+
+// A REPLACED BUILD is refused, which is the second revocation the issue names.
+// The issuer approves another image for the module exercising the capability, so
+// the execution it is sealed to is no longer the one the issuer approves.
+func TestAReplacedBuildIsRefusedThroughTheServedSources(t *testing.T) {
+	installDelegationBindingService(t)
+	sources, _ := delegationSources(t)
+	verifier := verifierOver(t, "reports", sources)
+	require.NoError(t, mustVerify(t, verifier, sources.token))
+	using := business.ModulePrincipalID("ingestservice")
+
+	replaced := testBuildFor("a replacement image")
+	replaced.BuildIncarnation = 2
+	workContextSingleton.seals.(*sealAnswersFake).approve(using, replaced)
+
+	digest, incarnation, err := sources.ApprovedBuild(context.Background(), using)
+	require.NoError(t, err)
+	require.Equal(t, replaced.ImageDigest, digest)
+	require.Equal(t, uint64(2), incarnation)
+
+	_, err = verifier.Verify(context.Background(), sources.token)
+	require.ErrorIs(t, err, workcontext.ErrRevoked)
 }
 
 // mustVerify is the "it verified a moment ago" half of every refusal test above.

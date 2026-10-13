@@ -4921,12 +4921,17 @@ func (x *ModuleCurrentInstallationResponse) GetBindingId() string {
 }
 
 // WorkContextSealQuestion asks for the live installation one principal holds.
-// The installation is named by the caller because identity is the caller's to
-// supply; its revision is the issuer's to answer.
+// Both identifiers must be the ones the presented capability names — its owner
+// and the installation it is sealed to — and its revision is the issuer's to
+// answer.
 type WorkContextSealQuestion struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	PrincipalId    string                 `protobuf:"bytes,1,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
-	InstallationId string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Both are compared against the presented capability, which is what makes
+	// them trustworthy — so neither carries a format rule. A uuid constraint
+	// here would add no safety the comparison does not already give and would
+	// refuse an installation id this host legitimately holds.
+	PrincipalId    string `protobuf:"bytes,1,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
+	InstallationId string `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -4977,7 +4982,9 @@ func (x *WorkContextSealQuestion) GetInstallationId() string {
 
 // WorkContextPrincipalEpochQuestion asks for one principal's live epoch,
 // independent of any installation. It is the question asked of the task owner
-// and of every actor hop alike, so a delegated actor is revocable on its own.
+// and of every actor hop alike, so a delegated actor is revocable on its own —
+// and the principal must be one of those: the capability's owner, or a principal
+// in its actor chain.
 type WorkContextPrincipalEpochQuestion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PrincipalId   string                 `protobuf:"bytes,1,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
@@ -5024,7 +5031,9 @@ func (x *WorkContextPrincipalEpochQuestion) GetPrincipalId() string {
 
 // WorkContextApprovedBuildQuestion asks what execution the issuer APPROVES for
 // one principal. It takes no attribute of the workload: resolving by what a
-// caller presents is exactly what lets a superseded pod in.
+// caller presents is exactly what lets a superseded pod in. The principal must
+// be the capability's owner or one in its actor chain, which is every principal
+// a verifier holds an execution against.
 type WorkContextApprovedBuildQuestion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PrincipalId   string                 `protobuf:"bytes,1,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
@@ -5070,9 +5079,12 @@ func (x *WorkContextApprovedBuildQuestion) GetPrincipalId() string {
 }
 
 // WorkContextOperationBindingQuestion resolves one operation binding by its
-// opaque id, EXACTLY. There is deliberately no question that lists bindings or
-// finds one whose scopes would admit a call: a search is a predicate somebody
-// writes, and one case too generous grants authority nobody reviewed.
+// opaque id, EXACTLY: the one the presented capability is sealed to, and no
+// other. There is deliberately no question that lists bindings or finds one
+// whose scopes would admit a call — a search is a predicate somebody writes, and
+// one case too generous grants authority nobody reviewed — and none that
+// resolves a binding some other capability names, which would make this an
+// oracle over other modules' installations.
 type WorkContextOperationBindingQuestion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BindingId     string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
@@ -5124,9 +5136,8 @@ func (x *WorkContextOperationBindingQuestion) GetBindingId() string {
 // is not a widening: this host's revision is the greater of the organization's
 // and the owner's own (a module principal's is its installed grant), so an answer
 // for a tenant without an owner would be a different number from the one the mint
-// stamped. A client therefore binds this question to the owner it read off the
-// capability being verified — which is the issuer's own signed statement by the
-// time any source is consulted, since the signature is checked first.
+// stamped. The owner must be the presented capability's own owner, so naming a
+// principal whose revision happens to be lower is not expressible.
 type WorkContextAuthorizationRevisionQuestion struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	OwnerPrincipalId string                 `protobuf:"bytes,1,opt,name=owner_principal_id,json=ownerPrincipalId,proto3" json:"owner_principal_id,omitempty"`
@@ -5172,7 +5183,8 @@ func (x *WorkContextAuthorizationRevisionQuestion) GetOwnerPrincipalId() string 
 }
 
 // WorkContextApprovalGrantQuestion resolves the approval a capability's grant
-// hop claims.
+// hop claims. The id must be the one the presented capability's hop claims, so a
+// capability carrying no grant hop has no grant to ask about.
 type WorkContextApprovalGrantQuestion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GrantId       string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
@@ -5612,13 +5624,15 @@ func (x *WorkContextApprovalGrantAnswer) GetGrantId() string {
 
 type ModuleResolveWorkContextAuthorityRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The tenant the capability under verification names. It must be the
-	// caller's own bound organization.
-	OrganizationId string `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
-	// The audience it was minted for. It must be the caller's own registration
-	// prefix: a module resolves live authority for capabilities addressed to it
-	// and for no others.
-	Audience string `protobuf:"bytes,2,opt,name=audience,proto3" json:"audience,omitempty"`
+	// The capability being verified, exactly as it was presented to the caller.
+	//
+	// It is the subject of the question and the whole of its authorization: the
+	// host authenticates it, requires it to be addressed to one of the caller's
+	// own names and to the caller's own tenant, and answers only about the
+	// identifiers it names. It is not minted from, not derived from, and NOT
+	// CONSUMED — a single-use capability presented here is still its consumer's
+	// to spend.
+	WorkContext string `protobuf:"bytes,1,opt,name=work_context,json=workContext,proto3" json:"work_context,omitempty"`
 	// Types that are valid to be assigned to Question:
 	//
 	//	*ModuleResolveWorkContextAuthorityRequest_Seal
@@ -5662,16 +5676,9 @@ func (*ModuleResolveWorkContextAuthorityRequest) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{75}
 }
 
-func (x *ModuleResolveWorkContextAuthorityRequest) GetOrganizationId() string {
+func (x *ModuleResolveWorkContextAuthorityRequest) GetWorkContext() string {
 	if x != nil {
-		return x.OrganizationId
-	}
-	return ""
-}
-
-func (x *ModuleResolveWorkContextAuthorityRequest) GetAudience() string {
-	if x != nil {
-		return x.Audience
+		return x.WorkContext
 	}
 	return ""
 }
@@ -6285,20 +6292,25 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12%\n" +
 	"\ttarget_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x12\x1d\n" +
 	"\n" +
-	"binding_id\x18\x05 \x01(\tR\tbindingIdJ\x04\b\x03\x10\x04R\x13solution_identifier\"y\n" +
-	"\x17WorkContextSealQuestion\x12+\n" +
-	"\fprincipal_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\vprincipalId\x121\n" +
-	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\"P\n" +
-	"!WorkContextPrincipalEpochQuestion\x12+\n" +
-	"\fprincipal_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\vprincipalId\"O\n" +
-	" WorkContextApprovedBuildQuestion\x12+\n" +
-	"\fprincipal_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\vprincipalId\"P\n" +
+	"binding_id\x18\x05 \x01(\tR\tbindingIdJ\x04\b\x03\x10\x04R\x13solution_identifier\"}\n" +
+	"\x17WorkContextSealQuestion\x12-\n" +
+	"\fprincipal_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\vprincipalId\x123\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x0einstallationId\"R\n" +
+	"!WorkContextPrincipalEpochQuestion\x12-\n" +
+	"\fprincipal_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\vprincipalId\"Q\n" +
+	" WorkContextApprovedBuildQuestion\x12-\n" +
+	"\fprincipal_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\vprincipalId\"P\n" +
 	"#WorkContextOperationBindingQuestion\x12)\n" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\tbindingId\"b\n" +
-	"(WorkContextAuthorizationRevisionQuestion\x126\n" +
-	"\x12owner_principal_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x10ownerPrincipalId\"I\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\tbindingId\"d\n" +
+	"(WorkContextAuthorizationRevisionQuestion\x128\n" +
+	"\x12owner_principal_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x10ownerPrincipalId\"I\n" +
 	" WorkContextApprovalGrantQuestion\x12%\n" +
 	"\bgrant_id\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x02R\agrantId\"\xb3\x01\n" +
@@ -6329,18 +6341,16 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\"\x82\x01\n" +
 	"\x1eWorkContextApprovalGrantAnswer\x12E\n" +
 	"\x05state\x18\x01 \x01(\x0e2/.saas.accounts.v1.WorkContextApprovalGrantStateR\x05state\x12\x19\n" +
-	"\bgrant_id\x18\x02 \x01(\tR\agrantId\"\xce\x05\n" +
-	"(ModuleResolveWorkContextAuthorityRequest\x121\n" +
-	"\x0forganization_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0eorganizationId\x12&\n" +
-	"\baudience\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xfd\x01R\baudience\x12?\n" +
+	"\bgrant_id\x18\x02 \x01(\tR\agrantId\"\xb3\x05\n" +
+	"(ModuleResolveWorkContextAuthorityRequest\x12.\n" +
+	"\fwork_context\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\vworkContext\x12?\n" +
 	"\x04seal\x18\x03 \x01(\v2).saas.accounts.v1.WorkContextSealQuestionH\x00R\x04seal\x12^\n" +
 	"\x0fprincipal_epoch\x18\x04 \x01(\v23.saas.accounts.v1.WorkContextPrincipalEpochQuestionH\x00R\x0eprincipalEpoch\x12[\n" +
 	"\x0eapproved_build\x18\x05 \x01(\v22.saas.accounts.v1.WorkContextApprovedBuildQuestionH\x00R\rapprovedBuild\x12d\n" +
 	"\x11operation_binding\x18\x06 \x01(\v25.saas.accounts.v1.WorkContextOperationBindingQuestionH\x00R\x10operationBinding\x12s\n" +
 	"\x16authorization_revision\x18\a \x01(\v2:.saas.accounts.v1.WorkContextAuthorizationRevisionQuestionH\x00R\x15authorizationRevision\x12[\n" +
 	"\x0eapproval_grant\x18\b \x01(\v22.saas.accounts.v1.WorkContextApprovalGrantQuestionH\x00R\rapprovalGrantB\x11\n" +
-	"\bquestion\x12\x05\xbaH\x02\b\x01\"\xdf\x04\n" +
+	"\bquestion\x12\x05\xbaH\x02\b\x01J\x04\b\x02\x10\x03R\baudience\"\xdf\x04\n" +
 	")ModuleResolveWorkContextAuthorityResponse\x12=\n" +
 	"\x04seal\x18\x01 \x01(\v2'.saas.accounts.v1.WorkContextSealAnswerH\x00R\x04seal\x12\\\n" +
 	"\x0fprincipal_epoch\x18\x02 \x01(\v21.saas.accounts.v1.WorkContextPrincipalEpochAnswerH\x00R\x0eprincipalEpoch\x12Y\n" +

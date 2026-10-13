@@ -49,6 +49,16 @@ type sealAnswersFake struct {
 	// revisionFrom, when set, answers every person's revision live — for a
 	// fixture whose authority facts a test replaces after the server is built.
 	revisionFrom func() uint64
+	// revisionErr refuses one owner's revision, which is how a removed member
+	// is expressed: the row-backed read answers
+	// ErrWorkContextPrincipalUnknown for a principal with no authorization
+	// record, and that is a DECISION about the capability rather than a lookup
+	// that failed.
+	revisionErr map[string]error
+	// tenants records the organization each answer was asked for, so a serving
+	// path that dropped the tenant is a failing test rather than a fake that
+	// never looked.
+	tenants []string
 }
 
 func newSealAnswersFake(revision uint64) *sealAnswersFake {
@@ -60,24 +70,27 @@ func newSealAnswersFake(revision uint64) *sealAnswersFake {
 		unknown:     map[string]bool{},
 		unheld:      map[string]bool{},
 		uninstalled: map[string]bool{},
+		revisionErr: map[string]error{},
 	}
 }
 
 // testInstallation is the installation the fake answers for an audience.
 func testInstallation(audience string) string { return "installation-" + audience }
 
-func (f *sealAnswersFake) WorkContextSeal(_ context.Context, _, _, installationID string) (string, uint64, error) {
+func (f *sealAnswersFake) WorkContextSeal(_ context.Context, orgID, _, installationID string) (string, uint64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.tenants = append(f.tenants, orgID)
 	if f.unheld[installationID] {
 		return "", 0, business.ErrWorkContextSealUnheld
 	}
 	return installationID, 1, nil
 }
 
-func (f *sealAnswersFake) WorkContextPrincipalEpoch(_ context.Context, _, principalID string) (uint64, error) {
+func (f *sealAnswersFake) WorkContextPrincipalEpoch(_ context.Context, orgID, principalID string) (uint64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.tenants = append(f.tenants, orgID)
 	if f.unknown[principalID] {
 		return 0, business.ErrWorkContextPrincipalUnknown
 	}
@@ -87,9 +100,10 @@ func (f *sealAnswersFake) WorkContextPrincipalEpoch(_ context.Context, _, princi
 	return 1, nil
 }
 
-func (f *sealAnswersFake) WorkContextApprovedBuild(_ context.Context, _, principalID string) (string, uint64, error) {
+func (f *sealAnswersFake) WorkContextApprovedBuild(_ context.Context, orgID, principalID string) (string, uint64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.tenants = append(f.tenants, orgID)
 	if f.unknown[principalID] {
 		return "", 0, business.ErrWorkContextPrincipalUnknown
 	}
@@ -107,6 +121,10 @@ func (f *sealAnswersFake) WorkContextRevision(ctx context.Context, orgID, ownerI
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.tenants = append(f.tenants, orgID)
+	if err, refused := f.revisionErr[ownerID]; refused {
+		return 0, err
+	}
 	if revision, ok := f.revisions[ownerID]; ok {
 		return revision, nil
 	}
@@ -123,6 +141,21 @@ func (f *sealAnswersFake) WorkContextAudienceInstallation(_ context.Context, _, 
 		return "", business.ErrWorkContextNoAudienceInstallation
 	}
 	return testInstallation(audience), nil
+}
+
+// askedTenants is the organization each answer was asked for, in order.
+func (f *sealAnswersFake) askedTenants() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.tenants...)
+}
+
+// refuseRevision makes one owner's revision read as a principal this
+// organization has no authorization record for — a removed member.
+func (f *sealAnswersFake) refuseRevision(ownerID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.revisionErr[ownerID] = business.ErrWorkContextPrincipalUnknown
 }
 
 // setRevision moves every owner's revision, which is how a test revokes.

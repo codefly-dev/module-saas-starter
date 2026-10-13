@@ -700,35 +700,50 @@ exchanges that produce one.
 
 `ModuleCapabilitiesService/ResolveWorkContextAuthority` answers the live values a
 composed module's verifier holds a presented capability's seal against: the
-installation and its revision, a principal's epoch, the approved build, an
+installation and its revision, a principal's epoch, the approved build, the
 operation binding, the owner's authorization revision, and an approval grant
 (this host records none, and says so). Without it a module can only run core's
 forwarding-hop `Inspector`, which checks no seal, epoch or revision and consumes
 no single-use token — so a revoked installation or an advanced epoch stays
 accepted there for the capability's whole life.
 
+- **The capability is the authorization.** Each question carries the capability it
+  is about. The host authenticates it with core's `Inspector` against the route
+  target it resolved from the CALLER'S own credential — the module's registration
+  prefix, or the route alias its delivered presence declares
+  (`declaredModuleAlias`) — then requires the capability's tenant to be the
+  caller's bound organization, and each identifier in the question to be one the
+  capability names (owner, a chain principal, the sealed installation, the sealed
+  binding, the hop's grant). Nothing is consumed: a question is not a use.
+  **An earlier revision took the tenant and audience as request fields and
+  compared the audience to the caller's prefix; an independent review showed that
+  pinned nothing, because no answer depended on either field.** Do not reintroduce
+  a request-named subject here.
 - **The answers are the issuer's own, not a second read.** The serving path hands
   each question to `moduleAuthoritySources` (`pkg/adapters/work_context_core.go`),
   which returns the same `hostSealSource`, `ownerRevisions` and `noApprovalGrants`
   that `coreAuthority` mints with and `coreVerifier` verifies with. One body, so a
-  mint and a callee's verdict read the same state.
-  `TestTheServedAnswersAreTheIssuersOwnSources` pins it.
-- **A module reads its own audience in its own tenant, and nothing else.**
-  `AuthorizeModuleWorkContextAuthorityRead` re-reads the live grant like every
-  path here, then requires `organization_id == caller.BoundOrg` and `audience ==
-  grant.Prefix`. One indistinguishable `PermissionDenied` covers both, so probing
-  reveals nothing about another module.
-- **Absence is a STATE, never an empty value**: `UNHELD`, `UNKNOWN`,
-  `BEARS_NO_EXECUTION`, `ABSENT`, `NOT_RECORDED`. A verifier turns each into a
-  refusal; every other failure is `Unavailable` with its cause logged, because a
-  lookup that failed decided nothing. An unknown principal stays a refusal rather
-  than becoming "bears no execution", which is the collapse that would hand out a
-  credential nothing can revoke by replacing a build.
+  mint and a callee's verdict read the same state
+  (`TestTheServedAnswersAreTheIssuersOwnSources`).
+- **Absence is a STATE**: `UNHELD`, `UNKNOWN`, `BEARS_NO_EXECUTION`, `ABSENT`,
+  `NOT_RECORDED`, each with an `UNSPECIFIED` a client refuses on. A verifier turns
+  each into a refusal of the capability.
+- **A decision and an outage are different answers.** `FailedPrecondition` means
+  the issuer decided and the answer is no — a removed member, a principal with no
+  authorization record, an inactive installation, a stale delegation, a build that
+  cannot be named (`decidedWorkContextAuthority`). `Unavailable` means a lookup
+  failed. Collapsing the first into the second is what the review found: the
+  removed-member case is the FIRST question core asks, so nothing downstream
+  catches it, and a retry policy retries a permanent revocation forever. No
+  refusal returns the cause's message — these questions are about a third party,
+  and one authority refusal names the subject's current tenant.
 - **No replay store is served.** Single-use consumption belongs to the consumer,
-  and an issuer consuming on its behalf would burn the nonce to answer a
-  question. Core keys its revision source by tenant while this host's revision is
-  owner-dependent, so the question names the owner and the client binds it per
-  capability.
+  which needs a durable, shared store when it runs more than one replica. Core
+  keys its revision source by tenant while this host's revision is
+  owner-dependent, so the question names the owner.
+- **The cost is five or more round trips per verification**, each authenticating
+  the capability and re-reading the caller's live grant. There is no batch
+  question.
 - The published Go client for it is `saas-sdk-go`'s `moduleauthority`, not this
   repository; the wire contract is held here by
   `pkg/adapters/module_work_context_authority_test.go`, which drives

@@ -1040,13 +1040,37 @@ message ModuleCurrentInstallationResponse {
 // in `pkg/adapters/work_context_core.go`). One body, so a callee's verdict and an
 // issuance cannot disagree about what "current" means.
 //
-// WHAT A CALLER MAY ASK. The caller is an authenticated module service principal
-// — its own Work Context in `x-codefly-work-context`, as on every method here —
-// and it may ask only about capabilities addressed to ITSELF, in the tenant its
-// credential is bound to: `audience` must be the caller's own registration
-// prefix and `organization_id` its own bound organization. Anything else is
-// PERMISSION_DENIED. That is not a privacy nicety: it is what stops a module
-// verifying, at full strength, a capability minted for somebody else.
+// WHAT A CALLER MAY ASK, AND HOW THAT IS BOUND. Every question is about ONE
+// CAPABILITY, which the caller presents in `work_context`, and the host answers
+// only about the identifiers that capability itself names. The binding is three
+// checks, in this order:
+//
+//  1. The capability is AUTHENTICATED here. The host is its issuer, so it runs
+//     core's `Inspector` over it — encoding, issuer, signature under this
+//     issuer's key, window, shape — against the ROUTE TARGET the host resolved
+//     from the CALLER'S OWN credential, never from the token. A module holds one
+//     or two names (its registration prefix, and the route alias its delivered
+//     presence declares), the token is inspected once per name, and a capability
+//     addressed to anything else is refused. Nothing is consumed: a question is
+//     not a use, so a single-use capability is still its consumer's to spend.
+//  2. The capability's tenant must be the organization the CALLER'S credential
+//     is bound to. A module installed in several asks with the credential it
+//     minted for the one in question.
+//  3. Each question's identifiers must be the ones the capability names — the
+//     owner, a principal in its actor chain, the installation it is sealed to,
+//     the binding it exercises, the grant its hop claims. They are carried in
+//     the request and CHECKED rather than inferred, so a client that asks about
+//     something else is told so instead of being quietly answered about the
+//     capability's own values.
+//
+// Together those are what makes "a module resolves live authority for
+// capabilities addressed to it, and for no others" a property rather than a
+// hope. An earlier revision took the audience and the tenant as request fields
+// and compared the audience to the caller's prefix; an independent review showed
+// that pinned nothing, because no ANSWER depended on either field — the caller
+// could label the call with its own prefix and still read any principal's epoch,
+// approved build or revision in its tenant. The identifiers now come off a
+// signed capability, so there is nothing left to label.
 //
 // ABSENCE IS AN ANSWER, AND IT IS NOT AN ERROR. Three of these questions have a
 // well-formed negative answer that a verifier turns into a REFUSAL rather than
@@ -1055,33 +1079,75 @@ message ModuleCurrentInstallationResponse {
 // holds. Each is carried as a STATE on the answer and never as an empty string or
 // a zero — an UNSPECIFIED state is a host that said nothing, which a client
 // refuses on rather than reading as either answer.
+//
+// A REFUSAL AND AN OUTAGE ARE DIFFERENT ANSWERS, and the codes keep them apart:
+//
+//   - FAILED_PRECONDITION means the issuer DECIDED, and the decision is no: the
+//     owner is no longer a member, the principal has no authorization record, a
+//     module's installation is inactive, a delegation behind a binding is stale,
+//     the approved build cannot be named. A capability in that state is revoked;
+//     a caller mints again and does not retry.
+//   - UNAVAILABLE means nothing was decided — a lookup failed. A caller retries.
+//
+// Collapsing the first into the second is the defect an independent review of
+// this surface's first revision found: every plain error became UNAVAILABLE, so
+// the removed-member case — the first question core's verifier asks — reached a
+// callee as a transient failure, which a retry policy retries forever and a
+// stale-verdict cache serves as "still good". No refusal carries the cause's
+// own message: a question is about a THIRD party, and the authority layer's
+// messages are written for a caller asking about itself (one of them named
+// another organization's tenant). The cause is logged by the host.
 
 // WorkContextSealQuestion asks for the live installation one principal holds.
-// The installation is named by the caller because identity is the caller's to
-// supply; its revision is the issuer's to answer.
+// Both identifiers must be the ones the presented capability names — its owner
+// and the installation it is sealed to — and its revision is the issuer's to
+// answer.
 message WorkContextSealQuestion {
-  string principal_id = 1 [(buf.validate.field).string.uuid = true];
-  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  // Both are compared against the presented capability, which is what makes
+  // them trustworthy — so neither carries a format rule. A uuid constraint
+  // here would add no safety the comparison does not already give and would
+  // refuse an installation id this host legitimately holds.
+  string principal_id = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  string installation_id = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
 }
 
 // WorkContextPrincipalEpochQuestion asks for one principal's live epoch,
 // independent of any installation. It is the question asked of the task owner
-// and of every actor hop alike, so a delegated actor is revocable on its own.
+// and of every actor hop alike, so a delegated actor is revocable on its own —
+// and the principal must be one of those: the capability's owner, or a principal
+// in its actor chain.
 message WorkContextPrincipalEpochQuestion {
-  string principal_id = 1 [(buf.validate.field).string.uuid = true];
+  string principal_id = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
 }
 
 // WorkContextApprovedBuildQuestion asks what execution the issuer APPROVES for
 // one principal. It takes no attribute of the workload: resolving by what a
-// caller presents is exactly what lets a superseded pod in.
+// caller presents is exactly what lets a superseded pod in. The principal must
+// be the capability's owner or one in its actor chain, which is every principal
+// a verifier holds an execution against.
 message WorkContextApprovedBuildQuestion {
-  string principal_id = 1 [(buf.validate.field).string.uuid = true];
+  string principal_id = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
 }
 
 // WorkContextOperationBindingQuestion resolves one operation binding by its
-// opaque id, EXACTLY. There is deliberately no question that lists bindings or
-// finds one whose scopes would admit a call: a search is a predicate somebody
-// writes, and one case too generous grants authority nobody reviewed.
+// opaque id, EXACTLY: the one the presented capability is sealed to, and no
+// other. There is deliberately no question that lists bindings or finds one
+// whose scopes would admit a call — a search is a predicate somebody writes, and
+// one case too generous grants authority nobody reviewed — and none that
+// resolves a binding some other capability names, which would make this an
+// oracle over other modules' installations.
 message WorkContextOperationBindingQuestion {
   string binding_id = 1 [
     (buf.validate.field).string.min_len = 1,
@@ -1096,15 +1162,18 @@ message WorkContextOperationBindingQuestion {
 // is not a widening: this host's revision is the greater of the organization's
 // and the owner's own (a module principal's is its installed grant), so an answer
 // for a tenant without an owner would be a different number from the one the mint
-// stamped. A client therefore binds this question to the owner it read off the
-// capability being verified — which is the issuer's own signed statement by the
-// time any source is consulted, since the signature is checked first.
+// stamped. The owner must be the presented capability's own owner, so naming a
+// principal whose revision happens to be lower is not expressible.
 message WorkContextAuthorizationRevisionQuestion {
-  string owner_principal_id = 1 [(buf.validate.field).string.uuid = true];
+  string owner_principal_id = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
 }
 
 // WorkContextApprovalGrantQuestion resolves the approval a capability's grant
-// hop claims.
+// hop claims. The id must be the one the presented capability's hop claims, so a
+// capability carrying no grant hop has no grant to ask about.
 message WorkContextApprovalGrantQuestion {
   string grant_id = 1 [
     (buf.validate.field).string.min_len = 1,
@@ -1221,16 +1290,20 @@ message WorkContextApprovalGrantAnswer {
 }
 
 message ModuleResolveWorkContextAuthorityRequest {
-  // The tenant the capability under verification names. It must be the
-  // caller's own bound organization.
-  string organization_id = 1 [(buf.validate.field).string.uuid = true];
-  // The audience it was minted for. It must be the caller's own registration
-  // prefix: a module resolves live authority for capabilities addressed to it
-  // and for no others.
-  string audience = 2 [
+  // The capability being verified, exactly as it was presented to the caller.
+  //
+  // It is the subject of the question and the whole of its authorization: the
+  // host authenticates it, requires it to be addressed to one of the caller's
+  // own names and to the caller's own tenant, and answers only about the
+  // identifiers it names. It is not minted from, not derived from, and NOT
+  // CONSUMED — a single-use capability presented here is still its consumer's
+  // to spend.
+  string work_context = 1 [
     (buf.validate.field).string.min_len = 1,
-    (buf.validate.field).string.max_len = 253
+    (buf.validate.field).string.max_len = 32768
   ];
+  reserved 2;
+  reserved "audience";
   oneof question {
     option (buf.validate.oneof).required = true;
     WorkContextSealQuestion seal = 3;

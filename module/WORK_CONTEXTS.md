@@ -330,52 +330,105 @@ serves it on the endpoint a module already depends on:
 
 | Question | Answers | Absence |
 | --- | --- | --- |
-| seal | the live installation and its revision, for one principal | `UNHELD` — not active in the organization, or the principal is not a member |
+| seal | the live installation and its revision, for the capability's owner | `UNHELD` — not active in the organization, or the principal is not a member |
 | principal epoch | one principal's live epoch, for the owner and every actor hop alike | `UNKNOWN` — no authorization record here |
 | approved build | the execution the issuer approves for one principal | `BEARS_NO_EXECUTION` — a person's session, which is correct |
-| operation binding | one binding by its opaque id, exactly | `ABSENT` — no such delegation, or one this organization does not entitle |
-| authorization revision | the revision a capability owned by one principal carries | — |
-| approval grant | the approval a grant hop claims | `NOT_RECORDED` — this host records none, so such a capability is refused |
+| operation binding | the binding the capability is sealed to, exactly | `ABSENT` — no such delegation, or one this organization does not entitle |
+| authorization revision | the revision a capability owned by that principal carries | — |
+| approval grant | the approval the capability's grant hop claims | `NOT_RECORDED` — this host records none |
 
-Three properties make this the issuer's answer rather than a second opinion:
+### The capability is the authorization
 
-- **It is the same body.** The serving path hands the question to the very
-  sources `coreAuthority` mints with and `coreVerifier` verifies with
-  (`moduleAuthoritySources` in `pkg/adapters/work_context_core.go`, over
-  `pkg/business/work_context_seal.go`). Two constructions of "the current seal"
-  would agree only by coincidence, and the seal's whole value is that a callee's
-  verdict and an issuance cannot disagree.
-- **A caller reads its own audience, in its own tenant.** The calling module is
-  authenticated from the Work Context it forwards, as on every method of that
-  surface, and the request's `audience` must be its own registration prefix and
-  its `organization_id` its own bound organization — anything else is
-  `PERMISSION_DENIED`. Serving another module's audience would let this caller
-  verify, with every seal check passing, a capability minted for somebody else. A
-  module installed in several organizations asks with the credential it minted
+Every question carries the capability it is about, and that is what bounds this
+surface. The host **authenticates** it — core's `Inspector`: encoding, issuer,
+signature under this issuer's key, window, shape, no live state read and nothing
+consumed — against the **route target the host resolved from the CALLER'S OWN
+credential**, which is a module's registration prefix and the route alias its
+delivered presence declares. A capability addressed to anything else is refused.
+Then the capability's tenant must be the organization the caller's credential is
+bound to, and each question's identifiers must be ones the capability names: the
+owner, a principal in its actor chain, the installation it is sealed to, the
+binding it exercises, the grant its hop claims. They travel in the request and
+are **checked**, not inferred, so a client asking about something else is told so
+rather than quietly answered about the capability's own values.
+
+That shape is the correction an independent review forced, and the reasoning is
+worth keeping. The first revision took the tenant and the audience as request
+fields and compared the audience to the caller's prefix. No **answer** depended
+on either field, so the comparison pinned nothing: a module could label the call
+with its own prefix and still read any principal's epoch, approved build or
+authorization revision in its tenant, which made the strongest check in the model
+a label. A presented, authenticated capability has nothing left to label.
+
+Consequences worth stating:
+
+- A module installed in several organizations asks with the credential it minted
   for the one in question.
-- **Absence is an answer and never an error.** Each negative above is a STATE on
-  the answer, so a verifier turns it into a refusal of the capability rather than
-  into an outage; an UNSPECIFIED state is a host that said nothing, which a
-  client refuses on. Every other failure is `UNAVAILABLE` with its cause logged
-  and not returned: a lookup that failed decided nothing. Reading one as "no such
-  installation" would make a database blip look like mass revocation; reading it
-  as "held" would be the check not running.
+- `NOT_RECORDED` is unreachable through this surface today rather than merely
+  unused: this host mints no grant hop, so no capability it issues carries a
+  grant to ask about. The arm exists so that the day it records approvals, the
+  answer has a shape and a client that does not understand it refuses.
+- A module addressed by a name that is neither its prefix nor its alias — a
+  binding's declared `audience` is a name the authority document chooses — cannot
+  verify at full strength. That is deliberate: accepting a third name would mean
+  believing a caller's claim that an audience is its own.
+
+### One body with the issuer
+
+The serving path hands each question to the very sources `coreAuthority` mints
+with and `coreVerifier` verifies with (`moduleAuthoritySources` in
+`pkg/adapters/work_context_core.go`, over `pkg/business/work_context_seal.go`).
+Two constructions of "the current seal" would agree only by coincidence, and the
+seal's whole value is that a callee's verdict and an issuance cannot disagree.
+
+### A refusal and an outage are different answers
+
+- `FAILED_PRECONDITION` — the issuer **decided**, and the decision is no: the
+  owner is no longer a member, the principal has no authorization record, a
+  module's installation is inactive, the delegation behind a binding is stale,
+  the approved build cannot be named. The capability is revoked; its holder mints
+  again and does not retry.
+- `UNAVAILABLE` — nothing was decided. A lookup failed; a retry may succeed.
+- The three absence states above are neither: a verifier turns each into a
+  refusal of the capability. An `UNSPECIFIED` state is a host that said nothing,
+  which a client refuses on.
+
+Collapsing the first into the second is the defect that review found: every plain
+error became `UNAVAILABLE`, so the removed-member case — the **first** question
+core's verifier asks, before the seal — reached a callee as a transient failure,
+which a retry policy retries forever and a stale-verdict cache serves as "still
+good". No refusal carries the cause's own message, because these questions are
+about a third party while the authority layer's messages are written for a caller
+asking about itself; one of them names the subject's current tenant. The cause is
+logged by the host.
+
+### What a module brings, and what it costs
 
 The replay store is deliberately not served. Single-use consumption is the
-consumer's own, durable and shared across its replicas, and an issuer that
-consumed on a callee's behalf would burn the nonce on the way to answering a
-question. Core's `RevisionSource` is keyed by tenant alone while this host's
-revision is owner-dependent, so the question names the owner and a client binds
-it per capability — safe because a verifier consults no source until the
-signature over those bytes has checked out.
+consumer's own, and an issuer that consumed on a callee's behalf would burn the
+nonce to answer a question — so a module brings its own, and a deployment with
+more than one replica needs it **durable and shared** or single-use is not single
+use. Core's `RevisionSource` is keyed by tenant alone while this host's revision
+is owner-dependent, so the question names the owner and a client binds it per
+capability.
+
+One verification is **five or more round trips** (revision, seal, a build and an
+epoch for the owner and for each hop, a binding), each one an authenticated
+capability and a live grant re-read on the host. That is the price of the
+guarantee and it is not hidden: a callee that cannot pay it per request should
+decide its cadence deliberately rather than discover it from a latency graph.
+There is no batch question today.
 
 A module builds `sdk-go/workcontext`'s `PinnedVerifier` on these three sources
-plus a replay store of its own; the key set is the JWKS accounts already
-publishes at `/v1/auth/.well-known/jwks.json`.
+plus its replay store; the key set is the JWKS accounts already publishes at
+`/v1/auth/.well-known/jwks.json`.
 `TestAComposedModuleVerifiesAHostCapabilityAgainstTheServedSources` and the
 refusal tests beside it (`pkg/adapters/module_work_context_authority_test.go`)
-are that verifier against this surface, with an unheld installation, a stale
-epoch, a stale revision and an unknown principal each refused through it.
+are that verifier against this surface: an unheld installation, a stale epoch, a
+stale revision, a removed owner, an unknown principal, a replaced build and a
+withdrawn binding are each refused through it, and a module presenting a
+capability addressed elsewhere — or to it in another organization — resolves
+nothing.
 
 ## The reserved module audience
 

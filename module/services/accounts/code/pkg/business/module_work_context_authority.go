@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -12,56 +13,120 @@ import (
 //
 // The answers themselves are the ones this host's own issuer reads
 // (work_context_seal.go); what lives here is the only question that is not the
-// issuer's — WHO MAY ASK. A module may ask about a capability addressed to
-// itself, in the tenant its own credential is bound to, and about nothing else.
+// issuer's — WHO MAY ASK, AND ABOUT WHAT.
 //
-// Both halves are load-bearing and neither is a privacy nicety:
+// This answers it as two values rather than as a verdict on request fields, and
+// the difference is the whole lesson of the first revision. That version took
+// the tenant and the audience as REQUEST fields and compared the audience to
+// the caller's prefix. An independent review showed the comparison pinned
+// nothing: no answer depended on either field, so a module could label the call
+// with its own prefix and still read any principal's epoch, approved build or
+// authorization revision in its tenant — a check that read as cover. What binds
+// a question now is the SIGNED CAPABILITY it is about: the adapter authenticates
+// it against the names below and answers only about the identifiers it carries.
 //
-//   - THE TENANT. Every answer here is per organization, and a module's
-//     credential is bound to one. A module that could name another tenant would
-//     be reading one organization's revocation state while installed in a
-//     different one. A module installed in several (a cross-tenant grant) asks
-//     with the credential it minted for the organization in question, exactly as
-//     every other capability it exercises there does.
-//   - THE AUDIENCE. An audience is what makes two capabilities signed by one key
-//     non-interchangeable, and a declared module's audience is its registration
-//     prefix. Serving live authority for another module's audience would let this
-//     caller VERIFY — at full strength, with every seal check passing — a
-//     capability a person minted for somebody else. Pinning the audience to the
-//     caller's own prefix is what keeps the strongest check in the model from
-//     being the one that admits the wrong consumer.
+//   - THE TENANT is the caller's own bound organization, taken from its verified
+//     credential and never from a request. Every answer here is per
+//     organization, and a module installed in several asks with the credential
+//     it minted for the one in question.
+//   - THE AUDIENCES are the caller's own names a capability may be addressed to.
+//     An audience is what makes two capabilities signed by one key
+//     non-interchangeable, so it is what decides whether a capability is this
+//     module's to resolve authority for at all.
 
-// AuthorizeModuleWorkContextAuthorityRead authorizes one live-authority read by
-// a composed module: the caller must be a module principal whose capability
-// decision stands right now (AuthorizeModuleCapability, as every path here
-// does), orgID must be the tenant its credential is bound to, and audience must
-// be its own registration prefix.
+// ModuleWorkContextAuthorityRead is what one authorized module may ask about.
+type ModuleWorkContextAuthorityRead struct {
+	// Tenant is the organization every answer is for.
+	Tenant string
+	// Audiences are the caller's own names, in no significant order: its
+	// registration prefix, and the route alias its delivered presence declares
+	// when it declares one that is not already another clause's spelling.
+	//
+	// Both are the host's to derive — the prefix from the authority document,
+	// the alias from delivered presence — so neither is a value a caller can
+	// choose. A capability addressed to anything else is refused, including a
+	// third name a declaration might give it: accepting that would mean
+	// believing a caller's claim that an audience is its own.
+	Audiences []string
+}
+
+// AuthorizeModuleWorkContextAuthorityRead authorizes one composed module's
+// live-authority reads and reports the tenant and the audiences they are bound
+// to.
 //
-// It returns nothing but a verdict. The values a verifier compares against are
-// the issuer's own reads, which the adapter serves through the one set of
-// core-typed sources it mints and verifies with; this decides only whether this
-// caller may see them for this (tenant, audience).
+// The caller must be a module principal whose capability decision stands right
+// now — AuthorizeModuleCapability, as every path on this surface does, so a
+// module whose installation was narrowed or withdrawn stops resolving authority
+// at its next question rather than at its credential's expiry.
 func (s *Service) AuthorizeModuleWorkContextAuthorityRead(
-	ctx context.Context, caller ModuleCaller, orgID, audience string,
-) error {
+	ctx context.Context, caller ModuleCaller,
+) (ModuleWorkContextAuthorityRead, error) {
 	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
-		return fenceErr
+		return ModuleWorkContextAuthorityRead{}, fenceErr
 	}
 	defer releaseAuthority()
 
-	grant, err := s.moduleCapability(ctx, caller)
+	authority, _, err := s.authorizeModuleCapability(ctx, caller)
 	if err != nil {
-		return err
+		return ModuleWorkContextAuthorityRead{}, err
 	}
-	if err := authorizeTenant(caller, grant, orgID); err != nil {
-		return err
+	grant := authority.Grant
+	if caller.BoundOrg == "" || grant.Prefix == "" {
+		return ModuleWorkContextAuthorityRead{}, status.Error(codes.PermissionDenied,
+			"work context authority caller denied")
 	}
-	// One refusal for both remaining shapes, deliberately indistinguishable: a
-	// caller probing this surface learns whether it may ask, never whether
-	// another module's prefix exists.
-	if orgID == "" || grant.Prefix == "" || audience != grant.Prefix {
-		return status.Error(codes.PermissionDenied, "work context authority caller denied")
+	read := ModuleWorkContextAuthorityRead{
+		Tenant:    caller.BoundOrg,
+		Audiences: []string{grant.Prefix},
 	}
-	return nil
+	// The alias, from the same delivered presence the audience vocabulary is
+	// derived from, and only the one belonging to THIS caller's registration:
+	// the binding its grant was proven under. A capability addressed to a
+	// module by its route alias is a shape this host mints — a binding's
+	// declared `audience` is a name the authority document chooses — so leaving
+	// the alias out would leave such a module on the forwarding-hop check with
+	// no way to verify at full strength.
+	//
+	// A failed resolution is an error rather than a prefix-only answer, on the
+	// same terms as HostAudiences: a store that cannot say what is declared
+	// must not read as "this module has no alias", which is a posture question
+	// decided by a lookup failure.
+	alias, err := s.declaredModuleAlias(ctx, grant.PresenceBinding)
+	if err != nil {
+		return ModuleWorkContextAuthorityRead{}, err
+	}
+	if alias != "" {
+		read.Audiences = append(read.Audiences, alias)
+	}
+	return read, nil
+}
+
+// declaredModuleAlias is the route alias delivered presence declares for one
+// registry binding, or "" when that binding declares none, is not a module, or
+// names a spelling another clause of the audience vocabulary owns.
+//
+// An EMPTY binding id resolves to no alias without a lookup. A grant with no
+// presence binding must not match a declaration with none either: that would
+// hand one module another's alias on the strength of two empty strings.
+func (s *Service) declaredModuleAlias(ctx context.Context, presenceBinding string) (string, error) {
+	if strings.TrimSpace(presenceBinding) == "" {
+		return "", nil
+	}
+	bindings, err := s.liveDeclaredBindings(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, binding := range bindings {
+		if binding.BindingID != presenceBinding || binding.Kind != SolutionDeclaredKindModule {
+			continue
+		}
+		alias := strings.TrimSpace(binding.Alias)
+		if alias == "" || alias == ModuleCapabilitiesAudience || alias == SourceOperationAudience ||
+			strings.HasPrefix(alias, SolutionAudiencePrefix) {
+			return "", nil
+		}
+		return alias, nil
+	}
+	return "", nil
 }
