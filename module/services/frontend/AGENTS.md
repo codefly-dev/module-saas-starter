@@ -37,8 +37,10 @@ Rename, reorder and membership changes preserve solution links and access.
 The gateway stamps an opaque `assetVersion` from the applied binding, target,
 generation and release. Browser assets use
 `/api/solutions/<id>/versions/<assetVersion>/proxy/assets/...`; the manifest,
-remote entry and relative chunks share that directory. Remote builds must use
-`publicPath: "auto"` and relative asset paths. Both proxy layers refuse a stale
+remote entry and relative chunks share that directory. The surfaces projection uses the
+page's asset version for both modules and solutions, including relative imports.
+Remote builds must use `publicPath: "auto"` and relative asset paths.
+Both proxy layers refuse a stale
 version with 410; this is a cache identity, not an access credential. The shared
 viewer navigation poll carries it, removes withdrawn pages and refreshes an open
 page when the version changes. The old remote is unmounted during the change,

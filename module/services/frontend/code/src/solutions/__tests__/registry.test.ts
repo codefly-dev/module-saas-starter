@@ -944,6 +944,27 @@ describe("surfacesProjection for a solution served through the host", () => {
   it("leaves the solution out when there is no host origin to resolve against", () => {
     expect(surfacesProjection(manifest, "word", granted)).toBeNull();
   });
+
+	it.each(["module", "solution"] as const)(
+		"keeps a %s client surface and its relative imports in the page's asset generation",
+		(kind) => {
+			const origin = "https://app.example";
+			const project = (version: string) => {
+				const selected = { ...manifest, kind, assetVersion: version };
+				const surface = surfacesProjection(selected, "word", granted, origin);
+				const entry = new URL(surface!.surfaces[0].module, surface!.origin);
+				const base = `/api/solutions/audit/versions/${version}/proxy/assets/`;
+				expect(entry.pathname).toBe(`${base}surfaces/footnote.js`);
+				expect(new URL("chunks/deferred.js", entry).pathname).toBe(
+					`${base}surfaces/chunks/deferred.js`,
+				);
+				expect(browserManifestUrl(selected)).toBe(`${base}mf-manifest.json`);
+				return entry.href;
+			};
+			expect(project("a".repeat(64))).not.toBe(project("b".repeat(64)));
+			expect(manifest.surfaces![0].module).toBe("/assets/surfaces/footnote.js");
+		},
+	);
 });
 
 // ---------------------------------------------------------------------------

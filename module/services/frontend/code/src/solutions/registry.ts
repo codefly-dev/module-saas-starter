@@ -219,6 +219,15 @@ export function solutionProxyBase(id: string): string {
 	return `/api/solutions/${encodeURIComponent(id)}/proxy`;
 }
 
+/** The same applied asset directory for web pages and client surfaces. */
+export function solutionAssetProxyBase(
+	manifest: Pick<SolutionManifest, "id" | "assetVersion">,
+): string {
+	return manifest.assetVersion
+		? `/api/solutions/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.assetVersion)}/proxy`
+		: solutionProxyBase(manifest.id);
+}
+
 /**
  * A manifest URL is handed to the Module Federation runtime, which fetches and
  * executes the script it points at inside the host origin. It is one of:
@@ -272,9 +281,7 @@ export function browserManifestUrl(
 		return registered;
 	}
 	const unversioned = solutionProxyBase(manifest.id);
-	const base = manifest.assetVersion
-		? `/api/solutions/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.assetVersion)}/proxy`
-		: unversioned;
+	const base = solutionAssetProxyBase(manifest);
 	const suffix = registered.startsWith(`${unversioned}/`)
 		? registered.slice(unversioned.length)
 		: registered;
