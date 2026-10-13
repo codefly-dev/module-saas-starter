@@ -239,6 +239,7 @@ func TestSealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.T)
 		replacement, err = testStore.InstallSolution(ctx, &installParams)
 		return err
 	}))
+	acknowledgeInstallation(t, replacement)
 	require.NotEqual(t, installation.Id, replacement.Id)
 	_, err = issuer.VerifyModuleWorkContext(testCtx, credential)
 	require.Error(t, err, "a reinstall does not revive a credential sealed to the old installation")

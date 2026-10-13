@@ -166,7 +166,7 @@ func (s *PostgresStore) RevokeOrgPendingInvitations(ctx context.Context, orgID s
 // grant deletion, whose trigger locks the organization's source-read revision.
 func (s *PostgresStore) ActiveInstallationIDs(ctx context.Context, orgID string) ([]string, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
-		`SELECT id FROM installations WHERE org_id = $1 AND status = 'active' ORDER BY id FOR UPDATE`, orgID)
+		`SELECT id FROM installations WHERE org_id = $1 AND status <> 'revoked' ORDER BY id FOR UPDATE`, orgID)
 	if err != nil {
 		return nil, wool.Get(ctx).In("ActiveInstallationIDs").Wrapf(err, "failed to list installations")
 	}

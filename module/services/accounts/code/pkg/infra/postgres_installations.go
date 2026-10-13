@@ -29,18 +29,18 @@ import (
 const installationColumns = `id::text, org_id::text, agent_principal_id::text,
 	owner_principal_id::text, co_owner_principal_ids::text[],
 	root_scope_node_id::text, status, created_at, revoked_at,
-	COALESCE(target_id::text, ''), COALESCE(revoked_reason, '')`
+	COALESCE(target_id::text, ''), COALESCE(revoked_reason, ''), COALESCE(failure_reason, '')`
 
 func scanInstallation(row rowScanner) (*gen.Installation, error) {
 	var (
 		id, orgID, agentID, ownerID, rootNodeID, status string
-		targetID, revokedReason                         string
+		targetID, revokedReason, failureReason          string
 		coOwners                                        []string
 		createdAt                                       time.Time
 		revokedAt                                       *time.Time
 	)
 	if err := row.Scan(&id, &orgID, &agentID, &ownerID, &coOwners,
-		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason); err != nil {
+		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason, &failureReason); err != nil {
 		return nil, err
 	}
 	out := &gen.Installation{
@@ -54,6 +54,7 @@ func scanInstallation(row rowScanner) (*gen.Installation, error) {
 		CreatedAt:           timestamppb.New(createdAt),
 		TargetId:            targetID,
 		RevokedReason:       revokedReason,
+		FailureReason:       failureReason,
 	}
 	if revokedAt != nil {
 		out.RevokedAt = timestamppb.New(*revokedAt)
@@ -63,6 +64,10 @@ func scanInstallation(row rowScanner) (*gen.Installation, error) {
 
 func installationStatusFromColumn(status string) gen.InstallationStatus {
 	switch status {
+	case "pending":
+		return gen.InstallationStatus_INSTALLATION_STATUS_PENDING
+	case "failed":
+		return gen.InstallationStatus_INSTALLATION_STATUS_FAILED
 	case "active":
 		return gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE
 	case "revoked":
@@ -102,8 +107,10 @@ func firstEligibleOwner(ctx context.Context, executor QueryExecutor, orgID strin
 }
 
 // InstallSolution composes the agent principal, solution scope node, standing
-// grant, and installation row inside the caller's WithOrgTx. Idempotent per
-// (org, solution): a re-install of an active solution returns the existing row.
+// grant, pending installation and durable step inside the caller's WithOrgTx.
+// Only acknowledged consent is usable. An active identical install is idempotent;
+// pending/failed consent requires its existing lifecycle, never a second install.
+// Composed modules retain their installation path; the callback is solution-owned.
 func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.InstallSolutionParams) (*gen.Installation, error) {
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
@@ -138,9 +145,12 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 	// than silently ignored — a changed ceiling is applied by uninstall + reinstall.
 	existing, err := scanInstallation(executor.QueryRow(ctx,
 		`SELECT `+installationColumns+` FROM installations
-		 WHERE org_id = $1 AND target_id = $2::uuid AND status = 'active'`,
+		 WHERE org_id = $1 AND target_id = $2::uuid AND status <> 'revoked'`,
 		params.OrgID, params.TargetID))
 	if err == nil {
+		if existing.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+			return nil, installerConflict("installation already exists; retry a failed installation or uninstall it")
+		}
 		if e := reconcileExistingInstallation(ctx, executor, existing, params); e != nil {
 			return nil, e
 		}
@@ -192,7 +202,7 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		INSERT INTO installations
 			(id, org_id, agent_principal_id, target_id, owner_principal_id,
 			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope)
-		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, 'active', NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb)
+		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, CASE WHEN $8='module' THEN 'active' ELSE 'pending' END, NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb)
 		RETURNING `+installationColumns,
 		params.OrgID, agentID, params.TargetID, params.OwnerPrincipalID,
 		stringArray(params.CoOwnerPrincipalIDs), nodeID, params.InstallerPrincipalID,
@@ -210,6 +220,11 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 			)
 		}
 		return nil, w.Wrapf(err, "failed to insert installation")
+	}
+	if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING {
+		if err := s.EnqueueInstallationStep(ctx, params.OrgID, installation.Id, "initial"); err != nil {
+			return nil, err
+		}
 	}
 	return installation, nil
 }
@@ -369,6 +384,10 @@ func sameStringSet(a, b []string) bool {
 // column value an enum selects, or "" for UNSPECIFIED, which selects every row.
 func installationStatusColumn(status gen.InstallationStatus) string {
 	switch status {
+	case gen.InstallationStatus_INSTALLATION_STATUS_PENDING:
+		return "pending"
+	case gen.InstallationStatus_INSTALLATION_STATUS_FAILED:
+		return "failed"
 	case gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE:
 		return "active"
 	case gen.InstallationStatus_INSTALLATION_STATUS_REVOKED:
@@ -474,7 +493,7 @@ func installationHealthFromLabel(label string) gen.InstallationHealth {
 const installationListingColumns = `i.id::text, i.org_id::text, i.agent_principal_id::text,
 	i.owner_principal_id::text, i.co_owner_principal_ids::text[],
 	i.root_scope_node_id::text, i.status, i.created_at, i.revoked_at,
-	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), ` + installationHealthLabel
+	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''), ` + installationHealthLabel
 
 // withHealthLabel scans one listing row: the installation's own columns through
 // scanInstallation, so the wire mapping has one definition, then the label.
@@ -691,8 +710,8 @@ func (s *PostgresStore) UninstallSolution(ctx context.Context, orgID, installati
 	}
 
 	revoked, err := scanInstallation(executor.QueryRow(ctx, `
-		UPDATE installations SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP
-		WHERE id = $1 AND org_id = $2 AND status = 'active'
+		UPDATE installations SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP, failure_reason = NULL
+		WHERE id = $1 AND org_id = $2 AND status <> 'revoked'
 		RETURNING `+installationColumns,
 		installationID, orgID,
 	))
@@ -710,7 +729,7 @@ func (s *PostgresStore) ResolveInstallationAuthority(ctx context.Context, orgID,
 	var facts *business.InstallationAuthorityFacts
 	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
 		var resolveErr error
-		facts, resolveErr = resolveInstallationAuthority(ctx, s.getQueryExecutor(ctx), orgID, installationID, permissions)
+		facts, resolveErr = resolveInstallationAuthority(ctx, s.getQueryExecutor(ctx), orgID, installationID, permissions, false)
 		return resolveErr
 	})
 	if err != nil {
@@ -719,7 +738,7 @@ func (s *PostgresStore) ResolveInstallationAuthority(ctx context.Context, orgID,
 	return facts, nil
 }
 
-func resolveInstallationAuthority(ctx context.Context, executor QueryExecutor, orgID, installationID string, permissions []business.WorkContextPermission) (*business.InstallationAuthorityFacts, error) {
+func resolveInstallationAuthority(ctx context.Context, executor QueryExecutor, orgID, installationID string, permissions []business.WorkContextPermission, installationStep bool) (*business.InstallationAuthorityFacts, error) {
 	var (
 		agentID, ownerID, rootNodeID, rootScopePath string
 		coOwners                                    []string
@@ -729,8 +748,8 @@ func resolveInstallationAuthority(ctx context.Context, executor QueryExecutor, o
 		       i.co_owner_principal_ids::text[], i.root_scope_node_id::text, n.scope_path::text
 		FROM installations i
 		JOIN scope_nodes n ON n.id = i.root_scope_node_id
-		WHERE i.id = $1 AND i.org_id = $2 AND i.status = 'active'`,
-		installationID, orgID,
+		WHERE i.id = $1 AND i.org_id = $2 AND (i.status = 'active' OR ($3 AND i.status = 'pending'))`,
+		installationID, orgID, installationStep,
 	).Scan(&agentID, &ownerID, &coOwners, &rootNodeID, &rootScopePath)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, business.NewStoreError(

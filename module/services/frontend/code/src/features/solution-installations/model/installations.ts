@@ -6,6 +6,7 @@ import type { Role } from "@/gen/saas/accounts/v1/common_pb";
 import {
 	type AvailableSolution,
 	InstallationHealth,
+	InstallationStatus,
 	type OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import type { Badge } from "@/shared/ui";
@@ -75,6 +76,25 @@ export function availableRows(solutions: AvailableSolution[]): AvailableRow[] {
 	}));
 }
 
+export function installationStatusView(status: InstallationStatus): FactView {
+	switch (status) {
+		case InstallationStatus.PENDING:
+			return { kind: "value", text: "Pending", tone: "warning" };
+		case InstallationStatus.FAILED:
+			return { kind: "value", text: "Failed", tone: "danger" };
+		case InstallationStatus.ACTIVE:
+			return { kind: "value", text: "Active", tone: "success" };
+		case InstallationStatus.REVOKED:
+			return { kind: "value", text: "Revoked", tone: "danger" };
+		default:
+			return {
+				kind: "gap",
+				label: "Not reported",
+				detail: "The host did not report this installation's status.",
+			};
+	}
+}
+
 export function healthView(health: InstallationHealth): FactView {
 	switch (health) {
 		case InstallationHealth.HEALTHY:
@@ -125,6 +145,9 @@ export interface InstalledRow {
 	solution: FactView;
 	revision: FactView;
 	health: FactView;
+	status: InstallationStatus;
+	lifecycle: FactView;
+	failureReason: string;
 	installedAt: string | undefined;
 	/** Granted at this installation's authority root: revocable here. */
 	grantedTeams: TeamGrantRow[];
@@ -183,6 +206,9 @@ export function installedRows(
 							}
 						: NOT_OFFERED,
 					health: healthView(health),
+					status: installation.status,
+					lifecycle: installationStatusView(installation.status),
+					failureReason: installation.failureReason,
 					installedAt: installation.createdAt
 						? timestampDate(installation.createdAt).toISOString()
 						: undefined,

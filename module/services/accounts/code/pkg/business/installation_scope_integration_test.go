@@ -29,6 +29,7 @@ func TestInstallationScopeInstallNarrowAuditAndPolicyLog(t *testing.T) {
 	scope.Queues = []string{"example.ingest"}
 	installed, err := testService.InstallSolution(testCtx, owner, params)
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installed)
 	state := func() *business.InstallationAuthorityState {
 		t.Helper()
 		var out *business.InstallationAuthorityState

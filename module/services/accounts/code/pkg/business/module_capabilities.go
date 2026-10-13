@@ -80,6 +80,7 @@ import (
 // running image comes from the pod's status, and the approval comes from a
 // signed document.
 type ModuleWorkload struct {
+	SPIFFEID       string `json:"spiffe_id"`
 	ServiceAccount string `json:"service_account"`
 	Namespace      string `json:"namespace"`
 	Container      string `json:"container"`

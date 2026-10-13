@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -188,7 +189,10 @@ func TestGateway_ModuleWorkContext_TakesOnlyTheProjectedTokenBearer(t *testing.T
 type fakeAccountsWorkContextMint struct {
 	code             codes.Code
 	lastInternal     string
+	lastPeer         string
 	lastPrefix       string
+	lastUpstream     string
+	lastManifest     string
 	lastOrganization string
 	lastToken        string
 	requestCount     int
@@ -201,9 +205,11 @@ func (f *fakeAccountsWorkContextMint) handle(ctx context.Context, dec func(any) 
 	}
 	f.requestCount++
 	f.lastPrefix = req.GetPrefix()
+	f.lastUpstream, f.lastManifest = req.GetUpstream(), req.GetManifest()
 	f.lastOrganization = req.GetOrganizationId()
 	f.lastToken = req.GetServiceAccountToken()
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		f.lastPeer = strings.Join(md.Get(workloadSPIFFEHeader), ",")
 		if values := md.Get("x-codefly-internal-token"); len(values) > 0 {
 			f.lastInternal = values[0]
 		}
@@ -325,6 +331,9 @@ func TestGateway_ModuleWorkContext_RelaysAccountsOutcome(t *testing.T) {
 		"rejected request": {codes.InvalidArgument, http.StatusBadRequest},
 		// accounts could not establish what the pod runs: retryable, not a verdict.
 		"execution unbound": {codes.Unavailable, http.StatusServiceUnavailable},
+		// Admitted and installed nowhere: its own answer, so the module serves
+		// its install endpoint and waits instead of stopping on a refusal.
+		"installed nowhere": {codes.FailedPrecondition, http.StatusPreconditionFailed},
 		"outage":            {codes.Internal, http.StatusBadGateway},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -338,6 +347,78 @@ func TestGateway_ModuleWorkContext_RelaysAccountsOutcome(t *testing.T) {
 			require.Equal(t, 1, mint.requestCount)
 		})
 	}
+}
+
+// The dynamic half of a registration travels with the mint, to accounts, under
+// the projected token that proves who reports it. The gateway forwards it and
+// decides nothing about it beyond its shape.
+func TestGateway_ModuleWorkContext_ForwardsTheReportedOriginAndManifest(t *testing.T) {
+	gw, mint := newWorkContextExchangeHarness(t)
+
+	req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
+	req.Body = io.NopCloser(strings.NewReader(`{"prefix":"documents","upstream":"https://backend.cell-documents.svc.cluster.local:8080","manifest":"{\"id\":\"documents\"}"}`))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "https://backend.cell-documents.svc.cluster.local:8080", mint.lastUpstream)
+	require.Equal(t, `{"id":"documents"}`, mint.lastManifest)
+}
+
+// An origin that is not exactly an https host and port, or names a host no
+// registered upstream may name, is refused at the edge: accounts is never asked
+// to record it, and no credential is minted beside it.
+func TestGateway_ModuleWorkContext_RefusesAnOriginThatIsNotOne(t *testing.T) {
+	for name, upstream := range map[string]string{
+		"plaintext":       "http://backend.cell-documents.svc.cluster.local:8080",
+		"no port":         "https://backend.cell-documents.svc.cluster.local",
+		"a path":          "https://backend.cell-documents.svc.cluster.local:8080/api",
+		"a query":         "https://backend.cell-documents.svc.cluster.local:8080?x=1",
+		"userinfo":        "https://ops@backend.cell-documents.svc.cluster.local:8080",
+		"cloud metadata":  "https://169.254.169.254:443",
+		"a public host":   "https://example.com:443",
+		"not a URL":       "backend:8080",
+		"another scheme":  "ftp://backend.cell-documents.svc.cluster.local:8080",
+		"fragment":        "https://backend.cell-documents.svc.cluster.local:8080#x",
+		"only whitespace": " ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			gw, mint := newWorkContextExchangeHarness(t)
+			body, err := json.Marshal(map[string]string{"prefix": "documents", "upstream": upstream})
+			require.NoError(t, err)
+			req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
+			req.Body = io.NopCloser(bytes.NewReader(body))
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Zero(t, mint.requestCount)
+		})
+	}
+}
+
+// The body is bounded: the manifest is the only large field, and a request
+// past the bound is refused before accounts is asked anything.
+func TestGateway_ModuleWorkContext_BoundsTheRequest(t *testing.T) {
+	gw, mint := newWorkContextExchangeHarness(t)
+	body, err := json.Marshal(map[string]string{"prefix": "documents", "manifest": strings.Repeat("a", 81<<10)})
+	require.NoError(t, err)
+	req := workContextRequest("documents", "documents-projected-token", "test-internal-token")
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Zero(t, mint.requestCount)
+
+	body, err = json.Marshal(map[string]string{"prefix": "documents", "manifest": strings.Repeat("a", 60<<10)})
+	require.NoError(t, err)
+	req = workContextRequest("documents", "documents-projected-token", "test-internal-token")
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 1, mint.requestCount)
 }
 
 func TestGateway_ModuleWorkContext_MethodNotAllowed(t *testing.T) {

@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -150,6 +152,9 @@ func newKubernetesHTTPClient(roots *x509.CertPool) *http.Client {
 // pinned-key trust policy refuses at boot: "I cannot perform this check" and "this
 // caller failed the check" must not be the same observable.
 func NewKubernetesClient() (*KubernetesClient, error) {
+	if dir := strings.TrimSpace(os.Getenv(LocalClusterEnvironment)); dir != "" {
+		return localClusterClient(dir, InCluster())
+	}
 	host := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST"))
 	port := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_PORT"))
 	if host == "" || port == "" {
@@ -161,6 +166,57 @@ func NewKubernetesClient() (*KubernetesClient, error) {
 		return nil, fmt.Errorf("%w: cannot read the cluster CA at %s: %w", ErrKubernetesUnavailable, inClusterCAPath, err)
 	}
 	return kubernetesClientFrom("https://"+host+":"+port, authority, inClusterTokenPath, inClusterNamespacePath)
+}
+
+// LocalClusterEnvironment names a directory that stands in for the kubelet's
+// projection when this host is NOT a pod: a developer's run of the composition
+// on a laptop, where the run itself is the cluster — it serves the TokenReview
+// and pod reads, issues each workload its projected token, and writes into this
+// directory what a kubelet would project into the host's pod:
+//
+//	server     the API server's https origin
+//	ca.crt     the one certificate authority that API server serves under
+//	token      this service's own token
+//	namespace  the namespace this service runs in
+//
+// The in-cluster paths stay fixed and unconfigurable, for the reason given
+// above them, and this does not change that: IN A POD THIS VARIABLE IS REFUSED,
+// not ignored. A pod's identity is the kubelet's to project, so a pod that
+// names a stand-in is a pod whose identity somebody is trying to point
+// elsewhere, and the host says so at boot rather than serving. Outside a pod
+// there is no kubelet and nothing to redirect: the stand-in is the only cluster
+// there is, and the host's local trust profile is still proven against it
+// (BindToAuthority) before a single delivery is admitted.
+const LocalClusterEnvironment = "SOLUTION_HOST_LOCAL_CLUSTER"
+
+// ErrLocalClusterInAPod refuses a stand-in named inside a real cluster.
+var ErrLocalClusterInAPod = errors.New("a pod may not name a local stand-in for its cluster")
+
+// localClusterClient builds the client from a stand-in directory. inPod is
+// InCluster's answer, passed in so a test drives the refusal through this code.
+func localClusterClient(dir string, inPod bool) (*KubernetesClient, error) {
+	if inPod {
+		return nil, fmt.Errorf("%w: %s is set and this process carries what a kubelet puts in a pod; "+
+			"a pod reads its identity from the kubelet's projection and from nowhere else",
+			ErrLocalClusterInAPod, LocalClusterEnvironment)
+	}
+	if !filepath.IsAbs(dir) {
+		return nil, fmt.Errorf("%w: %s must be an absolute directory, got %q", ErrKubernetesUnavailable, LocalClusterEnvironment, dir)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "server"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: cannot read the local cluster's API server address: %w", ErrKubernetesUnavailable, err)
+	}
+	server, err := url.Parse(strings.TrimSpace(string(raw)))
+	if err != nil || server.Scheme != "https" || server.Host == "" || server.Port() == "" || server.User != nil ||
+		(server.Path != "" && server.Path != "/") || server.RawQuery != "" || server.Fragment != "" {
+		return nil, fmt.Errorf("%w: the local cluster's API server address must be an https origin and nothing more", ErrKubernetesUnavailable)
+	}
+	authority, err := os.ReadFile(filepath.Join(dir, "ca.crt"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: cannot read the local cluster's CA: %w", ErrKubernetesUnavailable, err)
+	}
+	return kubernetesClientFrom("https://"+server.Host, authority, filepath.Join(dir, "token"), filepath.Join(dir, "namespace"))
 }
 
 // kubernetesClientFrom is the construction NewKubernetesClient performs, over

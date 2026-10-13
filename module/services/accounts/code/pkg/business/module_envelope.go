@@ -128,7 +128,7 @@ func (w ModuleWorkloadIdentity) workload() ModuleWorkload {
 	if err != nil {
 		return ModuleWorkload{Container: w.Container}
 	}
-	return ModuleWorkload{ServiceAccount: identity.ServiceAccount, Namespace: identity.Namespace, Container: w.Container}
+	return ModuleWorkload{SPIFFEID: w.SPIFFEID, ServiceAccount: identity.ServiceAccount, Namespace: identity.Namespace, Container: w.Container}
 }
 
 // ModuleEnvelopeRecord is one stored revision: the document as written, and who
@@ -683,7 +683,7 @@ func (s *Service) PutModuleEnvelope(
 	entry := &PolicyLogEntry{OperationID: newPolicyLogOperationID("module-envelope"),
 		Decision: PolicyLogNarrowed, SubjectKind: PolicyLogModuleEnvelope, SubjectID: "module-envelope",
 		Policy: policy, EnvelopeRevision: envelope.Revision, Actor: actorID}
-	if err := s.WithPolicyLoggedNarrowing(ctx, entry, func(ctx context.Context) error {
+	apply := func(ctx context.Context) error {
 		if err := s.moduleEnvelopes.AppendModuleEnvelopeRecord(ctx, record, expectedRevision); err != nil {
 			return err
 		}
@@ -705,7 +705,24 @@ func (s *Service) PutModuleEnvelope(
 				"previous_revision": int64(expectedRevision), //nolint:gosec // a revision is a small positive counter
 				"principals":        len(envelope.Principals),
 			})
-	}); err != nil {
+	}
+	// The policy log witnesses NARROWINGS — "a narrowing nothing witnessed is
+	// one a restore undoes silently". A write that only grants (a first
+	// envelope, a build or a principal added, nothing an installation loses)
+	// is not one: a restore that undoes it leaves less authority, which is the
+	// fail-closed direction, so it is applied and audited without a witness.
+	// Anything that removes or changes what was granted is witnessed as today.
+	narrows, err := s.moduleEnvelopeNarrows(ctx, envelope, document)
+	if err != nil {
+		return nil, err
+	}
+	write := apply
+	if narrows {
+		write = func(ctx context.Context) error { return s.WithPolicyLoggedNarrowing(ctx, entry, apply) }
+	} else {
+		write = func(ctx context.Context) error { return s.store.WithControlPlane(ctx, apply) }
+	}
+	if err := write(ctx); err != nil {
 		if errors.Is(err, ErrModuleEnvelopeConflict) {
 			return nil, NewStoreError(err, ErrTypeConflict)
 		}
@@ -858,6 +875,176 @@ func installationTenancyAllowed(envelope *ModuleEnvelope, principalID, orgID str
 		if ModulePrincipalID(prefix) == principalID {
 			return moduleAvailableToOrganization(principal.Grant, orgID)
 		}
+	}
+	return false
+}
+
+// moduleEnvelopeNarrows reports whether writing next would take authority away
+// from anyone: a build or a principal the current envelope approves that next
+// does not, a principal whose section changed at all (a changed section may
+// drop a binding, a workload or a ceiling, and the conservative reading of a
+// change is a narrowing), or an installation next would uninstall. A host with
+// no envelope has granted nothing, so its first envelope narrows nothing.
+func (s *Service) moduleEnvelopeNarrows(ctx context.Context, next *ModuleEnvelope, nextDocument []byte) (bool, error) {
+	var current *ModuleEnvelopeRecord
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		current, err = s.moduleEnvelopes.LatestModuleEnvelopeRecord(ctx)
+		return err
+	}); err != nil {
+		return false, err
+	}
+	if current != nil {
+		var before, after moduleEnvelopeWire
+		if err := json.Unmarshal(current.Document, &before); err != nil {
+			return true, nil
+		}
+		if err := json.Unmarshal(nextDocument, &after); err != nil {
+			return true, nil
+		}
+		approved := make(map[solutionhost.ImageDigest]bool, len(after.ApprovedBuilds))
+		for _, build := range after.ApprovedBuilds {
+			approved[build] = true
+		}
+		for _, build := range before.ApprovedBuilds {
+			if !approved[build] {
+				return true, nil
+			}
+		}
+		for prefix, was := range before.Principals {
+			is, kept := after.Principals[prefix]
+			if !kept {
+				return true, nil
+			}
+			wasJSON, err := json.Marshal(was)
+			if err != nil {
+				return true, nil
+			}
+			isJSON, err := json.Marshal(is)
+			if err != nil {
+				return true, nil
+			}
+			var wasValue, isValue any
+			if json.Unmarshal(wasJSON, &wasValue) != nil || json.Unmarshal(isJSON, &isValue) != nil {
+				return true, nil
+			}
+			if !envelopeValueWidens(wasValue, isValue) {
+				return true, nil
+			}
+		}
+	}
+	installations, err := s.moduleEnvelopes.ModuleInstallations(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, installation := range installations {
+		if !installationTenancyAllowed(next, installation.PrincipalID, installation.OrgID) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// envelopeValueWidens reports whether after grants at least everything before
+// did, over the envelope's JSON shape: every key of an object is kept and
+// widened; a list keeps every element (lists of objects match by their
+// identifying field, scalar lists by value); a true stays true; a string stays
+// the same, except that an empty one may be set. Anything else — a key gone, an
+// element gone, a value changed — is read as a narrowing, so the witness is
+// required for it.
+func envelopeValueWidens(before, after any) bool {
+	switch was := before.(type) {
+	case map[string]any:
+		is, ok := after.(map[string]any)
+		if !ok {
+			return false
+		}
+		for key, value := range was {
+			next, kept := is[key]
+			if !kept {
+				return envelopeValueEmpty(value)
+			}
+			if !envelopeValueWidens(value, next) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		is, ok := after.([]any)
+		if !ok {
+			return false
+		}
+		for _, element := range was {
+			if !envelopeListKeeps(is, element) {
+				return false
+			}
+		}
+		return true
+	case bool:
+		is, ok := after.(bool)
+		return ok && (!was || is)
+	case string:
+		is, ok := after.(string)
+		return ok && (was == "" || was == is)
+	case float64:
+		is, ok := after.(float64)
+		return ok && was == is
+	case nil:
+		return true
+	}
+	return false
+}
+
+// envelopeListKeeps reports whether list keeps element: an object by its
+// identifying field (id, resource_kind, spiffe_id) and widened, a scalar by
+// value.
+func envelopeListKeeps(list []any, element any) bool {
+	object, isObject := element.(map[string]any)
+	for _, candidate := range list {
+		if !isObject {
+			if envelopeValueWidens(element, candidate) && envelopeValueWidens(candidate, element) {
+				return true
+			}
+			continue
+		}
+		other, ok := candidate.(map[string]any)
+		if !ok {
+			continue
+		}
+		identified := false
+		same := true
+		for _, key := range []string{"id", "resource_kind", "spiffe_id"} {
+			if value, exists := object[key]; exists {
+				identified = true
+				if other[key] != value {
+					same = false
+				}
+			}
+		}
+		if identified && same && envelopeValueWidens(object, other) {
+			return true
+		}
+		if !identified && envelopeValueWidens(object, other) && envelopeValueWidens(other, object) {
+			return true
+		}
+	}
+	return false
+}
+
+func envelopeValueEmpty(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return typed == ""
+	case bool:
+		return !typed
+	case float64:
+		return typed == 0
+	case []any:
+		return len(typed) == 0
+	case map[string]any:
+		return len(typed) == 0
 	}
 	return false
 }

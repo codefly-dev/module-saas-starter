@@ -290,12 +290,30 @@ credential. The split is the point.
 | Which release runs | the declaration | `release`, recorded as `applied_release` |
 | Which route alias it answers on | the declaration | `routes[].alias` |
 | The workload identity to expect | the declaration | `workload` |
-| Resolved upstream and frontend | host reconciliation | `backend_upstream`, `frontend_manifest` |
+| Resolved upstream and frontend | the running workload, at its mint | `backend_upstream`, `frontend_manifest` |
 
 The document deliberately carries no upstream address and no manifest. An
 address written into a delivery document is a resolution result that was true on
 one cluster until something moved; a manifest is what the running build actually
-published. Both are observations that the host resolves under declared authority.
+published. Both are observations that the host records under declared authority.
+
+**The workload reports them with its mint.** `POST /modules/_work-context`
+carries two optional fields beside `prefix`: `upstream`, the https origin the
+gateway dials to reach the workload, and `manifest`, the frontend manifest it
+serves. Accounts records them (`RecordModuleUpstream`) only after the projected
+token and the running build have been bound exactly as for a mint, only onto the
+registration the applied presence already declares, and never onto the static
+half — the alias, the target and the workload identity stay the delivery's. No
+installation is required: a solution nobody has installed must still be reachable
+for its install step, which is delivered to the origin recorded here.
+
+The origin is bounded twice, at the gateway and again in accounts: `https`, a
+host and a port and nothing else, on a composition-local host (loopback or
+private address, a bare service name, or a cluster-local name). It cannot
+redirect a solution's traffic to another workload: the gateway reaches a
+recorded origin only over TLS to the SPIFFE identity the applied presence names.
+The request body is bounded at 80 KiB at the gateway. A report that is refused
+refuses the mint.
 
 ### The registry key is the route alias
 
@@ -407,6 +425,19 @@ TokenReview can be performed — a delivered carrier is authorised by TokenRevie
 so a host that cannot reach its API server has no input at all and starting
 would leave it polling an inbox nothing can write to.
 
+**A process on a developer machine may relocate both, and a pod never can.**
+`codefly run` starts the host as a process, where the kubelet's paths do not
+exist and writing them needs root. Two settings name a local stand-in, and each
+is **refused at boot when the process runs in a pod** (`infra.InCluster()`), so
+neither is a way for a composition to move a deployed host's trust:
+
+| Key | Meaning |
+| --- | --- |
+| `SOLUTION_HOST_LOCAL_CLUSTER` | an absolute directory holding `server` (the https origin of the local stand-in for the API server), `ca.crt`, `token` and `namespace`. TokenReview and pod reads go there. It does not make `InCluster()` true: the process is still not in a pod, and everything keyed on that stays local. |
+| `SOLUTION_HOST_LOCAL_TRUST_ANCHOR` | an absolute directory holding `verification_policy.json`. A relocated anchor must be a **local** profile — one bound to a cluster CA by its `local` block — so it can only ever admit a developer's key for the one local cluster whose CA it names. |
+
+In a pod both constants stand exactly as described above.
+
 **There is no mount setting.** It was `SOLUTION_HOST_BINDINGS_DIR`, a projected
 ConfigMap volume, and both it and the directory reader are deleted. A mount is
 the CURRENT desired set and nothing more, so a document that arrived, was
@@ -454,7 +485,18 @@ pass and every activation reads the CURRENT revision and hands Core's
 `ValidateAgainst` its projection for the document being judged, so containment
 is Core's exact rule and a narrowing takes effect at the next check with no
 restart. It is never read out of a delivered document — "an envelope a document
-carried would be a document declaring its own ceiling". Absence and damage are
+carried would be a document declaring its own ceiling".
+
+**Only a narrowing needs the policy-log witness.** A revision that takes
+authority away — a principal, an approved build, a unit, an action, a workload,
+a `true` that becomes `false`, a value that changes, or an organization a live
+installation depends on — is written under `WithPolicyLoggedNarrowing`, so a
+host restored from an older database cannot silently give it back. A revision
+that only adds is written on the control plane without it. The comparison
+(`moduleEnvelopeNarrows`) is the boundary and fails towards the witness:
+anything it does not recognise as "at least everything that was granted" —
+including a document it cannot decode — is a narrowing. A host with no witness
+configured therefore accepts grants and refuses every narrowing. Absence and damage are
 different answers: no revision written is a complete deployment that grants no
 module anything, while a revision that cannot be read leaves what the last pass
 installed serving, because reading a damaged ceiling as "no ceiling" withdraws
@@ -555,6 +597,39 @@ and DSSE envelope for verification on every reconciliation. The existing `bundle
 storage column holds the envelope; it does not change the carrier's wire shape.
 
 ## 7b. The host's own control paths, and which part a consumer may hardcode
+
+The current solution mint is `POST /modules/_work-context` on the gateway's
+`workload` endpoint (`api: http`, transported over TLS 1.3). Codefly resolves its
+address and port. A solution presents its X.509-SVID and projected ServiceAccount
+token as `Authorization: Bearer`; it needs no shared internal token on this
+listener. The gateway verifies the client chain and single SPIFFE URI SAN against
+`workload-identity/TRUST_BUNDLE_FILE` and `ALLOWED_CALLERS_FILE`. Accounts' existing
+TokenReview/BindExecution path requires that URI to equal both the reviewed
+namespace/ServiceAccount identity and the SPIFFE ID in applied presence. A
+mismatch returns 403, logs the mint refusal, and issues no credential.
+
+A workload that is admitted and **installed nowhere** is answered `412`
+(`FailedPrecondition` from accounts), not `403`: nothing is wrong with the
+workload, there is simply no installation to seal a credential to. It serves
+its install endpoint and asks again. The origin and manifest it reported with
+that mint are recorded all the same, because the install step is delivered
+there.
+
+The `workload-identity` group supplies `CERT_FILE`, `KEY_FILE`,
+`TRUST_BUNDLE_FILE`, `ALLOWED_CALLERS_FILE`, and `TOKEN_FILE` as readable paths;
+missing files fail startup with the key named. The SDK certificate reloader
+keeps the last good pair during rotation. Trust is reread for each handshake;
+caller admission rereads the newline-separated, `#`-commented allowlist for each
+handshake and request, so revocation also affects existing connections.
+
+Solution proxy traffic uses TLS 1.3, presents the gateway SVID, verifies the
+server chain, and requires exactly the SPIFFE URI declared by the applied
+presence. The registry read joins matching registration and applied-generation
+records; a missing, inconsistent or ambiguous workload identity is not proxied.
+Dial-time address revalidation still rejects off-mesh and metadata destinations.
+The plain `rest` endpoint retains its existing routes, including module-authority
+mints with the internal token and projected bearer. Those module mints and module
+upstreams retain their existing in-cluster transport contract.
 
 Three repositories independently invented the string `/platform/_credential`
 from a design note, and nothing failed at build time. This section exists so the
@@ -759,6 +834,13 @@ brokering pattern is the same one `GET /solutions/_entitlements` already uses.
 
 ## 8. Local runs: one attestation path, not a local mode
 
+Local solution traffic follows the same mutual-TLS contract as deployed traffic:
+the platform projects rotating SVIDs, trust and peer files, and the gateway uses
+its resolved `workload` endpoint for solution mints. Its solution proxy presents
+the gateway SVID and checks applied presence for the destination's SPIFFE ID.
+Plain-HTTP solution listeners and mints are not a supported local mode. Module
+SDK mints continue to use the plain in-cluster endpoint described in §7b.
+
 Binding a credential to an approved execution means reading what the workload
 actually runs: `TokenReview` on its projected service-account token, then the pod
 by the name that review returns, then the application container's `imageID`. That
@@ -948,6 +1030,33 @@ It does not, once the local run uses pods:
 So presence v2 **can** describe a local run honestly. What it cannot describe
 honestly is a run of bare *processes* — which is an argument for running pods
 locally, not an argument for a second trust model.
+
+### A run of processes: the CLI answers as the cluster
+
+The argument above ends at "run pods locally". A run of processes is still the
+first loop a developer has, so `codefly run` supplies what the host reads from
+Kubernetes instead of the host learning a second path. The host's code is the
+same in both: TokenReview on the projected token, the pod by the name the review
+returns, the build that pod runs, pinned-key verification of every delivered
+carrier, the envelope as an independent ceiling.
+
+What the CLI stands in for, per run:
+
+- **the API server** — TokenReview and pod reads over TLS under a CA created for
+  that run, with projected tokens issued for the same audiences. The host
+  reaches it through `SOLUTION_HOST_LOCAL_CLUSTER` (§7, Configuration).
+- **workload identity** — X.509-SVIDs under that same CA, named as a cell names
+  them from the namespace and service account.
+- **the trust anchor** — a local profile whose `local` block pins that run's CA,
+  read through `SOLUTION_HOST_LOCAL_TRUST_ANCHOR`.
+
+What is weaker than a cluster, stated rather than implied: the build a pod is
+said to run is the SHA-256 of the executable the CLI started, and the CLI is
+both the party that says so and the party that signs the presence naming it. No
+kubelet is a second witness. That is the authority a developer already has over
+their own machine, and it is bounded to it — the profile admits a person's key
+only for the one CA it names, and both relocations are refused in a pod, so no
+deployed host can be pointed at a stand-in.
 
 ### Two rules that do not bend locally
 

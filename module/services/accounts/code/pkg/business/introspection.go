@@ -151,6 +151,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"DelegationService/DecideDelegation":                           "Approve or deny a delegation request.",
 	"InstallationService/InstallSolution":                          "Install a solution: compose its agent principal, scope node, standing grant, and installation row.",
 	"InstallationService/UninstallSolution":                        "Uninstall a solution and reverse its composition.",
+	"InstallationService/RetryInstallation":                        "Run a failed installation's install step again; the installation is pending until the solution acknowledges.",
 	"InstallationService/NarrowInstallation":                       "Narrow an installation's scope, bump its revision and cancel the organization's affected work.",
 	"InstallationService/TransferInstallationOwnership":            "Reassign an installation's accountable owner of record.",
 	"InstallationService/GetInstallation":                          "Get one installation and its live health.",

@@ -76,6 +76,7 @@ func TestDeleteOrganizationSerializesWithAnotherInstallationUninstall(t *testing
 			TargetID: targetID, RootScopeLabel: "Example Solution", RoleID: roleID,
 		})
 		require.NoError(t, err)
+		acknowledgeInstallation(t, installation)
 		ids = append(ids, installation.Id)
 	}
 	sort.Strings(ids)
@@ -322,6 +323,7 @@ func TestRevokeInstallationsOfTargetLocksTheBatchBeforeUpdating(t *testing.T) {
 		TargetID: targetID, RootScopeLabel: "Example Solution", RoleID: roleID,
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, second)
 	ids := []string{first, second.Id}
 	sort.Strings(ids)
 	ctx, cancel := context.WithTimeout(testCtx, 30*time.Second)

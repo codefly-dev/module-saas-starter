@@ -133,12 +133,18 @@ capability in `X-Codefly-Work-Context` and the same JSON body:
 Accounts resolves `organizationSlug` through its existing organization store,
 then compares the persisted ID with both token tenant and delegation. It
 checks the current owner's administrative eligibility and role permission
-contents before mutation. Inspect returns `state: absent` or `state: ready` and
-`changed: false`; apply returns `state: ready` and reports whether it created
-anything. Verify fails on an absent or incompatible installation. Ready responses
+contents before mutation. Inspect returns `state: absent`, `pending`, `failed`,
+or `ready` and `changed: false`; apply reports the current state and whether it
+created anything. Solution installations are pending until the workload install
+step acknowledges. Reapplying observes that run; it never restarts a failed run.
+An organization administrator retries failed consent through RetryInstallation.
+Verify refuses absent, pending, failed, and incompatible installations. Existing responses
 include `organizationId`, `principalId`, `installationId`, `scopeNodeId`, and
 `grantId`. Absent responses contain only `organizationId` alongside state and
 changed. IDs are always read from the server, including after a lost response.
+Only `ready` may carry a verified authority reference. Declaration resolution
+uses the same registry binding as InstallSolution; this delegated path grants
+only its approved agent ceiling, with empty module-capability consent.
 
 HTTP statuses: 400 invalid shape/unknown fields; 401 missing, expired, wrongly
 signed or wrong-audience capability; 403 missing/expired/revoked delegation or

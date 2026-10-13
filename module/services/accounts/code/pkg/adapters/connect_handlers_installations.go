@@ -16,6 +16,10 @@ type installationConnectHandler struct {
 	inner *InstallationServer
 }
 
+func (h *installationConnectHandler) RetryInstallation(ctx context.Context, req *connect.Request[gen.RetryInstallationRequest]) (*connect.Response[gen.Installation], error) {
+	return unary(ctx, req, h.inner.RetryInstallation)
+}
+
 func (h *installationConnectHandler) InstallSolution(ctx context.Context, req *connect.Request[gen.InstallSolutionRequest]) (*connect.Response[gen.Installation], error) {
 	return unary(ctx, req, h.inner.InstallSolution)
 }

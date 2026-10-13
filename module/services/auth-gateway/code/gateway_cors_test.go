@@ -218,7 +218,7 @@ func TestCORS_UpstreamGrantIsReplacedNotDuplicated(t *testing.T) {
 	twoRegisteredClients(t, gw)
 
 	permissive := &fakeUpstream{body: "solution-response"}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newSolutionTestServer(t, gw, "example", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		permissive.ServeHTTP(w, r)
@@ -405,7 +405,7 @@ func TestCORS_StreamedResponseCarriesTheGrantWithItsFirstChunk(t *testing.T) {
 	twoRegisteredClients(t, gw)
 
 	release := make(chan struct{})
-	solution := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	solution := newSolutionTestServer(t, gw, "example", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: one\n\n"))
 		http.NewResponseController(w).Flush()
@@ -618,7 +618,7 @@ func TestCORS_VaryIsNotDuplicatedAgainstAnUpstreamThatSetsIt(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	twoRegisteredClients(t, gw)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := newSolutionTestServer(t, gw, "example", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Add("Vary", "Origin")
 		w.Header().Add("Vary", "Accept-Encoding")
 		w.WriteHeader(http.StatusOK)

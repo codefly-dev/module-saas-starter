@@ -32,7 +32,7 @@ type InstallationExposure struct {
 	InheritedTeams []*gen.CollectionReadGrant
 }
 
-// OrganizationInstallation is one active installation as its organization's
+// OrganizationInstallation is one nonrevoked installation as its organization's
 // administrator manages it.
 type OrganizationInstallation struct {
 	Summary  *gen.InstallationSummary
@@ -47,7 +47,7 @@ type OrganizationInstallation struct {
 // is the one outcome an administrator granting "exposure" must never be handed.
 var ErrRoleDoesNotExposeSolution = errors.New("role does not permit using a solution")
 
-// ListOrganizationInstallations lists orgID's ACTIVE installations, one page, with
+// ListOrganizationInstallations lists orgID's installations, one page, with
 // live health, exposure and the catalogue row of each installed target.
 //
 // The installations and their exposure are read on ONE read-only REPEATABLE
@@ -77,7 +77,7 @@ func (s *Service) ListOrganizationInstallations(
 	if err := s.installationStore().WithOrgReadSnapshot(ctx, orgID, func(ctx context.Context) error {
 		var e error
 		summaries, e = s.installationStore().ListInstallations(ctx, orgID,
-			gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, pageToken, pageSize+1)
+			gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, pageToken, pageSize+1)
 		if e != nil {
 			return e
 		}
@@ -121,17 +121,23 @@ func (s *Service) ListOrganizationInstallations(
 	out := make([]*OrganizationInstallation, 0, len(summaries))
 	for _, summary := range summaries {
 		installation := summary.GetInstallation()
+		if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED {
+			continue
+		}
 		row := &OrganizationInstallation{
 			Summary:  summary,
 			Exposure: exposure[installation.GetId()],
 			Target:   targets[installation.GetTargetId()],
 		}
-		if row.Exposure == nil {
+		if row.Exposure == nil && installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
 			// Both reads share one snapshot and an active installation always has
 			// a root node, so a missing entry is a defect rather than a race. It
 			// fails the listing instead of showing an active row with no root.
 			return nil, "", w.Wrapf(fmt.Errorf("installation %s has no authority root in the same snapshot", installation.GetId()),
 				"cannot list organization installations")
+		}
+		if row.Exposure == nil {
+			row.Exposure = &InstallationExposure{}
 		}
 		out = append(out, row)
 	}

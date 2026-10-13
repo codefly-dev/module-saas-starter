@@ -89,7 +89,33 @@ type keyBundleVerifier struct {
 // NewSolutionHostKeyVerifier reads the one policy document at the constant
 // anchor. A path parameter here would let composition nominate its own trust.
 func NewSolutionHostKeyVerifier() (solutionHostBundleVerifierWithPolicy, error) {
-	return readSolutionHostKeyVerifier(SolutionHostTrustAnchorPath)
+	directory, err := solutionHostTrustAnchorDir()
+	if err != nil {
+		return nil, err
+	}
+	verifier, err := readSolutionHostKeyVerifier(directory)
+	if err != nil {
+		return nil, err
+	}
+	return requireLocalProfileOffTheAnchor(directory, verifier)
+}
+
+// requireLocalProfileOffTheAnchor holds a relocated anchor to being a local
+// profile. The constant anchor may carry a release policy, because only the
+// platform can mount there. A directory a developer's run names may carry only
+// a policy bound to one cluster's certificate authority, which the host must
+// then prove it runs in — so a relocated anchor can never be a set of keys
+// trusted on nobody's say-so.
+func requireLocalProfileOffTheAnchor(directory string, verifier solutionHostBundleVerifierWithPolicy) (solutionHostBundleVerifierWithPolicy, error) {
+	if directory == SolutionHostTrustAnchorPath {
+		return verifier, nil
+	}
+	if keyed, ok := verifier.(*keyBundleVerifier); !ok || keyed.local == nil {
+		return nil, fmt.Errorf("%w: the anchor at %q was named by %s and is not a local profile; "+
+			"only a policy bound to a cluster's certificate authority may be read from outside %s",
+			ErrSolutionHostTrustRootUnavailable, directory, LocalTrustAnchorEnvironment, SolutionHostTrustAnchorPath)
+	}
+	return verifier, nil
 }
 
 // The file reader is private so only tests can substitute a temporary mount.

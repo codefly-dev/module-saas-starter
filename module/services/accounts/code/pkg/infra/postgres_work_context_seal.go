@@ -34,7 +34,13 @@ func (s *PostgresStore) WorkContextHeldInstallation(
 			  FROM public.installations i
 			 WHERE i.org_id = $1::uuid
 			   AND i.id::text = $3
-			   AND i.status = 'active'
+			   -- A member of the organization holds its installations that are
+			   -- active AND the ones still pending: an installation is pending
+			   -- until its install step completes, and that step is the one
+			   -- capability minted to a pending installation — sealing it is
+			   -- what lets the step be delivered at all. A failed or
+			   -- revoked installation is held by nobody.
+			   AND i.status IN ('active', 'pending')
 			   AND EXISTS (SELECT 1 FROM public.organization_members m
 			                WHERE m.org_id = i.org_id AND m.user_id::text = $2)`,
 			orgID, principalID, installationID,

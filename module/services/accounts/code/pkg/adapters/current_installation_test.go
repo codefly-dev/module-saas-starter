@@ -132,6 +132,9 @@ func TestCurrentInstallationServedModuleAndParent(t *testing.T) {
 		{"wrong tenant", func(i *gen.Installation) { i.OrgId = uuid.NewString() }},
 		{"wrong installation", func(i *gen.Installation) { i.Id = uuid.NewString() }},
 		{"revoked", func(i *gen.Installation) { i.RevokedAt = timestamppb.Now() }},
+		// HOST-INST-002, HOST-INST-004: unacknowledged consent is absent.
+		{"pending", func(i *gen.Installation) { i.Status = gen.InstallationStatus_INSTALLATION_STATUS_PENDING }},
+		{"failed", func(i *gen.Installation) { i.Status = gen.InstallationStatus_INSTALLATION_STATUS_FAILED }},
 		{"inactive", func(i *gen.Installation) { i.Status = gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED }},
 		{"no consented target", func(i *gen.Installation) { i.TargetId = "" }},
 	} {

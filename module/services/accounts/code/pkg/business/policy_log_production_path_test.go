@@ -210,6 +210,7 @@ func TestARealUninstallAppendsAndThenCommitsItsReceipt(t *testing.T) {
 		AllowedScopes:   []string{"doc"},
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installation)
 
 	// An install is not a narrowing, so it must not have been offered to the
 	// log. A protocol that appended on every write would make "was authority
@@ -346,6 +347,7 @@ func TestANarrowingTheLogRefusesChangesNothing(t *testing.T) {
 		AllowedScopes:   []string{"doc"},
 	})
 	require.NoError(t, err)
+	acknowledgeInstallation(t, installation)
 
 	testPolicyLog.mu.Lock()
 	testPolicyLog.failWith = errPolicyLogDown

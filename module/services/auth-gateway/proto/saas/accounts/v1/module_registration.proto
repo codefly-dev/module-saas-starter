@@ -60,6 +60,28 @@ message ModuleMintWorkContextRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // upstream is where the minting workload serves its backend, as an absolute
+  // https origin with no path: the dynamic half of its registration, reported
+  // by the runtime that proved its identity with the token above (#952). The
+  // gateway reaches it only under the SVID the applied presence names for the
+  // workload, so a claimed origin that is not that workload serves nothing.
+  // Empty leaves the registration's backend half as it is.
+  string upstream = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string = {
+      max_len: 512
+      uri: true
+    }
+  ];
+  // manifest is the solution's frontend manifest as its runtime serves it: the
+  // other dynamic half of a solution's registration (a module has none), the
+  // document the host's frontend renders the solution's page from. Reported
+  // with the same proven identity as upstream. Empty leaves the frontend half
+  // as it is.
+  string manifest = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.max_len = 65536
+  ];
 }
 
 // ModuleMintWorkContextResponse carries the signed capability plus the identity

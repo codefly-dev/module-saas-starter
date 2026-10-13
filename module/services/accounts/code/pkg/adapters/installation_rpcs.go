@@ -20,6 +20,24 @@ type InstallationServer struct {
 	gen.UnsafeInstallationServiceServer
 }
 
+func (s *InstallationServer) RetryInstallation(ctx context.Context, req *gen.RetryInstallationRequest) (*gen.Installation, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
+		return nil, err
+	}
+	installation, err := service.RetryInstallation(ctx, actorID, req.GetOrgId(), req.GetInstallationId())
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	return installation, nil
+}
+
 func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.InstallSolutionRequest) (*gen.Installation, error) {
 	if err := Validate(req); err != nil {
 		return nil, err

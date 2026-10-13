@@ -44,6 +44,9 @@ const (
 	// InstallationServiceNarrowInstallationProcedure is the fully-qualified name of the
 	// InstallationService's NarrowInstallation RPC.
 	InstallationServiceNarrowInstallationProcedure = "/saas.accounts.v1.InstallationService/NarrowInstallation"
+	// InstallationServiceRetryInstallationProcedure is the fully-qualified name of the
+	// InstallationService's RetryInstallation RPC.
+	InstallationServiceRetryInstallationProcedure = "/saas.accounts.v1.InstallationService/RetryInstallation"
 	// InstallationServiceTransferInstallationOwnershipProcedure is the fully-qualified name of the
 	// InstallationService's TransferInstallationOwnership RPC.
 	InstallationServiceTransferInstallationOwnershipProcedure = "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"
@@ -82,6 +85,9 @@ type InstallationServiceClient interface {
 	// Narrowing is witnessed in the policy log before commit, then atomically
 	// bumps the installation revision, cancels its org's work and records audit.
 	NarrowInstallation(context.Context, *connect.Request[v1.NarrowInstallationRequest]) (*connect.Response[emptypb.Empty], error)
+	// RetryInstallation runs a failed installation's install step again, at the
+	// same revision. The installation is pending until the solution acknowledges.
+	RetryInstallation(context.Context, *connect.Request[v1.RetryInstallationRequest]) (*connect.Response[v1.Installation], error)
 	// TransferInstallationOwnership reassigns the owner of record and replaces the
 	// co-owner succession set. This is how a "connection owner left the org"
 	// failure is repaired: an admin transfers the installation to a current admin,
@@ -182,6 +188,12 @@ func NewInstallationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(installationServiceMethods.ByName("NarrowInstallation")),
 			connect.WithClientOptions(opts...),
 		),
+		retryInstallation: connect.NewClient[v1.RetryInstallationRequest, v1.Installation](
+			httpClient,
+			baseURL+InstallationServiceRetryInstallationProcedure,
+			connect.WithSchema(installationServiceMethods.ByName("RetryInstallation")),
+			connect.WithClientOptions(opts...),
+		),
 		transferInstallationOwnership: connect.NewClient[v1.TransferInstallationOwnershipRequest, v1.Installation](
 			httpClient,
 			baseURL+InstallationServiceTransferInstallationOwnershipProcedure,
@@ -232,6 +244,7 @@ type installationServiceClient struct {
 	installSolution               *connect.Client[v1.InstallSolutionRequest, v1.Installation]
 	uninstallSolution             *connect.Client[v1.UninstallSolutionRequest, emptypb.Empty]
 	narrowInstallation            *connect.Client[v1.NarrowInstallationRequest, emptypb.Empty]
+	retryInstallation             *connect.Client[v1.RetryInstallationRequest, v1.Installation]
 	transferInstallationOwnership *connect.Client[v1.TransferInstallationOwnershipRequest, v1.Installation]
 	getInstallation               *connect.Client[v1.GetInstallationRequest, v1.GetInstallationResponse]
 	listInstallations             *connect.Client[v1.ListInstallationsRequest, v1.ListInstallationsResponse]
@@ -254,6 +267,11 @@ func (c *installationServiceClient) UninstallSolution(ctx context.Context, req *
 // NarrowInstallation calls saas.accounts.v1.InstallationService.NarrowInstallation.
 func (c *installationServiceClient) NarrowInstallation(ctx context.Context, req *connect.Request[v1.NarrowInstallationRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.narrowInstallation.CallUnary(ctx, req)
+}
+
+// RetryInstallation calls saas.accounts.v1.InstallationService.RetryInstallation.
+func (c *installationServiceClient) RetryInstallation(ctx context.Context, req *connect.Request[v1.RetryInstallationRequest]) (*connect.Response[v1.Installation], error) {
+	return c.retryInstallation.CallUnary(ctx, req)
 }
 
 // TransferInstallationOwnership calls
@@ -309,6 +327,9 @@ type InstallationServiceHandler interface {
 	// Narrowing is witnessed in the policy log before commit, then atomically
 	// bumps the installation revision, cancels its org's work and records audit.
 	NarrowInstallation(context.Context, *connect.Request[v1.NarrowInstallationRequest]) (*connect.Response[emptypb.Empty], error)
+	// RetryInstallation runs a failed installation's install step again, at the
+	// same revision. The installation is pending until the solution acknowledges.
+	RetryInstallation(context.Context, *connect.Request[v1.RetryInstallationRequest]) (*connect.Response[v1.Installation], error)
 	// TransferInstallationOwnership reassigns the owner of record and replaces the
 	// co-owner succession set. This is how a "connection owner left the org"
 	// failure is repaired: an admin transfers the installation to a current admin,
@@ -405,6 +426,12 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 		connect.WithSchema(installationServiceMethods.ByName("NarrowInstallation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	installationServiceRetryInstallationHandler := connect.NewUnaryHandler(
+		InstallationServiceRetryInstallationProcedure,
+		svc.RetryInstallation,
+		connect.WithSchema(installationServiceMethods.ByName("RetryInstallation")),
+		connect.WithHandlerOptions(opts...),
+	)
 	installationServiceTransferInstallationOwnershipHandler := connect.NewUnaryHandler(
 		InstallationServiceTransferInstallationOwnershipProcedure,
 		svc.TransferInstallationOwnership,
@@ -455,6 +482,8 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 			installationServiceUninstallSolutionHandler.ServeHTTP(w, r)
 		case InstallationServiceNarrowInstallationProcedure:
 			installationServiceNarrowInstallationHandler.ServeHTTP(w, r)
+		case InstallationServiceRetryInstallationProcedure:
+			installationServiceRetryInstallationHandler.ServeHTTP(w, r)
 		case InstallationServiceTransferInstallationOwnershipProcedure:
 			installationServiceTransferInstallationOwnershipHandler.ServeHTTP(w, r)
 		case InstallationServiceGetInstallationProcedure:
@@ -488,6 +517,10 @@ func (UnimplementedInstallationServiceHandler) UninstallSolution(context.Context
 
 func (UnimplementedInstallationServiceHandler) NarrowInstallation(context.Context, *connect.Request[v1.NarrowInstallationRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.NarrowInstallation is not implemented"))
+}
+
+func (UnimplementedInstallationServiceHandler) RetryInstallation(context.Context, *connect.Request[v1.RetryInstallationRequest]) (*connect.Response[v1.Installation], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.RetryInstallation is not implemented"))
 }
 
 func (UnimplementedInstallationServiceHandler) TransferInstallationOwnership(context.Context, *connect.Request[v1.TransferInstallationOwnershipRequest]) (*connect.Response[v1.Installation], error) {

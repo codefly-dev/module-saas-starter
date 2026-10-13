@@ -90,6 +90,14 @@
       },
       "type": "object"
     },
+    "InstallationServiceRetryInstallationBody": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "InstallationServiceRevokeInstallationFromTeamBody": {
       "properties": {
         "orgId": {
@@ -2415,6 +2423,10 @@
           "format": "date-time",
           "type": "string"
         },
+        "failureReason": {
+          "description": "Why the install step failed: the solution's bounded refusal reason, or a\nfixed reason when it never answered. Empty unless status is FAILED.",
+          "type": "string"
+        },
         "id": {
           "type": "string"
         },
@@ -2460,11 +2472,13 @@
     },
     "v1InstallationStatus": {
       "default": "INSTALLATION_STATUS_UNSPECIFIED",
-      "description": "InstallationStatus is the lifecycle of an installation row. An uninstall is a\nsoft delete (status=revoked, revoked_at set) so the agent, grants, and audit\ntrail remain resolvable.",
+      "description": "InstallationStatus is the lifecycle of an installation row. An uninstall is a\nsoft delete (status=revoked, revoked_at set) so the agent, grants, and audit\ntrail remain resolvable.\n\n - INSTALLATION_STATUS_PENDING: Installed, and waiting for the solution to acknowledge its standard install\nstep. Nothing can use a pending installation.\n - INSTALLATION_STATUS_FAILED: The solution refused its install step, or never answered within the\nattempt budget. Nothing can use it; an administrator may retry it.",
       "enum": [
         "INSTALLATION_STATUS_UNSPECIFIED",
         "INSTALLATION_STATUS_ACTIVE",
-        "INSTALLATION_STATUS_REVOKED"
+        "INSTALLATION_STATUS_REVOKED",
+        "INSTALLATION_STATUS_PENDING",
+        "INSTALLATION_STATUS_FAILED"
       ],
       "type": "string"
     },
@@ -7771,6 +7785,45 @@
           }
         },
         "summary": "Narrowing is witnessed in the policy log before commit, then atomically\nbumps the installation revision, cancels its org's work and records audit.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:retry": {
+      "post": {
+        "operationId": "InstallationService_RetryInstallation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceRetryInstallationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RetryInstallation runs a failed installation's install step again, at the\nsame revision. The installation is pending until the solution acknowledges.",
         "tags": [
           "InstallationService"
         ]

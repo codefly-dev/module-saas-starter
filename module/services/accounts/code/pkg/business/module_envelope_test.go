@@ -362,7 +362,7 @@ func TestOnlyAnApprovedWorkloadBindsThePrincipal(t *testing.T) {
 
 	workload, err := approvedWorkload(entry, []ModuleWorkloadIdentity{{SPIFFEID: testSPIFFEID, Container: testContainer}}, document)
 	require.NoError(t, err)
-	require.Equal(t, ModuleWorkload{ServiceAccount: "reports", Namespace: "acme-prod", Container: testContainer}, workload)
+	require.Equal(t, ModuleWorkload{SPIFFEID: testSPIFFEID, ServiceAccount: "reports", Namespace: "acme-prod", Container: testContainer}, workload)
 
 	for name, retargeted := range map[string]ModuleWorkloadIdentity{
 		"another service account": {SPIFFEID: "spiffe://acme.test/ns/acme-prod/sa/intruder", Container: testContainer},
@@ -423,7 +423,7 @@ func TestSPIFFEIDsAreParsedStrictly(t *testing.T) {
 		[]any{map[string]any{"spiffe_id": "spiffe://ns/ns/acme-prod/sa/reports", "container": testContainer}}
 	envelope, err := ParseModuleEnvelope(encodeEnvelope(t, document))
 	require.NoError(t, err)
-	require.Equal(t, ModuleWorkload{ServiceAccount: "reports", Namespace: "acme-prod", Container: testContainer},
+	require.Equal(t, ModuleWorkload{SPIFFEID: "spiffe://ns/ns/acme-prod/sa/reports", ServiceAccount: "reports", Namespace: "acme-prod", Container: testContainer},
 		envelope.Principals[testModulePrefix].WorkloadIdentities[0].workload())
 }
 

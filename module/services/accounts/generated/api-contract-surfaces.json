@@ -221,6 +221,7 @@
         "/saas.accounts.v1.InstallationService/ListInstallations",
         "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
         "/saas.accounts.v1.InstallationService/NarrowInstallation",
+        "/saas.accounts.v1.InstallationService/RetryInstallation",
         "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
         "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
         "/saas.accounts.v1.InstallationService/UninstallSolution"

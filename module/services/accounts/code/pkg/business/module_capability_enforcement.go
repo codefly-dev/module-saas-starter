@@ -225,7 +225,7 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 		ctx, caller.PrincipalID, caller.BoundOrg, sealedInstallation)
 	if err != nil {
 		if errors.Is(err, ErrModuleInstallationInactive) {
-			return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive,
+			return nil, nil, wrapStatus(codes.FailedPrecondition, ErrModuleInstallationInactive,
 				"principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
 		}
 		if errors.Is(err, ErrModuleAuthorityUnreadable) {
@@ -241,7 +241,7 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 	}
 
 	if live == nil || live.InstallationID == "" || !live.Scope.Capabilities {
-		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive, "principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
+		return nil, nil, wrapStatus(codes.FailedPrecondition, ErrModuleInstallationInactive, "principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
 	}
 	if live.RegistryBindingID != grant.PresenceBinding {
 		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive, "installation belongs to a different registry binding")
