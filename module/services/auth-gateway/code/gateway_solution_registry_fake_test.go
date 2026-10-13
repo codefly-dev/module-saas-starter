@@ -194,18 +194,14 @@ func init() {
 // that derived it differently would hand tests a status the real registry
 // never produces.
 //
-// A declared module is active once its presence is applied: it has no browser
-// remote, so no frontend block is waited for. A solution is active once its
-// applied presence carries one; until then it is pending.
+// Either declared kind is active with or without a frontend.
 func fakeSolutionStatus(record *accountsv1.SolutionRegistration) accountsv1.SolutionRegistrationStatus {
 	switch {
 	case record.GetTombstonedAt() != nil:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED
-	case record.GetDeclared().GetKind() == accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE:
+	case declaredModuleKind(record) || declaredSolutionKind(record):
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
-	case record.GetFrontend() == nil:
-		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
 	default:
-		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
+		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
 	}
 }

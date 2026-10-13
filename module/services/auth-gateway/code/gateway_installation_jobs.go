@@ -107,7 +107,14 @@ func (c *installationJobConsumer) runOnce(ctx context.Context) error {
 
 func (g *Gateway) deliverInstallationStep(ctx context.Context, claim *installationStepClaim) (int, string) {
 	entry, resolution := g.solutions.resolveRoutingOfKind(ctx, claim.RouteAlias, solutionSurface)
-	if resolution != solutionRoutable || entry.TargetID != claim.TargetID || entry.BindingID != claim.BindingID {
+	if resolution != solutionRoutable || entry == nil {
+		// Failed resolution returns no route. The claim is still retryable;
+		// logging fields of that absent route would terminate the consumer.
+		log.Printf("installation step: route %q is not deliverable: resolution=%v claimed target=%q binding=%q",
+			claim.RouteAlias, resolution, claim.TargetID, claim.BindingID)
+		return http.StatusServiceUnavailable, ""
+	}
+	if entry.TargetID != claim.TargetID || entry.BindingID != claim.BindingID {
 		// Named, because a step that cannot be delivered is retried and then
 		// dead-lettered with a generic reason, and the operator reading the
 		// installation needs to know which of these it was.

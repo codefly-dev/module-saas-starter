@@ -293,7 +293,7 @@ credential. The split is the point.
 | Which release runs | the declaration | `release`, recorded as `applied_release` |
 | Which route alias it answers on | the declaration | `routes[].alias` |
 | The workload identity to expect | the declaration | `workload` (the SPIFFE ID is the workload's mesh principal) |
-| The page a solution serves — title, order, exposed module, host contract, dashboard, client surfaces | the declaration | `frontend`, copied onto the record as `frontend_manifest` when the generation applies |
+| The page a module or solution serves — title, order, exposed module, host contract, dashboard, client surfaces | the declaration | `frontend`, copied onto the record as `frontend_manifest` when the generation applies |
 | Where its backend is reached | the composition, through the Codefly SDK | nowhere: the gateway resolves it from the endpoints the document declares |
 
 The document carries no address. An address written into a delivery document is
@@ -311,12 +311,13 @@ HTTP-family only — and asks the Codefly SDK for each; exactly one answers, and
 that is where `/solutions/<alias>/*` and `/v1/<alias>/*` go, over plain HTTP.
 None, or more than one, leaves the alias unrouted (`503 … not active`). The
 install step is delivered to the same address over the same transport. A
-solution is **active** once its presence is applied with a `frontend` block
-(`SolutionRegistrationStatus`), which accounts copies onto the record's frontend
-half in the transaction that applies the generation; the gateway's registry
-projection builds the manifest the frontend renders from that block plus the
-host's own constants — the asset path, the backend alias, the capability path.
-A module is active once its presence is applied: it fronts no page.
+module or solution is **active** once its presence is applied, independently of
+its optional `frontend` block (`SolutionRegistrationStatus`). Accounts copies
+that block in the same apply transaction; the gateway builds the common manifest
+from it plus the host's constants — asset path, backend alias and capability
+path. Either kind can serve a page, and either can be headless. Each
+organisation's installation readiness and consent remain separate checks.
+
 
 **The registry stops authorising routes it cannot confirm.** A replica serves
 from its snapshot and refreshes it every 10 s; a snapshot the registry has not

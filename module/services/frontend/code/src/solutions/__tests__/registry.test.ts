@@ -675,7 +675,7 @@ describe("registry snapshot", () => {
   }
 
   function snapshotResponse(
-    solutions: Array<{ id: string; status: string; manifest?: string }>,
+    solutions: Array<{ id: string; status: string; manifest?: string; kind?: string; targetId?: string }>,
   ) {
     return new Response(
       JSON.stringify({ revision: 7, solutions }),
@@ -701,6 +701,21 @@ describe("registry snapshot", () => {
     vi.unstubAllGlobals();
     getEndpoints.mockReset();
     getWorkspaceSecret.mockReset();
+  });
+
+  it("loads either kind and trusts only the host declaration for routing and consent", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => snapshotResponse([
+      {id: "audit", kind: "module", targetId: targetFor("audit"), status: "active", manifest: JSON.stringify(baseManifest({kind: "solution"}))},
+      {id: "reports", kind: "solution", status: "active", manifest: manifestFor("reports", 2)},
+    ])));
+    const manifests = await loadSolutions();
+    if (manifests === "unavailable") throw new Error("fixture registry must load");
+    expect(manifests?.find(m => m.id === "audit")?.kind).toBe("module");
+    expect(manifests?.find(m => m.id === "reports")?.kind).toBe("solution");
+    const module = manifests!.find(m => m.id === "audit")!;
+    expect(navProjection(module, granted)?.id).toBe("audit");
+    expect(entitledSolutions([module], entitlements({solutions: [{...granted, targetId: "another-target"}]}))).toEqual([]);
+    expect(parseManifest(baseManifest({kind: "module"}))?.kind).toBeUndefined();
   });
 
   it("checks runtime compatibility on the read-only projection", async () => {

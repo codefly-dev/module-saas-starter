@@ -72,8 +72,8 @@ function gatewayBase(): string | null {
 
 /**
  * Generic solution proxy. Forwards a browser request to the API gateway's
- * root for platform Connect procedures or its runtime solution passthrough
- * (/solutions/{alias}/…) for other paths, attaching the first-party
+ * root for platform Connect procedures, /v1/{alias}/… for module data, or
+ * /solutions/{alias}/… for solution data and shared assets, attaching first-party
  * trust headers and carrying the caller's identity (bearer and/or session
  * cookie). The browser never reaches a solution service directly, and this route
  * names no specific solution — it only resolves whatever registered at runtime.
@@ -125,9 +125,17 @@ async function handler(
 		/^saas\.[A-Za-z_][A-Za-z0-9_]*\.v1\.[A-Za-z_][A-Za-z0-9_]*\/[A-Za-z_][A-Za-z0-9_]*$/.test(
 			suffix,
 		);
+	// Both kinds use the same page and asset loader. A module's data requests
+	// stay on the module gateway surface, preserving its audience and checks.
+	// The gateway independently restricts the common asset route to public
+	// GET/HEAD paths; this choice grants no exemption here.
+	const publicAsset =
+		(request.method === "GET" || request.method === "HEAD") &&
+		/^(?:assets|\.well-known)(?:\/|$)/.test(suffix);
+	const routePrefix = solution.kind === "module" && !publicAsset ? "v1" : "solutions";
 	const target = platformProcedure
 		? `${base}/${suffix}${search}`
-		: `${base}/solutions/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
+		: `${base}/${routePrefix}/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
 
 	const headers = new Headers();
 	// First-party trust headers, resolved server-side from Codefly config — the

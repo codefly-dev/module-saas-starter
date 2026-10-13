@@ -47,5 +47,5 @@ func TestADeclaredModuleIsActiveWithNoReportedHalf(t *testing.T) {
 	module := &SolutionRegistration{SolutionID: "documents", Declared: &SolutionDeclaredBinding{BindingID: "acme.test.documents", Kind: SolutionDeclaredKindModule}}
 	require.Equal(t, SolutionRegistrationActive, module.Status())
 	solution := &SolutionRegistration{SolutionID: "notebook", Declared: &SolutionDeclaredBinding{BindingID: "acme.test.notebook", Kind: SolutionDeclaredKindSolution}}
-	require.Equal(t, SolutionRegistrationPending, solution.Status(), "a solution still waits for both of its halves")
+	require.Equal(t, SolutionRegistrationActive, solution.Status(), "a headless solution is available independently of frontend metadata")
 }

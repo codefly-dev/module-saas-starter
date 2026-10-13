@@ -33,9 +33,14 @@ service, and the alternative is a gateway that cannot start.
 
 ## Reading declared solution upstreams
 
+An installation delivery may race withdrawal or an unavailable registry. Failed
+route resolution carries no routing entry: return a retryable 503 before reading
+its fields, including in logs. A replacement binding must also fail the claim's
+target/binding comparison. The installation consumer stays alive in both cases.
+
 `GET /solutions/_registry` returns this replica's read projection: identity,
-publisher, revision, declared target, status (`active`, `pending`,
-`tombstoned`) and, for an active solution, the manifest the frontend renders
+publisher, revision, declared target and kind, status (`active`, `pending`,
+`tombstoned`) and, for either kind with a frontend block, the manifest the frontend renders
 its page from — built here (`solutionManifest`) from the `frontend` block of
 the applied presence, which accounts copies onto the record's frontend half,
 plus the host's own constants: the asset path, the backend alias, the
@@ -46,6 +51,11 @@ cluster-internal credential.
 The gateway proxies `/solutions/{id}/…` using the same verified identity and
 header discipline as catalog routes, with per-viewer installation admission.
 Only public `/assets` and `/.well-known` paths accept unauthenticated GET/HEAD.
+A declared module with a frontend block uses that same public asset surface.
+Module data requests still use `/v1/<alias>/*`, with live installation admission;
+`/solutions/<alias>/*` never turns into a second module API surface. A headless
+module cannot expose assets there. Withdrawal and the registry lease apply to
+both kinds, including public assets.
 
 ## Composed-module REST routes
 

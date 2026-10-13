@@ -88,7 +88,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// read further down this handler is what let a replacement binding be
 	// admitted on its own installation while the bearer went to its
 	// predecessor's address.
-	routing, resolution := g.solutions.resolveRouting(r.Context(), id)
+	surface := solutionSurface
+	if _, public := solutionPublicUpstreamPath(r.Method, path); public {
+		surface = frontendSurface
+	}
+	routing, resolution := g.solutions.resolveRoutingOfKind(r.Context(), id, surface)
 	switch resolution {
 	case solutionUnregistered:
 		httpError(w, http.StatusBadGateway, "solution not registered")
@@ -102,12 +106,9 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusServiceUnavailable, "solution registration not active")
 		return true
 	case solutionWrongKind:
-		// The alias is declared, and not as a SOLUTION — a module, or a record
-		// whose kind this gateway cannot read. Same answer and same code as a
-		// record nothing declared, for the same reason: from this surface it is
-		// not a solution this host declares, and no later read changes that. A
-		// module is reached at /v1/<alias>/*, which is where its own refusal is
-		// worded.
+		// No declaration admits this record on the requested surface. This is
+		// a final refusal, independent of the record's availability status.
+		w.Header().Set(solutionEntitlementRefusalHeader, refusalNotEntitled)
 		httpError(w, http.StatusForbidden, "solution is not declared on this host")
 		return true
 	case solutionRegistryUnavailable:
@@ -403,6 +404,7 @@ type solutionRegistryProjection struct {
 }
 
 type solutionRegistrationProjection struct {
+	Kind      string `json:"kind,omitempty"`
 	ID        string `json:"id"`
 	Publisher string `json:"publisher"`
 	Revision  int64  `json:"revision"`
@@ -454,6 +456,12 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 			Revision:  record.GetRevision(),
 			Status:    solutionRegistryStatusLabel(record),
 			TargetID:  record.GetDeclared().GetTargetId(),
+		}
+		switch {
+		case declaredModuleKind(record):
+			projection.Kind = "module"
+		case declaredSolutionKind(record):
+			projection.Kind = "solution"
 		}
 		if manifest, ok := solutionManifest(record); ok {
 			projection.Manifest = &manifest

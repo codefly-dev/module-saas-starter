@@ -43,13 +43,13 @@ const (
 	SolutionRegistrationTombstoned SolutionRegistrationStatus = "tombstoned"
 )
 
-// SolutionFrontendHalf is the `frontend` block of a solution's applied
+// SolutionFrontendHalf is the `frontend` block of a module or solution's applied
 // presence, copied onto the record in the transaction that applies the
 // generation. Manifest carries the block as JSON — what the solution declared
 // (title, order, exposed module, host contract, dashboard, surfaces) — and the
 // gateway's registry projection builds the manifest the frontend renders from
 // it plus the host's own constants. Nothing is reported by a running process,
-// and a module has no half: it fronts no page.
+// and a headless component of either kind has no half.
 type SolutionFrontendHalf struct {
 	Revision int64
 	Manifest string
@@ -245,30 +245,17 @@ func IsSolutionRuntimeBoundary(seeds []string, candidate, orgID string) bool {
 	return false
 }
 
-// Status reports declared availability, independent of a runtime clock.
-//
-// WHAT IS REQUIRED DEPENDS ON THE KIND, and that is not a relaxation. A module
-// is active once its presence is applied: it is reached at /v1/<alias>/*,
-// nothing loads a manifest for it, and where it serves is resolved by the
-// gateway through the Codefly SDK from the endpoint that presence declares. A
-// solution serves a page too, so it is active once its applied presence
-// carries the frontend block the page is rendered from; where its backend
-// serves is resolved the same way. Nothing is reported by a running process,
-// so there is no observation to wait for and no two halves to disagree.
-//
-// A record with no declaration keeps the solution reading. It is the stricter of
-// the two, and an undeclared record is withdrawn by the cutover's own constraint
-// anyway, so this is the fail-closed direction.
+// Status reports declared availability, independent of a runtime clock or UI.
+// Both modules and solutions may be headless. Frontend declarations determine
+// whether a page exists; each organization's installation has its own status.
 func (r *SolutionRegistration) Status() SolutionRegistrationStatus {
 	switch {
 	case r.TombstonedAt != nil:
 		return SolutionRegistrationTombstoned
-	case r.Declared != nil && r.Declared.Kind == SolutionDeclaredKindModule:
+	case r.Declared != nil && (r.Declared.Kind == SolutionDeclaredKindModule || r.Declared.Kind == SolutionDeclaredKindSolution):
 		return SolutionRegistrationActive
-	case r.Frontend == nil:
-		return SolutionRegistrationPending
 	default:
-		return SolutionRegistrationActive
+		return SolutionRegistrationPending
 	}
 }
 

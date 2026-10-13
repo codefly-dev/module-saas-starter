@@ -5,13 +5,23 @@ The authenticated product, behind auth-gateway. Architecture is in
 and [../../FRONTEND_PLUGINS.md](../../FRONTEND_PLUGINS.md). This file covers the
 solution read projections and the published client kit.
 
-## Reading declared solutions
+## Reading declared modules and solutions
 
 `src/solutions/registry.ts` validates the gateway's durable registry snapshot and
 caches it for five seconds. It exposes reads only. An expired snapshot is dropped
 when a refresh fails, so callers receive unavailable instead of stale authority.
 The manifest includes navigation, frontend loading information, backend alias,
 compatibility requirements and optional dashboard, surfaces and source metadata.
+Both kinds use this reader, the `/s/<id>` page and the same federation loader.
+The gateway stamps `kind` from the applied declaration; a remote manifest cannot
+choose its routing kind. A shared module has one deployment, while each
+organisation installs it and grants team access independently through the same
+target-based entitlement projection. Headless components contribute no page.
+For a module page, relative data requests through the injected `apiBase` reach
+`/v1/<alias>/<suffix>`; for a solution they reach `/solutions/<alias>/<suffix>`.
+Public GET/HEAD assets use the common `/solutions/<alias>/assets` surface for
+both kinds. Platform Connect procedures still reach the gateway root.
+
 These declarations grant no access to content. The solution page reads the full
 manifest in process; browser projections carry only the fields described below.
 

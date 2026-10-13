@@ -7,9 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Availability is derived from delivered presence alone: a solution is active
-// once its applied generation carries a frontend block, a module once its
-// presence is applied, and nothing a running process reports moves either.
+// Availability is derived from delivered presence alone, for either kind and
+// with or without a frontend. Installation readiness is a separate fact.
 func TestSolutionRegistrationStatusIsDerivedFromDeliveredPresence(t *testing.T) {
 	record := &SolutionRegistration{
 		Declared: &SolutionDeclaredBinding{BindingID: "acme.test.example", Generation: 1, TargetID: "example-target", Kind: SolutionDeclaredKindSolution},
@@ -17,9 +16,11 @@ func TestSolutionRegistrationStatusIsDerivedFromDeliveredPresence(t *testing.T) 
 	}
 	require.Equal(t, SolutionRegistrationActive, record.Status())
 	record.Frontend = nil
-	require.Equal(t, SolutionRegistrationPending, record.Status(), "a solution whose presence declares no frontend block has no page to render")
+	require.Equal(t, SolutionRegistrationActive, record.Status(), "a headless solution can serve its API")
 	record.Declared.Kind = SolutionDeclaredKindModule
-	require.Equal(t, SolutionRegistrationActive, record.Status(), "a module fronts no page and waits for nothing")
+	require.Equal(t, SolutionRegistrationActive, record.Status(), "a headless module can serve its API")
+	record.Declared = nil
+	require.Equal(t, SolutionRegistrationPending, record.Status(), "a frontend alone cannot activate a record")
 	now := time.Now()
 	record.TombstonedAt = &now
 	require.Equal(t, SolutionRegistrationTombstoned, record.Status())

@@ -14,6 +14,8 @@ import { getEndpoints, getWorkspaceSecret } from "codefly";
 
 export interface SolutionManifest {
 	id: string;
+	/** Stamped from the host's declaration, never from the remote manifest. */
+	kind?: "module" | "solution";
 	/**
 	 * The immutable solution target the host declared this record under — the
 	 * key a per-viewer projection joins entitlements against.
@@ -336,6 +338,7 @@ function internalToken(): string | null {
 }
 
 interface GatewayRegistryEntry {
+	kind?: unknown;
 	id?: unknown;
 	status?: unknown;
 	manifest?: unknown;
@@ -394,6 +397,9 @@ function manifestsFromSnapshot(payload: unknown): {
 		manifests.push({
 			...parsed,
 			targetId: typeof entry.targetId === "string" ? entry.targetId : "",
+			...(entry.kind === "module" || entry.kind === "solution"
+				? { kind: entry.kind }
+				: {}),
 		});
 	}
 	manifests.sort((a, b) => (a.nav.order ?? 0) - (b.nav.order ?? 0));

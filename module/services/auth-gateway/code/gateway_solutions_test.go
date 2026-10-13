@@ -383,13 +383,11 @@ func TestGateway_Solution_PublicSurface_FailsOpenOnLimiterOutage(t *testing.T) {
 
 // --- durable registry behaviour (#534) ---
 
-// A solution that registered only its backend half is NOT routable. Serving it
-// would advertise a page whose required half never arrived; the audit finding
-// this fixes is exactly that the two halves could disagree.
-func TestGateway_Solution_NoFrontendBlock_NotRoutable(t *testing.T) {
+// A headless solution serves its protected backend without advertising a page.
+func TestGateway_Solution_NoFrontendBlock_BackendRoutable(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 
-	declareSolution(t, gw, "audit", "http://example.svc")
+	upstream := registerSolutionUpstream(t, gw, "audit")
 	registry := solutionRegistryFake(t, gw)
 	registry.records["audit"].Frontend = nil
 	require.NoError(t, gw.solutions.refresh(context.Background()))
@@ -399,8 +397,8 @@ func TestGateway_Solution_NoFrontendBlock_NotRoutable(t *testing.T) {
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
-	require.Contains(t, w.Body.String(), "not active")
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "/v1/ping", upstream.lastPath)
 }
 
 // A declared solution the composition handed this gateway no address for is
@@ -592,7 +590,7 @@ func TestGateway_Solution_RegistrySnapshot(t *testing.T) {
 	require.Equal(t, "audit", snapshot.Solutions[0].ID)
 	require.Equal(t, "active", snapshot.Solutions[0].Status)
 	require.Equal(t, "reports", snapshot.Solutions[1].ID)
-	require.Equal(t, "pending", snapshot.Solutions[1].Status)
+	require.Equal(t, "active", snapshot.Solutions[1].Status)
 	require.Nil(t, snapshot.Solutions[1].Manifest, "a presence without its frontend block has no page to render")
 	require.NotContains(t, w.Body.String(), "upstream")
 }
@@ -636,4 +634,93 @@ func TestGateway_Solution_RegistrySnapshotBuildsTheManifestFromThePresence(t *te
 	var unreadable solutionRegistryProjection
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &unreadable))
 	require.Nil(t, unreadable.Solutions[0].Manifest)
+}
+
+// A module contributes a page through the same loader as a solution. Only its
+// public assets use /solutions; its authenticated API remains on /v1.
+func TestGateway_ModuleFrontendUsesCommonAssetsOnly(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	upstream := registerSolutionUpstream(t, gw, "shared-example")
+	registry := solutionRegistryFake(t, gw)
+	registry.records["shared-example"].Declared.Kind = accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	for _, tc := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/assets/mf-manifest.json", http.StatusOK},
+		{http.MethodHead, "/assets/chunk.js", http.StatusOK},
+		{http.MethodGet, "/.well-known/capabilities", http.StatusOK},
+		{http.MethodGet, "/records", http.StatusForbidden},
+		{http.MethodPost, "/assets/write", http.StatusForbidden},
+		{http.MethodGet, "/assets/../records", http.StatusForbidden},
+	} {
+		t.Run(tc.method+tc.path, func(t *testing.T) {
+			upstream.lastHeaders = nil
+			r := httptest.NewRequest(tc.method, "/solutions/shared-example"+tc.path, nil)
+			r.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, r)
+			require.Equal(t, tc.status, w.Code)
+			if tc.status == http.StatusOK {
+				require.Equal(t, tc.path, upstream.lastPath)
+				require.Empty(t, upstream.lastHeaders.Get("Authorization"))
+			} else {
+				require.Nil(t, upstream.lastHeaders)
+			}
+		})
+	}
+	// The module stays routable as a backend when headless, but exposes no UI assets.
+	registry.records["shared-example"].Frontend = nil
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/solutions/shared-example/assets/chunk.js", nil))
+	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestGateway_ModuleFrontendWithdrawalAndLease(t *testing.T) {
+	for _, withdrawn := range []bool{false, true} {
+		t.Run(map[bool]string{false: "expired lease", true: "withdrawn"}[withdrawn], func(t *testing.T) {
+			gw, _, _, _ := newGatewayHarness(t)
+			upstream := registerSolutionUpstream(t, gw, "shared-example")
+			registry := solutionRegistryFake(t, gw)
+			registry.records["shared-example"].Declared.Kind = accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE
+			if withdrawn {
+				registry.tombstone("shared-example")
+			}
+			require.NoError(t, gw.solutions.refresh(context.Background()))
+			if !withdrawn {
+				registry.listErr = grpcstatus.Error(codes.Unavailable, "offline")
+				gw.solutions.now = func() time.Time { return time.Now().Add(solutionRegistryLease + time.Second) }
+			}
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/solutions/shared-example/assets/chunk.js", nil))
+			if withdrawn {
+				require.Equal(t, http.StatusBadGateway, w.Code)
+			} else {
+				require.Equal(t, http.StatusServiceUnavailable, w.Code)
+			}
+			require.Nil(t, upstream.lastHeaders)
+		})
+	}
+}
+
+func TestGateway_ModuleFrontendSnapshot(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "shared-example")
+	registry := solutionRegistryFake(t, gw)
+	registry.records["shared-example"].Declared.Kind = accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	r := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
+	r.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+	var snapshot solutionRegistryProjection
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &snapshot))
+	require.Len(t, snapshot.Solutions, 1)
+	require.Equal(t, "module", snapshot.Solutions[0].Kind)
+	require.Equal(t, fakeSolutionTarget("shared-example"), snapshot.Solutions[0].TargetID)
+	require.NotNil(t, snapshot.Solutions[0].Manifest)
+	require.Contains(t, *snapshot.Solutions[0].Manifest, "/assets/mf-manifest.json")
 }

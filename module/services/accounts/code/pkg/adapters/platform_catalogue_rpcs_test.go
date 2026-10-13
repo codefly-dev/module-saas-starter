@@ -59,7 +59,7 @@ func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 			// id instead — which is correct behaviour, and not what this test
 			// is about.
 			Declared: &business.SolutionDeclaredBinding{
-				BindingID: "acme.test.example-solution", Generation: 1,
+				BindingID: "acme.test.example-solution", Generation: 1, Kind: business.SolutionDeclaredKindSolution,
 				Release: "acme/example-solution@1.0.0", TargetID: platformTargetD,
 			},
 			UpdatedAt: time.Now().UTC(),

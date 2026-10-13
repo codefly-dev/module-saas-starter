@@ -68,11 +68,12 @@ function withTrustContext(publicOrigin = "http://frontend") {
 	);
 }
 
-function registerAudit(serviceAlias = "audit-backend") {
+function registerAudit(serviceAlias = "audit-backend", kind: "module" | "solution" = "solution") {
 	findSolution.mockImplementation(async (id: string) =>
 		id === "audit"
 			? {
 					id: "audit",
+					kind,
 					nav: { title: "Audit", path: "/s/audit" },
 					frontend: {
 						type: "module-federation",
@@ -1012,4 +1013,31 @@ describe("solution proxy trace context", () => {
 		expect(headers.has("x-forwarded-for")).toBe(false);
 		expect(headers.has("x-b3-traceid")).toBe(false);
 	});
+});
+
+
+describe("shared module frontend", () => {
+ it.each([
+  ["records", "v1"],
+  ["assets/mf-manifest.json", "solutions"],
+  [".well-known/capabilities", "solutions"],
+ ])("routes %s through its owning gateway surface", async (path, prefix) => {
+  withGateway();
+  registerAudit("shared-example", "module");
+  const res = await GET(proxyRequest(`http://frontend/api/solutions/audit/proxy/${path}`, {
+   headers: { authorization: "Bearer caller-token" },
+  }), context("audit", path.split("/")));
+  expect(res.status).toBe(200);
+  expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/${prefix}/shared-example/${path}`);
+  expect((fetchMock.mock.calls[0][1].headers as Headers).get("authorization")).toBe("Bearer caller-token");
+ });
+ it("preserves a live installation refusal from the module gateway", async () => {
+  withGateway();
+  registerAudit("shared-example", "module");
+  fetchMock.mockResolvedValue(new Response("installation revoked", {status: 403}));
+  const res = await GET(proxyRequest("http://frontend/api/solutions/audit/proxy/records"), context("audit", ["records"]));
+  expect(res.status).toBe(403);
+  expect(await res.text()).toBe("installation revoked");
+  expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/v1/shared-example/records`);
+ });
 });

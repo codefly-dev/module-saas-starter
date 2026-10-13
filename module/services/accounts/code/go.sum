@@ -64,6 +64,8 @@ github.com/codefly-dev/core v0.19.3 h1:nWCK+wBtwYO91oyZ4G+jNgoVGcgVCr73wz2taLLiF
 github.com/codefly-dev/core v0.19.3/go.mod h1:4ovwm7kaHFtY9+TT8yfjA4D/BiAhIFZez7lcil8muVo=
 github.com/codefly-dev/core v0.19.5-0.20261013174810-6ec8b82139e1 h1:1giJnf26MIVDfxpk3cWvaELtsvUlpIeuOmvDcDc++lI=
 github.com/codefly-dev/core v0.19.5-0.20261013174810-6ec8b82139e1/go.mod h1:0uX/7lTBVaGV0RI2Mb3mpEr/PPdx/jZqXHym/U8FVDI=
+github.com/codefly-dev/core v0.19.5-0.20261013181847-319233f7a87f h1:QuCLMc3CNYmz0nvptFMYGK+UBzIUq20lCiPKRdGEDtI=
+github.com/codefly-dev/core v0.19.5-0.20261013181847-319233f7a87f/go.mod h1:0uX/7lTBVaGV0RI2Mb3mpEr/PPdx/jZqXHym/U8FVDI=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba h1:6nFaDYsLyA5x3WiGAk6pMI3c0naqxiPeaTHMqRPvbVs=

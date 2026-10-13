@@ -535,6 +535,7 @@ type routingSurface int
 const (
 	solutionSurface routingSurface = iota
 	moduleSurface
+	frontendSurface
 )
 
 func (c *solutionRegistryCache) resolveRoutingOfKind(
@@ -564,20 +565,20 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	// The declaration positively identifies the routing surface. Both kinds
 	// require organization consent; an unspecified kind is served by neither.
 	switch surface {
+	case frontendSurface:
+		// A shared module can contribute a page. Only its public asset surface
+		// uses this path; its APIs keep the module route and audience checks.
+		if (!declaredSolutionKind(record) && !declaredModuleKind(record)) ||
+			record.GetFrontend().GetManifest() == "" {
+			return nil, solutionWrongKind
+		}
 	case moduleSurface:
 		// A record with no declaration has no module routing identity.
 		if !declaredModuleKind(record) {
 			return nil, solutionWrongKind
 		}
 	default:
-		// Only a record that IS declared, and declared as the other kind, is
-		// refused here. Presence NOTHING declared keeps its existing path: it
-		// resolves to no target, and per-viewer admission refuses it with the
-		// entitlement refusal header that tells an operator which of the three
-		// layers said no. Short-circuiting it here would answer the same 403 while
-		// losing that, and "nothing declared this" is a different fact from "a
-		// module is declared here".
-		if record.GetDeclared() != nil && !declaredSolutionKind(record) {
+		if !declaredSolutionKind(record) {
 			return nil, solutionWrongKind
 		}
 	}
@@ -598,11 +599,9 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	}, solutionRoutable
 }
 
-// solutionRecordActive reads the availability accounts derived from the
-// declaration: ACTIVE, which for a module is its presence applied and for a
-// solution its presence applied with a frontend block. Where either is served
-// is resolved beside it, and a record with no resolved address is not active
-// on this replica whatever the authority derived.
+// solutionRecordActive reads the availability accounts derived from applied
+// presence. Frontend availability and installation readiness are separate facts.
+// A record without a resolved address is not routable on this replica.
 func solutionRecordActive(record *accountsv1.SolutionRegistration) bool {
 	return record != nil && record.GetTombstonedAt() == nil &&
 		record.GetStatus() == accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE

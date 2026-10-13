@@ -42,7 +42,10 @@ The internal `SolutionRegistryService` exposes the registry and host-binding
 reads. The gateway reads the snapshot and brokers it to the frontend. Both cache
 briefly: gateway reconciliation is approximately 10 seconds with a refresh on
 cache miss; frontend snapshots expire after 5 seconds and a failed refresh
-reports unavailable. An incomplete record stays pending and is not served.
+reports unavailable. An undeclared record stays pending and is not served.
+Applied modules and solutions are active independently of their optional
+frontend block; headless backends remain usable. Registry availability does not
+replace the separate organisation installation status and consent checks.
 
 Migration 26 destructively removes runtime-only state and makes declaration
 ownership mandatory. Its from-zero proof is `TestMigration25FromZero` in the
