@@ -153,10 +153,13 @@ type ExecutionIdentity struct {
 
 // ExecutionReviewer is the independent source: a TokenReview, and a pod read.
 //
-// Two methods rather than one, because the second needs the first's answer — the
+// Review and read are separate because the second needs the first's answer — the
 // pod is read by the name and namespace the TOKEN named, so a caller cannot
 // point the host at a different pod.
 type ExecutionReviewer interface {
+	// NativeDevelopment is true only for a non-pod local stand-in constructed
+	// by the infrastructure adapter. Production always requires a mesh presenter.
+	NativeDevelopment() bool
 	// ReviewToken authenticates a token and reports the identity Kubernetes
 	// attributes to it. The audience is checked by the API server, so a token
 	// minted for another audience is rejected there rather than here.
@@ -364,13 +367,17 @@ func (s *Service) BindExecution(
 			ErrExecutionNotBoundToken, reviewed.Namespace, reviewed.ServiceAccount)
 	}
 
-	// THE TOKEN'S LIFETIME IS THE REPLAY WINDOW. A projected token is a bearer
-	// credential: TokenReview proves the cluster issued it to this pod, never
-	// that the pod is the one presenting it. The host bounds it to the
-	// shortest projection Kubernetes issues. Binding the mint to the party
-	// PRESENTING the token — the TLS peer did this on the deleted workload
-	// listener, and nothing replaces it yet (#1118, interface 6 held for an
-	// owner decision) — is the residual this leaves open.
+	if !s.executionReviewer.NativeDevelopment() {
+		presenter := VerifiedWorkloadPresenter(ctx)
+		identity, parseErr := ParseKubernetesSPIFFEID(presenter)
+		if parseErr != nil || presenter != grant.Workload.SPIFFEID ||
+			identity.Namespace != reviewed.Namespace || identity.ServiceAccount != reviewed.ServiceAccount {
+			return nil, fmt.Errorf("%w: authenticated presenter does not match the applied and reviewed workload", ErrExecutionIdentityMismatch)
+		}
+	}
+
+	// Mesh identity identifies a ServiceAccount, not an individual pod. Keep
+	// the projected-token lifetime, pod UID and running-build checks as well.
 	if reviewed.IssuedAt.IsZero() || reviewed.ExpiresAt.IsZero() {
 		return nil, fmt.Errorf("%w: the review reported no issue or expiry time", ErrExecutionTokenLifetime)
 	}

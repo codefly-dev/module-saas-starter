@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 )
 
@@ -29,4 +30,20 @@ func workloadListener(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), workloadListenerKey{}, true)))
 	})
+}
+
+func authenticatedWorkloadListener(next http.Handler, waypoint string) (http.Handler, error) {
+	if _, err := presenterFromXFCC([]string{"By=" + waypoint + ";URI=" + waypoint}, waypoint); err != nil {
+		return nil, errors.New("protected workload presenter waypoint must be a canonical SPIFFE identity")
+	}
+	return workloadListener(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, err := presenterFromXFCC(r.Header.Values("X-Forwarded-Client-Cert"), waypoint)
+		if err != nil {
+			httpError(w, http.StatusUnauthorized, "workload presenter required")
+			return
+		}
+		r.Header.Del("X-Forwarded-Client-Cert")
+		r.Header.Del(workloadPresenterHeader)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), workloadPresenterKey{}, principal)))
+	})), nil
 }

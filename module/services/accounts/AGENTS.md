@@ -575,37 +575,28 @@ could not run is `ErrExecutionUnbound`, not one.
   API server has just authenticated. A longer one, or one whose lifetime cannot
   be read, is refused.
 
-**No listener binding.** The gateway's workload endpoint is plain HTTP inside
-the cell's mesh (#1118): the SPIFFE peer its mutual-TLS listener used to forward
-on the mint RPC, and `BindExecution`'s comparison of it, are deleted. The
-SPIFFE ID `ModuleWorkload` retains from applied presence names the workload's
-mesh principal, and nothing on this host verifies a certificate against it.
+**Presenter binding.** Production exchanges require the gateway-authenticated
+workload presenter in private request context. The internal gRPC adapter accepts
+`x-codefly-workload-presenter` only with the gateway-only provenance credential,
+refuses duplicate or malformed values, and removes the raw assertion before
+calling business code. `BindExecution` compares the complete SPIFFE ID against
+applied presence and its namespace/ServiceAccount against TokenReview. The
+protected waypoint must overwrite caller XFCC and be the only network peer
+admitted to the workload listener; a trusted-looking header is not that proof.
 
-**Replay, stated precisely.** A projected ServiceAccount token is a BEARER
-credential. TokenReview proves the cluster issued it to a named pod and that the
-pod still exists; it does not prove the pod is the party presenting it. So:
+**Replay, stated precisely.** Reusing a valid projection for legitimate work is
+allowed. A stolen token presented under a different mesh principal is refused;
+a pod UID, approved running build and current organisation installation are still
+required. Mesh identity names a ServiceAccount, so two pods sharing that identity
+remain indistinguishable as presenters. TokenReview, the 600-second lifetime
+bound, pod UID and build checks remain essential. This change does not establish
+pod-specific proof of possession or live mesh qualification.
 
-- **Closed here:** a token from another workload, another audience or another
-  cluster; a replaced pod at the same name; a pod running an unapproved build or
-  any unapproved container; a stopped container or a pod being deleted; a token
-  older than 10 minutes.
-- **Not closed — the residual:** a peer that has COPIED a still-valid token
-  from an approved, running pod (and holds the broker's perimeter credential)
-  can mint as that pod's principal for the rest of that token's lifetime, and
-  the mint record attributes it to the victim pod. TokenReview cannot close
-  this, and nothing on this host can tell the copy from the original.
-- **Held for an owner decision (#1118, interface 6):** single use per
-  projection — recording the TokenReview credential id and refusing a second
-  mint with it — was specified and found to break legitimate re-mints: a module
-  mints its own context, an operation context per declared binding and a
-  source-operation context per sync from one projection inside one rotation
-  window. The leading replacement binds the PRESENTER rather than counting
-  mints: the gateway's workload port reads the connection's source address
-  (`r.RemoteAddr`, in `workloadListener`), conveys it on the mint RPC where the
-  SPIFFE peer travelled (`moduleMintContext`), and accounts requires it to be
-  one of the pod IPs the TokenReview's pod reports (`status.podIPs`). Under
-  ambient, ztunnel authenticates that source; locally the stand-in pod's
-  address is loopback. Not built until confirmed.
+**Native development.** Only constructing the Kubernetes client from the local
+stand-in outside a real pod selects the native exemption. In-cluster construction
+requires presenter binding, and setting a local stand-in inside a pod fails
+startup. Business tests using an in-memory cluster model the native trust profile;
+production presenter tests use the real Kubernetes decoder and business mint path.
 
 **Three digest types, and conflating any two defeats the check.** They are
 separate Go types rather than three strings for exactly that reason:

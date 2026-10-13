@@ -834,6 +834,7 @@ func stripAllIdentityHeaders(r *http.Request) {
 const grpcMetadataHeaderPrefix = "grpc-metadata-"
 
 var untrustedAuthHeaders = []string{
+	workloadPresenterHeader,
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
 	"x-scoped-roles", "x-scoped-roles-truncated",
 	"x-auth-id", "x-user-email", "x-user-name", "x-session-id",

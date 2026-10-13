@@ -684,13 +684,21 @@ and metadata destinations. There is no `workload-identity` configuration group,
 no trust bundle and no caller allowlist: the mesh is the only party that
 authenticates a hop inside the cell.
 
-**Binding a mint to the party presenting the token is held** (#1118, interface
-6, an owner decision). The TLS peer did that on the deleted listener; single
-use per projection rotation was found to break legitimate re-mints — a module
-mints its own context, an operation context per declared binding and a
-source-operation context per sync from one projection inside one rotation
-window — so no replacement lands here yet. The residual is stated in
-`services/accounts/AGENTS.md`.
+**Production mints bind the presenter.** The protected workload listener accepts
+one canonical waypoint XFCC assertion and forwards its SPIFFE principal only with
+the gateway's own provenance credential. Accounts compares it with the applied
+workload and reviewed token's namespace/ServiceAccount, then keeps the pod UID,
+running-build and live installation checks. The expected waypoint is supplied
+as `gateway/WORKLOAD_PRESENTER_PRINCIPAL`; an empty value prevents production
+startup. Infrastructure must pin that value, HTTP sanitization and enrollment,
+and prevent direct or alternate-Service access around the waypoint. The same
+ServiceAccount still means the same mesh identity, even for different pods.
+
+Native stand-in construction outside a pod selects the sole exemption; a
+production Kubernetes client never accepts missing presenter evidence. Legitimate
+repeated exchanges with one projection remain valid. Source tests do not qualify
+the real mesh: header overwrite, direct PodIP/HBONE refusal and repeated exchanges
+must still be exercised together before a production rollout.
 
 Three repositories independently invented the string `/platform/_credential`
 from a design note, and nothing failed at build time. This section exists so the
@@ -900,8 +908,9 @@ HTTP past the gateway, the gateway's resolved `workload` endpoint for every
 mint, and the solution proxy forwarding to the address the Codefly SDK resolves
 for the solution's declared endpoint. What the mesh does in a cell — admit the
 workload port from composed workloads alone — a native run does by binding
-every service but the gateway to loopback. There is no local trust model and
-no local SVID: nothing serves or presents one anywhere.
+the native services to loopback. Native Accounts uses its explicit non-pod
+stand-in profile; this provides no mesh presenter and cannot be selected inside
+a real pod. No application serves or presents a local SVID.
 
 Binding a credential to an approved execution means reading what the workload
 actually runs: `TokenReview` on its projected service-account token, then the pod

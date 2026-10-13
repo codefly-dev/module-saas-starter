@@ -371,23 +371,28 @@ other drops.
 
 `workload` (`api: http`) serves the gateway's full handler over plain HTTP on a
 port of its own, which Codefly allocates like the other two; a gateway that
-cannot resolve it does not start. It is the endpoint composed workloads reach
-this gateway on: in a cell the mesh admits it from composed workloads alone
-(an `AuthorizationPolicy` the cell's applier compiles from the L4 edges the
-CLI delivers), and a native run binds every service but the gateway to
-loopback. The server wraps the handler in `workloadListener`, which marks each
-request it serves; a header never does, so a caller on the public endpoint
-cannot claim the mark.
+cannot resolve it does not start. The production listener requires the protected
+waypoint's exact `By=<waypoint>;URI=<presenter>` XFCC assertion, with a single
+canonical value. Missing, duplicate and malformed assertions are refused before
+the handler. `gateway/WORKLOAD_PRESENTER_PRINCIPAL` supplies the expected waypoint
+identity and is required outside native development. This header is trustworthy
+only with protected enrollment, HTTP sanitization, and destination policy that
+admits the waypoint alone; comparing `By` does not establish that network fact.
 
 The three module credential exchanges (`/modules/_work-context`,
 `/modules/_operation-context`, `/modules/_source-operation-context`) are served
 on this endpoint and nowhere else: on `rest` they are unexposed paths (`404`).
-`/modules/_work-context` presents the pod's projected token and no other
-credential; the two other exchanges keep the cluster-internal token they always
-took. Nothing attests a workload to accounts beyond the token it presents —
-`moduleMintContext` appends the gateway's own internal credential to the RPC
-and nothing else — and binding a mint to the party presenting it is held for an
-owner decision (#1118, interface 6).
+The listener puts the authenticated presenter in private request context and
+removes the raw headers. `moduleMintContext` sends that principal to accounts
+with the existing gateway-provenance credential, separately from the internal
+perimeter credential. A caller's presenter header is never copied into the RPC.
+Accounts verifies provenance and compares the presenter with applied presence
+and TokenReview before granting work authority.
+
+Native development has no waypoint and stamps no presenter. Accounts permits
+that absence only with its actual non-pod stand-in Kubernetes client; a local
+flag on the gateway cannot disable the production Accounts check. These are
+source-level controls; the composed mesh path still requires traffic qualification.
 
 Solutions are proxied over plain HTTP to the address the Codefly SDK resolved,
 through the same guarded transport as a module (`registeredTransport`); the

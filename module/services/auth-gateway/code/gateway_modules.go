@@ -352,11 +352,20 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 	return true
 }
 
-// moduleMintContext presents the gateway's cluster-internal credential on
-// every module mint. Nothing else travels with it: a workload is proven to
-// accounts by the projected token in the request, never by this hop.
+// moduleMintContext authenticates the gateway's presenter assertion separately
+// from the internal perimeter token. Only the protected workload listener can
+// place a presenter in context; request headers are never copied into it.
 func (s *ExtAuthz) moduleMintContext(ctx context.Context) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	md, _ := metadata.FromOutgoingContext(ctx)
+	md = md.Copy()
+	md.Set("x-codefly-internal-token", s.internalToken)
+	md.Delete(workloadPresenterHeader)
+	md.Delete("x-codefly-gateway-token")
+	if presenter := workloadPresenter(ctx); presenter != "" {
+		md.Set(workloadPresenterHeader, presenter)
+		md.Set("x-codefly-gateway-token", s.gatewayToken)
+	}
+	return metadata.NewOutgoingContext(ctx, md)
 }
 
 func (s *ExtAuthz) mintModuleWorkContext(

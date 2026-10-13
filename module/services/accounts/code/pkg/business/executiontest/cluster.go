@@ -286,3 +286,6 @@ var (
 	_ business.ExecutionReviewer  = (*Cluster)(nil)
 	_ business.ExecutionAuthority = (*Cluster)(nil)
 )
+
+// NativeDevelopment identifies this in-memory cluster fixture; it models no mesh.
+func (*Cluster) NativeDevelopment() bool { return true }

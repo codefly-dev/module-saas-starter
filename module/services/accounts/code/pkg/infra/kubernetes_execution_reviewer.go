@@ -57,3 +57,7 @@ func (c *KubernetesClient) ReadPod(ctx context.Context, namespace, pod string) (
 }
 
 var _ business.ExecutionReviewer = (*KubernetesClient)(nil)
+
+// NativeDevelopment reports construction from the non-pod local stand-in.
+// Environment flags alone cannot change an already constructed client's mode.
+func (c *KubernetesClient) NativeDevelopment() bool { return c.nativeDevelopment }

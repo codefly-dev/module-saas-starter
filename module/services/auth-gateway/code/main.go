@@ -292,9 +292,17 @@ func main() {
 		}
 		// The same handler on the workload port, marked so the module credential
 		// exchanges know they are on it; the same bounds as the public server.
+		workloadHandler := workloadListener(httpServer.Handler)
+		if !codefly.IsLocal() {
+			workloadHandler, err = authenticatedWorkloadListener(httpServer.Handler,
+				workspaceEnv("gateway", "WORKLOAD_PRESENTER_PRINCIPAL"))
+			if err != nil {
+				panic(fmt.Sprintf("gateway/WORKLOAD_PRESENTER_PRINCIPAL: %v", err))
+			}
+		}
 		workloadServer = &http.Server{
 			Addr:              fmt.Sprintf(":%d", workloadPort),
-			Handler:           workloadListener(httpServer.Handler),
+			Handler:           workloadHandler,
 			ReadHeaderTimeout: httpServer.ReadHeaderTimeout, ReadTimeout: httpServer.ReadTimeout,
 			IdleTimeout: httpServer.IdleTimeout, MaxHeaderBytes: httpServer.MaxHeaderBytes,
 		}

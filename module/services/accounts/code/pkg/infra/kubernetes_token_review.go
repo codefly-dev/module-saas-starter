@@ -96,8 +96,9 @@ func inCluster(serviceHost string, projected ...string) bool {
 
 // KubernetesClient is the host's read-only window onto the API server.
 type KubernetesClient struct {
-	endpoint string
-	http     *http.Client
+	nativeDevelopment bool // set only by the non-pod stand-in constructor
+	endpoint          string
+	http              *http.Client
 	// token is this SERVICE'S own credential, re-read per request.
 	//
 	// Re-read rather than cached: a projected service-account token is rotated
@@ -216,7 +217,12 @@ func localClusterClient(dir string, inPod bool) (*KubernetesClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot read the local cluster's CA: %w", ErrKubernetesUnavailable, err)
 	}
-	return kubernetesClientFrom("https://"+server.Host, authority, filepath.Join(dir, "token"), filepath.Join(dir, "namespace"))
+	client, err := kubernetesClientFrom("https://"+server.Host, authority, filepath.Join(dir, "token"), filepath.Join(dir, "namespace"))
+	if err != nil {
+		return nil, err
+	}
+	client.nativeDevelopment = true
+	return client, nil
 }
 
 // kubernetesClientFrom is the construction NewKubernetesClient performs, over

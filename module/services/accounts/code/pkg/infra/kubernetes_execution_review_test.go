@@ -85,6 +85,7 @@ func reviewService(t *testing.T, client *KubernetesClient, registry string) *bus
 	installations := &installationtest.Store{}
 	for principal, grant := range parsed {
 		grant.PresenceBinding = "example." + grant.Prefix
+		grant.Workload.SPIFFEID = "spiffe://cluster.local/ns/" + grant.Workload.Namespace + "/sa/" + grant.Workload.ServiceAccount
 		parsed[principal] = grant
 		scope := business.FullInstallationScope(grant)
 		_, err := installations.InstallSolution(context.Background(), &business.InstallSolutionParams{OrgID: grant.Tenant, RegistryPrincipalID: principal, RegistryBindingID: grant.PresenceBinding, Scope: &scope})
@@ -107,7 +108,7 @@ const (
 // The control, so every refusal below is about its one difference.
 func TestReviewedRunningAppAloneMints(t *testing.T) {
 	service := reviewService(t, reviewClient(t, reviewAppSpec, reviewAppStatus), reviewAlphaOnly)
-	authority, err := service.ModuleAuthorizeWorkContext(context.Background(), "alpha", reviewToken(t, 10*time.Minute))
+	authority, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", reviewToken(t, 10*time.Minute))
 	require.NoError(t, err)
 	require.Equal(t, "pod-alpha", authority.Execution.PodUID)
 }
@@ -117,7 +118,7 @@ func TestReviewedRunningAppAloneMints(t *testing.T) {
 func TestReviewSharedWorkloadMintsAsNeitherPrefix(t *testing.T) {
 	service := reviewService(t, reviewClient(t, reviewAppSpec, reviewAppStatus), reviewShared)
 	for _, prefix := range []string{"alpha", "beta"} {
-		_, err := service.ModuleAuthorizeWorkContext(context.Background(), prefix, reviewToken(t, 10*time.Minute))
+		_, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), prefix, reviewToken(t, 10*time.Minute))
 		require.ErrorIs(t, err, business.ErrModuleIdentityDenied, prefix)
 		require.ErrorIs(t, err, business.ErrExecutionWorkloadAmbiguous, prefix)
 	}
@@ -173,7 +174,7 @@ func TestReviewPodsTheApprovalDoesNotCoverMintNothing(t *testing.T) {
 				client = reviewClientDeleting(t)
 			}
 			service := reviewService(t, client, reviewAlphaOnly)
-			_, err := service.ModuleAuthorizeWorkContext(context.Background(), "alpha", reviewToken(t, 10*time.Minute))
+			_, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", reviewToken(t, 10*time.Minute))
 			require.ErrorIs(t, err, tc.want)
 			require.ErrorIs(t, err, business.ErrModuleIdentityDenied)
 		})
@@ -200,11 +201,44 @@ func reviewClientDeleting(t *testing.T) *KubernetesClient {
 // FINDING 2b, through the real decoder: the token's own iat and exp bound it.
 func TestReviewATokenLongerLivedThanTenMinutesMintsNothing(t *testing.T) {
 	service := reviewService(t, reviewClient(t, reviewAppSpec, reviewAppStatus), reviewAlphaOnly)
-	_, err := service.ModuleAuthorizeWorkContext(context.Background(), "alpha", reviewToken(t, time.Hour))
+	_, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", reviewToken(t, time.Hour))
 	require.ErrorIs(t, err, business.ErrExecutionTokenLifetime)
 
 	// A token the review authenticates but whose claims cannot be read is
 	// refused rather than given an assumed lifetime.
-	_, err = service.ModuleAuthorizeWorkContext(context.Background(), "alpha", "copied-valid-alpha-token")
+	_, err = service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", "copied-valid-alpha-token")
 	require.ErrorIs(t, err, business.ErrExecutionTokenRejected)
+}
+
+// Exercise presenter binding through the production Kubernetes decoder and
+// business authorization, with a valid copied token and an approved live pod.
+func TestProductionPresenterMustMatchAppliedAndReviewedWorkload(t *testing.T) {
+	client := reviewClient(t, reviewAppSpec, reviewAppStatus)
+	require.False(t, client.NativeDevelopment())
+	service := reviewService(t, client, reviewAlphaOnly)
+	token := reviewToken(t, 10*time.Minute)
+	const valid = "spiffe://cluster.local/ns/acme-prod/sa/shared"
+	for _, presenter := range []string{"", "spiffe://other/ns/acme-prod/sa/shared", "spiffe://cluster.local/ns/other/sa/shared", "spiffe://cluster.local/ns/acme-prod/sa/attacker", valid + "?"} {
+		t.Run(presenter, func(t *testing.T) {
+			ctx := business.WithVerifiedWorkloadPresenter(context.Background(), presenter)
+			_, err := service.ModuleAuthorizeWorkContext(ctx, "alpha", token)
+			require.ErrorIs(t, err, business.ErrExecutionIdentityMismatch)
+		})
+	}
+	ctx := business.WithVerifiedWorkloadPresenter(context.Background(), valid)
+	for range 3 {
+		_, err := service.ModuleAuthorizeWorkContext(ctx, "alpha", token)
+		require.NoError(t, err, "legitimate exchanges do not spend the projection")
+	}
+	// Changing the applied trust domain must not be hidden by equal ns/SA.
+	registry, err := moduleregistrytest.Parse(reviewAlphaOnly)
+	require.NoError(t, err)
+	for id, grant := range registry {
+		grant.Workload.SPIFFEID = "spiffe://other/ns/acme-prod/sa/shared"
+		grant.PresenceBinding = "example." + grant.Prefix
+		registry[id] = grant
+	}
+	service.SetModulePrincipals(registry)
+	_, err = service.ModuleAuthorizeWorkContext(ctx, "alpha", token)
+	require.ErrorIs(t, err, business.ErrExecutionIdentityMismatch)
 }
