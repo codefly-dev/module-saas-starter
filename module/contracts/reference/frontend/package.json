@@ -18,8 +18,8 @@
 		"build": "tsc -p tsconfig.json"
 	},
 	"dependencies": {
-		"@codefly-dev/saas-plugin-contract": "2.4.4",
-		"@codefly-dev/saas-plugin-react": "0.4.5"
+		"@codefly-dev/saas-plugin-contract": "2.5.0",
+		"@codefly-dev/saas-plugin-react": "0.4.6"
 	},
 	"peerDependencies": {
 		"react": ">=19.2 <20"
