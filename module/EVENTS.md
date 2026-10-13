@@ -305,9 +305,51 @@ It is code-owned (in the audit events contribution, not an audit registry type),
 `visibility: internal` and declares no partition. It is therefore never fanned
 out, relayed or replayed to a subscriber, and no subscription pattern may match
 it; the `saas` namespace stays unsubscribable by a module. The only reader is a
-platform principal (a `cross_tenant` grant), through a cross-tenant journal read
-that is specified separately and not yet part of this module. The `data` limit
-below applies: an entry too large for it is refused, not truncated.
+platform principal (a `cross_tenant` grant), through the cross-tenant journal read
+below. The `data` limit below applies: an entry too large for it is refused, not
+truncated.
+
+### The cross-tenant journal read
+
+`Service.ModuleReadJournal` (the host side of `ReadJournal` on
+`ModuleCapabilitiesService`) serves journal rows of every tenant, and the rows with
+no tenant, to a module principal whose grant is `cross_tenant`, the gate a
+system-scoped `ModuleEmitAuditEvent` has. It reads on the control plane, enqueues
+nothing and does not touch `pkg/jobs`. A caller names the event types it reads,
+exactly and at least one, so no principal reads every event of every tenant by
+leaving the filter out.
+
+`seq` is the order rows were inserted, not the order their transactions commit, so
+a cursor on `seq` can pass a row whose transaction is still open and never return
+for it (the next section's re-read window exists for that). This read instead keys
+on `(xact_id, seq)`, where `domain_events.xact_id` is the id of the transaction
+that wrote the row (migration 37), and serves a row only while
+`xact_id < pg_snapshot_xmin(pg_current_snapshot())`, the oldest transaction still
+running. Every transaction that can still commit took its id at or after that
+bound, so a row below it belongs to a finished transaction, no row that has not
+appeared yet can sort before one that has, and a cursor that stops at the last row
+served skips nothing. A row written before migration 37 has no `xact_id`, reads as
+transaction 0 and sorts first, in `seq` order.
+
+The position is an opaque string, `v1.<xact_id>.<seq>` in decimal. The literal
+`"start"` is also a valid position, meaning "before the oldest retained entry": a
+reader with nothing read passes it as `after`, and `""` is accepted as an alias. No
+entry's position is ever `"start"`, and it exists so the first page of a journal has
+a non-empty position to correlate on. A malformed position is `InvalidArgument`.
+`next_after` is the last entry's position, or the request's `after` (`"start"`
+included) when the page is empty. A page is at most 500
+entries and 2 MiB of event data (the first row is always served). The read holds
+behind a write transaction that stays open, and behind rows whose transaction ids
+are ahead of the cluster after a logical restore into a new one: both stall the
+reader and lose nothing.
+
+Each entry says whether it is `delivery_machinery`, computed here so a caller never
+parses this module's payloads: the entry the row carries is a
+`saas.module.operation_context_minted` or `saas.module.delegated_audience_exchange`
+on one of the `delivery_bindings` the caller names (both carry `binding_id`), or a
+`saas.module.work_context_minted` for the caller's own module principal. It is the
+caller's own delivery footprint, which delivered as ordinary work would produce more
+of itself.
 
 ## Authority
 

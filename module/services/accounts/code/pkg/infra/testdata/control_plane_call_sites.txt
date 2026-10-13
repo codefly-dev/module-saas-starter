@@ -66,6 +66,7 @@ pkg/business/invitations.go: (*Service).ResendInvitation: As(System())
 pkg/business/invitations.go: (*Service).RevokeInvitation: WithControlPlane
 pkg/business/invitations.go: (*Service).invitationByToken: As(System())
 pkg/business/invitations.go: (*Service).pendingInvitationForSsoJit: As(System())
+pkg/business/journal_read.go: (*Service).ModuleReadJournal: WithControlPlane
 pkg/business/magic_links.go: (*Service).SendMagicLink: As(System())
 pkg/business/magic_links.go: (*Service).VerifyMagicLink: As(System())
 pkg/business/magic_links.go: (*Service).VerifyMagicLink: As(System())
