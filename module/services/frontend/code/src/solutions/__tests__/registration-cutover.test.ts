@@ -12,13 +12,21 @@ describe.each([
 		expect(service.methods.map((method) => method.name)).toEqual([
 			"ListSolutionHostBindings", "ListSolutionRegistrations",
 		]);
-		for (const name of ["SolutionFrontendBinding", "SolutionBackendBinding"]) {
-			const message = registry.messages.find((message) => message.name === name);
-			expect(message).toBeDefined();
-			expect(message!.fields.map((field) => field.name)).not.toContain("lease_expires_at");
-		}
-		for (const name of ["PutSolutionRegistrationRequest", "DeleteSolutionRegistrationRequest"]) {
+		const frontend = registry.messages.find((message) => message.name === "SolutionFrontendBinding");
+		expect(frontend).toBeDefined();
+		expect(frontend!.fields.map((field) => field.name)).not.toContain("lease_expires_at");
+		// Nothing a running process reports is on the wire (#1118): the reported
+		// backend half is deleted as a message, the record carries no `backend`,
+		// and the version two reported halves were compared on is gone with them.
+		expect(frontend!.fields.map((field) => field.name)).not.toContain("contract_version");
+		const record = registry.messages.find((message) => message.name === "SolutionRegistration");
+		expect(record).toBeDefined();
+		expect(record!.fields.map((field) => field.name)).not.toContain("backend");
+		for (const name of ["PutSolutionRegistrationRequest", "DeleteSolutionRegistrationRequest", "SolutionBackendBinding"]) {
 			expect(registry.messages.map((message) => message.name)).not.toContain(name);
 		}
+		const status = registry.enums.find((candidate) => candidate.name === "SolutionRegistrationStatus");
+		expect(status).toBeDefined();
+		expect(status!.values.map((value) => value.name)).not.toContain("SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE");
 	});
 });

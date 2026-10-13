@@ -31,8 +31,9 @@ type installationStepClaim struct {
 }
 
 // Accounts retains the queue and signer. This consumer is here because the
-// gateway already owns the verified registry resolution and workload transport.
-// No user route can submit an upstream, credential, installation or job to it.
+// gateway already owns the verified registry resolution and the guarded
+// transport to a declared upstream. No user route can submit an upstream,
+// credential, installation or job to it.
 type installationJobConsumer struct {
 	accountsURL, internalToken, worker string
 	client                             *http.Client
@@ -114,13 +115,10 @@ func (g *Gateway) deliverInstallationStep(ctx context.Context, claim *installati
 			claim.RouteAlias, resolution, entry.TargetID, claim.TargetID, entry.BindingID, claim.BindingID)
 		return http.StatusServiceUnavailable, ""
 	}
-	transport, err := g.workload.upstreamTransport(entry.WorkloadSPIFFEID)
-	if err != nil {
-		log.Printf("installation step: route %q: no transport to workload %q: %v", claim.RouteAlias, entry.WorkloadSPIFFEID, err)
-		return http.StatusServiceUnavailable, ""
-	}
-	defer transport.CloseIdleConnections()
-	return sendInstallationStep(ctx, &http.Client{Transport: transport, Timeout: installationCallTimeout,
+	// The step goes where the proxy goes: the address the Codefly SDK resolved
+	// for the solution's declared endpoint, over the same guarded plain-HTTP
+	// transport, with no second route to a workload.
+	return sendInstallationStep(ctx, &http.Client{Transport: g.registeredTransport, Timeout: installationCallTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, entry.Upstream.String()+"/_codefly/installations", claim)
 }
 

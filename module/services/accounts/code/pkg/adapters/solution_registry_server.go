@@ -43,10 +43,9 @@ func (s *SolutionRegistryServer) ListSolutionRegistrations(
 }
 
 var solutionRegistrationStatusProto = map[business.SolutionRegistrationStatus]gen.SolutionRegistrationStatus{
-	business.SolutionRegistrationActive:       gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE,
-	business.SolutionRegistrationPending:      gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING,
-	business.SolutionRegistrationIncompatible: gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE,
-	business.SolutionRegistrationTombstoned:   gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED,
+	business.SolutionRegistrationActive:     gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE,
+	business.SolutionRegistrationPending:    gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING,
+	business.SolutionRegistrationTombstoned: gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED,
 }
 
 // solutionDeclaredKindProto maps the stored kind onto the wire. A kind the map
@@ -68,19 +67,7 @@ func solutionRegistrationProto(record *business.SolutionRegistration) *gen.Solut
 		UpdatedAt:  timestamppb.New(record.UpdatedAt),
 	}
 	if half := record.Frontend; half != nil {
-		out.Frontend = &gen.SolutionFrontendBinding{
-			Revision:        half.Revision,
-			Manifest:        half.Manifest,
-			ContractVersion: half.ContractVersion,
-		}
-	}
-	if half := record.Backend; half != nil {
-		out.Backend = &gen.SolutionBackendBinding{
-			Revision:        half.Revision,
-			Upstream:        half.Upstream,
-			ServiceAlias:    half.ServiceAlias,
-			ContractVersion: half.ContractVersion,
-		}
+		out.Frontend = &gen.SolutionFrontendBinding{Revision: half.Revision, Manifest: half.Manifest}
 	}
 	if record.TombstonedAt != nil {
 		out.TombstonedAt = timestamppb.New(*record.TombstonedAt)

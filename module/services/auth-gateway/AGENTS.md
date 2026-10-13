@@ -34,9 +34,14 @@ service, and the alternative is a gateway that cannot start.
 ## Reading declared solution upstreams
 
 `GET /solutions/_registry` returns this replica's read projection: identity,
-publisher, revision, frontend manifest, declared target and status (`active`,
-`pending`, `incompatible`, `tombstoned`). It never exposes the backend upstream.
-The frontend reads it with the cluster-internal credential.
+publisher, revision, declared target, status (`active`, `pending`,
+`tombstoned`) and, for an active solution, the manifest the frontend renders
+its page from — built here (`solutionManifest`) from the `frontend` block of
+the applied presence, which accounts copies onto the record's frontend half,
+plus the host's own constants: the asset path, the backend alias, the
+capability path. It exposes no address: where a solution's backend is reached
+is resolved in this process and stays here. The frontend reads it with the
+cluster-internal credential.
 
 The gateway proxies `/solutions/{id}/…` using the same verified identity and
 header discipline as catalog routes, with per-viewer installation admission.
@@ -58,20 +63,25 @@ alias the catalog *owns* is refused outright rather than half-served — the mat
 takes only the paths it matches, so serving the rest would split one prefix
 between two authorities.
 
-Where it goes is **resolved, never recorded**. The registry holds no module
-address. On each refresh the gateway reads the endpoints the module's APPLIED
-presence declares for the service that runs it, and asks the Codefly SDK
+Where it goes is **resolved, never recorded**, and a solution is routed the
+same way. The registry holds no address. On each refresh the gateway reads the
+endpoints the APPLIED presence declares for the service that runs its workload
+(`appliedRouteEndpoints`: the presence's own HTTP-family endpoints, and only
+those) and asks the Codefly SDK
 (`codefly.For(...).Module().Service().Endpoint().API().ResolveNetworkInstance()`)
-for each: the Codefly CLI writes this gateway's `CODEFLY__ENDPOINT__…` variables
-for exactly the endpoints composed solutions consume through the host, locally
-and in a render, so exactly one answers and that is where `/v1/<alias>` goes.
-None, or more than one, leaves the module unrouted (`503 module registration
-not active`) and is logged once. In-cluster traffic after the gateway is plain
-HTTP; the mesh provides mTLS.
+for each (`resolveRouteUpstreams`): the Codefly CLI writes this gateway's
+`CODEFLY__ENDPOINT__…` variables for exactly the endpoints composed workloads
+are reached through, locally and in a render, so exactly one answers and that
+is where `/v1/<alias>` — and `/solutions/<alias>` — goes. None, or more than
+one, leaves the alias unrouted (`503 … registration not active`) and is logged
+once. In-cluster traffic after the gateway is plain HTTP; the mesh provides mTLS.
 
-Otherwise it uses the **solution shape**: the same cache, single carried
-resolution, upstream URL policy, guarded transport, tombstone rule and 120 s
-presence revocation bound. Before forwarding a bearer it asks accounts for the viewer's
+The two surfaces share one shape: the same cache, single carried resolution,
+upstream URL policy, guarded transport, tombstone rule and the 120 s
+revocation lease (`solutionRegistryLease`): a snapshot the registry has not
+confirmed for that long authorises neither surface (`503 solution registry
+snapshot is stale`), a tombstone already held still answers as a withdrawal,
+and the next read that succeeds renews it. Before forwarding a bearer it asks accounts for the viewer's
 live entitlement to the resolved target, without caching that decision. Accounts
 intersects the delivered authority, envelope and organization's installation
 scope. The path is forwarded unchanged; a module owns its `/v1/<alias>` surface.
@@ -341,55 +351,42 @@ bearer: identity is stripped there and no ext_authz check runs, so the gateway
 has nothing to bind, and both halves say no rather than one promising what the
 other drops.
 
-## Workload TLS endpoint and solution upstreams
+## The workload endpoint
 
-`workload` (`api: http`) serves the same mux over TLS 1.3 with required, verified
-client certificates when the `workload-identity` workspace group supplies
-`CERT_FILE`, `KEY_FILE`, `TRUST_BUNDLE_FILE`, and `ALLOWED_CALLERS_FILE`. If all
-four values are absent, the gateway boots with only its existing plain endpoints,
-does not resolve or open the workload endpoint, and logs once at info that no
-workload identity is projected. Solution mints remain unreachable over mTLS and
-solution proxying stays refused without a workload identity. Any partial set of
-values or missing/unreadable supplied file fails boot naming its key. Keep the
-`workload-identity` workspace dependency declared: renders use it to select
-consumers of the projection.
-The pinned SDK's `CertificateReloader` supplies both certificate callbacks.
-Every handshake checks a single SPIFFE URI against the live caller file; every
-request checks it again so keep-alive connections cannot outlive revocation.
-The caller file must be published atomically, as the kubelet publishes a
-ConfigMap volume (written whole, swapped behind one symlink); a mid-write mix
-of two lists is indistinguishable from a complete list, so an in-place rewrite
-is outside the contract. A truncated write is refused whole.
+`workload` (`api: http`) serves the gateway's full handler over plain HTTP on a
+port of its own, which Codefly allocates like the other two; a gateway that
+cannot resolve it does not start. It is the endpoint composed workloads reach
+this gateway on: in a cell the mesh admits it from composed workloads alone
+(an `AuthorizationPolicy` the cell's applier compiles from the L4 edges the
+CLI delivers), and a native run binds every service but the gateway to
+loopback. The server wraps the handler in `workloadListener`, which marks each
+request it serves; a header never does, so a caller on the public endpoint
+cannot claim the mark.
 
-On this endpoint every module mint (`/modules/_work-context`,
-`/modules/_operation-context`, `/modules/_source-operation-context`) conveys
-the verified SVID peer to accounts on the authenticated internal RPC. Accounts
-binds it to TokenReview and the applied presence before signing. Caller-supplied
-identity headers never attest a peer. Plain `rest` module mints still require
-the internal token and keep their existing behavior.
+The three module credential exchanges (`/modules/_work-context`,
+`/modules/_operation-context`, `/modules/_source-operation-context`) are served
+on this endpoint and nowhere else: on `rest` they are unexposed paths (`404`).
+`/modules/_work-context` presents the pod's projected token and no other
+credential; the two other exchanges keep the cluster-internal token they always
+took. Nothing attests a workload to accounts beyond the token it presents —
+`moduleMintContext` appends the gateway's own internal credential to the RPC
+and nothing else — and binding a mint to the party presenting it is held for an
+owner decision (#1118, interface 6).
 
-SPIFFE comparisons use the certificate's raw URI SAN, without URL normalization.
-The live caller file must end in a newline; an incomplete or invalid snapshot
-admits nobody, including on an existing connection. Entries trim only ASCII
-space, tab and CR, with `#` introducing a comment.
-
-Solutions are proxied only over TLS 1.3 with the gateway SVID. The server's chain
-and single SPIFFE URI must match the applied presence read alongside its registry
-record. Missing or ambiguous identities fail closed. The existing DNS/address
-guard remains the only dial path. Module upstream transport remains unchanged.
+Solutions are proxied over plain HTTP to the address the Codefly SDK resolved,
+through the same guarded transport as a module (`registeredTransport`); the
+install step goes the same way. No SVID is served, presented or verified
+anywhere.
 
 ## Brokering a module's Work Context
 
-`POST /modules/_work-context` takes the
-cluster-internal token plus the module pod's **projected ServiceAccount token**
-as `Authorization: Bearer <token>` (exactly one header, that scheme), body
-`{prefix, organization_id?, upstream?, manifest?}`, bounded at 80 KiB.
-`upstream` and `manifest` are the dynamic half of the workload's registration
-([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#the-document-and-who-owns-which-field)):
-they are accepted only on the `workload` endpoint and refused `400` on the
-plain one; the gateway checks the origin's shape — `https`, a host and a port, a host a
-registered upstream may name — refuses `400` before asking accounts otherwise,
-and forwards both unread beyond that. Accounts answers `FailedPrecondition`
+`POST /modules/_work-context`, on the workload endpoint, takes the module
+pod's **projected ServiceAccount token** as `Authorization: Bearer <token>`
+(exactly one header, that scheme), body `{prefix, organization_id?}`, bounded
+at 4 KiB. Nothing is reported with it: a solution's address is resolved and its
+manifest comes from its presence
+([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#the-document-and-who-owns-which-field)).
+Accounts answers `FailedPrecondition`
 for a workload that is admitted and installed nowhere, relayed as `412`. A shared module selects an organization; accounts
 requires its live installation and the envelope's `cross_tenant` grant. A
 tenant-pinned module may omit the selector or name only its pinned tenant.

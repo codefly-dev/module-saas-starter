@@ -115,6 +115,12 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		// unregistered solution from a registered one. Fail closed and say so.
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
 		return true
+	case solutionRegistryStale:
+		// A snapshot loaded, and the registry has not confirmed it within the
+		// revocation lease: a withdrawal applied since would be invisible here,
+		// so nothing is routed on it.
+		httpError(w, http.StatusServiceUnavailable, "solution registry snapshot is stale")
+		return true
 	}
 
 	// THE ROUTE IS RESOLVED, SO THE AUDIENCE IS KNOWN: a capability presented to
@@ -190,10 +196,9 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		// strictly worse exposure than the authenticated path's.
 		removePersonsSessionCredential(r.Header)
 		entry := &RouteEntry{
-			Service:          "solution:" + id,
-			WorkloadSPIFFEID: routing.WorkloadSPIFFEID,
-			UpstreamPath:     publicPath,
-			RateLimitClass:   edgeRateLimitClassPublic,
+			Service:        "solution:" + id,
+			UpstreamPath:   publicPath,
+			RateLimitClass: edgeRateLimitClassPublic,
 		}
 		g.rateLimitThenProxy(w, r, routing.Upstream, entry)
 		return true
@@ -303,11 +308,10 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		class = edgeRateLimitClassStandardWrite
 	}
 	entry := &RouteEntry{
-		Service:          "solution:" + id,
-		WorkloadSPIFFEID: routing.WorkloadSPIFFEID,
-		UpstreamPath:     "/" + path,
-		Protected:        true,
-		RateLimitClass:   class,
+		Service:        "solution:" + id,
+		UpstreamPath:   "/" + path,
+		Protected:      true,
+		RateLimitClass: class,
 	}
 	// Metered FIRST, and the admission check runs inside the budget.
 	//
@@ -391,7 +395,7 @@ func solutionPublicUpstreamPath(method, subPath string) (string, bool) {
 }
 
 // solutionRegistryProjection is what the gateway publishes about the registry.
-// It is a deliberate projection, not the record: the upstream URL stays inside
+// It is a deliberate projection, not the record: a resolved address stays inside
 // this process, because the only component that routes to it is this one.
 type solutionRegistryProjection struct {
 	Revision  int64                            `json:"revision"`
@@ -413,9 +417,11 @@ type solutionRegistrationProjection struct {
 	// so a replacement solution inherited the predecessor's menu entry and its
 	// team exposure. The alias stays in the projection because it is what a URL
 	// is built from; it is no longer what anything is authorised by.
-	TargetID     string  `json:"targetId,omitempty"`
-	ServiceAlias string  `json:"serviceAlias,omitempty"`
-	Manifest     *string `json:"manifest,omitempty"`
+	TargetID string `json:"targetId,omitempty"`
+	// Manifest is the document the frontend renders the solution's page from:
+	// the frontend block of the applied presence plus the host's own constants
+	// (solutionManifest). Absent until the presence declares one.
+	Manifest *string `json:"manifest,omitempty"`
 }
 
 // handleSolutionRegistrySnapshot serves this replica's view of the registry to
@@ -443,14 +449,13 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 	}
 	for _, record := range records {
 		projection := solutionRegistrationProjection{
-			ID:           record.GetSolutionId(),
-			Publisher:    record.GetPublisher(),
-			Revision:     record.GetRevision(),
-			Status:       solutionRegistryStatusLabel(record),
-			TargetID:     record.GetDeclared().GetTargetId(),
-			ServiceAlias: record.GetBackend().GetServiceAlias(),
+			ID:        record.GetSolutionId(),
+			Publisher: record.GetPublisher(),
+			Revision:  record.GetRevision(),
+			Status:    solutionRegistryStatusLabel(record),
+			TargetID:  record.GetDeclared().GetTargetId(),
 		}
-		if manifest := record.GetFrontend().GetManifest(); manifest != "" {
+		if manifest, ok := solutionManifest(record); ok {
 			projection.Manifest = &manifest
 		}
 		out.Solutions = append(out.Solutions, projection)
@@ -529,7 +534,7 @@ func (g *Gateway) confineResourceMintToItsConsumer(w http.ResponseWriter, r *htt
 	switch resolution {
 	case solutionRoutable:
 		// Resolved to one declared binding. Admission below.
-	case solutionRegistryUnavailable:
+	case solutionRegistryUnavailable, solutionRegistryStale:
 		// Undecidable, and a mint is never issued on an unanswered question.
 		httpError(w, http.StatusServiceUnavailable,
 			"the solution registry could not be read, so this token's consumer "+

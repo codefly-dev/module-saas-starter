@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:0a02fc7e630eb13971649710dd7b3058ab843ee281065b1532b17821c07dac8a",
+      "digest": "sha256:6978e3bf929634aed8639da7b73afcbb8eb43362da4db24c34f477354c5f656b",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -64,7 +64,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:0a02fc7e630eb13971649710dd7b3058ab843ee281065b1532b17821c07dac8a",
+      "digest": "sha256:6978e3bf929634aed8639da7b73afcbb8eb43362da4db24c34f477354c5f656b",
       "services": [
         {
           "name": "APIKeyService",
@@ -558,7 +558,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:35b09d7e8c2024969abc646b8e18844dc9620c5da11a67da7fc1199dfeac2ca9",
+      "digest": "sha256:6f8916ec14bccf783de31b3e115de05cced8923c50024bff4027baf3ddae03fc",
       "services": [
         {
           "name": "AuthGatewayService",

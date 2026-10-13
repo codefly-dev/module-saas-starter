@@ -65,10 +65,10 @@ func TestAModulePresenceOffersTheEndpointsOfTheServiceItRuns(t *testing.T) {
 		endpointOf("documents", "grpc", "grpc"), endpointOf("documents", "rest", "rest"), endpointOf("store", "rest", "rest"))
 	require.Equal(t, []moduleEndpoint{
 		{Module: "documents", Service: "documents", Name: "rest", API: "rest"},
-	}, appliedModuleEndpoints(binding), "only the serving service's HTTP-family endpoints: not grpc, not another service's")
+	}, appliedRouteEndpoints(binding), "only the serving service's HTTP-family endpoints: not grpc, not another service's")
 
 	foreign := modulePresenceBinding(t, solutionhost.Endpoint{Name: "rest", Service: "documents", Module: "accounts", API: "rest", Visibility: "internal"})
-	require.Empty(t, appliedModuleEndpoints(foreign), "a presence may not name another module's endpoint as its own surface")
+	require.Empty(t, appliedRouteEndpoints(foreign), "a presence may not name another module's endpoint as its own surface")
 
 	var document solutionhost.SolutionHostBinding
 	require.NoError(t, json.Unmarshal([]byte(binding.Applied.Generation.Document), &document))
@@ -76,7 +76,8 @@ func TestAModulePresenceOffersTheEndpointsOfTheServiceItRuns(t *testing.T) {
 	body, err := json.Marshal(&document)
 	require.NoError(t, err)
 	binding.Applied.Generation.Document = string(body)
-	require.Empty(t, appliedModuleEndpoints(binding), "a solution's presence offers no module surface")
+	require.Equal(t, []moduleEndpoint{{Module: "documents", Service: "documents", Name: "rest", API: "rest"}},
+		appliedRouteEndpoints(binding), "a solution's presence offers its endpoints by the same rule")
 }
 
 // Of the endpoints a presence offers, the gateway forwards to the one the
@@ -103,7 +104,7 @@ func TestAModuleIsRoutedToTheEndpointTheCompositionAddressed(t *testing.T) {
 				}
 				return "", errors.New("carrier absent")
 			}
-			upstreams := cache.resolveModuleUpstreams(context.Background(), map[string][]moduleEndpoint{"documents": {grpc, rest}})
+			upstreams := cache.resolveRouteUpstreams(context.Background(), map[string][]moduleEndpoint{"documents": {grpc, rest}})
 			if tc.want == "" {
 				require.NotContains(t, upstreams, "documents")
 				return
@@ -113,29 +114,23 @@ func TestAModuleIsRoutedToTheEndpointTheCompositionAddressed(t *testing.T) {
 	}
 }
 
-// The address the SDK resolves is where traffic goes, and a recorded backend
-// upstream is not consulted for a module at all.
+// The address the SDK resolves is where traffic goes, asked for by the
+// endpoint's declared name; the record carries no address at all.
 func TestAModuleRouteGoesWhereTheSDKResolvesItsEndpoint(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	resolved := declareModule(t, gw, "example-module")
-	registry := solutionRegistryFake(t, gw)
-	decoy := &fakeUpstream{body: "decoy"}
-	decoyServer := httptest.NewServer(decoy)
-	t.Cleanup(decoyServer.Close)
-	registry.mu.Lock()
-	registry.records["example-module"].Backend.Upstream = decoyServer.URL
-	registry.mu.Unlock()
-	// The resolver answers for the endpoint, not for the record: hold the
-	// original address there while the record now names the decoy.
-	endpoint := moduleEndpoint{Module: "example-module", Service: "example-module", Name: "rest", API: "rest"}
+	endpoint := fakeRouteEndpoint("example-module")
 	original, _ := testModuleAddresses.Load(endpoint)
+	asked := 0
 	previous := gw.solutions.resolveEndpoint
-	gw.solutions.resolveEndpoint = func(_ context.Context, asked moduleEndpoint) (string, error) {
-		require.Equal(t, endpoint, asked)
+	gw.solutions.resolveEndpoint = func(_ context.Context, named moduleEndpoint) (string, error) {
+		require.Equal(t, endpoint, named)
+		asked++
 		return original.(string), nil
 	}
 	t.Cleanup(func() { gw.solutions.resolveEndpoint = previous })
 	require.NoError(t, gw.solutions.refresh(context.Background()))
+	require.Equal(t, 1, asked)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/example-module/things", nil)
@@ -143,7 +138,6 @@ func TestAModuleRouteGoesWhereTheSDKResolvesItsEndpoint(t *testing.T) {
 	gw.ServeHTTP(recorder, request)
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	require.Equal(t, "/v1/example-module/things", resolved.lastPath)
-	require.Empty(t, decoy.lastPath, "a recorded upstream is never a module's destination")
 }
 
 // No resolvable address, or one the upstream policy refuses, leaves the module

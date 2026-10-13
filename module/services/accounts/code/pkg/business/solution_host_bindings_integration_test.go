@@ -422,8 +422,8 @@ func TestSolutionHostBinding_RemovalIsATombstoneGeneration(t *testing.T) {
 	if withdrawn == nil || withdrawn.TombstonedAt == nil {
 		t.Fatalf("the registration was not withdrawn: %+v", withdrawn)
 	}
-	if withdrawn.Frontend != nil || withdrawn.Backend != nil {
-		t.Fatal("a withdrawal clears the endpoints in the write that records it")
+	if withdrawn.Frontend != nil {
+		t.Fatal("a withdrawal clears the frontend half in the write that records it")
 	}
 	if withdrawn.Declared == nil || withdrawn.Declared.Generation != 5 {
 		t.Fatalf("the tombstone must keep its declaration: %+v", withdrawn.Declared)

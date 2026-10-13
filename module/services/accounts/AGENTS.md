@@ -105,14 +105,14 @@ to be empty.
 
 **The mint** reads the binding through
 `business.SolutionRuntimeBoundarySeedStore`, which also reports the publisher of
-record and whether the backend half is serving, and refuses a missing record and
-a tombstone separately. A row with no `declared_binding_id` answers the
-tombstoned error: the cutover's own constraint makes an undeclared row a
-withdrawn one. **Serving is delivered presence**, not an asserted lease — a
-non-tombstoned declared row whose applied generation carries a backend half
-(`backend_revision` and `backend_upstream`) — and the refusal names both columns.
-Revocation reaches a capability through that per-mint read, under the existing
-120 s cache bound: carrier deletion is not revocation, the applied tombstone is.
+record, and refuses a missing record and a tombstone separately. A row with no
+`declared_binding_id` answers the tombstoned error: the cutover's own constraint
+makes an undeclared row a withdrawn one. **Serving is delivered presence** and
+nothing else — a non-tombstoned declared row; where the solution is reached is
+resolved by the gateway through the Codefly SDK and lives in no column, and
+nothing a running process reports is stored (#1118). Revocation reaches a
+capability through that per-mint read, under the registry's 120 s lease:
+carrier deletion is not revocation, the applied tombstone is.
 
 Which solution is asking comes from `auth.VerifiedSolution`, and **nothing on the
 wire sets it**: a request carrying `X-Codefly-Solution-Id` or
@@ -572,15 +572,13 @@ could not run is `ErrExecutionUnbound`, not one.
   API server has just authenticated. A longer one, or one whose lifetime cannot
   be read, is refused.
 
-**Workload listener binding.** The gateway's TLS listener forwards its verified
-SPIFFE peer on the authenticated internal mint RPC. `BindExecution` compares it
-to the namespace and ServiceAccount returned by TokenReview and the full SPIFFE
-ID retained from applied presence in `ModuleWorkload`. A mismatch follows the
-existing refused-identity log path and is returned as 403 on the workload
-endpoint, before signing or recording any credential. Plain module SDK mints
-continue on their existing endpoint without this additional TLS attestation.
+**No listener binding.** The gateway's workload endpoint is plain HTTP inside
+the cell's mesh (#1118): the SPIFFE peer its mutual-TLS listener used to forward
+on the mint RPC, and `BindExecution`'s comparison of it, are deleted. The
+SPIFFE ID `ModuleWorkload` retains from applied presence names the workload's
+mesh principal, and nothing on this host verifies a certificate against it.
 
-**Replay on the plain module endpoint, stated precisely.** A projected ServiceAccount token is a BEARER
+**Replay, stated precisely.** A projected ServiceAccount token is a BEARER
 credential. TokenReview proves the cluster issued it to a named pod and that the
 pod still exists; it does not prove the pod is the party presenting it. So:
 
@@ -593,14 +591,18 @@ pod still exists; it does not prove the pod is the party presenting it. So:
   can mint as that pod's principal for the rest of that token's lifetime, and
   the mint record attributes it to the victim pod. TokenReview cannot close
   this, and nothing on this host can tell the copy from the original.
-- **The strongest closing option — an owner decision, not built:** bind each
-  mint to request-origin identity. The mesh's pod-specific mTLS identity of the
-  connection that carried the request is conveyed by the broker in a header only
-  the broker can set, and accounts requires it to name the same pod UID the
-  TokenReview did. A copied token is then useless from any other pod. It needs
-  the mesh to issue per-pod (not per-ServiceAccount) identities, and the gateway
-  to forward the verified peer, so it is a platform decision rather than a change
-  to this mint.
+- **Held for an owner decision (#1118, interface 6):** single use per
+  projection — recording the TokenReview credential id and refusing a second
+  mint with it — was specified and found to break legitimate re-mints: a module
+  mints its own context, an operation context per declared binding and a
+  source-operation context per sync from one projection inside one rotation
+  window. The leading replacement binds the PRESENTER rather than counting
+  mints: the gateway's workload port reads the connection's source address
+  (`r.RemoteAddr`, in `workloadListener`), conveys it on the mint RPC where the
+  SPIFFE peer travelled (`moduleMintContext`), and accounts requires it to be
+  one of the pod IPs the TokenReview's pod reports (`status.podIPs`). Under
+  ambient, ztunnel authenticates that source; locally the stand-in pod's
+  address is loopback. Not built until confirmed.
 
 **Three digest types, and conflating any two defeats the check.** They are
 separate Go types rather than three strings for exactly that reason:

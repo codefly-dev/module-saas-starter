@@ -42,15 +42,11 @@ func declareModule(t *testing.T, gw *Gateway, alias string) *fakeUpstream {
 			TargetId:   fakeSolutionTarget(alias),
 			Kind:       accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE,
 		},
-		// NO frontend half, which is the real shape: a module has no browser
+		// NO frontend block, which is the real shape: a module has no browser
 		// remote and nothing loads a manifest for it. Giving the fake one would
-		// hide the rule that makes modules routable at all — requiring both
-		// halves leaves every module permanently PENDING.
-		Backend: &accountsv1.SolutionBackendBinding{
-			Revision: registry.revision, Upstream: srv.URL,
-			ServiceAlias: alias, ContractVersion: "v1",
-		},
+		// hide the rule that makes modules routable at all.
 	}
+	registry.route(alias, srv.URL)
 	registry.mu.Unlock()
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 	return fake
@@ -289,21 +285,21 @@ func TestAModuleIsServingOnItsBackendHalfAlone(t *testing.T) {
 		return w
 	}
 	require.Equal(t, http.StatusOK, serve().Code,
-		"a declared module with a backend and NO frontend half must route")
+		"a declared module with an addressed endpoint and NO frontend block must route")
 
 	registry := solutionRegistryFake(t, gw)
 	registry.mu.Lock()
 	registry.revision++
 	record := registry.records["example-module"]
 	record.Revision = registry.revision
-	record.Backend = nil
+	testModuleAddresses.Delete(fakeRouteEndpoint("example-module"))
 	registry.mu.Unlock()
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 
 	fake.lastHeaders = nil
 	w := serve()
 	require.Equal(t, http.StatusServiceUnavailable, w.Code,
-		"a module with no backend half has nothing to proxy to, and that is not the same fact as being undeclared")
+		"a module the composition handed no address for has nothing to proxy to, and that is not the same fact as being undeclared")
 	require.Contains(t, w.Body.String(), "module registration not active")
 	require.Nil(t, fake.lastHeaders)
 }

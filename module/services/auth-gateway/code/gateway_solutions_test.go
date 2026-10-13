@@ -15,17 +15,26 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 )
 
-// registerSolutionUpstream wires a fully registered solution — both halves,
-// admitted endpoints — into the registry behind gw and returns the upstream's capture
-// struct. Both halves matter: a solution with only one is deliberately not
-// routable (see TestGateway_Solution_BackendHalfAlone_NotRoutable).
+// registerSolutionUpstream wires a declared, serving solution — its presence
+// applied with a frontend block, its endpoint addressed by the composition —
+// into the registry behind gw and returns the upstream's capture struct. Both
+// facts matter: a solution missing either is deliberately not routable.
 func registerSolutionUpstream(t *testing.T, gw *Gateway, id string) *fakeUpstream {
 	t.Helper()
 	fake := &fakeUpstream{body: "solution-response"}
-	srv := newSolutionTestServer(t, gw, id, fake)
-	t.Cleanup(srv.Close)
-	registerSolutionHalves(t, gw, id, srv.URL)
+	srv := newSolutionTestServer(t, fake)
+	declareSolution(t, gw, id, srv.URL)
 	return fake
+}
+
+// newSolutionTestServer serves a solution's backend the way the gateway now
+// reaches one: plain HTTP at the address the composition resolved, inside the
+// cell's mesh.
+func newSolutionTestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 // solutionRegistryFake reaches the registry standing in for accounts behind gw.
@@ -36,17 +45,18 @@ func solutionRegistryFake(t *testing.T, gw *Gateway) *fakeSolutionRegistry {
 	return registry
 }
 
-// registerSolutionHalves writes both halves straight into the registry and
-// refreshes the gateway's cache, standing in for reconciled declarations.
-func registerSolutionHalves(t *testing.T, gw *Gateway, id, upstream string) {
+// declareSolution writes a declared solution record whose applied presence
+// carries a frontend block, addresses its endpoint at upstream the way the
+// composition's carrier would, and refreshes the gateway's cache.
+func declareSolution(t *testing.T, gw *Gateway, id, upstream string) {
 	t.Helper()
 	registry := solutionRegistryFake(t, gw)
 	registry.mu.Lock()
+	registry.route(id, upstream)
 	registry.revision++
 	registry.records[id] = &accountsv1.SolutionRegistration{
 		SolutionId: id, Publisher: "solution:" + id, Revision: registry.revision,
-		Frontend: &accountsv1.SolutionFrontendBinding{Manifest: `{"id":"` + id + `"}`},
-		Backend:  &accountsv1.SolutionBackendBinding{Upstream: upstream, ServiceAlias: id},
+		Frontend: &accountsv1.SolutionFrontendBinding{Revision: registry.revision, Manifest: fakeFrontendBlock(id)},
 		Declared: &accountsv1.SolutionDeclaredBinding{BindingId: "acme.test." + id, Generation: 1, Release: "acme/" + id + "@1.0.0", TargetId: fakeSolutionTarget(id),
 			Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION},
 	}
@@ -376,10 +386,10 @@ func TestGateway_Solution_PublicSurface_FailsOpenOnLimiterOutage(t *testing.T) {
 // A solution that registered only its backend half is NOT routable. Serving it
 // would advertise a page whose required half never arrived; the audit finding
 // this fixes is exactly that the two halves could disagree.
-func TestGateway_Solution_BackendHalfAlone_NotRoutable(t *testing.T) {
+func TestGateway_Solution_NoFrontendBlock_NotRoutable(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 
-	registerSolutionHalves(t, gw, "audit", "http://example.svc")
+	declareSolution(t, gw, "audit", "http://example.svc")
 	registry := solutionRegistryFake(t, gw)
 	registry.records["audit"].Frontend = nil
 	require.NoError(t, gw.solutions.refresh(context.Background()))
@@ -393,15 +403,14 @@ func TestGateway_Solution_BackendHalfAlone_NotRoutable(t *testing.T) {
 	require.Contains(t, w.Body.String(), "not active")
 }
 
-// The two halves must agree on a contract version. A page built against one
-// backend contract must not be served against another.
-func TestGateway_Solution_MismatchedContractVersions_NotRoutable(t *testing.T) {
+// A declared solution the composition handed this gateway no address for is
+// registered and not serving: the Codefly SDK answers for its endpoint or
+// nothing does, and nothing on the record is a fallback.
+func TestGateway_Solution_NoCarrier_NotRoutable(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 
-	registerSolutionHalves(t, gw, "audit", "http://example.svc")
-	registry := solutionRegistryFake(t, gw)
-	registry.records["audit"].Frontend.ContractVersion = "v2"
-	registry.records["audit"].Backend.ContractVersion = "v1"
+	declareSolution(t, gw, "audit", "http://example.svc")
+	testModuleAddresses.Delete(fakeRouteEndpoint("audit"))
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 
 	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/ping", nil)
@@ -410,6 +419,52 @@ func TestGateway_Solution_MismatchedContractVersions_NotRoutable(t *testing.T) {
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "not active")
+}
+
+// A snapshot the registry has not confirmed within the revocation lease stops
+// authorising routes: a withdrawal applied during the outage would be invisible
+// here. The answer names the stale registry, so an operator can tell it from
+// a replica that never loaded one, and routes resume on the next read that
+// succeeds. A tombstone already held keeps answering as the registry would.
+func TestGateway_Solution_StaleSnapshotStopsAuthorisingRoutes(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "audit")
+	module := declareModule(t, gw, "example-module")
+	registry := solutionRegistryFake(t, gw)
+	registry.seedDeclared("gone", "http://gone.svc")
+	registry.tombstone("gone")
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+
+	serve := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		return w
+	}
+	require.Equal(t, http.StatusOK, serve("/solutions/audit/v1/ping").Code)
+
+	// The registry goes away, and the snapshot ages past the lease.
+	registry.listErr = grpcstatus.Error(codes.Unavailable, "registry down")
+	gw.solutions.now = func() time.Time { return time.Now().Add(solutionRegistryLease + time.Second) }
+	fake.lastHeaders, module.lastHeaders = nil, nil
+	for _, path := range []string{"/solutions/audit/v1/ping", "/v1/example-module/things"} {
+		w := serve(path)
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, path)
+		require.Contains(t, w.Body.String(), "stale", path)
+	}
+	require.Nil(t, fake.lastHeaders, "nothing is forwarded on a stale snapshot")
+	require.Nil(t, module.lastHeaders, "nothing is forwarded on a stale snapshot")
+	_, resolution := gw.solutions.resolveRouting(context.Background(), "gone")
+	require.Equal(t, solutionUnregistered, resolution, "a withdrawal already held is still a withdrawal")
+
+	// The registry answers again: the next read that succeeds — the reconcile
+	// tick, here — renews the lease, and routes resume on the snapshot it read.
+	registry.listErr = nil
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	require.Equal(t, http.StatusOK, serve("/solutions/audit/v1/ping").Code)
+	require.NotNil(t, fake.lastHeaders)
 }
 
 // A registration survives the process that received it. A fresh cache — what a
@@ -417,7 +472,7 @@ func TestGateway_Solution_MismatchedContractVersions_NotRoutable(t *testing.T) {
 // nobody re-registering.
 func TestGateway_Solution_RestartRebuildsFromRegistry(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
-	registerSolutionHalves(t, gw, "audit", "http://10.0.0.7:8080")
+	declareSolution(t, gw, "audit", "http://10.0.0.7:8080")
 	registry := solutionRegistryFake(t, gw)
 
 	restarted := newSolutionRegistryCache(registry)
@@ -435,7 +490,7 @@ func TestGateway_Solution_ReplicasConvergeOnSameRevision(t *testing.T) {
 	other := newSolutionRegistryCache(registry)
 	require.NoError(t, other.refresh(context.Background()))
 
-	registerSolutionHalves(t, gw, "audit", "http://10.0.0.7:8080")
+	declareSolution(t, gw, "audit", "http://10.0.0.7:8080")
 
 	_, otherRevision, _ := other.snapshot()
 	_, writerRevision, _ := gw.solutions.snapshot()
@@ -459,7 +514,7 @@ func TestGateway_Solution_CacheMissRefreshesOnceWithinFloor(t *testing.T) {
 	registry := solutionRegistryFake(t, gw)
 	lagging := newSolutionRegistryCache(registry)
 	require.NoError(t, lagging.refresh(context.Background()))
-	registerSolutionHalves(t, gw, "audit", "http://10.0.0.7:8080")
+	declareSolution(t, gw, "audit", "http://10.0.0.7:8080")
 
 	// Past the refresh floor, so the miss is allowed to consult the registry.
 	lagging.now = func() time.Time { return time.Now().Add(solutionRefreshFloor) }
@@ -514,9 +569,9 @@ func TestGateway_Solution_RegistryOutageKeepsLastSnapshot(t *testing.T) {
 func TestGateway_Solution_RegistrySnapshot(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 	registerSolutionUpstream(t, gw, "audit")
-	registerSolutionHalves(t, gw, "reports", "http://example.svc")
+	declareSolution(t, gw, "reports", "http://example.svc")
 	registry := solutionRegistryFake(t, gw)
-	registry.records["reports"].Backend = nil
+	registry.records["reports"].Frontend = nil
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 
 	noTok := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
@@ -538,5 +593,47 @@ func TestGateway_Solution_RegistrySnapshot(t *testing.T) {
 	require.Equal(t, "active", snapshot.Solutions[0].Status)
 	require.Equal(t, "reports", snapshot.Solutions[1].ID)
 	require.Equal(t, "pending", snapshot.Solutions[1].Status)
+	require.Nil(t, snapshot.Solutions[1].Manifest, "a presence without its frontend block has no page to render")
 	require.NotContains(t, w.Body.String(), "upstream")
+}
+
+// The manifest the projection carries is built here, from the frontend block
+// the applied presence declared plus the host's own constants — never
+// reported by the running solution. Its shape is the one the frontend parses.
+func TestGateway_Solution_RegistrySnapshotBuildsTheManifestFromThePresence(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	declareSolution(t, gw, "audit", "http://example.svc")
+	registry := solutionRegistryFake(t, gw)
+	registry.records["audit"].Frontend.Manifest = `{"title":"Audit","order":3,"exposed_module":"./Page","host_contract":1,` +
+		`"dashboard":{"events":[]},"surfaces":[{"id":"footnote","client":"word","title":"Footnote","description":"Cite it","module":"/surfaces/footnote.js","contract":1,"applies":null,"events":["document.saved"]}]}`
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var snapshot solutionRegistryProjection
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &snapshot))
+	require.Len(t, snapshot.Solutions, 1)
+	require.NotNil(t, snapshot.Solutions[0].Manifest)
+	require.JSONEq(t, `{
+		"id":"audit","schemaVersion":1,
+		"nav":{"title":"Audit","path":"/s/audit","order":3},
+		"frontend":{"type":"module-federation","manifestUrl":"/assets/mf-manifest.json","exposedModule":"./Page","hostContract":1},
+		"backend":{"serviceAlias":"audit","capabilityPath":"/.well-known/capabilities"},
+		"dashboard":{"events":[]},
+		"surfaces":[{"id":"footnote","client":"word","title":"Footnote","description":"Cite it","module":"/surfaces/footnote.js","contract":1,"events":["document.saved"]}]
+	}`, *snapshot.Solutions[0].Manifest)
+
+	// A block this host cannot read renders nothing, rather than a manifest
+	// the frontend would refuse for a reason it cannot name.
+	registry.records["audit"].Frontend.Manifest = `{"title":`
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	var unreadable solutionRegistryProjection
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &unreadable))
+	require.Nil(t, unreadable.Solutions[0].Manifest)
 }

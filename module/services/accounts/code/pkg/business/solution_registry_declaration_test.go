@@ -26,30 +26,44 @@ func (s *declarationProjectionStore) SaveSolutionRegistration(_ context.Context,
 	return nil
 }
 
-func TestDeclaredPresenceDoesNotAdoptRuntimeObservations(t *testing.T) {
+// The frontend half is the applied generation's own frontend block and nothing
+// older: a generation that declares none takes the page with it, whatever the
+// record held before, and one that declares a block writes it whole.
+func TestDeclaredPresenceWritesItsOwnFrontendBlock(t *testing.T) {
+	frontend := &solutionhost.Frontend{Title: "Example", Order: 2, ExposedModule: "./Page", HostContract: 1,
+		Surfaces: []solutionhost.FrontendSurface{{ID: "footnote", Client: "word", Title: "Footnote", Module: "/surfaces/footnote.js", Contract: 1, Applies: "always"}}}
 	for _, tc := range []struct {
 		name     string
 		declared *SolutionDeclaredBinding
-		keep     bool
+		frontend *solutionhost.Frontend
+		want     string
 	}{
-		{"runtime", nil, false},
-		{"replaced target", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "old-target"}, false},
-		{"same target", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "current-target"}, true},
+		{"runtime, no block", nil, nil, ""},
+		{"replaced target, no block", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "old-target"}, nil, ""},
+		{"same target, no block", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "current-target"}, nil, ""},
+		{"same target, a block", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "current-target"}, frontend,
+			`{"title":"Example","order":2,"exposed_module":"./Page","host_contract":1,"surfaces":[{"id":"footnote","client":"word","title":"Footnote","module":"/surfaces/footnote.js","contract":1,"applies":"always"}]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &declarationProjectionStore{current: &SolutionRegistration{
 				SolutionID: "example", Publisher: "solution:example", Declared: tc.declared,
-				Frontend: &SolutionFrontendHalf{Manifest: "{}"}, Backend: &SolutionBackendHalf{Upstream: "http://example.svc"},
+				Frontend: &SolutionFrontendHalf{Manifest: "{}"},
 			}}
 			svc := &Service{store: store}
 			document := &solutionhost.SolutionHostBinding{Binding: "acme.test.example", Generation: 2,
-				Kind:    solutionhost.KindSolution,
-				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"}}
+				Kind:     solutionhost.KindSolution,
+				Release:  solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
+				Frontend: tc.frontend}
 			_, err := svc.declareSolutionRegistration(context.Background(), document, "example", "current-target", time.Now())
 			require.NoError(t, err)
 			require.NotNil(t, store.saved)
-			require.Equal(t, tc.keep, store.saved.Frontend != nil)
-			require.Equal(t, tc.keep, store.saved.Backend != nil)
+			if tc.want == "" {
+				require.Nil(t, store.saved.Frontend)
+			} else {
+				require.NotNil(t, store.saved.Frontend)
+				require.JSONEq(t, tc.want, store.saved.Frontend.Manifest)
+				require.Equal(t, int64(10), store.saved.Frontend.Revision)
+			}
 			require.Equal(t, "current-target", store.saved.Declared.TargetID)
 		})
 	}

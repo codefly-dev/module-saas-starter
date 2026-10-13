@@ -88,7 +88,6 @@ pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithCon
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
-pkg/business/module_upstream.go: (*Service).RecordModuleUpstream: WithControlPlane
 pkg/business/notifications.go: (*Service).resolveNotificationUser: WithControlPlane
 pkg/business/onboarding.go: (*Service).organizationConfigured: WithControlPlane
 pkg/business/organization_lifecycle.go: (*Service).GetOrganizationRoster: WithControlPlane

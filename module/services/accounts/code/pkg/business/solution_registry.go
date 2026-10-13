@@ -38,26 +38,21 @@ var (
 type SolutionRegistrationStatus string
 
 const (
-	SolutionRegistrationActive       SolutionRegistrationStatus = "active"
-	SolutionRegistrationPending      SolutionRegistrationStatus = "pending"
-	SolutionRegistrationIncompatible SolutionRegistrationStatus = "incompatible"
-	SolutionRegistrationTombstoned   SolutionRegistrationStatus = "tombstoned"
+	SolutionRegistrationActive     SolutionRegistrationStatus = "active"
+	SolutionRegistrationPending    SolutionRegistrationStatus = "pending"
+	SolutionRegistrationTombstoned SolutionRegistrationStatus = "tombstoned"
 )
 
-// SolutionFrontendHalf is a stored frontend observation. The frontend validates
-// the manifest and its runtime compatibility when reading the projection.
+// SolutionFrontendHalf is the `frontend` block of a solution's applied
+// presence, copied onto the record in the transaction that applies the
+// generation. Manifest carries the block as JSON — what the solution declared
+// (title, order, exposed module, host contract, dashboard, surfaces) — and the
+// gateway's registry projection builds the manifest the frontend renders from
+// it plus the host's own constants. Nothing is reported by a running process,
+// and a module has no half: it fronts no page.
 type SolutionFrontendHalf struct {
-	Revision        int64
-	Manifest        string
-	ContractVersion string
-}
-
-// SolutionBackendHalf is the stored backend registration.
-type SolutionBackendHalf struct {
-	Revision        int64
-	Upstream        string
-	ServiceAlias    string
-	ContractVersion string
+	Revision int64
+	Manifest string
 }
 
 // SolutionDeclaredKind is what a declaration declares the presence of. Core
@@ -119,7 +114,6 @@ type SolutionRegistration struct {
 	Publisher  string
 	Revision   int64
 	Frontend   *SolutionFrontendHalf
-	Backend    *SolutionBackendHalf
 	// Declared is the binding that declared this record, or nil when the record
 	// has not been reconciled from a declaration.
 	Declared     *SolutionDeclaredBinding
@@ -145,25 +139,18 @@ type SolutionRuntimeBoundarySeedStore interface {
 	SolutionRuntimeBoundarySeeds(ctx context.Context) ([]string, error)
 }
 
-// SolutionBoundarySeed is what the mint reads about one registration: the seed
-// its boundary is derived from, the publisher of record, and whether the half
-// that mints is currently serving.
-// SolutionBoundarySeed is what the mint reads about one declared solution.
+// SolutionBoundarySeed is what the mint reads about one declared solution: the
+// binding its boundary is derived from and the publisher of record.
 //
 // BindingID replaced an opaque `Seed` read off the registration row: the
 // boundary is derived from the declared presence binding, not from a
-// per-registration random.
-//
-// BackendServing is DELIVERED presence, never a heartbeat or a lease. The
-// branch deleted the renewal path, so a row is serving when its applied
-// declared generation carries a backend half; MissingBackendHalf says so for
-// the refusal, which names the two columns it read rather than saying only
-// "not serving".
+// per-registration random. Serving is DELIVERED presence and nothing else — a
+// declared, non-tombstoned row — and the read refuses a tombstone and a missing
+// record by name; where the solution is reached is the Codefly SDK's answer at
+// the gateway, which no record carries.
 type SolutionBoundarySeed struct {
-	BindingID          string
-	Publisher          string
-	BackendServing     bool
-	MissingBackendHalf string
+	BindingID string
+	Publisher string
 }
 
 // SolutionRuntimeBoundary derives the boundary a solution's Work Context is
@@ -260,33 +247,25 @@ func IsSolutionRuntimeBoundary(seeds []string, candidate, orgID string) bool {
 
 // Status reports declared availability, independent of a runtime clock.
 //
-// WHICH HALVES ARE REQUIRED DEPENDS ON THE KIND, and that is not a relaxation.
-// A solution serves a page and a backend, so both halves and agreeing contract
-// versions are what make it usable. A module has neither half: it is reached at
-// /v1/<alias>/*, nothing loads a manifest for it, and where it serves is not
-// reported but resolved — the gateway asks the Codefly SDK for the endpoint its
-// applied presence declares. The incompatible case needs two contract versions
-// to disagree, so it cannot arise for a module either.
+// WHAT IS REQUIRED DEPENDS ON THE KIND, and that is not a relaxation. A module
+// is active once its presence is applied: it is reached at /v1/<alias>/*,
+// nothing loads a manifest for it, and where it serves is resolved by the
+// gateway through the Codefly SDK from the endpoint that presence declares. A
+// solution serves a page too, so it is active once its applied presence
+// carries the frontend block the page is rendered from; where its backend
+// serves is resolved the same way. Nothing is reported by a running process,
+// so there is no observation to wait for and no two halves to disagree.
 //
 // A record with no declaration keeps the solution reading. It is the stricter of
 // the two, and an undeclared record is withdrawn by the cutover's own constraint
 // anyway, so this is the fail-closed direction.
 func (r *SolutionRegistration) Status() SolutionRegistrationStatus {
-	if r.TombstonedAt != nil {
-		return SolutionRegistrationTombstoned
-	}
-	// A declared module is active once its presence is applied: the gateway
-	// resolves its address through the Codefly SDK from the endpoint that
-	// presence declares, so there is no reported half to wait for.
-	if r.Declared != nil && r.Declared.Kind == SolutionDeclaredKindModule {
-		return SolutionRegistrationActive
-	}
 	switch {
-	case r.Frontend != nil && r.Backend != nil &&
-		r.Frontend.ContractVersion != "" && r.Backend.ContractVersion != "" &&
-		r.Frontend.ContractVersion != r.Backend.ContractVersion:
-		return SolutionRegistrationIncompatible
-	case r.Frontend == nil || r.Backend == nil:
+	case r.TombstonedAt != nil:
+		return SolutionRegistrationTombstoned
+	case r.Declared != nil && r.Declared.Kind == SolutionDeclaredKindModule:
+		return SolutionRegistrationActive
+	case r.Frontend == nil:
 		return SolutionRegistrationPending
 	default:
 		return SolutionRegistrationActive

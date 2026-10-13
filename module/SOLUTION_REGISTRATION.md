@@ -46,10 +46,13 @@ snapshot; the frontend obtains the projection through `GET /solutions/_registry`
 using the cluster-internal credential. Registry identity and the immutable target
 are host facts, never assertions accepted from a browser or remote component.
 
-An upstream receives forwarded viewer credentials. The transport therefore checks
-resolved addresses at dial time, refusing public, link-local and metadata
-addresses. Composition-local addresses and the explicit loopback development
-case remain supported. A changed DNS answer cannot bypass the transport check.
+An upstream — a solution's backend or a module's endpoint, reached over plain
+HTTP inside the cell's mesh at the address the Codefly SDK resolves for the
+endpoint its applied presence declares — receives forwarded viewer credentials.
+The transport therefore checks resolved addresses at dial time, refusing public,
+link-local and metadata addresses. Composition-local addresses and the explicit
+loopback development case remain supported. A changed DNS answer cannot bypass
+the transport check.
 
 ## 3. Runtime compatibility
 
@@ -289,40 +292,38 @@ credential. The split is the point.
 | That a solution should be present at all | the declaration | `solution_host_bindings.applied_*` |
 | Which release runs | the declaration | `release`, recorded as `applied_release` |
 | Which route alias it answers on | the declaration | `routes[].alias` |
-| The workload identity to expect | the declaration | `workload` |
-| Resolved upstream and frontend | the running workload, at its mint | `backend_upstream`, `frontend_manifest` |
+| The workload identity to expect | the declaration | `workload` (the SPIFFE ID is the workload's mesh principal) |
+| The page a solution serves — title, order, exposed module, host contract, dashboard, client surfaces | the declaration | `frontend`, copied onto the record as `frontend_manifest` when the generation applies |
+| Where its backend is reached | the composition, through the Codefly SDK | nowhere: the gateway resolves it from the endpoints the document declares |
 
-The document deliberately carries no upstream address and no manifest. An
-address written into a delivery document is a resolution result that was true on
-one cluster until something moved; a manifest is what the running build actually
-published. Both are observations that the host records under declared authority.
+The document carries no address. An address written into a delivery document is
+a resolution result that was true on one cluster until something moved, so the
+document declares endpoints by NAME and the Codefly CLI writes this gateway a
+`CODEFLY__ENDPOINT__…` carrier for each one a composed workload is reached
+through, locally and in a render. **Nothing is reported by a running process**:
+the mint carries no origin and no manifest (the two fields are reserved on
+`ModuleMintWorkContextRequest`), and the registry holds no address of any kind.
 
-**The workload reports them with its mint.** `POST /modules/_work-context`
-carries two optional fields beside `prefix`: `upstream`, the https origin the
-gateway dials to reach the workload, and `manifest`, the frontend manifest it
-serves. Accounts records them (`RecordModuleUpstream`) only after the projected
-token and the running build have been bound exactly as for a mint, only onto the
-registration the applied presence already declares, and never onto the static
-half — the alias, the target and the workload identity stay the delivery's. No
-installation is required: a solution nobody has installed must still be reachable
-for its install step, which is delivered to the origin recorded here.
+**The gateway resolves where every declared alias is reached, solution and
+module alike.** On each refresh it reads the endpoints the APPLIED presence
+declares for the service that runs its workload — the presence's own endpoints,
+HTTP-family only — and asks the Codefly SDK for each; exactly one answers, and
+that is where `/solutions/<alias>/*` and `/v1/<alias>/*` go, over plain HTTP.
+None, or more than one, leaves the alias unrouted (`503 … not active`). The
+install step is delivered to the same address over the same transport. A
+solution is **active** once its presence is applied with a `frontend` block
+(`SolutionRegistrationStatus`), which accounts copies onto the record's frontend
+half in the transaction that applies the generation; the gateway's registry
+projection builds the manifest the frontend renders from that block plus the
+host's own constants — the asset path, the backend alias, the capability path.
+A module is active once its presence is applied: it fronts no page.
 
-The dynamic half is accepted only on the `workload` endpoint, where the
-reporter's identity is on the connection; on the plain endpoint the request is
-refused. The origin is bounded twice, at the gateway and again in accounts: `https`, a
-host and a port and nothing else, on a composition-local host (loopback or
-private address, a bare service name, or a cluster-local name). It cannot
-redirect a solution's traffic to another workload: the gateway reaches a
-recorded origin only over TLS to the SPIFFE identity the applied presence names.
-The request body is bounded at 80 KiB at the gateway. A report that is refused
-refuses the mint.
-
-**A module reports nothing.** A module has no reported half: its registration
-is active once its presence is applied, and the gateway resolves where it
-serves through the Codefly SDK: of the endpoints that presence declares for the
-service that runs it, the one the Codefly CLI handed the gateway an address for
-— the endpoint composed solutions consume through the host. The registry never
-holds a module address, and a module's mint may not record one. While a module's declaration is live its alias is also a member of the
+**The registry stops authorising routes it cannot confirm.** A replica serves
+from its snapshot and refreshes it every 10 s; a snapshot the registry has not
+confirmed for 120 s — the revocation lease — authorises no solution or module
+route (`503 solution registry snapshot is stale`), so an outage never serves a
+withdrawn presence indefinitely. A tombstone already held keeps answering as
+the registry would. While a module's declaration is live its alias is also a member of the
 host's closed audience vocabulary, so a solution can mint a viewer's Work
 Context for it; the tombstone that withdraws the module withdraws the audience.
 Addressability is all a presence grants: authority for the module's own calls is
@@ -630,14 +631,19 @@ storage column holds the envelope; it does not change the carrier's wire shape.
 ## 7b. The host's own control paths, and which part a consumer may hardcode
 
 The current solution mint is `POST /modules/_work-context` on the gateway's
-`workload` endpoint (`api: http`, transported over TLS 1.3). Codefly resolves its
-address and port. A solution presents its X.509-SVID and projected ServiceAccount
-token as `Authorization: Bearer`; it needs no shared internal token on this
-listener. The gateway verifies the client chain and single SPIFFE URI SAN against
-`workload-identity/TRUST_BUNDLE_FILE` and `ALLOWED_CALLERS_FILE`. Accounts' existing
-TokenReview/BindExecution path requires that URI to equal both the reviewed
-namespace/ServiceAccount identity and the SPIFFE ID in applied presence. A
-mismatch returns 403, logs the mint refusal, and issues no credential.
+`workload` endpoint (`api: http`, plain HTTP on a port of its own). Codefly
+resolves its address and port; a workload reads it from the workspace value it
+already reads (`platform/gateway-endpoint`, a solution's gateway value), which
+the composition points at `${endpoint:<host>/auth-gateway/workload}`. Past the
+gateway every hop inside a cell is plain HTTP: the cell's mesh carries
+transport security and admits the workload port only from composed workloads
+(an `AuthorizationPolicy` the cell's applier compiles from the edges the CLI
+delivers), and a native run binds every service but the gateway to loopback.
+No workload serves or presents an application-level SVID. A solution presents
+its projected ServiceAccount token as `Authorization: Bearer` and nothing else
+on this endpoint; accounts' TokenReview/BindExecution path judges it. The
+three module credential exchanges are served on the workload endpoint and
+nowhere else — the public `rest` endpoint answers them `404`.
 
 A principal the registry does not hold is refused, with one exception: while
 the delivery inbox holds a document the registry was derived without, the
@@ -649,25 +655,24 @@ A workload that is admitted and **installed nowhere** is answered `412`
 (`FailedPrecondition` from accounts, on the module's own mint only — a
 capability's use and a headless operation still hear the refusal), not `403`: nothing is wrong with the
 workload, there is simply no installation to seal a credential to. It serves
-its install endpoint and asks again. The origin and manifest it reported with
-that mint are recorded all the same, because the install step is delivered
-there.
+its install endpoint and asks again; the install step is delivered to the
+address the Codefly SDK resolves for its declared endpoint, exactly as its
+traffic is.
 
-The `workload-identity` group supplies `CERT_FILE`, `KEY_FILE`,
-`TRUST_BUNDLE_FILE` and `ALLOWED_CALLERS_FILE` as readable paths;
-missing files fail startup with the key named. The SDK certificate reloader
-keeps the last good pair during rotation. Trust is reread for each handshake;
-caller admission rereads the newline-separated, `#`-commented allowlist for each
-handshake and request, so revocation also affects existing connections.
+Solution proxy traffic is plain HTTP to that address, through the same guarded
+transport a module's is: the registry read joins matching registration and
+applied-generation records, and dial-time address revalidation rejects off-mesh
+and metadata destinations. There is no `workload-identity` configuration group,
+no trust bundle and no caller allowlist: the mesh is the only party that
+authenticates a hop inside the cell.
 
-Solution proxy traffic uses TLS 1.3, presents the gateway SVID, verifies the
-server chain, and requires exactly the SPIFFE URI declared by the applied
-presence. The registry read joins matching registration and applied-generation
-records; a missing, inconsistent or ambiguous workload identity is not proxied.
-Dial-time address revalidation still rejects off-mesh and metadata destinations.
-The plain `rest` endpoint retains its existing routes, including module-authority
-mints with the internal token and projected bearer. Those module mints and module
-upstreams retain their existing in-cluster transport contract.
+**Binding a mint to the party presenting the token is held** (#1118, interface
+6, an owner decision). The TLS peer did that on the deleted listener; single
+use per projection rotation was found to break legitimate re-mints — a module
+mints its own context, an operation context per declared binding and a
+source-operation context per sync from one projection inside one rotation
+window — so no replacement lands here yet. The residual is stated in
+`services/accounts/AGENTS.md`.
 
 Three repositories independently invented the string `/platform/_credential`
 from a design note, and nothing failed at build time. This section exists so the
@@ -872,12 +877,13 @@ brokering pattern is the same one `GET /solutions/_entitlements` already uses.
 
 ## 8. Local runs: one attestation path, not a local mode
 
-Local solution traffic follows the same mutual-TLS contract as deployed traffic:
-the platform projects rotating SVIDs, trust and peer files, and the gateway uses
-its resolved `workload` endpoint for solution mints. Its solution proxy presents
-the gateway SVID and checks applied presence for the destination's SPIFFE ID.
-Plain-HTTP solution listeners and mints are not a supported local mode. Module
-SDK mints continue to use the plain in-cluster endpoint described in §7b.
+Local solution traffic follows the same contract as deployed traffic: plain
+HTTP past the gateway, the gateway's resolved `workload` endpoint for every
+mint, and the solution proxy forwarding to the address the Codefly SDK resolves
+for the solution's declared endpoint. What the mesh does in a cell — admit the
+workload port from composed workloads alone — a native run does by binding
+every service but the gateway to loopback. There is no local trust model and
+no local SVID: nothing serves or presents one anywhere.
 
 Binding a credential to an approved execution means reading what the workload
 actually runs: `TokenReview` on its projected service-account token, then the pod
@@ -1058,12 +1064,12 @@ It does not, once the local run uses pods:
   awkward: the generation moves with it, so each rebuild is an ordinary apply.
 - **`execution.identity.spiffe_id`** — the one that looks impossible and is not.
   Core validates this field for **well-formedness only**: the parsed scheme must
-  be `spiffe` and nothing more. It does not require an issuer to exist, a trust
-  bundle to be present, or an SVID to be obtainable. So a local run populates it
-  with the service-account-derived identity, which *is* the identity the pod runs
-  as, and whether anything verifies it remains the conditional-mTLS rule — require
-  and verify a peer certificate only where a trust bundle is projected. No local
-  SPIRE, no invention, and no schema exception.
+  be `spiffe` and nothing more. It names the workload's **mesh principal** — the
+  SPIFFE ID the cell's mesh issues to its ServiceAccount — never an SVID the
+  workload serves or presents, so a local run populates it with the
+  service-account-derived identity, which *is* the identity the pod runs as,
+  and nothing on the host verifies a certificate against it. No local SPIRE, no
+  invention, and no schema exception.
 
 So presence v2 **can** describe a local run honestly. What it cannot describe
 honestly is a run of bare *processes* — which is an argument for running pods
@@ -1081,10 +1087,9 @@ carrier, the envelope as an independent ceiling.
 What the CLI stands in for, per run:
 
 - **the API server** — TokenReview and pod reads over TLS under a CA created for
-  that run, with projected tokens issued for the same audiences. The host
-  reaches it through `SOLUTION_HOST_LOCAL_CLUSTER` (§7, Configuration).
-- **workload identity** — X.509-SVIDs under that same CA, named as a cell names
-  them from the namespace and service account.
+  that run, with projected tokens issued for the same audiences and rotated as
+  the kubelet rotates them. The host reaches it through
+  `SOLUTION_HOST_LOCAL_CLUSTER` (§7, Configuration).
 - **the trust anchor** — a local profile whose `local` block pins that run's CA,
   read through `SOLUTION_HOST_LOCAL_TRUST_ANCHOR`.
 

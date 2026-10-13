@@ -94,11 +94,8 @@ func declareReadingModule(t *testing.T, gw *Gateway, alias string, module http.H
 			TargetId:   fakeSolutionTarget(alias),
 			Kind:       accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE,
 		},
-		Backend: &accountsv1.SolutionBackendBinding{
-			Revision: registry.revision, Upstream: srv.URL,
-			ServiceAlias: alias, ContractVersion: "v1",
-		},
 	}
+	registry.route(alias, srv.URL)
 	registry.mu.Unlock()
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 }

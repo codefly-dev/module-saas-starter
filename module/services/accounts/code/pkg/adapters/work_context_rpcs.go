@@ -382,17 +382,11 @@ func (s *WorkContextAuthorityServer) taskBoundary(
 	if seed.Publisher != identity.Publisher {
 		return "", status.Error(codes.PermissionDenied, "solution registration is owned by another publisher")
 	}
-	// The backend half is the half that mints, and "serving" is DELIVERED
-	// presence: the applied declared generation carries a backend half on a
-	// non-tombstoned declared row. It was a lease expiry, which nothing renews
-	// any more — the renewal path is deleted and a tombstone is the only
-	// withdrawal — so the refusal names the columns it read rather than leaving
-	// an operator to guess which half never arrived.
-	if !seed.BackendServing {
-		return "", status.Errorf(codes.FailedPrecondition,
-			"solution backend registration is not serving: the declared row for %q carries no backend half (%s is absent)",
-			identity.SolutionID, seed.MissingBackendHalf)
-	}
+	// "Serving" is DELIVERED presence and nothing else: the seed read above
+	// refused a tombstone and a missing record by name, and the applied
+	// generation is what the gateway resolves the solution's address from.
+	// There is no lease to renew — the renewal path is deleted and a tombstone
+	// is the only withdrawal.
 	boundary, err := business.SolutionRuntimeBoundary(seed.BindingID, orgID)
 	if err != nil {
 		return "", status.Error(codes.Internal, "cannot derive the solution runtime boundary")

@@ -12,12 +12,16 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/solution_registry.proto.
  */
 export const file_saas_accounts_v1_solution_registry: GenFile = /*@__PURE__*/
-  fileDesc("CihzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIm8KF1NvbHV0aW9uRnJvbnRlbmRCaW5kaW5nEhAKCHJldmlzaW9uGAEgASgDEhAKCG1hbmlmZXN0GAIgASgJEhgKEGNvbnRyYWN0X3ZlcnNpb24YAyABKAlKBAgEEAVSEGxlYXNlX2V4cGlyZXNfYXQihQEKFlNvbHV0aW9uQmFja2VuZEJpbmRpbmcSEAoIcmV2aXNpb24YASABKAMSEAoIdXBzdHJlYW0YAiABKAkSFQoNc2VydmljZV9hbGlhcxgDIAEoCRIYChBjb250cmFjdF92ZXJzaW9uGAQgASgJSgQIBRAGUhBsZWFzZV9leHBpcmVzX2F0IooEChRTb2x1dGlvblJlZ2lzdHJhdGlvbhITCgtzb2x1dGlvbl9pZBgBIAEoCRIRCglwdWJsaXNoZXIYAiABKAkSEAoIcmV2aXNpb24YAyABKAMSPAoGc3RhdHVzGAQgASgOMiwuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxJACghmcm9udGVuZBgFIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Gcm9udGVuZEJpbmRpbmdIAIgBARI+CgdiYWNrZW5kGAYgASgLMiguc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkJhY2tlbmRCaW5kaW5nSAGIAQESLgoKdXBkYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNgoNdG9tYnN0b25lZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAogBARJACghkZWNsYXJlZBgKIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25EZWNsYXJlZEJpbmRpbmdIA4gBAUILCglfZnJvbnRlbmRCCgoIX2JhY2tlbmRCEAoOX3RvbWJzdG9uZWRfYXRCCwoJX2RlY2xhcmVkSgQICRAKUhBydW50aW1lX2JvdW5kYXJ5Ij4KIExpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnNSZXF1ZXN0EhoKEmluY2x1ZGVfdG9tYnN0b25lZBgBIAEoCCJ9CiFMaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVzcG9uc2USPQoNcmVnaXN0cmF0aW9ucxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25SZWdpc3RyYXRpb24SGQoRcmVnaXN0cnlfcmV2aXNpb24YAiABKAMimwEKF1NvbHV0aW9uRGVjbGFyZWRCaW5kaW5nEhIKCmJpbmRpbmdfaWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIPCgdyZWxlYXNlGAMgASgJEhEKCXRhcmdldF9pZBgEIAEoCRI0CgRraW5kGAUgASgOMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkRlY2xhcmVkS2luZCJ9Ch1Tb2x1dGlvbkhvc3RCaW5kaW5nR2VuZXJhdGlvbhISCgpnZW5lcmF0aW9uGAEgASgEEg4KBmRpZ2VzdBgCIAEoCRIQCghkb2N1bWVudBgDIAEoCRImCgJhdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAisgEKJFNvbHV0aW9uSG9zdEJpbmRpbmdBcHBsaWVkR2VuZXJhdGlvbhJDCgpnZW5lcmF0aW9uGAEgASgLMi8uc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkhvc3RCaW5kaW5nR2VuZXJhdGlvbhIPCgdyZW1vdmVkGAIgASgIEg4KBnJvdXRlcxgDIAMoCRITCgtzb2x1dGlvbl9pZBgEIAEoCRIPCgdyZWxlYXNlGAUgASgJIo4EChhTb2x1dGlvbkhvc3RCaW5kaW5nU3RhdGUSEgoKYmluZGluZ19pZBgBIAEoCRIXCg9ob3N0X2Nvb3JkaW5hdGUYAiABKAkSFgoOaG9zdF9jb21wb25lbnQYAyABKAkSRQoHZGVzaXJlZBgEIAEoCzIvLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb25IAIgBARJMCgdhcHBsaWVkGAUgASgLMjYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkhvc3RCaW5kaW5nQXBwbGllZEdlbmVyYXRpb25IAYgBARIaChJwZW5kaW5nX2dlbmVyYXRpb24YBiABKAQSFgoOcGVuZGluZ19yZWFzb24YByABKAkSNgoNcGVuZGluZ19zaW5jZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAogBARJBCgxyZWdpc3RyYXRpb24YCSABKAsyJi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uUmVnaXN0cmF0aW9uSAOIAQESLgoKdXBkYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCCgoIX2Rlc2lyZWRCCgoIX2FwcGxpZWRCEAoOX3BlbmRpbmdfc2luY2VCDwoNX3JlZ2lzdHJhdGlvbiIhCh9MaXN0U29sdXRpb25Ib3N0QmluZGluZ3NSZXF1ZXN0ImAKIExpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1Jlc3BvbnNlEjwKCGJpbmRpbmdzGAEgAygLMiouc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkhvc3RCaW5kaW5nU3RhdGUqpQIKGlNvbHV0aW9uUmVnaXN0cmF0aW9uU3RhdHVzEiwKKFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABInCiNTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX0FDVElWRRABEigKJFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfUEVORElORxACEi0KKVNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfSU5DT01QQVRJQkxFEAQSKwonU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19UT01CU1RPTkVEEAUiBAgDEAMqJFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfRVhQSVJFRCqGAQoUU29sdXRpb25EZWNsYXJlZEtpbmQSJgoiU09MVVRJT05fREVDTEFSRURfS0lORF9VTlNQRUNJRklFRBAAEiMKH1NPTFVUSU9OX0RFQ0xBUkVEX0tJTkRfU09MVVRJT04QARIhCh1TT0xVVElPTl9ERUNMQVJFRF9LSU5EX01PRFVMRRACQr0BChRjb20uc2Fhcy5hY2NvdW50cy52MUIVU29sdXRpb25SZWdpc3RyeVByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("CihzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIm0KF1NvbHV0aW9uRnJvbnRlbmRCaW5kaW5nEhAKCHJldmlzaW9uGAEgASgDEhAKCG1hbmlmZXN0GAIgASgJSgQIAxAESgQIBBAFUhBjb250cmFjdF92ZXJzaW9uUhBsZWFzZV9leHBpcmVzX2F0Is0DChRTb2x1dGlvblJlZ2lzdHJhdGlvbhITCgtzb2x1dGlvbl9pZBgBIAEoCRIRCglwdWJsaXNoZXIYAiABKAkSEAoIcmV2aXNpb24YAyABKAMSPAoGc3RhdHVzGAQgASgOMiwuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxJACghmcm9udGVuZBgFIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Gcm9udGVuZEJpbmRpbmdIAIgBARIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2Cg10b21ic3RvbmVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgBiAEBEkAKCGRlY2xhcmVkGAogASgLMikuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkRlY2xhcmVkQmluZGluZ0gCiAEBQgsKCV9mcm9udGVuZEIQCg5fdG9tYnN0b25lZF9hdEILCglfZGVjbGFyZWRKBAgGEAdKBAgJEApSB2JhY2tlbmRSEHJ1bnRpbWVfYm91bmRhcnkiPgogTGlzdFNvbHV0aW9uUmVnaXN0cmF0aW9uc1JlcXVlc3QSGgoSaW5jbHVkZV90b21ic3RvbmVkGAEgASgIIn0KIUxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnNSZXNwb25zZRI9Cg1yZWdpc3RyYXRpb25zGAEgAygLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbhIZChFyZWdpc3RyeV9yZXZpc2lvbhgCIAEoAyKbAQoXU29sdXRpb25EZWNsYXJlZEJpbmRpbmcSEgoKYmluZGluZ19pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEEg8KB3JlbGVhc2UYAyABKAkSEQoJdGFyZ2V0X2lkGAQgASgJEjQKBGtpbmQYBSABKA4yJi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uRGVjbGFyZWRLaW5kIn0KHVNvbHV0aW9uSG9zdEJpbmRpbmdHZW5lcmF0aW9uEhIKCmdlbmVyYXRpb24YASABKAQSDgoGZGlnZXN0GAIgASgJEhAKCGRvY3VtZW50GAMgASgJEiYKAmF0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKyAQokU29sdXRpb25Ib3N0QmluZGluZ0FwcGxpZWRHZW5lcmF0aW9uEkMKCmdlbmVyYXRpb24YASABKAsyLy5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdHZW5lcmF0aW9uEg8KB3JlbW92ZWQYAiABKAgSDgoGcm91dGVzGAMgAygJEhMKC3NvbHV0aW9uX2lkGAQgASgJEg8KB3JlbGVhc2UYBSABKAkijgQKGFNvbHV0aW9uSG9zdEJpbmRpbmdTdGF0ZRISCgpiaW5kaW5nX2lkGAEgASgJEhcKD2hvc3RfY29vcmRpbmF0ZRgCIAEoCRIWCg5ob3N0X2NvbXBvbmVudBgDIAEoCRJFCgdkZXNpcmVkGAQgASgLMi8uc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkhvc3RCaW5kaW5nR2VuZXJhdGlvbkgAiAEBEkwKB2FwcGxpZWQYBSABKAsyNi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdBcHBsaWVkR2VuZXJhdGlvbkgBiAEBEhoKEnBlbmRpbmdfZ2VuZXJhdGlvbhgGIAEoBBIWCg5wZW5kaW5nX3JlYXNvbhgHIAEoCRI2Cg1wZW5kaW5nX3NpbmNlGAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgCiAEBEkEKDHJlZ2lzdHJhdGlvbhgJIAEoCzImLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25SZWdpc3RyYXRpb25IA4gBARIuCgp1cGRhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIKCghfZGVzaXJlZEIKCghfYXBwbGllZEIQCg5fcGVuZGluZ19zaW5jZUIPCg1fcmVnaXN0cmF0aW9uIiEKH0xpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1JlcXVlc3QiYAogTGlzdFNvbHV0aW9uSG9zdEJpbmRpbmdzUmVzcG9uc2USPAoIYmluZGluZ3MYASADKAsyKi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdTdGF0ZSqnAgoaU29sdXRpb25SZWdpc3RyYXRpb25TdGF0dXMSLAooU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEicKI1NPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfQUNUSVZFEAESKAokU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19QRU5ESU5HEAISKwonU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19UT01CU1RPTkVEEAUiBAgDEAMiBAgEEAQqJFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfRVhQSVJFRCopU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19JTkNPTVBBVElCTEUqhgEKFFNvbHV0aW9uRGVjbGFyZWRLaW5kEiYKIlNPTFVUSU9OX0RFQ0xBUkVEX0tJTkRfVU5TUEVDSUZJRUQQABIjCh9TT0xVVElPTl9ERUNMQVJFRF9LSU5EX1NPTFVUSU9OEAESIQodU09MVVRJT05fREVDTEFSRURfS0lORF9NT0RVTEUQAkK9AQoUY29tLnNhYXMuYWNjb3VudHMudjFCFVNvbHV0aW9uUmVnaXN0cnlQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
- * SolutionFrontendBinding is the stored frontend half. manifest is the document
- * the frontend validates while reading the projection; accounts stores it
- * verbatim and keeps presence authority separate from runtime compatibility.
+ * SolutionFrontendBinding is the stored frontend half: the `frontend` block of
+ * the applied presence, copied by accounts in the transaction that applies the
+ * generation. manifest carries that block as JSON (title, order,
+ * exposed_module, host_contract, dashboard, surfaces) — the author-declared
+ * half of the manifest the gateway's registry projection builds, adding the
+ * host's own constants. Present on a solution whose applied generation
+ * declares one; a module has none.
  *
  * @generated from message saas.accounts.v1.SolutionFrontendBinding
  */
@@ -31,11 +35,6 @@ export type SolutionFrontendBinding = Message<"saas.accounts.v1.SolutionFrontend
    * @generated from field: string manifest = 2;
    */
   manifest: string;
-
-  /**
-   * @generated from field: string contract_version = 3;
-   */
-  contractVersion: string;
 };
 
 /**
@@ -44,41 +43,6 @@ export type SolutionFrontendBinding = Message<"saas.accounts.v1.SolutionFrontend
  */
 export const SolutionFrontendBindingSchema: GenMessage<SolutionFrontendBinding> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_solution_registry, 0);
-
-/**
- * SolutionBackendBinding is the stored backend half: the upstream the gateway
- * proxies to and the logical service alias it is addressed by.
- *
- * @generated from message saas.accounts.v1.SolutionBackendBinding
- */
-export type SolutionBackendBinding = Message<"saas.accounts.v1.SolutionBackendBinding"> & {
-  /**
-   * @generated from field: int64 revision = 1;
-   */
-  revision: bigint;
-
-  /**
-   * @generated from field: string upstream = 2;
-   */
-  upstream: string;
-
-  /**
-   * @generated from field: string service_alias = 3;
-   */
-  serviceAlias: string;
-
-  /**
-   * @generated from field: string contract_version = 4;
-   */
-  contractVersion: string;
-};
-
-/**
- * Describes the message saas.accounts.v1.SolutionBackendBinding.
- * Use `create(SolutionBackendBindingSchema)` to create a new message.
- */
-export const SolutionBackendBindingSchema: GenMessage<SolutionBackendBinding> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 1);
 
 /**
  * SolutionRegistration is the canonical record. revision is drawn from one
@@ -116,11 +80,6 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
   frontend?: SolutionFrontendBinding;
 
   /**
-   * @generated from field: optional saas.accounts.v1.SolutionBackendBinding backend = 6;
-   */
-  backend?: SolutionBackendBinding;
-
-  /**
    * @generated from field: google.protobuf.Timestamp updated_at = 7;
    */
   updatedAt?: Timestamp;
@@ -143,7 +102,7 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
  * Use `create(SolutionRegistrationSchema)` to create a new message.
  */
 export const SolutionRegistrationSchema: GenMessage<SolutionRegistration> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 2);
+  messageDesc(file_saas_accounts_v1_solution_registry, 1);
 
 /**
  * ListSolutionRegistrationsRequest reads the whole registry. There is one
@@ -167,7 +126,7 @@ export type ListSolutionRegistrationsRequest = Message<"saas.accounts.v1.ListSol
  * Use `create(ListSolutionRegistrationsRequestSchema)` to create a new message.
  */
 export const ListSolutionRegistrationsRequestSchema: GenMessage<ListSolutionRegistrationsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 3);
+  messageDesc(file_saas_accounts_v1_solution_registry, 2);
 
 /**
  * @generated from message saas.accounts.v1.ListSolutionRegistrationsResponse
@@ -192,7 +151,7 @@ export type ListSolutionRegistrationsResponse = Message<"saas.accounts.v1.ListSo
  * Use `create(ListSolutionRegistrationsResponseSchema)` to create a new message.
  */
 export const ListSolutionRegistrationsResponseSchema: GenMessage<ListSolutionRegistrationsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 4);
+  messageDesc(file_saas_accounts_v1_solution_registry, 3);
 
 /**
  * SolutionDeclaredBinding identifies the applied declaration and target.
@@ -256,7 +215,7 @@ export type SolutionDeclaredBinding = Message<"saas.accounts.v1.SolutionDeclared
  * Use `create(SolutionDeclaredBindingSchema)` to create a new message.
  */
 export const SolutionDeclaredBindingSchema: GenMessage<SolutionDeclaredBinding> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 5);
+  messageDesc(file_saas_accounts_v1_solution_registry, 4);
 
 /**
  * SolutionHostBindingGeneration is one generation of one document. The document
@@ -295,7 +254,7 @@ export type SolutionHostBindingGeneration = Message<"saas.accounts.v1.SolutionHo
  * Use `create(SolutionHostBindingGenerationSchema)` to create a new message.
  */
 export const SolutionHostBindingGenerationSchema: GenMessage<SolutionHostBindingGeneration> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 6);
+  messageDesc(file_saas_accounts_v1_solution_registry, 5);
 
 /**
  * SolutionHostBindingAppliedGeneration is the generation this host reconciled,
@@ -344,7 +303,7 @@ export type SolutionHostBindingAppliedGeneration = Message<"saas.accounts.v1.Sol
  * Use `create(SolutionHostBindingAppliedGenerationSchema)` to create a new message.
  */
 export const SolutionHostBindingAppliedGenerationSchema: GenMessage<SolutionHostBindingAppliedGeneration> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 7);
+  messageDesc(file_saas_accounts_v1_solution_registry, 6);
 
 /**
  * SolutionHostBindingState is one binding's whole state: desired, applied, and
@@ -424,7 +383,7 @@ export type SolutionHostBindingState = Message<"saas.accounts.v1.SolutionHostBin
  * Use `create(SolutionHostBindingStateSchema)` to create a new message.
  */
 export const SolutionHostBindingStateSchema: GenMessage<SolutionHostBindingState> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 8);
+  messageDesc(file_saas_accounts_v1_solution_registry, 7);
 
 /**
  * ListSolutionHostBindingsRequest reads every declared binding. There is one set
@@ -441,7 +400,7 @@ export type ListSolutionHostBindingsRequest = Message<"saas.accounts.v1.ListSolu
  * Use `create(ListSolutionHostBindingsRequestSchema)` to create a new message.
  */
 export const ListSolutionHostBindingsRequestSchema: GenMessage<ListSolutionHostBindingsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 9);
+  messageDesc(file_saas_accounts_v1_solution_registry, 8);
 
 /**
  * @generated from message saas.accounts.v1.ListSolutionHostBindingsResponse
@@ -458,7 +417,7 @@ export type ListSolutionHostBindingsResponse = Message<"saas.accounts.v1.ListSol
  * Use `create(ListSolutionHostBindingsResponseSchema)` to create a new message.
  */
 export const ListSolutionHostBindingsResponseSchema: GenMessage<ListSolutionHostBindingsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 10);
+  messageDesc(file_saas_accounts_v1_solution_registry, 9);
 
 /**
  * SolutionRegistrationStatus is derived from declared state and complete,
@@ -473,28 +432,22 @@ export enum SolutionRegistrationStatus {
   UNSPECIFIED = 0,
 
   /**
-   * Both halves are present and their declared contract
-   * versions agree. This is the only status either surface serves.
+   * The presence is applied: for a module that is all, and for a solution its
+   * applied generation carries a `frontend` block. This is the only status
+   * either surface serves.
    *
    * @generated from enum value: SOLUTION_REGISTRATION_STATUS_ACTIVE = 1;
    */
   ACTIVE = 1,
 
   /**
-   * A half has not been observed. The record is durable but incomplete, so no
-   * page advertises it and the gateway has nothing to route to.
+   * A solution whose applied presence declares no `frontend` block. The record
+   * is durable but incomplete, so no page advertises it and the gateway routes
+   * nothing to it.
    *
    * @generated from enum value: SOLUTION_REGISTRATION_STATUS_PENDING = 2;
    */
   PENDING = 2,
-
-  /**
-   * The two halves declare different contract versions, so activating them
-   * together would serve a page against a backend it was not built for.
-   *
-   * @generated from enum value: SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE = 4;
-   */
-  INCOMPATIBLE = 4,
 
   /**
    * An applied removal keeps the declaration as a tombstone.

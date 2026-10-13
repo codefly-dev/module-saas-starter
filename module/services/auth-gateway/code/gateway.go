@@ -51,11 +51,11 @@ type Gateway struct {
 	// clients is this replica's view of the registered-client registry: which
 	// browser origins each first-party client speaks from (track 0016).
 	clients *clientRegistryCache
-	// registeredTransport guards module upstream DNS/address resolution.
-	// Solutions use the same guarded dialer with per-destination workload TLS;
+	// registeredTransport guards declared upstream DNS/address resolution,
+	// for a solution exactly as for a module: plain HTTP to where the Codefly
+	// SDK resolved the route, re-validated at dial time;
 	// catalog upstreams keep the default transport.
 	registeredTransport http.RoundTripper
-	workload            *workloadIdentity
 	// solutionEntitlements answers what one viewer may use (#949). Set after
 	// construction, like workContext: a nil client fails the entitlement surface
 	// closed rather than answering an empty projection, which would retract every
@@ -471,7 +471,6 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	// token. Never expose these capabilities to the frontend upstream.
 	r.Header.Del("X-Codefly-Gateway-Token")
 	r.Header.Del("X-Codefly-Internal-Token")
-	r.Header.Del(workloadSPIFFEHeader)
 	r.Header.Del("X-Codefly-Public-Origin")
 	if isAccountsRoute(entry) && g.authz != nil && g.authz.gatewayToken != "" {
 		r.Header.Set("X-Codefly-Gateway-Token", g.authz.gatewayToken)
@@ -506,20 +505,12 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	}
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 	if isRuntimeRegisteredRoute(entry) && g.registeredTransport != nil {
-		// A runtime-registered upstream — module or solution — merely names a mesh
-		// host that its registrant chose; re-validate the resolved address at dial
+		// A declared upstream — module or solution — is where the Codefly SDK
+		// resolved an endpoint the composition wrote, reached over plain HTTP
+		// inside the cell's mesh; re-validate the resolved address at dial
 		// time (SSRF / DNS-rebinding defense). Catalog upstreams keep the default
 		// transport.
 		proxy.Transport = g.registeredTransport
-	}
-	if entry != nil && strings.HasPrefix(entry.Service, solutionServicePrefix) {
-		transport, err := g.workload.upstreamTransport(entry.WorkloadSPIFFEID)
-		if err != nil || upstream.Scheme != "https" {
-			httpError(w, http.StatusBadGateway, "solution workload identity unavailable")
-			return
-		}
-		defer transport.CloseIdleConnections()
-		proxy.Transport = transport
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())

@@ -11,11 +11,13 @@ import "google/protobuf/timestamp.proto";
 // compatible frontend/backend observations, never from an expiring lease.
 enum SolutionRegistrationStatus {
   SOLUTION_REGISTRATION_STATUS_UNSPECIFIED = 0;
-  // Both halves are present and their declared contract
-  // versions agree. This is the only status either surface serves.
+  // The presence is applied: for a module that is all, and for a solution its
+  // applied generation carries a `frontend` block. This is the only status
+  // either surface serves.
   SOLUTION_REGISTRATION_STATUS_ACTIVE = 1;
-  // A half has not been observed. The record is durable but incomplete, so no
-  // page advertises it and the gateway has nothing to route to.
+  // A solution whose applied presence declares no `frontend` block. The record
+  // is durable but incomplete, so no page advertises it and the gateway routes
+  // nothing to it.
   SOLUTION_REGISTRATION_STATUS_PENDING = 2;
   // Was `SOLUTION_REGISTRATION_STATUS_EXPIRED`: both halves registered but a
   // lease had lapsed. Presence is delivered, never heartbeat-asserted, so there
@@ -24,37 +26,35 @@ enum SolutionRegistrationStatus {
   // meaning a later value gave the number.
   reserved 3;
   reserved "SOLUTION_REGISTRATION_STATUS_EXPIRED";
-  // The two halves declare different contract versions, so activating them
-  // together would serve a page against a backend it was not built for.
-  SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE = 4;
+  // Was `SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE`: two REPORTED halves
+  // declaring different contract versions. Nothing is reported any more — the
+  // frontend block is delivered with the presence and the address is resolved
+  // — so the state cannot arise. Reserved rather than reused.
+  reserved 4;
+  reserved "SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE";
   // An applied removal keeps the declaration as a tombstone.
   SOLUTION_REGISTRATION_STATUS_TOMBSTONED = 5;
 }
 
-// SolutionFrontendBinding is the stored frontend half. manifest is the document
-// the frontend validates while reading the projection; accounts stores it
-// verbatim and keeps presence authority separate from runtime compatibility.
+// SolutionFrontendBinding is the stored frontend half: the `frontend` block of
+// the applied presence, copied by accounts in the transaction that applies the
+// generation. manifest carries that block as JSON (title, order,
+// exposed_module, host_contract, dashboard, surfaces) — the author-declared
+// half of the manifest the gateway's registry projection builds, adding the
+// host's own constants. Present on a solution whose applied generation
+// declares one; a module has none.
 message SolutionFrontendBinding {
   int64 revision = 1;
   string manifest = 2;
-  string contract_version = 3;
+  // Was `string contract_version`: a version two REPORTED halves were
+  // compared on. Nothing is reported, so there is nothing to compare.
+  // Reserved rather than reused.
+  reserved 3;
+  reserved "contract_version";
   // Was `google.protobuf.Timestamp lease_expires_at`: the renewal path is
   // deleted, so a column nothing renews was legacy. Reserved, not reused — a
   // released number never takes another name or type.
   reserved 4;
-  reserved "lease_expires_at";
-}
-
-// SolutionBackendBinding is the stored backend half: the upstream the gateway
-// proxies to and the logical service alias it is addressed by.
-message SolutionBackendBinding {
-  int64 revision = 1;
-  string upstream = 2;
-  string service_alias = 3;
-  string contract_version = 4;
-  // Was `google.protobuf.Timestamp lease_expires_at`: see
-  // SolutionFrontendBinding above. Reserved, not reused.
-  reserved 5;
   reserved "lease_expires_at";
 }
 
@@ -68,7 +68,13 @@ message SolutionRegistration {
   int64 revision = 3;
   SolutionRegistrationStatus status = 4;
   optional SolutionFrontendBinding frontend = 5;
-  optional SolutionBackendBinding backend = 6;
+  // Was `optional SolutionBackendBinding backend`: the upstream a running
+  // solution reported at mint and the alias it was addressed by. The address
+  // is resolved by the Codefly SDK from the endpoint the applied presence
+  // declares and lives in no record; the alias is the registry key. The
+  // message is deleted with the field. Reserved rather than reused.
+  reserved 6;
+  reserved "backend";
   google.protobuf.Timestamp updated_at = 7;
   optional google.protobuf.Timestamp tombstoned_at = 8;
   // Was `string runtime_boundary`: the opaque id every Work Context minted for

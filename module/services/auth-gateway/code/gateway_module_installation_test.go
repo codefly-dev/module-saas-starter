@@ -36,8 +36,8 @@ func TestDynamicModuleProxyInstallationAndAttribution(t *testing.T) {
 	registry.records["example-module"] = &accountsv1.SolutionRegistration{
 		SolutionId: "example-module", Publisher: "solution:example-module", Revision: 1,
 		Declared: &accountsv1.SolutionDeclaredBinding{BindingId: "acme.test.example", TargetId: fakeSolutionTarget("example-module"), Generation: 1, Release: "acme/example@1.0.0", Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE},
-		Backend:  &accountsv1.SolutionBackendBinding{Revision: 1, Upstream: "http://127.0.0.1:18080", ServiceAlias: "example-module", ContractVersion: "v1"},
 	}
+	registry.route("example-module", "http://127.0.0.1:18080")
 	gw := NewGateway(authz, NewRouteMatcher(testRouteEntries(), nil), nil, nil, registry, newFakeClientRegistry())
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 	authority := &entitledTo{}

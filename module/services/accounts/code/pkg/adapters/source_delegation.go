@@ -69,7 +69,6 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	ctx = moduleMintWorkloadPeer(ctx)
 	authority, err := service.AuthorizeSourceOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), business.SourceDelegationRef{
 		DelegationID: req.GetDelegationId(),
 		SourceID:     req.GetSourceId(),

@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -483,9 +484,16 @@ func (s *Service) declareSolutionRegistration(
 	}
 	if current != nil && current.Declared != nil && current.Declared.TargetID == targetID {
 		next.Publisher = current.Publisher
-		// A tombstone cleared the halves; a live record keeps the ones it has.
-		next.Frontend = current.Frontend
-		next.Backend = current.Backend
+	}
+	// The frontend half is THIS generation's `frontend` block and nothing
+	// older: a generation that drops the block takes the page with it, and
+	// nothing a running process reports can put one back.
+	if document.Frontend != nil {
+		block, err := json.Marshal(document.Frontend)
+		if err != nil {
+			return 0, fmt.Errorf("binding %q: cannot encode its frontend block: %w", document.Binding, err)
+		}
+		next.Frontend = &SolutionFrontendHalf{Revision: revision, Manifest: string(block)}
 	}
 	if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
 		return 0, err

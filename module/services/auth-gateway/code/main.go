@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -52,31 +51,17 @@ func main() {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
 	httpPort = httpNet.Port
-	workload, err := loadWorkloadIdentity(func(key string) (string, error) {
-		return codefly.For(ctx).WorkspaceValue("workload-identity", key)
-	})
-	if err != nil {
-		panic(err)
+	// The workload endpoint is where composed workloads reach this gateway:
+	// plain HTTP on a port of its own, admitted by the cell's mesh from
+	// composed workloads alone (and bound beside the rest of a native run),
+	// serving the full handler. The module credential exchanges are served
+	// there and nowhere else, so a gateway that cannot resolve it does not
+	// start. Its port is Codefly's, like the two above.
+	workloadNet, err := codefly.For(ctx).Endpoint("workload").API("http").ResolveNetworkInstance()
+	if err != nil || workloadNet == nil || workloadNet.Port == 0 {
+		panic(fmt.Sprintf("Codefly workload endpoint is unavailable: %v", err))
 	}
-	workloadListener, workloadTLS, err := workload.listen(func() (net.Listener, error) {
-		workloadNet, err := codefly.For(ctx).Endpoint("workload").API("http").ResolveNetworkInstance()
-		if err != nil || workloadNet == nil || workloadNet.Port == 0 {
-			return nil, fmt.Errorf("Codefly workload endpoint is unavailable: %v", err)
-		}
-		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", workloadNet.Port))
-		if err != nil {
-			return nil, fmt.Errorf("workload listener: %w", err)
-		}
-		return listener, nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	if workloadListener != nil {
-		defer workloadListener.Close()
-	} else {
-		slog.Info("workload endpoint is off because no workload identity is projected")
-	}
+	workloadPort := workloadNet.Port
 	var otelProvider *wooltel.Provider
 	var otelMetricProvider *otelMetrics
 	if observabilityEnabled() {
@@ -276,7 +261,6 @@ func main() {
 		// reach this replica without restarting it.
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
-		gateway.workload = workload
 		go gateway.runInstallationJobs(ctx, apiHTTPURL)
 		// The per-viewer solution entitlement read (#949), over the same internal
 		// connection. It is not a cache: the answer is per viewer and must not
@@ -306,19 +290,21 @@ func main() {
 			IdleTimeout:       120 * time.Second,
 			MaxHeaderBytes:    1 << 20, // 1 MiB
 		}
-		if workloadListener != nil {
-			workloadServer = &http.Server{
-				Handler: workload.handler(httpServer.Handler), TLSConfig: workloadTLS,
-				ReadHeaderTimeout: httpServer.ReadHeaderTimeout, ReadTimeout: httpServer.ReadTimeout,
-				IdleTimeout: httpServer.IdleTimeout, MaxHeaderBytes: httpServer.MaxHeaderBytes,
-			}
-			go func() {
-				if err := workloadServer.ServeTLS(workloadListener, "", ""); err != nil && err != http.ErrServerClosed {
-					log.Printf("workload server: %v", err)
-					stop()
-				}
-			}()
+		// The same handler on the workload port, marked so the module credential
+		// exchanges know they are on it; the same bounds as the public server.
+		workloadServer = &http.Server{
+			Addr:              fmt.Sprintf(":%d", workloadPort),
+			Handler:           workloadListener(httpServer.Handler),
+			ReadHeaderTimeout: httpServer.ReadHeaderTimeout, ReadTimeout: httpServer.ReadTimeout,
+			IdleTimeout: httpServer.IdleTimeout, MaxHeaderBytes: httpServer.MaxHeaderBytes,
 		}
+		go func() {
+			fmt.Printf("auth-gateway workload endpoint (HTTP) listening on :%d\n", workloadPort)
+			if err := workloadServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("workload server: %v", err)
+				stop()
+			}
+		}()
 		go func() {
 			fmt.Printf("auth-gateway API gateway (HTTP) listening on :%d (api: %s, routes: %d)\n",
 				httpPort, apiHTTPURL, len(routeEntries))
