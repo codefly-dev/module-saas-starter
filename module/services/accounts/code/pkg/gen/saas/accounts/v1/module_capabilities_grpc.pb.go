@@ -53,6 +53,7 @@ const (
 	ModuleCapabilitiesService_Unsubscribe_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
 	ModuleCapabilitiesService_ListSubscriptions_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
 	ModuleCapabilitiesService_ReplayEvents_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
+	ModuleCapabilitiesService_ResolveWorkContextAuthority_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority"
 )
 
 // ModuleCapabilitiesServiceClient is the client API for ModuleCapabilitiesService service.
@@ -179,6 +180,14 @@ type ModuleCapabilitiesServiceClient interface {
 	ListSubscriptions(ctx context.Context, in *ModuleListSubscriptionsRequest, opts ...grpc.CallOption) (*ModuleListSubscriptionsResponse, error)
 	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
 	ReplayEvents(ctx context.Context, in *ModuleReplayEventsRequest, opts ...grpc.CallOption) (*ModuleReplayEventsResponse, error)
+	// ResolveWorkContextAuthority answers one live value a callee's verifier
+	// holds a capability's seal against: the installation it was sealed to and
+	// its revision, a principal's epoch, the build the issuer approves for a
+	// principal, an operation binding, the authorization revision a capability's
+	// owner carries, or an approval grant. It is the surface a composed module
+	// builds its seal, revision and grant sources on; see the block above
+	// ModuleResolveWorkContextAuthorityRequest for what a caller may ask.
+	ResolveWorkContextAuthority(ctx context.Context, in *ModuleResolveWorkContextAuthorityRequest, opts ...grpc.CallOption) (*ModuleResolveWorkContextAuthorityResponse, error)
 }
 
 type moduleCapabilitiesServiceClient struct {
@@ -528,6 +537,16 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) ResolveWorkContextAuthority(ctx context.Context, in *ModuleResolveWorkContextAuthorityRequest, opts ...grpc.CallOption) (*ModuleResolveWorkContextAuthorityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleResolveWorkContextAuthorityResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ResolveWorkContextAuthority_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ModuleCapabilitiesServiceServer is the server API for ModuleCapabilitiesService service.
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
@@ -652,6 +671,14 @@ type ModuleCapabilitiesServiceServer interface {
 	ListSubscriptions(context.Context, *ModuleListSubscriptionsRequest) (*ModuleListSubscriptionsResponse, error)
 	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
 	ReplayEvents(context.Context, *ModuleReplayEventsRequest) (*ModuleReplayEventsResponse, error)
+	// ResolveWorkContextAuthority answers one live value a callee's verifier
+	// holds a capability's seal against: the installation it was sealed to and
+	// its revision, a principal's epoch, the build the issuer approves for a
+	// principal, an operation binding, the authorization revision a capability's
+	// owner carries, or an approval grant. It is the surface a composed module
+	// builds its seal, revision and grant sources on; see the block above
+	// ModuleResolveWorkContextAuthorityRequest for what a caller may ask.
+	ResolveWorkContextAuthority(context.Context, *ModuleResolveWorkContextAuthorityRequest) (*ModuleResolveWorkContextAuthorityResponse, error)
 	mustEmbedUnimplementedModuleCapabilitiesServiceServer()
 }
 
@@ -757,6 +784,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) ListSubscriptions(context.Co
 }
 func (UnimplementedModuleCapabilitiesServiceServer) ReplayEvents(context.Context, *ModuleReplayEventsRequest) (*ModuleReplayEventsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReplayEvents not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ResolveWorkContextAuthority(context.Context, *ModuleResolveWorkContextAuthorityRequest) (*ModuleResolveWorkContextAuthorityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveWorkContextAuthority not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) mustEmbedUnimplementedModuleCapabilitiesServiceServer() {
 }
@@ -1342,6 +1372,24 @@ func _ModuleCapabilitiesService_ReplayEvents_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_ResolveWorkContextAuthority_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleResolveWorkContextAuthorityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ResolveWorkContextAuthority(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ResolveWorkContextAuthority_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ResolveWorkContextAuthority(ctx, req.(*ModuleResolveWorkContextAuthorityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ModuleCapabilitiesService_ServiceDesc is the grpc.ServiceDesc for ModuleCapabilitiesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1468,6 +1516,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReplayEvents",
 			Handler:    _ModuleCapabilitiesService_ReplayEvents_Handler,
+		},
+		{
+			MethodName: "ResolveWorkContextAuthority",
+			Handler:    _ModuleCapabilitiesService_ResolveWorkContextAuthority_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

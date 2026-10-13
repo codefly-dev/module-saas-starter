@@ -107,3 +107,7 @@ func (h *moduleCapabilitiesConnectHandler) ListSubscriptions(ctx context.Context
 func (h *moduleCapabilitiesConnectHandler) ReplayEvents(ctx context.Context, req *connect.Request[gen.ModuleReplayEventsRequest]) (*connect.Response[gen.ModuleReplayEventsResponse], error) {
 	return unary(ctx, req, h.inner.ReplayEvents)
 }
+
+func (h *moduleCapabilitiesConnectHandler) ResolveWorkContextAuthority(ctx context.Context, req *connect.Request[gen.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[gen.ModuleResolveWorkContextAuthorityResponse], error) {
+	return unary(ctx, req, h.inner.ResolveWorkContextAuthority)
+}

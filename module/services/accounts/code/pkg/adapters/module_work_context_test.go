@@ -53,6 +53,16 @@ func (s *recordingModuleStore) WithControlPlane(ctx context.Context, fn func(ctx
 	return fn(ctx)
 }
 
+// GetSourceDelegation answers that this organization records no delegation,
+// which is what makes an operation-binding question resolvable here: the
+// binding id parses, the record is looked up, and absence is the answer. The
+// embedded Store is nil, so a method this fixture does not answer panics rather
+// than returning a zero value — which is the right failure for a read nobody
+// meant to make, and the reason this one is spelled out.
+func (s *recordingModuleStore) GetSourceDelegation(context.Context, string, string) (*business.SourceDelegation, error) {
+	return nil, nil
+}
+
 func (s *recordingModuleStore) OrganizationIDExists(_ context.Context, id string) (bool, error) {
 	s.tenantChecks++
 	s.tenantCheckedID = id

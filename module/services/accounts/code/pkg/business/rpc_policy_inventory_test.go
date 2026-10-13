@@ -45,6 +45,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements",
 		"/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
 		"/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
+		"/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
 		"/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",
 		"/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience",
 		"/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
