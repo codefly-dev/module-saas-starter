@@ -76,7 +76,7 @@ func TestAuditJournalEnvelopeCarriesTheWholeEntry(t *testing.T) {
 		t.Fatalf("time = %v", envelope.GetTime().AsTime())
 	}
 	// publish_domain_event admits a no-organization entry from a user-scoped
-	// transaction only when this is that user (migration 36).
+	// transaction only when this is that user (migration 37).
 	if envelope.GetActorPrincipalId() != entry.ActorID {
 		t.Fatalf("actor principal = %q, want the entry's actor %q", envelope.GetActorPrincipalId(), entry.ActorID)
 	}

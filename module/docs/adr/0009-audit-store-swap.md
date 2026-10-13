@@ -48,8 +48,8 @@ tenant, and an `internal` type in it is never fanned out.
    every audit entry, including one with no organization, to the journal as the
    internal type `saas.audit.recorded.v1`, carrying the whole entry, in the
    caller's transaction through the existing transport. No table, relay or drain is
-   added to this module. Migration 36 admits user-scoped publication (item 2a),
-   and migration 37 records the writing transaction for the journal cursor. The type is
+   added to this module. Migration 37 admits user-scoped publication (item 2a),
+   and migration 38 records the writing transaction for the journal cursor. The type is
    code-owned and `internal`: the
    relay marks it published with no fan-out, a replay skips it, and no
    subscription may match it. The organization-scoped webhook event of an external
@@ -63,7 +63,7 @@ tenant, and an `internal` type in it is never fanned out.
    (the WebAuthn registration and the MFA enrolment, for example). That
    transaction runs as `app_tenant` and sets only `app.current_user_id`, and
    `publish_domain_event` refused every event with no tenant from `app_tenant`.
-   Migration 36 replaces the function with an identical body except that the
+   Migration 37 replaces the function with an identical body except that the
    `app_tenant` branch also admits one case: the tenant is NULL, the type is
    `saas.audit.recorded.v1`, `app.current_user_id` is set and non-empty, and the
    event's actor (`p_actor_principal_id`) is that same user. The record in `data`
@@ -84,7 +84,7 @@ tenant, and an `internal` type in it is never fanned out.
    grant, reads the journal through a cross-tenant read RPC on
    `ModuleCapabilitiesService` (`ReadJournal`) and hands this module one range of
    it at a time. The read serves rows in `(xact_id, seq)` order and only below the
-   oldest transaction still running (migration 37; [EVENTS.md](../../EVENTS.md)), so
+   oldest transaction still running (migration 38; [EVENTS.md](../../EVENTS.md)), so
    a cursor never passes a row that can still commit; its positions are opaque,
    and `"start"` is the position before the oldest retained entry. It marks the
    entries that are the reader's own delivery footprint (`delivery_machinery`), so
@@ -157,7 +157,7 @@ tenant, and an `internal` type in it is never fanned out.
 - Every no-organization entry is published on the transaction the caller already
   holds, including a user-scoped one: `publish_domain_event` admits a tenant-less
   `saas.audit.recorded.v1` from `app_tenant` when its actor is the transaction's
-  user (migration 36). A tenant-less event of any other type, or for any other
+  user (migration 37). A tenant-less event of any other type, or for any other
   actor, is still refused from `app_tenant`. The comparison is on the text of the
   actor id and of `app.current_user_id`, which are the canonical lowercase user id
   everywhere they are set; a non-canonical spelling of the same id is refused where

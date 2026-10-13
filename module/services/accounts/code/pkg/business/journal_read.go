@@ -23,7 +23,7 @@ import (
 // seq is the order rows were inserted, not the order their transactions commit,
 // so a cursor on seq passes a row whose transaction is still open and never comes
 // back for it. A position is therefore (xact_id, seq): the id of the transaction
-// that wrote the row (migration 37), then seq. Rows are served in that order and
+// that wrote the row (migration 38), then seq. Rows are served in that order and
 // only while xact_id is below the oldest transaction still running,
 // pg_snapshot_xmin(pg_current_snapshot()). Every transaction that can still commit
 // took its id at or after that bound, so a row below it belongs to a transaction
@@ -35,7 +35,7 @@ import (
 // new one. Both stall the reader without losing anything.
 
 // JournalPosition is where a row sits in the cross-tenant read order: the id of
-// the transaction that wrote it, then its seq. A row written before migration 37
+// the transaction that wrote it, then its seq. A row written before migration 38
 // has no transaction id and sits at transaction 0, before every other row, in seq
 // order. The zero value is before the first row.
 type JournalPosition struct {

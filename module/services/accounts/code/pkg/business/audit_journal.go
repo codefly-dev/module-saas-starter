@@ -86,7 +86,7 @@ type auditJournalRecord struct {
 // entry with no organization from a user-scoped transaction (a caller running as
 // app_tenant with only app.current_user_id set): such an event is admitted only
 // when its actor is that user, the rule audit_events_tenant applies to the same
-// entry's row (migration 36).
+// entry's row (migration 37).
 func NewAuditJournalEnvelope(entry AuditEntry) (*events.EventEnvelope, error) {
 	if entry.ID == "" {
 		return nil, errors.New("audit: a journal event needs the entry id")

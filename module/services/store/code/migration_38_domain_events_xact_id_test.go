@@ -41,17 +41,17 @@ func publishAsControlPlane(t *testing.T, db *sql.DB, eventID, eventType string) 
 	return xact
 }
 
-// Migration 37 adds domain_events.xact_id, the writing transaction's id, as a
+// Migration 38 adds domain_events.xact_id, the writing transaction's id, as a
 // column default, so the journal read can serve only rows whose transaction has
 // finished. It must change nothing about publish_domain_event, leave the rows
 // that existed NULL and still readable in seq order under the key the read uses,
 // stamp every new row with its real transaction id, and revert cleanly. Install
-// the ledger below 37, write rows, apply 37, write more, step back, and forward
+// the ledger below 38, write rows, apply 38, write more, step back, and forward
 // again.
 //
 // The URL must name a fresh, disposable PostgreSQL 16+ cluster, as for the
-// migration 26 and 36 replays.
-func TestMigration37DomainEventsXactID(t *testing.T) {
+// migration 26 and 37 replays.
+func TestMigration38DomainEventsXactID(t *testing.T) {
 	raw := os.Getenv("ACCOUNTS_INSTALLER_TEST_DATABASE_URL")
 	if raw == "" {
 		t.Skip("ACCOUNTS_INSTALLER_TEST_DATABASE_URL is unset; PostgreSQL replay not run")
@@ -76,8 +76,8 @@ func TestMigration37DomainEventsXactID(t *testing.T) {
 		t.Fatal("from-zero replay refuses a database containing application tables")
 	}
 
-	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 36), raw); err != nil {
-		t.Fatalf("apply the ledger below migration 37: %v", err)
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 37), raw); err != nil {
+		t.Fatalf("apply the ledger below migration 38: %v", err)
 	}
 	var hasColumn bool
 	hasXactColumn := func() bool {
@@ -89,7 +89,7 @@ func TestMigration37DomainEventsXactID(t *testing.T) {
 		return hasColumn
 	}
 	if hasXactColumn() {
-		t.Fatal("xact_id exists below migration 37")
+		t.Fatal("xact_id exists below migration 38")
 	}
 	function := readPublishDomainEvent(t, db)
 
@@ -99,12 +99,12 @@ func TestMigration37DomainEventsXactID(t *testing.T) {
 	publishAsControlPlane(t, db, legacyA, "saas.test.legacy")
 	publishAsControlPlane(t, db, legacyB, "saas.test.legacy")
 
-	withUp := "file://" + ledgerUpTo(t, 37)
+	withUp := "file://" + ledgerUpTo(t, 38)
 	if err := migrateStoreFrom(withUp, raw); err != nil {
-		t.Fatalf("apply migration 37: %v", err)
+		t.Fatalf("apply migration 38: %v", err)
 	}
 	if !hasXactColumn() {
-		t.Fatal("migration 37 added no xact_id column")
+		t.Fatal("migration 38 added no xact_id column")
 	}
 	var dataType, columnDefault string
 	if err := db.QueryRow(`SELECT format_type(a.atttypid, a.atttypmod), coalesce(pg_get_expr(d.adbin, d.adrelid), '')
@@ -119,7 +119,7 @@ func TestMigration37DomainEventsXactID(t *testing.T) {
 
 	// The function is not touched: same body, owner, authority, settings, grants.
 	if after := readPublishDomainEvent(t, db); after != function {
-		t.Fatalf("migration 37 changed publish_domain_event:\n got %+v\nwant %+v", after, function)
+		t.Fatalf("migration 38 changed publish_domain_event:\n got %+v\nwant %+v", after, function)
 	}
 
 	// Legacy rows stay NULL and are not rewritten into a real transaction id.
@@ -170,7 +170,7 @@ func TestMigration37DomainEventsXactID(t *testing.T) {
 	}
 	var indexDef string
 	if err := db.QueryRow(`SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND indexname='idx_domain_events_xact_seq'`).Scan(&indexDef); err != nil {
-		t.Fatalf("migration 37 did not create idx_domain_events_xact_seq: %v", err)
+		t.Fatalf("migration 38 did not create idx_domain_events_xact_seq: %v", err)
 	}
 	if !strings.Contains(indexDef, "COALESCE(xact_id, '0'::xid8)") || !strings.Contains(indexDef, "seq") {
 		t.Fatalf("index is not on the read's key: %s", indexDef)
@@ -183,7 +183,7 @@ func TestMigration37DomainEventsXactID(t *testing.T) {
 	stepErr := runner.Steps(-1)
 	sourceErr, databaseErr := runner.Close()
 	if stepErr != nil || sourceErr != nil || databaseErr != nil {
-		t.Fatalf("revert migration 37: step %v, close source %v, close database %v", stepErr, sourceErr, databaseErr)
+		t.Fatalf("revert migration 38: step %v, close source %v, close database %v", stepErr, sourceErr, databaseErr)
 	}
 	if hasXactColumn() {
 		t.Fatal("the down migration left xact_id behind")
@@ -209,7 +209,7 @@ func TestMigration37DomainEventsXactID(t *testing.T) {
 	publishAsControlPlane(t, db, "00000000-0000-4000-8000-000000000005", "saas.test.after_down")
 
 	if err := migrateStoreFrom(withUp, raw); err != nil {
-		t.Fatalf("apply migration 37 again after its down: %v", err)
+		t.Fatalf("apply migration 38 again after its down: %v", err)
 	}
 	// Every row that exists when the column comes back is NULL again, the one
 	// published while it was gone included, and still reads in seq order.
@@ -220,5 +220,5 @@ func TestMigration37DomainEventsXactID(t *testing.T) {
 	if nullAgain != 5 {
 		t.Fatalf("%d rows are NULL after re-applying, want 5", nullAgain)
 	}
-	t.Log("migration 37 added xact_id as a default without touching publish_domain_event; existing rows stayed NULL and ordered by seq; its down removed the column and index and kept every row")
+	t.Log("migration 38 added xact_id as a default without touching publish_domain_event; existing rows stayed NULL and ordered by seq; its down removed the column and index and kept every row")
 }
