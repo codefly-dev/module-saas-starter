@@ -256,6 +256,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
         "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
         "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
         "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
         "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
         "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
@@ -7586,6 +7587,49 @@
       },
       "policy_tier": "internal",
       "description": "Open a pending approval whose resume job the module claims.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ResolveWorkContextAuthority",
+      "input_type": "saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest",
+      "output_type": "saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Answer one live value a callee verifier holds a capability's seal against.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

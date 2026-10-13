@@ -696,6 +696,44 @@ See [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md) and
 [../../MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md) for the other
 exchanges that produce one.
 
+## Serving the live authority a callee verifies against
+
+`ModuleCapabilitiesService/ResolveWorkContextAuthority` answers the live values a
+composed module's verifier holds a presented capability's seal against: the
+installation and its revision, a principal's epoch, the approved build, an
+operation binding, the owner's authorization revision, and an approval grant
+(this host records none, and says so). Without it a module can only run core's
+forwarding-hop `Inspector`, which checks no seal, epoch or revision and consumes
+no single-use token — so a revoked installation or an advanced epoch stays
+accepted there for the capability's whole life.
+
+- **The answers are the issuer's own, not a second read.** The serving path hands
+  each question to `moduleAuthoritySources` (`pkg/adapters/work_context_core.go`),
+  which returns the same `hostSealSource`, `ownerRevisions` and `noApprovalGrants`
+  that `coreAuthority` mints with and `coreVerifier` verifies with. One body, so a
+  mint and a callee's verdict read the same state.
+  `TestTheServedAnswersAreTheIssuersOwnSources` pins it.
+- **A module reads its own audience in its own tenant, and nothing else.**
+  `AuthorizeModuleWorkContextAuthorityRead` re-reads the live grant like every
+  path here, then requires `organization_id == caller.BoundOrg` and `audience ==
+  grant.Prefix`. One indistinguishable `PermissionDenied` covers both, so probing
+  reveals nothing about another module.
+- **Absence is a STATE, never an empty value**: `UNHELD`, `UNKNOWN`,
+  `BEARS_NO_EXECUTION`, `ABSENT`, `NOT_RECORDED`. A verifier turns each into a
+  refusal; every other failure is `Unavailable` with its cause logged, because a
+  lookup that failed decided nothing. An unknown principal stays a refusal rather
+  than becoming "bears no execution", which is the collapse that would hand out a
+  credential nothing can revoke by replacing a build.
+- **No replay store is served.** Single-use consumption belongs to the consumer,
+  and an issuer consuming on its behalf would burn the nonce to answer a
+  question. Core keys its revision source by tenant while this host's revision is
+  owner-dependent, so the question names the owner and the client binds it per
+  capability.
+- The published Go client for it is `saas-sdk-go`'s `moduleauthority`, not this
+  repository; the wire contract is held here by
+  `pkg/adapters/module_work_context_authority_test.go`, which drives
+  `sdk-go/workcontext`'s `PinnedVerifier` against the real handler.
+
 ## Minting an operation context with no person present
 
 `ModuleCapabilitiesService/MintModuleOperationContext` (`EXPOSURE_INTERNAL`,

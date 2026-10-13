@@ -311,6 +311,72 @@ signing key: during a key rotation, a capability signed under the previous key
 is refused by every read-back (fail closed) even while a consumer still accepts
 it, until its holder mints a new one.
 
+## A callee verifies at full strength: the live authority a module reads
+
+A composed module that RECEIVES a Work Context is its callee, and the checks it
+can make from a trust root alone are a forwarding hop's: the encoding, the
+signature, the issuer, the audience, the window and the shape. A hop consults no
+live state and consumes nothing, so a module that stops there accepts a
+capability whose installation was revoked, whose build was replaced, whose
+operation binding was withdrawn or whose principal's epoch has moved — for as
+long as that capability lives, which is at most the 15-minute ceiling but is
+still every use inside it.
+
+The missing half is the issuer's live state, and this host is the issuer. It
+serves it on the endpoint a module already depends on:
+`ModuleCapabilitiesService/ResolveWorkContextAuthority` (`EXPOSURE_INTERNAL`, on
+`accounts/authority`), one question per call, each the exact question core's
+`Verifier` asks its `SealSource`, `RevisionSource` or `GrantSource`:
+
+| Question | Answers | Absence |
+| --- | --- | --- |
+| seal | the live installation and its revision, for one principal | `UNHELD` — not active in the organization, or the principal is not a member |
+| principal epoch | one principal's live epoch, for the owner and every actor hop alike | `UNKNOWN` — no authorization record here |
+| approved build | the execution the issuer approves for one principal | `BEARS_NO_EXECUTION` — a person's session, which is correct |
+| operation binding | one binding by its opaque id, exactly | `ABSENT` — no such delegation, or one this organization does not entitle |
+| authorization revision | the revision a capability owned by one principal carries | — |
+| approval grant | the approval a grant hop claims | `NOT_RECORDED` — this host records none, so such a capability is refused |
+
+Three properties make this the issuer's answer rather than a second opinion:
+
+- **It is the same body.** The serving path hands the question to the very
+  sources `coreAuthority` mints with and `coreVerifier` verifies with
+  (`moduleAuthoritySources` in `pkg/adapters/work_context_core.go`, over
+  `pkg/business/work_context_seal.go`). Two constructions of "the current seal"
+  would agree only by coincidence, and the seal's whole value is that a callee's
+  verdict and an issuance cannot disagree.
+- **A caller reads its own audience, in its own tenant.** The calling module is
+  authenticated from the Work Context it forwards, as on every method of that
+  surface, and the request's `audience` must be its own registration prefix and
+  its `organization_id` its own bound organization — anything else is
+  `PERMISSION_DENIED`. Serving another module's audience would let this caller
+  verify, with every seal check passing, a capability minted for somebody else. A
+  module installed in several organizations asks with the credential it minted
+  for the one in question.
+- **Absence is an answer and never an error.** Each negative above is a STATE on
+  the answer, so a verifier turns it into a refusal of the capability rather than
+  into an outage; an UNSPECIFIED state is a host that said nothing, which a
+  client refuses on. Every other failure is `UNAVAILABLE` with its cause logged
+  and not returned: a lookup that failed decided nothing. Reading one as "no such
+  installation" would make a database blip look like mass revocation; reading it
+  as "held" would be the check not running.
+
+The replay store is deliberately not served. Single-use consumption is the
+consumer's own, durable and shared across its replicas, and an issuer that
+consumed on a callee's behalf would burn the nonce on the way to answering a
+question. Core's `RevisionSource` is keyed by tenant alone while this host's
+revision is owner-dependent, so the question names the owner and a client binds
+it per capability — safe because a verifier consults no source until the
+signature over those bytes has checked out.
+
+A module builds `sdk-go/workcontext`'s `PinnedVerifier` on these three sources
+plus a replay store of its own; the key set is the JWKS accounts already
+publishes at `/v1/auth/.well-known/jwks.json`.
+`TestAComposedModuleVerifiesAHostCapabilityAgainstTheServedSources` and the
+refusal tests beside it (`pkg/adapters/module_work_context_authority_test.go`)
+are that verifier against this surface, with an unheld installation, a stale
+epoch, a stale revision and an unknown principal each refused through it.
+
 ## The reserved module audience
 
 `module-capabilities` is the audience a composed module's own capability carries,
