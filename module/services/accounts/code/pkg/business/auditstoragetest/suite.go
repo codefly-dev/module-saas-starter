@@ -61,8 +61,13 @@ type Harness struct {
 type fixture struct {
 	org, otherOrg string
 	actor, other  string
-	entries       []business.AuditEntry
-	types         business.AuditEventTypeIndex
+	// resource names this run's entries and no one else's. Harness.New asks for
+	// an empty store, but the Postgres one is append-only and shared with every
+	// other test of its package, so a read across organizations has to be pinned
+	// to what this suite wrote rather than to whatever the store already holds.
+	resource string
+	entries  []business.AuditEntry
+	types    business.AuditEventTypeIndex
 }
 
 func entry(org, actor string, eventType business.EventType, resourceID string, at time.Time, payload map[string]any) business.AuditEntry {
@@ -73,7 +78,7 @@ func entry(org, actor string, eventType business.EventType, resourceID string, a
 		ActorType:     business.ActorTypeUser,
 		EventType:     eventType,
 		SchemaVersion: 1,
-		Resource:      "datasource",
+		Resource:      "datasource", // replaced by the fixture's own, see newFixture
 		ResourceID:    resourceID,
 		Payload:       payload,
 		CreatedAt:     at,
@@ -84,6 +89,7 @@ func newFixture() *fixture {
 	f := &fixture{
 		org: uuid.NewString(), otherOrg: uuid.NewString(),
 		actor: uuid.NewString(), other: uuid.NewString(),
+		resource: "contract-" + uuid.NewString(),
 	}
 	// Every instant falls in a partition EnsureAuditPartitions provisions: this
 	// month or the one before it.
@@ -120,6 +126,9 @@ func newFixture() *fixture {
 	impersonated := entry(f.org, f.actor, business.EventOrgUpdated, "", base.Add(-6*day), map[string]any{"name": "Acting"})
 	impersonated.IsImpersonated, impersonated.ImpersonatedBy, impersonated.ClientID, impersonated.IPAddress = true, f.other, "client-1", "203.0.113.7"
 	f.entries = append(f.entries, impersonated)
+	for i := range f.entries {
+		f.entries[i].Resource = f.resource
+	}
 
 	// The facts a storage outside Postgres takes from the registry's projection.
 	f.types = business.AuditEventTypeIndex{}
@@ -163,7 +172,7 @@ func Run(t *testing.T, h Harness) {
 		"type and set":       {OrgID: f.org, EventType: string(business.EventAuthLogin), EventTypes: []string{string(business.EventOrgUpdated)}},
 		"category":           {OrgID: f.org, Category: "organization"},
 		"namespace":          {OrgID: f.org, Namespace: "saas"},
-		"resource":           {OrgID: f.org, Resource: "datasource", ResourceID: "doc-1"},
+		"resource":           {OrgID: f.org, Resource: f.resource, ResourceID: "doc-1"},
 		"client":             {OrgID: f.org, ClientID: "client-1"},
 		"payload":            {OrgID: f.org, PayloadContains: map[string]any{"boundary": "b-1"}},
 		"payload number":     {OrgID: f.org, PayloadContains: map[string]any{"result_count": 3.0}},
@@ -172,7 +181,9 @@ func Run(t *testing.T, h Harness) {
 		"payload absent":     {OrgID: f.org, PayloadContains: map[string]any{"outcome": nil}},
 		"window":             {OrgID: f.org, From: &week, To: &recent},
 		"platform for actor": {ActorID: f.actor},
-		"platform":           {},
+		// Every organization and the entries with none, which only the platform
+		// scope reads: pinned to this run's resource, see fixture.resource.
+		"platform":           {Resource: f.resource},
 		"other organization": {OrgID: f.otherOrg},
 	}
 

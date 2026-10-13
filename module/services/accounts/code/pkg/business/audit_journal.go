@@ -78,6 +78,13 @@ type auditJournalRecord struct {
 // with an advisory lock held until the producer's transaction commits, and
 // nothing reads the journal in partition order. The tenant is the entry's
 // organization, empty for an entry with no organization.
+//
+// The envelope's actor is the entry's actor id: for a person it is their user id,
+// which is also their principal id. publish_domain_event reads it to admit an
+// entry with no organization from a user-scoped transaction (a caller running as
+// app_tenant with only app.current_user_id set): such an event is admitted only
+// when its actor is that user, the rule audit_events_tenant applies to the same
+// entry's row (migration 36).
 func NewAuditJournalEnvelope(entry AuditEntry) (*events.EventEnvelope, error) {
 	if entry.ID == "" {
 		return nil, errors.New("audit: a journal event needs the entry id")
@@ -114,7 +121,9 @@ func NewAuditJournalEnvelope(entry AuditEntry) (*events.EventEnvelope, error) {
 		Time:            timestamppb.New(entry.CreatedAt.UTC()),
 		Data:            data,
 		TenantId:        entry.OrgID,
-		SchemaVersion:   1,
+		// The same value audit_events.actor_id records for the entry.
+		ActorPrincipalId: entry.ActorID,
+		SchemaVersion:    1,
 	}, nil
 }
 

@@ -75,6 +75,11 @@ func TestAuditJournalEnvelopeCarriesTheWholeEntry(t *testing.T) {
 	if !envelope.GetTime().AsTime().Equal(at) {
 		t.Fatalf("time = %v", envelope.GetTime().AsTime())
 	}
+	// publish_domain_event admits a no-organization entry from a user-scoped
+	// transaction only when this is that user (migration 36).
+	if envelope.GetActorPrincipalId() != entry.ActorID {
+		t.Fatalf("actor principal = %q, want the entry's actor %q", envelope.GetActorPrincipalId(), entry.ActorID)
+	}
 	if envelope.GetId() == entry.ID || envelope.GetId() != AuditJournalEventID(entry.ID) {
 		t.Fatalf("journal id %q must be derived from, and differ from, the entry id %q", envelope.GetId(), entry.ID)
 	}

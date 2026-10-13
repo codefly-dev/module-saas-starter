@@ -294,9 +294,12 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 }
 
 // publishJournal records the entry as a journal event on the transaction already
-// on ctx: the organization's for an organization-scoped entry, and the control
-// plane's for one with no organization, which Emit opens for it. The event
-// commits with the mutation or not at all; there is no second write to lose.
+// on ctx: the organization's for an organization-scoped entry, and for one with
+// no organization whichever the caller holds. That is the control plane's when
+// Emit opens it, or the caller's own user-scoped transaction under EmitTx, where
+// publish_domain_event admits the event because its actor is that transaction's
+// user (migration 36). The event commits with the mutation or not at all; there
+// is no second write to lose.
 func (e *DurableAuditEmitter) publishJournal(ctx context.Context, entry AuditEntry) error {
 	envelope, err := NewAuditJournalEnvelope(entry)
 	if err != nil {
