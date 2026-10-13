@@ -202,31 +202,41 @@ func TestTriggerDeclarationPrefersTheReferenceArmAndFingerprintsItself(t *testin
 	require.Zero(t, edited.NextOccurrenceAt.Minute()%15)
 }
 
-// THE HOST FIRES NOTHING. No code in this service may read a due-schedule set
-// or enqueue reconcile work on a timer: the schedule is declared, and a host
-// that also fired it would be two schedules for one source with the undeclared
-// one winning.
+// THE STOPGAP SWEEP IS CONFINED TO THE FILES THAT DELETE IT (issue #1112).
 //
-// It is an AST walk and not a grep, for the reason a grep would miss: a
-// commented-out sweep, a string in a doc comment and a test fixture all match
-// the text and none of them fires anything, while a call behind a one-line
-// wrapper matches no text at all. The parser is given no comments, so prose
-// about the sweep — including this file's — cannot fail the gate, and cannot
-// make it pass either.
-func TestNoHostTimerFiresTheReconcileSchedule(t *testing.T) {
-	// The producer that left, and the read it needed. Either name reappearing
-	// in non-test source is the sweep coming back.
-	forbidden := map[string]string{
-		"RunDatasourceReconcile":               "the reconcile sweep: the schedule is declared, not fired here",
-		"ListDatasourceSourcesDueForReconcile": "the due-schedule query the sweep read",
-		"enqueueScheduledReconcile":            "the sweep's per-source dispatch",
-		"enqueueScheduledPullSync":             "the sweep's pull-provider dispatch",
-		"scheduledReconcileKey":                "the sweep's schedule-derived idempotency key",
+// The host fires this schedule again, as a labelled stopgap, because nothing
+// consumes the declaration. That is only a stopgap if deleting it is one
+// commit, and it is only one commit while every name belonging to it lives in
+// the files RunDatasourceReconcile's deletion list names. A wrapper added
+// somewhere else — a second caller, a second tick, a "just here too" helper —
+// turns the deletion into an archaeology exercise and is exactly how a
+// temporary schedule becomes a permanent second one.
+//
+// So this walk no longer forbids the names; it bounds WHERE they may appear.
+// It is an AST walk and not a grep for the reason a grep would miss: prose
+// about the sweep (including this file's, and the deletion list itself) matches
+// the text and fires nothing, while a call behind a one-line wrapper matches no
+// text at all. The parser is given no comments, so a doc comment naming the
+// sweep can neither fail the gate nor satisfy it.
+func TestTheStopgapSweepIsConfinedToTheFilesThatDeleteIt(t *testing.T) {
+	// Each name, and the one non-test file it may be referenced from. These are
+	// exactly the files RunDatasourceReconcile's deletion list names.
+	confined := map[string]map[string]bool{
+		"RunDatasourceReconcile":               {"business/datasource_deliveries.go": true, "work.go": true},
+		"ListDatasourceSourcesDueForReconcile": {"business/datasource_deliveries.go": true, "business/store.go": true, "infra/postgres_datasource_sources.go": true},
+		"enqueueScheduledReconcile":            {"business/datasource_deliveries.go": true},
+		"enqueueScheduledPullSync":             {"business/datasource_deliveries.go": true},
+		"scheduledReconcileKey":                {"business/datasource_deliveries.go": true},
+		"datasourceReconcileBatchSize":         {"business/datasource_deliveries.go": true},
 	}
 	root, err := filepath.Abs("..")
 	require.NoError(t, err)
-	var found []string
-	require.NoError(t, filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+	// work.go sits beside pkg/ rather than inside it, so the walk starts one
+	// level up from the service's packages.
+	serviceRoot, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	var escaped []string
+	require.NoError(t, filepath.WalkDir(serviceRoot, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -244,18 +254,201 @@ func TestNoHostTimerFiresTheReconcileSchedule(t *testing.T) {
 		if parseErr != nil {
 			return parseErr
 		}
-		relative, _ := filepath.Rel(root, path)
+		relative, _ := filepath.Rel(serviceRoot, path)
+		relative = strings.TrimPrefix(relative, "pkg/")
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
 			if !ok {
 				return true
 			}
-			if reason, forbid := forbidden[identifier.Name]; forbid {
-				found = append(found, relative+": "+identifier.Name+" — "+reason)
+			allowed, tracked := confined[identifier.Name]
+			if tracked && !allowed[relative] {
+				escaped = append(escaped, relative+": "+identifier.Name)
 			}
 			return true
 		})
 		return nil
 	}))
-	require.Empty(t, found, "this host must fire nothing on a source's reconcile schedule")
+	require.Empty(t, escaped, "the stopgap sweep must stay deletable in one commit; see RunDatasourceReconcile's deletion list")
+	// And the walk must actually be looking at the service: a root that
+	// resolved to an empty tree would pass this test having checked nothing.
+	require.DirExists(t, filepath.Join(root, "business"))
+}
+
+// The sweep enqueues for a source that is due and active, and for no other —
+// asserted on the jobs it produced, not on the count it returned, because a
+// count is the sweep agreeing with itself.
+func TestStopgapSweepEnqueuesOnlyDueActiveSources(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
+
+	due := githubSource(t, svc, "main", nil, "")
+	later := githubSource(t, svc, "main", nil, "")
+	parked := githubSource(t, svc, "main", nil, "")
+	setNextReconcile(t, store, due.ID, time.Now().Add(-time.Minute))
+	setNextReconcile(t, store, later.ID, time.Now().Add(time.Hour))
+	setNextReconcile(t, store, parked.ID, time.Time{}) // nil = off its schedule
+
+	_, err := svc.RunDatasourceReconcile(t.Context())
+	require.NoError(t, err)
+
+	require.Len(t, jobsFor(producer, due.ID), 1, "the due source was not reconciled")
+	require.Empty(t, jobsFor(producer, later.ID), "a source not yet due was reconciled")
+	require.Empty(t, jobsFor(producer, parked.ID), "a source off its schedule was reconciled")
+
+	job := jobsFor(producer, due.ID)[0]
+	require.Equal(t, business.DatasourceDeliveryQueue, job.GetQueue())
+	require.Equal(t, business.DatasourceReconcileTopic, job.GetTopic())
+	require.Equal(t, "conditional", job.GetAttributes()["datasource.reconcile_mode"])
+	// A message on exactly the same terms as every other enqueue: the platform
+	// validates content_type (min_len 1), and a sweep job it refuses would fail
+	// without rescheduling, so the same due batch would stall forever at WARN.
+	require.Equal(t, "application/json", job.GetContentType())
+	require.Equal(t, "{}", string(job.GetPayload()))
+	require.EqualValues(t, 1, job.GetSchemaVersion())
+
+	// And the pass moved the schedule, so the next tick does not pick the same
+	// row again.
+	require.True(t, storedSource(t, store, due.ID).NextReconcileAt.After(time.Now()),
+		"the sweep did not reschedule the source it enqueued")
+}
+
+// A pull provider goes to the pull engine the connector has, with the
+// provenance that tells an operator the schedule took the pass rather than a
+// person — the same two engines one declared occurrence reaches.
+func TestStopgapSweepRoutesAPullProviderToItsOwnEngine(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{})
+
+	source := newCrawlerSource(t, svc)
+	takeConnectSync(t, producer, source)
+	setNextReconcile(t, store, source.ID, time.Now().Add(-time.Minute))
+
+	_, err := svc.RunDatasourceReconcile(t.Context())
+	require.NoError(t, err)
+
+	jobs := jobsFor(producer, source.ID)
+	require.Len(t, jobs, 1)
+	require.Equal(t, business.DatasourceSyncRequestQueue, jobs[0].GetQueue())
+	require.Equal(t, business.DatasourceScheduledSyncSource, jobs[0].GetSource())
+}
+
+// Two replicas sweeping one due row before either bumps it enqueue ONE job
+// between them, because the key is the row's due instant rather than a fresh
+// identity. For a pull provider a duplicate is a second full re-send of the
+// whole source, with no cursor to make the second one cheap.
+func TestStopgapSweepKeyIsTheDueInstantSoTwoReplicasAgree(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{})
+
+	source := newUploadSource(t, svc)
+	takeConnectSync(t, producer, source)
+	due := time.Now().Add(-time.Minute).UTC()
+
+	// Two passes over the same due instant: the bump is undone between them, so
+	// both see the row exactly as a second replica would.
+	setNextReconcile(t, store, source.ID, due)
+	_, err := svc.RunDatasourceReconcile(t.Context())
+	require.NoError(t, err)
+	setNextReconcile(t, store, source.ID, due)
+	_, err = svc.RunDatasourceReconcile(t.Context())
+	require.NoError(t, err)
+
+	keys := jobKeys(producer, source.ID)
+	require.Len(t, keys, 2, "expected one job per pass in the recording")
+	require.Equal(t, keys[0], keys[1],
+		"two replicas on one due row produced different keys; the platform would run the pull twice")
+
+	// A different due instant is different work and must not be swallowed as a
+	// replay of the one before it. (Earlier rather than later only so the row
+	// is still due when the sweep reads it; the key cares which instant, not
+	// which direction.)
+	setNextReconcile(t, store, source.ID, due.Add(-time.Hour))
+	_, err = svc.RunDatasourceReconcile(t.Context())
+	require.NoError(t, err)
+	later := jobKeys(producer, source.ID)
+	require.Len(t, later, 3)
+	require.NotEqual(t, keys[0], later[2], "the next scheduled pass reused the previous instant's key")
+}
+
+// The stopgap does not change what the source DECLARES. That is what lets the
+// two coexist until the declaration is consumed: the declaration reads the
+// stored instant's presence as "on its schedule" and never its value, and its
+// own next occurrence comes from the cron. A sweep that moved the declaration
+// would be two schedules disagreeing rather than one firing twice.
+func TestStopgapSweepLeavesTheDeclarationUnchanged(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
+
+	source := githubSource(t, svc, "main", nil, "")
+	setNextReconcile(t, store, source.ID, time.Now().Add(-time.Minute))
+	before := business.DeclareSourceTrigger(storedSource(t, store, source.ID), nil, nil)
+	require.True(t, before.Declarable())
+
+	_, err := svc.RunDatasourceReconcile(t.Context())
+	require.NoError(t, err)
+
+	after := business.DeclareSourceTrigger(storedSource(t, store, source.ID), nil, nil)
+	require.True(t, after.Declarable(), "the sweep took the source off its declared schedule")
+	require.Equal(t, before.Schedule.Cron, after.Schedule.Cron)
+	require.Equal(t, before.Digest, after.Digest, "the sweep moved the declaration an installation pinned")
+}
+
+// One occurrence's enqueue key names the ORGANIZATION and the SOURCE as well as
+// the effect (issue #1112, m2 — and N4 on PR #1115, which found the fix
+// untested).
+//
+// An effect identity is the CALLER's to choose and the GitHub reconcile job's
+// scope is Global, so a key of the effect alone put every tenant's reconciles
+// in one namespace: a caller in one organization could pick an identity already
+// pending for a source in another and have the platform collapse the two,
+// suppressing that organization's reconcile with no refusal anywhere. The test
+// asserts the three parts are all present AND that two organizations choosing
+// the same identity do not collide — the second half being the defect, which an
+// assertion on the key's shape alone would not catch.
+func TestReconcileOccurrenceKeyIsScopedByOrgAndSource(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newReconcileOperationStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
+
+	// Two sources in two DIFFERENT organizations, which is the scenario: the
+	// GitHub reconcile job's scope is Global, so one key namespace spans every
+	// tenant. Within one organization the attempt row already binds an effect
+	// identity to its source and refuses a second use, so a same-org test
+	// would pass for the wrong reason.
+	const otherOrg = "22222222-2222-4222-8222-222222222222"
+	first := newUploadSource(t, svc)
+	takeConnectSync(t, producer, first)
+	second := newUploadSourceIn(t, svc, otherOrg)
+	takeConnectSync(t, producer, second)
+	require.NotEqual(t, first.OrgID, second.OrgID, "fixture: the two sources must be in different organizations")
+
+	// The SAME caller-chosen identity, in each organization.
+	const chosen = "an identity the caller chose"
+	reconcileOnce(t, svc, first.OrgID, first.ID, chosen)
+	reconcileOnce(t, svc, second.OrgID, second.ID, chosen)
+
+	firstKey := jobKeys(producer, first.ID)
+	secondKey := jobKeys(producer, second.ID)
+	require.Len(t, firstKey, 1)
+	require.Len(t, secondKey, 1)
+	require.NotEqual(t, firstKey[0], secondKey[0],
+		"two organizations' sources under one caller-chosen identity produced the same key; the platform would collapse them and one tenant's reconcile would be suppressed with no refusal anywhere")
+
+	// Each part is named, so a future key change cannot drop one silently.
+	require.Contains(t, firstKey[0], first.OrgID, "the key does not name the organization")
+	require.Contains(t, firstKey[0], first.ID, "the key does not name the source")
+	require.Contains(t, firstKey[0], chosen, "the key does not name the effect")
+
+	// And the idempotency the operation DOES need still holds: two attempts of
+	// one occurrence on one source agree.
+	reconcileOnce(t, svc, first.OrgID, first.ID, chosen)
+	again := jobKeys(producer, first.ID)
+	require.Len(t, again, 2)
+	require.Equal(t, again[0], again[1],
+		"two attempts of one occurrence produced different keys; the pull would run twice")
 }

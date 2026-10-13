@@ -40,6 +40,13 @@ func (h *datasourceConnectHandler) DelegateSourceTriggers(
 		if errors.Is(err, business.ErrTriggerSourceNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, err)
 		}
+		// Told apart from "not found" on purpose: the source exists and an
+		// administrator can read it, and what they may not do is bind their own
+		// authority to it. A NotFound here would send an operator looking for a
+		// source that is in front of them.
+		if errors.Is(err, business.ErrTriggerSourcePersonal) {
+			return nil, connect.NewError(connect.CodePermissionDenied, err)
+		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.DelegateSourceTriggersResponse{
@@ -185,6 +192,25 @@ func (h *datasourceConnectHandler) LookupReconcileSource(
 	return connect.NewResponse(out), nil
 }
 
+// requireReconcile is the gate both reconcile RPCs take, before the receipt
+// replay and again after the SDK's serialization hold.
+//
+// It checks the Work Context's SCOPE as well as the host's RBAC, and the scope
+// check is the one #1090 omitted (issue #1112). Both RPCs are
+// sourceOperationProcedure, so a delegated capability authenticates here as the
+// delegating PERSON — and that person is, for every source a reference is
+// recorded against, an organization administrator. Tenant, membership and role
+// are therefore all satisfied for every source in the organization, and a
+// capability scoped to source A could reconcile source B. The other two source
+// operations (InvokeSourceOperation, PruneSourceOperationReceipts) have always
+// bound the capability to the source id this way; these two now do too.
+//
+// The action is the existing per-source vocabulary — "invoke" to produce the
+// effect, "read" to recover a receipt — and not a new "reconcile" verb: the
+// scopes are a module's declared source_delegation_scopes, so a verb no
+// composition declares would refuse every real delegation rather than narrow
+// it. An interactive identity carries no source capability and passes through
+// to the host RBAC gate, exactly as on the other operations.
 func (h *datasourceConnectHandler) requireReconcile(ctx context.Context, actor, org, source, effect string, lookup bool) error {
 	tenant, _, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok || tenant != org {
@@ -192,6 +218,13 @@ func (h *datasourceConnectHandler) requireReconcile(ctx context.Context, actor, 
 	}
 	if err := requireOrgMember(ctx, actor, org); err != nil {
 		return translateGRPCError(err)
+	}
+	action := "invoke"
+	if lookup {
+		action = "read"
+	}
+	if err := requireSourceOperationScope(ctx, org, source, action); err != nil {
+		return err
 	}
 	return translateGRPCError(h.svc.ReconcileSourceAuthority(ctx, actor, org, source, effect, lookup))
 }

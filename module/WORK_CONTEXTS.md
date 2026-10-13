@@ -659,13 +659,23 @@ them.
   recognises as a grant reference, which is what lets an occurrence's run
   outlive the capability that admitted it. Nothing is cached: a revocation lands
   on the next occurrence, not behind something held from the last one.
-- `binding` — **the installation-principal arm, and the first
-  proof.** It names one of the release's declared bindings and mints from that
-  binding's `headless_scopes` under the module's own principal
+- `binding` — **the installation-principal arm, and PLANNED.** It would name
+  one of the release's declared bindings and mint from that binding's
+  `headless_scopes` under the module's own principal
   (`MintModuleOperationContext`). That principal owns it and acts directly, with
-  no actor hop, so there is no delegation to revoke and no authority to outlive the token: the
-  run is bounded by the capability's own short lifetime. That is why it is the
-  proof and not the contract.
+  no actor hop, so there is no delegation to revoke and no authority to outlive
+  the token: the run would be bounded by the capability's own short lifetime.
+
+  **It cannot serve the reconcile trigger, and this host has never emitted it**
+  (issue #1112). Three facts, each on its own sufficient: `ModuleOperationContextTTL`
+  is 60 seconds while the reconcile trigger declares a 10-minute deadline, so an
+  occurrence bounded by the capability cannot carry the deadline the declaration
+  states; the capability is the module's own principal, while `ReconcileSource`
+  requires an organization **member**, which an installation principal is not;
+  and `DeclareSourceTrigger` sets `Identity.Binding` nowhere. Making it work
+  needs a lifetime policy for occurrences that this mint does not have — a
+  second lifetime on a capability every other headless call shares — so it is
+  stated as planned rather than quietly shortened to fit.
 
 **What a composition must declare for either arm to mint at all.** The grant is
 the opt-in, exactly as for every other operation context: `source_delegation_scopes`
@@ -693,11 +703,26 @@ the guard that protects identity untouched: a capability addressed to
 **Binding a reference to a source that is already connected.** A delegation is
 recorded only when a person connects or reconnects a source, so a release
 installed afterwards finds no reference to name and nothing backfills one.
-`DatasourceService/DelegateSourceTriggers` records it under the calling
-organization administrator — exactly what a reconnect does, in one transaction —
-and answers with the reference to write into the release's trigger. It grants
-nothing new: the scopes are the binding's declared ones and every fact is
-re-checked on every mint.
+`DatasourceService/DelegateSourceTriggers` records one under the calling
+organization administrator, in one transaction, and answers with the reference
+to write into the release's trigger. It grants nothing new: the scopes are the
+binding's declared ones and every fact is re-checked on every mint.
+
+It is **additive**, and it **refuses another member's personal source** (issue
+#1112). It used to run the connect path, which is right for a connect and
+destructive for a backfill: that path revokes every delegation on the source as
+`replaced` and re-inserts each one owned by the caller, so one administrator's
+press took a personal source's delegation away from its owner and moved every
+unrelated module's authority onto the administrator — failing in-flight children's
+re-checks and running everything afterwards under the wrong authority. A target
+that already holds an active delegation is now left exactly as it is, and only a
+target with none gets one. A personal source is its owner's, which is the
+division `ReconcileDatasourceSource` makes on the pass itself: it refuses a
+personal source to anyone but its owner, so a reference under an administrator
+would bind a trigger to an authority that cannot perform the operation it
+admits. (`ReconcileSourceAuthority`, the role gate before it, admits the owner
+*or* an organization administrator — so it is not the check that draws this
+line.)
 
 **Reading it back.** `DatasourceService/GetSourceTriggerDeclaration` answers the
 declaration, the references an operator may bind to it, and the children minted
@@ -707,7 +732,72 @@ and nothing caches it — so a revoked reference shows up as the next occurrence
 having no child at all. The playground that drives the whole walk is
 `/admin/platform/unattended-work`.
 
+**What the reconcile trigger's occurrences admit, and the scope that binds
+them.** `DatasourceService/ReconcileSource` and `LookupReconcileSource` are
+source operations, so a delegated capability authenticates as the **delegating
+person** — and a reference is only ever recorded under someone holding the
+connect role, which is an organization administrator. Tenant, membership and
+role are therefore satisfied for every source in that organization, which is
+why those two RPCs bind the capability to the **source id** as well
+(`requireSourceOperationScope`, under `invoke` for the pass and `read` for the
+receipt lookup). Without it a module holding a child for one source could
+reconcile every source in the organization (issue #1112). The action names are
+the existing per-source vocabulary on purpose: a new `reconcile` verb would be
+one no composition declares in its `source_delegation_scopes`, and would refuse
+every real delegation rather than narrow it.
+
+**And the scope check alone is not enough, because the scope list is
+per-BINDING.** A mint seals the binding's declared `source_delegation_scopes`
+verbatim, and one scope may name up to 64 resource ids — so a child minted from
+source A's delegation legitimately carries a scope naming A, B and C. A scope
+check admits it on all three, under A's delegator's authority, with B's and C's
+delegations never read and their revocation unable to stop it. So
+`requireReconcile` also compares the **delegation's own source** with the one
+being acted on (`requireDelegatedSourceMatch`), from the delegation
+`ConfirmSourceDelegationParent` returns — which the adapter used to discard. The
+two checks answer different questions and neither implies the other: "may this
+capability act on this source at all" and "is this the source whose owner's
+authority it is carrying".
+
+**The ceiling on how many sources one trigger can serve** is therefore the
+declared scope's, not a deployment variable's. A binding declares at most one
+scope per `resource_kind` (kinds must be strictly increasing) and at most 64
+resource ids in it, so a module's trigger reaches at most **64 named
+`datasource.sources`** — and only those, since an unconstrained kind is refused
+outright as "not an installation-selected source slot". The registry those
+scopes are read from is derived per reconcile pass from the live authority
+documents in the module envelope; the `MODULE_PRINCIPALS` environment variable
+that once carried it is gone (#1055/#1064), so nothing here is bounded by an
+environment's size.
+
+**Two gaps belong to the module that fires triggers, not to this host, and are
+named rather than worked around.**
+
+1. **One installed trigger per release name.** This host declares every source's
+   reconcile under one release name (`saas_datasource_reconcile`), because the
+   name is a kind of work and the immutable reference a composition pins is
+   derived from the installed manifest, which is not this host's to know. The
+   firing module keys an installed trigger by that name, so a second source's
+   trigger replaces the first's and per-source triggers cannot be installed for
+   more than one source. Either the firing module accepts several triggers per
+   release, or it admits a release named per source. Until one of those, nothing
+   can consume the declaration for a deployment with more than one source — which
+   is why the host's own reconcile sweep is restored as a labelled stopgap
+   (MODULE.md § Unattended work).
+2. **No client path to a revocable reference.** The reference this host declares
+   is the source id, so revocation is not durable: a reconnect records a new
+   delegation and the same reference resolves to it, re-arming an installed
+   trigger with no explicit re-delegation. This host already accepts the durable
+   form — `MintSourceOperationContext` takes `delegation_id` as well as
+   `source_id`, and the gateway relays both. The module-authority client a firing
+   module mints through offers only the `source_id` form, and then asserts that
+   the answer's `source_id` equals what it sent, so a delegation id placed in the
+   declaration is refused by that client rather than by this host. The fix is a
+   delegation-id form on that client plus a firing module that forwards the
+   declared reference to it.
+
 **What is not proven.** No live occurrence exists anywhere. Nothing in this
-repository composes a module that executes declared work, so both arms are
-qualified at the routes such a module calls and neither has been exercised
-against a live declared trigger.
+repository composes a module that executes declared work, so the reference arm
+is qualified at the route such a module calls and has never been exercised
+against a live declared trigger; the installation-binding arm is planned and
+has never been emitted at all.

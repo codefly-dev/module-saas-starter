@@ -38,15 +38,23 @@ import {
 /**
  * A source's reconcile schedule, as the trigger it declares.
  *
- * This host fires nothing on this schedule. What a source carries is an
- * interval — its own configuration — and what that interval produces is a
- * declaration an executing module admits occurrences from. So the panel shows
- * the declaration rather than a queue: the cron, the policies, the identity an
- * occurrence borrows, and the last and next occurrence.
+ * What a source carries is an interval — its own configuration — and what that
+ * interval produces is a declaration an executing module admits occurrences
+ * from. So the panel shows the declaration rather than a queue: the cron, the
+ * policies, the identity an occurrence borrows, and the last and next
+ * occurrence.
  *
- * "Next" is computed from the declared cron and is what the declaration SAYS;
- * the authoritative cursor belongs to the module that fires the trigger, and
- * this host does not hold one.
+ * WHO ACTUALLY FIRES IT TODAY IS THIS HOST, as a labelled stopgap (issue
+ * #1112), because nothing consumes the declaration yet. The panel says so
+ * rather than describing a schedule nobody runs: before this it showed a
+ * "next occurrence" that would never happen, which is the most misleading
+ * thing a schedule panel can show.
+ *
+ * "Next" is computed from the declared cron and is what the declaration SAYS.
+ * Once a composed module fires the trigger the authoritative cursor is that
+ * module's and this host will not hold one; while the stopgap runs, the cron
+ * and the stored instant it sweeps on are derived from the same interval, so
+ * the two agree without either reading the other.
  *
  * A person's "Sync now" is listed in the SAME table as those occurrences, and
  * that is the panel's claim rather than a convenience: both admit
@@ -79,10 +87,11 @@ export function SourceTriggerSchedules({ orgId }: { orgId: string }) {
 				<CardTitle>Reconcile schedules</CardTitle>
 				<CardDescription>
 					Each connected source declares its reconcile schedule as a trigger an
-					executing module fires. This host fires nothing on it. A person&apos;s
-					&ldquo;Sync now&rdquo; admits the same operation with an effect
-					identity of its own, so it is listed beside the occurrences rather
-					than apart from them.
+					executing module is meant to fire. Until a composed runtime consumes
+					that declaration, this host still fires the schedule itself, as a
+					stopgap. A person&apos;s &ldquo;Sync now&rdquo; admits the same
+					operation with an effect identity of its own, so it is listed beside
+					the occurrences rather than apart from them.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
@@ -253,10 +262,15 @@ const RECONCILE_OPERATION =
 	"/saas.accounts.v1.DatasourceService/ReconcileSource";
 
 /**
- * Said rather than left blank: an occurrence's effect identity is minted by the
- * module that fires the trigger, so this host never sees one and has nothing to
- * print. A dash would read as "it has none", which would make the admission
- * look unlike the manual pass beside it.
+ * Said rather than left blank: a declared occurrence's effect identity is
+ * minted by the module that fires the trigger, so this host never sees one and
+ * has nothing to print. A dash would read as "it has none", which would make
+ * the admission look unlike the manual pass beside it.
+ *
+ * The stopgap sweep is a third case and is deliberately claimed as neither: it
+ * enqueues under a key derived from the schedule instant and admits no
+ * operation at all, so it has no effect identity to show and appears here only
+ * as a "last occurrence" moving.
  */
 const MINTED_BY_THE_FIRING_MODULE = "Minted by the firing module";
 
@@ -311,12 +325,21 @@ function useAdmittedPasses(): AdmittedReconcilePass[] {
  * Which arm the declaration names, in words. A declaration with neither is the
  * state an installing module refuses rather than running the work as itself,
  * so it is said plainly instead of being left blank.
+ *
+ * The reference arm does NOT name which module's delegation it is (issue
+ * #1112, m5). The reference value is the source id, so every delegation on one
+ * source reads back the same and the host resolves whichever module holds an
+ * active one at mint. Naming one here would be this page's own guess: an
+ * operator whose executing module holds no delegation would read that a
+ * reference is bound to it when another module's is. The references table
+ * names each module, which is where that question is answerable.
  */
 export function declaredIdentity(declaration?: {
 	identity?: { source: string; binding: string };
 }): string {
 	const identity = declaration?.identity;
-	if (identity?.source) return "A delegation reference";
+	if (identity?.source)
+		return "A delegation reference — whichever module holds an active one";
 	if (identity?.binding) return "An installation binding";
 	return "None — occurrences would be refused";
 }

@@ -16,11 +16,14 @@ import { server } from "@/test/setup";
 // on — that a revocation lands on the NEXT occurrence, with nothing held from
 // the one before it.
 
+// An organization administrator with NO platform role, because that is who the
+// RPCs behind this page admit (issue #1112, m4). The page asked for a platform
+// super administrator, which hid an org admin's own organization from them.
 const session = vi.hoisted(() => ({
 	organizationId: "org-1",
 	isAuthenticated: true,
-	orgRole: "owner" as OrgRole | undefined,
-	platformRole: "super_admin" as PlatformRole | undefined,
+	orgRole: "admin" as OrgRole | undefined,
+	platformRole: undefined as PlatformRole | undefined,
 	switchOrganization: async () => {},
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
@@ -86,7 +89,8 @@ const child = {
 
 beforeEach(() => {
 	session.organizationId = "org-1";
-	session.platformRole = "super_admin";
+	session.orgRole = "admin";
+	session.platformRole = undefined;
 	vi.clearAllMocks();
 });
 afterEach(cleanup);
@@ -143,7 +147,13 @@ describe("UnattendedWorkPlayground", () => {
 		// Which arm it names, said in words: a declaration that named neither
 		// would have its occurrences refused, and the page says so rather than
 		// leaving the field blank.
-		expect(screen.getByText("A delegation reference")).toBeTruthy();
+		// It does not claim WHICH module's reference: the reference value is the
+		// source id, so the host resolves whichever module holds an active one.
+		expect(
+			screen.getByText(
+				"A delegation reference — whichever module holds an active one",
+			),
+		).toBeTruthy();
 
 		// The reference an operator bound, with whose authority it carries and
 		// exactly what it allows — never the module's own authority.
@@ -186,6 +196,27 @@ describe("UnattendedWorkPlayground", () => {
 		expect(String(vi.mocked(toast.error).mock.calls[0][0])).toContain(
 			"revoked",
 		);
+	});
+
+	it("admits an organization administrator and refuses a plain member", async () => {
+		serve({
+			declaration: declared,
+			delegations: [reference],
+			children: [child],
+		});
+		// The RPCs behind the page are ORG_ADMIN and org-scoped, so this is the
+		// role the gate must match. Before this it required a platform super
+		// administrator and told the reader it reached every tenant.
+		renderInApp(<Page />);
+		expect(await screen.findByText("Unattended work")).toBeTruthy();
+		cleanup();
+
+		session.orgRole = "member";
+		renderInApp(<Page />);
+		expect(
+			await screen.findByText("Organization administrator required"),
+		).toBeTruthy();
+		expect(screen.queryByText("Unattended work")).toBeNull();
 	});
 
 	it("says a source on no schedule declares no trigger, rather than showing an empty one", async () => {

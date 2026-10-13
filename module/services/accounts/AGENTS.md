@@ -867,12 +867,39 @@ the values and records the other column beside them).
   occurrence's run outlive the capability that admitted it, and makes a
   revocation land on the NEXT occurrence rather than behind something held from
   the one before.
-- **`binding` is the installation-principal arm, and the first
-  proof.** It names one of the release's bindings and mints from that binding's
-  `headless_scopes` under the module's own principal
-  (`MintModuleOperationContext`). An ordinary token admission, so the run is
-  bounded by the capability's own short lifetime — which is exactly why it is the
-  proof and not the contract.
+- **`binding` is the installation-principal arm, and PLANNED.** It would name
+  one of the release's bindings and mint from that binding's `headless_scopes`
+  under the module's own principal (`MintModuleOperationContext`) — an ordinary
+  token admission, bounded by the capability's own short lifetime. It cannot
+  serve the reconcile trigger and has never been emitted (#1112):
+  `ModuleOperationContextTTL` is 60s against the trigger's 10-minute
+  `DatasourceTriggerDeadline`, `requireReconcile` needs an organization member
+  which an installation principal is not, and `DeclareSourceTrigger` sets the
+  field nowhere. The mint route itself works and is tested; what is missing is a
+  lifetime policy for occurrences, which would be a second lifetime on a
+  capability every other headless call shares.
+- **A reconcile occurrence's capability is bound to the SOURCE, not just the
+  organization** (#1112). `ReconcileSource` and `LookupReconcileSource` are
+  `sourceOperationProcedure`, so a delegated child authenticates as the
+  delegating person — an organization administrator, for every source a
+  reference is recorded against. Tenant, membership and role are therefore
+  satisfied org-wide, which is why `requireReconcile` also calls
+  `requireSourceOperationScope` (`invoke` for the pass, `read` for the lookup),
+  as `InvokeSourceOperation` and `PruneSourceOperationReceipts` always have.
+  Without it a child scoped to one source could reconcile every source in the
+  organization. The action names are the existing vocabulary deliberately: a new
+  `reconcile` verb is one no composition declares in its
+  `source_delegation_scopes`, so it would refuse every real delegation instead
+  of narrowing one.
+- **Revocation is not durable while the reference is the source id** (#1112). A
+  mint resolves the active delegation from the source, so a reconnect records a
+  new one the same reference resolves to and an installed trigger re-arms with
+  no re-delegation. This host already takes the durable form
+  (`SourceDelegationRef.DelegationID`, and the gateway's `delegation_id`); the
+  module-authority client a firing module mints through sends only `source_id`
+  and asserts the answer's `source_id` matches, so a delegation id in the
+  declaration is refused by that client, not here. Named as that client's gap in
+  [WORK_CONTEXTS.md § Triggers](../WORK_CONTEXTS.md#triggers-for-work-no-person-started).
 - **A composition must declare one of them or neither arm can mint.** The
   binding needs `source_delegation_scopes` for the reference arm,
   `headless_scopes` for the principal arm, and the `audience` the executing
@@ -887,14 +914,32 @@ the values and records the other column beside them).
   binding declaring headless or delegation scopes; it does not touch the one
   that matters for identity, since a capability addressed to
   `module-capabilities` is still refused at signing whatever a binding declares.
-- **Binding a reference without reconnecting.** A delegation is recorded when a
-  person connects or reconnects a source, so a release installed afterwards, or
-  a module that declared its binding afterwards, finds no reference to name and
-  nothing backfills one. `DatasourceService/DelegateSourceTriggers`
-  (`TENANT_REQUIREMENT_ORG_ADMIN`) records it under the calling administrator —
-  exactly what a reconnect does, in one transaction, through the same
-  `recordSourceDelegationsTx`. It grants nothing new: the scopes are the
-  binding's declared ones and every fact is re-checked on every mint.
+- **Binding a reference without reconnecting, additively.** A delegation is
+  recorded when a person connects or reconnects a source, so a release installed
+  afterwards, or a module that declared its binding afterwards, finds no
+  reference to name and nothing backfills one.
+  `DatasourceService/DelegateSourceTriggers` (`TENANT_REQUIREMENT_ORG_ADMIN`)
+  records one under the calling administrator, in one transaction. It grants
+  nothing new: the scopes are the binding's declared ones and every fact is
+  re-checked on every mint.
+
+  It records in `sourceDelegationBackfill` mode, not the connect's
+  `sourceDelegationReplace` (#1112) — two modes of one function, so the registry
+  read that answers "which modules accept a delegation here" has exactly one
+  path. The replace mode revokes every delegation on the source as `replaced`
+  and re-inserts each under the caller, which is right for a connect and
+  destructive for a backfill: it took a personal
+  source's delegation from its owner and moved every unrelated module's
+  authority onto the administrator, failing in-flight children's re-checks. The
+  backfill leaves a target that already holds an active delegation untouched and
+  records only for a target with none, and it refuses a personal source the
+  caller does not own (`ErrTriggerSourcePersonal` → `PermissionDenied`, told
+  apart from `NotFound` because the source exists and is readable) — the
+  division `ReconcileDatasourceSource` makes on the pass itself, so a reference
+  can never bind a trigger to an authority that cannot perform the operation it
+  admits. Not `ReconcileSourceAuthority`: that role gate admits the owner *or*
+  an organization administrator, so an administrator reaches it on another
+  member's personal source and is stopped one step later.
 - **What a reader sees.** `DatasourceService/GetSourceTriggerDeclaration` answers
   the declaration, the references an operator may bind to it, and the children
   minted against them. The children come from `saas.datasource.delegation.used`,
@@ -1009,18 +1054,36 @@ Two of those three are now the **same admission**: a person's "Sync now" and one
 occurrence of the declared schedule both admit `ReconcileSource` under an effect
 identity their caller minted (issue #1094).
 
-- **The schedule is DECLARED here and FIRED somewhere else** (issue #1081).
-  `business.DeclareSourceTrigger` turns a source's interval into a trigger an
-  declared release carries — a five-field cron in UTC, `"skip"` for both missed
-  occurrences and overlap, a deadline in nanoseconds, the input every occurrence is admitted with,
-  and the identity occurrences run under. This host fires nothing on it:
-  `TestNoHostTimerFiresTheReconcileSchedule` walks the AST of every non-test file
-  in the service and fails on the names the sweep used, because a host that also
-  fired this would be two schedules for one source with the undeclared one
-  winning. What left with the sweep: `RunDatasourceReconcile`, its one-minute
-  ticker in `work.go`, `enqueueScheduledReconcile`, `enqueueScheduledPullSync`,
-  `scheduledReconcileKey` and the due query they read
-  (`ListDatasourceSourcesDueForReconcile`).
+- **The schedule is DECLARED here** (issue #1081) **and, for now, also FIRED
+  here** (issue #1112). `business.DeclareSourceTrigger` turns a source's
+  interval into a trigger a declared release carries — a five-field cron in UTC,
+  `"skip"` for both missed occurrences and overlap, a deadline in nanoseconds,
+  the input every occurrence is admitted with, and the identity occurrences run
+  under.
+
+  #1090 deleted the host's sweep on the strength of that declaration, and
+  nothing consumes it: `GetSourceTriggerDeclaration` is a read, no path here
+  installs a release, and the module that fires triggers keys an installed
+  trigger by its release **name** while this host declares every source under
+  `DatasourceReconcileRelease` — so per-source triggers cannot be installed for
+  more than one source even once something tries. The result was no scheduled
+  reconcile anywhere.
+
+  So `RunDatasourceReconcile`, its one-minute tick in `work.go`,
+  `enqueueScheduledReconcile`, `enqueueScheduledPullSync`,
+  `scheduledReconcileKey` and the due query
+  (`ListDatasourceSourcesDueForReconcile`) are back, as a **labelled stopgap**.
+  The one condition that deletes them, and the exact list, is one comment block
+  beside `RunDatasourceReconcile`; the firing module's gap is named in
+  [WORK_CONTEXTS.md § Triggers](../WORK_CONTEXTS.md#triggers-for-work-no-person-started)
+  rather than worked around here.
+  `TestTheStopgapSweepIsConfinedToTheFilesThatDeleteIt` walks the AST of every
+  non-test file in the service and fails on any of those names appearing outside
+  the files the deletion list names, so deleting the stopgap stays one commit;
+  four behavioural tests beside it assert what the sweep does rather than what
+  it is called. The two schedules must not both run — they enqueue under
+  different keys, so a double fire is a second pass serialised behind the first,
+  which GitHub survives and a pull provider pays for with a full re-send.
 - **One occurrence admits one host operation, and so does a person's press.**
   `DatasourceService/ReconcileSource` (marked `codefly.runnable.v0.operation`,
   idempotency required, paired with `LookupReconcileSource`) is what the declared
