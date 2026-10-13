@@ -405,6 +405,29 @@ with: the `Mint*` exchanges' refusals carry theirs under
 [Source delegations](#source-delegations-a-sync-runs-with-the-connecting-persons-authority)),
 so matching on a bare reason across the whole service is wrong.
 
+## Reading back a capability this host issued
+
+A capability presented with a QUESTION is read back, never verified:
+`CheckWorkContextRecordAccess`, `ListReadableSourceCollections` and the
+module-parent reads (`GetCurrentInstallation`, the executable-artifact reads) go
+through `WorkContextAuthorityServer.readBack`, which is core's
+`Authority.ReadBack`. It makes every check a verifier makes against live state —
+signature, issuer, audience, window, revision, seal, epochs, binding — and never
+touches the replay store, so the consumer that verified and consumed a
+single-use capability can still ask about it, on every page of a listing. A path
+that ACTS on a capability or derives from it (an exchange, a renewal, a child)
+verifies and consumes with `verifyIssued`; do not move one onto `readBack`, and
+do not answer a question through `verifyIssued`.
+
+**A read-back trusts only the current signing key.** `Authority.ReadBack` checks
+the signature under the authority's own key id and nothing else, where a
+verifier holds a key map that can also carry a previous key. So during a key
+rotation, a capability signed under the PREVIOUS key is refused by every
+read-back — fail closed, as an invalid capability — while a consumer whose JWKS
+still lists that key accepts it. The capability's lifetime bounds the window:
+its holder mints a new one under the current key. Rotating the Work Context key
+therefore briefly refuses questions about capabilities already in flight.
+
 ## Minting a module Work Context
 
 The identity itself is a **Work Context**. The auth-gateway brokers the exchange
@@ -749,7 +772,15 @@ that authority (`pkg/business/source_delegation.go`):
   person-owned context with a module actor — takes the sealed binding id
   (`operation_binding_id`) and confirms it from the delegation rather than the
   row-backed agent path, so it stops confirming once the delegation, its binding,
-  the source, the person's role or their revision moves.
+  the source, the person's role or their revision moves. That revision is the
+  person's ordinary one — the higher of the organization's and the person's own —
+  so revocation is coarser than the delegation alone: ANY organization-wide
+  revision bump (a role or membership change anywhere in the organization)
+  revokes every delegated capability in flight. A verifier answers it as stale
+  (`FAILED_PRECONDITION`), and the consumer mints again; a delegation that has
+  itself ended then answers `PERMISSION_DENIED` (`DELEGATION_REVOKED`). The
+  lifetime is 60 seconds, so the cost is one extra round trip, not a stall — but
+  a consumer must not retry a stale capability as if the failure were transient.
 - **Delegation and installation are both required at use.** Minting, revision
   confirmation and exchange hold the actor's installation in the delegation's
   organization to the current envelope. `cross_tenant` permits consent in other

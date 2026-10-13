@@ -374,6 +374,15 @@ The Work Context path deliberately does not take the grace: a presented
 capability is an optional attenuation the caller can retry, so it fails closed
 the moment its key set expires.
 
+Accounts' own read-backs are narrower still. A capability presented with a
+question (`CheckWorkContextRecordAccess`, `ListReadableSourceCollections`, the
+module-parent reads) is read back through core's `Authority.ReadBack`, which
+trusts only the authority's CURRENT key id. From the moment the Work Context key
+rotates, a capability signed under the previous key is refused by those
+read-backs — while a consumer whose JWKS still lists the old key accepts it —
+until its holder mints a new one; the capability's own lifetime
+bounds the window. See `services/accounts/AGENTS.md`.
+
 ## Observability
 
 Two counters, both with a fixed label set and no credential-derived values:

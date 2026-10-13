@@ -194,9 +194,8 @@ func boundaryCaller() context.Context {
 
 func boundaryMintRequest(audience string) *gen.StartTaskWorkContextRequest {
 	return &gen.StartTaskWorkContextRequest{
-		OrgId:     renewOrgID,
-		SessionId: renewSession,
-		Audience:  audience,
+		OrgId:    renewOrgID,
+		Audience: audience,
 		AuthorityScopes: []*gen.WorkContextScope{{
 			ResourceKind: "evidence",
 			Actions:      []string{"read"},

@@ -7,6 +7,7 @@ import (
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -47,7 +48,6 @@ func TestStartTaskMintsWhatACoreVerifierReadsForAModule(t *testing.T) {
 	issued, err := server.StartTask(ctx, &gen.StartTaskWorkContextRequest{
 		OrgId:           renewOrgID,
 		TaskId:          renewTaskID,
-		SessionId:       "019f6bf7-0000-7000-8000-000000000000", // named by the runtime; not what is signed
 		Audience:        "documents",
 		TtlSeconds:      300,
 		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}},
@@ -79,17 +79,18 @@ func TestStartTaskMintsWhatACoreVerifierReadsForAModule(t *testing.T) {
 	// capability to, and is minted nothing.
 	seals.uninstalled["documents"] = true
 	_, err = server.StartTask(ctx, &gen.StartTaskWorkContextRequest{
-		OrgId: renewOrgID, TaskId: renewTaskID, SessionId: confinedSession, Audience: "documents", TtlSeconds: 300,
+		OrgId: renewOrgID, TaskId: renewTaskID, Audience: "documents", TtlSeconds: 300,
 		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}},
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not installed in this organization")
 }
 
-// StartChildSession and StartInstallationTask assign the session they sign,
-// whatever the request carried: a session a caller could name is one it could
-// name after another credential's, and the gateway pairs a confined credential
-// with a capability on the session alone.
+// StartChildSession assigns the session it signs: a session a caller could name
+// is one it could name after another credential's, and the gateway pairs a
+// confined credential with a capability on the session alone.
+// StartInstallationTask is held to the same rule by
+// TestStartInstallationTaskAssignsAFreshSessionEachTime.
 func TestDerivedSessionsAreAssignedByTheIssuer(t *testing.T) {
 	previous := service
 	svc, err := business.NewService(renewMembershipStore{})
@@ -122,4 +123,40 @@ func TestDerivedSessionsAreAssignedByTheIssuer(t *testing.T) {
 		require.Equal(t, renewSession, issued.GetParentSessionId())
 	}
 	require.NotEqual(t, first.GetSessionId(), second.GetSessionId(), "each child session is fresh")
+}
+
+// StartInstallationTask is a headless mint: no caller session exists to bind, so
+// every capability it issues opens a fresh session, assigned by the issuer and
+// returned in IssuedWorkContext — never one a request named, and never shared.
+func TestStartInstallationTaskAssignsAFreshSessionEachTime(t *testing.T) {
+	_, facts, _, _ := sourceReadFixture(t)
+	svc, err := business.NewService(&exactRecordStore{})
+	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{service: svc}, nil)
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
+	service = svc
+	declareTestAudiences(svc)
+	facts.installationFcts = &business.InstallationAuthorityFacts{
+		OwnerPrincipalID:       readOwner,
+		OrganizationRevision:   facts.facts.OrganizationRevision,
+		OwnerPrincipalRevision: facts.facts.PrincipalRevision,
+		Actor: &business.Principal{ID: installAgentID, Kind: business.PrincipalKindAgent,
+			AgentIdentifier: "example.test/solution:1.0.0", AllowedAudiences: []string{"rows"}, AllowedScopes: []string{"rows"}},
+	}
+	mint := func() *gen.IssuedWorkContext {
+		issued, err := workContextSingleton.StartInstallationTask(
+			metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "source-read-test-perimeter")),
+			&gen.StartInstallationTaskRequest{OrgId: readOrg, InstallationId: installID, TaskId: installTaskID, Audience: "rows",
+				AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-a"}}}})
+		require.NoError(t, err)
+		return issued
+	}
+	first, second := mint(), mint()
+	for _, issued := range []*gen.IssuedWorkContext{first, second} {
+		require.NotEmpty(t, issued.GetSessionId())
+		verified, err := workContextSingleton.verifyIssued(context.Background(), issued.GetToken())
+		require.NoError(t, err)
+		require.Equal(t, issued.GetSessionId(), verified.Context().GetSessionId(), "the session returned is the one signed")
+	}
+	require.NotEqual(t, first.GetSessionId(), second.GetSessionId(), "each installation capability opens its own session")
 }

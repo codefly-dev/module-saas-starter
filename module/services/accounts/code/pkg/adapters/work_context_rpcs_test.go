@@ -746,7 +746,6 @@ func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
 		return &gen.StartTaskWorkContextRequest{
 			OrgId:            renewOrgID,
 			TaskId:           renewTaskID,
-			SessionId:        sessionID,
 			ActorPrincipalId: renewActorID,
 			Audience:         "tool.test",
 			TtlSeconds:       900,

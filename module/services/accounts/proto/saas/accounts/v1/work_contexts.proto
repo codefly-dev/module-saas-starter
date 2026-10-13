@@ -39,7 +39,15 @@ message WorkContextScope {
   ];
 }
 
+// StartTaskWorkContextRequest mints a Task capability for the caller. Its Session
+// is the one the caller authenticated with — or a fresh one when it has none —
+// assigned by the issuer and returned in IssuedWorkContext, never named by the
+// caller: a session a caller could name is one it could name after another
+// credential's, and a confined credential is paired with a capability on the
+// session alone.
 message StartTaskWorkContextRequest {
+  reserved 3;
+  reserved "session_id";
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   // The runtime boundary the capability is minted under. Required on an
   // ordinary mint, where the caller owns the Task it names.
@@ -56,7 +64,6 @@ message StartTaskWorkContextRequest {
     (buf.validate.field).string.uuid = true,
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE
   ];
-  string session_id = 3 [(buf.validate.field).string.uuid = true];
   // Empty means a direct human-owned Task. Otherwise this must name an active,
   // registered agent Principal in org_id.
   string actor_principal_id = 4;

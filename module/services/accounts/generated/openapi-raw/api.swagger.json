@@ -6429,6 +6429,7 @@
         "parameters": [
           {
             "name": "body",
+            "description": "StartTaskWorkContextRequest mints a Task capability for the caller. Its Session\nis the one the caller authenticated with — or a fresh one when it has none —\nassigned by the issuer and returned in IssuedWorkContext, never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone.",
             "in": "body",
             "required": true,
             "schema": {
@@ -11635,9 +11636,6 @@
           "type": "string",
           "description": "The runtime boundary the capability is minted under. Required on an\nordinary mint, where the caller owns the Task it names.\n\nFORBIDDEN on a solution-scoped mint. The host assigns each registered\nsolution one opaque boundary at registration and seals that one, so a\nsolution never chooses the boundary its runs are visible under and can\nnever name another solution's (issue #1015). Which of the two a request is\ndepends on the credential it carries, which no schema rule can see, so the\nrule here is only \"a UUID when present\" and the handler refuses the wrong\nshape on either path: an absent boundary on an ordinary mint, a named one\non a solution-scoped mint."
         },
-        "sessionId": {
-          "type": "string"
-        },
         "actorPrincipalId": {
           "type": "string",
           "description": "Empty means a direct human-owned Task. Otherwise this must name an active,\nregistered agent Principal in org_id."
@@ -11667,7 +11665,8 @@
           "type": "string",
           "description": "Optional product/project attribution inside workspace_id."
         }
-      }
+      },
+      "description": "StartTaskWorkContextRequest mints a Task capability for the caller. Its Session\nis the one the caller authenticated with — or a fresh one when it has none —\nassigned by the issuer and returned in IssuedWorkContext, never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone."
     },
     "v1StopImpersonationRequest": {
       "type": "object",

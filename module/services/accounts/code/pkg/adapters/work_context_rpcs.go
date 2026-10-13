@@ -16,7 +16,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 
@@ -532,7 +531,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 		},
 		// The capability opens the session the caller authenticated with, and
 		// never one the request named: see callerSession.
-		Session: callerSession(ctx, req.GetSessionId()),
+		Session: callerSession(ctx),
 		Replay:  workContextReplayPolicy(req.GetReplayPolicy()),
 		TTL:     workContextTTL(req.GetTtlSeconds()),
 	}
@@ -1222,7 +1221,7 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	// session they authenticated with. A hop in the chain that bears an
 	// execution cannot be attested by an owner, so such a chain is exchanged by
 	// its module through the module capability surface instead.
-	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, workcontext.Execution{}, callerSession(ctx, ""))
+	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, workcontext.Execution{}, callerSession(ctx))
 }
 
 // exchangeVerifiedParent runs AFTER the caller's authentication and
@@ -1522,30 +1521,17 @@ func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID s
 
 // callerSession is the session a capability the caller opens is bound to: the
 // session the caller authenticated with, or "" — which core turns into a fresh
-// one — when it has none. It is NEVER the id a request named.
+// one — when it has none. A request cannot name one: StartTask has no session
+// field (it is reserved), like every other mint.
 //
 // That is what makes a session id identify its owner. A party holding a
 // confined access token pairs a capability with it on the session alone (the
 // gateway's module routes do), and the pairing holds only while every session a
-// capability carries is either its caller's verified session or a fresh one. A
-// requested id signed as-is would let any caller mint a capability carrying
-// another credential's session.
-//
-// A divergent requested id is ignored rather than refused: it is a correlation
-// field the derived value replaces, not authority, and refusing it would break
-// every caller that roots its own Task and Session ids while presenting a real
-// session. The issued response carries the session actually bound, which is
-// what a caller correlates on. Neither id is logged — a session id identifies a
-// live session, and wool masks keys rather than values.
-func callerSession(ctx context.Context, requested string) string {
+// capability carries is either its caller's verified session or a fresh one.
+// The issued response carries the session actually bound, which is what a
+// caller correlates on.
+func callerSession(ctx context.Context) string {
 	verified, ok := accountsauth.VerifiedSessionID(ctx)
-	if ok && requested != "" {
-		if parsed, _ := uuid.Parse(requested); parsed != verified {
-			wool.Get(ctx).In("StartTask").Warn(
-				"requested session_id is not the caller's verified session; binding to the verified session",
-			)
-		}
-	}
 	return issuedSession(verified, ok)
 }
 
@@ -1560,7 +1546,7 @@ func (s *WorkContextAuthorityServer) verifyParent(
 ) (*workcontext.Verified, *business.Principal, error) {
 	parent, err := s.verifyIssued(ctx, encoded)
 	if err != nil {
-		return nil, nil, refusedReadBack(err, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller"))
+		return nil, nil, refusedReadBack(ctx, err, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller"))
 	}
 	claims := parent.Context()
 	if claims.GetTenantId() != orgID || claims.GetOwnerPrincipalId() != ownerID {
@@ -1586,7 +1572,7 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 ) (*workcontext.Verified, *business.Principal, error) {
 	parent, err := s.verifyIssued(ctx, encoded)
 	if err != nil {
-		return nil, nil, refusedReadBack(err, status.Error(codes.PermissionDenied, "parent Work Context is not valid"))
+		return nil, nil, refusedReadBack(ctx, err, status.Error(codes.PermissionDenied, "parent Work Context is not valid"))
 	}
 	if parent.Context().GetTenantId() != orgID {
 		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
