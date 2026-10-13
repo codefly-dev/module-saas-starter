@@ -1,4 +1,5 @@
 import { notifySourceReconcileAdmitted } from "@codefly-dev/saas-ui";
+import { QueryClient } from "@tanstack/react-query";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1141,5 +1142,145 @@ describe("a superseded refusal when both answers share a millisecond", () => {
 
 		expect(client.getQueryData([...KEY])).toBeTruthy();
 		expect(client.getQueryState([...KEY])?.status).toBe("success");
+	});
+});
+
+// THE TWO LIFECYCLE PATHS MY OWN SUITE HAD MISSED (issue #1121, r23's
+// request-order note). Both were named by the reviewer against the generation
+// guard, and both are about the guard NOT swallowing the deletion it sits
+// beside.
+//
+// 1. An observer that unmounts WHILE the refusal is in flight. This is not the
+//    same path as refetching an already-inactive query: removing the last
+//    observer mid-fetch takes TanStack's `removeObserver` route, which may
+//    cancel and revert the in-flight fetch's state. A guard that compared the
+//    reverted generation wrongly would stop deleting exactly here — where no
+//    component is mounted to show anything, and the next mount would serve the
+//    refused answer from cache.
+//
+// 2. RETRY, which the real client has and this test harness does not:
+//    `src/lib/providers.tsx` sets `retry: 1`, `src/test/container.tsx` sets
+//    `retry: false`. So every refusal test in this file has been exercising a
+//    single attempt, and the retried shape — queryFn entered twice for one
+//    logical read, each attempt capturing its own generation — was untested.
+describe("the deletion under the lifecycle paths the harness hides", () => {
+	const KEY = ["source-trigger-declaration", "org-1", SOURCE] as const;
+
+	function retrying() {
+		return new QueryClient({
+			defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+		});
+	}
+
+	it("still deletes when the observer unmounts before the refusal arrives", async () => {
+		let denied = false;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async () => {
+					if (!denied) {
+						return HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						});
+					}
+					await held;
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				},
+			),
+		);
+		const { client, unmount } = renderInApp(
+			<SourceTriggerSchedules orgId="org-1" />,
+		);
+		await screen.findByText("*/30 * * * *");
+
+		// The refusal starts while the view is mounted...
+		denied = true;
+		const refused = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		// ...and the view goes away before it answers.
+		unmount();
+		release403?.();
+		await act(async () => {
+			await refused;
+		});
+
+		expect(client.getQueryData([...KEY])).toBeUndefined();
+	});
+
+	it("deletes a refused read that the client retried", async () => {
+		let attempts = 0;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				attempts++;
+				return attempts === 1
+					? HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						})
+					: HttpResponse.json({ code: "permission_denied" }, { status: 403 });
+			}),
+		);
+		const client = retrying();
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+		await screen.findByText("*/30 * * * *");
+
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: KEY, exact: true })
+				.catch(() => undefined);
+		});
+
+		// Two attempts for one logical read, and the snapshot is gone after
+		// them rather than restored by the second attempt's own capture.
+		expect(attempts).toBe(3);
+		expect(client.getQueryData([...KEY])).toBeUndefined();
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+	});
+
+	// And the retry's happy path: a transient failure that succeeds on the
+	// retry must not lose the answer the retry just wrote.
+	it("keeps the answer a retry recovered after a transient failure", async () => {
+		let attempts = 0;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				attempts++;
+				if (attempts === 1) {
+					return HttpResponse.json({ message: "boom" }, { status: 500 });
+				}
+				return HttpResponse.json({
+					declaration: declared,
+					delegations: [],
+					children: [],
+				});
+			}),
+		);
+		const client = retrying();
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+
+		await screen.findByText("*/30 * * * *");
+		expect(attempts).toBe(2);
+		expect(client.getQueryData([...KEY])).toBeTruthy();
 	});
 });

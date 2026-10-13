@@ -1,3 +1,4 @@
+import { QueryClient } from "@tanstack/react-query";
 import {
 	act,
 	cleanup,
@@ -426,5 +427,109 @@ describe("a superseded refusal when both identity answers share a millisecond", 
 
 		expect(client.getQueryData([...KEY])).toBeTruthy();
 		expect(client.getQueryState([...KEY])?.status).toBe("success");
+	});
+});
+
+// THE SAME TWO LIFECYCLE PATHS HERE (issue #1121, r23's request-order note):
+// an observer that unmounts WHILE the refusal is in flight — TanStack's
+// `removeObserver` route, which may cancel and revert the fetch's state, and is
+// not the same path as refetching an already-inactive query — and RETRY, which
+// the real client has (`src/lib/providers.tsx`: `retry: 1`) and this harness
+// does not (`src/test/container.tsx`: `retry: false`), so every refusal test
+// here had been exercising a single attempt.
+describe("the identity deletion under the lifecycle paths the harness hides", () => {
+	const KEY = ["module-tenant-identity", "example", "operate", ORG] as const;
+
+	it("still deletes when the observer unmounts before the refusal arrives", async () => {
+		let denied = false;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				async () => {
+					if (!denied) return HttpResponse.json(minted);
+					await held;
+					return HttpResponse.json(
+						{ code: "permission_denied", message: "refused" },
+						{ status: 403 },
+					);
+				},
+			),
+		);
+		const { client, unmount } = renderInApp(<ModuleTenantIdentityPlayground />);
+		fill();
+		await screen.findByText("audit-1");
+
+		denied = true;
+		const refused = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		unmount();
+		release403?.();
+		await act(async () => {
+			await refused;
+		});
+
+		expect(client.getQueryData([...KEY])).toBeUndefined();
+	});
+
+	it("deletes a refused read that the client retried", async () => {
+		let attempts = 0;
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				() => {
+					attempts++;
+					return attempts === 1
+						? HttpResponse.json(minted)
+						: HttpResponse.json(
+								{ code: "permission_denied", message: "refused" },
+								{ status: 403 },
+							);
+				},
+			),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+		});
+		renderInApp(<ModuleTenantIdentityPlayground />, client);
+		fill();
+		await screen.findByText("audit-1");
+
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: KEY, exact: true })
+				.catch(() => undefined);
+		});
+
+		expect(attempts).toBeGreaterThan(2);
+		expect(client.getQueryData([...KEY])).toBeUndefined();
+	});
+
+	it("keeps the answer a retry recovered after a transient failure", async () => {
+		let attempts = 0;
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ResolveModuleTenantIdentity"),
+				() => {
+					attempts++;
+					return attempts === 1
+						? HttpResponse.json({ message: "boom" }, { status: 500 })
+						: HttpResponse.json(minted);
+				},
+			),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+		});
+		renderInApp(<ModuleTenantIdentityPlayground />, client);
+		fill();
+
+		await screen.findByText("audit-1");
+		expect(attempts).toBe(2);
+		expect(client.getQueryData([...KEY])).toBeTruthy();
 	});
 });
