@@ -137,17 +137,16 @@ func (h *moduleCapabilitiesConnectHandler) MintSourceOperationContext(ctx contex
 // Nothing is journaled: the module principal is declared, not registered, so
 // the actor-chain journal has no row to record it against, and the durable
 // record is the delegation's use event.
+//
+// It is the mint for a capability that has NO parent to derive from: the
+// module's own sync run, and the grant-reference arm, where the caller presents
+// an identifier rather than a capability. An exchange of a presented parent is
+// a derivation and goes through reissue instead, which is why this takes no
+// window: the only window it ever mints is the operation-context ceiling.
 func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 	ctx context.Context, authority business.SourceOperationContextAuthority,
 ) (string, *basev0.WorkContextV1, error) {
-	return s.startSourceOperation(ctx, authority, business.SourceOperationContextTTL)
-}
-
-// startSourceOperation is StartSourceOperationTask for a window no longer than
-// ttl — an exchange of a delegated parent is held to what is left of it.
-func (s *WorkContextAuthorityServer) startSourceOperation(
-	ctx context.Context, authority business.SourceOperationContextAuthority, ttl time.Duration,
-) (string, *basev0.WorkContextV1, error) {
+	ttl := business.SourceOperationContextTTL
 	if !s.configured() {
 		return "", nil, ErrWorkContextAuthorityUnconfigured
 	}

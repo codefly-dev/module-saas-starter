@@ -23,8 +23,10 @@ for example:
 Each installed scope may additionally restrict `resource_ids`. Actions are
 always exactly `read`. The incoming parent must already admit all installed
 scopes; installation never confers new viewer authority. A child lives at most
-60 seconds and less than the remaining parent lifetime. Owner, tenant, Task,
-Session and actor/delegation chain remain unchanged. The response is secret and
+60 seconds and less than the remaining parent lifetime. Owner, tenant, Task and
+the actor/delegation chain remain unchanged, and the child opens a new Session
+whose `parent_session_id` is the parent's — the one field that cannot be equal,
+because core refuses a derived capability that reuses its parent's Session. The response is secret and
 must not be logged. No persisted credential or broad signing port is created.
 Interactive calls can continue using the existing owner-bearer
 `WorkContextService.ExchangeAudience` API.
@@ -95,9 +97,10 @@ binding must preserve the required read scope, including receipt-lookup paths;
 the return binding cannot recover authority removed by an earlier exchange.
 Use a separate read-only binding for that proof rather than a task-start or
 execution binding. The signed owner, tenant and task remain unchanged, the
-returned capability opens a fresh session (a session a capability carries is its
-minter's verified session or new, never copied), and current revocation is
-checked again on the return exchange.
+returned capability opens a fresh session naming the presented one as its
+`parent_session_id` (a session a capability carries is its minter's verified
+session or new, never copied), and current revocation is checked again on the
+return exchange.
 
 ```json
 {"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"example-producer","invoke_scopes":[{"resource_kind":"results","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"results","actions":["read"]}]}}}}
@@ -285,19 +288,46 @@ answered by one set of functions for minting and verifying alike
 - **Session.** Every session a capability carries is the session its caller
   authenticated with, or a fresh one — never one a request names. `StartTask`
   binds the caller's verified session; `StartChildSession`,
-  `StartInstallationTask`, a root session and a renewal assign a fresh one and
-  return it in the response. The gateway pairs a resource-confined credential
-  with a capability on that session alone, which holds only because a caller can
-  never choose it.
+  `StartInstallationTask`, a root session, a renewal and every audience exchange
+  assign a fresh one and return it in the response. The gateway pairs a
+  resource-confined credential with a capability on that session alone, which
+  holds only because a caller can never choose it.
+- **Lineage.** A capability DERIVED from one a caller presented — a child
+  session, and every audience exchange — carries that capability's session as
+  its `parent_session_id`, and returns it in the response. It is what equality
+  cannot be: core refuses a derived capability that reuses its parent's session,
+  so a party holding the parent recognises the derivation by the link instead.
+  Without it, a holder could not tell a re-issue of its OWN capability from a
+  re-issue of any other capability the same owner holds, and refusing every one
+  was the only safe answer available to it. A root session and a renewal carry
+  no link, because neither is derived from what was presented.
 
-Core derives only by adding a hop and never extends a window, so re-issuing a
-capability — a root session, an audience exchange, a renewal — mints it afresh
-from its owner and re-derives each hop, with the same delegation ids, against
-live state. The seal is re-resolved too, never copied from the parent: a
-person's capability is sealed to the organization's installation of the
-audience it now addresses (an exchange into an audience the organization never
-installed is refused), and a module or installation principal's to its own
-installation. A parent this host derives from is verified at full strength for
+Re-issuing a capability for another audience is a DERIVATION from the one
+presented (core's `Authority.Reissue`): the same owner, task, authorization
+revision and actor chain — with every hop's epoch and attested execution — and
+no hop appended, because re-pointing a capability delegates to nobody. The
+effective authority, which is the final hop's or the owner's when it acts
+directly, may only be narrowed. Nothing inherited is re-read and re-stamped:
+core holds the parent's sealed state against live state with the verifier's own
+check, so a capability whose installation, principal epoch, hop execution or
+operation binding has moved re-issues nothing.
+
+The installation is the exception, and the reason it is one is the host's own:
+a person's capability is sealed to the organization's installation of the
+audience it addresses, so one re-issued for another audience is sealed to that
+audience's installation as it stands now (an exchange into an audience the
+organization never installed is refused), and a module or installation
+principal's stays its own, which the audience does not change. A capability
+exercising an **operation binding** moves nowhere at all: its installation is
+the one that granted the binding, a binding is held within an installation and
+does not travel, so such a capability is re-issued inside the installation it
+holds.
+
+A root session and a **renewal** are not derivations and keep the older shape:
+core never extends a window, and a renewal exists to outlive the capability
+presented, so it is minted afresh from the owner with every hop re-derived
+against live state — appending none — and descends from nothing its caller
+presented. A parent this host derives from is verified at full strength for
 the audience it names, and a single-use parent is consumed by the derivation, as
 by any consumer. A capability presented with a QUESTION — a viewer's capability
 asked what it may read (`CheckWorkContextRecordAccess`,

@@ -6330,7 +6330,7 @@
         "parameters": [
           {
             "name": "body",
-            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer.",
+            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes.\n\nThe reissued capability is DERIVED from the one presented. It appends no\nactor hop — the holder is the principal the capability already names, and\nonly the callee and the reach change — and it opens a fresh Session, assigned\nby the issuer, whose parent_session_id is the presented capability's Session.\nThat link is what lets a party holding both tell this reissue from a reissue\nof any other capability the same owner holds; equality is not available,\nbecause a derived capability may never reuse its parent's Session. It expires\nno later than the capability it came from, and a window beyond that one's is\na renewal (RenewWorkContextRequest), which is minted afresh from the owner\nand so descends from nothing the caller presented.",
             "in": "body",
             "required": true,
             "schema": {
@@ -8346,7 +8346,7 @@
           "format": "int32"
         }
       },
-      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer."
+      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes.\n\nThe reissued capability is DERIVED from the one presented. It appends no\nactor hop — the holder is the principal the capability already names, and\nonly the callee and the reach change — and it opens a fresh Session, assigned\nby the issuer, whose parent_session_id is the presented capability's Session.\nThat link is what lets a party holding both tell this reissue from a reissue\nof any other capability the same owner holds; equality is not available,\nbecause a derived capability may never reuse its parent's Session. It expires\nno later than the capability it came from, and a window beyond that one's is\na renewal (RenewWorkContextRequest), which is minted afresh from the owner\nand so descends from nothing the caller presented."
     },
     "v1ExportAuditLogRequest": {
       "type": "object",

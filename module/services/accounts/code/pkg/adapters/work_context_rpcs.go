@@ -1217,21 +1217,31 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if err != nil {
 		return nil, err
 	}
-	// The owner is exchanging their own capability, so it is re-issued in the
-	// session they authenticated with. A hop in the chain that bears an
-	// execution cannot be attested by an owner, so such a chain is exchanged by
-	// its module through the module capability surface instead.
-	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, workcontext.Execution{}, callerSession(ctx))
+	// The owner is exchanging their own capability, so the re-issue is DERIVED
+	// from it: a new session under the one they authenticated with, named in
+	// parent_session_id, rather than a second capability carrying that session
+	// and no link to it. A party holding both can then tell this re-issue from
+	// a re-issue of any other capability the same owner holds.
+	return s.exchangeVerifiedParent(ctx, parent, actor, req)
 }
 
 // exchangeVerifiedParent runs AFTER the caller's authentication and
-// current-parent checks. lastExecution attests the chain's last hop when that
-// hop's principal bears an execution; session is the issuer-assigned session
-// the exchanged capability opens ("" for a fresh one).
+// current-parent checks, and re-issues the capability the caller presented for
+// the requested audience.
+//
+// It takes neither an attested execution nor a session. A re-issue adds no
+// principal, so there is nothing for the caller to attest: every hop keeps the
+// execution it attested at its own mint, held against the build the issuer
+// approves for that principal. And its session is always fresh, because core
+// refuses a derived capability that reuses its parent's — the lineage in
+// parent_session_id is what names the session it came from. Before this, an
+// owner could not exchange a chain whose last hop bears an execution at all,
+// because the re-mint made the owner re-attest a build it does not run.
 func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
-	ctx context.Context, parent *basev0.WorkContextV1, actor *business.Principal,
-	req *gen.ExchangeWorkContextAudienceRequest, lastExecution workcontext.Execution, session string,
+	ctx context.Context, verified *workcontext.Verified, actor *business.Principal,
+	req *gen.ExchangeWorkContextAudienceRequest,
 ) (*gen.IssuedWorkContext, error) {
+	parent := verified.Context()
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
 	}
@@ -1249,9 +1259,9 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	if err != nil {
 		return nil, err
 	}
-	token, signed, err := s.remint(ctx, parent, req.GetAudience(),
+	token, signed, err := s.reissue(ctx, verified, req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
-		attenuated, lastExecution, session)
+		attenuated)
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}

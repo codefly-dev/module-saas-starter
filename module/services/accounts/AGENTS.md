@@ -872,8 +872,21 @@ that authority (`pkg/business/source_delegation.go`):
   identical in shape to a mint's, except that the actor hop is the **caller's**
   principal — the module that uses the capability, whose build core attests at
   the mint — and the operation binding names the caller; the revision check
-  confirms it the same way. A parent-token exchange re-derives the child the same
-  way, with the caller on the hop.
+  confirms it the same way.
+
+  A parent-token exchange is not a mint and does not look like one. It is a
+  DERIVATION of the capability presented (`reissue`): the chain, the seal and
+  the operation binding are the parent's, so the hop still names the
+  **delegating** module and the binding is the one granted to it, and the child
+  carries the parent's session as its `parent_session_id`. Only the audience and
+  the final hop's scopes change, to the caller's installed binding's — which
+  must attenuate what the parent's hop actually holds, so a binding declaring
+  more than the person delegated through this parent is refused rather than
+  signed. The caller's entitlement is enforced before signing and recorded
+  against it, not carried in the capability: nothing a callee reads names the
+  exchanging module, and a callee that needs to know it was handed the
+  capability it admitted compares the child to that capability instead, which is
+  what the lineage link makes possible.
   `ExchangeDelegatedReadAudience` deliberately has no reference arm: a source
   delegation authorizes operation bindings only.
 - **Codes.** `FAILED_PRECONDITION` + `DELEGATION_MISSING` (the source has no

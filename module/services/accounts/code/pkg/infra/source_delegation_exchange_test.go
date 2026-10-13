@@ -190,11 +190,23 @@ func TestSourceDelegation_FixedTenantModulesReachTheOrgThroughTheDelegation(t *t
 	require.Equal(t, "docstore-ingest", child.GetAudience())
 	require.Equal(t, w.org, child.GetTenantId())
 	require.Equal(t, w.admin, child.GetOwnerPrincipalId())
-	require.Len(t, child.GetActorChain(), 1)
-	require.Equal(t, business.ModulePrincipalID(runtimeModule), child.GetActorChain()[0].GetPrincipalId(),
-		"the exchanged capability is used by the runtime, so its hop is the runtime's")
+	// The TOKEN arm re-issues the capability it was presented, so the hop is
+	// still the DELEGATING module's and the binding is the one granted to it.
+	// Appending the runtime's hop would record a delegation that did not
+	// happen, and a callee could no longer prove the child is the capability it
+	// admitted narrowed to a binding — which is the proof the parent link
+	// exists to make possible. The runtime's entitlement is enforced before
+	// signing (its installed binding, resolved against this delegation, and the
+	// live read that only the two entitled modules pass) and recorded in the
+	// exchange event, rather than carried in the capability.
+	require.Len(t, child.GetActorChain(), 1, "an exchange appends no hop")
+	require.Equal(t, business.ModulePrincipalID(delegationModule), child.GetActorChain()[0].GetPrincipalId())
 	require.Equal(t, delegation.ID, child.GetActorChain()[0].GetDelegationId())
-	require.Equal(t, business.SourceDelegationBindingID(delegation.ID, runtimeModule), child.GetOperationBinding().GetBindingId())
+	require.Equal(t, business.SourceDelegationBindingID(delegation.ID, delegationModule), child.GetOperationBinding().GetBindingId(),
+		"a binding is held by a principal and does not travel")
+	require.Equal(t, parent.GetSessionId(), child.GetParentSessionId(),
+		"and the child names the session it descends from, which is what the runtime was handed")
+	require.NotEqual(t, parent.GetSessionId(), child.GetSessionId())
 	require.NoError(t, checkRevision(child), "the revision check covers an exchanged context")
 
 	_, err = w.svc.RevokeSourceDelegation(testCtx, w.other, w.org, delegation.ID)

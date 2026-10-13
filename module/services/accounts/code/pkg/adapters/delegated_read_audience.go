@@ -176,13 +176,15 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
 	}
-	// Re-issued in a fresh session: the module exchanging it holds no session
-	// of its own to bind.
+	// Derived from the capability the module presented, in a fresh session under
+	// the parent's: the module exchanging it holds no session of its own to
+	// bind, and the parent link is what lets whoever admitted that session
+	// recognise this capability as its descendant.
 	var issued *gen.IssuedWorkContext
 	if delegated {
-		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
+		issued, err = authority.exchangeDelegatedParent(ctx, caller, presented, delegation, binding, time.Duration(ttl)*time.Second)
 	} else {
-		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, workcontext.Execution{}, "")
+		issued, err = authority.exchangeVerifiedParent(ctx, presented, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)})
 	}
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
@@ -464,44 +466,103 @@ func sourceDelegationHops(actors []*basev0.WorkActorV1) []business.SourceDelegat
 	return out
 }
 
-// exchangeDelegatedParent re-issues a parent minted from a source delegation for
-// the caller's own binding. The caller — the module the delegation's binding
-// names as its audience — is the module that USES what is issued, so the
-// capability is minted afresh: the person's session, then the caller's hop
-// exercising the delegation as its operation binding, attesting the build its
-// verified credential was sealed to. Core resolves that binding live and refuses
-// it for any module the delegation does not entitle.
+// exchangeDelegatedParent re-issues a parent minted from a source delegation
+// for the caller's own binding: the person's session and the delegating
+// module's hop exactly as the parent carries them, re-pointed at the audience
+// the caller's installed binding names and narrowed to that binding's scopes,
+// in a new session under the parent's.
+//
+// WHO THE CAPABILITY SAYS IS ACTING is the delegating module, not the caller,
+// and that is the change. This used to mint afresh and put the CALLER in the
+// chain with the caller's own binding and attested build, which made the result
+// a capability nobody could tie back to the admitted session: a re-mint starts
+// at the owner, so the result descended from an intermediate this host never
+// released. A holder of the parent had no way to tell a re-issue of its own
+// capability from a re-issue of another, and refusing every one was its only
+// safe answer.
+//
+// The caller's entitlement is not weakened by leaving it out of the chain, it
+// is enforced earlier and recorded: the binding resolved for this exchange is
+// the CALLER's installed operation audience, resolved against the delegation in
+// the caller's own organization, re-resolved after signing, and the exchange is
+// audited against the caller. What the capability carries is the authority, and
+// the authority is the person's, exercised through the module they delegated to.
+//
+// The binding's scopes must attenuate what the parent's final hop actually
+// holds. A binding declaring more than the person delegated through this parent
+// is refused rather than signed, which is the one behaviour a re-mint could not
+// give: it attenuated against the OWNER's authority scopes, so a parent whose
+// hop had been narrowed could be exchanged back up to the installed binding's
+// full set.
 func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
-	ctx context.Context, caller business.ModuleCaller, parent *basev0.WorkContextV1,
+	ctx context.Context, caller business.ModuleCaller, parent *workcontext.Verified,
 	delegation *business.SourceDelegation, binding delegatedAudienceBinding, ttl time.Duration,
 ) (*gen.IssuedWorkContext, error) {
 	grant, declared := service.ModulePrincipals()[caller.PrincipalID]
 	if !declared || delegation == nil || caller.Sealed == nil || caller.Sealed.InstallationID == nil {
-		return nil, status.Error(codes.PermissionDenied, "the caller holds no installation this delegation can be exercised through")
+		return nil, status.Error(codes.PermissionDenied, "the caller is not a declared module holding an installation in this organization")
 	}
-	actorScopes := make([]business.ModuleOperationScope, 0, len(binding.scopes))
-	for _, scope := range binding.scopes {
-		actorScopes = append(actorScopes, business.ModuleOperationScope{
-			ResourceKind: scope.GetResourceKind(),
-			Actions:      append([]string(nil), scope.GetActions()...),
-			ResourceIDs:  append([]string(nil), scope.GetResourceIds()...),
-		})
+	// THE CALLER MUST BE A MODULE THIS DELEGATION ENTITLES, and asking it here
+	// is the whole reason this function is not three lines.
+	//
+	// Exactly two modules may use a delegation — the one the person granted to,
+	// and the audience its binding names — and WorkContextOperationBinding is
+	// where that is decided. The mint used to ask as a SIDE EFFECT: it named
+	// SourceDelegationBindingID(delegation, caller) as the capability's
+	// operation binding, and core resolved that id live, which refuses an id
+	// naming any other module. A derivation carries the PARENT's binding
+	// instead, so that read no longer happens on its own.
+	//
+	// Leaving it out made the exchange transitive. The audience module is
+	// entitled to CONSUME what it is handed; without this it could also pass it
+	// on, re-issuing the child for any audience it declares a binding for,
+	// because every remaining gate then holds — the parent's audience is now
+	// the third module's own prefix, the delegation still confirms against the
+	// delegating module's hop, and that module's own binding attenuates the
+	// parent. The person's authority would reach a module they never delegated
+	// to, with the delegating module still named as the actor.
+	if _, err := service.WorkContextOperationBinding(ctx, parent.Context().GetTenantId(),
+		business.SourceDelegationBindingID(delegation.ID, grant.Prefix)); err != nil {
+		return nil, sourceDelegationCallerError(err)
 	}
-	authority := business.SourceOperationContextAuthority{
-		ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{
-			PrincipalID: caller.PrincipalID, Tenant: parent.GetTenantId(),
-			InstallationID: *caller.Sealed.InstallationID, Execution: caller.SealedExecution(),
-		},
-		ModulePrefix:     grant.Prefix,
-		OwnerPrincipalID: parent.GetOwnerPrincipalId(),
-		Delegation:       *delegation,
-		Audience:         binding.audience,
-		Scopes:           operationScopesFromCore(parent.GetAuthorityScopes()),
-		ActorScopes:      actorScopes,
+	// The audience is policy, not a caller's word, but it is still a mint
+	// input: requireMintableAudience refuses an empty one — good at whichever
+	// consumer accepts it — and the capability surface's own audience, which a
+	// peer reads as a module identity. The mint ran it; a derivation has to run
+	// it too, because an installed binding may name either (nothing in
+	// validateOperationAudiences rejects the reserved spelling).
+	if err := requireMintableAudience(binding.audience); err != nil {
+		return nil, status.Errorf(codes.PermissionDenied, "installed audience binding names an audience no capability may be minted for: %s", binding.audience)
 	}
-	token, signed, err := s.startSourceOperation(ctx, authority, ttl)
+	_, scopes, err := workContextScopes(binding.scopes, mintContentReads(binding.audience))
+	if err != nil {
+		return nil, status.Errorf(codes.PermissionDenied, "installed audience binding declares unusable scopes: %v", err)
+	}
+	if len(scopes) == 0 {
+		return nil, status.Error(codes.PermissionDenied, "installed audience binding declares no scope")
+	}
+	token, signed, err := s.reissue(ctx, parent, binding.audience, workcontext.ReplayIdempotent, ttl, scopes)
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
 	return issuedWorkContext(token, signed), nil
+}
+
+// sourceDelegationCallerError maps the live binding read that decides whether
+// the caller is a module this delegation entitles. Every way the answer can be
+// "no" is PermissionDenied and says the same thing, so a module learns nothing
+// from the refusal beyond the fact that it cannot exchange; only a genuine
+// outage is Unavailable, because only an outage is worth retrying.
+func sourceDelegationCallerError(err error) error {
+	switch {
+	case errors.Is(err, business.ErrNoOperationBinding),
+		errors.Is(err, business.ErrSourceDelegationContextStale),
+		errors.Is(err, business.ErrModuleInstallationInactive),
+		errors.Is(err, business.ErrModuleIdentityDenied):
+		return status.Error(codes.PermissionDenied, "the caller is not a module this source delegation entitles")
+	case status.Code(err) != codes.Unknown:
+		return err
+	default:
+		return status.Error(codes.Unavailable, "source delegation authority is unavailable")
+	}
 }
