@@ -55,6 +55,24 @@ func (a ModuleOperationContextAuthority) WireScopes() []*gen.WorkContextScope {
 // binding's headless_scopes and nothing else: invoke_scopes describe what the
 // module may do on a person's behalf and are never reused for work that has no
 // person, so a binding that declares no headless_scopes is refused (fail closed).
+//
+// IT IS ALSO THE PER-TENANT MODULE IDENTITY, and that is worth naming rather
+// than leaving as an incidental parameter (issue #1121). requestedOrganization
+// is the organization the capability acts FOR: its tenant is that
+// organization, so a module can present itself as acting for a tenant instead
+// of as itself, which is what a consumer admitting a publication for a tenant
+// needs from a publisher that has no person present.
+//
+// Which organizations may be named is the envelope's to decide and never the
+// caller's (moduleMintOrganization): a principal PINNED to a tenant may name
+// that tenant and no other, and an unpinned principal declaring cross_tenant
+// may name one organization per mint. Both are then held to that organization's
+// own live installation, and the binding is re-read AFTER the installation
+// scope narrows it (authorizeModuleCapabilityFromSnapshot) — so the scopes a
+// per-tenant capability carries are that tenant's consent and not the
+// deployment's, and an organization consenting to nothing leaves the binding
+// with no headless scopes and is refused. The bound is per tenant, which is
+// the whole point: one identity per deployment could not be.
 func (s *Service) ModuleAuthorizeOperationContext(
 	ctx context.Context, prefix, serviceAccountToken, bindingID string, requestedOrganization ...string,
 ) (ModuleOperationContextAuthority, error) {

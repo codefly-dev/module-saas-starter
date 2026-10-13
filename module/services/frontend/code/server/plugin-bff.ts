@@ -2,12 +2,10 @@ import { toJsonString } from "@bufbuild/protobuf";
 import {
 	type ConnectProcedure,
 	connectProcedureTargetPath,
-	FRONTEND_SERVICE_ROOT_PREFIX,
-	type FrontendServiceAllowlistEntry,
 	type FrontendServiceProtocol,
 	frontendServiceTargetPath,
-	isConnectServiceName,
 	isFrontendServicePath,
+	isServiceableFrontendService,
 	resolveConnectProcedure,
 } from "@codefly-dev/saas-plugin-contract";
 import {
@@ -138,25 +136,6 @@ function safePath(request: Request, segments: readonly string[]): boolean {
 	// admitting it would let a caller spell a verb the binding never declared.
 	if (/%(?:00|25|2f|3a|5c)/i.test(rawPath)) return false;
 	return isFrontendServicePath(segments);
-}
-
-/**
- * Whether this host will proxy the resolved alias at all, independent of the
- * path asked for. Both rules are the composition's, re-asserted here because
- * the BFF reads the GENERATED allowlist rather than the composition that
- * validated it: a build-time rule no runtime re-checks is one a stale or
- * hand-edited projection walks straight past.
- */
-function proxyableEntry(entry: FrontendServiceAllowlistEntry): boolean {
-	if (entry.protocol === "connect") {
-		// Connect without a declared service list reaches nothing: the path
-		// names the service, so an absent list is an unbounded alias.
-		const services = entry.connectServices ?? [];
-		return services.length > 0 && services.every(isConnectServiceName);
-	}
-	// The origin root is Connect-only. A REST alias declaring it would be a
-	// prefix-less proxy of its whole upstream.
-	return entry.routePrefix !== FRONTEND_SERVICE_ROOT_PREFIX;
 }
 
 function sameOrigin(request: Request): boolean {
@@ -304,16 +283,37 @@ function isCapabilityProbe(path: readonly string[]): boolean {
 	);
 }
 
+/**
+ * Where the fixed capability handshake is probed on this alias's upstream.
+ *
+ * On a Connect alias it lands under the requirement's own mount prefix, like
+ * every other procedure of that alias (issue #1121). It used to be sent to the
+ * origin root unconditionally, which is right only for a requirement that
+ * declared the root: a backend mounting Connect under `/v1/connect` answered
+ * the probe with its own 404, so the alias was reported incompatible and the
+ * mounted form this host advertises could never complete a handshake.
+ *
+ * On a REST alias the product may own the path, so the requirement's optional
+ * `probePath` wins over the well-known one; neither is relative to the route
+ * prefix, because a probe path is declared absolute and validated as such.
+ */
 function capabilityTargetURL(
 	baseURL: string,
 	protocol: FrontendServiceProtocol,
+	routePrefix: string,
 	probePath?: string,
 ): URL {
 	const target = new URL(baseURL);
-	target.pathname =
-		protocol === "connect"
-			? FRONTEND_PLUGIN_CAPABILITIES_CONNECT_PROCEDURE
-			: (probePath ?? FRONTEND_PLUGIN_CAPABILITIES_REST_PATH);
+	if (protocol !== "connect") {
+		target.pathname = probePath ?? FRONTEND_PLUGIN_CAPABILITIES_REST_PATH;
+		return target;
+	}
+	const [service, method] =
+		FRONTEND_PLUGIN_CAPABILITIES_CONNECT_PROCEDURE.slice(1).split("/");
+	target.pathname = connectProcedureTargetPath(routePrefix, {
+		service,
+		method,
+	});
 	return target;
 }
 
@@ -345,7 +345,14 @@ export async function handlePluginBffRequest(
 	// A resolved entry the composition's own rules would have refused is a
 	// projection this host cannot serve, not a bad request: nothing the caller
 	// could have asked differently would make the alias proxyable.
-	if (!proxyableEntry(resolution.value.entry)) {
+	//
+	// `resolvePluginService` already refuses an unserviceable entry at load, so
+	// in this service the check below is unreachable through that resolver.
+	// It stays because `resolve` is a dependency: a test, or a host wiring its
+	// own resolver, reaches this handler with whatever entry it hands over, and
+	// the rule that decides what may be proxied belongs to the thing that
+	// proxies. One predicate, read in both places, so they cannot disagree.
+	if (!isServiceableFrontendService(resolution.value.entry)) {
 		return problem("backend_unavailable", 503, requestID);
 	}
 
@@ -426,6 +433,7 @@ export async function handlePluginBffRequest(
 			upstreamTarget = capabilityTargetURL(
 				resolution.value.baseURL,
 				resolution.value.entry.protocol,
+				resolution.value.entry.routePrefix,
 				resolution.value.entry.compatibility.probePath,
 			);
 			upstreamHeaders.set("accept", "application/json");

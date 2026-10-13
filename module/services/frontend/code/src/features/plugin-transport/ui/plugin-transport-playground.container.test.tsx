@@ -235,6 +235,29 @@ describe("the plugin transport playground", () => {
 		expect(row.textContent).not.toContain("Press again to send");
 	});
 
+	it("arms a non-GET row the table shows as refused", async () => {
+		// `carried` answers for the DEMO declaration, and the request goes to
+		// the plugin the operator named — whose requirement for the same alias
+		// may be a different protocol with a different service list (issue
+		// #1121, N3). So the arming gate reads the method, not the badge: this
+		// row is a POST the demo reads as refused, and one press must not send
+		// it.
+		const { upstream } = render();
+		const row = rowFor("POST procedures/records");
+		expect(row.textContent).toContain("refused");
+
+		press(row);
+		expect(row.textContent).toContain("Press again to send");
+		expect(upstream).not.toHaveBeenCalled();
+		// Nothing was attempted at all, so the row carries no answer yet.
+		expect(row.textContent).not.toContain("invalid_path");
+
+		press(row);
+		await waitFor(() => {
+			expect(row.textContent).toContain("invalid_path");
+		});
+	});
+
 	it("sends a read on the first press", async () => {
 		// GET is safe and idempotent, so there is nothing to confirm; making the
 		// operator press twice for every row would turn the confirmation into

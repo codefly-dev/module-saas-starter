@@ -8,6 +8,8 @@
  * the package both already depend on, so one change moves both sides.
  */
 
+import type { FrontendServiceProtocol } from "./contracts.js";
+
 /** A path segment with no reserved character in it. */
 const SAFE_SEGMENT = /^[A-Za-z0-9._~-]+$/;
 
@@ -37,6 +39,79 @@ const MAX_SEGMENT_LENGTH = 256;
  * product path prefix.
  */
 export const FRONTEND_SERVICE_ROOT_PREFIX = "/";
+
+/**
+ * An absolute upstream path prefix: one or more safe segments, each with no
+ * reserved character in it. Deliberately narrower than a URL path — a prefix is
+ * where the host mounts an alias, so a query, a fragment, an empty segment or a
+ * trailing slash are all shapes it has no meaning for.
+ */
+const SAFE_ROUTE_PREFIX = /^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/;
+
+/**
+ * Whether this requirement's route prefix is one the host may mount, for the
+ * protocol it declares. It is the WHOLE rule, in one place, because two
+ * different readings of it are what the BFF walked past: the composition
+ * validated the full form at build time while the runtime re-check compared
+ * only against the root, so a prefix the composition would have refused —
+ * `""`, `/..`, `/a//b` — passed the runtime one and landed its relative path
+ * straight on the upstream origin.
+ *
+ * The origin root is Connect-only, and declaring it is the only way to say what
+ * the Connect protocol already decides: a procedure's path is
+ * `/<fully.qualified.Service>/<Method>` from the origin. A REST requirement
+ * declaring it would be a prefix-less proxy of its whole upstream, and so would
+ * any prefix that is not an absolute path of safe, non-dot segments.
+ */
+export function isFrontendServiceRoutePrefix(
+	protocol: FrontendServiceProtocol,
+	routePrefix: unknown,
+): routePrefix is string {
+	if (typeof routePrefix !== "string") return false;
+	if (protocol === "connect" && routePrefix === FRONTEND_SERVICE_ROOT_PREFIX) {
+		return true;
+	}
+	return (
+		SAFE_ROUTE_PREFIX.test(routePrefix) &&
+		routePrefix
+			.slice(1)
+			.split("/")
+			.every((segment) => segment !== "." && segment !== "..")
+	);
+}
+
+/**
+ * What a requirement must look like for the host to proxy it at all: its prefix
+ * is one the protocol admits, and a Connect one declares a usable list of the
+ * services it may reach.
+ *
+ * Both halves are the composition's own rules, and this is the one function
+ * that states them — the BFF reads the GENERATED allowlist rather than the
+ * composition that validated it, so a build-time rule no runtime re-checks is
+ * one a stale or hand-edited projection walks straight past. `Array.isArray` is
+ * part of the rule and not defensive noise: a projection whose
+ * `connectServices` is a string has a `length` and no `every`, so a check that
+ * assumed an array threw out of the request handler as a 500 instead of
+ * refusing the alias as unserviceable.
+ */
+export function isServiceableFrontendService(service: {
+	protocol: FrontendServiceProtocol;
+	routePrefix: string;
+	connectServices?: readonly string[];
+}): boolean {
+	if (!isFrontendServiceRoutePrefix(service.protocol, service.routePrefix)) {
+		return false;
+	}
+	if (service.protocol !== "connect") return true;
+	// Connect without a declared service list reaches nothing: the path names
+	// the service, so an absent — or non-array — list is an unbounded alias.
+	const services = service.connectServices;
+	return (
+		Array.isArray(services) &&
+		services.length > 0 &&
+		services.every(isConnectServiceName)
+	);
+}
 
 function usableSegment(segment: string): boolean {
 	return (

@@ -53,7 +53,7 @@ const ROUTES: AdminRoute[] = [
 		platformGated: true,
 	},
 	{
-		path: "/admin/platform/unattended-work",
+		path: "/admin/unattended-work",
 		heading: /Unattended work/,
 		platformGated: true,
 	},

@@ -229,6 +229,27 @@ type SourceDelegationTarget struct {
 	Binding   ModuleOperationAudience
 }
 
+// SelfAddressed reports whether this target's binding is one the module holding
+// it can admit as its OWN incoming execution context: its audience is its own
+// declared prefix.
+//
+// It is the shape a declared trigger's reference arm can serve (issue #1121,
+// N8), and nothing more than that: a trigger's reference is a source id, a mint
+// by source id resolves the active delegation of the CALLING module, and the
+// capability is addressed to the binding's audience — so a delegation to module
+// A addressed to audience B can serve a trigger only through the delegation-id
+// exchange, which no reference this host declares can reach. See
+// selfAdmittingBinding for why naming your own prefix is admitted at all.
+//
+// IT DOES NOT IDENTIFY THE EXECUTOR (issue #1121, F1). Nothing this host holds
+// declares which module executes declared work, and these bindings are generic,
+// so a self-addressed target is a candidate the backfill may record for — never
+// a module proved to install and fire the release. The name says "self
+// addressed" because that is the fact it tests.
+func (t SourceDelegationTarget) SelfAddressed() bool {
+	return t.Binding.Audience != "" && t.Binding.Audience == t.Prefix
+}
+
 // SourceDelegationTargets lists, sorted by module prefix, the binding of every
 // declared module that accepts source delegations. The declaration is the
 // opt-in; the module's declared tenancy is deliberately not consulted, because
@@ -267,9 +288,21 @@ const (
 	// theirs.
 	sourceDelegationReplace sourceDelegationRecordMode = iota
 	// sourceDelegationBackfill is a reference recorded for a source that is
-	// ALREADY connected (DelegateSourceTriggers). It revokes nothing: a target
-	// already holding an active delegation is left exactly as it is, and only a
-	// target with none gets one.
+	// ALREADY connected (DelegateSourceTriggers). It leaves a target's live
+	// delegation exactly as it is, and only a target with none — or with one
+	// its module's current declaration no longer supports — gets one.
+	//
+	// It is also narrowed to SELF-ADDRESSED targets
+	// (SourceDelegationTarget.SelfAddressed), because that is the shape the
+	// reference a declared release's trigger names can serve. It used to record
+	// one for every module accepting delegations, which hands the calling
+	// administrator's authority over that source to modules whose delegation no
+	// trigger of this host could ever name — authority nobody asked to grant
+	// (issue #1121, N8). It does not follow that a self-addressed target is the
+	// module which will execute the release; nothing here declares that (F1).
+	// A connect still delegates to every target: that is a person establishing
+	// the source, and the consuming module's sync is the delegation's main
+	// purpose.
 	//
 	// The distinction is issue #1112, M2. The backfill used to run the replace
 	// mode, which took every delegation on the source, marked it `replaced` and
@@ -312,12 +345,34 @@ func (s *Service) recordSourceDelegationsTx(
 	recorded := 0
 	for _, target := range targets {
 		if mode == sourceDelegationBackfill {
+			if !target.SelfAddressed() {
+				continue
+			}
 			existing, err := s.store.ActiveSourceDelegation(ctx, sourceID, target.Prefix)
 			if err != nil {
 				return recorded, fmt.Errorf("read active source delegation: %w", err)
 			}
+			// A live delegation is the operator's answer that nothing was
+			// missing — but only while the module's current declaration still
+			// supports it. One recorded against a binding that has since
+			// changed its audience or its delegation scopes (or that is gone)
+			// is refused by the very next mint, which revokes it as
+			// `binding_changed`: leaving it in place reported "nothing was
+			// missing" over a source whose trigger could never mint
+			// (issue #1121, N8). So it is revoked here, for the same reason and
+			// under the same name, and the fresh one is recorded in the same
+			// transaction. Nothing live is re-owned — a delegation conferring
+			// nothing is not authority anybody holds.
 			if existing != nil {
-				continue
+				if existing.BindingID == target.BindingID &&
+					existing.BindingDigest == SourceDelegationBindingDigest(target.Binding) {
+					continue
+				}
+				if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{
+					OrgID: orgID, SourceID: sourceID, ModulePrefix: target.Prefix,
+				}, SourceDelegationBindingChanged); err != nil {
+					return recorded, err
+				}
 			}
 		} else {
 			replaced, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{

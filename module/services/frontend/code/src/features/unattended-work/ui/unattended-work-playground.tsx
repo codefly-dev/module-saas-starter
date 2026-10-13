@@ -8,6 +8,7 @@ import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
 import {
 	mayKeepRetainedRows,
+	readHasNotAnswered,
 	readOutcome,
 	readOutcomeMessage,
 	staleReadNotice,
@@ -32,6 +33,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { sourceLabel } from "../model/source-label";
 import {
@@ -186,6 +188,21 @@ function TriggerIdentityPanel({
 	const outcome = readOutcome(read.isError, read.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const declaration = withheld ? undefined : read.data?.declaration;
+	// Only meaningful when an answer survived: a refusal has nothing to be
+	// stale about, having just been deleted at the query boundary.
+	const declarationStale = declaration
+		? staleReadNotice(outcome, "this trigger")
+		: null;
+	// ALL THREE CARDS BELOW READ THIS ONE RESPONSE, so they are classified
+	// once, here, from the read seam's own predicate. Every per-card flag I
+	// reached for was a near miss: `isFetching` is false while paused, and
+	// `isPending` is false in the state a refused refetch leaves behind —
+	// status `success`, the answer deleted, the retry paused (issue #1121,
+	// r24/r25).
+	const unanswered = readHasNotAnswered(read);
+	const declarationPhase = useLoadingPhase(unanswered);
+	const waiting =
+		unanswered || declarationPhase.indicator || declarationPhase.quiet;
 	const references = withheld ? [] : (read.data?.delegations ?? []);
 	const children = withheld ? [] : (read.data?.children ?? []);
 	const live = references.filter((reference) => reference.active);
@@ -201,49 +218,86 @@ function TriggerIdentityPanel({
 						host still runs the schedule itself as a stopgap.
 					</CardDescription>
 				</CardHeader>
-				<CardContent className="space-y-2 text-sm">
-					{declaration?.undeclarableReason ? (
+				<CardContent className="space-y-2 text-sm" data-slot="declared-trigger">
+					{/*
+					 * THE CARD SAYS WHICH STATE THE READ IS IN (issue #1121, r22
+					 * F1). It withheld refused rows already, which is right, and
+					 * then rendered every fact as an em dash — which reads as
+					 * "this host declares nothing" to a viewer who is simply not
+					 * allowed to see it. A refusal and a failure are now said in
+					 * the card they are about; a transient failure keeps the
+					 * prior answer under a stale notice.
+					 */}
+					<DelayedLoading
+						active={unanswered}
+						label="Reading the declared trigger"
+					/>
+					{declarationStale && (
+						<p role="status" className="text-muted-foreground">
+							{declarationStale}
+						</p>
+					)}
+					{/*
+					 * THE FACTS NEED A DECLARATION — the branch is on having
+					 * one, never on the read having finished. Testing
+					 * `!declaration && !read.isFetching` meant the pending
+					 * window fell through to the facts list, which rendered
+					 * dashes and an Identity row computed from no declaration
+					 * at all: "None — occurrences would be refused", the exact
+					 * false claim about authority the schedule row was fixed
+					 * for (issue #1121).
+					 */}
+					{declaration ? null : waiting ? null : (
+						<p role="status" className="text-muted-foreground">
+							{readOutcomeMessage(
+								outcome,
+								"this source's declared trigger",
+								"This source declares no trigger.",
+							)}
+						</p>
+					)}
+					{!declaration ? null : declaration.undeclarableReason ? (
 						<p role="status" className="text-muted-foreground">
 							{declaration.undeclarableReason}
 						</p>
 					) : (
 						<dl className="grid gap-2 sm:grid-cols-2">
-							<Fact label="Release" value={declaration?.release ?? "—"} mono />
+							<Fact label="Release" value={declaration.release || "—"} mono />
 							<Fact
 								label="Operation"
-								value={declaration?.operation ?? "—"}
+								value={declaration.operation || "—"}
 								mono
 							/>
 							<Fact
 								label="Schedule"
-								value={declaration?.schedule?.cron ?? "—"}
+								value={declaration.schedule?.cron ?? "—"}
 								mono
 							/>
 							<Fact
 								label="Timezone"
-								value={declaration?.schedule?.timezone ?? "—"}
+								value={declaration.schedule?.timezone ?? "—"}
 							/>
 							<Fact
 								label="Missed occurrences"
-								value={declaration?.schedule?.missedRun ?? "—"}
+								value={declaration.schedule?.missedRun ?? "—"}
 							/>
 							<Fact
 								label="Overlap"
-								value={declaration?.schedule?.overlap ?? "—"}
+								value={declaration.schedule?.overlap ?? "—"}
 							/>
 							<Fact
 								label="Occurrence deadline"
-								value={nanosecondsAsDuration(declaration?.schedule?.deadline)}
+								value={nanosecondsAsDuration(declaration.schedule?.deadline)}
 							/>
 							<Fact
 								label="Occurrence input"
-								value={declaration?.schedule?.inputJson || "—"}
+								value={declaration.schedule?.inputJson || "—"}
 								mono
 							/>
 							<Fact label="Identity" value={declaredIdentity(declaration)} />
 							<Fact
 								label="Declaration"
-								value={declaration?.digest ?? "—"}
+								value={declaration.digest || "—"}
 								mono
 							/>
 						</dl>
@@ -281,15 +335,33 @@ function TriggerIdentityPanel({
 					</Button>
 				</CardHeader>
 				<CardContent>
+					{/*
+					 * `outcome === "empty"` means nothing has FAILED, not that the
+					 * read succeeded — so a read still in flight produced "No
+					 * reference is bound … an occurrence would be refused", which
+					 * is both an absence and a prediction, neither of them the
+					 * host's (issue #1121, r25). The sentence now waits for the
+					 * read that licenses it, exactly as the children card does.
+					 */}
+					<DelayedLoading
+						active={unanswered}
+						label="Reading the references bound to this source"
+					/>
 					{references.length === 0 ? (
-						<p
-							role="status"
-							className="py-6 text-center text-sm text-muted-foreground"
-						>
-							{outcome === "empty"
-								? "No reference is bound to this source's triggers. An occurrence would be refused."
-								: readOutcomeMessage(outcome, "this source's delegations", "")}
-						</p>
+						unanswered ? null : (
+							<p
+								role="status"
+								className="py-6 text-center text-sm text-muted-foreground"
+							>
+								{read.isSuccess
+									? "No reference is bound to this source's triggers. An occurrence would be refused."
+									: readOutcomeMessage(
+											outcome,
+											"this source's delegations",
+											"",
+										)}
+							</p>
+						)
 					) : (
 						<Table>
 							<TableHeader>
@@ -377,10 +449,24 @@ function TriggerIdentityPanel({
 								onError: (error) => toast.error(String(error)),
 							})
 						}
+						// The DISABLED state is unchanged: refusing to act on a
+						// reference set this page cannot see is correct, and this
+						// change is not about what the button does. What changes is
+						// what the operator is TOLD — "No live reference" is a claim
+						// about the host's answer, and a read that has not answered
+						// has made none (issue #1121, r24).
 						disabled={reconcile.isPending || live.length === 0}
 						title={
 							live.length === 0
-								? "No live reference: an occurrence would be refused"
+								? unanswered
+									? "Still reading this source’s references"
+									: !read.isSuccess
+										? readOutcomeMessage(
+												outcome,
+												"this source’s references",
+												"No live reference: an occurrence would be refused",
+											)
+										: "No live reference: an occurrence would be refused"
 								: undefined
 						}
 					>
@@ -389,14 +475,23 @@ function TriggerIdentityPanel({
 					</Button>
 				</CardHeader>
 				<CardContent>
-					{children.length === 0 ? (
-						<p
-							role="status"
-							className="py-6 text-center text-sm text-muted-foreground"
-						>
-							No child has been minted against this source&apos;s references.
-						</p>
-					) : (
+					{/*
+					 * A TRUE EMPTY IS ONLY KNOWABLE AFTER A SUCCESSFUL READ. This
+					 * card reads the same response as the declaration above it, and
+					 * reported "no child has been minted" off an array length — so a
+					 * held request, a paused read and a refusal all produced a
+					 * statement about this source's children that the host had never
+					 * made (issue #1121, r24). The empty sentence now waits for the
+					 * read that licenses it; everything else says which state it is
+					 * in. A transient failure keeps the rows, because those children
+					 * were really minted and one request not coming back does not
+					 * unmint them.
+					 */}
+					<DelayedLoading
+						active={unanswered}
+						label="Reading the children this source minted"
+					/>
+					{children.length > 0 ? (
 						<Table>
 							<TableHeader>
 								<TableRow>
@@ -427,6 +522,24 @@ function TriggerIdentityPanel({
 								))}
 							</TableBody>
 						</Table>
+					) : unanswered ? null : read.isSuccess ? (
+						<p
+							role="status"
+							className="py-6 text-center text-sm text-muted-foreground"
+						>
+							No child has been minted against this source&apos;s references.
+						</p>
+					) : (
+						<p
+							role="status"
+							className="py-6 text-center text-sm text-muted-foreground"
+						>
+							{readOutcomeMessage(
+								outcome,
+								"the children this source minted",
+								"No child has been minted against this source’s references.",
+							)}
+						</p>
 					)}
 				</CardContent>
 			</Card>

@@ -77,6 +77,35 @@ func (s *Service) SourceOperationAttemptForActor(ctx context.Context, actor, org
 	return attempt, err
 }
 
+// unattendedPassKey carries the delegation a source operation was admitted
+// under, when one admitted it.
+//
+// It exists for the audit trail (issue #1121, m3). A delegated pass
+// authenticates as the DELEGATING PERSON — that is the reference arm's whole
+// design, and ADR 0008 puts that person and their chain in the trail
+// deliberately — so the actor is a `user` and is not a mis-attribution. What
+// the row could not say is that nobody was present for it: the two passes stamp
+// an identical request identity, and business cannot tell them apart from
+// anything else on the context. The adapter can: it has just confirmed the
+// delegation. So it says so, here, and the observation records it.
+type unattendedPassKey struct{}
+
+// WithUnattendedPass marks this request as a pass admitted by the delegation
+// `delegationID`, with no person present. Called by the authority layer that
+// confirmed the delegation, never from a request field.
+func WithUnattendedPass(ctx context.Context, delegationID string) context.Context {
+	if delegationID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, unattendedPassKey{}, delegationID)
+}
+
+// unattendedPass reports the delegation this pass was admitted under, if any.
+func unattendedPass(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(unattendedPassKey{}).(string)
+	return id, ok && id != ""
+}
+
 // A request may wait behind another holder of its effect id. Recheck authority
 // after that wait, immediately before the SDK reads or replays a receipt.
 type sourceOperationRecheckKey struct{}

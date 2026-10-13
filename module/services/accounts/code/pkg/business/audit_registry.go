@@ -804,7 +804,16 @@ var auditEventCatalog = []AuditEventDefinition{
 		append(append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup")), optionalFields(mintExecutionFields())...)...), 3),
 	mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
 		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...),
-	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
+	// v2 (#1121) records whether a person was present. A pass admitted by a
+	// source delegation authenticates as the DELEGATING person, so the actor is
+	// a `user` and that is correct rather than a mis-attribution — but a row
+	// that says only "a user requested a sync" cannot answer whether anybody
+	// asked for it. `unattended` and the delegation it was admitted under are
+	// optional because the other emitter of this event is a person's "Sync
+	// now", which carries neither.
+	revised(observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.",
+		append([]PayloadField{str("job_id"), str("repo")},
+			optionalFields([]PayloadField{boolean("unattended"), uid("delegation_id")})...)...), 2),
 	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
 		str("repo"), enum("credential_kind", "pat", "app", "public")), 2),
 	// v2 names what was removed — v1 recorded an empty payload, so the trail

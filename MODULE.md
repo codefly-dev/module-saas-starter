@@ -251,7 +251,23 @@ arm is planned and has never been emitted.
 The depth is in
 [services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md#unattended-work-whose-authority-an-occurrence-runs-under)
 and [WORK_CONTEXTS.md](./module/WORK_CONTEXTS.md#triggers-for-work-no-person-started);
-the playground is `/admin/platform/unattended-work`.
+the playground is `/admin/unattended-work`.
+
+**A module identity minted for one tenant.** Beside the trigger identities
+above, a module acting with no person present can present itself as acting
+*for* a tenant rather than as itself: the headless operation mint names the
+organization, and the capability's tenant is that organization, its scopes that
+organization's installation narrowed to the binding's `headless_scopes`. Which
+organizations it may name is the envelope's (a pinned principal names its own
+tenant and no other; an unpinned one declaring `cross_tenant` names one per
+mint), and each is then held to its own consent — so the bound is per tenant,
+not per deployment. That is what a consumer admitting a publication for a tenant
+reads the publisher's tenant from.
+`PlatformAdminService/ResolveModuleTenantIdentity` and
+`/admin/platform/module-identity` answer what one mint would assert, or why it
+would be refused, and issue nothing. The existing client selects one tenant
+through `Credentials.OrganizationID`; its operation-mint wiring is described in
+[WORK_CONTEXTS.md](./module/WORK_CONTEXTS.md#a-module-identity-minted-for-one-tenant).
 
 ## The host as an OAuth 2.1 authorization server
 
@@ -655,7 +671,8 @@ Every page lives under `frontend/code/src/app/admin/`:
 | `/admin/billing` | `OpenBillingPortal`, `ListInvoices` |
 | `/admin/platform/admins` | platform role grant/revoke |
 | `/admin/platform/organizations` | `ListAllOrganizations`, `GetOrganizationRoster`, `CreateOrganization` (with `owner_user_id`), `UpdateOrganization`, `AddMember`, `RemoveMember`, `DeleteOrganization` |
-| `/admin/platform/unattended-work` | `ListSources`, `GetSourceTriggerDeclaration`, `DelegateSourceTriggers`, `RevokeSourceDelegation`, `ReconcileSource` — the playground for whose authority work no person started runs under |
+| `/admin/unattended-work` | `ListSources`, `GetSourceTriggerDeclaration`, `DelegateSourceTriggers`, `RevokeSourceDelegation`, `ReconcileSource` — the playground for whose authority work no person started runs under |
+| `/admin/platform/module-identity` | `ResolveModuleTenantIdentity` — what a module's capability for ONE tenant would carry, or why it would be refused. It issues no capability |
 
 Client-side gating uses `<RoleGate>` (`src/components/auth/role-gate.tsx`) — display-only; backend remains authoritative.
 

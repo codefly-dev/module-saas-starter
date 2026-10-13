@@ -219,3 +219,33 @@ codefly generate proto --proto ./proto --output . --local --template buf.gen.loc
 The package root and `./capabilities` are public.
 
 The default light muted foreground uses achromatic OKLCH lightness 0.54 so small captions meet WCAG AA 4.5:1 on background, card, muted and accent surfaces. The default dark pair also satisfies this check. Custom appearances own their chosen contrast; clients should use these semantic tokens rather than inventing local caption colors.
+
+## Version history
+
+There is no separate changelog: this package's released shape is small enough
+that the versions worth knowing about are the ones that changed what a
+composition may declare, and that record belongs beside the rules.
+
+- **2.5.0** — `isFrontendServiceRoutePrefix` and `isServiceableFrontendService`
+  are exported: the whole route-prefix rule, and what a host may proxy at all,
+  as predicates both the composition and the host's runtime read. A MINOR, not
+  a patch, because the public surface grew; `^2` consumers take it unchanged.
+  The composition refuses nothing it admitted in 2.4.4 — the host's own
+  re-check gained the parts of the rule it was missing, which is where a stale
+  or hand-edited allowlist used to walk past a prefix the composition would
+  never have validated.
+- **2.4.4** — `connectServices` became required and non-empty on a `connect`
+  requirement, and rejected on a `rest` one. **Released as a PATCH, and that
+  was a deliberate call rather than an oversight.** Semver would normally read
+  a validation that refuses a previously accepted declaration as breaking: a
+  `connect` requirement without the new field fails composition. Three facts
+  decided it the other way. The shape it tightens shipped one day earlier in
+  2.4.3 (the root Connect prefix), so the window in which a published
+  composition could have declared it was a day wide; the only would-be consumer
+  vendored 2.4.0, which has neither the field nor the prefix; and a major would
+  have forced every remote's peer range off `^2` — cascading a breaking minor
+  through the co-versioned `0.x` kit — for a capability nobody was consuming.
+  The alternative to the tightening was leaving a Connect alias reaching every
+  service its upstream origin served, as the viewer.
+- **2.4.3** — a `connect` requirement may declare the origin root (`/`) as its
+  route prefix, which is where the Connect protocol puts a procedure.

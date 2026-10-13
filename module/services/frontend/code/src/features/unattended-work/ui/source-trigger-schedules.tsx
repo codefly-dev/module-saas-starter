@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import {
 	mayKeepRetainedRows,
+	readHasNotAnswered,
 	readOutcome,
 	readOutcomeMessage,
 	staleReadNotice,
@@ -28,6 +29,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { sourceLabel } from "../model/source-label";
 import {
@@ -50,11 +52,21 @@ import {
  * "next occurrence" that would never happen, which is the most misleading
  * thing a schedule panel can show.
  *
- * "Next" is computed from the declared cron and is what the declaration SAYS.
- * Once a composed module fires the trigger the authoritative cursor is that
- * module's and this host will not hold one; while the stopgap runs, the cron
- * and the stored instant it sweeps on are derived from the same interval, so
- * the two agree without either reading the other.
+ * "Next occurrence" is computed from the declared cron and is what the
+ * declaration SAYS. Once a composed module fires the trigger the authoritative
+ * cursor is that module's and this host will not hold one.
+ *
+ * WHILE THE STOPGAP RUNS, THAT IS NOT WHEN THE PASS HAPPENS (issue #1121, N6).
+ * The two share a period and not a phase: the declared cron for a sub-hourly
+ * interval steps by the minute inside the hour, due on the quarter or half
+ * hour, while the sweep
+ * fires on the source's stored instant, which every pass moves to
+ * `now + interval` — an arbitrary offset inside the period. This panel used to
+ * claim the two agreed "without either reading the other", which was wrong in
+ * the most misleading direction available: a reader was shown 14:30 for a pass
+ * that would happen at 14:07. So both are shown, each labelled with who acts
+ * on it, and the host's own row disappears when an operator turns the stopgap
+ * off.
  *
  * A person's "Sync now" is listed in the SAME table as those occurrences, and
  * that is the panel's claim rather than a convenience: both admit
@@ -86,12 +98,16 @@ export function SourceTriggerSchedules({ orgId }: { orgId: string }) {
 			<CardHeader>
 				<CardTitle>Reconcile schedules</CardTitle>
 				<CardDescription>
-					Each connected source declares its reconcile schedule as a trigger an
-					executing module is meant to fire. Until a composed runtime consumes
-					that declaration, this host still fires the schedule itself, as a
-					stopgap. A person&apos;s &ldquo;Sync now&rdquo; admits the same
-					operation with an effect identity of its own, so it is listed beside
-					the occurrences rather than apart from them.
+					Each connected source declares its reconcile schedule as a trigger for
+					a module that executes declared work. Whether one consumes that
+					declaration is not something this host can confirm, so nothing below
+					claims it: what is shown is what this host declares, and what this
+					host itself does about it — the stopgap sweep, which fires on the
+					source&apos;s own stored instant rather than on the declared cron, so
+					those two rows are two different facts. A person&apos;s &ldquo;Sync
+					now&rdquo; admits the same operation with an effect identity of its
+					own, so it is listed beside the occurrences rather than apart from
+					them.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
@@ -152,7 +168,24 @@ function SourceTriggerRow({
 	passes: AdmittedReconcilePass[];
 }) {
 	const read = useSourceTriggerDeclaration(orgId, sourceId);
+	// THIS ROW'S OWN READ IS CLASSIFIED, not just its data (issue #1121). The
+	// source LIST is classified by the panel above; the per-source declaration
+	// was not, so a refused read, a read still in flight and a source whose
+	// trigger genuinely has no identity all rendered the same sentence — "None
+	// — occurrences would be refused", which is a statement about this source's
+	// authority that the host never made. A viewer denied the read was told the
+	// trigger has no identity rather than that they cannot see it.
+	const outcome = readOutcome(read.isError, read.error);
 	const declaration = read.data?.declaration;
+	const stale = declaration ? staleReadNotice(outcome, "this trigger") : null;
+	// AN ANSWER IS STILL COMING, asked once in the read seam rather than
+	// re-derived here. `isPending && fetchStatus !== "idle"` was closer than
+	// `isFetching` and still missed the state a refused refetch leaves — status
+	// `success`, data deleted, retry paused — which is how this row said "no
+	// trigger is declared" a third time (issue #1121, r24).
+	const unanswered = readHasNotAnswered(read);
+	const phase = useLoadingPhase(unanswered);
+	const waiting = unanswered || phase.indicator || phase.quiet;
 	const identity = useMemo(() => declaredIdentity(declaration), [declaration]);
 	// The operation is read off the declaration so the manual rows name the
 	// same string the scheduled ones do. A literal here would be this page's
@@ -163,22 +196,50 @@ function SourceTriggerRow({
 	// A source that declares no trigger still takes a manual pass: the
 	// declaration is refused for the interval it carries, not for the
 	// operation, and a person's pass does not go through a schedule at all. So
-	// the undeclarable reason replaces the SCHEDULE's rows, never the table.
+	// the undeclarable reason replaces the SCHEDULE's rows, never the table —
+	// and neither does a read that did not answer, which is why the manual rows
+	// below sit outside every declaration branch.
 	return (
 		<div className="rounded-lg border p-4" data-slot="source-trigger">
 			<div className="flex items-center justify-between gap-2">
 				<span className="font-medium">{label}</span>
-				{declaration?.undeclarableReason ? (
-					<Badge tone="neutral">Declares no trigger</Badge>
-				) : (
-					<Badge tone="success">{declaration?.schedule?.cron ?? "—"}</Badge>
-				)}
+				{declaration ? (
+					declaration.undeclarableReason ? (
+						<Badge tone="neutral">Declares no trigger</Badge>
+					) : (
+						<Badge tone="success">{declaration.schedule?.cron ?? "—"}</Badge>
+					)
+				) : null}
 			</div>
-			<dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-				<Fact label="Release" value={declaration?.release ?? "—"} mono />
-				<Fact label="Operation" value={operation} mono />
-				<Fact label="Declared identity" value={identity} />
-			</dl>
+			<DelayedLoading
+				active={unanswered}
+				label={`Reading the trigger ${label} declares`}
+			/>
+			{stale && (
+				<p role="status" className="mt-2 text-sm text-muted-foreground">
+					{stale}
+				</p>
+			)}
+			{/*
+			 * The declaration's facts need a declaration. Without one the read
+			 * either has not answered or was refused, and the message says
+			 * which — never a dash, which would read as "this host has none".
+			 */}
+			{declaration ? (
+				<dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+					<Fact label="Release" value={declaration.release || "—"} mono />
+					<Fact label="Operation" value={operation} mono />
+					<Fact label="Declared identity" value={identity} />
+				</dl>
+			) : waiting ? null : (
+				<p role="status" className="mt-2 text-sm text-muted-foreground">
+					{readOutcomeMessage(
+						outcome,
+						"this source's declared trigger",
+						"This source declares no trigger.",
+					)}
+				</p>
+			)}
 			{declaration?.undeclarableReason && (
 				<p className="mt-2 text-sm text-muted-foreground">
 					{declaration.undeclarableReason}
@@ -194,7 +255,22 @@ function SourceTriggerRow({
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{!declaration?.undeclarableReason && (
+					{/*
+					 * THREE SEPARATE CONDITIONS, because they answer three
+					 * questions and one flag answered them all wrongly
+					 * (issue #1121, the final-amendment review).
+					 *
+					 * The declaration's own rows need a declaration that
+					 * declares something. The host's sweep needs only a
+					 * declaration to have ARRIVED — it sweeps a source whose
+					 * interval no cron can express just the same. And neither
+					 * may render before the read lands: `!declaration?.x` is
+					 * true when `declaration` is undefined, so the old guard
+					 * rendered the whole block over a read that had failed,
+					 * reporting the sweep as "off" about a host nothing had
+					 * been established for.
+					 */}
+					{declaration && !declaration.undeclarableReason && (
 						<>
 							<TableRow data-slot="scheduled-occurrence">
 								<TableCell className="text-sm">
@@ -210,7 +286,7 @@ function SourceTriggerRow({
 							</TableRow>
 							<TableRow data-slot="scheduled-occurrence">
 								<TableCell className="text-sm">
-									Scheduled · next occurrence
+									Declared · next occurrence
 								</TableCell>
 								<TableCell className="text-sm text-muted-foreground">
 									{MINTED_BY_THE_FIRING_MODULE}
@@ -221,6 +297,46 @@ function SourceTriggerRow({
 								<TableCell className="text-sm">—</TableCell>
 							</TableRow>
 						</>
+					)}
+					{/*
+					 * What this host will actually do, for ANY source whose
+					 * declaration has arrived — including one that declares no
+					 * trigger, which the sweep reconciles on its stored instant
+					 * every interval. Hiding it there told an operator this host
+					 * does nothing for a source it refreshes on a timer.
+					 *
+					 * The instant is a different one from the declared
+					 * occurrence above, on purpose: see the panel's note.
+					 */}
+					{declaration && (
+						<TableRow data-slot="host-sweep">
+							<TableCell className="text-sm">
+								{/*
+								 * Three states, because the facts supplied are three
+								 * (issue #1121). Enabled WITH an instant is a pass
+								 * due. Enabled with none is a source the sweep will
+								 * not reach — a parked source, whose stored instant
+								 * the park path cleared — and "next pass —" read as a
+								 * pass whose time was unknown. Disabled is neither.
+								 */}
+								{!declaration.hostSweepEnabled
+									? "This host’s stopgap sweep · off"
+									: declaration.hostSweepDueAt
+										? "This host’s stopgap sweep · next pass"
+										: "This host’s stopgap sweep · on, nothing due for this source"}
+							</TableCell>
+							<TableCell className="text-sm text-muted-foreground">
+								{!declaration.hostSweepEnabled
+									? SWEEP_OFF_FIRES_NOTHING_HERE
+									: declaration.hostSweepDueAt
+										? NO_EFFECT_IDENTITY
+										: SWEEP_ON_NOTHING_DUE}
+							</TableCell>
+							<TableCell className="text-sm" data-slot="host-sweep-due">
+								{instant(declaration.hostSweepDueAt)}
+							</TableCell>
+							<TableCell className="text-sm">—</TableCell>
+						</TableRow>
 					)}
 					{passes.map((pass) => (
 						<TableRow key={pass.effectId} data-slot="manual-pass">
@@ -266,13 +382,38 @@ const RECONCILE_OPERATION =
  * minted by the module that fires the trigger, so this host never sees one and
  * has nothing to print. A dash would read as "it has none", which would make
  * the admission look unlike the manual pass beside it.
- *
- * The stopgap sweep is a third case and is deliberately claimed as neither: it
- * enqueues under a key derived from the schedule instant and admits no
- * operation at all, so it has no effect identity to show and appears here only
- * as a "last occurrence" moving.
  */
 const MINTED_BY_THE_FIRING_MODULE = "Minted by the firing module";
+
+/**
+ * The stopgap sweep is a third case and claims neither: it enqueues under a key
+ * derived from the schedule instant and admits no operation at all, so it has
+ * no effect identity, and its pass shows up in "last occurrence" rather than as
+ * an admission of its own.
+ */
+const NO_EFFECT_IDENTITY = "None — the sweep admits no operation";
+
+/**
+ * What a switched-off sweep means, and the one thing it does not mean.
+ *
+ * It said "An executing module fires the declaration", which asserts that
+ * something else does — and nothing this host holds verifies that (issue
+ * #1121, F1). The switch says only that THIS host stopped sweeping, so a
+ * deployment that turned it off before a module consumed the declaration read
+ * as covered while nothing fired at all. The honest statement is the negative
+ * one plus the gap.
+ */
+/**
+ * The sweep is running and this source has no instant in it. Said rather than
+ * shown as a missing time: the stored instant is what the park and restore
+ * paths clear, so its absence is the source being off the schedule — a fact,
+ * not a gap in what the host answered.
+ */
+const SWEEP_ON_NOTHING_DUE =
+	"None — this source is not on the sweep's schedule";
+
+const SWEEP_OFF_FIRES_NOTHING_HERE =
+	"This host does not fire it — whether an executing module does is unverified here";
 
 /**
  * One labelled fact. Exported because the playground renders the same
@@ -326,20 +467,30 @@ function useAdmittedPasses(): AdmittedReconcilePass[] {
  * state an installing module refuses rather than running the work as itself,
  * so it is said plainly instead of being left blank.
  *
- * The reference arm does NOT name which module's delegation it is (issue
- * #1112, m5). The reference value is the source id, so every delegation on one
- * source reads back the same and the host resolves whichever module holds an
- * active one at mint. Naming one here would be this page's own guess: an
- * operator whose executing module holds no delegation would read that a
- * reference is bound to it when another module's is. The references table
- * names each module, which is where that question is answerable.
+ * The arm's own value cannot say whose delegation it is — it is the source id,
+ * so every delegation on one source reads back the same — so the declaration
+ * reports the holder beside it and this names that module.
+ *
+ * IT DOES NOT CLAIM THE EXECUTOR HOLDS IT (issue #1121, F1). The host sets the
+ * arm for a self-addressed delegation, which is the one shape a source-id
+ * reference can serve, but nothing it holds declares WHICH module executes the
+ * release: those bindings are generic and a deployment may have several. So a
+ * source whose only self-addressed delegation belongs to module A reads as a
+ * candidate under A's name, and if the composed executor is B — holding none —
+ * B's mint is refused and this page must not have said otherwise. Saying "the
+ * executing module holds it" was that claim, and it is withdrawn.
  */
 export function declaredIdentity(declaration?: {
 	identity?: { source: string; binding: string };
+	identityHolder?: string;
 }): string {
 	const identity = declaration?.identity;
-	if (identity?.source)
-		return "A delegation reference — whichever module holds an active one";
+	if (identity?.source) {
+		const holder = declaration?.identityHolder;
+		return holder
+			? `A delegation reference held by ${holder} — whether it executes this release is unverified`
+			: "A delegation reference — its holder was not reported";
+	}
 	if (identity?.binding) return "An installation binding";
 	return "None — occurrences would be refused";
 }

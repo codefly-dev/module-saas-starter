@@ -277,6 +277,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/ListPlatformCatalogue":                   "List every composed module and solution with its declared, running and installed state.",
 	"PlatformAdminService/GetModuleEnvelope":                       "Read the current module envelope, the authority ceiling every module principal is derived inside.",
 	"PlatformAdminService/PutModuleEnvelope":                       "Write the next revision of the module envelope; it takes effect at the next check.",
+	"PlatformAdminService/ResolveModuleTenantIdentity":             "Read what a per-tenant module operation context would assert for one module, binding and organization, or why it would be refused.",
 	"PlatformAdminService/StopImpersonation":                       "End the caller's own impersonation session.",
 	"PlatformAdminService/SuspendUser":                             "Suspend a user account.",
 	"PlatformAdminService/UnsuspendUser":                           "Restore a suspended user.",

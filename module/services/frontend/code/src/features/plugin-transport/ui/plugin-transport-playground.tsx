@@ -83,6 +83,12 @@ type Answer =
  * because the custom-verb rows are writes. Anything but a read is therefore
  * armed by the first press, naming the plugin and alias it will write to, and
  * sent only by the second; editing the plugin name retracts it.
+ *
+ * EVERY non-read is armed, including the rows the Carried column shows as
+ * refused. That column answers for the demo declaration above, and the request
+ * goes to the plugin the operator named: an alias the demo declares `connect`
+ * may be `rest` there, so a row this page reads as refused is one that backend
+ * carries — and it used to leave the browser on the first press.
  */
 export function PluginTransportPlayground() {
 	const runtime = usePluginRuntime();
@@ -210,8 +216,10 @@ export function PluginTransportPlayground() {
 						literal. A colon anywhere else, a traversal, a non-procedure path on
 						a Connect alias, or a procedure of a service the requirement never
 						declared is refused in the browser. Anything but a read asks for
-						confirmation first: the plugin above is editable, so a press could
-						write to a backend your composition really installed.
+						confirmation first — including a row below shown as refused, because
+						&ldquo;carried&rdquo; is read from the demo declaration while the
+						request goes to the plugin named above, whose own requirement for
+						that alias may carry it.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -240,7 +248,9 @@ export function PluginTransportPlayground() {
 											<Badge
 												tone={transportCarries(route) ? "success" : "danger"}
 											>
-												{transportCarries(route) ? "carried" : "refused"}
+												{transportCarries(route)
+													? "carried"
+													: "refused by the demo"}
 											</Badge>
 										</TableCell>
 										<TableCell className="max-w-96 text-xs">

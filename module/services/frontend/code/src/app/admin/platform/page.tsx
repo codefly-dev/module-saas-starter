@@ -68,10 +68,23 @@ const sections = [
 		icon: Workflow,
 	},
 	{
+		// Under /admin/, not /admin/platform/: every RPC behind it is org-scoped
+		// and ORG_ADMIN, so an organization administrator reaches it from their
+		// own sidebar (issue #1121). It is listed here too because a platform
+		// operator looking at the composition's unattended work starts on this
+		// page, and a tile naming the page they want is cheaper than knowing
+		// the route.
 		title: "Unattended Work",
 		description:
 			"Bind the identity work no person started runs under, and read the trigger each source declares.",
-		href: "/admin/platform/unattended-work",
+		href: "/admin/unattended-work",
+		icon: KeyRound,
+	},
+	{
+		title: "Module Identity",
+		description:
+			"Resolve what a module's capability for one tenant would carry, and why it would be refused.",
+		href: "/admin/platform/module-identity",
 		icon: KeyRound,
 	},
 	{

@@ -143,6 +143,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/platform/jobs":                    {},
 	"GET /v1/platform/jobs/operations":         {},
 	"GET /v1/platform/module-envelope":         {},
+	"GET /v1/platform/module-tenant-identity":  {},
 	"GET /v1/platform/sessions":                {},
 	"GET /v1/platform/users":                   {},
 	"GET /v1/platform/waitlist":                {},

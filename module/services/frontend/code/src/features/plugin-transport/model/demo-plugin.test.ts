@@ -46,18 +46,28 @@ describe("the transport playground's demo plugin", () => {
 		expect(outside && transportCarries(outside)).toBe(false);
 	});
 
-	it("confirms every mutating route it would actually send", () => {
-		// The page's plugin name is editable, so a press on a carried non-read is
-		// a real write to whatever backend the operator named. Each one is armed
-		// first; a route the transport will not carry needs no confirmation
-		// because nothing leaves the browser.
+	it("confirms every non-GET route, carried or not", () => {
+		// The page's plugin name is editable, so a press on a non-read is a real
+		// write to whatever backend the operator named — and `carried` answers
+		// for the DEMO declaration, not for that plugin's installed requirement
+		// (issue #1121, N3). A row the demo reads as refused is carried the
+		// moment the named plugin declares that alias differently, and it left
+		// the browser unconfirmed. So the arming gate reads the method alone.
 		for (const route of TRANSPORT_DEMO_ROUTES) {
-			expect(transportMutates(route), route.path).toBe(
-				route.method !== "GET" && route.carried,
-			);
+			expect(transportMutates(route), route.path).toBe(route.method !== "GET");
 		}
+		// Non-vacuous in both directions: the table carries reads and writes,
+		// and at least one write the demo itself reads as refused.
 		expect(
 			TRANSPORT_DEMO_ROUTES.filter(transportMutates).length,
+		).toBeGreaterThan(0);
+		expect(
+			TRANSPORT_DEMO_ROUTES.filter((route) => !transportMutates(route)).length,
+		).toBeGreaterThan(0);
+		expect(
+			TRANSPORT_DEMO_ROUTES.filter(
+				(route) => !route.carried && transportMutates(route),
+			).length,
 		).toBeGreaterThan(0);
 	});
 

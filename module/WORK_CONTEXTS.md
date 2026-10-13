@@ -482,7 +482,8 @@ The host mints a child Work Context with:
 - owner = the module's own service principal (kind `service`), acting directly:
   no actor hop, as core models an owner acting, with the seal naming its
   installation and the build its pod runs;
-- tenant = the tenant the module envelope's grant declares for that principal;
+- tenant = **the organization the capability acts FOR**, which the caller names
+  and the envelope decides (see below);
 - a 60-second lifetime and the idempotent replay policy;
 - an authorization revision that is a digest of the module's whole derived
   registry entry (`business.ModuleOperationContextRevision`, never zero).
@@ -531,6 +532,77 @@ The rules are fail-closed on purpose:
 A composed module reaches it through the gateway's `POST
 /modules/_operation-context` ([services/auth-gateway/AGENTS.md](./services/auth-gateway/AGENTS.md)),
 which brokers to accounts exactly as `/modules/_work-context` does.
+
+### A module identity minted for ONE tenant
+
+This mint **is** the per-tenant module identity, and it is worth naming rather
+than leaving as a parameter nobody documents (issue #1121). `organization_id` on
+the request is the organization the capability acts for: its tenant is that
+organization, so a module can present itself as *acting for a tenant* instead of
+as itself. That is what a consumer admitting a publication for a tenant needs
+from a publisher with nobody signed in — it takes the tenant from the verified
+capability, where this host has already decided the principal may speak for it,
+never from a request field it would have to trust.
+
+**Which organizations may be named is the envelope's, never the caller's.**
+`moduleMintOrganization` decides it, identically for the identity mint and this
+one:
+
+| The envelope declares | It may mint for |
+| --- | --- |
+| `tenant: <org>` | that organization only; another is `PermissionDenied`. `cross_tenant` beside a pin changes nothing |
+| no tenant, `cross_tenant: true` | one organization per mint, named on the request |
+| no tenant, no `cross_tenant` | nothing: naming an organization is not authority over it |
+
+**And every named organization is then held to its own consent.** The mint
+re-reads the binding *after* `authorizeModuleCapabilityFromSnapshot` intersects
+that organization's installation scope, so what a per-tenant capability carries
+is that tenant's consent and not the deployment's: an organization that
+consented to fewer headless scopes gets fewer, and one that consented to none
+leaves the binding with no headless scopes and is refused. The bound is
+therefore per tenant, which a single deployment-wide identity could not be.
+Proved by `TestSharedInstallationMintSelectsOnlyConsentingOrganization`, which
+mints for two organizations and compares what each capability carries.
+
+**Reading it back, and the playground.**
+`PlatformAdminService/ResolveModuleTenantIdentity` answers what one mint would
+assert for a module, a binding and an organization — the principal, the tenant,
+the audience, the scopes, the lifetime, the revision, and whether the principal
+is shared — or the refusal, in one of four forms, because what an operator does
+about each is different: declare the principal, widen the envelope's tenancy,
+install the module there, or consent to the binding's headless scopes there.
+Beside it it answers the trail of capabilities actually issued, which is the
+only record of one. `/admin/platform/module-identity` drives it.
+
+**It issues no capability, and that is the shape rather than a limitation.** The
+mint authenticates with the module pod's projected ServiceAccount token held
+against the build its authority document approves; a browser has none, and a
+surface that answered an operator with a module's capability would be a second
+spelling of that module's identity. So the read resolves the decision from the
+same declared facts and stops before the signature.
+
+**Selecting a tenant through the published client.**
+`saas-sdk-go/moduleauthority` already exposes `Credentials.OrganizationID`
+(including v0.1.0). Construct a separate client for each organization: both
+`ModuleWorkContext` and `MintModuleOperationContext` send that selector. For an
+outbound operation use `MintModuleOperationContext` with the installed binding;
+`ModuleWorkContext` addresses the host's capability broker and is not authority
+to call a different audience. The operation result names its tenant and
+principal; a publisher must hold that tenant to its committed change and use
+that principal as its source. This is consumer wiring, not a missing mint.
+
+**What this repository does not exercise.** `qualification/module-authority`
+still pins `v0.0.3-0.20261011073356-ac003d53e6b1`, a pre-0.1.0 pseudo-version
+whose mints take no organization at all — so the per-tenant mint is proved
+against this host's own seam and not through the published client. Raising that
+pin, with a qualification case that mints for two organizations through it, is
+the gap that remains here.
+
+The operator page and its issued-capability trail distinguish a read not yet
+requested, loading, a failed read and a successful empty result. A forbidden
+read clears retained identity snapshots, so later refresh failures cannot
+redisplay authority the viewer was refused. Transient failures retain a prior
+successful answer with a stale-data notice.
 
 ## Operation contexts from a source delegation
 
@@ -764,6 +836,26 @@ observe — hence `TestTriggerDeclarationMatchesTheContractFieldNames`, which
 pins the document's names *and values* and records the other column beside
 them.
 
+**What the host does about a schedule is reported separately from what the
+schedule says, for every source.** The stopgap sweep reconciles an active source
+whose stored instant has elapsed, whether or not that source declares a trigger
+— an interval no five-field cron can express is undeclarable and still swept —
+so the declaration read carries `host_sweep_enabled` and `host_sweep_due_at`
+beside the cron for the undeclarable case as well. And a sweep that is switched
+off says only that this host stopped: whether a module consumes the declaration
+is not something this host verifies, so neither the read nor the operator view
+asserts it.
+
+**A declared reference is a candidate, not a readiness claim** (#1121, F1). The
+host sets the reference arm for a self-addressed delegation — the only shape a
+source-id reference can serve — and reports whose delegation it is
+(`identity_holder`). It does **not** establish that the module which executes
+this release holds one: nothing the host has declares who that is, those
+bindings are generic, and a deployment may have several. A composed executor
+with no delegation on the source is refused at the mint
+(`ErrSourceDelegationMissing`), so the read names the holder and leaves executor
+readiness unverified rather than calling the source bound.
+
 **Exactly one identity, and the two are not alternatives of equal standing.**
 
 - `source` — **the grant reference, and the contract.** It names a
@@ -849,7 +941,7 @@ against them. The children are read from `saas.datasource.delegation.used`,
 because that trail is the only record of one — a capability lives about a minute
 and nothing caches it — so a revoked reference shows up as the next occurrence
 having no child at all. The playground that drives the whole walk is
-`/admin/platform/unattended-work`.
+`/admin/unattended-work`.
 
 **What the reconcile trigger's occurrences admit, and the scope that binds
 them.** `DatasourceService/ReconcileSource` and `LookupReconcileSource` are

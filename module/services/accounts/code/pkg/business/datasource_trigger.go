@@ -169,8 +169,45 @@ type SourceTriggerDeclaration struct {
 	// source, whatever admitted it. NextOccurrenceAt is the next instant the
 	// declared cron comes due, computed from the declaration — never a stored
 	// cursor, because the cursor belongs to the module that fires the trigger.
-	LastOccurrenceAt   *time.Time
-	NextOccurrenceAt   *time.Time
+	LastOccurrenceAt *time.Time
+	NextOccurrenceAt *time.Time
+	// HostSweepEnabled and HostSweepDueAt say what THIS HOST will do about the
+	// schedule, which is not the same question as what the declaration says
+	// (issue #1121, N6).
+	//
+	// The two share a period and NOT a phase, and reporting only the cron's
+	// instant said otherwise. The declared cron for a sub-hourly interval is
+	// `*/M * * * *`, which comes due on the quarter- or half-hour; the stopgap
+	// sweep fires on the STORED instant, which every pass and every bump moves
+	// to `now + interval` — an arbitrary offset inside the period, set by
+	// whenever the source was last connected or reconciled. So a reader shown
+	// "next occurrence 14:30" was reading the declaration's statement while the
+	// pass that will actually happen was at 14:07.
+	//
+	// Keeping the cron's phase and the stored instant apart is deliberate: the
+	// cron must not be aligned to the stored instant (the declaration is
+	// derived from the interval and nothing else), and the stored instant must
+	// not be aligned to the cron (`*/M` has no per-source spread, so every
+	// source of a provider would come due in the same second — a thundering
+	// herd on one provider, which is exactly what the sweep's natural
+	// scattering avoids). They are two facts, so they are reported as two.
+	//
+	// HostSweepDueAt is unset when the sweep is off, or when the source is not
+	// on its schedule: then there is no pass this host will take.
+	//
+	// STOPGAP (issue #1112): both go with RunDatasourceReconcile.
+	HostSweepEnabled bool
+	HostSweepDueAt   *time.Time
+	// IdentityHolder is the module whose delegation the reference arm resolved
+	// to when this declaration was built, and it is reported because the arm
+	// itself cannot carry it: the reference value is the source id.
+	//
+	// It is NOT the executing module (issue #1121, F1). Nothing declares who
+	// executes declared work, so this says "module A's self-addressed
+	// delegation is what a reference on this source would resolve to", and
+	// whether A is the module that installs this release is unverified here.
+	// Empty when the arm names no identity.
+	IdentityHolder     string
 	UndeclarableReason string
 }
 
@@ -200,6 +237,33 @@ type TriggerDelegationReference struct {
 	CreatedAt     time.Time
 	RevokedAt     *time.Time
 	RevokedReason string
+}
+
+// candidateForADeclaredExecutor reports whether a declared trigger's reference
+// arm MAY name this delegation: it is live, it has a reference value, its
+// binding still confers something, and the module that holds it is the audience
+// of its own binding — the only shape a source-id reference can serve, because
+// a mint by source id resolves the delegation of the CALLING module and the
+// capability is addressed to the binding's audience.
+//
+// WHAT IT DOES NOT ESTABLISH, and the name says so on purpose (issue #1121,
+// F1): that the module holding it is the module which will execute this
+// release. Nothing in the envelope or the derived registry declares who
+// executes declared work — self-addressed bindings are generic, and a
+// deployment may have several — so "module A holds a self-addressed delegation
+// on source S" does not imply "the composed executor B can mint for S". B's
+// mint resolves ActiveSourceDelegation(S, B) and is correctly refused with
+// ErrSourceDelegationMissing; what would have been wrong is this host telling
+// an operator that S was ready.
+//
+// So the declaration names the candidate and the read reports WHICH module
+// holds it (SourceTriggerDeclaration.IdentityHolder), and neither claims
+// executor readiness. Resolving it properly needs the executing principal to be
+// named by a contract that does not exist yet; hard-coding a sibling module's
+// prefix here is not that contract.
+func (r TriggerDelegationReference) candidateForADeclaredExecutor() bool {
+	return r.Active && r.Reference != "" && len(r.Scopes) > 0 &&
+		r.Audience != "" && r.Audience == r.Module
 }
 
 // TriggerChildContext is one child Work Context this host minted against a
@@ -352,10 +416,36 @@ func datasourceTriggerInput(orgID, sourceID string) []byte {
 // stated as planned in MODULE.md and WORK_CONTEXTS.md rather than quietly
 // shortened to fit.
 //
+// ONLY A SELF-ADDRESSED DELEGATION IS NAMED, AND IT IS A CANDIDATE (issue
+// #1121, m5 and F1). It used to take the first active reference from any
+// module, which named delegations no trigger could ever use: a mint by source
+// id resolves the active delegation OF THE CALLING MODULE
+// (ActiveSourceDelegation by source and prefix) and the capability is addressed
+// to the binding's declared audience, which the module admitting it must itself
+// accept. Both are true of exactly one shape — a delegation whose binding names
+// its own module as the audience, the self-admitting binding
+// selfAdmittingBinding exists to allow. A delegation to module A addressed to
+// audience B is reachable only through the delegation-id exchange, which a
+// source-id reference cannot name.
+//
+// THAT IS A SHAPE, NOT AN EXECUTOR. Nothing this host holds declares which
+// module executes declared work — self-addressed bindings are generic and a
+// deployment may have several — so a source whose only such delegation belongs
+// to module A is a candidate under A's name, and if the composed executor is B,
+// holding none, B's mint is refused with ErrSourceDelegationMissing. The
+// declaration therefore reports WHOSE delegation it resolved to
+// (SourceTriggerDeclaration.IdentityHolder) and claims nothing about readiness;
+// see candidateForADeclaredExecutor, which carries the whole argument.
+//
+// An active delegation with no resolvable scopes is not a candidate either: the
+// module no longer declares the binding it was recorded against, so the next
+// mint revokes it as binding_changed.
+//
 // THE REFERENCE IS THE SOURCE ID, AND REVOCATION IS THEREFORE NOT DURABLE
 // (issue #1112, M3). Every delegation on one source reads back under the same
-// reference value, so this loop names whichever module holds an active one;
-// and because a mint resolves the active delegation from the source afresh, a
+// reference value, so the resolution below cannot distinguish two delegations
+// of one source by reference value; and because a mint resolves the active
+// delegation from the source afresh, a
 // reconnect that records a new delegation re-arms an installed trigger with no
 // explicit re-delegation. The durable shape is an opaque, delegation-level
 // reference, which this host's own mint already accepts (SourceDelegationRef's
@@ -365,15 +455,26 @@ func datasourceTriggerInput(orgID, sourceID string) []byte {
 // from what it sent, so a delegation id in this field is rejected by the
 // caller, not by this host. Named in WORK_CONTEXTS.md § Triggers as that
 // facade's gap.
-func DeclareSourceTrigger(source *DatasourceSource, references []TriggerDelegationReference, lastOccurrence *time.Time) SourceTriggerDeclaration {
+func DeclareSourceTrigger(
+	source *DatasourceSource, references []TriggerDelegationReference,
+	lastOccurrence *time.Time, hostSweep bool,
+) SourceTriggerDeclaration {
 	declaration := SourceTriggerDeclaration{
 		Release:          DatasourceReconcileRelease,
 		Operation:        DatasourceReconcileOperation,
 		LastOccurrenceAt: lastOccurrence,
+		HostSweepEnabled: hostSweep,
 	}
 	if source == nil {
 		declaration.UndeclarableReason = TriggerUndeclarableNoSchedule
 		return declaration
+	}
+	// The instant the stopgap will sweep on, which is the stored one and not
+	// the cron's — see the field's note. A source held off its schedule has a
+	// cleared instant, so there is no pass to report.
+	if hostSweep && source.Status == DatasourceStatusActive && source.NextReconcileAt != nil {
+		due := source.NextReconcileAt.UTC()
+		declaration.HostSweepDueAt = &due
 	}
 	cron, reason := datasourceTriggerCron(source.ReconcileInterval, source.ID)
 	if reason != "" {
@@ -396,11 +497,15 @@ func DeclareSourceTrigger(source *DatasourceSource, references []TriggerDelegati
 		Deadline:  DatasourceTriggerDeadline,
 		Input:     datasourceTriggerInput(source.OrgID, source.ID),
 	}
-	// Whichever module holds an active delegation, because every delegation on
-	// one source carries the same reference value — see the M3 note above.
+	// A delegation a declared executor COULD use — the self-addressed one, for
+	// the reasons in candidateForADeclaredExecutor, which also says why this is
+	// not proof that the composed executor holds it. The holder travels with it
+	// so a reader is told whose delegation the reference resolves to today
+	// rather than being left to infer an executor.
 	for _, reference := range references {
-		if reference.Active && reference.Reference != "" {
+		if reference.candidateForADeclaredExecutor() {
 			declaration.Identity = DeclaredTriggerIdentity{Source: reference.Reference}
+			declaration.IdentityHolder = reference.Module
 			break
 		}
 	}
@@ -586,7 +691,8 @@ func (s *Service) GetSourceTriggerDeclaration(ctx context.Context, orgID, source
 	if err != nil {
 		return SourceTriggerDeclaration{}, nil, nil, err
 	}
-	return DeclareSourceTrigger(source, references, source.LastSyncedAt), references, children, nil
+	return DeclareSourceTrigger(source, references, source.LastSyncedAt, s.DatasourceReconcileSweepEnabled()),
+		references, children, nil
 }
 
 // DelegateSourceTriggers records the delegation a declared release's triggers

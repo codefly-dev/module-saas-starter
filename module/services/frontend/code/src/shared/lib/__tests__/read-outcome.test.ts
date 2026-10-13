@@ -2,6 +2,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { describe, expect, it } from "vitest";
 import {
 	mayKeepRetainedRows,
+	readHasNotAnswered,
 	readOutcome,
 	readOutcomeMessage,
 	staleReadNotice,
@@ -87,5 +88,82 @@ describe("what survives a failed refresh", () => {
 		// Nothing to caveat: the rows are gone, or they are current.
 		expect(staleReadNotice("forbidden", "this team's roles")).toBeNull();
 		expect(staleReadNotice("empty", "this team's roles")).toBeNull();
+	});
+});
+
+// THE QUESTION BEFORE THE OUTCOME (issue #1121). `readOutcome` classifies a
+// read that finished; this one says whether it has finished at all, and the
+// five states below are the ones that reached production as "finished, nothing
+// came back" — each turned by some card into an absence the host never
+// reported.
+describe("readHasNotAnswered", () => {
+	it("is true for a cold read on the wire", () => {
+		expect(
+			readHasNotAnswered({
+				data: undefined,
+				error: null,
+				fetchStatus: "fetching",
+			}),
+		).toBe(true);
+	});
+
+	it("is true for a cold read paused offline, where isFetching is false", () => {
+		expect(
+			readHasNotAnswered({
+				data: undefined,
+				error: null,
+				fetchStatus: "paused",
+			}),
+		).toBe(true);
+	});
+
+	// The state a refused refetch leaves: the refusal deleted the retained
+	// answer and the retry is paused, so the query reports status `success`
+	// with nothing in it and no error. `isPending` is false here.
+	it("is true once a refusal has deleted the answer and its retry is paused", () => {
+		expect(
+			readHasNotAnswered({
+				data: undefined,
+				error: null,
+				fetchStatus: "paused",
+			}),
+		).toBe(true);
+	});
+
+	it("is false with an answer in hand, refetching or not", () => {
+		expect(
+			readHasNotAnswered({
+				data: { any: true },
+				error: null,
+				fetchStatus: "fetching",
+			}),
+		).toBe(false);
+		expect(
+			readHasNotAnswered({
+				data: { any: true },
+				error: null,
+				fetchStatus: "idle",
+			}),
+		).toBe(false);
+	});
+
+	// A failure already answered stays on screen: a paused retry does not hide
+	// a refusal the reader has already been given.
+	it("is false once something has failed, even while a retry is paused", () => {
+		expect(
+			readHasNotAnswered({
+				data: undefined,
+				error: new Error("permission denied"),
+				fetchStatus: "paused",
+			}),
+		).toBe(false);
+	});
+
+	// A disabled query is idle: a read that was never issued is not in
+	// progress, which is what keeps a genuine "complete the selection" message.
+	it("is false for a disabled query, which is idle with nothing in it", () => {
+		expect(
+			readHasNotAnswered({ data: undefined, error: null, fetchStatus: "idle" }),
+		).toBe(false);
 	});
 });

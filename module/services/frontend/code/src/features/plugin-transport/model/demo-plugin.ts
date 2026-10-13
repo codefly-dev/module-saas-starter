@@ -172,6 +172,13 @@ export const TRANSPORT_DEMO_ROUTES: readonly TransportDemoRoute[] = [
  * Whether the transport carries one demo route, derived from the contract's own
  * predicates rather than from the row's `carried` flag — so the table and the
  * transport cannot disagree about a shape while both look right.
+ *
+ * It answers for THE DEMO DECLARATION, which is what the table is about, and
+ * that is not the same question as what the plugin the operator named carries:
+ * the runtime applies the INSTALLED requirement's rule. Nothing safety-bearing
+ * may read this (issue #1121, N3) — `transportMutates` arms every non-GET row
+ * precisely because this predicate cannot answer for a plugin it has never
+ * seen.
  */
 export function transportCarries(route: TransportDemoRoute): boolean {
 	const segments = route.path.split("/");
@@ -192,9 +199,19 @@ export function transportCarries(route: TransportDemoRoute): boolean {
  * It matters because the page's plugin name is the operator's to edit. Pointed
  * at a plugin their composition really installed, a press on one of these rows
  * is a real write to that backend under the operator's own credential, so the
- * page asks first. A route the transport will not carry needs no confirmation:
- * nothing leaves the browser.
+ * page asks first.
+ *
+ * EVERY NON-GET ROW IS CONFIRMED, including the ones the table shows as
+ * refused (issue #1121, N3). It used to skip confirmation for a row
+ * `transportCarries` reads as refused, and that predicate answers from the DEMO
+ * DECLARATION — while the request is sent against the plugin the operator
+ * named, whose requirement for the same alias may be a different protocol with
+ * a different declared service list. So `procedures/records`, which the demo
+ * reads as a REST path on a Connect alias, is carried the moment the named
+ * plugin declares that alias `rest` — and it left the browser as a POST on the
+ * first press. A refusal the browser will make costs one extra press; a write
+ * nobody confirmed cannot be taken back.
  */
 export function transportMutates(route: TransportDemoRoute): boolean {
-	return route.method !== "GET" && transportCarries(route);
+	return route.method !== "GET";
 }

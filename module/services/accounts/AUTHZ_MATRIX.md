@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **268 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **269 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -208,6 +208,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PlatformAdminService/OverrideEntitlement` | unary | `POST /v1/platform/organizations/{org_id}/entitlements` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=ANY; impersonation=FORBIDDEN | — | — | SUCCESS: saas.entitlement.override | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Override one entitlement limit for a single organization. |
 | `/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope` | unary | `PUT /v1/platform/module-envelope` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN; mfa=RECENT_STEP_UP; impersonation=FORBIDDEN | — | — | SUCCESS: saas.platform.module_envelope_written | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Write the next revision of the module envelope; it takes effect at the next check. |
 | `/saas.accounts.v1.PlatformAdminService/ReplayJob` | unary | `POST /v1/platform/jobs/{source_job_id}:replay` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN; mfa=RECENT_STEP_UP | — | — | SUCCESS: saas.job.replayed | REQUIRED / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Idempotently copy dead-lettered work for another attempt. |
+| `/saas.accounts.v1.PlatformAdminService/ResolveModuleTenantIdentity` | unary | `GET /v1/platform/module-tenant-identity` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Read what a per-tenant module operation context would assert for one module, binding and organization, or why it would be refused. |
 | `/saas.accounts.v1.PlatformAdminService/RevokePlatformRole` | unary | `DELETE /v1/platform/admins/{user_id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN; mfa=IF_ENROLLED_RECENT_STEP_UP; impersonation=FORBIDDEN | — | — | SUCCESS: saas.platform.role_revoked | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Revoke a platform role. |
 | `/saas.accounts.v1.PlatformAdminService/RevokeSession` | unary | `DELETE /v1/platform/sessions/{session_id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT | — | — | SUCCESS: saas.session.revoked | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Revoke a single session. |
 | `/saas.accounts.v1.PlatformAdminService/SearchUsers` | unary | `GET /v1/platform/users` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Search across all users. |
@@ -284,5 +285,5 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `mfa`: 5
 - `org_admin`: 64
 - `org_member`: 56
-- `platform_admin`: 29
+- `platform_admin`: 30
 - `public`: 18

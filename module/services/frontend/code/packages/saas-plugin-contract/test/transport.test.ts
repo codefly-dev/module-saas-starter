@@ -7,6 +7,8 @@ import {
 	isConnectProcedurePath,
 	isConnectServiceName,
 	isFrontendServicePath,
+	isFrontendServiceRoutePrefix,
+	isServiceableFrontendService,
 	resolveConnectProcedure,
 } from "../src/transport.js";
 
@@ -215,5 +217,120 @@ describe("the path a declared binding lands on", () => {
 			]),
 		).toBe("/example.records.v1.RecordService/RecoverRecord");
 		expect(frontendServiceTargetPath("/", [])).toBe("/");
+	});
+});
+
+// THE WHOLE PREFIX RULE, IN ONE PLACE (issue #1121).
+//
+// The composition validated the full form at build time while the host's
+// runtime re-check compared only against the root, so a prefix the composition
+// would have refused passed the runtime one — and a REST entry declaring `""`
+// landed every relative path on the upstream origin. Both sides read this now,
+// so the table below is the rule both obey.
+describe("isFrontendServiceRoutePrefix", () => {
+	it.each([
+		["an absolute path of safe segments", "rest", "/v1/example", true],
+		["one segment", "rest", "/v1", true],
+		// The root is Connect-only: it says "where the Connect protocol puts a
+		// procedure", which is the origin. A REST alias declaring it has no
+		// prefix at all.
+		["the root on a connect requirement", "connect", "/", true],
+		["the root on a rest requirement", "rest", "/", false],
+		// The empty string is NOT the root, which is exactly why comparing
+		// against the root alone admitted it.
+		["the empty string", "rest", "", false],
+		["the empty string on connect", "connect", "", false],
+		["a relative prefix", "rest", "v1/example", false],
+		["a traversal", "rest", "/v1/../private", false],
+		["a dot segment", "rest", "/v1/./private", false],
+		["an empty segment", "rest", "/v1//private", false],
+		["a trailing slash", "rest", "/v1/example/", false],
+		["an encoded separator", "rest", "/v1/%2fprivate", false],
+		["a query", "rest", "/v1/example?all=1", false],
+		["a fragment", "rest", "/v1/example#x", false],
+	])("%s", (_name, protocol, prefix, admitted) => {
+		expect(
+			isFrontendServiceRoutePrefix(protocol as "connect" | "rest", prefix),
+		).toBe(admitted);
+	});
+
+	it("refuses anything that is not a string", () => {
+		for (const value of [undefined, null, 1, {}, ["/v1"]]) {
+			expect(isFrontendServiceRoutePrefix("rest", value)).toBe(false);
+			expect(isFrontendServiceRoutePrefix("connect", value)).toBe(false);
+		}
+	});
+});
+
+// What a host may proxy at all, independent of the path asked for.
+describe("isServiceableFrontendService", () => {
+	it("admits the two shapes a composition installs", () => {
+		expect(
+			isServiceableFrontendService({
+				protocol: "rest",
+				routePrefix: "/v1/example",
+			}),
+		).toBe(true);
+		expect(
+			isServiceableFrontendService({
+				protocol: "connect",
+				routePrefix: "/",
+				connectServices: ["example.records.v1.RecordService"],
+			}),
+		).toBe(true);
+		expect(
+			isServiceableFrontendService({
+				protocol: "connect",
+				routePrefix: "/v1/connect",
+				connectServices: ["example.records.v1.RecordService"],
+			}),
+		).toBe(true);
+	});
+
+	// The probe the review used: a REST entry whose prefix is the empty string
+	// proxies its whole upstream, because every relative path lands at the
+	// origin. `admin/secret` is a real path on a real backend.
+	it("refuses a rest entry with no prefix", () => {
+		expect(
+			isServiceableFrontendService({ protocol: "rest", routePrefix: "" }),
+		).toBe(false);
+		expect(frontendServiceTargetPath("", ["admin", "secret"])).toBe(
+			"/admin/secret",
+		);
+	});
+
+	// A Connect entry whose service list is not an array has a `length` and no
+	// `every`: a check that assumed an array threw out of the request handler
+	// as a 500 rather than refusing the alias.
+	it.each([
+		["a string", "example.records.v1.RecordService"],
+		["an object", { 0: "example.records.v1.RecordService", length: 1 }],
+		["a number", 1],
+		["null", null],
+		["absent", undefined],
+		["empty", []],
+		["an unusable name", ["not a service name"]],
+		["a non-string entry", [1]],
+	])("refuses a connect entry whose services are %s", (_name, services) => {
+		expect(
+			isServiceableFrontendService({
+				protocol: "connect",
+				routePrefix: "/",
+				connectServices: services as unknown as readonly string[],
+			}),
+		).toBe(false);
+	});
+
+	// On a REST alias the field is meaningless rather than disqualifying: the
+	// composition refuses it, and a projection carrying one is still bounded by
+	// its prefix.
+	it("ignores connect services on a rest entry", () => {
+		expect(
+			isServiceableFrontendService({
+				protocol: "rest",
+				routePrefix: "/v1/example",
+				connectServices: ["nonsense"] as unknown as readonly string[],
+			}),
+		).toBe(true);
 	});
 });

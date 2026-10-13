@@ -117,3 +117,66 @@ describe("server-only plugin service binding resolution", () => {
 		}
 	});
 });
+
+// THE GENERATED ALLOWLIST IS RE-VALIDATED AT LOAD (issue #1121).
+//
+// It is a build artifact, and this server reads it rather than the composition
+// that validated it — so a rule nothing re-checks here is one a stale or
+// hand-edited projection walks straight past. The entry is refused as
+// `unavailable` rather than `not_installed`, because the alias IS installed and
+// what cannot happen is this host serving it.
+describe("an entry the composition's own rules would have refused", () => {
+	function withEntry(
+		overrides: Partial<FrontendServiceAllowlist["entries"][number]>,
+	): FrontendServiceAllowlist {
+		return {
+			...allowlist,
+			entries: [{ ...allowlist.entries[0], ...overrides }],
+		};
+	}
+
+	it.each([
+		// `""` is not the root, which is why comparing against the root alone
+		// admitted it — and it proxies the whole upstream origin.
+		["no route prefix", { routePrefix: "" }],
+		["a relative route prefix", { routePrefix: "api/v1" }],
+		["a traversal in the prefix", { routePrefix: "/api/../private" }],
+		["an empty segment", { routePrefix: "/api//private" }],
+		["the origin root on a REST alias", { routePrefix: "/" }],
+		[
+			"a connect alias with no declared services",
+			{ protocol: "connect" as const, routePrefix: "/" },
+		],
+		[
+			"a connect alias whose service list is not a list",
+			{
+				protocol: "connect" as const,
+				routePrefix: "/",
+				connectServices:
+					"example.records.v1.RecordService" as unknown as readonly string[],
+			},
+		],
+	])("is unavailable: %s", (_label, overrides) => {
+		expect(
+			resolvePluginServiceFrom(
+				withEntry(overrides),
+				[endpoint()],
+				"example",
+				"api",
+			),
+		).toEqual({ ok: false, reason: "unavailable" });
+	});
+
+	it("survives an allowlist whose entries are not a list", () => {
+		// A hand-edited or truncated projection: `find` on a non-array throws,
+		// and a throw out of the resolver is a 500 where a 404 is the answer.
+		expect(
+			resolvePluginServiceFrom(
+				{ ...allowlist, entries: undefined as unknown as [] },
+				[endpoint()],
+				"example",
+				"api",
+			),
+		).toEqual({ ok: false, reason: "not_installed" });
+	});
+});

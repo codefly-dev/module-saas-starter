@@ -892,6 +892,42 @@ func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, 
 // source. That is the cost of a double fire, and it is why this is a stopgap
 // to delete and not a safety net to keep.
 
+// SetDatasourceReconcileSweep records whether THIS deployment fires the
+// reconcile schedule it declares (issue #1121, N7).
+//
+// It exists so the declaration's consumer and the stopgap can never both run.
+// While both exist they are two schedules over one source: they enqueue under
+// different idempotency keys, so nothing collapses them, and the per-source
+// FIFO key only makes the second serialise behind the first — survivable for
+// GitHub, a second full re-send for a pull provider. The moment a composition
+// installs a module that consumes the declaration it must turn this off, and
+// before this there was nothing to turn off but a redeploy of a patched host.
+//
+// Default ON, deliberately: that is what every deployment does today, and a
+// switch whose default silently stopped every scheduled reconcile would be the
+// outage #1090 already caused once.
+//
+// The sweep itself refuses, which is where the guard belongs: a switch read
+// only where the ticker is installed would leave every other caller of
+// RunDatasourceReconcile unguarded, and the declaration's own read would still
+// describe a sweep that is not running. The one-minute tick in work.go goes on
+// firing and its callback goes on being called; what it finds is a sweep that
+// reads nothing and enqueues nothing.
+//
+// STOPGAP (issue #1112): deleted with RunDatasourceReconcile, and listed in the
+// block above.
+func (s *Service) SetDatasourceReconcileSweep(enabled bool) {
+	s.datasourceReconcileSweepOff = !enabled
+}
+
+// DatasourceReconcileSweepEnabled reports that switch: whether this host still
+// fires the reconcile schedule it declares.
+//
+// STOPGAP (issue #1112).
+func (s *Service) DatasourceReconcileSweepEnabled() bool {
+	return !s.datasourceReconcileSweepOff
+}
+
 // RunDatasourceReconcile is the periodic sweep: it enqueues reconcile work for
 // every active source whose schedule has elapsed and reschedules it. A GitHub
 // source gets a conditional reconcile on the delivery queue — the job resolves
@@ -910,6 +946,12 @@ func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, 
 // deletes this.
 func (s *Service) RunDatasourceReconcile(ctx context.Context) (int, error) {
 	w := wool.Get(ctx).In("RunDatasourceReconcile")
+	// The operator turned the stopgap off, which means something else fires
+	// this schedule now. Nothing, not a leftover ticker and not another caller
+	// added later, may sweep beside it.
+	if !s.DatasourceReconcileSweepEnabled() {
+		return 0, nil
+	}
 	if s.datasourceJobs == nil {
 		return 0, w.NewError("datasource connector is not configured")
 	}

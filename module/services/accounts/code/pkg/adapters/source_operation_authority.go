@@ -84,6 +84,12 @@ func authenticateSourceOperationContext(ctx context.Context, headers http.Header
 	// requireCurrentAuthority above and borrows nobody's source.
 	if delegated && delegation != nil && delegation.SourceID != "" {
 		ctx = context.WithValue(ctx, sourceOperationDelegationKey{}, delegation.SourceID)
+		// And that nobody was present for this pass. The observation an
+		// operation emits records the delegating person as its actor, which is
+		// right — the authority is theirs — but says nothing about whether they
+		// asked for it; only this layer, which has just confirmed the
+		// delegation, can tell the two apart (issue #1121, m3).
+		ctx = business.WithUnattendedPass(ctx, delegation.ID)
 	}
 	return ctx, nil
 }

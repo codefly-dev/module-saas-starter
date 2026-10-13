@@ -26,6 +26,16 @@ function AccessDenied() {
  * asked for a platform super administrator and said it reached every tenant's
  * delegations, which was wrong in both directions: it hid an org admin's own
  * organization from them, and it described a reach no RPC behind it has.
+ *
+ * IT LIVES UNDER `/admin/`, NOT `/admin/platform/`, and that is the fix rather
+ * than a tidy-up (issue #1121, N5). The route catalog derives a page's access
+ * boundary from its path — everything under `admin/platform` is `super_admin`
+ * — so while this page sat there, the catalog said `super_admin` and the gate
+ * below said `admin`: two access declarations for one page, disagreeing, with
+ * nothing to reconcile them. Moving it makes the derivation agree by
+ * construction instead of by a special case in the generator, and it gives
+ * organization administrators a navigation entry they can actually reach
+ * (`admin-unattended-work` in frontend.bindings.codefly.yaml).
  */
 export default function Page() {
 	return (

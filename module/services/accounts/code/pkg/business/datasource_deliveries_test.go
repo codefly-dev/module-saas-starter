@@ -687,7 +687,7 @@ func TestSourceTriggerDeclaration_DeclaresOnlyASourceOnItsSchedule(t *testing.T)
 		t.Fatal(err)
 	}
 
-	declared := business.DeclareSourceTrigger(on, nil, nil)
+	declared := business.DeclareSourceTrigger(on, nil, nil, true)
 	if !declared.Declarable() {
 		t.Fatalf("a source on its schedule declares no trigger: %q", declared.UndeclarableReason)
 	}
@@ -699,7 +699,7 @@ func TestSourceTriggerDeclaration_DeclaresOnlyASourceOnItsSchedule(t *testing.T)
 		t.Fatalf("declared operation = %q", declared.Operation)
 	}
 
-	if cleared := business.DeclareSourceTrigger(off, nil, nil); cleared.Declarable() {
+	if cleared := business.DeclareSourceTrigger(off, nil, nil, true); cleared.Declarable() {
 		t.Fatalf("a source off its schedule declared a trigger: %+v", cleared.Schedule)
 	}
 }

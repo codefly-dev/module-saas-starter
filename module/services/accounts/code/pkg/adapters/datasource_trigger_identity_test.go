@@ -87,14 +87,51 @@ func TestTriggerOccurrenceMintsFromTheReferenceAndIsRefusedAfterRevocation(t *te
 	require.Len(t, audit.of(business.EventSourceDelegationUsed), 2, "a refused occurrence mints nothing and records no child")
 }
 
-// The installation-principal arm: a binding whose audience is the executing
-// module's own and which declares headless scopes mints a capability for an
-// occurrence with no person anywhere in it.
+// A DELEGATION ONE MODULE HOLDS IS NOT A CAPABILITY ANOTHER CAN MINT
+// (issue #1121, F1), at the real mint route.
 //
-// It is the first proof and not the contract, and the assertions say why: the
-// capability is owned and actored by the module's own principal, so there is
-// no delegation to revoke and no authority to outlive the token — the run is
-// bounded by the capability's own short lifetime.
+// This is the second half of the finding the declaration half corrects. The
+// counterexample: source S has a live delegation held by module A, and the
+// composed executor is module B. The declaration can only name S — the
+// reference value is the source id — so a host that called S "bound" would be
+// claiming readiness for B. It is not: a mint by source id resolves
+// ActiveSourceDelegation(S, caller) and B has none.
+//
+// Asserted here rather than reasoned about, because the whole correction rests
+// on the mint refusing B while admitting A.
+func TestAnotherModulesDelegationDoesNotMintForThisOne(t *testing.T) {
+	store, audit := installSourceDelegationService(t)
+
+	// A holds the delegation and mints from the source id.
+	held, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{SourceID: delegationSource})
+	require.NoError(t, err)
+	require.NotEmpty(t, held.GetToken())
+	require.Len(t, audit.of(business.EventSourceDelegationUsed), 1)
+
+	// B presents the same reference and is refused — as a decision, not an
+	// outage, so a module reading it does not retry it as transient. By source,
+	// "another module holds it" is indistinguishable from "nobody does", which
+	// is deliberate: B learns nothing about A's delegation.
+	_, err = mintSourceContext("reports", moduleToken(t, "reports"), business.SourceDelegationRef{SourceID: delegationSource})
+	requireRefusal(t, err, codes.FailedPrecondition, SourceDelegationMissingReason)
+	require.Len(t, audit.of(business.EventSourceDelegationUsed), 1,
+		"a refused mint issues nothing and records no child")
+	// The delegation A holds is untouched by B's attempt.
+	require.NotNil(t, store.delegations[delegationID])
+}
+
+// The headless mint a binding with its own audience and headless scopes
+// answers: a capability for work with no person anywhere in it.
+//
+// IT IS NOT THE INSTALLATION-BINDING ARM OF A DECLARED TRIGGER, and calling it
+// "the first proof" of that arm was a leftover (issue #1112 M4, corrected in
+// #1121). No declaration this host builds sets `Identity.Binding`, and this
+// trigger cannot use one: the mint lives 60 seconds against a 10-minute
+// declared deadline, and the capability is the module's own principal while
+// ReconcileSource requires an organization member. What this test proves is the
+// mint itself — the capability is owned and actored by the module's own
+// principal, so there is no delegation to revoke and no authority to outlive
+// the token, and the run is bounded by the capability's own short lifetime.
 func TestTriggerOccurrenceMintsFromTheInstallationBinding(t *testing.T) {
 	store, audit := installModuleOperationContextService(t, executionPrincipals)
 	installModuleWorkContextAuthority(t)

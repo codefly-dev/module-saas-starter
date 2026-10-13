@@ -87,3 +87,45 @@ export function staleReadNotice(
 		? `Couldn't refresh ${subject}, so this may be out of date.`
 		: null;
 }
+
+/**
+ * Whether a read has produced no answer yet — so nothing may be asserted about
+ * what it would have said.
+ *
+ * `readOutcome` classifies a read that FINISHED. This answers the question
+ * before it, and every surface that states an absence needs both: a card may
+ * only say "there is nothing here" once a read succeeded and said so.
+ *
+ * No single query flag carries it. `isFetching` means a request is on the wire,
+ * so it is false while a read is PAUSED offline. `isPending` means no data has
+ * ever arrived, so it is false in the state a refused refetch leaves behind: the
+ * refusal deletes the retained answer (see `mayKeepRetainedRows`), its retry
+ * pauses, and the query sits at status `success` with `data` undefined and
+ * `error` null — answered once, holding nothing, and still trying. Each of
+ * those read as "finished, nothing came back", and the surfaces above them
+ * turned it into "no trigger is declared", "no child has been minted", "no
+ * reference is bound: an occurrence would be refused".
+ *
+ * What is true of all of them is simpler than the states themselves: nothing is
+ * in hand, nothing has failed yet, and a fetch is not idle.
+ *
+ * The three parts each carry their weight:
+ * - `data === undefined` — with an answer in hand there is nothing to wait for;
+ *   a refetch over it is `staleReadNotice`'s business, not this one.
+ * - no `error` — a failure already answered must stay on screen. A paused retry
+ *   does not hide a refusal the reader has already been given.
+ * - `fetchStatus !== "idle"` — a DISABLED query is idle, and a read that was
+ *   never issued is not a read in progress. That is what keeps a genuine
+ *   "complete the selection above" attached to an incomplete selection.
+ */
+export function readHasNotAnswered(read: {
+	data?: unknown;
+	error?: unknown;
+	fetchStatus: "fetching" | "paused" | "idle";
+}): boolean {
+	return (
+		read.data === undefined &&
+		(read.error ?? null) === null &&
+		read.fetchStatus !== "idle"
+	);
+}

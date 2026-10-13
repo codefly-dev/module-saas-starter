@@ -1143,6 +1143,17 @@ func doWork(ctx context.Context) (Clean, error) {
 	perSourceWebhookMounted := strings.EqualFold(
 		strings.TrimSpace(workspaceEnv("github-app", "DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true")
 	service.SetDatasourceWebhookReceiverMounted(perSourceWebhookMounted)
+
+	// Whether this host still fires the reconcile schedule it DECLARES, which
+	// is a labelled stopgap (business/datasource_deliveries.go) and the one
+	// switch a composition turns off the moment a module consumes the
+	// declaration — the two must never both run (issue #1121, N7). A declared
+	// key of the application group rather than an ambient variable, and ON
+	// unless it says `false`: that is what every deployment does today, and a
+	// default that silently stopped every scheduled reconcile is the outage
+	// #1090 already caused once.
+	service.SetDatasourceReconcileSweep(!strings.EqualFold(
+		strings.TrimSpace(workspaceEnv("application", "DATASOURCE_RECONCILE_SWEEP_ENABLED")), "false"))
 	if perSourceWebhookMounted {
 		adapters.RegisterHTTPRoute(datasource.GitHubWebhookPath, datasource.NewHandler(
 			datasource.GitHubWebhookPath,
@@ -1232,6 +1243,13 @@ func doWork(ctx context.Context) (Clean, error) {
 		// occurrence of the declared trigger admits
 		// DatasourceService/ReconcileSource, which reaches exactly the engines
 		// this sweep reaches.
+		// Off when the operator says something else fires it. The switch is
+		// read once at startup and told to the service; the refusal lives in
+		// RunDatasourceReconcile (SetDatasourceReconcileSweep), so this
+		// callback still runs on every tick and finds a sweep that reads
+		// nothing. Guarding the sweep rather than the ticker is deliberate: a
+		// host that only dropped the tick would still sweep from any other
+		// caller.
 		sweepReconcile := func() {
 			if n, err := service.RunDatasourceReconcile(retentionCtx); err != nil {
 				rw.Warn("datasource reconcile sweep failed", wool.ErrField(err))

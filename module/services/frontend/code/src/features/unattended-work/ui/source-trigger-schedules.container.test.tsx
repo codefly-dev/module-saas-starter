@@ -1,4 +1,5 @@
 import { notifySourceReconcileAdmitted } from "@codefly-dev/saas-ui";
+import { onlineManager, QueryClient } from "@tanstack/react-query";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +44,12 @@ const declared = {
 	digest: "4f1c",
 	lastOccurrenceAt: "2026-10-12T09:00:00Z",
 	nextOccurrenceAt: "2026-10-12T09:30:00Z",
+	// The host still fires the schedule itself, and NOT on the declared cron's
+	// instant: the sweep reads the source's stored instant, which every pass
+	// moves to `now + interval`. The two share a period and not a phase, which
+	// is why the fixture's two instants differ by more than a label.
+	hostSweepEnabled: true,
+	hostSweepDueAt: "2026-10-12T09:07:00Z",
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -69,7 +76,7 @@ async function admissions(): Promise<HTMLElement> {
 		expect(found).not.toBeNull();
 		return found as HTMLElement;
 	});
-	await within(table).findByText(/Scheduled · next occurrence/);
+	await within(table).findByText(/Declared · next occurrence/);
 	return table;
 }
 
@@ -197,5 +204,1287 @@ describe("SourceTriggerSchedules", () => {
 				'[data-slot="scheduled-occurrence"]',
 			),
 		).toHaveLength(0);
+	});
+});
+
+// THE DECLARED OCCURRENCE AND THE PASS THAT WILL HAPPEN ARE TWO FACTS
+// (issue #1121, N6).
+//
+// The panel used to show the cron's instant alone and claim the stopgap agreed
+// with it. It does not: the cron comes due on the half hour while the sweep
+// fires on the stored instant, so a reader was shown 09:30 for a pass that
+// happens at 09:07. Both rows are here, and the host's row says what it is.
+describe("the host's own sweep", () => {
+	it("shows the instant it will sweep on, beside the declared occurrence", async () => {
+		serve({ declaration: declared, delegations: [], children: [] });
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		const table = await admissions();
+
+		const declaredRow = within(table).getByText(/Declared · next occurrence/);
+		const sweepRow = within(table).getByText(
+			/This host’s stopgap sweep · next pass/,
+		);
+		expect(declaredRow).toBeTruthy();
+		expect(sweepRow).toBeTruthy();
+		// The two instants are different, which is the whole finding. Compared
+		// as rendered rather than as ISO strings, because the cells are local
+		// time.
+		const declaredAt = new Date("2026-10-12T09:30:00Z").toLocaleString();
+		const sweepAt = new Date("2026-10-12T09:07:00Z").toLocaleString();
+		expect(declaredAt).not.toBe(sweepAt);
+		expect(
+			table.querySelector('[data-slot="next-occurrence"]')?.textContent,
+		).toBe(declaredAt);
+		expect(
+			table.querySelector('[data-slot="host-sweep-due"]')?.textContent,
+		).toBe(sweepAt);
+		// The sweep admits no operation, so it has no effect identity to show —
+		// said rather than left as a dash that would read as "it has none".
+		expect(
+			within(table).getByText(/None — the sweep admits no operation/),
+		).toBeTruthy();
+	});
+
+	it("says the host takes no pass when an operator turned the sweep off", async () => {
+		// The switch exists so the declaration's consumer and the stopgap can
+		// never both run. With it off there is no host pass at all, and showing
+		// an instant would be describing one.
+		serve({
+			declaration: {
+				...declared,
+				hostSweepEnabled: false,
+				hostSweepDueAt: undefined,
+			},
+			delegations: [],
+			children: [],
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		const table = await admissions();
+
+		expect(
+			within(table).getByText(/This host’s stopgap sweep · off/),
+		).toBeTruthy();
+		// NOT "an executing module fires the declaration", which asserted that
+		// something else does fire it — a readiness claim this host cannot make
+		// (issue #1121, F1). The switch says only that this host stopped.
+		expect(within(table).getByText(/This host does not fire it/)).toBeTruthy();
+		expect(
+			within(table).queryByText(/An executing module fires the declaration/),
+		).toBeNull();
+		expect(
+			table.querySelector('[data-slot="host-sweep-due"]')?.textContent,
+		).toBe("—");
+		// The declaration itself is unchanged by the switch: it is what the
+		// source declares, not what this host does about it.
+		expect(
+			table.querySelector('[data-slot="next-occurrence"]')?.textContent,
+		).toBe(new Date("2026-10-12T09:30:00Z").toLocaleString());
+	});
+});
+
+// TWO CLAIMS THE PANEL MADE THAT THIS HOST CANNOT BACK (issue #1121, the
+// final-amendment review).
+//
+// Both are about the host-sweep row, and both are render-side: the backend
+// already carries every fact either one needs.
+describe("what the panel says about this host's own sweep", () => {
+	// The sweep does not care whether the source DECLARES a trigger. Its due
+	// query selects active sources whose stored instant has elapsed, and
+	// `DeclareSourceTrigger` computes `hostSweepDueAt` before the cron check
+	// precisely so this case is reportable — `TestAnUndeclarableSourceStillReportsTheHostSweep`
+	// pins that in pkg/adapters. So a source whose interval no five-field cron
+	// can express is swept every interval while the panel showed "declares no
+	// trigger" and nothing else: the operator was told the host does nothing
+	// for a source it reconciles on a timer.
+	it("reports the sweep for a source that declares no trigger", async () => {
+		serve({
+			declaration: {
+				release: "saas_datasource_reconcile",
+				operation: "/saas.accounts.v1.DatasourceService/ReconcileSource",
+				undeclarableReason:
+					"the reconcile interval is not one a five-field cron expression can express",
+				hostSweepEnabled: true,
+				hostSweepDueAt: "2026-10-12T09:07:00Z",
+			},
+			delegations: [],
+			children: [],
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText(/not one a five-field cron expression can express/);
+		const table = await waitFor(() => {
+			const found = document.querySelector<HTMLElement>(
+				'[data-slot="admissions"]',
+			);
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+
+		await waitFor(() =>
+			expect(table.querySelector('[data-slot="host-sweep"]')).not.toBeNull(),
+		);
+		expect(
+			table.querySelector('[data-slot="host-sweep-due"]')?.textContent,
+		).toBe(new Date("2026-10-12T09:07:00Z").toLocaleString());
+		// And the DECLARATION's own rows stay withheld, which was the half the
+		// old conditional had right: without a schedule there is no declared
+		// occurrence to show.
+		expect(
+			table.querySelectorAll('[data-slot="scheduled-occurrence"]'),
+		).toHaveLength(0);
+	});
+
+	// With the sweep off, "an executing module fires the declaration" asserts
+	// that something else does fire it. Nothing this host holds verifies that
+	// (issue #1121, F1): the switch says only that THIS host stopped, so a
+	// deployment that turned it off before a runtime consumed the declaration
+	// read as covered while nothing fired at all.
+	it("does not claim an executing module fires it when the sweep is off", async () => {
+		serve({
+			declaration: {
+				...declared,
+				identityHolder: "module-a",
+				hostSweepEnabled: false,
+				hostSweepDueAt: undefined,
+			},
+			delegations: [],
+			children: [],
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		const table = await admissions();
+
+		const sweep = table.querySelector<HTMLElement>('[data-slot="host-sweep"]');
+		expect(sweep).not.toBeNull();
+		expect((sweep as HTMLElement).textContent).not.toMatch(
+			/An executing module fires the declaration/,
+		);
+		expect((sweep as HTMLElement).textContent).toMatch(/unverified/);
+		// The holder is reported in the declared-identity row, so the two facts
+		// are not conflated into one claim.
+		expect(screen.getByText(/held by module-a/)).toBeTruthy();
+	});
+
+	// A declaration that has not arrived — a read still in flight, or one that
+	// failed — must not render a sweep row at all: "off" would be an answer
+	// about this host that nothing established.
+	it("says nothing about the sweep before the declaration lands", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({}, { status: 500 }),
+			),
+		);
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("acme/handbook");
+
+		await waitFor(() =>
+			expect(document.querySelector('[data-slot="admissions"]')).not.toBeNull(),
+		);
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+		expect(
+			document.querySelector('[data-slot="scheduled-occurrence"]'),
+		).toBeNull();
+	});
+});
+
+// WHAT ONE SOURCE'S ROW SAYS WHEN THE DECLARATION READ DID NOT SUCCEED
+// (issue #1121, the final UI review).
+//
+// The list read is classified; the PER-SOURCE declaration read was not, and a
+// row that reads only `data` answers three different situations the same way.
+// All three probes drive the real hooks through the container harness.
+describe("a per-source declaration read that is refused, pending or stale", () => {
+	// Cold refusal: the host answered nothing, and the row said "None —
+	// occurrences would be refused", which is a definite statement about this
+	// source's identity. `declaredIdentity(undefined)` treated unknown as
+	// absent, so a viewer whose read was denied was told the trigger has no
+	// identity rather than that they cannot see it.
+	it("does not report an absent identity when the read was refused", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json(
+					{ code: "permission_denied", message: "denied" },
+					{ status: 403 },
+				),
+			),
+		);
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("acme/handbook");
+
+		await waitFor(() =>
+			expect(
+				document.querySelector('[data-slot="source-trigger"]'),
+			).not.toBeNull(),
+		);
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		// And nothing about this host's own sweep, which the read never answered.
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+	});
+
+	// A refusal AFTER a success must not leave the previous answer on screen:
+	// TanStack keeps the last good data when a refetch rejects, so the row went
+	// on showing a cached declaration — including the sweep row this amendment
+	// added — to a viewer who is no longer allowed to see it. The clearing
+	// belongs in the query function, where the refusal is classified.
+	it("drops a cached declaration when a later read is refused", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json(
+							{ code: "permission_denied", message: "denied" },
+							{ status: 403 },
+						)
+					: HttpResponse.json({
+							declaration: {
+								release: "saas_datasource_reconcile",
+								operation:
+									"/saas.accounts.v1.DatasourceService/ReconcileSource",
+								undeclarableReason: "the source has no reconcile schedule",
+								hostSweepEnabled: true,
+								hostSweepDueAt: "2026-10-12T09:07:00Z",
+							},
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("the source has no reconcile schedule");
+		await waitFor(() =>
+			expect(document.querySelector('[data-slot="host-sweep"]')).not.toBeNull(),
+		);
+
+		denied = true;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+		expect(
+			screen.queryByText("the source has no reconcile schedule"),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+	});
+
+	// The sweep is ON and this source has no due instant — a parked source,
+	// whose stored instant the park path cleared. "next pass —" reads as a pass
+	// whose time is unknown; the supplied facts say there is no pass due.
+	it("says the sweep has nothing due rather than a next pass with no time", async () => {
+		serve({
+			declaration: {
+				release: "saas_datasource_reconcile",
+				operation: "/saas.accounts.v1.DatasourceService/ReconcileSource",
+				undeclarableReason:
+					"the source is parked and is not on its reconcile schedule",
+				hostSweepEnabled: true,
+			},
+			delegations: [],
+			children: [],
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText(/parked and is not on its reconcile schedule/);
+		const sweep = await waitFor(() => {
+			const found = document.querySelector<HTMLElement>(
+				'[data-slot="host-sweep"]',
+			);
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+
+		expect(sweep.textContent).not.toMatch(/next pass/);
+		expect(sweep.textContent).toMatch(/nothing due/i);
+		expect(
+			sweep.querySelector('[data-slot="host-sweep-due"]')?.textContent,
+		).toBe("—");
+	});
+});
+
+// THE REST OF THE CLOSURE CONDITIONS for the per-source declaration read
+// (issue #1121, r22 F1): pending, a non-refusal failure, 403 then a transient
+// failure, 403 then a remount, recovery on success, and manual admissions
+// surviving all of it.
+//
+// A declaration served only after the test releases it, so "pending" is a real
+// state rather than a race.
+function heldDeclaration() {
+	let release: (() => void) | undefined;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	server.use(
+		http.post(rpc("DatasourceService", "ListSources"), () =>
+			HttpResponse.json(sources),
+		),
+		http.post(
+			rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+			async () => {
+				await gate;
+				return HttpResponse.json({
+					declaration: declared,
+					delegations: [],
+					children: [],
+				});
+			},
+		),
+	);
+	return () => release?.();
+}
+
+describe("the declaration read's remaining states", () => {
+	it("claims nothing while the read is still in flight", async () => {
+		const release = heldDeclaration();
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("acme/handbook");
+
+		// The row exists; its declaration does not yet. Neither an absent
+		// identity nor a sweep state may be asserted about a read in flight.
+		await waitFor(() =>
+			expect(
+				document.querySelector('[data-slot="source-trigger"]'),
+			).not.toBeNull(),
+		);
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+
+		release();
+		await screen.findByText("*/30 * * * *");
+	});
+
+	// A failure that is NOT a refusal reads differently, because the two mean
+	// different things: unknown versus not allowed.
+	it("separates a failed read from a refused one", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({ message: "boom" }, { status: 500 }),
+			),
+		);
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("acme/handbook");
+
+		await waitFor(() =>
+			expect(screen.getByText(/Couldn.t load/i)).toBeTruthy(),
+		);
+		expect(screen.queryByText(/don.t have permission/i)).toBeNull();
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+	});
+
+	// A refusal, then a transient failure. The snapshot the refusal deleted must
+	// not come back: a transient failure retains what the cache HAS, and after a
+	// refusal it has nothing.
+	it("does not resurrect a refused snapshot through a later transient failure", async () => {
+		let phase: "ok" | "denied" | "down" = "ok";
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				if (phase === "ok") {
+					return HttpResponse.json({
+						declaration: declared,
+						delegations: [],
+						children: [],
+					});
+				}
+				return phase === "denied"
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({ message: "boom" }, { status: 500 });
+			}),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		phase = "denied";
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		phase = "down";
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+		expect(screen.queryByText("*/30 * * * *")).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+	});
+
+	// And not through a remount either: the snapshot is gone from the cache, so
+	// a component mounting into that same cache has nothing to show.
+	it("does not resurrect a refused snapshot through a remount", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const first = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		denied = true;
+		await act(async () => {
+			await first.client.refetchQueries({
+				queryKey: ["source-trigger-declaration"],
+			});
+		});
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		cleanup();
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, first.client);
+		await screen.findByText("acme/handbook");
+		expect(screen.queryByText("*/30 * * * *")).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+	});
+
+	// Recovery is exactly one thing: a read that succeeds.
+	it("recovers when a later read succeeds", async () => {
+		let denied = true;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		denied = false;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+		await screen.findByText("*/30 * * * *");
+		await waitFor(() =>
+			expect(document.querySelector('[data-slot="host-sweep"]')).not.toBeNull(),
+		);
+		expect(screen.queryByText(/don.t have permission/i)).toBeNull();
+	});
+
+	// A transient failure keeps the last good answer AND says it may be out of
+	// date. Blanking a good answer because one request did not come back is
+	// worse than the staleness.
+	it("keeps a transiently failed answer and labels it stale", async () => {
+		let down = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				down
+					? HttpResponse.json({ message: "boom" }, { status: 500 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		down = true;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+
+		expect(screen.getByText("*/30 * * * *")).toBeTruthy();
+		await waitFor(() =>
+			expect(screen.getByText(/may be out of date/i)).toBeTruthy(),
+		);
+	});
+
+	// Through every one of those, the passes THIS BROWSER admitted stay: they
+	// come from the kit's notification, not from the declaration read, and a
+	// person's pass goes through no schedule at all.
+	it("keeps manual admissions through a refusal", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+		act(() =>
+			notifySourceReconcileAdmitted({
+				sourceId: SOURCE,
+				effectId: "effect-dddd",
+				jobId: "job-9",
+				status: "committed",
+				repeat: false,
+				at: "2026-10-12T09:20:00Z",
+			}),
+		);
+		await screen.findByText("effect-dddd");
+
+		denied = true;
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["source-trigger-declaration"] });
+		});
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		expect(screen.getByText("effect-dddd")).toBeTruthy();
+		expect(document.querySelectorAll('[data-slot="manual-pass"]')).toHaveLength(
+			1,
+		);
+	});
+});
+
+// A REFUSAL DELETES ONE DECLARATION, NOT EVERY DECLARATION (issue #1121, the
+// parent's scope finding on b3d01c3d3).
+//
+// `getQueryCache().findAll({ queryKey })` matches by PREFIX in TanStack Query,
+// so clearing `["source-trigger-declaration"]` reached every org and every
+// source. One source refusing its read then blanked a sibling source whose own
+// read had SUCCEEDED — and the damage is invisible at the component, because
+// that sibling's query status is still `success` with no error: the row has no
+// refusal to report and falls through to "This source declares no trigger",
+// which is a false statement about a source the viewer is allowed to see.
+//
+// The blast radius of a refusal is the key that was refused. These two probes
+// pin that at both scopes a key carries: another source in the same
+// organization, and the same source in another organization.
+const SOURCE_B = "aaaaaaaa-0000-4000-8000-000000000002";
+
+const twoSources = {
+	datasources: [
+		sources.datasources[0],
+		{
+			id: SOURCE_B,
+			orgId: "org-1",
+			provider: "DATASOURCE_PROVIDER_GITHUB",
+			github: { repo: "acme/runbooks", branch: "main" },
+			status: "DATASOURCE_STATUS_ACTIVE",
+		},
+	],
+};
+
+const declaredB = {
+	...declared,
+	schedule: { ...declared.schedule, cron: "15 * * * *" },
+	identity: { source: SOURCE_B },
+	digest: "9e22",
+};
+
+describe("one refused declaration does not blank another", () => {
+	it("leaves an authorized source's declaration intact when a sibling source is refused", async () => {
+		let denyA = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(twoSources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async ({ request }) => {
+					const body = (await request.json()) as { sourceId?: string };
+					if (body.sourceId === SOURCE_B) {
+						return HttpResponse.json({
+							declaration: declaredB,
+							delegations: [],
+							children: [],
+						});
+					}
+					return denyA
+						? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+						: HttpResponse.json({
+								declaration: declared,
+								delegations: [],
+								children: [],
+							});
+				},
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+		await screen.findByText("15 * * * *");
+
+		denyA = true;
+		// ONLY A IS REFETCHED, which is the whole point: B's query is not
+		// re-run, so if A's refusal deleted B's snapshot nothing restores it.
+		// Refetching both would hide the defect, because B's own successful
+		// re-read would repopulate what A had just wiped.
+		await act(async () => {
+			await client.refetchQueries({
+				queryKey: ["source-trigger-declaration", "org-1", SOURCE],
+				exact: true,
+			});
+		});
+
+		// A is gone and says why.
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+		expect(screen.queryByText("*/30 * * * *")).toBeNull();
+		// B is UNTOUCHED: its read succeeded, so its declaration, its sweep row
+		// and its cached answer all stand. The last assertion is the one that
+		// fails on the prefix clear — the component would otherwise claim B
+		// declares no trigger while its query sits in `success`.
+		expect(screen.getByText("15 * * * *")).toBeTruthy();
+		expect(
+			client.getQueryData(["source-trigger-declaration", "org-1", SOURCE_B]),
+		).toBeTruthy();
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+	});
+
+	it("leaves another organization's declaration of the same source intact", async () => {
+		const other = ["source-trigger-declaration", "org-2", SOURCE] as const;
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		// A second organization's answer for the same source id, which no part
+		// of this refusal is about.
+		client.setQueryData(other, {
+			declaration: declaredB,
+			delegations: [],
+			children: [],
+		});
+
+		denied = true;
+		await act(async () => {
+			await client.refetchQueries({
+				queryKey: ["source-trigger-declaration", "org-1", SOURCE],
+			});
+		});
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		expect(client.getQueryData(other)).toBeTruthy();
+	});
+});
+
+// A SUPERSEDED REFUSAL MUST NOT ERASE A NEWER SUCCESS (issue #1121).
+//
+// Two fetches overlap on one key. The older one is superseded — TanStack
+// cancels it when the newer starts — but the request itself is already in
+// flight and eventually rejects with 403. Its catch then ran and deleted the
+// answer the NEWER fetch had just written, leaving the query in a state no
+// component can read correctly: status `success`, fetchStatus `idle`, `data`
+// undefined and `error` null. The row has no refusal to report and no
+// declaration to show, so it says "This source declares no trigger" about a
+// source whose latest read succeeded.
+//
+// The condition is the one the lifecycle already records: delete only if no
+// newer success replaced what this fetch was reading. `dataUpdatedAt` is that
+// fact, so the fix reads the field it already writes rather than adding a
+// mechanism beside it.
+describe("a superseded refusal", () => {
+	const KEY = ["source-trigger-declaration", "org-1", SOURCE] as const;
+
+	function overlapping() {
+		let call = 0;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(twoSources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async ({ request }) => {
+					const body = (await request.json()) as { sourceId?: string };
+					if (body.sourceId !== SOURCE) {
+						return HttpResponse.json({
+							declaration: declaredB,
+							delegations: [],
+							children: [],
+						});
+					}
+					call++;
+					if (call === 1) {
+						return HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						});
+					}
+					if (call === 2) {
+						// The OLD fetch: superseded, answers last, and answers 403.
+						await held;
+						return HttpResponse.json(
+							{ code: "permission_denied" },
+							{ status: 403 },
+						);
+					}
+					// The NEWER fetch, which succeeds with a different answer.
+					return HttpResponse.json({
+						declaration: {
+							...declared,
+							schedule: { ...declared.schedule, cron: "45 * * * *" },
+						},
+						delegations: [],
+						children: [],
+					});
+				},
+			),
+		);
+		return () => release403?.();
+	}
+
+	it("does not erase the newer answer it was superseded by", async () => {
+		const release = overlapping();
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		// The old fetch starts and is left in flight.
+		const stale = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		// The newer fetch supersedes it and lands.
+		await act(async () => {
+			await client.refetchQueries({ queryKey: KEY, exact: true });
+		});
+		await screen.findByText("45 * * * *");
+
+		// Now the superseded request finally answers 403.
+		release();
+		await act(async () => {
+			await stale;
+		});
+
+		const state = client.getQueryState([...KEY]);
+		expect(state?.status).toBe("success");
+		// The newer answer is still there, and still on screen.
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+		expect(screen.getByText("45 * * * *")).toBeTruthy();
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+	});
+
+	// The deletion itself must survive the guard: a refusal with nothing newer
+	// behind it still clears, including when no component is mounted to see it.
+	it("still deletes a refusal that nothing newer replaced, with the view unmounted", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				denied
+					? HttpResponse.json({ code: "permission_denied" }, { status: 403 })
+					: HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						}),
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+
+		cleanup();
+		denied = true;
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: KEY, exact: true, type: "all" })
+				.catch(() => undefined);
+		});
+
+		expect(client.getQueryData([...KEY])).toBeUndefined();
+	});
+});
+
+// THE GENERATION OF A SUCCESS IS NOT ITS CLOCK READING (issue #1121, r23).
+//
+// The first guard compared `dataUpdatedAt`, a MILLISECOND timestamp. Two
+// successes in the same millisecond carry the same value, so "has a newer
+// success replaced what I was reading?" answered no, and the superseded
+// refusal deleted the newer answer after all — the very bug the guard was
+// added for, surviving at sub-millisecond spacing, which is exactly the
+// spacing an overlapping refetch has.
+//
+// `dataUpdateCount` is the lifecycle's own generation counter: it increments on
+// every write and cannot tie. This test freezes the clock so both successes
+// share a timestamp, which is what makes it a test of the FIELD CHOICE rather
+// than of the comparison.
+describe("a superseded refusal when both answers share a millisecond", () => {
+	const KEY = ["source-trigger-declaration", "org-1", SOURCE] as const;
+
+	afterEach(() => vi.useRealTimers());
+
+	it("does not erase a newer success that landed in the same millisecond", async () => {
+		// Only Date is faked: timers, promises and MSW keep working, while
+		// every `Date.now()` TanStack takes returns one instant.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-10-13T12:00:00.000Z"));
+
+		let call = 0;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async () => {
+					call++;
+					if (call === 1) {
+						return HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						});
+					}
+					if (call === 2) {
+						await held;
+						return HttpResponse.json(
+							{ code: "permission_denied" },
+							{ status: 403 },
+						);
+					}
+					return HttpResponse.json({
+						declaration: {
+							...declared,
+							schedule: { ...declared.schedule, cron: "45 * * * *" },
+						},
+						delegations: [],
+						children: [],
+					});
+				},
+			),
+		);
+		const { client } = renderInApp(<SourceTriggerSchedules orgId="org-1" />);
+		await screen.findByText("*/30 * * * *");
+
+		const stale = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		await act(async () => {
+			await client.refetchQueries({ queryKey: KEY, exact: true });
+		});
+
+		// The premise of the test, asserted rather than assumed: the newer
+		// success carries the SAME timestamp as the answer the old fetch was
+		// reading, and a later generation.
+		const after = client.getQueryState([...KEY]);
+		expect(after?.dataUpdatedAt).toBe(
+			new Date("2026-10-13T12:00:00.000Z").getTime(),
+		);
+		expect(after?.dataUpdateCount).toBeGreaterThan(1);
+
+		release403?.();
+		await act(async () => {
+			await stale;
+		});
+
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+		expect(client.getQueryState([...KEY])?.status).toBe("success");
+	});
+});
+
+// THE TWO LIFECYCLE PATHS MY OWN SUITE HAD MISSED (issue #1121, r23's
+// request-order note). Both were named by the reviewer against the generation
+// guard, and both are about the guard NOT swallowing the deletion it sits
+// beside.
+//
+// 1. An observer that unmounts WHILE the refusal is in flight. This is not the
+//    same path as refetching an already-inactive query: removing the last
+//    observer mid-fetch takes TanStack's `removeObserver` route, which may
+//    cancel and revert the in-flight fetch's state. A guard that compared the
+//    reverted generation wrongly would stop deleting exactly here — where no
+//    component is mounted to show anything, and the next mount would serve the
+//    refused answer from cache.
+//
+// 2. RETRY, which the real client has and this test harness does not:
+//    `src/lib/providers.tsx` sets `retry: 1`, `src/test/container.tsx` sets
+//    `retry: false`. So every refusal test in this file has been exercising a
+//    single attempt, and the retried shape — queryFn entered twice for one
+//    logical read, each attempt capturing its own generation — was untested.
+describe("the deletion under the lifecycle paths the harness hides", () => {
+	const KEY = ["source-trigger-declaration", "org-1", SOURCE] as const;
+
+	function retrying() {
+		return new QueryClient({
+			defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+		});
+	}
+
+	it("still deletes when the observer unmounts before the refusal arrives", async () => {
+		let denied = false;
+		let release403: (() => void) | undefined;
+		const held = new Promise<void>((resolve) => {
+			release403 = resolve;
+		});
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(
+				rpc("DatasourceService", "GetSourceTriggerDeclaration"),
+				async () => {
+					if (!denied) {
+						return HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						});
+					}
+					await held;
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				},
+			),
+		);
+		const { client, unmount } = renderInApp(
+			<SourceTriggerSchedules orgId="org-1" />,
+		);
+		await screen.findByText("*/30 * * * *");
+
+		// The refusal starts while the view is mounted...
+		denied = true;
+		const refused = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+		// ...and the view goes away before it answers.
+		unmount();
+		release403?.();
+		await act(async () => {
+			await refused;
+		});
+
+		expect(client.getQueryData([...KEY])).toBeUndefined();
+	});
+
+	it("deletes a refused read that the client retried", async () => {
+		let attempts = 0;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				attempts++;
+				return attempts === 1
+					? HttpResponse.json({
+							declaration: declared,
+							delegations: [],
+							children: [],
+						})
+					: HttpResponse.json({ code: "permission_denied" }, { status: 403 });
+			}),
+		);
+		const client = retrying();
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+		await screen.findByText("*/30 * * * *");
+
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: KEY, exact: true })
+				.catch(() => undefined);
+		});
+
+		// Two attempts for one logical read, and the snapshot is gone after
+		// them rather than restored by the second attempt's own capture.
+		expect(attempts).toBe(3);
+		expect(client.getQueryData([...KEY])).toBeUndefined();
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+	});
+
+	// And the retry's happy path: a transient failure that succeeds on the
+	// retry must not lose the answer the retry just wrote.
+	it("keeps the answer a retry recovered after a transient failure", async () => {
+		let attempts = 0;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				attempts++;
+				if (attempts === 1) {
+					return HttpResponse.json({ message: "boom" }, { status: 500 });
+				}
+				return HttpResponse.json({
+					declaration: declared,
+					delegations: [],
+					children: [],
+				});
+			}),
+		);
+		const client = retrying();
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+
+		await screen.findByText("*/30 * * * *");
+		expect(attempts).toBe(2);
+		expect(client.getQueryData([...KEY])).toBeTruthy();
+	});
+});
+
+// A PAUSED READ HAS NOT ANSWERED (issue #1121, the read-lifecycle review).
+//
+// Offline, TanStack parks a cold query at status `pending` with fetchStatus
+// `paused` — and `isFetching` is FALSE, because that flag means "a request is
+// on the wire". Every gate in this file was written against `isFetching`, so a
+// paused read read as "finished, nothing came back" and the row stated "This
+// source declares no trigger" about a source nobody had asked the host about
+// yet. The source LIST beside it already had this right:
+// `sources.isPending && sources.fetchStatus !== "idle"`, which separates a read
+// still coming (fetching or paused) from a read that was never issued
+// (disabled, idle). That is the model these rows now reuse.
+describe("a declaration read paused by the browser being offline", () => {
+	afterEach(() => onlineManager.setOnline(true));
+
+	it("claims nothing while the read is paused, and recovers when online", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({
+					declaration: declared,
+					delegations: [],
+					children: [],
+				}),
+			),
+		);
+		// The list is already in the cache — the reported shape — so the panel
+		// renders its rows while the per-source read cannot leave the gate.
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		client.setQueryData(["unattended-sources", "org-1"], sources.datasources);
+		onlineManager.setOnline(false);
+
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+		await screen.findByText("acme/handbook");
+
+		// The premise, asserted rather than assumed.
+		await waitFor(() => {
+			const state = client.getQueryState([
+				"source-trigger-declaration",
+				"org-1",
+				SOURCE,
+			]);
+			expect(state?.fetchStatus).toBe("paused");
+			expect(state?.status).toBe("pending");
+		});
+
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+
+		// Back online, the read runs and the row fills in.
+		onlineManager.setOnline(true);
+		await screen.findByText("*/30 * * * *");
+	});
+});
+
+// THE STATE MY OWN DELETION CREATES (issue #1121, r24's paused-retry case).
+//
+// Initial success, then a refetch whose first attempt is refused: the query
+// function deletes the retained answer, correctly. The retry then PAUSES
+// because the browser is offline, and the query sits in a shape no single flag
+// describes — status `success` (it had data once), fetchStatus `paused`, data
+// undefined, error null (the fetch has not finished failing). `isPending` is
+// FALSE, so `isPending && fetchStatus !== "idle"` reads it as answered, and the
+// row said "This source declares no trigger" again.
+//
+// What is true of every one of these states is simpler than the states: there
+// is nothing in hand, nothing has failed yet, and a fetch is not idle. That is
+// the predicate, and it lives in the read seam beside the other three.
+describe("a refused refetch whose retry is paused offline", () => {
+	const KEY = ["source-trigger-declaration", "org-1", SOURCE] as const;
+
+	afterEach(() => onlineManager.setOnline(true));
+
+	it("claims nothing in the state the deletion leaves behind, and recovers", async () => {
+		let call = 0;
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () => {
+				call++;
+				if (call === 1) {
+					return HttpResponse.json({
+						declaration: declared,
+						delegations: [],
+						children: [],
+					});
+				}
+				if (call === 2) {
+					// The refusal lands and the browser drops offline with it, so
+					// the retry has to pause rather than race.
+					onlineManager.setOnline(false);
+					return HttpResponse.json(
+						{ code: "permission_denied" },
+						{ status: 403 },
+					);
+				}
+				return HttpResponse.json({
+					declaration: declared,
+					delegations: [],
+					children: [],
+				});
+			}),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+		await screen.findByText("*/30 * * * *");
+
+		// NOT awaited: a paused retry never settles, so awaiting the refetch
+		// here would hang rather than observe the state it produces.
+		const refetching = client
+			.refetchQueries({ queryKey: KEY, exact: true })
+			.catch(() => undefined);
+
+		// The premise, asserted exactly: this is the composite state, not a
+		// plain pending one.
+		await waitFor(() => {
+			const state = client.getQueryState([...KEY]);
+			expect(state?.status).toBe("success");
+			expect(state?.fetchStatus).toBe("paused");
+			expect(state?.data).toBeUndefined();
+			expect(state?.error).toBeNull();
+		});
+
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(screen.queryByText("*/30 * * * *")).toBeNull();
+
+		onlineManager.setOnline(true);
+		await act(async () => {
+			await refetching;
+		});
+		await screen.findByText("*/30 * * * *");
+	});
+
+	// r24 ALSO asks that an existing error survive a paused retry. In the
+	// installed TanStack it cannot, and the reason is worth recording where the
+	// next person will look: starting a refetch RESETS the query, so a refetch
+	// that then pauses leaves status `pending`, fetchStatus `paused`, data
+	// undefined and **error null** — the refusal is gone from the state, not
+	// hidden by a gate. Asserted below rather than described.
+	//
+	// So the row cannot keep showing a refusal it can no longer substantiate,
+	// and what matters is that it substitutes nothing: no "declares no
+	// trigger", no identity claim. The predicate's no-error clause stays as the
+	// guard for an error that IS in hand, which is unit-tested directly
+	// (`readHasNotAnswered` in shared/lib) because no app path reaches
+	// error-present with a non-idle fetch in this version.
+	it("claims nothing when an offline refetch resets a refusal to a paused read", async () => {
+		server.use(
+			http.post(rpc("DatasourceService", "ListSources"), () =>
+				HttpResponse.json(sources),
+			),
+			http.post(rpc("DatasourceService", "GetSourceTriggerDeclaration"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		renderInApp(<SourceTriggerSchedules orgId="org-1" />, client);
+		await waitFor(() =>
+			expect(screen.getByText(/don.t have permission/i)).toBeTruthy(),
+		);
+
+		onlineManager.setOnline(false);
+		await act(async () => {
+			await client
+				.refetchQueries({ queryKey: KEY, exact: true })
+				.catch(() => undefined);
+		});
+		// What the library actually does with the refusal.
+		const state = client.getQueryState([...KEY]);
+		expect(state?.status).toBe("pending");
+		expect(state?.fetchStatus).toBe("paused");
+		expect(state?.error).toBeNull();
+
+		// And the row asserts nothing in its place.
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 60));
+		});
+		expect(screen.queryByText("This source declares no trigger.")).toBeNull();
+		expect(
+			screen.queryByText("None — occurrences would be refused"),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="host-sweep"]')).toBeNull();
+		// The manual-pass table is always there: it comes from this browser,
+		// not from the read.
+		expect(
+			document.querySelector('[data-slot="source-trigger"]'),
+		).not.toBeNull();
 	});
 });

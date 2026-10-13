@@ -180,6 +180,60 @@ func TestReconcileSourceOperation_TwoAttemptsOfOneOccurrenceAreOneJob(t *testing
 	}
 }
 
+// NOTHING IS ENQUEUED FOR A PASS THAT WILL BE REFUSED (issue #1121, m2/N4).
+//
+// The effect's binding and digest are read before the enqueue, because both
+// refusals are decisions about the attempt row alone. Enqueueing and then
+// refusing left a job behind for a request this host rejected — and since the
+// key names the source, a re-presented identity naming a DIFFERENT source
+// produced a key of its own: a real second re-send of that source rather than
+// a collapsed replay.
+func TestReconcileSourceOperation_RefusedPassEnqueuesNothing(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newReconcileOperationStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
+
+	first := newUploadSource(t, svc)
+	second := newCrawlerSource(t, svc)
+	takeConnectSync(t, producer, first)
+	takeConnectSync(t, producer, second)
+
+	// One occurrence of the first source, admitted and recorded.
+	reconcileOnce(t, svc, first.OrgID, first.ID, "occurrence-1")
+	if got := len(jobKeys(producer, first.ID)); got != 1 {
+		t.Fatalf("the admitted pass enqueued %d job(s), want 1", got)
+	}
+
+	// The same identity, now naming the second source. It is refused — and the
+	// refusal must happen before anything reaches the queue.
+	digest := sha256.Sum256([]byte("occurrence-1"))
+	ctx := receipts.WithEffect(t.Context(), receipts.Effect{
+		ID: "occurrence-1", Tenant: second.OrgID, Method: business.ReconcileSourceMethod, RequestDigest: digest[:],
+	})
+	err := svc.ReconcileDatasourceSource(ctx, "actor", second.OrgID, second.ID,
+		func(context.Context, string) error { return nil })
+	if err == nil {
+		t.Fatal("an effect identity bound to another source was admitted")
+	}
+	if jobs := jobKeys(producer, second.ID); len(jobs) != 0 {
+		t.Fatalf("a refused pass enqueued %d job(s) for the second source: %v", len(jobs), jobs)
+	}
+
+	// And the same source with a different request digest: refused as a reuse,
+	// again with nothing enqueued beyond the one admitted pass.
+	other := sha256.Sum256([]byte("a different request"))
+	ctx = receipts.WithEffect(t.Context(), receipts.Effect{
+		ID: "occurrence-1", Tenant: first.OrgID, Method: business.ReconcileSourceMethod, RequestDigest: other[:],
+	})
+	if err := svc.ReconcileDatasourceSource(ctx, "actor", first.OrgID, first.ID,
+		func(context.Context, string) error { return nil }); err == nil {
+		t.Fatal("an effect identity re-presented with another request was admitted")
+	}
+	if got := len(jobKeys(producer, first.ID)); got != 1 {
+		t.Fatalf("a refused reuse enqueued a second job: %d", got)
+	}
+}
+
 // reconcileOnce runs one reconcile pass as one occurrence of the declared
 // trigger would: an effect identity in context, and the receipt committed by
 // the callback the operation hands it.
