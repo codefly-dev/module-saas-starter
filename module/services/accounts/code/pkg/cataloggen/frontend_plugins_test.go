@@ -69,8 +69,8 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 		"/admin/platform/feature-flags",
 		"/admin/platform/jobs",
 		"/admin/platform/organizations",
+		"/admin/platform/module-identity",
 		"/admin/platform/plugin-transport",
-		"/admin/platform/unattended-work",
 		"/admin/platform/waitlist",
 		"/admin/roles",
 		"/admin/roles/{roleId}",
@@ -79,6 +79,10 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 		"/admin/sso",
 		"/admin/teams",
 		"/admin/teams/{teamId}",
+		// Under /admin/, so the access boundary the generator derives is `admin`
+		// — the same one the page's own gate declares (issue #1121). Under
+		// /admin/platform/ it derived `super_admin` and the two disagreed.
+		"/admin/unattended-work",
 		"/admin/users",
 		"/admin/users/{userId}",
 		"/admin/webhooks",
