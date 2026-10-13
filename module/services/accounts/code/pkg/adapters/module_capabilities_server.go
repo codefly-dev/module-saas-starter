@@ -954,6 +954,12 @@ func moduleApprovalProto(a *business.ApprovalRequest) *gen.ModuleApproval {
 }
 
 func (s *ModuleCapabilitiesServer) ReadJournal(ctx context.Context, req *gen.ModuleReadJournalRequest) (*gen.ModuleReadJournalResponse, error) {
+	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return nil, fenceErr
+	}
+	defer releaseAuthority()
+
 	if err := Validate(req); err != nil {
 		return nil, err
 	}

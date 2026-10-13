@@ -12,6 +12,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"connectrpc.com/connect"
 	"github.com/codefly-dev/sdk-go/receipts"
 	"github.com/stretchr/testify/require"
