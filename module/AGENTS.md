@@ -110,10 +110,11 @@ must not be replaced with a hard-coded address or port.
 
 ## Runtime composition seams
 
-Solutions and composed modules are independently deployed and **self-register at
-runtime**: the host learns to render and proxy them with no rebuild. Nothing in
-this tree names a specific one — a registered target is data, never a branch, and
-the seam must stay generic (repository-root `AGENTS.md`, § Boundaries).
+Solutions and composed modules are independently deployed. Signed delivery
+updates their presence; the host projects optional pages and resolves routes through
+the SDK. Organisation installation grants remain separate from shared deployment,
+and idle runtime credential renewal does not establish presence. A declared target
+is data, never a branch (repository-root `AGENTS.md`, § Boundaries).
 
 The depth sits with the code that owns each half:
 

@@ -165,9 +165,10 @@ here. Its baseline shrinks and never grows: clean a file, delete its line.
 
 ## Where the depth lives
 
-A **solution** or composed module is independently deployed and **self-registers with
-this host at runtime** — a remote in the frontend, an upstream in the gateway — so the
-host renders and proxies it with no rebuild, and nothing here names a specific one.
+A **solution** or composed module is independently deployed. The host reconciles
+its signed delivery, projects its optional frontend and resolves its routes through
+the SDK. Registration is a delivery lifecycle event; runtime work exchanges do not
+refresh presence. Nothing here names a specific consumer.
 Depth sits with the code that owns it:
 
 | File | Covers |
