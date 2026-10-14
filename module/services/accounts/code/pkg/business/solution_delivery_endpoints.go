@@ -55,7 +55,11 @@ func (s *Service) joinEndpointDelivery(delivered *solutionhost.DeliveredEndpoint
 	if !ok {
 		return nil, solutionhost.ErrEndpointsUnapplied
 	}
-	host := solutionhost.Host{Coordinate: s.deliveryCoordinate, Applied: []solutionhost.Applied{applied}}
+	host := solutionhost.Host{
+		Coordinate:      s.deliveryCoordinate,
+		Applied:         []solutionhost.Applied{applied},
+		DomainsBySigner: s.deliveryDomainsBySigner,
+	}
 	if _, err := host.AdmitEndpoints(delivered); err != nil {
 		return nil, err
 	}

@@ -53,7 +53,9 @@ endpoint values separately through the signed delivery inbox. The internal
 applied-state read carries those bytes opaquely; the gateway passes them to
 `ResolveDeliveredNetworkInstance(applied, raw)`. Core validates the complete
 presence digest and the SDK resolves the selected endpoint. Neither Accounts
-nor the gateway interprets configuration carrier keys.
+nor the gateway interprets configuration carrier keys. Endpoint admission and
+subsequent applied-state reads use the host's existing signer-to-domain policy;
+a valid signature alone does not authorise the asserted ownership domain.
 
 The delivery inbox retains the signed bytes; the identity registry gains no
 address column. An exact historical lookup keeps a withheld desired generation
