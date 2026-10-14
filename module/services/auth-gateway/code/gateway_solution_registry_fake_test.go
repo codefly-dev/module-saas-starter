@@ -26,6 +26,7 @@ type fakeSolutionRegistry struct {
 	listErr error
 
 	listCalls int
+	retained  map[string]*accountsv1.SolutionFrontendGeneration
 }
 
 func newFakeSolutionRegistry() *fakeSolutionRegistry {
@@ -204,4 +205,22 @@ func fakeSolutionStatus(record *accountsv1.SolutionRegistration) accountsv1.Solu
 	default:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
 	}
+}
+
+func (f *fakeSolutionRegistry) GetRetainedFrontend(_ context.Context, binding, version string) (*accountsv1.SolutionFrontendGeneration, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	retained := f.retained[version]
+	if retained == nil || retained.GetBindingId() != binding {
+		return nil, nil
+	}
+	for _, record := range f.records {
+		if record.GetDeclared().GetBindingId() == binding && record.GetDeclared().GetTargetId() == retained.GetTargetId() && record.GetTombstonedAt() == nil {
+			return proto.Clone(retained).(*accountsv1.SolutionFrontendGeneration), nil
+		}
+	}
+	return nil, nil
 }

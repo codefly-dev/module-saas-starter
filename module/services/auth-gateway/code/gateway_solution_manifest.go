@@ -37,7 +37,7 @@ const (
 // block this host cannot read is "none" too: the projection then omits the
 // manifest rather than publishing one the frontend would refuse for a reason
 // it cannot name, and the cause is logged here, where it is readable.
-func solutionManifest(record *accountsv1.SolutionRegistration) (string, bool) {
+func solutionManifest(record *accountsv1.SolutionRegistration, prepared bool) (string, bool) {
 	block := record.GetFrontend().GetManifest()
 	if block == "" {
 		return "", false
@@ -47,8 +47,8 @@ func solutionManifest(record *accountsv1.SolutionRegistration) (string, bool) {
 		log.Printf("solution registry: record %q carries a frontend block this host cannot read: %v", record.GetSolutionId(), err)
 		return "", false
 	}
-	if frontend.Payload != nil {
-		return "", false // No immutable payload serving adapter is connected yet.
+	if frontend.Payload != nil && !prepared {
+		return "", false
 	}
 	alias := record.GetSolutionId()
 	manifest := map[string]any{

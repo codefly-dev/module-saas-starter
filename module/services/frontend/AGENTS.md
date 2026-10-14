@@ -44,8 +44,9 @@ generation and release. Browser assets use
 remote entry and relative chunks share that directory. The surfaces projection uses the
 page's asset version for both modules and solutions, including relative imports.
 Remote builds must use `publicPath: "auto"` and relative asset paths.
-Both proxy layers refuse a stale
-version with 410; this is a cache identity, not an access credential. The shared
+The gateway serves a historical version only while its admitted history and
+live target permit it; unknown or expired versions receive 410. This is a cache
+identity, not an access credential. The shared
 viewer navigation poll carries it, removes withdrawn pages and refreshes an open
 page when the version changes. The old remote is unmounted during the change,
 and a previous loading failure cannot poison the new generation.
@@ -376,3 +377,9 @@ entry cancels the read reporting the refusal and strands recovery, clearing it
 restarts every active read of it so a standing 403 never settles, and
 `setQueryData(key, undefined)` is a documented no-op. Recovery is then exactly
 one thing — a read that succeeds.
+
+Versioned GET/HEAD asset requests reach the gateway even if the current page is
+headless or absent from the advertised manifest. The gateway owns historical
+version admission and live target checks; the proxy validates the version shape,
+forwards it from a fresh header set and preserves its Cache-Control and errors.
+Historical identities never open data routes or grant organisation access.

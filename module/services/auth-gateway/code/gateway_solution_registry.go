@@ -15,6 +15,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -106,6 +107,17 @@ func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.Lis
 	return out, nil
 }
 
+// Historical assets are read by identity, never broadcast in the route snapshot.
+type solutionFrontendReader interface {
+	GetRetainedFrontend(context.Context, string, string) (*accountsv1.SolutionFrontendGeneration, error)
+}
+
+func (c *accountsSolutionRegistry) GetRetainedFrontend(ctx context.Context, binding, version string) (*accountsv1.SolutionFrontendGeneration, error) {
+	response := &accountsv1.GetRetainedSolutionFrontendResponse{}
+	err := c.invoke(ctx, "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend", &accountsv1.GetRetainedSolutionFrontendRequest{BindingId: binding, AssetVersion: version}, response)
+	return response.GetFrontend(), err
+}
+
 // solutionResolution is why a solution is or is not routable right now. The
 // distinctions are the ones an operator needs: never registered, registered but
 // not yet whole, declared and unavailable, and "we cannot tell".
@@ -139,7 +151,13 @@ var errSolutionRegistryUnconfigured = errors.New("solution registry client not c
 
 // solutionRegistryCache is the gateway's replica-local view of the registry.
 type solutionRegistryCache struct {
-	client solutionRegistryClient
+	client         solutionRegistryClient
+	frontendSource frontendpayload.Source
+	frontends      map[string]map[string]*preparedFrontend
+	preparing      chan struct{}
+	serving        chan struct{}
+	bundles        map[string]*frontendpayload.Bundle // guarded by preparing
+	bundleOrder    []string
 	// now is the cache refresh clock. Tests move it; production leaves
 	// it at time.Now.
 	now func() time.Time
@@ -178,6 +196,9 @@ type solutionRegistryCache struct {
 func newSolutionRegistryCache(client solutionRegistryClient) *solutionRegistryCache {
 	return &solutionRegistryCache{
 		client:          client,
+		preparing:       make(chan struct{}, 1),
+		serving:         make(chan struct{}, 8),
+		bundles:         map[string]*frontendpayload.Bundle{},
 		now:             time.Now,
 		resolveEndpoint: moduleEndpointResolver,
 		records:         map[string]*accountsv1.SolutionRegistration{},
@@ -232,12 +253,20 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	if c.client == nil {
 		return errSolutionRegistryUnconfigured
 	}
+	readAt := c.now()
+	ctx, cancel := context.WithTimeout(ctx, solutionRegistryCallTimeout)
+	defer cancel()
 	resp, err := c.client.List(ctx, &accountsv1.ListSolutionRegistrationsRequest{IncludeTombstoned: true})
 	// Resolved BEFORE the lock: resolution may read the workspace from disk,
 	// and every lookup waits on this lock.
 	var upstreams map[string]*url.URL
+	var frontends map[string]map[string]*preparedFrontend
 	if err == nil {
 		upstreams = c.resolveRouteUpstreams(ctx, resp.routeEndpoints)
+		frontends = c.prepareFrontends(ctx, resp)
+		if c.now().Sub(readAt) > solutionRegistryLease {
+			err = context.DeadlineExceeded
+		}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -252,9 +281,11 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	}
 	c.records = records
 	c.upstreams = upstreams
+	c.frontends = frontends
 	c.revision = resp.GetRegistryRevision()
 	c.loaded = true
-	c.loadedAt = c.attemptedAt
+	// Acquisition must never renew the age of the authority read preceding it.
+	c.loadedAt = readAt
 	c.lastErr = nil
 	return nil
 }
@@ -377,10 +408,15 @@ func routableUpstream(raw string) (*url.URL, bool) {
 // snapshot past the revocation lease, which holds records and authorises none
 // of them.
 func (c *solutionRegistryCache) lookup(id string) (record *accountsv1.SolutionRegistration, upstream *url.URL, found, loaded, stale bool) {
+	read := c.lookupSnapshot(id)
+	return read.record, read.upstream, read.found, read.loaded, read.stale
+}
+
+func (c *solutionRegistryCache) lookupSnapshot(id string) solutionLookup {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	record, found = c.records[id]
-	return record, c.upstreams[id], found, c.loaded, c.loaded && c.now().Sub(c.loadedAt) > solutionRegistryLease
+	record, found := c.records[id]
+	return solutionLookup{record: record, upstream: c.upstreams[id], frontends: c.frontends[id], found: found, loaded: c.loaded, stale: c.loaded && c.now().Sub(c.loadedAt) > solutionRegistryLease}
 }
 
 func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
@@ -393,7 +429,8 @@ func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
 // a verdict must never be derived without: whether the registry could actually
 // be consulted about it.
 type solutionLookup struct {
-	record *accountsv1.SolutionRegistration
+	record    *accountsv1.SolutionRegistration
+	frontends map[string]*preparedFrontend
 	// upstream is the resolved address of the alias, from the same snapshot as
 	// record.
 	upstream *url.URL
@@ -443,26 +480,20 @@ func (c *solutionRegistryCache) conclusive(record *accountsv1.SolutionRegistrati
 // organization did not install this" because accounts was down. An authority
 // that cannot be asked must never read as an answer from it.
 func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solutionLookup {
-	record, upstream, found, loaded, stale := c.lookup(id)
-	if !stale && c.conclusive(record, found) {
-		return solutionLookup{record: record, upstream: upstream, found: found, loaded: loaded}
+	read := c.lookupSnapshot(id)
+	if !read.stale && c.conclusive(read.record, read.found) {
+		return read
 	}
 	refreshErr := c.refreshIfStale(ctx)
 	if refreshErr != nil {
 		log.Printf("solution registry: on-demand refresh for %q failed: %v", id, refreshErr)
 	}
-	record, upstream, found, loaded, stale = c.lookup(id)
-	if stale {
+	read = c.lookupSnapshot(id)
+	if read.stale {
 		log.Printf("solution registry: the snapshot is past the %s lease and the registry cannot be read; no route is authorised on it", solutionRegistryLease)
 	}
-	return solutionLookup{
-		record:      record,
-		upstream:    upstream,
-		found:       found,
-		loaded:      loaded,
-		stale:       stale,
-		undecidable: refreshErr != nil && !c.conclusive(record, found),
-	}
+	read.undecidable = refreshErr != nil && !c.conclusive(read.record, read.found)
+	return read
 }
 
 // solutionRouting is ONE resolution of one route alias: the identity admission
@@ -485,8 +516,10 @@ func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solu
 // that must refuse it is the one holding the viewer, and it refuses it as a
 // verdict rather than as a missing route.
 type solutionRouting struct {
+	Alias                       string
 	AssetVersion                string
 	FrontendRequiresPreparation bool
+	Frontends                   map[string]*preparedFrontend
 	// TargetID is the immutable solution target this alias resolves to, empty
 	// for a registration no declaration opened a target for.
 	TargetID string
@@ -538,6 +571,7 @@ const (
 	solutionSurface routingSurface = iota
 	moduleSurface
 	frontendSurface
+	retainedFrontendSurface
 )
 
 func (c *solutionRegistryCache) resolveRoutingOfKind(
@@ -567,11 +601,11 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	// The declaration positively identifies the routing surface. Both kinds
 	// require organization consent; an unspecified kind is served by neither.
 	switch surface {
-	case frontendSurface:
+	case frontendSurface, retainedFrontendSurface:
 		// A shared module can contribute a page. Only its public asset surface
 		// uses this path; its APIs keep the module route and audience checks.
 		if (!declaredSolutionKind(record) && !declaredModuleKind(record)) ||
-			record.GetFrontend().GetManifest() == "" {
+			(surface != retainedFrontendSurface && record.GetFrontend().GetManifest() == "") {
 			return nil, solutionWrongKind
 		}
 	case moduleSurface:
@@ -591,12 +625,14 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	// endpoint the applied presence declares, for a solution exactly as for a
 	// module. No address means the composition handed this gateway no carrier
 	// for it, which is "not serving" and not "not registered".
-	if read.upstream == nil {
+	if read.upstream == nil && surface != retainedFrontendSurface && !(surface == frontendSurface && frontendRequiresPreparation(record)) {
 		return nil, solutionNotActive
 	}
 	return &solutionRouting{
+		Alias:                       record.GetSolutionId(),
 		AssetVersion:                frontendAssetVersion(record),
 		FrontendRequiresPreparation: frontendRequiresPreparation(record),
+		Frontends:                   read.frontends,
 		TargetID:                    record.GetDeclared().GetTargetId(),
 		BindingID:                   record.GetDeclared().GetBindingId(),
 		Upstream:                    read.upstream,

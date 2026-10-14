@@ -11,6 +11,7 @@ import (
 	sync "sync"
 	unsafe "unsafe"
 
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -879,6 +880,93 @@ func (x *SolutionHostBindingState) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// One previously applied frontend for a still-live target. The targeted read
+// joins exact admitted bytes to applied history, excluding delivered-only and
+// closed-target identities. Public code confers no installation or API access.
+type SolutionFrontendGeneration struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Generation    uint64                 `protobuf:"varint,1,opt,name=generation,proto3" json:"generation,omitempty"`
+	TargetId      string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	BindingId     string                 `protobuf:"bytes,3,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	Release       string                 `protobuf:"bytes,4,opt,name=release,proto3" json:"release,omitempty"`
+	Frontend      string                 `protobuf:"bytes,5,opt,name=frontend,proto3" json:"frontend,omitempty"`
+	AssetVersion  string                 `protobuf:"bytes,6,opt,name=asset_version,json=assetVersion,proto3" json:"asset_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SolutionFrontendGeneration) Reset() {
+	*x = SolutionFrontendGeneration{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SolutionFrontendGeneration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SolutionFrontendGeneration) ProtoMessage() {}
+
+func (x *SolutionFrontendGeneration) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SolutionFrontendGeneration.ProtoReflect.Descriptor instead.
+func (*SolutionFrontendGeneration) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SolutionFrontendGeneration) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *SolutionFrontendGeneration) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *SolutionFrontendGeneration) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *SolutionFrontendGeneration) GetRelease() string {
+	if x != nil {
+		return x.Release
+	}
+	return ""
+}
+
+func (x *SolutionFrontendGeneration) GetFrontend() string {
+	if x != nil {
+		return x.Frontend
+	}
+	return ""
+}
+
+func (x *SolutionFrontendGeneration) GetAssetVersion() string {
+	if x != nil {
+		return x.AssetVersion
+	}
+	return ""
+}
+
 // ListSolutionHostBindingsRequest reads every declared binding. There is one set
 // per deployment and it holds tens of bindings at most, so a consumer rebuilds
 // its view from a full snapshot.
@@ -890,7 +978,7 @@ type ListSolutionHostBindingsRequest struct {
 
 func (x *ListSolutionHostBindingsRequest) Reset() {
 	*x = ListSolutionHostBindingsRequest{}
-	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -902,7 +990,7 @@ func (x *ListSolutionHostBindingsRequest) String() string {
 func (*ListSolutionHostBindingsRequest) ProtoMessage() {}
 
 func (x *ListSolutionHostBindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -915,7 +1003,7 @@ func (x *ListSolutionHostBindingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSolutionHostBindingsRequest.ProtoReflect.Descriptor instead.
 func (*ListSolutionHostBindingsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{9}
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{10}
 }
 
 type ListSolutionHostBindingsResponse struct {
@@ -927,7 +1015,7 @@ type ListSolutionHostBindingsResponse struct {
 
 func (x *ListSolutionHostBindingsResponse) Reset() {
 	*x = ListSolutionHostBindingsResponse{}
-	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -939,7 +1027,7 @@ func (x *ListSolutionHostBindingsResponse) String() string {
 func (*ListSolutionHostBindingsResponse) ProtoMessage() {}
 
 func (x *ListSolutionHostBindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -952,7 +1040,7 @@ func (x *ListSolutionHostBindingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSolutionHostBindingsResponse.ProtoReflect.Descriptor instead.
 func (*ListSolutionHostBindingsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{10}
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListSolutionHostBindingsResponse) GetBindings() []*SolutionHostBindingState {
@@ -962,11 +1050,109 @@ func (x *ListSolutionHostBindingsResponse) GetBindings() []*SolutionHostBindingS
 	return nil
 }
 
+// A retained frontend read returns at most one exact APPLIED identity. It never
+// expands the shared registry snapshot by the number of retained generations.
+type GetRetainedSolutionFrontendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BindingId     string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	AssetVersion  string                 `protobuf:"bytes,2,opt,name=asset_version,json=assetVersion,proto3" json:"asset_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRetainedSolutionFrontendRequest) Reset() {
+	*x = GetRetainedSolutionFrontendRequest{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRetainedSolutionFrontendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRetainedSolutionFrontendRequest) ProtoMessage() {}
+
+func (x *GetRetainedSolutionFrontendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRetainedSolutionFrontendRequest.ProtoReflect.Descriptor instead.
+func (*GetRetainedSolutionFrontendRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetRetainedSolutionFrontendRequest) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *GetRetainedSolutionFrontendRequest) GetAssetVersion() string {
+	if x != nil {
+		return x.AssetVersion
+	}
+	return ""
+}
+
+type GetRetainedSolutionFrontendResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Frontend      *SolutionFrontendGeneration `protobuf:"bytes,1,opt,name=frontend,proto3" json:"frontend,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRetainedSolutionFrontendResponse) Reset() {
+	*x = GetRetainedSolutionFrontendResponse{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRetainedSolutionFrontendResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRetainedSolutionFrontendResponse) ProtoMessage() {}
+
+func (x *GetRetainedSolutionFrontendResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRetainedSolutionFrontendResponse.ProtoReflect.Descriptor instead.
+func (*GetRetainedSolutionFrontendResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetRetainedSolutionFrontendResponse) GetFrontend() *SolutionFrontendGeneration {
+	if x != nil {
+		return x.Frontend
+	}
+	return nil
+}
+
 var File_saas_accounts_v1_solution_registry_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\n" +
-	"(saas/accounts/v1/solution_registry.proto\x12\x10saas.accounts.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x81\x01\n" +
+	"(saas/accounts/v1/solution_registry.proto\x12\x10saas.accounts.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bbuf/validate/validate.proto\"\x81\x01\n" +
 	"\x17SolutionFrontendBinding\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x03R\brevision\x12\x1a\n" +
 	"\bmanifest\x18\x02 \x01(\tR\bmanifestJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\x10contract_versionR\x10lease_expires_at\"\xe9\x04\n" +
@@ -1042,10 +1228,26 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\n" +
 	"\b_appliedB\x10\n" +
 	"\x0e_pending_sinceB\x0f\n" +
-	"\r_registration\"!\n" +
+	"\r_registration\"\xd3\x01\n" +
+	"\x1aSolutionFrontendGeneration\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x01 \x01(\x04R\n" +
+	"generation\x12\x1b\n" +
+	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x03 \x01(\tR\tbindingId\x12\x18\n" +
+	"\arelease\x18\x04 \x01(\tR\arelease\x12\x1a\n" +
+	"\bfrontend\x18\x05 \x01(\tR\bfrontend\x12#\n" +
+	"\rasset_version\x18\x06 \x01(\tR\fassetVersion\"!\n" +
 	"\x1fListSolutionHostBindingsRequest\"j\n" +
 	" ListSolutionHostBindingsResponse\x12F\n" +
-	"\bbindings\x18\x01 \x03(\v2*.saas.accounts.v1.SolutionHostBindingStateR\bbindings*\xa7\x02\n" +
+	"\bbindings\x18\x01 \x03(\v2*.saas.accounts.v1.SolutionHostBindingStateR\bbindings\"\x88\x01\n" +
+	"\"GetRetainedSolutionFrontendRequest\x12&\n" +
+	"\n" +
+	"binding_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tbindingId\x12:\n" +
+	"\rasset_version\x18\x02 \x01(\tB\x15\xbaH\x12r\x102\x0e^[a-f0-9]{64}$R\fassetVersion\"o\n" +
+	"#GetRetainedSolutionFrontendResponse\x12H\n" +
+	"\bfrontend\x18\x01 \x01(\v2,.saas.accounts.v1.SolutionFrontendGenerationR\bfrontend*\xa7\x02\n" +
 	"\x1aSolutionRegistrationStatus\x12,\n" +
 	"(SOLUTION_REGISTRATION_STATUS_UNSPECIFIED\x10\x00\x12'\n" +
 	"#SOLUTION_REGISTRATION_STATUS_ACTIVE\x10\x01\x12(\n" +
@@ -1070,7 +1272,7 @@ func file_saas_accounts_v1_solution_registry_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_solution_registry_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_saas_accounts_v1_solution_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_saas_accounts_v1_solution_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_saas_accounts_v1_solution_registry_proto_goTypes = []any{
 	(SolutionRegistrationStatus)(0),              // 0: saas.accounts.v1.SolutionRegistrationStatus
 	(SolutionDeclaredKind)(0),                    // 1: saas.accounts.v1.SolutionDeclaredKind
@@ -1083,32 +1285,36 @@ var file_saas_accounts_v1_solution_registry_proto_goTypes = []any{
 	(*SolutionHostBindingGeneration)(nil),        // 8: saas.accounts.v1.SolutionHostBindingGeneration
 	(*SolutionHostBindingAppliedGeneration)(nil), // 9: saas.accounts.v1.SolutionHostBindingAppliedGeneration
 	(*SolutionHostBindingState)(nil),             // 10: saas.accounts.v1.SolutionHostBindingState
-	(*ListSolutionHostBindingsRequest)(nil),      // 11: saas.accounts.v1.ListSolutionHostBindingsRequest
-	(*ListSolutionHostBindingsResponse)(nil),     // 12: saas.accounts.v1.ListSolutionHostBindingsResponse
-	(*timestamppb.Timestamp)(nil),                // 13: google.protobuf.Timestamp
+	(*SolutionFrontendGeneration)(nil),           // 11: saas.accounts.v1.SolutionFrontendGeneration
+	(*ListSolutionHostBindingsRequest)(nil),      // 12: saas.accounts.v1.ListSolutionHostBindingsRequest
+	(*ListSolutionHostBindingsResponse)(nil),     // 13: saas.accounts.v1.ListSolutionHostBindingsResponse
+	(*GetRetainedSolutionFrontendRequest)(nil),   // 14: saas.accounts.v1.GetRetainedSolutionFrontendRequest
+	(*GetRetainedSolutionFrontendResponse)(nil),  // 15: saas.accounts.v1.GetRetainedSolutionFrontendResponse
+	(*timestamppb.Timestamp)(nil),                // 16: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_solution_registry_proto_depIdxs = []int32{
 	0,  // 0: saas.accounts.v1.SolutionRegistration.status:type_name -> saas.accounts.v1.SolutionRegistrationStatus
 	2,  // 1: saas.accounts.v1.SolutionRegistration.frontend:type_name -> saas.accounts.v1.SolutionFrontendBinding
-	13, // 2: saas.accounts.v1.SolutionRegistration.updated_at:type_name -> google.protobuf.Timestamp
-	13, // 3: saas.accounts.v1.SolutionRegistration.tombstoned_at:type_name -> google.protobuf.Timestamp
+	16, // 2: saas.accounts.v1.SolutionRegistration.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 3: saas.accounts.v1.SolutionRegistration.tombstoned_at:type_name -> google.protobuf.Timestamp
 	7,  // 4: saas.accounts.v1.SolutionRegistration.declared:type_name -> saas.accounts.v1.SolutionDeclaredBinding
 	4,  // 5: saas.accounts.v1.SolutionRegistration.group:type_name -> saas.accounts.v1.SolutionGroup
 	3,  // 6: saas.accounts.v1.ListSolutionRegistrationsResponse.registrations:type_name -> saas.accounts.v1.SolutionRegistration
 	1,  // 7: saas.accounts.v1.SolutionDeclaredBinding.kind:type_name -> saas.accounts.v1.SolutionDeclaredKind
-	13, // 8: saas.accounts.v1.SolutionHostBindingGeneration.at:type_name -> google.protobuf.Timestamp
+	16, // 8: saas.accounts.v1.SolutionHostBindingGeneration.at:type_name -> google.protobuf.Timestamp
 	8,  // 9: saas.accounts.v1.SolutionHostBindingAppliedGeneration.generation:type_name -> saas.accounts.v1.SolutionHostBindingGeneration
 	8,  // 10: saas.accounts.v1.SolutionHostBindingState.desired:type_name -> saas.accounts.v1.SolutionHostBindingGeneration
 	9,  // 11: saas.accounts.v1.SolutionHostBindingState.applied:type_name -> saas.accounts.v1.SolutionHostBindingAppliedGeneration
-	13, // 12: saas.accounts.v1.SolutionHostBindingState.pending_since:type_name -> google.protobuf.Timestamp
+	16, // 12: saas.accounts.v1.SolutionHostBindingState.pending_since:type_name -> google.protobuf.Timestamp
 	3,  // 13: saas.accounts.v1.SolutionHostBindingState.registration:type_name -> saas.accounts.v1.SolutionRegistration
-	13, // 14: saas.accounts.v1.SolutionHostBindingState.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 14: saas.accounts.v1.SolutionHostBindingState.updated_at:type_name -> google.protobuf.Timestamp
 	10, // 15: saas.accounts.v1.ListSolutionHostBindingsResponse.bindings:type_name -> saas.accounts.v1.SolutionHostBindingState
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	11, // 16: saas.accounts.v1.GetRetainedSolutionFrontendResponse.frontend:type_name -> saas.accounts.v1.SolutionFrontendGeneration
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_solution_registry_proto_init() }
@@ -1124,7 +1330,7 @@ func file_saas_accounts_v1_solution_registry_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_solution_registry_proto_rawDesc), len(file_saas_accounts_v1_solution_registry_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

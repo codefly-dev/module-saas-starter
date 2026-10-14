@@ -201,7 +201,6 @@ func TestSolutionHostBinding_UnpreparedFrontendPreservesAppliedGeneration(t *tes
 	solutionID := testDeclaredSolutionID(t)
 	source := &deliveredSet{}
 	first := declaredBinding(t, solutionID, 1)
-	first.Frontend = &solutionhost.Frontend{Title: "Example", ExposedModule: "./Page", HostContract: 1}
 	source.put(t, first)
 	reconciler := newTestReconciler(t, source)
 	if err := reconciler.RunOnce(testCtx); err != nil {
@@ -224,11 +223,11 @@ func TestSolutionHostBinding_UnpreparedFrontendPreservesAppliedGeneration(t *tes
 			t.Fatalf("expected unprepared frontend refusal, got %v", err)
 		}
 		state := bindingState(t, first.Binding)
-		if state == nil || state.Applied == nil || state.Applied.Generation != 1 || state.PendingGeneration() != 2 || state.PendingReason != business.ErrSolutionFrontendNotPrepared.Error() {
+		if state == nil || state.Applied == nil || state.Applied.Generation != 1 || state.PendingGeneration() != 2 || !strings.HasPrefix(state.PendingReason, business.ErrSolutionFrontendNotPrepared.Error()+": ") {
 			t.Fatalf("old generation not preserved with a pending successor: %+v", state)
 		}
 		after := registration(t, solutionID)
-		if after == nil || after.Revision != before.Revision || after.Frontend.Manifest != before.Frontend.Manifest || after.Declared.TargetID != before.Declared.TargetID {
+		if after == nil || after.Revision != before.Revision || after.Frontend != nil || before.Frontend != nil || after.Declared.TargetID != before.Declared.TargetID {
 			t.Fatalf("unprepared payload changed the active registration: %+v", after)
 		}
 	}

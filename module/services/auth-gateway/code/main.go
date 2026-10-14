@@ -16,6 +16,7 @@ import (
 
 	"github.com/codefly-dev/core/standards"
 	wooltel "github.com/codefly-dev/core/wool/otel"
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
 
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -261,6 +262,11 @@ func main() {
 		// reach this replica without restarting it.
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
+		frontendSource, err := frontendpayload.ConfigureNative(ctx, codefly.For(ctx), codefly.IsLocal(), os.Getenv("KUBERNETES_SERVICE_HOST") != "")
+		if err != nil {
+			panic(err)
+		}
+		gateway.solutions.frontendSource = frontendSource
 		go gateway.runInstallationJobs(ctx, apiHTTPURL)
 		// The per-viewer solution entitlement read (#949), over the same internal
 		// connection. It is not a cache: the answer is per viewer and must not

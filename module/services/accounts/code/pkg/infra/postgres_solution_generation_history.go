@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 )
 
 // solution_generation_history is a control-plane-owned platform relation, and the
@@ -26,7 +27,11 @@ const solutionGenerationHistoryColumns = `binding_id, target_id::text, generatio
 func (s *PostgresStore) RecordSolutionGenerationDecision(
 	ctx context.Context, decision *business.SolutionGenerationDecision,
 ) error {
-	var targetID, reason, release *string
+	var targetID, reason, release, assetVersion *string
+	if decision.Decision == business.SolutionGenerationApplied && decision.TargetID != "" && decision.Release != "" {
+		value := frontendpayload.AssetVersion(decision.BindingID, decision.TargetID, decision.Generation, decision.Release)
+		assetVersion = &value
+	}
 	if decision.TargetID != "" {
 		targetID = &decision.TargetID
 	}
@@ -43,11 +48,11 @@ func (s *PostgresStore) RecordSolutionGenerationDecision(
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO public.solution_generation_history
 			(binding_id, target_id, generation, digest, decision, reason, release,
-			 registry_revision, decided_at)
-		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9)
+			 registry_revision, decided_at, asset_version)
+		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (binding_id, generation, digest, decision) DO NOTHING`,
 		decision.BindingID, targetID, int64(decision.Generation), decision.Digest,
-		decision.Decision, reason, release, decision.RegistryRevision, decidedAt)
+		decision.Decision, reason, release, decision.RegistryRevision, decidedAt, assetVersion)
 	return err
 }
 

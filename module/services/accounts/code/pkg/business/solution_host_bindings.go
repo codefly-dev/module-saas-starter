@@ -117,14 +117,14 @@ type SolutionHostBindingApplied struct {
 
 // SolutionHostBindingRecord is the host's durable record for one binding ID.
 type SolutionHostBindingRecord struct {
-	BindingID      string
-	HostCoordinate string
-	HostComponent  string
-	Desired        *SolutionHostBindingGeneration
-	Applied        *SolutionHostBindingApplied
-	PendingReason  string
-	PendingSince   *time.Time
-	UpdatedAt      time.Time
+	BindingID         string
+	HostCoordinate    string
+	HostComponent     string
+	Desired           *SolutionHostBindingGeneration
+	Applied           *SolutionHostBindingApplied
+	PendingReason     string
+	PendingSince      *time.Time
+	UpdatedAt         time.Time
 }
 
 // AppliedState is the record in the shape core judges a document against. A

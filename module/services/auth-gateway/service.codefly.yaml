@@ -33,6 +33,7 @@ workspace-configuration-dependencies:
     # origin a token is accepted at are one operator-pinned value rather than
     # two headers that can disagree.
     - application
+    - artifact-cache
     - gateway
     - gateway-trust
     - internal-auth

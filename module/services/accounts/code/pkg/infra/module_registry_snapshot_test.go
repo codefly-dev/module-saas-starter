@@ -94,7 +94,7 @@ func TestControlPlaneReadSnapshotKeepsPresenceAndWithdrawalHistoryTogether(t *te
 	alias := uniqueAlias("registry-snapshot")
 	binding := "binding-" + alias
 	now := time.Now().UTC()
-	applied := appliedPresenceRecord(binding, alias, 1, now, false)
+	applied := appliedPresenceRecord(t, binding, alias, 1, now, false)
 	raw, err := solutionhost.FixtureDocument(solutionhost.DocumentTypeAuthority, "valid")
 	require.NoError(t, err)
 	document, err := solutionhost.ParseAuthority(raw)

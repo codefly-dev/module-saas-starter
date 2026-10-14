@@ -18,7 +18,7 @@ func TestSolutionManifestGroupsOnlyDeclaredSolutions(t *testing.T) {
 			Frontend: &accountsv1.SolutionFrontendBinding{Manifest: fakeFrontendBlock("example")},
 			Group:    &accountsv1.SolutionGroup{Id: "operations", Title: "Operations", Order: 2},
 		}
-		wire, ok := solutionManifest(record)
+		wire, ok := solutionManifest(record, false)
 		require.True(t, ok)
 		var projected map[string]json.RawMessage
 		require.NoError(t, json.Unmarshal([]byte(wire), &projected))
@@ -28,7 +28,7 @@ func TestSolutionManifestGroupsOnlyDeclaredSolutions(t *testing.T) {
 			require.NotContains(t, projected, "group")
 		}
 		record.Frontend = nil
-		_, ok = solutionManifest(record)
+		_, ok = solutionManifest(record, false)
 		require.False(t, ok, "group membership cannot manufacture a frontend")
 	}
 }

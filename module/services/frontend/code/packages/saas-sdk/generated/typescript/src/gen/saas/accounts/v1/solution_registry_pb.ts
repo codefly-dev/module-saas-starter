@@ -6,13 +6,14 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file saas/accounts/v1/solution_registry.proto.
  */
 export const file_saas_accounts_v1_solution_registry: GenFile = /*@__PURE__*/
-  fileDesc("CihzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIm0KF1NvbHV0aW9uRnJvbnRlbmRCaW5kaW5nEhAKCHJldmlzaW9uGAEgASgDEhAKCG1hbmlmZXN0GAIgASgJSgQIAxAESgQIBBAFUhBjb250cmFjdF92ZXJzaW9uUhBsZWFzZV9leHBpcmVzX2F0IowEChRTb2x1dGlvblJlZ2lzdHJhdGlvbhITCgtzb2x1dGlvbl9pZBgBIAEoCRIRCglwdWJsaXNoZXIYAiABKAkSEAoIcmV2aXNpb24YAyABKAMSPAoGc3RhdHVzGAQgASgOMiwuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxJACghmcm9udGVuZBgFIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Gcm9udGVuZEJpbmRpbmdIAIgBARIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2Cg10b21ic3RvbmVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgBiAEBEkAKCGRlY2xhcmVkGAogASgLMikuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkRlY2xhcmVkQmluZGluZ0gCiAEBEjMKBWdyb3VwGAsgASgLMh8uc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkdyb3VwSAOIAQFCCwoJX2Zyb250ZW5kQhAKDl90b21ic3RvbmVkX2F0QgsKCV9kZWNsYXJlZEIICgZfZ3JvdXBKBAgGEAdKBAgJEApSB2JhY2tlbmRSEHJ1bnRpbWVfYm91bmRhcnkiOQoNU29sdXRpb25Hcm91cBIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRINCgVvcmRlchgDIAEoBSI+CiBMaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVxdWVzdBIaChJpbmNsdWRlX3RvbWJzdG9uZWQYASABKAgifQohTGlzdFNvbHV0aW9uUmVnaXN0cmF0aW9uc1Jlc3BvbnNlEj0KDXJlZ2lzdHJhdGlvbnMYASADKAsyJi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uUmVnaXN0cmF0aW9uEhkKEXJlZ2lzdHJ5X3JldmlzaW9uGAIgASgDIpsBChdTb2x1dGlvbkRlY2xhcmVkQmluZGluZxISCgpiaW5kaW5nX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSDwoHcmVsZWFzZRgDIAEoCRIRCgl0YXJnZXRfaWQYBCABKAkSNAoEa2luZBgFIAEoDjImLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25EZWNsYXJlZEtpbmQifQodU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SEgoKZ2VuZXJhdGlvbhgBIAEoBBIOCgZkaWdlc3QYAiABKAkSEAoIZG9jdW1lbnQYAyABKAkSJgoCYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrIBCiRTb2x1dGlvbkhvc3RCaW5kaW5nQXBwbGllZEdlbmVyYXRpb24SQwoKZ2VuZXJhdGlvbhgBIAEoCzIvLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SDwoHcmVtb3ZlZBgCIAEoCBIOCgZyb3V0ZXMYAyADKAkSEwoLc29sdXRpb25faWQYBCABKAkSDwoHcmVsZWFzZRgFIAEoCSKOBAoYU29sdXRpb25Ib3N0QmluZGluZ1N0YXRlEhIKCmJpbmRpbmdfaWQYASABKAkSFwoPaG9zdF9jb29yZGluYXRlGAIgASgJEhYKDmhvc3RfY29tcG9uZW50GAMgASgJEkUKB2Rlc2lyZWQYBCABKAsyLy5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdHZW5lcmF0aW9uSACIAQESTAoHYXBwbGllZBgFIAEoCzI2LnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0FwcGxpZWRHZW5lcmF0aW9uSAGIAQESGgoScGVuZGluZ19nZW5lcmF0aW9uGAYgASgEEhYKDnBlbmRpbmdfcmVhc29uGAcgASgJEjYKDXBlbmRpbmdfc2luY2UYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAKIAQESQQoMcmVnaXN0cmF0aW9uGAkgASgLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbkgDiAEBEi4KCnVwZGF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQgoKCF9kZXNpcmVkQgoKCF9hcHBsaWVkQhAKDl9wZW5kaW5nX3NpbmNlQg8KDV9yZWdpc3RyYXRpb24iIQofTGlzdFNvbHV0aW9uSG9zdEJpbmRpbmdzUmVxdWVzdCJgCiBMaXN0U29sdXRpb25Ib3N0QmluZGluZ3NSZXNwb25zZRI8CghiaW5kaW5ncxgBIAMoCzIqLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ1N0YXRlKqcCChpTb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxIsCihTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASJwojU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19BQ1RJVkUQARIoCiRTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX1BFTkRJTkcQAhIrCidTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX1RPTUJTVE9ORUQQBSIECAMQAyIECAQQBCokU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19FWFBJUkVEKilTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX0lOQ09NUEFUSUJMRSqGAQoUU29sdXRpb25EZWNsYXJlZEtpbmQSJgoiU09MVVRJT05fREVDTEFSRURfS0lORF9VTlNQRUNJRklFRBAAEiMKH1NPTFVUSU9OX0RFQ0xBUkVEX0tJTkRfU09MVVRJT04QARIhCh1TT0xVVElPTl9ERUNMQVJFRF9LSU5EX01PRFVMRRACYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("CihzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIm0KF1NvbHV0aW9uRnJvbnRlbmRCaW5kaW5nEhAKCHJldmlzaW9uGAEgASgDEhAKCG1hbmlmZXN0GAIgASgJSgQIAxAESgQIBBAFUhBjb250cmFjdF92ZXJzaW9uUhBsZWFzZV9leHBpcmVzX2F0IowEChRTb2x1dGlvblJlZ2lzdHJhdGlvbhITCgtzb2x1dGlvbl9pZBgBIAEoCRIRCglwdWJsaXNoZXIYAiABKAkSEAoIcmV2aXNpb24YAyABKAMSPAoGc3RhdHVzGAQgASgOMiwuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxJACghmcm9udGVuZBgFIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Gcm9udGVuZEJpbmRpbmdIAIgBARIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2Cg10b21ic3RvbmVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgBiAEBEkAKCGRlY2xhcmVkGAogASgLMikuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkRlY2xhcmVkQmluZGluZ0gCiAEBEjMKBWdyb3VwGAsgASgLMh8uc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkdyb3VwSAOIAQFCCwoJX2Zyb250ZW5kQhAKDl90b21ic3RvbmVkX2F0QgsKCV9kZWNsYXJlZEIICgZfZ3JvdXBKBAgGEAdKBAgJEApSB2JhY2tlbmRSEHJ1bnRpbWVfYm91bmRhcnkiOQoNU29sdXRpb25Hcm91cBIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRINCgVvcmRlchgDIAEoBSI+CiBMaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVxdWVzdBIaChJpbmNsdWRlX3RvbWJzdG9uZWQYASABKAgifQohTGlzdFNvbHV0aW9uUmVnaXN0cmF0aW9uc1Jlc3BvbnNlEj0KDXJlZ2lzdHJhdGlvbnMYASADKAsyJi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uUmVnaXN0cmF0aW9uEhkKEXJlZ2lzdHJ5X3JldmlzaW9uGAIgASgDIpsBChdTb2x1dGlvbkRlY2xhcmVkQmluZGluZxISCgpiaW5kaW5nX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSDwoHcmVsZWFzZRgDIAEoCRIRCgl0YXJnZXRfaWQYBCABKAkSNAoEa2luZBgFIAEoDjImLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25EZWNsYXJlZEtpbmQifQodU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SEgoKZ2VuZXJhdGlvbhgBIAEoBBIOCgZkaWdlc3QYAiABKAkSEAoIZG9jdW1lbnQYAyABKAkSJgoCYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIs0BCiRTb2x1dGlvbkhvc3RCaW5kaW5nQXBwbGllZEdlbmVyYXRpb24SQwoKZ2VuZXJhdGlvbhgBIAEoCzIvLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SDwoHcmVtb3ZlZBgCIAEoCBIOCgZyb3V0ZXMYAyADKAkSEwoLc29sdXRpb25faWQYBCABKAkSDwoHcmVsZWFzZRgFIAEoCRIZChFlbmRwb2ludF9kZWxpdmVyeRgGIAEoDCKOBAoYU29sdXRpb25Ib3N0QmluZGluZ1N0YXRlEhIKCmJpbmRpbmdfaWQYASABKAkSFwoPaG9zdF9jb29yZGluYXRlGAIgASgJEhYKDmhvc3RfY29tcG9uZW50GAMgASgJEkUKB2Rlc2lyZWQYBCABKAsyLy5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdHZW5lcmF0aW9uSACIAQESTAoHYXBwbGllZBgFIAEoCzI2LnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0FwcGxpZWRHZW5lcmF0aW9uSAGIAQESGgoScGVuZGluZ19nZW5lcmF0aW9uGAYgASgEEhYKDnBlbmRpbmdfcmVhc29uGAcgASgJEjYKDXBlbmRpbmdfc2luY2UYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAKIAQESQQoMcmVnaXN0cmF0aW9uGAkgASgLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbkgDiAEBEi4KCnVwZGF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQgoKCF9kZXNpcmVkQgoKCF9hcHBsaWVkQhAKDl9wZW5kaW5nX3NpbmNlQg8KDV9yZWdpc3RyYXRpb24ikQEKGlNvbHV0aW9uRnJvbnRlbmRHZW5lcmF0aW9uEhIKCmdlbmVyYXRpb24YASABKAQSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmJpbmRpbmdfaWQYAyABKAkSDwoHcmVsZWFzZRgEIAEoCRIQCghmcm9udGVuZBgFIAEoCRIVCg1hc3NldF92ZXJzaW9uGAYgASgJIiEKH0xpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1JlcXVlc3QiYAogTGlzdFNvbHV0aW9uSG9zdEJpbmRpbmdzUmVzcG9uc2USPAoIYmluZGluZ3MYASADKAsyKi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdTdGF0ZSJvCiJHZXRSZXRhaW5lZFNvbHV0aW9uRnJvbnRlbmRSZXF1ZXN0EhsKCmJpbmRpbmdfaWQYASABKAlCB7pIBHICEAESLAoNYXNzZXRfdmVyc2lvbhgCIAEoCUIVukgSchAyDl5bYS1mMC05XXs2NH0kImUKI0dldFJldGFpbmVkU29sdXRpb25Gcm9udGVuZFJlc3BvbnNlEj4KCGZyb250ZW5kGAEgASgLMiwuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkZyb250ZW5kR2VuZXJhdGlvbiqnAgoaU29sdXRpb25SZWdpc3RyYXRpb25TdGF0dXMSLAooU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEicKI1NPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfQUNUSVZFEAESKAokU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19QRU5ESU5HEAISKwonU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19UT01CU1RPTkVEEAUiBAgDEAMiBAgEEAQqJFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfRVhQSVJFRCopU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19JTkNPTVBBVElCTEUqhgEKFFNvbHV0aW9uRGVjbGFyZWRLaW5kEiYKIlNPTFVUSU9OX0RFQ0xBUkVEX0tJTkRfVU5TUEVDSUZJRUQQABIjCh9TT0xVVElPTl9ERUNMQVJFRF9LSU5EX1NPTFVUSU9OEAESIQodU09MVVRJT05fREVDTEFSRURfS0lORF9NT0RVTEUQAmIGcHJvdG8z", [file_google_protobuf_timestamp, file_buf_validate_validate]);
 
 /**
  * SolutionFrontendBinding is the stored frontend half: the `frontend` block of
@@ -335,6 +336,15 @@ export type SolutionHostBindingAppliedGeneration = Message<"saas.accounts.v1.Sol
    * @generated from field: string release = 5;
    */
   release: string;
+
+  /**
+   * Opaque Codefly endpoint delivery joined to this exact applied document.
+   * Only the Codefly SDK interprets it. Empty means no delivered route; neither
+   * desired state nor startup addresses are a fallback.
+   *
+   * @generated from field: bytes endpoint_delivery = 6;
+   */
+  endpointDelivery: Uint8Array;
 };
 
 /**
@@ -425,6 +435,52 @@ export const SolutionHostBindingStateSchema: GenMessage<SolutionHostBindingState
   messageDesc(file_saas_accounts_v1_solution_registry, 8);
 
 /**
+ * One previously applied frontend for a still-live target. The targeted read
+ * joins exact admitted bytes to applied history, excluding delivered-only and
+ * closed-target identities. Public code confers no installation or API access.
+ *
+ * @generated from message saas.accounts.v1.SolutionFrontendGeneration
+ */
+export type SolutionFrontendGeneration = Message<"saas.accounts.v1.SolutionFrontendGeneration"> & {
+  /**
+   * @generated from field: uint64 generation = 1;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: string target_id = 2;
+   */
+  targetId: string;
+
+  /**
+   * @generated from field: string binding_id = 3;
+   */
+  bindingId: string;
+
+  /**
+   * @generated from field: string release = 4;
+   */
+  release: string;
+
+  /**
+   * @generated from field: string frontend = 5;
+   */
+  frontend: string;
+
+  /**
+   * @generated from field: string asset_version = 6;
+   */
+  assetVersion: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SolutionFrontendGeneration.
+ * Use `create(SolutionFrontendGenerationSchema)` to create a new message.
+ */
+export const SolutionFrontendGenerationSchema: GenMessage<SolutionFrontendGeneration> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_solution_registry, 9);
+
+/**
  * ListSolutionHostBindingsRequest reads every declared binding. There is one set
  * per deployment and it holds tens of bindings at most, so a consumer rebuilds
  * its view from a full snapshot.
@@ -439,7 +495,7 @@ export type ListSolutionHostBindingsRequest = Message<"saas.accounts.v1.ListSolu
  * Use `create(ListSolutionHostBindingsRequestSchema)` to create a new message.
  */
 export const ListSolutionHostBindingsRequestSchema: GenMessage<ListSolutionHostBindingsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 9);
+  messageDesc(file_saas_accounts_v1_solution_registry, 10);
 
 /**
  * @generated from message saas.accounts.v1.ListSolutionHostBindingsResponse
@@ -456,7 +512,49 @@ export type ListSolutionHostBindingsResponse = Message<"saas.accounts.v1.ListSol
  * Use `create(ListSolutionHostBindingsResponseSchema)` to create a new message.
  */
 export const ListSolutionHostBindingsResponseSchema: GenMessage<ListSolutionHostBindingsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 10);
+  messageDesc(file_saas_accounts_v1_solution_registry, 11);
+
+/**
+ * A retained frontend read returns at most one exact APPLIED identity. It never
+ * expands the shared registry snapshot by the number of retained generations.
+ *
+ * @generated from message saas.accounts.v1.GetRetainedSolutionFrontendRequest
+ */
+export type GetRetainedSolutionFrontendRequest = Message<"saas.accounts.v1.GetRetainedSolutionFrontendRequest"> & {
+  /**
+   * @generated from field: string binding_id = 1;
+   */
+  bindingId: string;
+
+  /**
+   * @generated from field: string asset_version = 2;
+   */
+  assetVersion: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetRetainedSolutionFrontendRequest.
+ * Use `create(GetRetainedSolutionFrontendRequestSchema)` to create a new message.
+ */
+export const GetRetainedSolutionFrontendRequestSchema: GenMessage<GetRetainedSolutionFrontendRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_solution_registry, 12);
+
+/**
+ * @generated from message saas.accounts.v1.GetRetainedSolutionFrontendResponse
+ */
+export type GetRetainedSolutionFrontendResponse = Message<"saas.accounts.v1.GetRetainedSolutionFrontendResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.SolutionFrontendGeneration frontend = 1;
+   */
+  frontend?: SolutionFrontendGeneration;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetRetainedSolutionFrontendResponse.
+ * Use `create(GetRetainedSolutionFrontendResponseSchema)` to create a new message.
+ */
+export const GetRetainedSolutionFrontendResponseSchema: GenMessage<GetRetainedSolutionFrontendResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_solution_registry, 13);
 
 /**
  * SolutionRegistrationStatus is derived from applied presence, never from an

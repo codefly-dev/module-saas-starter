@@ -399,6 +399,7 @@
       "name": "SolutionRegistryService",
       "full_name": "saas.accounts.v1.SolutionRegistryService",
       "procedures": [
+        "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend",
         "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
         "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
       ]
@@ -11910,6 +11911,49 @@
       },
       "policy_tier": "internal",
       "description": "List the installed solutions a subject may use in one organization.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend",
+      "service": "SolutionRegistryService",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "GetRetainedSolutionFrontend",
+      "input_type": "saas.accounts.v1.GetRetainedSolutionFrontendRequest",
+      "output_type": "saas.accounts.v1.GetRetainedSolutionFrontendResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Read one retained frontend identity for a live declared target; grants no installation or API access.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

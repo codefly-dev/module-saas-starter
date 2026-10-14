@@ -45,6 +45,14 @@ A binding ID identifies a deployment instance, while an alias identifies a route
 consent names the target and cannot follow an alias to a replacement instance.
 Only observations for the same declared target may survive a re-declaration.
 
+New frontend candidates require complete signed payload preparation before apply.
+A failed candidate preserves the applied predecessor. Migration 40 indexes new
+applied frontend identities; the targeted internal retained-frontend read joins
+exact signed history to a still-live target and keeps last ten or the configured
+lazy-load window. Pre-migration history is not backfilled. Full history is never
+broadcast in the route snapshot. See the prepared-payload section in
+[../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md).
+
 The internal `SolutionRegistryService` exposes the registry and host-binding
 reads. The gateway reads the snapshot and brokers it to the frontend. Both cache
 briefly: gateway reconciliation is approximately 10 seconds with a refresh on

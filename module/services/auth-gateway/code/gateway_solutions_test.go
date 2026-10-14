@@ -36,7 +36,7 @@ func TestGateway_SignedFrontendPayloadNeverFallsBackToMutableBackend(t *testing.
 			require.NoError(t, err)
 			record.Frontend.Manifest = string(encoded)
 			require.NoError(t, gw.solutions.refresh(context.Background()))
-			_, advertised := solutionManifest(record)
+			_, advertised := solutionManifest(record, false)
 			require.False(t, advertised)
 			for _, method := range []string{http.MethodGet, http.MethodHead} {
 				for _, path := range []string{"assets", "assets/mf-manifest.json", "assets/deferred-chunk.js"} {
@@ -782,19 +782,19 @@ func TestGateway_FrontendAssetsCannotChangeGenerationUnderAStableURL(t *testing.
 		}
 		return w.Code
 	}
-	require.Equal(t, http.StatusOK, request(original))
+	require.Equal(t, http.StatusGone, request(original), "an unsigned legacy frontend cannot serve a versioned immutable URL")
 	record.Declared.Generation++
 	record.Declared.Release = "acme/example@2.0.0"
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 	upgraded := frontendAssetVersion(record)
 	require.NotEqual(t, original, upgraded)
 	require.Equal(t, http.StatusGone, request(original), "a stale frontend replica must not serve new bytes under the previous URL")
-	require.Equal(t, http.StatusOK, request(upgraded))
+	require.Equal(t, http.StatusGone, request(upgraded))
 	record.Declared.Generation++
 	record.Declared.Release = "acme/example@1.0.0"
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 	rolledBack := frontendAssetVersion(record)
 	require.NotEqual(t, original, rolledBack, "rollback is a new applied generation")
 	require.Equal(t, http.StatusGone, request(upgraded))
-	require.Equal(t, http.StatusOK, request(rolledBack))
+	require.Equal(t, http.StatusGone, request(rolledBack))
 }

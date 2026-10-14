@@ -1211,8 +1211,9 @@ The gateway stamps an opaque `assetVersion` from the applied binding, target,
 generation and release. Browser assets use
 `/api/solutions/<id>/versions/<assetVersion>/proxy/assets/...`; the manifest,
 remote entry and relative chunks share that directory. Remote builds must use
-`publicPath: "auto"` and relative asset paths. Both proxy layers refuse a stale
-version with 410; this is a cache identity, not an access credential. The shared
+`publicPath: "auto"` and relative asset paths. The gateway serves a historical version only while its admitted history and
+live target permit it; unknown or expired versions receive 410. This is a cache
+identity, not an access credential. The shared
 viewer navigation poll carries it, removes withdrawn pages and refreshes an open
 page when the version changes. The old remote is unmounted during the change,
 and a previous loading failure cannot poison the new generation.
@@ -1220,3 +1221,50 @@ and a previous loading failure cannot poison the new generation.
 This does not by itself make a rolling backend serve immutable assets: delivery
 must also bind the resolved endpoint and packaged frontend to the same build.
 The browser cache tests do not qualify that producer/deployment boundary.
+
+### Prepared frontend payloads and historical assets
+
+A newly delivered frontend must name its signed payload. Accounts verifies the
+complete immutable bundle before applying that generation; a missing, malformed
+or unavailable bundle keeps the candidate pending and leaves the previously
+applied generation intact. A headless declaration needs no payload. Preparation
+uses the shared `frontendpayload` reader, the signed digest, Core's canonical
+archive extractor and the complete declared frontend. Both wire bytes and total
+expanded content are limited to 64 MiB. The manifest must use `publicPath: auto`,
+a named global entry, the declared expose and a complete local asset inventory.
+
+Migration 40 indexes new applied-history decisions by the gateway's existing
+opaque asset version. It does not backfill older history: those decisions
+predate mandatory immutable preparation and confer no retained serving identity.
+`SolutionRegistryService/GetRetainedSolutionFrontend` is an internal, targeted
+read. It verifies the exact applied document, digest, binding and still-live
+target and returns only the requested frontend declaration. History is never
+attached to the shared all-bindings response. Retention includes the target's
+last ten applied generations and every applied generation within
+`federation/FRONTEND_LAZY_LOAD_WINDOW` (a positive duration, default `24h`).
+A rejected candidate is not retained authority. Closing the target revokes every
+retained identity; reusing its route alias cannot recover those identities.
+
+Versioned GET/HEAD assets use this authority even when the current generation is
+headless. Every versioned request requires an admitted immutable bundle; a
+version string alone cannot open the backend asset proxy. A rollback receives a
+new version. Assets grant no installation, team membership or API permission.
+Already-applied legacy frontends retain only their unversioned compatibility
+path; new frontend delivery cannot enter that path without a signed payload.
+
+The gateway bounds bundle preparation to one acquisition at a time and reuses
+four verified bundles (at most 256 MiB of cached content). Route snapshots keep
+metadata, not additional copies of current bundles. At most eight asset handlers
+hold reads concurrently; excess requests receive 503. Each acquisition is bounded
+by the existing ten-second registry deadline. Preparation never renews the
+120-second registry lease; withdrawal or a replaced target fences cached bytes.
+The browser proxy preserves immutable Cache-Control on versioned responses and
+preserves withdrawal/unavailability errors from the gateway.
+
+The implemented runtime source is native development only: Codefly owns and
+creates its digest-named selection cache, then injects `artifact-cache/ROOT` as a
+workspace value into Accounts and the gateway. They open it read-only; a Pod or
+nonlocal run refuses that source. The registry reader is separately tested but
+production repository, protected reader identity, custody and retention have not
+been bound to a deployed composition. These changes do not qualify production
+artifact acquisition or production mountless credential delivery.

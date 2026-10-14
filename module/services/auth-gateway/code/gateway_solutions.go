@@ -1,9 +1,7 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	stdpath "path"
@@ -12,6 +10,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	"google.golang.org/grpc/codes"
 )
 
@@ -21,6 +20,8 @@ import (
 const solutionPrefix = "/solutions/"
 
 const frontendVersionHeader = "X-Codefly-Frontend-Version"
+
+var frontendVersionPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 const (
 	solutionServicePrefix = "solution:"
@@ -95,8 +96,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// admitted on its own installation while the bearer went to its
 	// predecessor's address.
 	surface := solutionSurface
-	if _, public := solutionPublicUpstreamPath(r.Method, path); public {
+	if publicPath, public := solutionPublicUpstreamPath(r.Method, path); public {
 		surface = frontendSurface
+		if r.Header.Get(frontendVersionHeader) != "" && strings.HasPrefix(publicPath, "/assets/") {
+			surface = retainedFrontendSurface
+		}
 	}
 	routing, resolution := g.solutions.resolveRoutingOfKind(r.Context(), id, surface)
 	switch resolution {
@@ -174,9 +178,14 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// unauthenticated flood of this proxy is still capped. Leaving it on bare
 	// proxyTo would make it the one unmetered public proxy in the gateway (#513).
 	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
-		if routing.FrontendRequiresPreparation && (publicPath == "/assets" || strings.HasPrefix(publicPath, "/assets/")) {
-			w.Header().Set("Cache-Control", "no-store")
-			httpError(w, http.StatusServiceUnavailable, "frontend payload is not prepared")
+		if (routing.FrontendRequiresPreparation || r.Header.Get(frontendVersionHeader) != "") && (publicPath == "/assets" || strings.HasPrefix(publicPath, "/assets/")) {
+			stripAllIdentityHeaders(r)
+			removePersonsSessionCredential(r.Header)
+			g.serveFrontendBundle(w, r, routing, publicPath)
+			return true
+		}
+		if routing.Upstream == nil {
+			httpError(w, http.StatusServiceUnavailable, "solution backend is unavailable")
 			return true
 		}
 		if requested := r.Header.Get(frontendVersionHeader); requested != "" && requested != routing.AssetVersion {
@@ -421,14 +430,13 @@ type solutionRegistryProjection struct {
 
 // frontendAssetVersion is an opaque cache identity for one applied generation.
 // It is not authority: both the page read and the gateway compare it against
-// the current declaration. A rollback gets a new identity, as does alias reuse.
+// admitted current or retained history. A rollback gets a new identity, as does alias reuse.
 func frontendAssetVersion(record *accountsv1.SolutionRegistration) string {
 	declared := record.GetDeclared()
 	if declared == nil {
 		return ""
 	}
-	identity, _ := json.Marshal([]any{declared.GetBindingId(), declared.GetTargetId(), declared.GetGeneration(), declared.GetRelease()})
-	return fmt.Sprintf("%x", sha256.Sum256(identity))
+	return frontendpayload.AssetVersion(declared.GetBindingId(), declared.GetTargetId(), declared.GetGeneration(), declared.GetRelease())
 }
 
 type solutionRegistrationProjection struct {
@@ -492,7 +500,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 		case declaredSolutionKind(record):
 			projection.Kind = "solution"
 		}
-		if manifest, ok := solutionManifest(record); ok {
+		if manifest, ok := solutionManifest(record, g.solutions.frontendPrepared(record)); ok {
 			projection.Manifest = &manifest
 			projection.AssetVersion = frontendAssetVersion(record)
 		}

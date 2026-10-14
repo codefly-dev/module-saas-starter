@@ -1043,7 +1043,7 @@ describe("shared module frontend", () => {
 });
 
 describe("versioned frontend assets", () => {
-	it("refuses a stale generation before sending a request", async () => {
+	it("asks the gateway whether an older asset generation is retained", async () => {
 		withGateway();
 		registerAudit();
 		findSolution.mockResolvedValue({
@@ -1061,9 +1061,8 @@ describe("versioned frontend assets", () => {
 				}),
 			},
 		);
-		expect(res.status).toBe(410);
-		expect(res.headers.get("cache-control")).toBe("no-store");
-		expect(fetchMock).not.toHaveBeenCalled();
+		expect(res.status).toBe(200);
+		expect((fetchMock.mock.calls[0][1].headers as Headers).get("X-Codefly-Frontend-Version")).toBe("a".repeat(64));
 	});
 	it("asks the gateway to compare the generation again beside route resolution", async () => {
 		withGateway();
@@ -1091,4 +1090,32 @@ describe("versioned frontend assets", () => {
 			),
 		).toBe(version);
 	});
+});
+
+describe("retained frontend authority", () => {
+ it.each([200, 410, 502, 503])("keeps gateway status %s with a headless current generation", async (status) => {
+  withGateway();
+  findSolution.mockResolvedValue(null);
+  const cache = status === 200 ? "public, max-age=31536000, immutable" : "no-store";
+  fetchMock.mockResolvedValue(new Response("retained response", {status, headers: {"cache-control": cache}}));
+  const res = await GET(proxyRequest("http://frontend/assets/lazy.js"), {params: Promise.resolve({id: "audit", version: "a".repeat(64), path: ["assets", "lazy.js"]})});
+  expect(res.status).toBe(status);
+  expect(await res.text()).toBe("retained response");
+  expect(res.headers.get("cache-control")).toBe(cache);
+  expect(findSolution).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/solutions/audit/assets/lazy.js`);
+ });
+ it("refuses malformed version before asking the gateway", async () => {
+  withGateway();
+  const res = await GET(proxyRequest("http://frontend/assets/lazy.js"), {params: Promise.resolve({id: "audit", version: "bad", path: ["assets", "lazy.js"]})});
+  expect(res.status).toBe(410);
+  expect(fetchMock).not.toHaveBeenCalled();
+ });
+ it("does not use retained code identity to open data routes", async () => {
+  withGateway();
+  findSolution.mockResolvedValue({id: "audit", assetVersion: "b".repeat(64), backend: {serviceAlias: "audit"}});
+  const res = await GET(proxyRequest("http://frontend/records"), {params: Promise.resolve({id: "audit", version: "a".repeat(64), path: ["records"]})});
+  expect(res.status).toBe(410);
+  expect(fetchMock).not.toHaveBeenCalled();
+ });
 });

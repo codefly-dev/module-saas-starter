@@ -3,6 +3,7 @@ syntax = "proto3";
 package saas.accounts.v1;
 
 import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
 
 // Read-only projection of the host's declared solution presence. The gateway
 // shares these messages and reads the accounts internal listener.
@@ -236,6 +237,18 @@ message SolutionHostBindingState {
   google.protobuf.Timestamp updated_at = 10;
 }
 
+// One previously applied frontend for a still-live target. The targeted read
+// joins exact admitted bytes to applied history, excluding delivered-only and
+// closed-target identities. Public code confers no installation or API access.
+message SolutionFrontendGeneration {
+  uint64 generation = 1;
+  string target_id = 2;
+  string binding_id = 3;
+  string release = 4;
+  string frontend = 5;
+  string asset_version = 6;
+}
+
 // ListSolutionHostBindingsRequest reads every declared binding. There is one set
 // per deployment and it holds tens of bindings at most, so a consumer rebuilds
 // its view from a full snapshot.
@@ -243,4 +256,14 @@ message ListSolutionHostBindingsRequest {}
 
 message ListSolutionHostBindingsResponse {
   repeated SolutionHostBindingState bindings = 1;
+}
+
+// A retained frontend read returns at most one exact APPLIED identity. It never
+// expands the shared registry snapshot by the number of retained generations.
+message GetRetainedSolutionFrontendRequest {
+  string binding_id = 1 [(buf.validate.field).string.min_len = 1];
+  string asset_version = 2 [(buf.validate.field).string.pattern = "^[a-f0-9]{64}$"];
+}
+message GetRetainedSolutionFrontendResponse {
+  SolutionFrontendGeneration frontend = 1;
 }

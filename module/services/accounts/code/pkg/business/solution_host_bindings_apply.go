@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 )
 
 // Reconciling an admitted generation into the durable registry (issue #952).
@@ -204,6 +205,18 @@ func (s *Service) applySolutionHostBinding(
 			return err
 		}
 	}
+	// Complete preparation precedes database locks. A slow or corrupt source
+	// never withdraws the previous generation or holds its installation locks.
+	var prepared *frontendpayload.Bundle
+	if !document.Removed && document.Frontend != nil {
+		if document.Frontend.Payload == nil {
+			return fmt.Errorf("%w: frontend declares no signed payload", ErrSolutionFrontendNotPrepared)
+		}
+		prepared, err = frontendpayload.Prepare(ctx, s.frontendSource, document.Frontend)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrSolutionFrontendNotPrepared, err)
+		}
+	}
 
 	// A withdrawal CLOSES the installable target and revokes every active
 	// installation naming it. That is a narrowing of authority, so it must be
@@ -269,11 +282,9 @@ func (s *Service) applySolutionHostBinding(
 			})
 		}
 
-		// A signed digest is not evidence that the host holds those bytes.
-		// Until immutable preparation/serving is wired, leave this generation
-		// desired and preserve the previous applied generation. Do not activate
-		// it through the legacy mutable-backend asset proxy.
-		if !document.Removed && document.Frontend != nil && document.Frontend.Payload != nil {
+		// Bind the preparation result to the same signed payload re-admitted
+		// under this lock. A delivery cannot assert its own readiness.
+		if !document.Removed && document.Frontend != nil && document.Frontend.Payload != nil && !prepared.Matches(document.Frontend) {
 			return ErrSolutionFrontendNotPrepared
 		}
 

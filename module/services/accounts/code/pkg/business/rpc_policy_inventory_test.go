@@ -80,6 +80,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.PrincipalService/EnableAgentPrincipal",
 		"/saas.accounts.v1.PrincipalService/GetAgentPrincipal",
 		"/saas.accounts.v1.PrincipalService/GetPrincipal",
+		"/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend",
 		"/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
 		"/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
 		"/saas.accounts.v1.UsageService/ConsumeUsage",

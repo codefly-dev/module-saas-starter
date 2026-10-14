@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -138,6 +139,7 @@ func solutionHostBindingStateProto(
 	if record.PendingSince != nil {
 		state.PendingSince = timestamppb.New(*record.PendingSince)
 	}
+
 	if desired := record.Desired; desired != nil {
 		state.Desired = solutionHostBindingGenerationProto(*desired)
 	}
@@ -187,3 +189,25 @@ func (h *solutionRegistryConnectHandler) ListSolutionHostBindings(ctx context.Co
 
 // SolutionRegistryErrorDomain is also the source-delegation ErrorInfo domain.
 const SolutionRegistryErrorDomain = "accounts.saas.codefly.dev"
+
+func (s *SolutionRegistryServer) GetRetainedSolutionFrontend(ctx context.Context, req *gen.GetRetainedSolutionFrontendRequest) (*gen.GetRetainedSolutionFrontendResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	retained, err := service.GetRetainedSolutionFrontend(ctx, req.GetBindingId(), req.GetAssetVersion())
+	if err != nil {
+		return nil, err
+	}
+	out := &gen.GetRetainedSolutionFrontendResponse{}
+	if retained != nil {
+		raw, err := json.Marshal(retained.Frontend)
+		if err != nil {
+			return nil, err
+		}
+		out.Frontend = &gen.SolutionFrontendGeneration{TargetId: retained.TargetID, Generation: retained.Generation, BindingId: req.GetBindingId(), Release: retained.Release, Frontend: string(raw), AssetVersion: req.GetAssetVersion()}
+	}
+	return out, nil
+}
+func (h *solutionRegistryConnectHandler) GetRetainedSolutionFrontend(ctx context.Context, req *connect.Request[gen.GetRetainedSolutionFrontendRequest]) (*connect.Response[gen.GetRetainedSolutionFrontendResponse], error) {
+	return unary(ctx, req, h.inner.GetRetainedSolutionFrontend)
+}

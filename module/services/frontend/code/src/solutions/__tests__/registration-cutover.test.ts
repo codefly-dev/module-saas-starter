@@ -10,7 +10,7 @@ describe.each([
 ] as const)("%s registry wire contract", (_name, registry, service) => {
 	it("exposes only reads and no runtime registration messages or lease fields", () => {
 		expect(service.methods.map((method) => method.name)).toEqual([
-			"ListSolutionHostBindings", "ListSolutionRegistrations",
+			"ListSolutionHostBindings", "ListSolutionRegistrations", "GetRetainedSolutionFrontend",
 		]);
 		const frontend = registry.messages.find((message) => message.name === "SolutionFrontendBinding");
 		expect(frontend).toBeDefined();

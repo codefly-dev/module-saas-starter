@@ -141,6 +141,8 @@ pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: W
 pkg/business/solution_delivery.go: (*Service).ReceiveSolutionDelivery: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).newestDelivered: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).readRegistryInputs: WithControlPlaneReadSnapshot
+pkg/business/solution_delivery_endpoints.go: (*Service).receiveDeliveredEndpoints: WithControlPlane
+pkg/business/solution_frontend_history.go: (*Service).GetRetainedSolutionFrontend: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionHostBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionTargets: WithControlPlane

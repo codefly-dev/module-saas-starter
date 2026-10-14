@@ -12,6 +12,7 @@ import (
 
 	"accounts/pkg/business"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 )
 
@@ -62,7 +63,7 @@ func declarePresence(t *testing.T, bindingID, alias string) string {
 			return err
 		}
 		targetID = target.ID
-		return testStore.SaveSolutionHostBinding(ctx, appliedPresenceRecord(bindingID, alias, 1, now, false))
+		return testStore.SaveSolutionHostBinding(ctx, appliedPresenceRecord(t, bindingID, alias, 1, now, false))
 	}))
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		revision, err := testStore.NextSolutionRegistryRevision(ctx)
@@ -90,7 +91,7 @@ func withdrawPresence(t *testing.T, bindingID, targetID, alias string, generatio
 			return err
 		}
 		if err := testStore.SaveSolutionHostBinding(ctx,
-			appliedPresenceRecord(bindingID, alias, generation, now, true)); err != nil {
+			appliedPresenceRecord(t, bindingID, alias, generation, now, true)); err != nil {
 			return err
 		}
 		var err error
@@ -107,12 +108,28 @@ func withdrawPresence(t *testing.T, bindingID, targetID, alias string, generatio
 // being exactly the value it rejects — so a helper that left it blank would
 // produce rows that store fine and freeze a reconciler.
 func appliedPresenceRecord(
-	bindingID, alias string, generation uint64, now time.Time, removed bool,
+	t *testing.T, bindingID, alias string, generation uint64, now time.Time, removed bool,
 ) *business.SolutionHostBindingRecord {
+	t.Helper()
+	document := productionPathBinding(t, alias, "fixture", generation)
+	document.Binding = bindingID
+	document.OwnershipDomain = "alpha"
+	document.Host = solutionhost.HostTarget{Coordinate: "acme/local/host", Component: "saas-starter"}
+	document.Release.Version = "1.0.0"
+	for i := range document.Artifacts {
+		document.Artifacts[i].Release = document.Release.Identity()
+	}
+	if removed {
+		document = productionPathTombstone(t, document, generation)
+	}
+	raw, err := document.CanonicalBytes()
+	require.NoError(t, err)
+	digest, err := document.Digest()
+	require.NoError(t, err)
 	entry := business.SolutionHostBindingGeneration{
 		Generation: generation,
-		Digest:     fixtureDigest(bindingID),
-		Document:   "{}",
+		Digest:     digest,
+		Document:   string(raw),
 		At:         now,
 	}
 	applied := &business.SolutionHostBindingApplied{
@@ -120,7 +137,7 @@ func appliedPresenceRecord(
 		SolutionID:                    alias,
 		Removed:                       removed,
 		Domain:                        "alpha",
-		Release:                       "acme/" + alias + "@1.0.0",
+		Release:                       document.Release.Identity(),
 	}
 	if !removed {
 		applied.Routes = []string{alias}

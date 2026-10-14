@@ -54,7 +54,8 @@ Only public `/assets` and `/.well-known` paths accept unauthenticated GET/HEAD.
 A declared module with a frontend block uses that same public asset surface.
 Module data requests still use `/v1/<alias>/*`, with live installation admission;
 `/solutions/<alias>/*` never turns into a second module API surface. A headless
-module cannot expose assets there. Withdrawal and the registry lease apply to
+current generation can retain previously admitted versioned assets while its
+target remains live; its own version opens no mutable asset path. Withdrawal and the registry lease apply to
 both kinds, including public assets.
 
 ## Composed-module REST routes
@@ -461,3 +462,11 @@ handler and accounts' real internal tier and `authority` endpoint, each run as a
 helper test from its own module (`TestModuleAuthorityContractGateway` here,
 `TestModuleAuthorityContractHost` in accounts). Change a path, header, JSON
 field, status or refusal body here and that qualification is what fails.
+
+Current frontend payloads are prepared through the shared `frontendpayload`
+module. Historical asset versions use Accounts' targeted internal read, with the
+same binding/target identity and lease checks. Preparation is serialized and
+bounded; four bundles cap cached content at 256 MiB, eight active handlers cap
+held reads, and route snapshots retain only metadata. New versioned assets never
+fall through to the mutable backend. The native read-only cache is wired through
+`artifact-cache/ROOT`; production artifact source wiring remains unqualified.

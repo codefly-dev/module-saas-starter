@@ -104,19 +104,23 @@ async function handler(
 		return new Response("invalid event cursor", { status: 400 });
 	}
 
-	const solution = await findSolution(id);
+	// A retained asset remains routable when the current generation is
+	// headless. The gateway owns target liveness and retained admission.
+	const retainedAsset = version !== undefined &&
+		(request.method === "GET" || request.method === "HEAD") && path?.[0] === "assets";
+	const solution = retainedAsset ? null : await findSolution(id);
 	// Distinguish a solution that is not registered from a registry this
 	// replica cannot read: the first is permanent for the caller, the second is
 	// worth retrying.
 	if (solution === "unavailable") {
 		return new Response("solution registry unavailable", { status: 503 });
 	}
-	if (!solution) {
+	if (!solution && !retainedAsset) {
 		return new Response("solution not registered", { status: 404 });
 	}
 	if (
 		version !== undefined &&
-		(!/^[a-f0-9]{64}$/.test(version) || version !== solution.assetVersion)
+		(!/^[a-f0-9]{64}$/.test(version) || (!retainedAsset && version !== solution?.assetVersion))
 	) {
 		return new Response("frontend generation is no longer served", {
 			status: 410,
@@ -142,14 +146,14 @@ async function handler(
 		(request.method === "GET" || request.method === "HEAD") &&
 		/^(?:assets|\.well-known)(?:\/|$)/.test(suffix);
 	const routePrefix =
-		solution.kind === "module" && !publicAsset ? "v1" : "solutions";
+		solution?.kind === "module" && !publicAsset ? "v1" : "solutions";
 	const target = platformProcedure
 		? `${base}/${suffix}${search}`
-		: `${base}/${routePrefix}/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
+		: `${base}/${routePrefix}/${encodeURIComponent((solution?.backend.serviceAlias ?? id))}/${suffix}${search}`;
 
 	const headers = new Headers();
-	// The gateway repeats this comparison against the same snapshot that chose
-	// the upstream, so an older frontend cache cannot relabel a newer generation.
+	// Accounts-backed retained history at the gateway decides asset admission.
+	// Forward the requested identity without relabelling it as the current version.
 	if (version !== undefined) headers.set("X-Codefly-Frontend-Version", version);
 	// First-party trust headers, resolved server-side from Codefly config — the
 	// gateway rejects solution traffic that lacks them even with a valid user
@@ -222,13 +226,17 @@ async function handler(
 		// from an unresolvable endpoint above so an operator can tell "no gateway
 		// configured" from "gateway down".
 		console.error(
-			`solution proxy: gateway unreachable solution=${id} alias=${solution.backend.serviceAlias} path=${suffix} method=${request.method}`,
+			`solution proxy: gateway unreachable solution=${id} alias=${(solution?.backend.serviceAlias ?? id)} path=${suffix} method=${request.method}`,
 			err,
 		);
 		return new Response("solution gateway unreachable", { status: 502 });
 	}
 
 	const responseHeaders = new Headers();
+ if (retainedAsset) {
+  responseHeaders.set("cache-control", upstream.headers.get("cache-control") ?? "no-store");
+  responseHeaders.set("x-content-type-options", "nosniff");
+ }
 	const upstreamContentType = upstream.headers.get("content-type");
 	if (upstreamContentType) {
 		responseHeaders.set("content-type", upstreamContentType);

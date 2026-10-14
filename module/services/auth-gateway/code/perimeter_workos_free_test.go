@@ -53,12 +53,16 @@ var allowedPerimeterConfigDeps = map[string]bool{
 	// to require a token's resource audience to name it, so the origin a client
 	// is sent to and the origin a token is accepted at are one operator-pinned
 	// value rather than two headers that can disagree.
-	"application":   true,
-	"gateway":       true,
-	"gateway-trust": true,
-	"internal-auth": true,
-	"observability": true,
-	"security":      true,
+	// artifact-cache is CLI render-owned and supplies only the native digest
+	// cache ROOT. ConfigureNative refuses Pods and non-local contexts; this
+	// group carries neither provider credentials nor a provider endpoint.
+	"artifact-cache": true,
+	"application":    true,
+	"gateway":        true,
+	"gateway-trust":  true,
+	"internal-auth":  true,
+	"observability":  true,
+	"security":       true,
 }
 
 // TestPerimeter_WorkspaceConfigExcludesIdentity asserts the ext_authz check's
@@ -172,6 +176,10 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	// declared registry rather than named by a caller, through the same URL policy
 	// a solution upstream passes. It reaches no external IdP.
 	"gateway_module_routes.go": true,
+	// Serves verified immutable bytes using ServeContent. Acquisition uses
+	// the injected digest source; it neither discovers nor contacts an IdP,
+	// and never participates in token verification.
+	"gateway_frontend_bundles.go": true,
 	// gateway_solution_entitlements.go answers what the calling viewer may use. It
 	// runs the same ext_authz Check as any protected route — so the token authority
 	// is unchanged and local — and its only network call is the internal gRPC hop to
