@@ -38,12 +38,14 @@ const (
 	SolutionDeliveryPresence SolutionDeliveryKind = "presence"
 	// SolutionDeliveryAuthority declares what a module instance is approved for.
 	SolutionDeliveryAuthority SolutionDeliveryKind = "authority"
+	// SolutionDeliveryEndpoints carries Codefly values for an applied presence.
+	SolutionDeliveryEndpoints SolutionDeliveryKind = "endpoints"
 )
 
 // Valid reports whether a kind is one this host serves. Checked at the edge, so
 // an unknown kind is a 404 on a path rather than a row with a kind nothing reads.
 func (kind SolutionDeliveryKind) Valid() bool {
-	return kind == SolutionDeliveryPresence || kind == SolutionDeliveryAuthority
+	return kind == SolutionDeliveryPresence || kind == SolutionDeliveryAuthority || kind == SolutionDeliveryEndpoints
 }
 
 // SolutionDeliveryCarrier is one received carrier: the canonical payload and the
@@ -96,6 +98,10 @@ const (
 // Delivery refusals. Each is a distinct fact with a distinct response code,
 // because a retry is right for some and wrong for the rest.
 var (
+	// ErrSolutionDeliveryNotApplied asks the producer to retry its signed value
+	// after presence reconciliation. A receipt alone never activates a route.
+	ErrSolutionDeliveryNotApplied = errors.New("endpoint delivery is waiting for applied presence")
+
 	// ErrSolutionDeliveryMalformed: the carrier does not parse, or the payload
 	// is not the canonical encoding of the document it decodes to. 400,
 	// terminal. A signer and a host that disagree about which bytes represent
@@ -144,6 +150,12 @@ type SolutionDeliveryStore interface {
 	// ListDeliveredDocuments returns every delivered generation of one kind:
 	// the history a terminal withdrawal is read from.
 	ListDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
+}
+
+// SolutionDeliveryReader retrieves one exact historical delivery. Applied reads
+// must not substitute the newest desired generation for the committed one.
+type SolutionDeliveryReader interface {
+	ReadDeliveredDocument(context.Context, SolutionDeliveryKind, string, uint64) (*SolutionDeliveryRecord, error)
 }
 
 // SolutionDeliveryCounter is the inbox's size, where the store can answer it.
@@ -352,6 +364,8 @@ func (s *Service) receiveDeliveredDocument(
 		return s.receiveDeliveredPresence(ctx, signed)
 	case SolutionDeliveryAuthority:
 		return s.receiveDeliveredAuthority(ctx, signed)
+	case SolutionDeliveryEndpoints:
+		return s.receiveDeliveredEndpoints(ctx, signed)
 	}
 	return nil, fmt.Errorf("%w: unknown delivery kind %q", ErrSolutionDeliveryMalformed, kind)
 }

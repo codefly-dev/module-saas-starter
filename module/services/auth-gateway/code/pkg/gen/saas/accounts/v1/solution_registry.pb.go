@@ -669,10 +669,14 @@ type SolutionHostBindingAppliedGeneration struct {
 	Routes []string `protobuf:"bytes,3,rep,name=routes,proto3" json:"routes,omitempty"`
 	// The registration record this generation reconciled into. A tombstone keeps
 	// the key it withdrew, which is the only way it knows what to withdraw.
-	SolutionId    string `protobuf:"bytes,4,opt,name=solution_id,json=solutionId,proto3" json:"solution_id,omitempty"`
-	Release       string `protobuf:"bytes,5,opt,name=release,proto3" json:"release,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SolutionId string `protobuf:"bytes,4,opt,name=solution_id,json=solutionId,proto3" json:"solution_id,omitempty"`
+	Release    string `protobuf:"bytes,5,opt,name=release,proto3" json:"release,omitempty"`
+	// Opaque Codefly endpoint delivery joined to this exact applied document.
+	// Only the Codefly SDK interprets it. Empty means no delivered route; neither
+	// desired state nor startup addresses are a fallback.
+	EndpointDelivery []byte `protobuf:"bytes,6,opt,name=endpoint_delivery,json=endpointDelivery,proto3" json:"endpoint_delivery,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SolutionHostBindingAppliedGeneration) Reset() {
@@ -738,6 +742,13 @@ func (x *SolutionHostBindingAppliedGeneration) GetRelease() string {
 		return x.Release
 	}
 	return ""
+}
+
+func (x *SolutionHostBindingAppliedGeneration) GetEndpointDelivery() []byte {
+	if x != nil {
+		return x.EndpointDelivery
+	}
+	return nil
 }
 
 // SolutionHostBindingState is one binding's whole state: desired, applied, and
@@ -1001,7 +1012,7 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"generation\x12\x16\n" +
 	"\x06digest\x18\x02 \x01(\tR\x06digest\x12\x1a\n" +
 	"\bdocument\x18\x03 \x01(\tR\bdocument\x12*\n" +
-	"\x02at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\xe4\x01\n" +
+	"\x02at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\x91\x02\n" +
 	"$SolutionHostBindingAppliedGeneration\x12O\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\v2/.saas.accounts.v1.SolutionHostBindingGenerationR\n" +
@@ -1010,7 +1021,8 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\x06routes\x18\x03 \x03(\tR\x06routes\x12\x1f\n" +
 	"\vsolution_id\x18\x04 \x01(\tR\n" +
 	"solutionId\x12\x18\n" +
-	"\arelease\x18\x05 \x01(\tR\arelease\"\x93\x05\n" +
+	"\arelease\x18\x05 \x01(\tR\arelease\x12+\n" +
+	"\x11endpoint_delivery\x18\x06 \x01(\fR\x10endpointDelivery\"\x93\x05\n" +
 	"\x18SolutionHostBindingState\x12\x1d\n" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tR\tbindingId\x12'\n" +

@@ -28,7 +28,10 @@ func (s *Service) ListSolutionHostBindings(ctx context.Context) ([]*SolutionHost
 	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		records, err = s.store.ListSolutionHostBindings(ctx)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.attachAppliedEndpointDeliveries(ctx, records)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list solution host bindings: %w", err)

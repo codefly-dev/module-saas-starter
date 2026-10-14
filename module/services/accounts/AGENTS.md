@@ -54,6 +54,14 @@ Applied modules and solutions are active independently of their optional
 frontend block; headless backends remain usable. Registry availability does not
 replace the separate organisation installation status and consent checks.
 
+The internal APPLIED read also carries opaque endpoint delivery bytes for the
+Codefly SDK. They come from the exact signed inbox generation, not a registry
+address column or the newest desired document. Accounts retains delivery
+provenance and applied-state authority; Codefly owns carrier interpretation.
+Migration 39 permits endpoint documents in the existing append-only inbox.
+Producer and consumer integration is in progress; this does not qualify the
+replacement transport or relax pod/build admission.
+
 An optional top-level `group` on an applied solution declaration is copied to
 the registration as presentation only, including for headless solutions.
 Migration 38 adds that nullable projection; modules and tombstones cannot carry

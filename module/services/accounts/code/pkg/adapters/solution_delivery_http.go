@@ -12,7 +12,7 @@ import (
 	"accounts/pkg/infra"
 )
 
-// The delivery endpoint: `POST /platform/_delivery/{presence,authority}`.
+// The delivery endpoint: `POST /platform/_delivery/{presence,authority,endpoints}`.
 //
 // Mounted on ACCOUNTS rather than brokered through the gateway, and the
 // asymmetry with the credential mint is deliberate. `POST
@@ -48,7 +48,7 @@ type solutionDeliveryService interface {
 	ReadSolutionDeliveryApplied(context.Context, string, string) (*business.SolutionDeliveryApplied, error)
 }
 
-// SolutionDeliveryHTTPHandler serves the two delivery paths.
+// SolutionDeliveryHTTPHandler serves the signed delivery paths.
 type SolutionDeliveryHTTPHandler struct {
 	service solutionDeliveryService
 }
@@ -171,6 +171,7 @@ func (h *SolutionDeliveryHTTPHandler) serveApplied(w http.ResponseWriter, r *htt
 //	409 rewritten generation terminal — publish never rewrites one, so this is
 //	                         a hand-edited delivery tree
 //	422 invalid document     terminal — it parses and Validate refuses it
+//	503 presence pending     RETRYABLE — the matching presence is not applied
 //	503 cannot verify        RETRYABLE — the host could not reach the API
 //	                         server or its trust root, so nothing was checked
 //
@@ -180,6 +181,8 @@ func (h *SolutionDeliveryHTTPHandler) serveApplied(w http.ResponseWriter, r *htt
 // they come from different branches of the same call.
 func solutionDeliveryStatus(err error) (int, string) {
 	switch {
+	case errors.Is(err, business.ErrSolutionDeliveryNotApplied):
+		return http.StatusServiceUnavailable, err.Error()
 	case errors.Is(err, business.ErrSolutionDeliveryMalformed):
 		return http.StatusBadRequest, err.Error()
 	case errors.Is(err, infra.ErrCarrierUnauthenticated):

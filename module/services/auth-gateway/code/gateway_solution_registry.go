@@ -351,7 +351,7 @@ var moduleEndpointResolver = sdkModuleEndpointAddress
 func sdkModuleEndpointAddress(ctx context.Context, endpoint moduleEndpoint) (string, error) {
 	instance, err := codefly.For(ctx).
 		Module(endpoint.Module).Service(endpoint.Service).Endpoint(endpoint.Name).API(endpoint.API).
-		ResolveDeliveredNetworkInstance(endpoint.applied)
+		ResolveDeliveredNetworkInstance(endpoint.applied, endpoint.delivery)
 	if err != nil {
 		return "", err
 	}

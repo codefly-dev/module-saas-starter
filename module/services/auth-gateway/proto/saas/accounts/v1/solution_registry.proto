@@ -205,6 +205,10 @@ message SolutionHostBindingAppliedGeneration {
   // the key it withdrew, which is the only way it knows what to withdraw.
   string solution_id = 4;
   string release = 5;
+  // Opaque Codefly endpoint delivery joined to this exact applied document.
+  // Only the Codefly SDK interprets it. Empty means no delivered route; neither
+  // desired state nor startup addresses are a fallback.
+  bytes endpoint_delivery = 6;
 }
 
 // SolutionHostBindingState is one binding's whole state: desired, applied, and

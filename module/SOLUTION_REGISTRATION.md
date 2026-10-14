@@ -48,20 +48,25 @@ Three mechanisms are routinely mistaken for a sandbox. None of them is one:
 
 ## Live route delivery
 
-The applied presence names the endpoints a component owns. Its addresses come
-from the Codefly SDK's `ResolveDeliveredNetworkInstance(applied)` accessor,
-which rereads a replaceable delivery projection and validates the complete
-presence digest. A component introduced after gateway startup can therefore
-receive an address through that input without changing the gateway environment.
-The same check refuses wrong-generation, missing and withdrawn projections,
-even when startup carriers still name an address. The existing registry refresh
-and guarded transport consume the result; there is no second routing registry.
+The applied presence names the endpoints a component owns. Codefly supplies
+endpoint values separately through the signed delivery inbox. The internal
+applied-state read carries those bytes opaquely; the gateway passes them to
+`ResolveDeliveredNetworkInstance(applied, raw)`. Core validates the complete
+presence digest and the SDK resolves the selected endpoint. Neither Accounts
+nor the gateway interprets configuration carrier keys.
 
-Deployment must supply the protected publisher and a stable directory mount.
-The reader tests exercise file replacement and refusal in a running resolver;
-they do not qualify the production publisher, unseen native graph extension,
-release-specific backends or frontend byte integrity. Generation-versioned asset
-URLs do not establish immutable JavaScript or lazy-loaded chunks.
+The delivery inbox retains the signed bytes; the identity registry gains no
+address column. An exact historical lookup keeps a withheld desired generation
+from replacing the endpoint value of the applied generation. Missing, withdrawn
+or mismatched values cannot fall back to startup carriers. The existing registry
+refresh and guarded transport consume the result without a second registry or
+a configuration mount.
+
+This replacement is being integrated across the delivery producer, Core, SDK
+and host. It is not yet qualified end to end. Credential delivery remains a
+separate production requirement; endpoint values do not replace pod/build
+admission. Generation-versioned asset URLs still do not establish immutable
+JavaScript or retained lazy-loaded chunks.
 
 ## 2. Declared authority
 
@@ -504,7 +509,12 @@ nothing.
 ### The authority half, and the one shape in which it is active
 
 Delivery has two kinds and the host serves both on their own paths:
-`POST /platform/_delivery/presence` and `POST /platform/_delivery/authority`.
+`POST /platform/_delivery/presence`, `POST /platform/_delivery/authority`, and
+`POST /platform/_delivery/endpoints`. Endpoint delivery follows committed
+presence: the producer retries the signed endpoint value if reconciliation is
+still pending (503). It needs no access to the separate protected observer. Its storage identity is Core's host/binding key plus the applied
+presence generation. Different endpoint bytes at that generation are a rewrite,
+not a refresh; a route address change requires a new presence generation.
 Each is verified with the reader for **its** kind, and the kind in the path is
 checked against the schema inside the attested bytes — which is a check rather
 than a convention, because the schema is part of the canonical encoding the
@@ -743,6 +753,7 @@ document, and every registrant hardcodes those paths today.
 | `POST /platform/_credential` | **Settled, NOT YET LIVE** | the module/solution credential mint. On the **gateway**, which forwards `Authorization` verbatim; accounts performs the `TokenReview` on the pod's own token. |
 | `POST /platform/_delivery/presence` | **LIVE** | a signed presence document, `{schema, document, bundle}` |
 | `POST /platform/_delivery/authority` | **LIVE** | a signed authority document, same carrier |
+| `POST /platform/_delivery/endpoints` | Integration in progress | a signed Codefly endpoint value for the exact applied presence; no configuration mount |
 | `GET /platform/_delivery/applied/{binding}` | Implemented; deployment qualification pending | committed APPLIED presence, readable only by the protected endpoint publisher |
 
 **The two delivery paths are now served by accounts**, which performs the

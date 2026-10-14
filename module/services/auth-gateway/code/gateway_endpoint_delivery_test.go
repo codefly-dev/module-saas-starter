@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/codefly-dev/core/resources"
@@ -16,7 +14,6 @@ import (
 // Init or an environment reload between deliveries.
 func TestGatewayResolvesOnlyTheAppliedEndpointDelivery(t *testing.T) {
 	t.Setenv(resources.ModulePrefix, "host")
-	t.Setenv(resources.EndpointDeliveryDirectoryKey, t.TempDir())
 	_, err := codefly.Init(t.Context())
 	require.NoError(t, err)
 	binding := modulePresenceBinding(t, endpointOf("documents", "rest", "rest"))
@@ -28,32 +25,28 @@ func TestGatewayResolvesOnlyTheAppliedEndpointDelivery(t *testing.T) {
 	})
 	t.Setenv(key, "http://stale.example:8080")
 	require.NoError(t, codefly.LoadEnvironmentVariables())
-	name, err := solutionhost.EndpointDeliveryFilename(endpoint.applied)
-	require.NoError(t, err)
-	path := filepath.Join(os.Getenv(resources.EndpointDeliveryDirectoryKey), name)
-	write := func(document *solutionhost.SolutionHostBinding, address string) {
+	deliver := func(document *solutionhost.SolutionHostBinding, address string) {
 		t.Helper()
 		raw, err := solutionhost.MarshalEndpointDelivery(document, map[string]string{key: address})
 		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(path+".tmp", raw, 0o600))
-		require.NoError(t, os.Rename(path+".tmp", path))
+		endpoint.delivery = raw
 	}
 	_, err = sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.ErrorIs(t, err, codefly.ErrEndpointDeliveryUnavailable)
-	write(endpoint.applied, "http://first.example:8081")
+	deliver(endpoint.applied, "http://first.example:8081")
 	address, err := sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.NoError(t, err)
 	require.Contains(t, address, "first.example")
 	next := *endpoint.applied
 	next.Generation++
-	write(&next, "http://second.example:8082")
+	deliver(&next, "http://second.example:8082")
 	_, err = sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.ErrorIs(t, err, codefly.ErrEndpointDeliveryUnavailable)
 	endpoint.applied = &next
 	address, err = sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.NoError(t, err)
 	require.Contains(t, address, "second.example")
-	require.NoError(t, os.Remove(path))
+	endpoint.delivery = nil
 	_, err = sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.ErrorIs(t, err, codefly.ErrEndpointDeliveryUnavailable)
 }

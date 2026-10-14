@@ -44,6 +44,8 @@ type moduleEndpoint struct {
 	Module, Service, Name, API string
 	// applied binds endpoint resolution to the same declaration as routing.
 	applied *solutionhost.SolutionHostBinding
+	// delivery is opaque Codefly input carried beside the applied declaration.
+	delivery []byte
 }
 
 // appliedRouteEndpoints are the endpoints an applied presence — a solution's
@@ -71,7 +73,7 @@ func appliedRouteEndpoints(binding *accountsv1.SolutionHostBindingState) []modul
 	var endpoints []moduleEndpoint
 	for _, endpoint := range document.Endpoints {
 		if serving[endpoint.Service] && endpoint.Module == alias && routeGatewayAPIs[endpoint.API] {
-			endpoints = append(endpoints, moduleEndpoint{Module: endpoint.Module, Service: endpoint.Service, Name: endpoint.Name, API: endpoint.API, applied: document})
+			endpoints = append(endpoints, moduleEndpoint{Module: endpoint.Module, Service: endpoint.Service, Name: endpoint.Name, API: endpoint.API, applied: document, delivery: binding.GetApplied().GetEndpointDelivery()})
 		}
 	}
 	return endpoints

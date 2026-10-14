@@ -152,7 +152,7 @@ func (c *SolutionDeliveryCarrierCheck) AuthorizeCarrier(
 		}
 		return nil
 
-	case business.SolutionDeliveryPresence:
+	case business.SolutionDeliveryPresence, business.SolutionDeliveryEndpoints:
 		// The namespace comes from the signed document's own workloads, or —
 		// for a generation that declares none — from the namespace this host
 		// last APPLIED for that binding. Which of the two answered is the
