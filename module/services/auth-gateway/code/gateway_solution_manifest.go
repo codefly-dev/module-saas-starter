@@ -47,6 +47,9 @@ func solutionManifest(record *accountsv1.SolutionRegistration) (string, bool) {
 		log.Printf("solution registry: record %q carries a frontend block this host cannot read: %v", record.GetSolutionId(), err)
 		return "", false
 	}
+	if frontend.Payload != nil {
+		return "", false // No immutable payload serving adapter is connected yet.
+	}
 	alias := record.GetSolutionId()
 	manifest := map[string]any{
 		"id":            alias,
@@ -94,4 +97,15 @@ func solutionManifest(record *accountsv1.SolutionRegistration) (string, bool) {
 		return "", false
 	}
 	return string(encoded), true
+}
+
+// Old applied records may predate the preparation gate in Accounts. Their
+// signed payload must never fall through to the mutable backend asset proxy.
+func frontendRequiresPreparation(record *accountsv1.SolutionRegistration) bool {
+	block := record.GetFrontend().GetManifest()
+	if block == "" {
+		return false
+	}
+	var frontend solutionhost.Frontend
+	return json.Unmarshal([]byte(block), &frontend) != nil || frontend.Payload != nil
 }

@@ -485,7 +485,8 @@ func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solu
 // that must refuse it is the one holding the viewer, and it refuses it as a
 // verdict rather than as a missing route.
 type solutionRouting struct {
-	AssetVersion string
+	AssetVersion                string
+	FrontendRequiresPreparation bool
 	// TargetID is the immutable solution target this alias resolves to, empty
 	// for a registration no declaration opened a target for.
 	TargetID string
@@ -594,10 +595,11 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 		return nil, solutionNotActive
 	}
 	return &solutionRouting{
-		AssetVersion: frontendAssetVersion(record),
-		TargetID:     record.GetDeclared().GetTargetId(),
-		BindingID:    record.GetDeclared().GetBindingId(),
-		Upstream:     read.upstream,
+		AssetVersion:                frontendAssetVersion(record),
+		FrontendRequiresPreparation: frontendRequiresPreparation(record),
+		TargetID:                    record.GetDeclared().GetTargetId(),
+		BindingID:                   record.GetDeclared().GetBindingId(),
+		Upstream:                    read.upstream,
 	}, solutionRoutable
 }
 

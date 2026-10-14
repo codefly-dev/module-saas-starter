@@ -197,6 +197,43 @@ func registration(t *testing.T, solutionID string) *business.SolutionRegistratio
 	return nil
 }
 
+func TestSolutionHostBinding_UnpreparedFrontendPreservesAppliedGeneration(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	source := &deliveredSet{}
+	first := declaredBinding(t, solutionID, 1)
+	first.Frontend = &solutionhost.Frontend{Title: "Example", ExposedModule: "./Page", HostContract: 1}
+	source.put(t, first)
+	reconciler := newTestReconciler(t, source)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatal(err)
+	}
+	before := registration(t, solutionID)
+	if before == nil {
+		t.Fatal("first generation was not applied")
+	}
+	successor := declaredBinding(t, solutionID, 2)
+	successor.Frontend = &solutionhost.Frontend{
+		Title: "Updated example", ExposedModule: "./Page", HostContract: 1,
+		Payload: &solutionhost.FrontendPayload{
+			Artifact: "frontend", Digest: solutionhost.PayloadDigest("sha256:" + strings.Repeat("ab", 32)), MediaType: "application/x-tar",
+		},
+	}
+	source.put(t, successor)
+	for range 2 {
+		if err := reconciler.RunOnce(testCtx); !errors.Is(err, business.ErrSolutionFrontendNotPrepared) {
+			t.Fatalf("expected unprepared frontend refusal, got %v", err)
+		}
+		state := bindingState(t, first.Binding)
+		if state == nil || state.Applied == nil || state.Applied.Generation != 1 || state.PendingGeneration() != 2 || state.PendingReason != business.ErrSolutionFrontendNotPrepared.Error() {
+			t.Fatalf("old generation not preserved with a pending successor: %+v", state)
+		}
+		after := registration(t, solutionID)
+		if after == nil || after.Revision != before.Revision || after.Frontend.Manifest != before.Frontend.Manifest || after.Declared.TargetID != before.Declared.TargetID {
+			t.Fatalf("unprepared payload changed the active registration: %+v", after)
+		}
+	}
+}
+
 // Grouping traverses signed delivery, Core admission and the same transaction
 // that applies presence. Headless solutions need no fabricated frontend, and
 // presentation changes preserve the identity that existing consent names.

@@ -39,6 +39,7 @@ const (
 )
 
 var (
+	ErrSolutionFrontendNotPrepared = errors.New("signed frontend payload is not prepared for immutable serving")
 	// ErrSolutionHostBindingNotDeclared is returned when a binding ID has no
 	// durable record.
 	ErrSolutionHostBindingNotDeclared = errors.New("solution host binding is not declared")

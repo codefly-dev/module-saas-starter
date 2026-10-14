@@ -269,6 +269,14 @@ func (s *Service) applySolutionHostBinding(
 			})
 		}
 
+		// A signed digest is not evidence that the host holds those bytes.
+		// Until immutable preparation/serving is wired, leave this generation
+		// desired and preserve the previous applied generation. Do not activate
+		// it through the legacy mutable-backend asset proxy.
+		if !document.Removed && document.Frontend != nil && document.Frontend.Payload != nil {
+			return ErrSolutionFrontendNotPrepared
+		}
+
 		// The registry revision this apply produced. It is recorded on the
 		// generation-history row so the trail says which registry state the
 		// generation became, rather than carrying a zero that reads like a

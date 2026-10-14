@@ -5,15 +5,55 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 )
+
+func TestGateway_SignedFrontendPayloadNeverFallsBackToMutableBackend(t *testing.T) {
+	for _, kind := range []accountsv1.SolutionDeclaredKind{
+		accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
+		accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE,
+	} {
+		t.Run(kind.String(), func(t *testing.T) {
+			gw, _, _, _ := newGatewayHarness(t)
+			upstream := registerSolutionUpstream(t, gw, "example")
+			record := solutionRegistryFake(t, gw).records["example"]
+			record.Declared.Kind = kind
+			var frontend solutionhost.Frontend
+			require.NoError(t, json.Unmarshal([]byte(record.Frontend.Manifest), &frontend))
+			frontend.Payload = &solutionhost.FrontendPayload{
+				Artifact: "frontend", Digest: solutionhost.PayloadDigest("sha256:" + strings.Repeat("ab", 32)), MediaType: "application/x-tar",
+			}
+			encoded, err := json.Marshal(frontend)
+			require.NoError(t, err)
+			record.Frontend.Manifest = string(encoded)
+			require.NoError(t, gw.solutions.refresh(context.Background()))
+			_, advertised := solutionManifest(record)
+			require.False(t, advertised)
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				for _, path := range []string{"assets", "assets/mf-manifest.json", "assets/deferred-chunk.js"} {
+					upstream.lastHeaders = nil
+					w := httptest.NewRecorder()
+					gw.ServeHTTP(w, httptest.NewRequest(method, "/solutions/example/"+path, nil))
+					require.Equal(t, http.StatusServiceUnavailable, w.Code)
+					require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+					require.Nil(t, upstream.lastHeaders, "unverified executable bytes must not reach the host origin")
+				}
+			}
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/solutions/example/.well-known/capabilities", nil))
+			require.Equal(t, http.StatusOK, w.Code, "backend capability discovery is independent of frontend preparation")
+		})
+	}
+}
 
 // registerSolutionUpstream wires a declared, serving solution — its presence
 // applied with a frontend block, its endpoint addressed by the composition —

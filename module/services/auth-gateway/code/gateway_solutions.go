@@ -174,6 +174,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// unauthenticated flood of this proxy is still capped. Leaving it on bare
 	// proxyTo would make it the one unmetered public proxy in the gateway (#513).
 	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
+		if routing.FrontendRequiresPreparation && (publicPath == "/assets" || strings.HasPrefix(publicPath, "/assets/")) {
+			w.Header().Set("Cache-Control", "no-store")
+			httpError(w, http.StatusServiceUnavailable, "frontend payload is not prepared")
+			return true
+		}
 		if requested := r.Header.Get(frontendVersionHeader); requested != "" && requested != routing.AssetVersion {
 			w.Header().Set("Cache-Control", "no-store")
 			httpError(w, http.StatusGone, "frontend generation is no longer served")
