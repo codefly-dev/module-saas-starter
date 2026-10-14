@@ -227,7 +227,7 @@ export function PlatformCataloguePage() {
 							{readOutcomeMessage(
 								outcome,
 								"the catalogue",
-								"Nothing is deployed: no module is composed and no solution is registered or installed.",
+								"No module or solution has been delivered to this platform. A platform operator must deploy one before an organization can install it.",
 							)}
 						</p>
 					) : (

@@ -16,7 +16,11 @@ Both kinds use this reader, the `/s/<id>` page and the same federation loader.
 The gateway stamps `kind` from the applied declaration; a remote manifest cannot
 choose its routing kind. A shared module has one deployment, while each
 organisation installs it and grants team access independently through the same
-target-based entitlement projection. Headless components contribute no page.
+target-based entitlement projection. The organization administration destination
+is labelled "Modules & solutions" and retains `/admin/solutions`; its empty
+state directs an administrator to the platform operator when nothing is available.
+The platform catalogue explains the delivery prerequisite. Headless components
+contribute no page.
 For a module page, relative data requests through the injected `apiBase` reach
 `/v1/<alias>/<suffix>`; for a solution they reach `/solutions/<alias>/<suffix>`.
 Public GET/HEAD assets use the common `/solutions/<alias>/assets` surface for

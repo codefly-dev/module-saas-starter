@@ -303,13 +303,17 @@ describe("PlatformCataloguePage admin container", () => {
 		expect(
 			await screen.findByText(/You don't have permission to see the catalogue/),
 		).toBeTruthy();
-		expect(screen.queryByText(/Nothing is deployed/)).toBeNull();
+		expect(
+			screen.queryByText(/No module or solution has been delivered/),
+		).toBeNull();
 	});
 
 	it("says an empty platform is empty", async () => {
 		serve({ entries: [], registryRevision: "0" });
 		renderInApp(<PlatformCataloguePage />);
-		expect(await screen.findByText(/Nothing is deployed/)).toBeTruthy();
+		expect(
+			await screen.findByText(/No module or solution has been delivered/),
+		).toBeTruthy();
 	});
 });
 
