@@ -1268,3 +1268,14 @@ nonlocal run refuses that source. The registry reader is separately tested but
 production repository, protected reader identity, custody and retention have not
 been bound to a deployed composition. These changes do not qualify production
 artifact acquisition or production mountless credential delivery.
+
+### Admission with no consumed permissions
+
+A signed authority document can explicitly declare `bindings: []`. The operator
+envelope must then admit the exact principal and presence binding using
+`admitted_bindings`. Omitted or null binding lists are refused. This admission
+uses the existing principal registry and installation path; it grants no
+consumed operation. Applied presence, workload identity, container, approved
+build, envelope revision and live organisation consent still have to agree.
+Installation-use consent and team grants remain required even for a no-op
+installation. An empty permission list does not make a page public.

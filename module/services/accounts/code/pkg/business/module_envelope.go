@@ -98,6 +98,9 @@ type ModuleEnvelope struct {
 
 // ModuleEnvelopePrincipal is the ceiling for one module principal.
 type ModuleEnvelopePrincipal struct {
+	// AdmittedBindings explicitly admits a principal over these presence bindings
+	// without granting consumed permission units. Supplied only by the operator.
+	AdmittedBindings []string
 	// Units are the whole authority units this host admits for the principal,
 	// built from the envelope alone: the audience is the grant's operation
 	// audience for the unit's binding. They are what core's exact containment
@@ -175,6 +178,7 @@ type moduleEnvelopeWire struct {
 }
 
 type moduleEnvelopePrincipalWire struct {
+	AdmittedBindings   []string                    `json:"admitted_bindings,omitempty"`
 	Bindings           []moduleEnvelopeUnitWire    `json:"bindings"`
 	WorkloadIdentities []ModuleWorkloadIdentity    `json:"workload_identities"`
 	ScopeCeilings      []solutionhost.ScopeCeiling `json:"scope_ceilings"`
@@ -379,11 +383,21 @@ func parseModuleEnvelopePrincipal(prefix string, wire moduleEnvelopePrincipalWir
 	if err := validateModulePrincipalCeiling(prefix, grant); err != nil {
 		return ModuleEnvelopePrincipal{}, err
 	}
-	// A principal admitting no unit can never be inside the envelope — core
-	// refuses a document principal with no binding — so an entry with none is
-	// one that reads as allowing a module and allows nothing.
-	if len(wire.Bindings) == 0 {
-		return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q admits no authority unit, so no delivered document can ever be inside its ceiling", prefix)
+	if wire.Bindings == nil {
+		return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q must declare bindings explicitly", prefix)
+	}
+	if len(wire.Bindings) == 0 && len(wire.AdmittedBindings) == 0 {
+		return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q admits no authority unit and no explicit presence binding", prefix)
+	}
+	admitted := make(map[string]bool, len(wire.AdmittedBindings))
+	for _, binding := range wire.AdmittedBindings {
+		if err := (solutionhost.EnvelopeAdmission{Principal: prefix, PresenceBinding: binding}).Validate(); err != nil {
+			return ModuleEnvelopePrincipal{}, err
+		}
+		if admitted[binding] {
+			return ModuleEnvelopePrincipal{}, fmt.Errorf("module principal %q admits presence binding %q twice", prefix, binding)
+		}
+		admitted[binding] = true
 	}
 	seen := make(map[string]bool, len(wire.Bindings))
 	units := make([]solutionhost.AuthorityBinding, 0, len(wire.Bindings))
@@ -417,6 +431,7 @@ func parseModuleEnvelopePrincipal(prefix string, wire moduleEnvelopePrincipalWir
 		return ModuleEnvelopePrincipal{}, err
 	}
 	return ModuleEnvelopePrincipal{
+		AdmittedBindings:   slices.Clone(wire.AdmittedBindings),
 		Units:              units,
 		WorkloadIdentities: slices.Clone(wire.WorkloadIdentities),
 		ScopeCeilings:      slices.Clone(wire.ScopeCeilings),
@@ -565,6 +580,9 @@ func (e *ModuleEnvelope) authorityEnvelopeFor(document *solutionhost.AuthorityDo
 		entry, declared := e.Principals[principal.Principal]
 		if !declared {
 			continue
+		}
+		for _, binding := range entry.AdmittedBindings {
+			envelope.Admissions = append(envelope.Admissions, solutionhost.EnvelopeAdmission{Principal: principal.Principal, PresenceBinding: binding})
 		}
 		envelope.Queues = append(envelope.Queues, entry.Grant.Queues...)
 		envelope.Namespaces = append(envelope.Namespaces, entry.Grant.Namespaces...)

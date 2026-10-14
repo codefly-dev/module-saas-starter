@@ -316,7 +316,8 @@ three inputs agree:
   Per module prefix it lists the WHOLE authority units the host admits (id
   `<presence binding>:<binding>:<operation>`, revision, scope, queue, namespace,
   binding key, lookup method — the audience is the grant's), the workload
-  identities the principal may run as (SPIFFE ID and container), the scope
+  identities the principal may run as (SPIFFE ID and container), explicit
+  `admitted_bindings` for a principal with no consumed units, the scope
   ceilings, and the grant ceiling below.
 - **a live authority document inside that envelope** — signed, delivered,
   re-verified on every pass against the host's CURRENT signer-to-domain policy

@@ -786,3 +786,45 @@ func (s *registryScenario) install(t *testing.T, org string) *gen.Installation {
 	acknowledgeInstallation(t, installation)
 	return installation
 }
+
+// This scenario starts at signed delivery and the persisted operator envelope,
+// not a seeded principal registry. Empty consumed scopes still yield distinct
+// organisation installations on one running host service.
+func TestEmptyPermissionDeliveryInstallsIndependentlyInTwoOrganizations(t *testing.T) {
+	s := newRegistryScenario(t, "empty")
+	current := s.currentRevision(t)
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(s.envelope(t, current+1, envelopeOptions{}), &wire))
+	principal := wire["principals"].(map[string]any)[s.prefix].(map[string]any)
+	principal["bindings"] = []any{}
+	principal["admitted_bindings"] = []string{s.primary.binding}
+	principal["scope_ceilings"] = []any{}
+	principal["grant"] = map[string]any{"cross_tenant": true}
+	raw, err := json.Marshal(wire)
+	require.NoError(t, err)
+	record, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, raw)
+	require.NoError(t, err)
+	s.deliverPresence(t, s.primary, 1, record.Revision)
+	s.pass(t)
+	document := s.authority(t, s.primary, 1, record.Revision, false, map[string][]solutionhost.AuthorityBinding{s.prefix: {}})
+	document.Queues, document.Namespaces, document.ScopeCeilings = []string{}, []string{}, []solutionhost.ScopeCeiling{}
+	s.deliverAuthority(t, document)
+	s.pass(t)
+	grant, present := s.entry()
+	require.True(t, present)
+	require.Empty(t, grant.OperationAudiences)
+	require.Empty(t, grant.ReadAudiences)
+	require.Empty(t, grant.Queues)
+	require.Empty(t, grant.Resources)
+	otherOrg := seedOrg(t, s.admin)
+	require.NoError(t, testStore.As(business.Identity{OrgID: otherOrg}).AddOrgMember(testCtx, s.admin, "admin"))
+	first := s.install(t, s.tenant)
+	second := s.install(t, otherOrg)
+	require.NotEqual(t, first.GetId(), second.GetId())
+	for _, org := range []string{s.tenant, otherOrg} {
+		_, err := s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(org))
+		require.NoError(t, err)
+	}
+	_, err = s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(business.NewIDString()))
+	require.ErrorIs(t, err, business.ErrModuleInstallationInactive)
+}
