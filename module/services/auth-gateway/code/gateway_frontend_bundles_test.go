@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
+
 	"github.com/codefly-dev/core/composition"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
