@@ -1280,8 +1280,9 @@ build, envelope revision and live organisation consent still have to agree.
 Installation-use consent and team grants remain required even for a no-op
 installation. An empty permission list does not make a page public.
 
-The local `artifact-cache` configuration group is declared with an empty `ROOT`
-so service validation can resolve the group before a native run. The CLI injects
-its actual retained root during that run. An empty default provisions no source
-and cannot activate a declared frontend; production artifact custody remains an
-independent deployment requirement.
+The `artifact-cache` configuration group belongs to the CLI: the native run
+injects its actual retained root, and authored defaults (including empty files)
+are refused by the render. Use the lifecycle CLI candidate for local validation;
+released CLI 0.1.185 does not yet recognise this group as CLI-owned. The root and
+module-tools configuration gates both enforce that no authored default ships.
+Production artifact custody remains an independent deployment requirement.

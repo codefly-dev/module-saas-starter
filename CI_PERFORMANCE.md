@@ -4,6 +4,15 @@ Target: less than five minutes from workflow creation to the successful release
 gate on an ordinary code change, with every existing check retained. Publication
 steps are additional. Queue time counts toward the target.
 
+The lifecycle candidate currently builds the exact CLI commit selected in
+`scripts/ci/install-codefly.sh` through its canonical Go installation entrypoint.
+Every job uses this same pin, including the planner. Released 0.1.185 cannot
+validate the new CLI-owned artifact-cache group; shipping a dummy default would
+conflict with render ownership. Source compilation adds cold-cache time and
+is development qualification only. The installer rejects release tags until a
+qualified released CLI replaces this candidate. Released archive selections
+still verify the paired checksum and retain their retry behavior.
+
 ## Measured baseline
 
 Two successful runs sampled on 2026-09-11 UTC:

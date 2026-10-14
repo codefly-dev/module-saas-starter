@@ -2,8 +2,14 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.185}"
+version="${CODEFLY_VERSION:-source-5234ce248b092edf1138a16ec4140dfbc8745522}"
+source_revision=""
 case "${version}" in
+  source-5234ce248b092edf1138a16ec4140dfbc8745522)
+    # Lifecycle candidate: recognises CLI-owned artifact-cache in every CI
+    # phase. Qualify exact owner source without requiring a release first.
+    source_revision="${version#source-}"
+    ;;
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
     ;;
@@ -72,6 +78,19 @@ esac
 if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   echo 'The CI Codefly installer requires Linux x64' >&2
   exit 1
+fi
+
+if [[ -n "${source_revision}" ]]; then
+  if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+    echo 'A host release requires a qualified released Codefly pin, not a source candidate' >&2
+    exit 1
+  fi
+  install -d "${RUNNER_TEMP}/codefly-bin"
+  GOWORK=off GOBIN="${RUNNER_TEMP}/codefly-bin" go install \
+    -ldflags "-X github.com/codefly-dev/cli/pkg/cliupdate.version=${version}" \
+    "github.com/codefly-dev/cli/cmd/codefly@${source_revision}"
+  echo "${RUNNER_TEMP}/codefly-bin" >> "${GITHUB_PATH}"
+  exit 0
 fi
 
 archive="codefly_${version}_linux_amd64.tar.gz"
