@@ -139,6 +139,7 @@ pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPl
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
 pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: WithControlPlane
 pkg/business/solution_delivery.go: (*Service).ReceiveSolutionDelivery: WithControlPlane
+pkg/business/solution_delivery.go: (*Service).presenceCarrierNamespaces: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).newestDelivered: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).readRegistryInputs: WithControlPlaneReadSnapshot
 pkg/business/solution_delivery_endpoints.go: (*Service).receiveDeliveredEndpoints: WithControlPlane

@@ -373,6 +373,32 @@ func TestTombstoneIsAcceptedAndWithdrawsTheRegistrationEndToEnd(t *testing.T) {
 	require.Equal(t, solutionID, withdrawn.Applied.SolutionID,
 		"a tombstone keeps the key it withdrew, so the removal stays attributable")
 
+	// Later received-only and refused history is not carrier provenance.
+	unapplied := *present
+	unapplied.Generation = 3
+	unapplied.Workloads = append([]solutionhost.Workload(nil), present.Workloads...)
+	unapplied.Workloads[0].Identity.SPIFFEID = "spiffe://cluster.local/ns/unrelated-namespace/sa/backend"
+	delivery.callerNamespace = "unrelated-namespace"
+	requireDelivered(t, delivery.post(t, business.SolutionDeliveryPresence, productionPathCarrier(t, &unapplied)))
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		for i := uint64(100); i < 160; i++ {
+			if err := testStore.RecordSolutionGenerationDecision(ctx, &business.SolutionGenerationDecision{BindingID: present.Binding, Generation: i, Digest: digest, Decision: business.SolutionGenerationRefused, Reason: "unapplied generation"}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	// Replaying after APPLIED must retain the original carrier namespace,
+	// including after the process serving delivery has restarted.
+	restarted := newProductionPathDelivery(t)
+	restarted.callerNamespace = namespace
+	replay := restarted.post(t, business.SolutionDeliveryPresence, productionPathCarrier(t, tombstone))
+	require.Equal(t, http.StatusOK, replay.Code, replay.Body.String())
+	restarted.callerNamespace = "unrelated-namespace"
+	refused := restarted.post(t, business.SolutionDeliveryPresence, productionPathCarrier(t, tombstone))
+	require.Equal(t, http.StatusForbidden, refused.Code, refused.Body.String())
+
 	// And the registry record the solution was served under is tombstoned, which
 	// is what actually takes it out of service.
 	registrations, _, err := delivery.service.ListSolutionRegistrations(testCtx, true)

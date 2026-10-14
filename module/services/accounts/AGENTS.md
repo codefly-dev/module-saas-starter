@@ -31,6 +31,10 @@ is read by the capability checks and does not create synthetic directory rows.
 generations and pending reasons. Core owns document admission; each apply
 re-decides under the binding row lock. A refused or unreadable delivery does not
 withdraw the last applied generation. Withdrawal requires a tombstone generation.
+A replay after removal authenticates against the last workload-bearing applied
+presence, recovered from immutable generation decisions joined to exact signed
+inbox bytes. Desired-only or refused history cannot supply a carrier namespace;
+this lookup does not use the catalogue's diagnostic history limit.
 
 `GET /platform/_delivery/applied/{binding}` reads only that committed generation,
 including tombstones, after an accounts-audience TokenReview of the protected

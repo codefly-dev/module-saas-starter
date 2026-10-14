@@ -204,3 +204,12 @@ commands. `node scripts/ci/release-gates.mjs check` validates publication
 dependencies and action pins. `actionlint .github/workflows/ci.yml` validates
 the provider workflow. Full hosted CI has run with these changes; see
 "Hosted result" above.
+
+### Configuration-sensitive test isolation
+
+Gateway configuration tests run with the same workspace values as their CI
+service. A fallback test that clears a process value must also reload the SDK
+configuration snapshot, then restore it after its environment cleanup. Otherwise
+an earlier test can leave the runner's default in the snapshot and mask the
+fallback under test. `TestConfiguredAuthenticationAttemptLimit` exercises this
+under the runner's configured default as well as a plain local `go test` run.

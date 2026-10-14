@@ -50,7 +50,7 @@ func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 			SolutionID: "example-solution",
 			Publisher:  "solution:example-solution",
 			Revision:   12,
-			Group: &business.SolutionGroup{ID: "operations", Title: "Operations", Order: 1},
+			Group:      &business.SolutionGroup{ID: "operations", Title: "Operations", Order: 1},
 			Frontend: &business.SolutionFrontendHalf{
 				Revision: 11, Manifest: `{"title":"Example","order":1,"exposed_module":"./Page","host_contract":1}`,
 			},
