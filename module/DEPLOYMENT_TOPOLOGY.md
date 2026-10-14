@@ -32,11 +32,13 @@ The accounts descriptor catalog is an input: if its RPCs use gRPC, Connect, or
 REST without a corresponding accounts endpoint, generation fails.
 
 `policy-log` is in the inventory with one private `grpc` endpoint and appears in
-NO row of the service graph below, which is correct rather than an omission: it
-declares no dependency on anything, and the host's client for it is not built
-yet, so there is no edge to draw. When that client lands it adds an
-`accounts` → `policy-log/grpc` row and nothing else — the witness must never
-depend on the database whose authority it witnesses.
+NO row of the service graph below. It declares no dependency on anything, and
+accounts — whose witness client is built (`infra.WitnessPolicyLog`) — does not
+declare the edge yet: declaring it would pull the witness into every local run,
+where it refuses to boot by its own contract, and that is an owner decision.
+When it is declared it adds an `accounts` → `policy-log/grpc` row and nothing
+else — the witness must never depend on the database whose authority it
+witnesses.
 
 ## Service graph
 

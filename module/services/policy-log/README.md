@@ -17,8 +17,9 @@ client. Native caller authentication, retained local storage and bootstrap remai
 owner work. Supplying a key alone does not qualify this service or revocation.
 No generated code was hand-written: the required no-change Codefly
 proto-generation check ran and came back byte-identical on two sibling services,
-and this service's own tree regenerates reproducibly. The host's client is
-separate work; no host Go code is changed here. Nothing in this directory has
+and this service's own tree regenerates reproducibly. The host's client lives
+in accounts (`pkg/infra/policy_log_witness.go`), against a byte-identical copy
+of this service's proto; accounts does not yet declare the dependency. Nothing in this directory has
 been deployed or booted, and the OpenAPI projection does not exist because the
 endpoint is private gRPC and reaches no gateway.
 
@@ -339,7 +340,10 @@ empty while `head + 2` refuses.
 
 Not exercised, by name: real GCS, deployed IAM and retention policy, the
 container build, `codefly ci run`, `codefly run` and the Codefly service graph,
-a deployed mesh policy, and a running host client. **Nothing here has been
+a deployed mesh policy, and a deployed host client. The host's client is
+exercised against this service's real server package, over loopback, by
+`TestWitnessHelperProcess` (a helper process started by accounts' tests, which
+cannot link this module). **Nothing here has been
 deployed or booted** — the binary's own startup path (`codefly.Init`, the
 injected port, the delivered signing-key secret, the GCS client, `witness.Open` against a real
 bucket) is covered by no test and has never executed. The signature of

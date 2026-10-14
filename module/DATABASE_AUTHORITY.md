@@ -1105,18 +1105,35 @@ and deliberately holds no read or job-creation permission to recover its row.
 Those limitations are why the receipt issuer is a separate service rather than
 an accounts adapter that manufactures its own evidence.
 
-**This checkout does not yet have a runnable log transport.** The new service's
-witness, storage, signing-key loader, mirror, and private service declaration are
-implemented; protobuf and OpenAPI generation and the RPC listener remain blocked
-by the required generator prerequisite. Its README records that boundary and
-the remaining real-GCS qualification. The host's Go code and client wiring are
-unchanged, so this source addition must not be read as a running deployment or
-as completion of the policy-log condition.
+**The host's client is built; no environment composes it yet.**
+`infra.WitnessPolicyLog` implements the host's `PolicyLog` over the witness's
+private gRPC API. It verifies every receipt, record and cursor against the
+witness key pinned in the trust anchor (`policy_log_public_key.json`), compares
+the key the witness publishes with that pin without ever adopting it, refuses a
+receipt for bytes other than the ones offered, a sequence at or below one it
+has already verified, a broken chain link, and a cursor whose signed
+`issued_at` is outside the staleness window of the host's clock. The receipt it
+stores is the witness's own fields plus the verifying key id, so the row is
+evidence anyone holding the pin can re-verify offline. The witness holds an
+opaque entry — operation id, subject kind and decision, subject id, and the
+SHA-256 of the host's canonical encoding of the whole operation — never the
+policy or the actor.
 
-Until the transport and host client are wired, the existing host still serves
-normally and refuses the four narrowings above. Once wired, inability to reach
-the log expires the serving gate's freshness window and refuses service; an
-appended operation without a local commit remains a gap until reconciled.
+`work.go` wires it only when composition has delivered BOTH the witness endpoint
+and the pinned key; a delivered key that cannot be used refuses the boot. With
+either absent the host is configured without a witness: it serves normally and
+refuses the four narrowings above, and says so at startup. accounts does not yet
+declare the dependency on `policy-log/grpc`, so today the client activates in no
+environment: declaring it pulls the witness into every local run, and the
+witness by its own contract refuses to boot on a workstation. That is an owner
+decision recorded on the issue, not a missing transport.
+
+Once composed, inability to reach the witness expires the serving gate's
+freshness window and refuses service; an appended operation without a local
+commit remains a gap until reconciled. The real witness is exercised end to end
+by `TestTheRealWitnessWitnessesUninstallAndScopeRevocation`: an uninstall and a
+scope-grant revocation each commit the receipt the witness signed, and with the
+witness down both are refused and nothing narrows.
 
 ## Control-plane boundary
 

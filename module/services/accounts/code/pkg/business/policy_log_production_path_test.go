@@ -28,9 +28,11 @@ import (
 // `Service.UninstallSolution`, `WithPolicyLoggedNarrowing`, the receipts in
 // `policy_log_commits` through `infra.PostgresStore`, and `RequireServing`.
 //
-// The external log is the one collaborator that is a double, and it has to be:
-// it is external by design, it lives in a warehouse, and no deployment of it
-// exists (pkg/infra/warehouse_policy_log.go says why). A double for a
+// The external log is the one collaborator that is a double here, because these
+// tests make it misbehave in ways the real witness never would — refusing on
+// demand, failing a read — and assert what the host does about it. The real
+// witness is exercised separately, end to end, in
+// policy_log_witness_production_path_test.go. A double for a
 // collaborator is not a double for the thing under test — the mistake this PR
 // has already paid for twice is faking the PolicyLogStore, which IS the thing
 // under test, and that one is real postgres here.
@@ -39,7 +41,7 @@ import (
 // errors from real production statements given input they cannot accept, which
 // is why the gap they leave is a gap the real store wrote.
 
-// recordingPolicyLog stands in for the external warehouse log: it issues real
+// recordingPolicyLog stands in for the external witness: it issues real
 // monotonic sequences and remembers every entry, so a test can assert what the
 // host offered it and in what order.
 type recordingPolicyLog struct {
