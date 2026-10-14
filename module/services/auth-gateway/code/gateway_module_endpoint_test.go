@@ -91,19 +91,19 @@ func TestAModuleIsRoutedToTheEndpointTheCompositionAddressed(t *testing.T) {
 	grpc := moduleEndpoint{Module: "documents", Service: "documents", Name: "grpc", API: "grpc"}
 	for _, tc := range []struct {
 		name      string
-		addressed map[moduleEndpoint]string
+		addressed map[string]string
 		want      string
 	}{
-		{"the one addressed endpoint", map[moduleEndpoint]string{rest: "http://documents.documents.svc.cluster.local:8080"}, "http://documents.documents.svc.cluster.local:8080"},
-		{"none addressed", map[moduleEndpoint]string{}, ""},
-		{"two addressed", map[moduleEndpoint]string{rest: "http://localhost:8080", grpc: "http://localhost:9090"}, ""},
-		{"an address the policy refuses", map[moduleEndpoint]string{rest: "http://8.8.8.8:80"}, ""},
-		{"a refused address beside one that answers", map[moduleEndpoint]string{rest: "http://localhost:8080", grpc: "http://8.8.8.8:80"}, "http://localhost:8080"},
+		{"the one addressed endpoint", map[string]string{rest.String(): "http://documents.documents.svc.cluster.local:8080"}, "http://documents.documents.svc.cluster.local:8080"},
+		{"none addressed", map[string]string{}, ""},
+		{"two addressed", map[string]string{rest.String(): "http://localhost:8080", grpc.String(): "http://localhost:9090"}, ""},
+		{"an address the policy refuses", map[string]string{rest.String(): "http://8.8.8.8:80"}, ""},
+		{"a refused address beside one that answers", map[string]string{rest.String(): "http://localhost:8080", grpc.String(): "http://8.8.8.8:80"}, "http://localhost:8080"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cache := newSolutionRegistryCache(nil)
 			cache.resolveEndpoint = func(_ context.Context, endpoint moduleEndpoint) (string, error) {
-				if address, ok := tc.addressed[endpoint]; ok {
+				if address, ok := tc.addressed[endpoint.String()]; ok {
 					return address, nil
 				}
 				return "", errors.New("carrier absent")
@@ -124,7 +124,7 @@ func TestAModuleRouteGoesWhereTheSDKResolvesItsEndpoint(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	resolved := declareModule(t, gw, "example-module")
 	endpoint := fakeRouteEndpoint("example-module")
-	original, _ := testModuleAddresses.Load(endpoint)
+	original, _ := testModuleAddresses.Load(endpoint.String())
 	asked := 0
 	previous := gw.solutions.resolveEndpoint
 	gw.solutions.resolveEndpoint = func(_ context.Context, named moduleEndpoint) (string, error) {

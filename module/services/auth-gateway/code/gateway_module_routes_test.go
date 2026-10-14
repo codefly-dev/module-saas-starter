@@ -292,7 +292,7 @@ func TestAModuleIsServingOnItsBackendHalfAlone(t *testing.T) {
 	registry.revision++
 	record := registry.records["example-module"]
 	record.Revision = registry.revision
-	testModuleAddresses.Delete(fakeRouteEndpoint("example-module"))
+	testModuleAddresses.Delete(fakeRouteEndpoint("example-module").String())
 	registry.mu.Unlock()
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 

@@ -448,7 +448,7 @@ func TestGateway_Solution_NoCarrier_NotRoutable(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 
 	declareSolution(t, gw, "audit", "http://example.svc")
-	testModuleAddresses.Delete(fakeRouteEndpoint("audit"))
+	testModuleAddresses.Delete(fakeRouteEndpoint("audit").String())
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 
 	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/ping", nil)

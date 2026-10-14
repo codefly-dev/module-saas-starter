@@ -29,7 +29,10 @@ func TestGatewayResolvesOnlyTheAppliedEndpointDelivery(t *testing.T) {
 		t.Helper()
 		raw, err := solutionhost.MarshalEndpointDelivery(document, map[string]string{key: address})
 		require.NoError(t, err)
-		endpoint.delivery = raw
+		binding.Applied.EndpointDelivery = raw
+		projected := appliedRouteEndpoints(binding)
+		require.Len(t, projected, 1)
+		endpoint = projected[0]
 	}
 	_, err = sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.ErrorIs(t, err, codefly.ErrEndpointDeliveryUnavailable)
@@ -42,11 +45,19 @@ func TestGatewayResolvesOnlyTheAppliedEndpointDelivery(t *testing.T) {
 	deliver(&next, "http://second.example:8082")
 	_, err = sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.ErrorIs(t, err, codefly.ErrEndpointDeliveryUnavailable)
-	endpoint.applied = &next
+	canonical, err := solutionhost.Marshal(&next)
+	require.NoError(t, err)
+	binding.Applied.Generation.Document = string(canonical)
+	binding.Applied.Generation.Generation = next.Generation
+	binding.Registration.Declared.Generation = next.Generation
+	endpoints = appliedRouteEndpoints(binding)
+	require.Len(t, endpoints, 1)
+	endpoint = endpoints[0]
 	address, err = sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.NoError(t, err)
 	require.Contains(t, address, "second.example")
-	endpoint.delivery = nil
+	binding.Applied.EndpointDelivery = nil
+	endpoint = appliedRouteEndpoints(binding)[0]
 	_, err = sdkModuleEndpointAddress(t.Context(), endpoint)
 	require.ErrorIs(t, err, codefly.ErrEndpointDeliveryUnavailable)
 }

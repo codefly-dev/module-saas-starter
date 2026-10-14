@@ -54,7 +54,7 @@ func fakeRouteEndpoint(alias string) moduleEndpoint {
 }
 
 func (f *fakeSolutionRegistry) route(alias, address string) {
-	testModuleAddresses.Store(fakeRouteEndpoint(alias), address)
+	testModuleAddresses.Store(fakeRouteEndpoint(alias).String(), address)
 }
 
 // seedDeclared creates a fully declared record, which is how a test gets one
@@ -182,7 +182,7 @@ var testModuleAddresses sync.Map
 
 func init() {
 	moduleEndpointResolver = func(_ context.Context, endpoint moduleEndpoint) (string, error) {
-		address, ok := testModuleAddresses.Load(endpoint)
+		address, ok := testModuleAddresses.Load(endpoint.String())
 		if !ok || address.(string) == "" {
 			return "", fmt.Errorf("no carrier for %s/%s/%s::%s", endpoint.Module, endpoint.Service, endpoint.Name, endpoint.API)
 		}
