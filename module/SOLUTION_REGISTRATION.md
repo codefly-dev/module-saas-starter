@@ -1279,3 +1279,9 @@ consumed operation. Applied presence, workload identity, container, approved
 build, envelope revision and live organisation consent still have to agree.
 Installation-use consent and team grants remain required even for a no-op
 installation. An empty permission list does not make a page public.
+
+The local `artifact-cache` configuration group is declared with an empty `ROOT`
+so service validation can resolve the group before a native run. The CLI injects
+its actual retained root during that run. An empty default provisions no source
+and cannot activate a declared frontend; production artifact custody remains an
+independent deployment requirement.
