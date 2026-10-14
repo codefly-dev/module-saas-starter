@@ -17,3 +17,18 @@ production retention and reader access remain the configured repository's duty.
 
 Run `GOWORK=off go test -race ./...` here. These tests cover preparation and
 transport; they do not qualify host activation, a browser rollout or deployment.
+
+The supported federation profile uses `publicPath: "auto"`, a named global
+remote entry, no executable public-path override and no remote dependencies.
+Preparation verifies all manifest-listed synchronous/asynchronous JavaScript and
+CSS, the declared expose, and client surfaces under `/assets/<bundle-file>`.
+Both wire and cumulative expanded bytes are limited to 64 MiB. This checks the
+producer's declared inventory; it does not analyze arbitrary JavaScript imports.
+The prepared identity includes the complete signed frontend declaration.
+
+Native processes read the render-owned `artifact-cache/ROOT` workspace value
+through `ConfigureNative`; no root is inferred or created by the host. This
+adapter requires both local Codefly context and absence of Pod context. An absent
+source preserves pending delivery and never falls back to a backend's mutable
+asset directory. Registry source selection and custody remain the deployment
+operator's contract, not an implicit default.

@@ -402,6 +402,11 @@ jobs:
         env:
           GOWORK: "off"
         run: go test ./...
+      - name: Verify immutable frontend preparation
+        working-directory: module/frontendpayload
+        env:
+          GOWORK: "off"
+        run: go test -race ./... && go vet ./...
       - name: Test source-read SDK and production authority boundary
         env:
           GOWORK: "off"

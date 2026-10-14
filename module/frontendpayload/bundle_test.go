@@ -29,7 +29,7 @@ func (s memorySource) Open(_ context.Context, digest solutionhost.PayloadDigest)
 }
 
 func frontendFor(data []byte) *solutionhost.Frontend {
-	return &solutionhost.Frontend{HostContract: 1, Payload: &solutionhost.FrontendPayload{
+	return &solutionhost.Frontend{HostContract: 1, ExposedModule: "./Page", Payload: &solutionhost.FrontendPayload{
 		Artifact: "frontend", MediaType: "application/x-tar",
 		Digest: solutionhost.PayloadDigest(fmt.Sprintf("sha256:%x", sha256.Sum256(data))),
 	}}
@@ -39,7 +39,7 @@ func archiveFor(t *testing.T, version string) []byte {
 	t.Helper()
 	dir := t.TempDir()
 	for name, content := range map[string]string{
-		"mf-manifest.json": `{"metaData":{"publicPath":"auto","remoteEntry":{"name":"remoteEntry.js","path":""}}}`,
+		"mf-manifest.json": `{"metaData":{"globalName":"example","publicPath":"auto","remoteEntry":{"name":"remoteEntry.js","path":"","type":"global"}},"exposes":[{"path":"./Page","assets":{"js":{"sync":["remoteEntry.js"],"async":["deferred.js"]}}}]}`,
 		"remoteEntry.js":   "import('./deferred.js')", "deferred.js": version,
 	} {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0600))
@@ -69,8 +69,8 @@ func TestCompleteSnapshotsSurviveSourceMutationAndRecoverIndependently(t *testin
 	require.NoError(t, err)
 	recovered, err := Prepare(t.Context(), source, fa)
 	require.NoError(t, err)
-	require.True(t, first.Matches(fa.Payload))
-	require.False(t, first.Matches(fb.Payload))
+	require.True(t, first.Matches(fa))
+	require.False(t, first.Matches(fb))
 	// Corrupt just the deferred file without changing the manifest or entry.
 	index := bytes.Index(a, []byte("version-a"))
 	require.GreaterOrEqual(t, index, 0)

@@ -4,6 +4,7 @@
 package frontendpayload
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -13,7 +14,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -35,12 +35,13 @@ type Source interface {
 // Bundle exposes only reads of a private snapshot. It never serves from the
 // source or a filesystem that can change after verification.
 type Bundle struct {
-	payload solutionhost.FrontendPayload
-	files   map[string][]byte
+	declaration [sha256.Size]byte
+	files       map[string][]byte
 }
 
-func (b *Bundle) Matches(payload *solutionhost.FrontendPayload) bool {
-	return b != nil && payload != nil && b.payload == *payload
+func (b *Bundle) Matches(frontend *solutionhost.Frontend) bool {
+	encoded, err := json.Marshal(frontend)
+	return b != nil && frontend != nil && err == nil && b.declaration == sha256.Sum256(encoded)
 }
 
 // Open returns a fresh reader, so concurrent requests cannot change one
@@ -89,6 +90,11 @@ func Prepare(ctx context.Context, source Source, frontend *solutionhost.Frontend
 	if got := fmt.Sprintf("sha256:%x", sha256.Sum256(archive)); got != string(payload.Digest) {
 		return nil, errors.New("frontend bundle digest mismatch")
 	}
+	// Core owns extraction; this frontend profile has a smaller expansion
+	// budget than Core's general archive limit. Check before touching disk.
+	if err := checkExpandedSize(ctx, archive); err != nil {
+		return nil, err
+	}
 	staging, err := os.MkdirTemp("", "frontend-prepare-")
 	if err != nil {
 		return nil, fmt.Errorf("prepare frontend scratch directory: %w", err)
@@ -97,7 +103,11 @@ func Prepare(ctx context.Context, source Source, frontend *solutionhost.Frontend
 	if err := composition.ExtractArchive(ctx, archive, staging); err != nil {
 		return nil, fmt.Errorf("unsafe frontend bundle: %w", err)
 	}
-	bundle := &Bundle{payload: payload, files: map[string][]byte{}}
+	encoded, err := json.Marshal(frontend)
+	if err != nil {
+		return nil, errors.New("frontend declaration cannot be encoded")
+	}
+	bundle := &Bundle{declaration: sha256.Sum256(encoded), files: map[string][]byte{}}
 	err = filepath.WalkDir(staging, func(filename string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -121,34 +131,29 @@ func Prepare(ctx context.Context, source Source, frontend *solutionhost.Frontend
 	if err != nil {
 		return nil, fmt.Errorf("snapshot frontend bundle: %w", err)
 	}
-	if err := bundle.checkManifest(); err != nil {
+	if err := bundle.checkManifest(frontend); err != nil {
 		return nil, err
 	}
 	return bundle, nil
 }
 
-func (b *Bundle) checkManifest() error {
-	var manifest struct {
-		MetaData struct {
-			RemoteEntry struct{ Name, Path string }
-			PublicPath  string
+func checkExpandedSize(ctx context.Context, archive []byte) error {
+	reader := tar.NewReader(bytes.NewReader(archive))
+	var expanded int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
+		header, err := reader.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read frontend archive: %w", err)
+		}
+		if header.Size < 0 || header.Size > MaxBundleBytes-expanded {
+			return errors.New("frontend bundle expanded size limit exceeded")
+		}
+		expanded += header.Size
 	}
-	if err := json.Unmarshal(b.files["mf-manifest.json"], &manifest); err != nil {
-		return errors.New("frontend bundle has no readable federation manifest")
-	}
-	entry := manifest.MetaData.RemoteEntry
-	// Absolute public paths escape the admitted root. The maintained producer
-	// uses an automatic/relative public path for entries and deferred chunks.
-	if manifest.MetaData.PublicPath != "" && manifest.MetaData.PublicPath != "auto" && manifest.MetaData.PublicPath != "./" {
-		return errors.New("frontend bundle public path must be relative")
-	}
-	if entry.Name == "" || strings.HasPrefix(entry.Path, "/") || strings.Contains(entry.Path, "..") {
-		return errors.New("frontend bundle has no relative remote entry")
-	}
-	_, _, err := b.Open(path.Join(entry.Path, entry.Name))
-	if err != nil {
-		return errors.New("frontend bundle is missing its remote entry")
-	}
-	return nil
 }

@@ -108,6 +108,10 @@ endpoints through `ResolveNetworkInstance`, which selects the delivered or local
 endpoint from the runtime environment; the removed `WithDefaultNetwork` switch
 must not be replaced with a hard-coded address or port.
 
+The shared `frontendpayload` Go module is an additional independent suite:
+`cd module/frontendpayload && GOWORK=off go test -race ./... && go vet ./...`.
+Its CI step verifies preparation separately from the service consumers.
+
 ## Runtime composition seams
 
 Solutions and composed modules are independently deployed. Signed delivery
