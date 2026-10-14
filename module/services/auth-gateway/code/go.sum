@@ -56,6 +56,8 @@ github.com/codefly-dev/sdk-go v0.4.1-0.20261013203326-9965662f525e h1:Q06e/DJDkk
 github.com/codefly-dev/sdk-go v0.4.1-0.20261013203326-9965662f525e/go.mod h1:3HqALKz0H9+KOQoJYp3PKIKzxi6Fxc0qBNDzujxF2vo=
 github.com/codefly-dev/sdk-go v0.4.1-0.20261014005033-6b8bd473c6d8 h1:I9ARumk8FZg7m7Xy5qC5ECUfxcVtZ1xhnpjKsPALpVc=
 github.com/codefly-dev/sdk-go v0.4.1-0.20261014005033-6b8bd473c6d8/go.mod h1:3HqALKz0H9+KOQoJYp3PKIKzxi6Fxc0qBNDzujxF2vo=
+github.com/codefly-dev/sdk-go v0.4.1-0.20261014012056-0abc4f26ff47 h1:GDoct/nlIz5i2fzOQiAcGrucjIH27nf6rStHW3PKBwI=
+github.com/codefly-dev/sdk-go v0.4.1-0.20261014012056-0abc4f26ff47/go.mod h1:XX6JnENJtvYGUsyuI1ROyutoxL6c4sjwGUrjxGX4rsQ=
 github.com/codefly-dev/sdk-go/workcontext v0.1.0 h1:oFU/Lg1xnlibRPqyKR0KGdgGttwH8EdZIuErqBaRZxo=
 github.com/codefly-dev/sdk-go/workcontext v0.1.0/go.mod h1:FeKytaeqEXRigN5UflAjVeoMoV2gEN2oJLgBBgpr0Jg=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
