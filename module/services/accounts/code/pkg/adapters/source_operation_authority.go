@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
+	"accounts/pkg/datasource/operations"
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
@@ -145,4 +147,25 @@ func requireSourceOperationScope(ctx context.Context, org, source, action string
 		}
 	}
 	return nil
+}
+
+// requireAuditedSourceOperationScope keeps pre-dispatch scope/delegation
+// refusals on the same audit spine as engine refusals. Callers first establish
+// tenant membership (lookups also resolve an actor-owned attempt). A foreign
+// tenant must never acquire a row through caller-controlled request fields.
+func (h *datasourceConnectHandler) requireAuditedSourceOperationScope(ctx context.Context, actor, org, source, action, effect string) error {
+	err := requireSourceOperationScope(ctx, org, source, action)
+	if err == nil {
+		return nil
+	}
+	tenant, _, verified := auth.VerifiedDatabaseIdentity(ctx)
+	claims, _ := ctx.Value(sourceOperationContextKey{}).(*basev0.WorkContextV1)
+	if verified && tenant == org && claims.GetTenantId() == org {
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		// No declaration was admitted: do not resolve it using refused authority,
+		// or copy the caller's operation/input/error into the audit payload.
+		h.svc.AuditSourceOperation(auditCtx, actor, org, source, operations.Declaration{}, effect, "refused")
+	}
+	return err
 }
