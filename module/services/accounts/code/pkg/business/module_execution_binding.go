@@ -153,10 +153,13 @@ type ExecutionIdentity struct {
 
 // ExecutionReviewer is the independent source: a TokenReview, and a pod read.
 //
-// Two methods rather than one, because the second needs the first's answer — the
+// Review and read are separate because the second needs the first's answer — the
 // pod is read by the name and namespace the TOKEN named, so a caller cannot
 // point the host at a different pod.
 type ExecutionReviewer interface {
+	// NativeDevelopment is true only for a non-pod local stand-in constructed
+	// by the infrastructure adapter. Production always requires a mesh presenter.
+	NativeDevelopment() bool
 	// ReviewToken authenticates a token and reports the identity Kubernetes
 	// attributes to it. The audience is checked by the API server, so a token
 	// minted for another audience is rejected there rather than here.
@@ -310,15 +313,6 @@ var ErrExecutionAuthorityUnreconciled = errors.New(
 // audience is what makes the token a credential FOR this host.
 const executionTokenAudience = "accounts"
 
-// WithWorkloadPeer carries the gateway's verified TLS identity through the
-// internal mint. Absence is the existing plain module mint; a present but empty
-// value is a refused attestation, never permission to omit the binding.
-func WithWorkloadPeer(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, workloadPeerContextKey{}, id)
-}
-
-type workloadPeerContextKey struct{}
-
 // BindExecution establishes what a caller is running and holds it against what
 // the authority document approves. The caller passes its mint snapshot; both
 // the declared container and the workload-owner lookup use that same registry.
@@ -368,23 +362,22 @@ func (s *Service) BindExecution(
 		// and nothing about the caller has been decided.
 		return nil, fmt.Errorf("%w: %w", ErrExecutionUnbound, err)
 	}
-	if peer, presented := ctx.Value(workloadPeerContextKey{}).(string); presented {
-		identity, err := ParseKubernetesSPIFFEID(peer)
-		if err != nil || peer != grant.Workload.SPIFFEID ||
-			identity.Namespace != reviewed.Namespace || identity.ServiceAccount != reviewed.ServiceAccount {
-			return nil, fmt.Errorf("%w: TLS workload identity differs from reviewed token or delivered presence", ErrExecutionIdentityMismatch)
-		}
-	}
 	if reviewed.PodUID == "" || reviewed.PodName == "" {
 		return nil, fmt.Errorf("%w: the token authenticates %s/%s but names no pod",
 			ErrExecutionNotBoundToken, reviewed.Namespace, reviewed.ServiceAccount)
 	}
 
-	// THE TOKEN'S LIFETIME IS THE REPLAY WINDOW. A projected token is a bearer
-	// credential: TokenReview proves the cluster issued it to this pod, never
-	// that the pod is the one presenting it. The workload listener additionally
-	// binds its TLS peer above. For plain module mints the host
-	// bounds it to the shortest projection Kubernetes issues.
+	if !s.executionReviewer.NativeDevelopment() {
+		presenter := VerifiedWorkloadPresenter(ctx)
+		identity, parseErr := ParseKubernetesSPIFFEID(presenter)
+		if parseErr != nil || presenter != grant.Workload.SPIFFEID ||
+			identity.Namespace != reviewed.Namespace || identity.ServiceAccount != reviewed.ServiceAccount {
+			return nil, fmt.Errorf("%w: authenticated presenter does not match the applied and reviewed workload", ErrExecutionIdentityMismatch)
+		}
+	}
+
+	// Mesh identity identifies a ServiceAccount, not an individual pod. Keep
+	// the projected-token lifetime, pod UID and running-build checks as well.
 	if reviewed.IssuedAt.IsZero() || reviewed.ExpiresAt.IsZero() {
 		return nil, fmt.Errorf("%w: the review reported no issue or expiry time", ErrExecutionTokenLifetime)
 	}

@@ -12,7 +12,7 @@ import (
 	"accounts/pkg/infra"
 )
 
-// The delivery endpoint: `POST /platform/_delivery/{presence,authority}`.
+// The delivery endpoint: `POST /platform/_delivery/{presence,authority,endpoints}`.
 //
 // Mounted on ACCOUNTS rather than brokered through the gateway, and the
 // asymmetry with the credential mint is deliberate. `POST
@@ -45,9 +45,10 @@ type solutionDeliveryService interface {
 	ReceiveSolutionDelivery(
 		ctx context.Context, carrier business.SolutionDeliveryCarrier, credential string,
 	) (business.SolutionDeliveryDisposition, *business.SolutionDeliveryRecord, error)
+	ReadSolutionDeliveryApplied(context.Context, string, string) (*business.SolutionDeliveryApplied, error)
 }
 
-// SolutionDeliveryHTTPHandler serves the two delivery paths.
+// SolutionDeliveryHTTPHandler serves the signed delivery paths.
 type SolutionDeliveryHTTPHandler struct {
 	service solutionDeliveryService
 }
@@ -71,6 +72,10 @@ type solutionDeliveryReceipt struct {
 }
 
 func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, SolutionDeliveryPrefix+"applied/") {
+		h.serveApplied(w, r)
+		return
+	}
 	// An unknown path under the reserved namespace is 404, never a fall-through.
 	kind := business.SolutionDeliveryKind(strings.TrimPrefix(r.URL.Path, SolutionDeliveryPrefix))
 	if !strings.HasPrefix(r.URL.Path, SolutionDeliveryPrefix) || !kind.Valid() {
@@ -118,6 +123,36 @@ func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 	})
 }
 
+func (h *SolutionDeliveryHTTPHandler) serveApplied(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	binding := strings.TrimPrefix(r.URL.Path, SolutionDeliveryPrefix+"applied/")
+	if binding == "" || len(binding) > 128 || strings.ContainsAny(binding, "/\\") {
+		writeSolutionDeliveryError(w, http.StatusNotFound, "no such delivery endpoint")
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeSolutionDeliveryError(w, http.StatusMethodNotAllowed, "applied state is a GET")
+		return
+	}
+	if len(r.Header.Values("Authorization")) != 1 {
+		writeSolutionDeliveryError(w, http.StatusUnauthorized, "one observer credential is required")
+		return
+	}
+	applied, err := h.service.ReadSolutionDeliveryApplied(r.Context(), binding, r.Header.Get("Authorization"))
+	if errors.Is(err, business.ErrSolutionHostBindingNotDeclared) {
+		writeSolutionDeliveryError(w, http.StatusNotFound, "binding has no applied generation")
+		return
+	}
+	if err != nil {
+		status, message := solutionDeliveryStatus(err)
+		writeSolutionDeliveryError(w, status, message)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(applied)
+}
+
 // solutionDeliveryStatus maps a refusal onto its response code.
 //
 // This mapping IS the published contract, and it is written as one function so
@@ -136,6 +171,7 @@ func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 //	409 rewritten generation terminal — publish never rewrites one, so this is
 //	                         a hand-edited delivery tree
 //	422 invalid document     terminal — it parses and Validate refuses it
+//	503 presence pending     RETRYABLE — the matching presence is not applied
 //	503 cannot verify        RETRYABLE — the host could not reach the API
 //	                         server or its trust root, so nothing was checked
 //
@@ -145,6 +181,8 @@ func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 // they come from different branches of the same call.
 func solutionDeliveryStatus(err error) (int, string) {
 	switch {
+	case errors.Is(err, business.ErrSolutionDeliveryNotApplied):
+		return http.StatusServiceUnavailable, err.Error()
 	case errors.Is(err, business.ErrSolutionDeliveryMalformed):
 		return http.StatusBadRequest, err.Error()
 	case errors.Is(err, infra.ErrCarrierUnauthenticated):

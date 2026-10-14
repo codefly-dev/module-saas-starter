@@ -39,6 +39,7 @@ const (
 )
 
 var (
+	ErrSolutionFrontendNotPrepared = errors.New("signed frontend payload is not prepared for immutable serving")
 	// ErrSolutionHostBindingNotDeclared is returned when a binding ID has no
 	// durable record.
 	ErrSolutionHostBindingNotDeclared = errors.New("solution host binding is not declared")
@@ -109,6 +110,9 @@ type SolutionHostBindingApplied struct {
 	// of "the domain this binding was claimed under", and those differ exactly
 	// when it matters — a host accepting two domains.
 	Domain string
+	// EndpointDelivery is an opaque read projection from the signed inbox,
+	// joined to this applied document. It is not a registry address column.
+	EndpointDelivery []byte
 }
 
 // SolutionHostBindingRecord is the host's durable record for one binding ID.

@@ -138,6 +138,8 @@ func tombstoneOf(t *testing.T, document *solutionhost.SolutionHostBinding, gener
 	removed.Workloads = nil
 	removed.Modules = nil
 	removed.Endpoints = nil
+	removed.Frontend = nil
+	removed.Group = nil
 	removed.Removed = true
 	if err := removed.Validate(); err != nil {
 		t.Fatalf("test tombstone is not valid: %v", err)
@@ -195,11 +197,96 @@ func registration(t *testing.T, solutionID string) *business.SolutionRegistratio
 	return nil
 }
 
+func TestSolutionHostBinding_UnpreparedFrontendPreservesAppliedGeneration(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	source := &deliveredSet{}
+	first := declaredBinding(t, solutionID, 1)
+	source.put(t, first)
+	reconciler := newTestReconciler(t, source)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatal(err)
+	}
+	before := registration(t, solutionID)
+	if before == nil {
+		t.Fatal("first generation was not applied")
+	}
+	successor := declaredBinding(t, solutionID, 2)
+	successor.Frontend = &solutionhost.Frontend{
+		Title: "Updated example", ExposedModule: "./Page", HostContract: 1,
+		Payload: &solutionhost.FrontendPayload{
+			Artifact: "frontend", Digest: solutionhost.PayloadDigest("sha256:" + strings.Repeat("ab", 32)), MediaType: "application/x-tar",
+		},
+	}
+	source.put(t, successor)
+	for range 2 {
+		if err := reconciler.RunOnce(testCtx); !errors.Is(err, business.ErrSolutionFrontendNotPrepared) {
+			t.Fatalf("expected unprepared frontend refusal, got %v", err)
+		}
+		state := bindingState(t, first.Binding)
+		if state == nil || state.Applied == nil || state.Applied.Generation != 1 || state.PendingGeneration() != 2 || !strings.HasPrefix(state.PendingReason, business.ErrSolutionFrontendNotPrepared.Error()+": ") {
+			t.Fatalf("old generation not preserved with a pending successor: %+v", state)
+		}
+		after := registration(t, solutionID)
+		if after == nil || after.Revision != before.Revision || after.Frontend != nil || before.Frontend != nil || after.Declared.TargetID != before.Declared.TargetID {
+			t.Fatalf("unprepared payload changed the active registration: %+v", after)
+		}
+	}
+}
+
+// Grouping traverses signed delivery, Core admission and the same transaction
+// that applies presence. Headless solutions need no fabricated frontend, and
+// presentation changes preserve the identity that existing consent names.
+func TestSolutionGroupRoundTripsThroughSignedHeadlessPresence(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	mount := &deliveredSet{}
+	reconciler := newTestReconciler(t, mount)
+	var targetID string
+	for i, group := range []*solutionhost.SolutionGroup{
+		{ID: "operations", Title: "Operations", Order: 2147483647},
+		{ID: "research", Title: "Research", Order: -2147483648},
+		nil,
+		{ID: "research", Title: "Research tools", Order: 3},
+	} {
+		document := declaredBinding(t, solutionID, uint64(i+1))
+		document.Group = group
+		mount.put(t, document)
+		if err := reconciler.RunOnce(testCtx); err != nil {
+			t.Fatal(err)
+		}
+		row := registration(t, solutionID)
+		if row == nil || row.Declared == nil || row.Frontend != nil {
+			t.Fatalf("headless registration missing or acquired a frontend: %+v", row)
+		}
+		if i == 0 {
+			targetID = row.Declared.TargetID
+		}
+		if targetID == "" || row.Declared.TargetID != targetID || row.Declared.Generation != uint64(i+1) {
+			t.Fatalf("group change moved consent identity or failed to apply: %+v", row.Declared)
+		}
+		if group == nil {
+			if row.Group != nil {
+				t.Fatalf("omitted group retained old membership: %+v", row.Group)
+			}
+		} else if row.Group == nil || row.Group.ID != group.ID || row.Group.Title != group.Title || int64(row.Group.Order) != group.Order {
+			t.Fatalf("applied group did not survive storage: got %+v, want %+v", row.Group, group)
+		}
+		if i == 3 {
+			mount.put(t, tombstoneOf(t, document, 5))
+			if err := reconciler.RunOnce(testCtx); err != nil {
+				t.Fatal(err)
+			}
+			withdrawn := registration(t, solutionID)
+			if withdrawn == nil || withdrawn.TombstonedAt == nil || withdrawn.Group != nil {
+				t.Fatalf("withdrawal retained group or failed: %+v", withdrawn)
+			}
+		}
+	}
+}
+
 // A delivered generation becomes a durable registration record, and the record
-// says which binding declared it. Nothing has heartbeated, so it is PENDING: that
-// is the whole point — declared and not observed is a state an operator can see,
-// where before it was indistinguishable from never deployed.
-func TestSolutionHostBinding_DeliveredGenerationDeclaresAPendingRegistration(t *testing.T) {
+// says which binding declared it. A headless declared component is ACTIVE without
+// any runtime report. Each organisation's installation readiness remains separate.
+func TestSolutionHostBinding_DeliveredGenerationDeclaresAnActiveRegistration(t *testing.T) {
 	solutionID := testDeclaredSolutionID(t)
 	document := declaredBinding(t, solutionID, 1)
 	mount := &deliveredSet{}
@@ -230,8 +317,8 @@ func TestSolutionHostBinding_DeliveredGenerationDeclaresAPendingRegistration(t *
 	if declared.Declared.BindingID != document.Binding || declared.Declared.Generation != 1 {
 		t.Fatalf("declaration = %+v", declared.Declared)
 	}
-	if got := declared.Status(); got != business.SolutionRegistrationPending {
-		t.Fatalf("status = %q, want pending: declared presence is not an observation", got)
+	if got := declared.Status(); got != business.SolutionRegistrationActive {
+		t.Fatalf("status = %q, want active: the applied declaration needs no runtime heartbeat or frontend", got)
 	}
 }
 
@@ -422,8 +509,8 @@ func TestSolutionHostBinding_RemovalIsATombstoneGeneration(t *testing.T) {
 	if withdrawn == nil || withdrawn.TombstonedAt == nil {
 		t.Fatalf("the registration was not withdrawn: %+v", withdrawn)
 	}
-	if withdrawn.Frontend != nil || withdrawn.Backend != nil {
-		t.Fatal("a withdrawal clears the endpoints in the write that records it")
+	if withdrawn.Frontend != nil {
+		t.Fatal("a withdrawal clears the frontend half in the write that records it")
 	}
 	if withdrawn.Declared == nil || withdrawn.Declared.Generation != 5 {
 		t.Fatalf("the tombstone must keep its declaration: %+v", withdrawn.Declared)

@@ -92,7 +92,7 @@ func newOperationContextExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsOp
 }
 
 func operationContextRequest(body, token, internal string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, moduleOperationContextPath, strings.NewReader(body))
+	req := onWorkloadEndpoint(httptest.NewRequest(http.MethodPost, moduleOperationContextPath, strings.NewReader(body)))
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -194,7 +194,7 @@ func TestGateway_ModuleOperationContext_RelaysAccountsOutcome(t *testing.T) {
 func TestGateway_ModuleOperationContext_MethodNotAllowed(t *testing.T) {
 	gw, mint := newOperationContextExchangeHarness(t)
 
-	req := httptest.NewRequest(http.MethodGet, moduleOperationContextPath, nil)
+	req := onWorkloadEndpoint(httptest.NewRequest(http.MethodGet, moduleOperationContextPath, nil))
 	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)

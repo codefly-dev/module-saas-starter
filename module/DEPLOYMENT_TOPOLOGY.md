@@ -53,12 +53,12 @@ depend on the database whose authority it witnesses.
 The Codefly module interface exposes the public `frontend/http` and
 `marketing/http` endpoints; the auth-gateway gRPC ext-authz endpoint has module
 visibility. Its `rest` and `workload` endpoints are also module-visible;
-`rest` serves plain HTTP and `workload` serves the same routes over TLS 1.3 with
-required workload client certificates. Both ports are allocated by Codefly.
-The gateway declares the platform-provided `workload-identity` configuration
-group and refuses startup without its projected certificate, key, trust bundle,
-caller allowlist and token files. Solution upstreams require mutual TLS and the
-SPIFFE identity from applied presence. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
+both serve plain HTTP, and `workload` serves the same handler on a port of its
+own that the cell's mesh admits from composed workloads alone (an
+`AuthorizationPolicy` the cell's applier compiles from the edges the CLI
+delivers). Both ports are allocated by Codefly. Solution upstreams are reached
+over plain HTTP at the address the Codefly SDK resolves for the endpoint their
+applied presence declares; no workload serves or presents an SVID. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
 `frontend/http`. Accounts, frontend, marketing, and telemetry may reach
 public IP space only over TCP 443. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other

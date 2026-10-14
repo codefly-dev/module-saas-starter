@@ -31,6 +31,17 @@ is read by the capability checks and does not create synthetic directory rows.
 generations and pending reasons. Core owns document admission; each apply
 re-decides under the binding row lock. A refused or unreadable delivery does not
 withdraw the last applied generation. Withdrawal requires a tombstone generation.
+A replay after removal authenticates against the last workload-bearing applied
+presence, recovered from immutable generation decisions joined to exact signed
+inbox bytes. Desired-only or refused history cannot supply a carrier namespace;
+this lookup does not use the catalogue's diagnostic history limit.
+
+`GET /platform/_delivery/applied/{binding}` reads only that committed generation,
+including tombstones, after an accounts-audience TokenReview of the protected
+endpoint publisher. A desired delivery receipt is not proof of apply. The
+observer's identity has no delivery write permission; other delivery identities
+have no observer permission. The wire and response taxonomy are documented in
+[../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md).
 
 `solution_registrations` is the durable read projection, keyed by the route alias.
 Every row names its declared binding, generation, release and immutable target.
@@ -38,11 +49,36 @@ A binding ID identifies a deployment instance, while an alias identifies a route
 consent names the target and cannot follow an alias to a replacement instance.
 Only observations for the same declared target may survive a re-declaration.
 
+New frontend candidates require complete signed payload preparation before apply.
+A failed candidate preserves the applied predecessor. Migration 40 indexes new
+applied frontend identities; the targeted internal retained-frontend read joins
+exact signed history to a still-live target and keeps last ten or the configured
+lazy-load window. Pre-migration history is not backfilled. Full history is never
+broadcast in the route snapshot. See the prepared-payload section in
+[../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md).
+
 The internal `SolutionRegistryService` exposes the registry and host-binding
 reads. The gateway reads the snapshot and brokers it to the frontend. Both cache
 briefly: gateway reconciliation is approximately 10 seconds with a refresh on
 cache miss; frontend snapshots expire after 5 seconds and a failed refresh
-reports unavailable. An incomplete record stays pending and is not served.
+reports unavailable. An undeclared record stays pending and is not served.
+Applied modules and solutions are active independently of their optional
+frontend block; headless backends remain usable. Registry availability does not
+replace the separate organisation installation status and consent checks.
+
+The internal APPLIED read also carries opaque endpoint delivery bytes for the
+Codefly SDK. They come from the exact signed inbox generation, not a registry
+address column or the newest desired document. Accounts retains delivery
+provenance and applied-state authority; Codefly owns carrier interpretation.
+Migration 39 permits endpoint documents in the existing append-only inbox.
+Producer and consumer integration is in progress; this does not qualify the
+replacement transport or relax pod/build admission.
+
+An optional top-level `group` on an applied solution declaration is copied to
+the registration as presentation only, including for headless solutions.
+Migration 38 adds that nullable projection; modules and tombstones cannot carry
+it. Moving or clearing a group preserves the installation target and grants.
+The catalogue exposes it without backend topology; authority never reads it.
 
 Migration 26 destructively removes runtime-only state and makes declaration
 ownership mandatory. Its from-zero proof is `TestMigration25FromZero` in the
@@ -105,14 +141,14 @@ to be empty.
 
 **The mint** reads the binding through
 `business.SolutionRuntimeBoundarySeedStore`, which also reports the publisher of
-record and whether the backend half is serving, and refuses a missing record and
-a tombstone separately. A row with no `declared_binding_id` answers the
-tombstoned error: the cutover's own constraint makes an undeclared row a
-withdrawn one. **Serving is delivered presence**, not an asserted lease — a
-non-tombstoned declared row whose applied generation carries a backend half
-(`backend_revision` and `backend_upstream`) — and the refusal names both columns.
-Revocation reaches a capability through that per-mint read, under the existing
-120 s cache bound: carrier deletion is not revocation, the applied tombstone is.
+record, and refuses a missing record and a tombstone separately. A row with no
+`declared_binding_id` answers the tombstoned error: the cutover's own constraint
+makes an undeclared row a withdrawn one. **Serving is delivered presence** and
+nothing else — a non-tombstoned declared row; where the solution is reached is
+resolved by the gateway through the Codefly SDK and lives in no column, and
+nothing a running process reports is stored (#1118). Revocation reaches a
+capability through that per-mint read, under the registry's 120 s lease:
+carrier deletion is not revocation, the applied tombstone is.
 
 Which solution is asking comes from `auth.VerifiedSolution`, and **nothing on the
 wire sets it**: a request carrying `X-Codefly-Solution-Id` or
@@ -284,7 +320,8 @@ three inputs agree:
   Per module prefix it lists the WHOLE authority units the host admits (id
   `<presence binding>:<binding>:<operation>`, revision, scope, queue, namespace,
   binding key, lookup method — the audience is the grant's), the workload
-  identities the principal may run as (SPIFFE ID and container), the scope
+  identities the principal may run as (SPIFFE ID and container), explicit
+  `admitted_bindings` for a principal with no consumed units, the scope
   ceilings, and the grant ceiling below.
 - **a live authority document inside that envelope** — signed, delivered,
   re-verified on every pass against the host's CURRENT signer-to-domain policy
@@ -572,35 +609,28 @@ could not run is `ErrExecutionUnbound`, not one.
   API server has just authenticated. A longer one, or one whose lifetime cannot
   be read, is refused.
 
-**Workload listener binding.** The gateway's TLS listener forwards its verified
-SPIFFE peer on the authenticated internal mint RPC. `BindExecution` compares it
-to the namespace and ServiceAccount returned by TokenReview and the full SPIFFE
-ID retained from applied presence in `ModuleWorkload`. A mismatch follows the
-existing refused-identity log path and is returned as 403 on the workload
-endpoint, before signing or recording any credential. Plain module SDK mints
-continue on their existing endpoint without this additional TLS attestation.
+**Presenter binding.** Production exchanges require the gateway-authenticated
+workload presenter in private request context. The internal gRPC adapter accepts
+`x-codefly-workload-presenter` only with the gateway-only provenance credential,
+refuses duplicate or malformed values, and removes the raw assertion before
+calling business code. `BindExecution` compares the complete SPIFFE ID against
+applied presence and its namespace/ServiceAccount against TokenReview. The
+protected waypoint must overwrite caller XFCC and be the only network peer
+admitted to the workload listener; a trusted-looking header is not that proof.
 
-**Replay on the plain module endpoint, stated precisely.** A projected ServiceAccount token is a BEARER
-credential. TokenReview proves the cluster issued it to a named pod and that the
-pod still exists; it does not prove the pod is the party presenting it. So:
+**Replay, stated precisely.** Reusing a valid projection for legitimate work is
+allowed. A stolen token presented under a different mesh principal is refused;
+a pod UID, approved running build and current organisation installation are still
+required. Mesh identity names a ServiceAccount, so two pods sharing that identity
+remain indistinguishable as presenters. TokenReview, the 600-second lifetime
+bound, pod UID and build checks remain essential. This change does not establish
+pod-specific proof of possession or live mesh qualification.
 
-- **Closed here:** a token from another workload, another audience or another
-  cluster; a replaced pod at the same name; a pod running an unapproved build or
-  any unapproved container; a stopped container or a pod being deleted; a token
-  older than 10 minutes.
-- **Not closed — the residual:** a peer that has COPIED a still-valid token
-  from an approved, running pod (and holds the broker's perimeter credential)
-  can mint as that pod's principal for the rest of that token's lifetime, and
-  the mint record attributes it to the victim pod. TokenReview cannot close
-  this, and nothing on this host can tell the copy from the original.
-- **The strongest closing option — an owner decision, not built:** bind each
-  mint to request-origin identity. The mesh's pod-specific mTLS identity of the
-  connection that carried the request is conveyed by the broker in a header only
-  the broker can set, and accounts requires it to name the same pod UID the
-  TokenReview did. A copied token is then useless from any other pod. It needs
-  the mesh to issue per-pod (not per-ServiceAccount) identities, and the gateway
-  to forward the verified peer, so it is a platform decision rather than a change
-  to this mint.
+**Native development.** Only constructing the Kubernetes client from the local
+stand-in outside a real pod selects the native exemption. In-cluster construction
+requires presenter binding, and setting a local stand-in inside a pod fails
+startup. Business tests using an in-memory cluster model the native trust profile;
+production presenter tests use the real Kubernetes decoder and business mint path.
 
 **Three digest types, and conflating any two defeats the check.** They are
 separate Go types rather than three strings for exactly that reason:

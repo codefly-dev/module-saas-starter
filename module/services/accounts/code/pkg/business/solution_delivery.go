@@ -38,12 +38,14 @@ const (
 	SolutionDeliveryPresence SolutionDeliveryKind = "presence"
 	// SolutionDeliveryAuthority declares what a module instance is approved for.
 	SolutionDeliveryAuthority SolutionDeliveryKind = "authority"
+	// SolutionDeliveryEndpoints carries Codefly values for an applied presence.
+	SolutionDeliveryEndpoints SolutionDeliveryKind = "endpoints"
 )
 
 // Valid reports whether a kind is one this host serves. Checked at the edge, so
 // an unknown kind is a 404 on a path rather than a row with a kind nothing reads.
 func (kind SolutionDeliveryKind) Valid() bool {
-	return kind == SolutionDeliveryPresence || kind == SolutionDeliveryAuthority
+	return kind == SolutionDeliveryPresence || kind == SolutionDeliveryAuthority || kind == SolutionDeliveryEndpoints
 }
 
 // SolutionDeliveryCarrier is one received carrier: the canonical payload and the
@@ -96,6 +98,10 @@ const (
 // Delivery refusals. Each is a distinct fact with a distinct response code,
 // because a retry is right for some and wrong for the rest.
 var (
+	// ErrSolutionDeliveryNotApplied asks the producer to retry its signed value
+	// after presence reconciliation. A receipt alone never activates a route.
+	ErrSolutionDeliveryNotApplied = errors.New("endpoint delivery is waiting for applied presence")
+
 	// ErrSolutionDeliveryMalformed: the carrier does not parse, or the payload
 	// is not the canonical encoding of the document it decodes to. 400,
 	// terminal. A signer and a host that disagree about which bytes represent
@@ -144,6 +150,18 @@ type SolutionDeliveryStore interface {
 	// ListDeliveredDocuments returns every delivered generation of one kind:
 	// the history a terminal withdrawal is read from.
 	ListDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
+}
+
+// SolutionDeliveryReader retrieves one exact historical delivery. Applied reads
+// must not substitute the newest desired generation for the committed one.
+type SolutionDeliveryReader interface {
+	ReadDeliveredDocument(context.Context, SolutionDeliveryKind, string, uint64) (*SolutionDeliveryRecord, error)
+}
+
+// SolutionDeliveryAppliedReader recovers the last workload-bearing presence
+// from committed decision history, never from desired or refused deliveries.
+type SolutionDeliveryAppliedReader interface {
+	ReadAppliedWorkloadPresence(context.Context, string, uint64) (*SolutionHostBindingGeneration, error)
 }
 
 // SolutionDeliveryCounter is the inbox's size, where the store can answer it.
@@ -352,6 +370,8 @@ func (s *Service) receiveDeliveredDocument(
 		return s.receiveDeliveredPresence(ctx, signed)
 	case SolutionDeliveryAuthority:
 		return s.receiveDeliveredAuthority(ctx, signed)
+	case SolutionDeliveryEndpoints:
+		return s.receiveDeliveredEndpoints(ctx, signed)
 	}
 	return nil, fmt.Errorf("%w: unknown delivery kind %q", ErrSolutionDeliveryMalformed, kind)
 }
@@ -453,14 +473,14 @@ func classifySolutionDeliveryVerification(err error) error {
 // one document delivery must be able to hand over to withdraw a binding was the
 // one document the carrier check could never authorise.
 //
-// So the fallback is the binding's LAST APPLIED namespace: what this host
+// So the fallback is the binding's LAST WORKLOAD-BEARING APPLIED namespace: what this host
 // recorded, from a generation it had already verified and admitted, for the same
 // binding. That is a stronger anchor than the arriving document, because the
 // arriving document is the thing under check and the applied record is the
 // host's own state.
 //
 // It can still come back empty — a first generation for a binding nothing has
-// applied, or a binding whose applied generation itself declared no workload.
+// applied, or a binding whose applied history never declared a workload.
 // Empty is handed to the authorizer rather than resolved here, so the refusal
 // reads in one place: there is nothing to authorise this carrier against.
 func (s *Service) presenceCarrierNamespaces(
@@ -488,7 +508,35 @@ func (s *Service) presenceCarrierNamespaces(
 			return nil, fmt.Errorf("%w: binding %q applied generation %d does not parse back: %w",
 				ErrSolutionDeliveryInvalid, record.BindingID, record.Applied.Generation, err)
 		}
-		return declaredNamespaces(applied), nil
+		if namespaces := declaredNamespaces(applied); len(namespaces) > 0 {
+			return namespaces, nil
+		}
+		reader, ok := s.deliveryStore.(SolutionDeliveryAppliedReader)
+		if !ok {
+			return nil, fmt.Errorf("%w: applied carrier history is unavailable", ErrSolutionDeliveryInvalid)
+		}
+		var previous *SolutionHostBindingGeneration
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var readErr error
+			previous, readErr = reader.ReadAppliedWorkloadPresence(ctx, document.Binding, record.Applied.Generation)
+			return readErr
+		}); err != nil {
+			return nil, err
+		}
+		if previous == nil {
+			return nil, nil
+		}
+		prior, err := solutionhost.Parse([]byte(previous.Document))
+		if err != nil {
+			return nil, fmt.Errorf("%w: parse applied carrier history: %w", ErrSolutionDeliveryInvalid, err)
+		}
+		digest, err := prior.Digest()
+		if err != nil || digest != previous.Digest || prior.Binding != document.Binding ||
+			prior.Generation != previous.Generation || prior.Generation > record.Applied.Generation ||
+			prior.Host != applied.Host || prior.OwnershipDomain != applied.OwnershipDomain || prior.Removed {
+			return nil, fmt.Errorf("%w: applied carrier history does not match binding %q", ErrSolutionDeliveryInvalid, document.Binding)
+		}
+		return declaredNamespaces(prior), nil
 	}
 	return nil, nil
 }

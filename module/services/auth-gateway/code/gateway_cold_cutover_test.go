@@ -7,15 +7,17 @@ import (
 	"strings"
 	"testing"
 
-	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
-
 	"github.com/stretchr/testify/require"
 )
 
 func TestGateway_DeletedRegistrationPathsReturn404(t *testing.T) {
 	gateway := NewGateway(&ExtAuthz{}, NewRouteMatcher(nil, nil), nil, nil, nil, nil)
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions} {
-		for _, path := range []string{"/modules/_register", "/modules/_registration-token", "/solutions/_register", "/solutions/_frontend", "/solutions/_registration-token", "/solutions/_register/extra", "/solutions/_frontend/extra", "/solutions/_registration-token/extra", "/v1/example", "/v1/example/records", "/v1/example:query"} {
+		// The three credential exchanges are on this list for the PUBLIC
+		// endpoint: they are served on the workload endpoint alone, and here
+		// they are unexposed paths like the deleted registration ones.
+		for _, path := range []string{"/modules/_register", "/modules/_registration-token", "/solutions/_register", "/solutions/_frontend", "/solutions/_registration-token", "/solutions/_register/extra", "/solutions/_frontend/extra", "/solutions/_registration-token/extra", "/v1/example", "/v1/example/records", "/v1/example:query",
+			moduleWorkContextPath, moduleOperationContextPath, moduleSourceOperationContextPath} {
 			t.Run(method+" "+path, func(t *testing.T) {
 				req := httptest.NewRequest(method, path, strings.NewReader(`{"prefix":"example","upstream":"http://example.svc"}`))
 				req.Header.Set("X-Codefly-Internal-Token", "example-internal-token")
@@ -28,19 +30,17 @@ func TestGateway_DeletedRegistrationPathsReturn404(t *testing.T) {
 	}
 }
 
-func TestDeclaredSolutionUpstreamReadPreservesURLAdmission(t *testing.T) {
+// The address the Codefly SDK resolves for a solution's endpoint is held to the
+// one upstream policy, like a module's: an origin and nothing more, on a host
+// the guard admits. One it refuses leaves the solution not serving.
+func TestDeclaredSolutionAddressIsHeldToTheUpstreamPolicy(t *testing.T) {
 	for _, upstream := range []string{
 		"http://169.254.169.254", "http://metadata.google.internal", "https://api.example.com",
 		"file://example.svc", "http://user:password@example.svc", "http://example.svc/path", "http://example.svc?secret=true",
 	} {
 		t.Run(upstream, func(t *testing.T) {
 			registry := newFakeSolutionRegistry()
-			registry.records["example"] = &accountsv1.SolutionRegistration{
-				SolutionId: "example", Frontend: &accountsv1.SolutionFrontendBinding{},
-				Backend: &accountsv1.SolutionBackendBinding{Upstream: upstream},
-				Declared: &accountsv1.SolutionDeclaredBinding{TargetId: "example-target",
-					Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION},
-			}
+			registry.seedDeclared("example", upstream)
 			cache := newSolutionRegistryCache(registry)
 			require.NoError(t, cache.refresh(context.Background()))
 			routing, resolution := cache.resolveRouting(context.Background(), "example")

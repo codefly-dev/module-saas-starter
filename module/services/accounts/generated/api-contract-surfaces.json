@@ -438,6 +438,7 @@
       "name": "SolutionRegistryService",
       "fullName": "saas.accounts.v1.SolutionRegistryService",
       "procedures": [
+        "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend",
         "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
         "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
       ]

@@ -499,3 +499,44 @@ func TestTheInstallStepQueueIsGrantedToNoModule(t *testing.T) {
 	require.ErrorIs(t, err, ErrModuleEnvelopeInvalid)
 	require.ErrorContains(t, err, InstallationStepQueue)
 }
+
+func TestEmptyPermissionAdmissionIsExactAndGrantsNoConsumedOperations(t *testing.T) {
+	wire := testEnvelopeDocument()
+	principal := wire["principals"].(map[string]any)[testModulePrefix].(map[string]any)
+	principal["bindings"] = []any{}
+	principal["admitted_bindings"] = []string{testPresenceBinding}
+	principal["scope_ceilings"] = []any{}
+	principal["grant"] = map[string]any{"cross_tenant": true}
+	envelope, err := ParseModuleEnvelope(encodeEnvelope(t, wire))
+	require.NoError(t, err)
+	document := testAuthority(t, []solutionhost.AuthorityBinding{}...)
+	document.Queues, document.Namespaces, document.ScopeCeilings = []string{}, []string{}, []solutionhost.ScopeCeiling{}
+	require.NoError(t, document.ValidateAgainst(envelope.authorityEnvelopeFor(document)))
+	grant, _, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], document, nil, testWorkload)
+	require.NoError(t, err)
+	require.Empty(t, grant.OperationAudiences)
+	require.Empty(t, grant.Queues)
+	require.Empty(t, grant.Namespaces)
+	require.Empty(t, grant.Resources)
+	require.Empty(t, grant.ReadAudiences)
+	require.True(t, grant.CrossTenant)
+	document.PresenceBinding = "acme.test.other"
+	require.ErrorIs(t, document.ValidateAgainst(envelope.authorityEnvelopeFor(document)), solutionhost.ErrOutsideEnvelope)
+	document.PresenceBinding = testPresenceBinding
+	document.Principals[0].Principal = "other"
+	require.ErrorIs(t, document.ValidateAgainst(envelope.authorityEnvelopeFor(document)), solutionhost.ErrOutsideEnvelope)
+	for name, mutate := range map[string]func(){
+		"omitted units":       func() { delete(principal, "bindings") },
+		"null units":          func() { principal["bindings"] = nil },
+		"missing admission":   func() { delete(principal, "admitted_bindings") },
+		"invalid admission":   func() { principal["admitted_bindings"] = []string{"bad:binding"} },
+		"duplicate admission": func() { principal["admitted_bindings"] = []string{testPresenceBinding, testPresenceBinding} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			principal["bindings"], principal["admitted_bindings"] = []any{}, []string{testPresenceBinding}
+			mutate()
+			_, err := ParseModuleEnvelope(encodeEnvelope(t, wire))
+			require.Error(t, err)
+		})
+	}
+}

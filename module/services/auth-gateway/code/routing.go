@@ -39,7 +39,6 @@ type RouteExtension struct {
 
 // RouteEntry is the internal representation used by the gateway.
 type RouteEntry struct {
-	WorkloadSPIFFEID            string             // declared TLS peer for a solution upstream
 	Service                     string             // upstream service name (from directory path)
 	Method                      string             // HTTP method
 	Path                        string             // public HTTP path (may contain {param} segments)

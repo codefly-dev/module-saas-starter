@@ -2,10 +2,12 @@ package business
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 )
 
 // Reconciling an admitted generation into the durable registry (issue #952).
@@ -27,7 +29,10 @@ func (s *Service) ListSolutionHostBindings(ctx context.Context) ([]*SolutionHost
 	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		records, err = s.store.ListSolutionHostBindings(ctx)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.attachAppliedEndpointDeliveries(ctx, records)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list solution host bindings: %w", err)
@@ -200,6 +205,18 @@ func (s *Service) applySolutionHostBinding(
 			return err
 		}
 	}
+	// Complete preparation precedes database locks. A slow or corrupt source
+	// never withdraws the previous generation or holds its installation locks.
+	var prepared *frontendpayload.Bundle
+	if !document.Removed && document.Frontend != nil {
+		if document.Frontend.Payload == nil {
+			return fmt.Errorf("%w: frontend declares no signed payload", ErrSolutionFrontendNotPrepared)
+		}
+		prepared, err = frontendpayload.Prepare(ctx, s.frontendSource, document.Frontend)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrSolutionFrontendNotPrepared, err)
+		}
+	}
 
 	// A withdrawal CLOSES the installable target and revokes every active
 	// installation naming it. That is a narrowing of authority, so it must be
@@ -263,6 +280,12 @@ func (s *Service) applySolutionHostBinding(
 				Release:    document.Release.Identity(),
 				DecidedAt:  now,
 			})
+		}
+
+		// Bind the preparation result to the same signed payload re-admitted
+		// under this lock. A delivery cannot assert its own readiness.
+		if !document.Removed && document.Frontend != nil && document.Frontend.Payload != nil && !prepared.Matches(document.Frontend) {
+			return ErrSolutionFrontendNotPrepared
 		}
 
 		// The registry revision this apply produced. It is recorded on the
@@ -483,9 +506,25 @@ func (s *Service) declareSolutionRegistration(
 	}
 	if current != nil && current.Declared != nil && current.Declared.TargetID == targetID {
 		next.Publisher = current.Publisher
-		// A tombstone cleared the halves; a live record keeps the ones it has.
-		next.Frontend = current.Frontend
-		next.Backend = current.Backend
+	}
+	// Grouping belongs to this applied solution generation, independently of
+	// whether it has a page. Omitting it clears the old presentation without
+	// changing the installation target or any authority record. Core admission
+	// bounds order to int32 and refuses groups on modules and tombstones.
+	if document.Group != nil && kind == SolutionDeclaredKindSolution {
+		next.Group = &SolutionGroup{
+			ID: document.Group.ID, Title: document.Group.Title, Order: int32(document.Group.Order),
+		}
+	}
+	// The frontend half is THIS generation's `frontend` block and nothing
+	// older: a generation that drops the block takes the page with it, and
+	// nothing a running process reports can put one back.
+	if document.Frontend != nil {
+		block, err := json.Marshal(document.Frontend)
+		if err != nil {
+			return 0, fmt.Errorf("binding %q: cannot encode its frontend block: %w", document.Binding, err)
+		}
+		next.Frontend = &SolutionFrontendHalf{Revision: revision, Manifest: string(block)}
 	}
 	if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
 		return 0, err

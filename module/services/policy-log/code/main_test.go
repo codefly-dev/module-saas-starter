@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"os"
 	"strings"
@@ -200,6 +204,41 @@ func TestEveryDeclaredProtocolOutputDirIsGenerated(t *testing.T) {
 		}
 		if len(entries) == 0 {
 			t.Errorf("declared protocol output dir %q is empty; nothing generates into it", dir)
+		}
+	}
+}
+
+func TestSigningIdentityComesOnlyFromDeliveredSecret(t *testing.T) {
+	t.Setenv("POLICY_LOG_SIGNING_KEY", "ambient-secret-must-not-be-read")
+	t.Setenv("POLICY_LOG_SIGNING_KEY_PATH", "/tmp/unused-key")
+	_, err := resolveSigningKey(func(group, key string) (string, error) {
+		if group != policyLogConfiguration || key != "POLICY_LOG_SIGNING_KEY" {
+			t.Fatalf("unexpected secret selection: %s/%s", group, key)
+		}
+		return "", errors.New("provider error containing private value")
+	})
+	if err == nil || !strings.Contains(err.Error(), "POLICY_LOG_SIGNING_KEY") || strings.Contains(err.Error(), "private value") {
+		t.Fatalf("missing secret refusal: %v", err)
+	}
+	want := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{19}, 32))
+	der, err := x509.MarshalPKCS8PrivateKey(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveSigningKey(func(string, string) (string, error) { return base64.StdEncoding.EncodeToString(der), nil })
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("delivered signing identity: %v", err)
+	}
+}
+
+func TestInvalidDeliveredSigningSecretNamesItsSetting(t *testing.T) {
+	for _, value := range []string{"", "malformed-private-value"} {
+		key, err := resolveSigningKey(func(string, string) (string, error) { return value, nil })
+		if err == nil || key != nil || !strings.Contains(err.Error(), "policy-log/POLICY_LOG_SIGNING_KEY") {
+			t.Fatalf("unnamed refusal: %v", err)
+		}
+		if value != "" && strings.Contains(err.Error(), value) {
+			t.Fatal("refusal exposed secret")
 		}
 	}
 }

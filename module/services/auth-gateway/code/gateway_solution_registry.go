@@ -15,6 +15,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -38,18 +39,25 @@ const (
 	// convergence delay for a request that arrives at a replica the
 	// declaration has not reached yet.
 	solutionRefreshFloor = 250 * time.Millisecond
+	// solutionRegistryLease is the revocation bound: how long a snapshot keeps
+	// authorising routes after the read that produced it. An applied tombstone
+	// reaches every replica within the reconcile interval while the registry
+	// answers; while it does not, a snapshot older than this stops authorising
+	// solution and module routes rather than serving a withdrawn presence
+	// indefinitely. The lease is the bound every reader of the registry is
+	// documented against (SOLUTION_REGISTRATION.md).
+	solutionRegistryLease = 120 * time.Second
 )
 
 // solutionRegistrySnapshot joins only matching applied generations. The compact
-// registration has no workload field; the host-binding read carries Core's
+// registration has no endpoint field; the host-binding read carries Core's
 // complete presence document. No new wire schema duplicates that contract.
 type solutionRegistrySnapshot struct {
 	*accountsv1.ListSolutionRegistrationsResponse
-	workloadIDs map[string]string
-	// moduleEndpoints is, per declared module alias, the endpoints its applied
-	// presence declares for the service that runs it (appliedModuleEndpoints):
-	// names, resolved by the Codefly SDK on refresh.
-	moduleEndpoints map[string][]moduleEndpoint
+	// routeEndpoints is, per declared alias — a solution's or a module's — the
+	// endpoints its applied presence declares for the service that runs it
+	// (appliedRouteEndpoints): names, resolved by the Codefly SDK on refresh.
+	routeEndpoints map[string][]moduleEndpoint
 }
 
 // solutionRegistryClient is the registry surface used by the cache and handlers.
@@ -83,23 +91,31 @@ func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.Lis
 	if err := c.invoke(ctx, "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings", &accountsv1.ListSolutionHostBindingsRequest{}, bindings); err != nil {
 		return nil, err
 	}
-	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, workloadIDs: make(map[string]string), moduleEndpoints: make(map[string][]moduleEndpoint)}
+	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint)}
 	for _, record := range resp.GetRegistrations() {
 		for _, binding := range bindings.GetBindings() {
 			// These reads may straddle reconciliation. Never attach a successor's
-			// identity to its predecessor's address, even within one generation.
+			// endpoints to its predecessor's record, even within one generation.
 			if !proto.Equal(record, binding.GetRegistration()) {
 				continue
 			}
-			if id := appliedWorkloadSPIFFEID(binding); id != "" {
-				out.workloadIDs[record.GetSolutionId()] = id
-			}
-			if endpoints := appliedModuleEndpoints(binding); len(endpoints) > 0 {
-				out.moduleEndpoints[record.GetSolutionId()] = endpoints
+			if endpoints := appliedRouteEndpoints(binding); len(endpoints) > 0 {
+				out.routeEndpoints[record.GetSolutionId()] = endpoints
 			}
 		}
 	}
 	return out, nil
+}
+
+// Historical assets are read by identity, never broadcast in the route snapshot.
+type solutionFrontendReader interface {
+	GetRetainedFrontend(context.Context, string, string) (*accountsv1.SolutionFrontendGeneration, error)
+}
+
+func (c *accountsSolutionRegistry) GetRetainedFrontend(ctx context.Context, binding, version string) (*accountsv1.SolutionFrontendGeneration, error) {
+	response := &accountsv1.GetRetainedSolutionFrontendResponse{}
+	err := c.invoke(ctx, "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend", &accountsv1.GetRetainedSolutionFrontendRequest{BindingId: binding, AssetVersion: version}, response)
+	return response.GetFrontend(), err
 }
 
 // solutionResolution is why a solution is or is not routable right now. The
@@ -119,6 +135,12 @@ const (
 	// is an unexposed path, the other a verdict about a record that is here. And
 	// distinct from solutionNotActive because no deployment arriving changes it.
 	solutionWrongKind
+	// solutionRegistryStale: a snapshot loaded, and it is older than the
+	// revocation lease because every read since has failed. Distinct from
+	// solutionRegistryUnavailable — a record IS held, and an operator reading
+	// the 503 needs to know the registry was reachable once and is not now —
+	// and answered the same way: nothing is authorised on it.
+	solutionRegistryStale
 )
 
 // errSolutionRegistryUnconfigured is what a registry call returns when the
@@ -129,27 +151,37 @@ var errSolutionRegistryUnconfigured = errors.New("solution registry client not c
 
 // solutionRegistryCache is the gateway's replica-local view of the registry.
 type solutionRegistryCache struct {
-	client solutionRegistryClient
+	client         solutionRegistryClient
+	frontendSource frontendpayload.Source
+	frontends      map[string]map[string]*preparedFrontend
+	preparing      chan struct{}
+	serving        chan struct{}
+	bundles        map[string]*frontendpayload.Bundle // guarded by preparing
+	bundleOrder    []string
 	// now is the cache refresh clock. Tests move it; production leaves
 	// it at time.Now.
 	now func() time.Time
 
-	// resolveEndpoint answers where a module endpoint lives. Production asks
-	// the Codefly SDK, which holds every address the composition handed this
+	// resolveEndpoint answers where an endpoint lives. Production asks the
+	// Codefly SDK, which holds every address the composition handed this
 	// gateway; the registry holds none.
 	resolveEndpoint func(context.Context, moduleEndpoint) (string, error)
 
-	mu          sync.RWMutex
-	records     map[string]*accountsv1.SolutionRegistration
-	workloadIDs map[string]string
-	// moduleUpstreams is each declared module's resolved address, taken on the
-	// same refresh as the record it routes, so a lookup never pairs one
-	// snapshot's record with another's address.
-	moduleUpstreams map[string]*url.URL
-	// moduleRefusals remembers which (alias, reason) was already logged.
-	moduleRefusals sync.Map
-	revision       int64
-	loaded         bool
+	mu      sync.RWMutex
+	records map[string]*accountsv1.SolutionRegistration
+	// upstreams is each declared alias's resolved address, taken on the same
+	// refresh as the record it routes, so a lookup never pairs one snapshot's
+	// record with another's address.
+	upstreams map[string]*url.URL
+	// routeRefusals remembers, per alias, the last refusal reason logged.
+	routeRefusals sync.Map
+	revision      int64
+	loaded        bool
+	// loadedAt is when the snapshot held was READ. The revocation lease is
+	// measured from it: a failed read leaves the snapshot where it was, and a
+	// snapshot the registry has not confirmed within the lease authorises
+	// nothing.
+	loadedAt time.Time
 	// attemptedAt is when a read was last ATTEMPTED, successfully or not. The
 	// refresh floor is measured from it rather than from the last SUCCESS: a
 	// failed read leaves the snapshot's age where it was, so measuring from that
@@ -164,6 +196,9 @@ type solutionRegistryCache struct {
 func newSolutionRegistryCache(client solutionRegistryClient) *solutionRegistryCache {
 	return &solutionRegistryCache{
 		client:          client,
+		preparing:       make(chan struct{}, 1),
+		serving:         make(chan struct{}, 8),
+		bundles:         map[string]*frontendpayload.Bundle{},
 		now:             time.Now,
 		resolveEndpoint: moduleEndpointResolver,
 		records:         map[string]*accountsv1.SolutionRegistration{},
@@ -176,7 +211,8 @@ func newSolutionRegistryCache(client solutionRegistryClient) *solutionRegistryCa
 // and the operator projection preserves that distinction.
 //
 // A failure leaves the previous snapshot in place: a registry outage must not
-// empty every replica's routing table.
+// empty every replica's routing table. It does age it, and past the lease the
+// snapshot stops authorising routes (see lookup).
 func (c *solutionRegistryCache) refresh(ctx context.Context) error {
 	c.refreshing.Lock()
 	defer c.refreshing.Unlock()
@@ -217,7 +253,21 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	if c.client == nil {
 		return errSolutionRegistryUnconfigured
 	}
+	readAt := c.now()
+	ctx, cancel := context.WithTimeout(ctx, solutionRegistryCallTimeout)
+	defer cancel()
 	resp, err := c.client.List(ctx, &accountsv1.ListSolutionRegistrationsRequest{IncludeTombstoned: true})
+	// Resolved BEFORE the lock: resolution may read the workspace from disk,
+	// and every lookup waits on this lock.
+	var upstreams map[string]*url.URL
+	var frontends map[string]map[string]*preparedFrontend
+	if err == nil {
+		upstreams = c.resolveRouteUpstreams(ctx, resp.routeEndpoints)
+		frontends = c.prepareFrontends(ctx, resp)
+		if c.now().Sub(readAt) > solutionRegistryLease {
+			err = context.DeadlineExceeded
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.attemptedAt = c.now()
@@ -230,10 +280,12 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 		records[record.GetSolutionId()] = record
 	}
 	c.records = records
-	c.workloadIDs = resp.workloadIDs
-	c.moduleUpstreams = c.resolveModuleUpstreams(ctx, resp.moduleEndpoints)
+	c.upstreams = upstreams
+	c.frontends = frontends
 	c.revision = resp.GetRegistryRevision()
 	c.loaded = true
+	// Acquisition must never renew the age of the authority read preceding it.
+	c.loadedAt = readAt
 	c.lastErr = nil
 	return nil
 }
@@ -259,20 +311,20 @@ func (c *solutionRegistryCache) reconcile(ctx context.Context) {
 	}
 }
 
-// resolveModuleUpstreams resolves each declared module to the one address this
-// gateway forwards /v1/<alias> to: of the endpoints its applied presence
+// resolveRouteUpstreams resolves each declared alias — a solution's
+// /solutions/<alias> or a module's /v1/<alias> — to the one address this
+// gateway forwards it to: of the HTTP-family endpoints its applied presence
 // declares, the one the composition handed this gateway an address for — the
-// Codefly CLI writes exactly the endpoints composed solutions consume through
-// the host. None leaves the module unrouted; two are refused as ambiguous
-// rather than chosen between; an address the upstream policy refuses is
-// refused. Each refusal is logged once per alias and reason, not on every
-// refresh.
-func (c *solutionRegistryCache) resolveModuleUpstreams(ctx context.Context, endpoints map[string][]moduleEndpoint) map[string]*url.URL {
+// Codefly CLI writes exactly the endpoints the host reaches a composed
+// workload through. An address the upstream policy refuses is not a candidate
+// (it is logged, and another endpoint may still answer); none leaves the alias
+// unrouted; several are refused as ambiguous rather than chosen between. Each
+// alias's reason is logged once, and again only after it changes.
+func (c *solutionRegistryCache) resolveRouteUpstreams(ctx context.Context, endpoints map[string][]moduleEndpoint) map[string]*url.URL {
 	upstreams := make(map[string]*url.URL, len(endpoints))
 	for alias, candidates := range endpoints {
 		var resolved []*url.URL
-		var named []string
-		refused := false
+		var named, refused []string
 		for _, endpoint := range candidates {
 			address, err := c.resolveEndpoint(ctx, endpoint)
 			if err != nil {
@@ -280,34 +332,41 @@ func (c *solutionRegistryCache) resolveModuleUpstreams(ctx context.Context, endp
 			}
 			upstream, ok := routableUpstream(address)
 			if !ok {
-				c.noteModuleRefusal(alias, fmt.Sprintf("endpoint %s resolves to an address the upstream policy refuses", endpoint))
-				refused = true
+				refused = append(refused, endpoint.String())
 				continue
 			}
 			resolved = append(resolved, upstream)
 			named = append(named, endpoint.String())
 		}
 		switch {
-		case refused:
 		case len(resolved) == 1:
 			upstreams[alias] = resolved[0]
+			c.noteRouteRouted(alias)
+		case len(resolved) == 0 && len(refused) > 0:
+			c.noteRouteRefusal(alias, fmt.Sprintf("its endpoints resolve only to addresses the upstream policy refuses (%v)", refused))
 		case len(resolved) == 0:
-			c.noteModuleRefusal(alias, "the composition handed this gateway no address for any endpoint its presence declares")
+			c.noteRouteRefusal(alias, "the composition handed this gateway no address for any endpoint its presence declares")
 		default:
-			c.noteModuleRefusal(alias, fmt.Sprintf("the composition handed this gateway addresses for several endpoints (%v); which one /v1/%s forwards to has no single answer", named, alias))
+			c.noteRouteRefusal(alias, fmt.Sprintf("the composition handed this gateway addresses for several endpoints (%v); which one the route forwards to has no single answer", named))
 		}
 	}
 	return upstreams
 }
 
-// noteModuleRefusal logs why a declared module is not routed, once per alias
-// and reason.
-func (c *solutionRegistryCache) noteModuleRefusal(alias, reason string) {
-	key := alias + "\x00" + reason
-	if _, seen := c.moduleRefusals.LoadOrStore(key, struct{}{}); seen {
+// noteRouteRefusal logs why a declared alias is not routed, once per alias
+// until the reason changes or the alias is routed again.
+func (c *solutionRegistryCache) noteRouteRefusal(alias, reason string) {
+	if previous, seen := c.routeRefusals.Swap(alias, reason); seen && previous == reason {
 		return
 	}
-	log.Printf("solution registry: module %q is not routed: %s", alias, reason)
+	log.Printf("solution registry: %q is not routed: %s", alias, reason)
+}
+
+// noteRouteRouted forgets an alias's last refusal, so a later one is logged.
+func (c *solutionRegistryCache) noteRouteRouted(alias string) {
+	if _, seen := c.routeRefusals.LoadAndDelete(alias); seen {
+		log.Printf("solution registry: %q is routed again", alias)
+	}
 }
 
 // String spells the endpoint as Codefly references one: module/service/name::api.
@@ -319,20 +378,21 @@ func (e moduleEndpoint) String() string {
 // replaces it with one standing in for the composition's carriers.
 var moduleEndpointResolver = sdkModuleEndpointAddress
 
-// sdkModuleEndpointAddress asks the Codefly SDK where a module endpoint lives.
-func sdkModuleEndpointAddress(_ context.Context, endpoint moduleEndpoint) (string, error) {
-	instance, err := codefly.For(codefly.Context()).
+// sdkModuleEndpointAddress asks the Codefly SDK where an endpoint lives.
+func sdkModuleEndpointAddress(ctx context.Context, endpoint moduleEndpoint) (string, error) {
+	instance, err := codefly.For(ctx).
 		Module(endpoint.Module).Service(endpoint.Service).Endpoint(endpoint.Name).API(endpoint.API).
-		ResolveNetworkInstance()
+		ResolveDeliveredNetworkInstance(endpoint.applied, endpoint.delivery)
 	if err != nil {
 		return "", err
 	}
 	return instance.Address, nil
 }
 
-// routableUpstream holds an address to the declared-upstream URL policy: http or
+// routableUpstream holds a resolved address to the upstream URL policy: http or
 // https, a host, and nothing but an origin, on a host the guard admits. It is
-// the one policy for a reported solution origin and a resolved module address.
+// the one policy for every address the composition resolves, solution and
+// module alike.
 func routableUpstream(raw string) (*url.URL, bool) {
 	upstream, err := url.Parse(raw)
 	if err != nil || upstream.Host == "" ||
@@ -344,12 +404,19 @@ func routableUpstream(raw string) (*url.URL, bool) {
 	return &url.URL{Scheme: upstream.Scheme, Host: upstream.Host}, true
 }
 
-// lookup reads the cached record without touching the network.
-func (c *solutionRegistryCache) lookup(id string) (*accountsv1.SolutionRegistration, string, *url.URL, bool, bool) {
+// lookup reads the cached record without touching the network. stale reports a
+// snapshot past the revocation lease, which holds records and authorises none
+// of them.
+func (c *solutionRegistryCache) lookup(id string) (record *accountsv1.SolutionRegistration, upstream *url.URL, found, loaded, stale bool) {
+	read := c.lookupSnapshot(id)
+	return read.record, read.upstream, read.found, read.loaded, read.stale
+}
+
+func (c *solutionRegistryCache) lookupSnapshot(id string) solutionLookup {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	record, ok := c.records[id]
-	return record, c.workloadIDs[id], c.moduleUpstreams[id], ok, c.loaded
+	record, found := c.records[id]
+	return solutionLookup{record: record, upstream: c.upstreams[id], frontends: c.frontends[id], found: found, loaded: c.loaded, stale: c.loaded && c.now().Sub(c.loadedAt) > solutionRegistryLease}
 }
 
 func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
@@ -362,14 +429,18 @@ func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
 // a verdict must never be derived without: whether the registry could actually
 // be consulted about it.
 type solutionLookup struct {
-	record     *accountsv1.SolutionRegistration
-	workloadID string
-	// moduleUpstream is the resolved address of a declared module, from the
-	// same snapshot as record.
-	moduleUpstream *url.URL
-	found          bool
+	record    *accountsv1.SolutionRegistration
+	frontends map[string]*preparedFrontend
+	// upstream is the resolved address of the alias, from the same snapshot as
+	// record.
+	upstream *url.URL
+	found    bool
 	// loaded is false until a snapshot has ever loaded on this replica.
 	loaded bool
+	// stale is set when the snapshot is older than the revocation lease and
+	// the read that would have renewed it failed: what it holds is no longer
+	// the registry's answer.
+	stale bool
 	// undecidable is set when this alias had no conclusive record in the
 	// snapshot AND the on-demand read that would have settled it failed. The
 	// lookup then rests on absence of evidence, which is not evidence of
@@ -386,49 +457,43 @@ type solutionLookup struct {
 // refresh must not convert a deliberate removal into an outage, which would
 // answer 503 forever for something that is permanently gone.
 //
-// The surface is carried in because what counts as "serving, so stop asking" is
-// per-surface: a record with a backend half and no frontend is settled for a
-// module and NOT settled for a solution, which should still refresh in case the
-// frontend half is about to arrive.
-func (c *solutionRegistryCache) conclusive(
-	record *accountsv1.SolutionRegistration, found bool, surface routingSurface,
-) bool {
+// A record that is declared and not yet active is NOT settled: a solution whose
+// presence is applied without its frontend block, or whose address the
+// composition has not handed this gateway, should still refresh in case the
+// generation that completes it is about to arrive.
+func (c *solutionRegistryCache) conclusive(record *accountsv1.SolutionRegistration, found bool) bool {
 	if !found {
 		return false
 	}
-	return record.GetTombstonedAt() != nil || solutionRecordActive(record, surface)
+	return record.GetTombstonedAt() != nil || solutionRecordActive(record)
 }
 
 // lookupFresh reads the snapshot, issuing at most one on-demand registry read
 // (floor-limited) when what it holds does not settle the question — so a
 // solution whose declaration was reconciled by another replica a moment ago is reachable
-// here without waiting out the reconcile interval.
+// here without waiting out the reconcile interval — or when the snapshot is
+// past the lease, so a replica that lost the registry keeps asking for it.
 //
 // The read's failure is CARRIED rather than logged and dropped. It used to be
 // dropped, and the empty lookup that followed was then reported as a fact: the
 // proxy answered "solution not registered" and admission answered "your
 // organization did not install this" because accounts was down. An authority
 // that cannot be asked must never read as an answer from it.
-func (c *solutionRegistryCache) lookupFresh(
-	ctx context.Context, id string, surface routingSurface,
-) solutionLookup {
-	record, workloadID, moduleUpstream, found, loaded := c.lookup(id)
-	if c.conclusive(record, found, surface) {
-		return solutionLookup{record: record, workloadID: workloadID, moduleUpstream: moduleUpstream, found: found, loaded: loaded}
+func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solutionLookup {
+	read := c.lookupSnapshot(id)
+	if !read.stale && c.conclusive(read.record, read.found) {
+		return read
 	}
 	refreshErr := c.refreshIfStale(ctx)
 	if refreshErr != nil {
 		log.Printf("solution registry: on-demand refresh for %q failed: %v", id, refreshErr)
 	}
-	record, workloadID, moduleUpstream, found, loaded = c.lookup(id)
-	return solutionLookup{
-		record:         record,
-		workloadID:     workloadID,
-		moduleUpstream: moduleUpstream,
-		found:          found,
-		loaded:         loaded,
-		undecidable:    refreshErr != nil && !c.conclusive(record, found, surface),
+	read = c.lookupSnapshot(id)
+	if read.stale {
+		log.Printf("solution registry: the snapshot is past the %s lease and the registry cannot be read; no route is authorised on it", solutionRegistryLease)
 	}
+	read.undecidable = refreshErr != nil && !c.conclusive(read.record, read.found)
+	return read
 }
 
 // solutionRouting is ONE resolution of one route alias: the identity admission
@@ -451,7 +516,10 @@ func (c *solutionRegistryCache) lookupFresh(
 // that must refuse it is the one holding the viewer, and it refuses it as a
 // verdict rather than as a missing route.
 type solutionRouting struct {
-	WorkloadSPIFFEID string
+	Alias                       string
+	AssetVersion                string
+	FrontendRequiresPreparation bool
+	Frontends                   map[string]*preparedFrontend
 	// TargetID is the immutable solution target this alias resolves to, empty
 	// for a registration no declaration opened a target for.
 	TargetID string
@@ -461,7 +529,8 @@ type solutionRouting struct {
 	// (`solution:<binding-id>`), and a second read could judge a token against the
 	// predecessor's audience while traffic went to the replacement's address.
 	BindingID string
-	// Upstream is the same record's backend address, normalised to scheme+host.
+	// Upstream is where the Codefly SDK resolved the alias's endpoint, from
+	// the same snapshot as the record, normalised to scheme+host.
 	Upstream *url.URL
 }
 
@@ -488,8 +557,8 @@ func (c *solutionRegistryCache) resolveRouting(ctx context.Context, id string) (
 
 // resolveModuleRouting is the same resolution for the /v1/<alias>/* surface. It
 // is the same function because the two surfaces must not drift: one lookup, one
-// carried resolution, one upstream policy, one tombstone rule, one 120 s
-// revocation bound. The only difference is the kind each surface serves.
+// carried resolution, one upstream policy, one tombstone rule, one revocation
+// lease. The only difference is the kind each surface serves.
 func (c *solutionRegistryCache) resolveModuleRouting(ctx context.Context, alias string) (*solutionRouting, solutionResolution) {
 	return c.resolveRoutingOfKind(ctx, alias, moduleSurface)
 }
@@ -501,96 +570,81 @@ type routingSurface int
 const (
 	solutionSurface routingSurface = iota
 	moduleSurface
+	frontendSurface
+	retainedFrontendSurface
 )
 
 func (c *solutionRegistryCache) resolveRoutingOfKind(
 	ctx context.Context, id string, surface routingSurface,
 ) (*solutionRouting, solutionResolution) {
-	read := c.lookupFresh(ctx, id, surface)
+	read := c.lookupFresh(ctx, id)
 	record, found := read.record, read.found
 	if !read.loaded || read.undecidable {
 		return nil, solutionRegistryUnavailable
 	}
+	// Past the lease, a held record is not the registry's answer any more: a
+	// tombstone applied during the outage would be invisible here, so nothing
+	// is authorised on the snapshot, tombstones included (a withdrawal already
+	// held is answered as the registry would have, which is the one reading
+	// that cannot be wrong).
+	if read.stale && (!found || record.GetTombstonedAt() == nil) {
+		return nil, solutionRegistryStale
+	}
 	// A tombstoned record is in the snapshot so declaration reconciliation and diagnostics
 	// can see it, but it routes exactly like an id that never registered. This is
-	// also how a module stops being routed: carrier deletion is not revocation,
-	// the applied tombstone is, and it reaches this read within the cache bound.
+	// also how a declared presence stops being routed: carrier deletion is not
+	// revocation, the applied tombstone is, and it reaches this read within the
+	// lease.
 	if !found || record.GetTombstonedAt() != nil {
 		return nil, solutionUnregistered
 	}
 	// The declaration positively identifies the routing surface. Both kinds
 	// require organization consent; an unspecified kind is served by neither.
 	switch surface {
+	case frontendSurface, retainedFrontendSurface:
+		// A shared module can contribute a page. Only its public asset surface
+		// uses this path; its APIs keep the module route and audience checks.
+		if (!declaredSolutionKind(record) && !declaredModuleKind(record)) ||
+			(surface != retainedFrontendSurface && record.GetFrontend().GetManifest() == "") {
+			return nil, solutionWrongKind
+		}
 	case moduleSurface:
 		// A record with no declaration has no module routing identity.
 		if !declaredModuleKind(record) {
 			return nil, solutionWrongKind
 		}
 	default:
-		// Only a record that IS declared, and declared as the other kind, is
-		// refused here. Presence NOTHING declared keeps its existing path: it
-		// resolves to no target, and per-viewer admission refuses it with the
-		// entitlement refusal header that tells an operator which of the three
-		// layers said no. Short-circuiting it here would answer the same 403 while
-		// losing that, and "nothing declared this" is a different fact from "a
-		// module is declared here".
-		if record.GetDeclared() != nil && !declaredSolutionKind(record) {
+		if !declaredSolutionKind(record) {
 			return nil, solutionWrongKind
 		}
 	}
-	if !solutionRecordActive(record, surface) {
+	if !solutionRecordActive(record) {
 		return nil, solutionNotActive
 	}
-	var upstream *url.URL
-	if surface == moduleSurface {
-		// A module's address is RESOLVED, never recorded: the Codefly SDK
-		// answers for the endpoint its applied presence declares.
-		if upstream = read.moduleUpstream; upstream == nil {
-			return nil, solutionNotActive
-		}
-	} else {
-		reported, ok := routableUpstream(record.GetBackend().GetUpstream())
-		if !ok {
-			// The deleted write handlers enforced this URL policy. Enforce it at
-			// the read boundary before a declared observation becomes a proxy target.
-			log.Printf("solution registry: record %q has an unusable upstream", id)
-			return nil, solutionNotActive
-		}
-		upstream = reported
-		upstream.Scheme = "https"
+	// The address is RESOLVED, never recorded: the Codefly SDK answers for the
+	// endpoint the applied presence declares, for a solution exactly as for a
+	// module. No address means the composition handed this gateway no carrier
+	// for it, which is "not serving" and not "not registered".
+	if read.upstream == nil && surface != retainedFrontendSurface && !(surface == frontendSurface && frontendRequiresPreparation(record)) {
+		return nil, solutionNotActive
 	}
 	return &solutionRouting{
-		WorkloadSPIFFEID: read.workloadID,
-		TargetID:         record.GetDeclared().GetTargetId(),
-		BindingID:        record.GetDeclared().GetBindingId(),
-		Upstream:         upstream,
+		Alias:                       record.GetSolutionId(),
+		AssetVersion:                frontendAssetVersion(record),
+		FrontendRequiresPreparation: frontendRequiresPreparation(record),
+		Frontends:                   read.frontends,
+		TargetID:                    record.GetDeclared().GetTargetId(),
+		BindingID:                   record.GetDeclared().GetBindingId(),
+		Upstream:                    read.upstream,
 	}, solutionRoutable
 }
 
-// solutionRecordActive reads the availability accounts derived from the
-// declaration, and checks the halves the SURFACE needs for itself.
-//
-// Both: the derived status is the authority's answer, and the structural check
-// beside it is this gateway refusing to proxy to a half it does not have in hand
-// — one read, two reasons, and neither inferred from the other.
-//
-// The halves differ by kind. A solution serves a page and a backend; a module has
-// no browser remote at all, is reached at /v1/<alias>/*, and nothing loads a
-// manifest for it — so requiring a frontend half there would leave every module
-// permanently unroutable. accounts derives the same distinction in
-// SolutionRegistration.Status, which is why the status check below still holds
-// for both.
-func solutionRecordActive(record *accountsv1.SolutionRegistration, surface routingSurface) bool {
-	if record == nil || record.GetTombstonedAt() != nil ||
-		record.GetStatus() != accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE {
-		return false
-	}
-	// A module's backend is resolved from its presence, not reported, so the
-	// record carries no half for it; a solution still needs both of its own.
-	if surface == moduleSurface {
-		return true
-	}
-	return record.GetBackend() != nil && record.GetFrontend() != nil
+// solutionRecordActive reads the availability accounts derived from applied
+// presence. Frontend availability and installation readiness are separate facts.
+// A record without a resolved address is not routable on this replica.
+func solutionRecordActive(record *accountsv1.SolutionRegistration) bool {
+	return record != nil && record.GetTombstonedAt() == nil &&
+		record.GetStatus() == accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
 }
 
 // snapshot returns the cached records ordered by id, along with the registry
@@ -615,7 +669,7 @@ func sortSolutionRecords(records []*accountsv1.SolutionRegistration) {
 }
 
 // solutionRegistryStatusLabel renders a record's status for a diagnostic
-// response. It carries no upstream, manifest, or credential — only the state
+// response. It carries no address, manifest, or credential — only the state
 // name an operator needs to tell these cases apart.
 func solutionRegistryStatusLabel(record *accountsv1.SolutionRegistration) string {
 	switch record.GetStatus() {
@@ -623,8 +677,6 @@ func solutionRegistryStatusLabel(record *accountsv1.SolutionRegistration) string
 		return "active"
 	case accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING:
 		return "pending"
-	case accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE:
-		return "incompatible"
 	case accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED:
 		return "tombstoned"
 	default:

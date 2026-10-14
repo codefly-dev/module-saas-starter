@@ -96,3 +96,6 @@ func (e *testModuleExecution) ApprovedBuild(_ context.Context, principal string)
 	}
 	return approved, 1, nil
 }
+
+// NativeDevelopment identifies this in-memory cluster fixture; it models no mesh.
+func (*testModuleExecution) NativeDevelopment() bool { return true }

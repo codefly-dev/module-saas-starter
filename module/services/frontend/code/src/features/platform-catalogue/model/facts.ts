@@ -153,21 +153,13 @@ export function registrationView(entry: CatalogueEntry): FactView {
 				kind: "value",
 				text: "Pending",
 				tone: "warning",
-				detail: "A half has never registered.",
+				detail: "Its applied presence declares no frontend block.",
 			};
-		// No EXPIRED case: this host has no lease to lapse. Status is derived
-		// from declared state and complete, compatible observations, so
-		// "a half's lease lapsed" is not a thing the registry can report any
-		// more — the enum dropped the value with the lease itself. A record
-		// whose halves disagree is INCOMPATIBLE and one whose removal applied
-		// is TOMBSTONED; neither is an expiry.
-		case SolutionRegistrationStatus.INCOMPATIBLE:
-			return {
-				kind: "value",
-				text: "Incompatible",
-				tone: "danger",
-				detail: "The two halves declare different contract versions.",
-			};
+		// No EXPIRED and no INCOMPATIBLE case: this host has no lease to lapse
+		// and nothing a running process reports to compare. Status is derived
+		// from delivered presence alone — the enum dropped both values with the
+		// lease and the reported halves. A record whose removal applied is
+		// TOMBSTONED, which is not an expiry.
 		case SolutionRegistrationStatus.TOMBSTONED:
 			return { kind: "value", text: "Deregistered", tone: "neutral" };
 		default:

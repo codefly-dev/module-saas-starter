@@ -1,5 +1,10 @@
 import "server-only";
 
+import {
+	parseSolutionGroup,
+	type SolutionGroup,
+} from "@/solutions/solution-groups";
+
 import { checkRuntimeCompatibility } from "@/solutions/compatibility";
 
 import { assertDataGraph, type DataGraph } from "@codefly/saas-plugin-manifest";
@@ -14,6 +19,12 @@ import { getEndpoints, getWorkspaceSecret } from "codefly";
 
 export interface SolutionManifest {
 	id: string;
+	/** Composition-owned presentation metadata; never a grant or target identity. */
+	group?: SolutionGroup;
+	/** Stamped from the host's declaration, never from the remote manifest. */
+	kind?: "module" | "solution";
+	/** Opaque identity of the applied target and generation, stamped by the gateway. */
+	assetVersion?: string;
 	/**
 	 * The immutable solution target the host declared this record under — the
 	 * key a per-viewer projection joins entitlements against.
@@ -115,7 +126,10 @@ export interface SolutionSurface {
 }
 
 /** The per-viewer navigation projection (see navProjection in projections.ts). */
-export type SolutionNav = Pick<SolutionManifest, "id" | "nav"> & {
+export type SolutionNav = Pick<
+	SolutionManifest,
+	"id" | "nav" | "assetVersion" | "group"
+> & {
 	/**
 	 * False when the solution is installed and granted but its installation is
 	 * not healthy right now — an offboarded owner of record, a revoked or disabled
@@ -205,6 +219,15 @@ export function solutionProxyBase(id: string): string {
 	return `/api/solutions/${encodeURIComponent(id)}/proxy`;
 }
 
+/** The same applied asset directory for web pages and client surfaces. */
+export function solutionAssetProxyBase(
+	manifest: Pick<SolutionManifest, "id" | "assetVersion">,
+): string {
+	return manifest.assetVersion
+		? `/api/solutions/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.assetVersion)}/proxy`
+		: solutionProxyBase(manifest.id);
+}
+
 /**
  * A manifest URL is handed to the Module Federation runtime, which fetches and
  * executes the script it points at inside the host origin. It is one of:
@@ -251,16 +274,18 @@ function isSafeManifestUrl(value: string): boolean {
  * registrant that spells the host-served form out lands on the same URL.
  */
 export function browserManifestUrl(
-	manifest: Pick<SolutionManifest, "id" | "frontend">,
+	manifest: Pick<SolutionManifest, "id" | "frontend" | "assetVersion">,
 ): string {
 	const registered = manifest.frontend.manifestUrl;
 	if (!registered.startsWith("/")) {
 		return registered;
 	}
-	const base = solutionProxyBase(manifest.id);
-	return registered.startsWith(`${base}/`)
-		? registered
-		: `${base}${registered}`;
+	const unversioned = solutionProxyBase(manifest.id);
+	const base = solutionAssetProxyBase(manifest);
+	const suffix = registered.startsWith(`${unversioned}/`)
+		? registered.slice(unversioned.length)
+		: registered;
+	return `${base}${suffix}`;
 }
 
 /**
@@ -336,6 +361,8 @@ function internalToken(): string | null {
 }
 
 interface GatewayRegistryEntry {
+	assetVersion?: unknown;
+	kind?: unknown;
 	id?: unknown;
 	status?: unknown;
 	manifest?: unknown;
@@ -383,7 +410,9 @@ function manifestsFromSnapshot(payload: unknown): {
 			continue;
 		}
 		if (!checkRuntimeCompatibility(parsed).compatible) {
-			console.error(`solution registry: incompatible runtime for ${String(entry.id)}`);
+			console.error(
+				`solution registry: incompatible runtime for ${String(entry.id)}`,
+			);
 			continue;
 		}
 		// The target is stamped from the record, overwriting anything the
@@ -394,6 +423,14 @@ function manifestsFromSnapshot(payload: unknown): {
 		manifests.push({
 			...parsed,
 			targetId: typeof entry.targetId === "string" ? entry.targetId : "",
+			...(typeof entry.assetVersion === "string" &&
+			/^[a-f0-9]{64}$/.test(entry.assetVersion)
+				? { assetVersion: entry.assetVersion }
+				: {}),
+			group: entry.kind === "solution" ? parsed.group : undefined,
+			...(entry.kind === "module" || entry.kind === "solution"
+				? { kind: entry.kind }
+				: {}),
 		});
 	}
 	manifests.sort((a, b) => (a.nav.order ?? 0) - (b.nav.order ?? 0));
@@ -767,9 +804,7 @@ function parseDeclaredSources(
 				candidate.paths.length > 64 ||
 				candidate.paths.some(
 					(path) =>
-						typeof path !== "string" ||
-						path.trim() === "" ||
-						path.length > 512,
+						typeof path !== "string" || path.trim() === "" || path.length > 512,
 				)
 			) {
 				return null;
@@ -847,6 +882,8 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 			return null;
 		}
 	}
+	const group = parseSolutionGroup(candidate.group);
+	if (group === null) return null;
 	const surfaces = parseSurfaces(candidate.surfaces);
 	if (surfaces === null) {
 		return null;
@@ -881,6 +918,7 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 	}
 	return {
 		id: candidate.id,
+		...(group ? { group } : {}),
 		// parseManifest reads a document the SOLUTION wrote, so it never carries
 		// a target: the host stamps it from the registry record in
 		// manifestsFromSnapshot. Empty here is therefore correct and not a

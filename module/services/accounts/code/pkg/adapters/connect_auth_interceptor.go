@@ -24,6 +24,7 @@ var forwardedIdentityHeaders = []string{
 	"X-Acting-As-User-Id", "X-Act", "X-Scopes", "X-Credential-Kind", "X-MFA-Satisfied",
 	"X-Authentication-Methods", "X-Auth-Time", "X-Assurance-Level", "X-MFA-Verified-At",
 	"X-Client-Id",
+	"X-Codefly-Workload-Presenter",
 	// Which registered solution a Work Context mint is for, and the publisher
 	// its credential named (issue #1015). Neither names a person, but together
 	// they select the runtime boundary the capability is sealed under, so they

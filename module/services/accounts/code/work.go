@@ -41,6 +41,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -131,6 +132,18 @@ func doWork(ctx context.Context) (Clean, error) {
 	service, err := business.NewService(store)
 	if err != nil {
 		return nil, err
+	}
+	frontendSource, err := frontendpayload.ConfigureNative(ctx, codefly.For(ctx), codefly.IsLocal(), infra.InCluster())
+	if err != nil {
+		return nil, err
+	}
+	service.SetFrontendArtifactSource(frontendSource)
+	if value := workspaceEnv("federation", "FRONTEND_LAZY_LOAD_WINDOW"); value != "" {
+		window, err := time.ParseDuration(value)
+		if err != nil || window <= 0 {
+			return nil, fmt.Errorf("federation/FRONTEND_LAZY_LOAD_WINDOW must be a positive duration")
+		}
+		service.SetFrontendLazyLoadWindow(window)
 	}
 	effectReceipts, closeEffectReceipts, err := store.NewEffectReceipts()
 	if err != nil {

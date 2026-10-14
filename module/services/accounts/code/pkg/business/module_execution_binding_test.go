@@ -697,3 +697,6 @@ func TestTheContainerReadIsTheDeclaredOneNotTheCallersChoice(t *testing.T) {
 	_, err = service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.NoError(t, err)
 }
+
+// NativeDevelopment identifies this in-memory cluster fixture; it models no mesh.
+func (*fakeExecutionReviewer) NativeDevelopment() bool { return true }

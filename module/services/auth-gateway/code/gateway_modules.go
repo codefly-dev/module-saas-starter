@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -137,6 +136,9 @@ const moduleExchangeTimeout = 10 * time.Second
 // moduleWorkContextPath serves the identity exchange a module runs at startup: it
 // presents its pod's projected ServiceAccount token and receives the Work
 // Context its service principal calls the module-facing capability surface with.
+//
+// It is served on the gateway's workload endpoint and nowhere else, like the
+// two exchanges below: the public endpoint answers an unexposed path's 404.
 const moduleWorkContextPath = "/modules/_work-context"
 
 // mintModuleWorkContextMethod is accounts' Work Context mint for a composed
@@ -171,7 +173,7 @@ func logModuleExchangeRefusal(exchange, prefix string, err error) {
 }
 
 func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != moduleWorkContextPath {
+	if r.URL.Path != moduleWorkContextPath || !onWorkloadListener(r.Context()) {
 		return false
 	}
 	if r.Method != http.MethodPost {
@@ -179,8 +181,11 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		return true
 	}
 
-	_, workloadRequest := workloadPeer(r.Context())
-	if g.authz == nil || (!workloadRequest && !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token"))) {
+	// The workload endpoint is reached by composed workloads alone — the cell's
+	// mesh admits it from nobody else, and a native run binds it beside the
+	// rest of the host — so the pod's projected token is the one credential a
+	// mint presents here, and accounts is what judges it.
+	if g.authz == nil {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
@@ -193,16 +198,8 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 	var payload struct {
 		Prefix         string `json:"prefix"`
 		OrganizationID string `json:"organization_id,omitempty"`
-		// Upstream is the origin the workload serves its backend at: the
-		// dynamic half of its registration, carried to accounts with the
-		// token that proves who reports it. Bounded here as every registered
-		// upstream was, before accounts bounds it again.
-		Upstream string `json:"upstream,omitempty"`
-		// Manifest is the solution's frontend manifest, the other dynamic
-		// half, bounded by accounts at 64 KiB.
-		Manifest string `json:"manifest,omitempty"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 80<<10)).Decode(&payload); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
 		httpError(w, http.StatusBadRequest, "invalid json")
 		return true
 	}
@@ -210,36 +207,20 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 		httpError(w, http.StatusBadRequest, "invalid prefix")
 		return true
 	}
-	// The dynamic half is reported only where the reporter's identity is on
-	// the connection. On the plain endpoint the internal token is all that
-	// separates a caller from a workload's projected token, and a holder of
-	// both could move that workload's recorded origin and manifest.
-	if !workloadRequest && (payload.Upstream != "" || payload.Manifest != "") {
-		httpError(w, http.StatusBadRequest, "upstream and manifest are reported on the workload endpoint")
-		return true
-	}
-	if payload.Upstream != "" {
-		parsed, err := url.Parse(payload.Upstream)
-		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.Port() == "" || parsed.User != nil ||
-			(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" ||
-			isDisallowedRegisteredUpstreamHost(parsed.Hostname()) {
-			httpError(w, http.StatusBadRequest, "invalid upstream")
-			return true
-		}
-	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), moduleExchangeTimeout)
 	defer cancel()
-	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, serviceAccountToken, payload.OrganizationID, payload.Upstream, payload.Manifest)
+	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, serviceAccountToken, payload.OrganizationID)
 	if err != nil {
 		logModuleExchangeRefusal("module-work-context", payload.Prefix, err)
 		switch status.Code(err) {
-		case codes.PermissionDenied:
-			if workloadRequest {
-				httpError(w, http.StatusForbidden, "forbidden")
-			} else {
-				httpError(w, http.StatusUnauthorized, "unauthorized")
-			}
+		case codes.PermissionDenied, codes.Unauthenticated:
+			// A refused token — not the workload the prefix declares, or a pod
+			// not running its approved build — is 401 on this exchange: the
+			// published module-authority client reads it as invalid
+			// credentials, and qualification/module-authority holds the host
+			// to that wire contract.
+			httpError(w, http.StatusUnauthorized, "unauthorized")
 		case codes.InvalidArgument:
 			httpError(w, http.StatusBadRequest, "invalid request")
 		case codes.FailedPrecondition:
@@ -293,7 +274,7 @@ const mintModuleOperationContextMethod = "/saas.accounts.v1.ModuleCapabilitiesSe
 // has two refusals worth telling apart — an unproven module (401) and a proven
 // module naming a binding it may not mint headless (403).
 func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != moduleOperationContextPath {
+	if r.URL.Path != moduleOperationContextPath || !onWorkloadListener(r.Context()) {
 		return false
 	}
 	if r.Method != http.MethodPost {
@@ -371,29 +352,31 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 	return true
 }
 
-// moduleMintContext carries the listener attestation on every module mint.
+// moduleMintContext authenticates the gateway's presenter assertion separately
+// from the internal perimeter token. Only the protected workload listener can
+// place a presenter in context; request headers are never copied into it.
 func (s *ExtAuthz) moduleMintContext(ctx context.Context) context.Context {
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
-	// Replace, never append to, caller metadata. Only the verified listener
-	// context may attest a workload to accounts' internal mint.
 	md, _ := metadata.FromOutgoingContext(ctx)
 	md = md.Copy()
-	md.Delete(workloadSPIFFEHeader)
-	if id, ok := workloadPeer(ctx); ok {
-		md.Set(workloadSPIFFEHeader, id)
+	md.Set("x-codefly-internal-token", s.internalToken)
+	md.Delete(workloadPresenterHeader)
+	md.Delete("x-codefly-gateway-token")
+	if presenter := workloadPresenter(ctx); presenter != "" {
+		md.Set(workloadPresenterHeader, presenter)
+		md.Set("x-codefly-gateway-token", s.gatewayToken)
 	}
 	return metadata.NewOutgoingContext(ctx, md)
 }
 
 func (s *ExtAuthz) mintModuleWorkContext(
-	ctx context.Context, prefix, serviceAccountToken, organizationID, upstream, manifest string,
+	ctx context.Context, prefix, serviceAccountToken, organizationID string,
 ) (*accountsv1.ModuleMintWorkContextResponse, error) {
 	if s.backendConn == nil {
 		return nil, fmt.Errorf("accounts connection not configured")
 	}
 	ctx = s.moduleMintContext(ctx)
 	response := &accountsv1.ModuleMintWorkContextResponse{}
-	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, OrganizationId: organizationID, Upstream: upstream, Manifest: manifest}
+	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, ServiceAccountToken: serviceAccountToken, OrganizationId: organizationID}
 	if err := s.backendConn.Invoke(ctx, mintModuleWorkContextMethod, request, response); err != nil {
 		return nil, err
 	}
@@ -461,7 +444,7 @@ const (
 //     usable by this module (body `DELEGATION_INVALID`); any other refusal is a
 //     bare `forbidden`.
 func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Path != moduleSourceOperationContextPath {
+	if r.URL.Path != moduleSourceOperationContextPath || !onWorkloadListener(r.Context()) {
 		return false
 	}
 	if r.Method != http.MethodPost {

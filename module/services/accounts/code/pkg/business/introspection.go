@@ -294,6 +294,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"SSOAdminService/StartSetup":                                   "Mint WorkOS portal link.",
 	"ClientRegistryService/ListRegisteredClients":                  "Read the declared first-party clients the gateway resolves origins from.",
 	"SolutionRegistryService/ListSolutionRegistrations":            "Read the solution registry snapshot a replica rebuilds its cache from.",
+	"SolutionRegistryService/GetRetainedSolutionFrontend":          "Read one retained frontend identity for a live declared target; grants no installation or API access.",
 	"SolutionRegistryService/ListSolutionHostBindings":             "Read the declared solution bindings: desired, applied and why they differ.",
 	"TeamService/AddMember":                                        "Add a user to a team.",
 	"TeamService/CreateTeam":                                       "Create a team within an org.",

@@ -114,6 +114,18 @@ func TestEveryDeclaredWorkspaceGroupShipsADefault(t *testing.T) {
 	moduleDir := findModuleDir(t)
 	for service := range servicesWithWorkspaceReads {
 		for group := range declaredWorkspaceGroups(t, service) {
+			// CLI owns this native-run value and refuses authored defaults.
+			// Unlike module configuration, its ROOT is the run's actual digest
+			// cache directory (composition.ArtifactCacheDir), not a shipped path.
+			if group == "artifact-cache" {
+				for _, suffix := range []string{".env", ".secret.env"} {
+					_, err := os.Stat(filepath.Join(moduleDir, "configurations", "local", group+suffix))
+					if !os.IsNotExist(err) {
+						t.Errorf("renderer-owned %s must have no authored default", group)
+					}
+				}
+				continue
+			}
 			plain := filepath.Join(moduleDir, "configurations", "local", group+".env")
 			secret := filepath.Join(moduleDir, "configurations", "local", group+".secret.env")
 			if _, err := os.Stat(plain); err == nil {

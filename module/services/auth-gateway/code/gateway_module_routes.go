@@ -113,6 +113,12 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 		// answering 404 — which would read as "this host does not serve that".
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
 		return true
+	case solutionRegistryStale:
+		// A snapshot loaded, and the registry has not confirmed it within the
+		// revocation lease: a withdrawal applied since would be invisible here,
+		// so nothing is routed on it.
+		httpError(w, http.StatusServiceUnavailable, "solution registry snapshot is stale")
+		return true
 	}
 
 	// An alias the CATALOG owns is refused rather than served in part. The catalog

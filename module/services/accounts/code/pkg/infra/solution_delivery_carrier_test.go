@@ -71,6 +71,42 @@ type tokenReviewProbe struct {
 	authorization string
 }
 
+func TestAppliedObserverIsASeparateReadIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		username string
+		audience string
+		want     error
+	}{
+		{"system:serviceaccount:istio-presenter:endpoint-publisher", "accounts", nil},
+		{"system:serviceaccount:other:endpoint-publisher", "accounts", infra.ErrCarrierNotAuthorized},
+		{"system:serviceaccount:istio-presenter:delivery", "accounts", infra.ErrCarrierNotAuthorized},
+		{"system:serviceaccount:platform-authority:delivery", "accounts", infra.ErrCarrierNotAuthorized},
+		{"system:serviceaccount:istio-presenter:endpoint-publisher", "kubernetes", infra.ErrCarrierUnauthenticated},
+	} {
+		t.Run(tc.username+"/"+tc.audience, func(t *testing.T) {
+			client, probe := tokenReviewing(t, tc.username, []string{tc.audience}, true)
+			check := infra.NewSolutionDeliveryCarrierCheck(client)
+			err := check.AuthorizeAppliedObserver(context.Background(), "Bearer publisher-token")
+			if tc.want == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tc.want)
+			}
+			require.Equal(t, []string{"accounts"}, probe.audiences)
+			require.Equal(t, "publisher-token", probe.token)
+			if tc.want == nil {
+				for _, kind := range []business.SolutionDeliveryKind{business.SolutionDeliveryPresence, business.SolutionDeliveryAuthority} {
+					require.ErrorIs(t, check.AuthorizeCarrier(context.Background(), "Bearer publisher-token", kind, []string{"istio-presenter"}), infra.ErrCarrierNotAuthorized)
+				}
+			}
+		})
+	}
+	client, _ := tokenReviewing(t, "", nil, false)
+	require.ErrorIs(t, infra.NewSolutionDeliveryCarrierCheck(client).AuthorizeAppliedObserver(context.Background(), "Bearer refused"), infra.ErrCarrierUnauthenticated)
+	require.ErrorIs(t, infra.NewSolutionDeliveryCarrierCheck(client).AuthorizeAppliedObserver(context.Background(), ""), infra.ErrCarrierUnauthenticated)
+	require.ErrorIs(t, infra.NewSolutionDeliveryCarrierCheck(nil).AuthorizeAppliedObserver(context.Background(), "Bearer token"), infra.ErrKubernetesUnavailable)
+}
+
 // The AUDIENCE is sent on every review. A TokenReview without one is checked
 // against the API server's own audiences, which would let the token every pod
 // is given for talking to the API server authenticate here.

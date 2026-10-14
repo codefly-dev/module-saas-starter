@@ -88,7 +88,6 @@ pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithCon
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
-pkg/business/module_upstream.go: (*Service).RecordModuleUpstream: WithControlPlane
 pkg/business/notifications.go: (*Service).resolveNotificationUser: WithControlPlane
 pkg/business/onboarding.go: (*Service).organizationConfigured: WithControlPlane
 pkg/business/organization_lifecycle.go: (*Service).GetOrganizationRoster: WithControlPlane
@@ -140,8 +139,11 @@ pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPl
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
 pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: WithControlPlane
 pkg/business/solution_delivery.go: (*Service).ReceiveSolutionDelivery: WithControlPlane
+pkg/business/solution_delivery.go: (*Service).presenceCarrierNamespaces: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).newestDelivered: WithControlPlane
 pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).readRegistryInputs: WithControlPlaneReadSnapshot
+pkg/business/solution_delivery_endpoints.go: (*Service).receiveDeliveredEndpoints: WithControlPlane
+pkg/business/solution_frontend_history.go: (*Service).GetRetainedSolutionFrontend: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionHostBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionTargets: WithControlPlane

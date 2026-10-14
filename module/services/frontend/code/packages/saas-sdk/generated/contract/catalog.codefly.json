@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:510daf371e882d8baa728008078001faf736f541f5d78c1396dfdf59b9d4ebe3",
+      "digest": "sha256:cc43f67ff06a775f7520f6426c85a57a8489f98d259c8996dbab924281327000",
       "services": [
         {
           "name": "APIKeyService",
@@ -404,6 +404,7 @@
           "name": "SolutionRegistryService",
           "fullName": "saas.accounts.v1.SolutionRegistryService",
           "procedures": [
+            "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend",
             "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
             "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
           ]

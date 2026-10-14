@@ -60,6 +60,12 @@ func TestAPodMayNotNameALocalStandInForItsCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a process outside a pod was refused its stand-in: %v", err)
 	}
+	if !client.NativeDevelopment() {
+		t.Fatal("stand-in construction did not select native development")
+	}
+	if (&KubernetesClient{}).NativeDevelopment() {
+		t.Fatal("production client defaults to native development")
+	}
 	if client.endpoint != "https://127.0.0.1:6443" || client.tokenPath != filepath.Join(dir, "token") || client.namespacePath != filepath.Join(dir, "namespace") {
 		t.Fatalf("the client reads %q, %q, %q", client.endpoint, client.tokenPath, client.namespacePath)
 	}

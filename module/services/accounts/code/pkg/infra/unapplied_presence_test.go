@@ -35,7 +35,12 @@ func TestUnappliedPresenceIsCountedUntilItsBindingApplies(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, before+1, pending, "a delivered presence nothing has applied is pending")
 
-	s.pass(t)
+	if err := s.passReasons(t); err != nil {
+		t.Logf("reconcile refusals: %v", err)
+	}
+	record := productionPathBindingRecord(t, s.delivery.service, s.primary.binding)
+	require.NotNil(t, record.Applied, "this binding must actually apply before checking the pending count")
+	require.Equal(t, uint64(1), record.Applied.Generation)
 	after, err := unapplied()
 	require.NoError(t, err)
 	require.Equal(t, before, after, "an applied presence is no longer pending")

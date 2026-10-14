@@ -82,13 +82,13 @@ each invocation fresh database state. Do not opt into `WithSharedControlChannel`
 which is only for older CLIs and reuses fixed local database directories across
 otherwise independent runs and migration revisions.
 
-Core is pinned per Go module. The host's five services (accounts, auth-gateway,
-policy-log, store, telemetry) run one core release, v0.19.3, which carries the
-issuer-side `Authority.ReadBack`. The module agent (the root module),
-`module/tools` and the module-authority qualification module stay on released
-v0.18.0. Never ship a host release on an untagged pseudo-version. Run
-qualification with `GOWORK=off` so a developer workspace cannot mask the pinned
-dependency.
+Core is pinned per Go module. Accounts and auth-gateway currently select
+candidate presence/delivery revisions for the lifecycle PR; the gateway also
+selects the SDK candidate providing `ResolveDeliveredNetworkInstance`.
+Their `go.mod` files are the exact source pins. The other services and tools
+retain their own released pins. These are development candidates, not release
+qualification: never ship a host release on an untagged pseudo-version.
+Run qualification with `GOWORK=off` so a workspace cannot mask the pins.
 Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.54,
 whose builder uses Go 1.27.2 under `GOTOOLCHAIN=local`; CI uses the same patch.
 Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).
@@ -102,19 +102,31 @@ Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-Accounts, auth-gateway, policy-log, store and telemetry use released SDK v0.3.1;
-accounts must not retain the pre-release SDK SHA from the callable-source
-development branch. Their listeners resolve allocated
+Lifecycle CI selects the exact CLI source candidate in
+`scripts/ci/install-codefly.sh` for every planner/executor job. It recognises
+the CLI-owned `artifact-cache` group without an authored default. This uses
+the canonical versioned Go install entrypoint; it does not require a CLI
+release for development qualification. The installer refuses release tags
+while the source candidate is selected. Restore a qualified released pin
+before publishing the host.
+
+Outside the gateway's delivery candidate, services use released SDK v0.4.0.
+Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local
 endpoint from the runtime environment; the removed `WithDefaultNetwork` switch
 must not be replaced with a hard-coded address or port.
 
+The shared `frontendpayload` Go module is an additional independent suite:
+`cd module/frontendpayload && GOWORK=off go test -race ./... && go vet ./...`.
+Its CI step verifies preparation separately from the service consumers.
+
 ## Runtime composition seams
 
-Solutions and composed modules are independently deployed and **self-register at
-runtime**: the host learns to render and proxy them with no rebuild. Nothing in
-this tree names a specific one — a registered target is data, never a branch, and
-the seam must stay generic (repository-root `AGENTS.md`, § Boundaries).
+Solutions and composed modules are independently deployed. Signed delivery
+updates their presence; the host projects optional pages and resolves routes through
+the SDK. Organisation installation grants remain separate from shared deployment,
+and idle runtime credential renewal does not establish presence. A declared target
+is data, never a branch (repository-root `AGENTS.md`, § Boundaries).
 
 The depth sits with the code that owns each half:
 

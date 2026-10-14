@@ -198,3 +198,34 @@ func (s *PostgresStore) CountUnappliedPresence(ctx context.Context) (uint64, err
 	}
 	return uint64(count), nil
 }
+
+// ReadDeliveredDocument reads the exact inbox generation selected by applied
+// state. Absence is not permission to use a newer desired or older delivery.
+func (s *PostgresStore) ReadDeliveredDocument(
+	ctx context.Context, kind business.SolutionDeliveryKind, documentID string, generation uint64,
+) (*business.SolutionDeliveryRecord, error) {
+	if generation == 0 || generation > uint64(1<<63-1) {
+		return nil, fmt.Errorf("delivery generation is outside the stored range")
+	}
+	var record business.SolutionDeliveryRecord
+	var kindText string
+	var storedGeneration int64
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT `+solutionDeliveryColumns+` FROM public.solution_delivery_documents
+		 WHERE kind = $1 AND document_id = $2 AND generation = $3`,
+		string(kind), documentID, int64(generation),
+	).Scan(&kindText, &record.DocumentID, &storedGeneration, &record.ContentHash,
+		&record.Payload, &record.Bundle, &record.SignerIdentity, &record.OwnershipDomain,
+		&record.ReceivedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	record.Kind = business.SolutionDeliveryKind(kindText)
+	record.Generation = uint64(storedGeneration) //nolint:gosec // CHECKed positive
+	return &record, nil
+}
+
+var _ business.SolutionDeliveryReader = (*PostgresStore)(nil)
