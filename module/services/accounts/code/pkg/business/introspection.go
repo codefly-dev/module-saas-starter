@@ -73,6 +73,9 @@ var serviceInfo = &gen.ServiceInfo{
 // options; descriptions remain editorial prose until source comments are
 // compiled into the service catalog.
 var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
+	"AuditService/DeliverAuditEvents":                              "Deliver one final audit journal range under the installed module's delivery authority, committing a receipt.",
+	"AuditService/LookupDeliverAuditEvents":                        "Read the receipt of one audit delivery without appending any entries.",
+	"ModuleCapabilitiesService/ReadJournal":                        "Read a page of the cross-tenant journal under a cross-tenant module grant, without enqueueing work.",
 	"DatasourceService/PruneSourceOperationReceipts":               "Expire old source receipt output while retaining effect tombstones.",
 	"DatasourceService/LookupPruneSourceOperationReceipts":         "Read an authorized source receipt-cleanup result.",
 	"DatasourceService/DelegateSourceTriggers":                     "Record the delegation a declared release's triggers run under for a source.",

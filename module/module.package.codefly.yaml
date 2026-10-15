@@ -1,7 +1,7 @@
 schema: codefly/module-package/v2
 kind: module-package
 id: codefly/saas-starter
-version: 0.1.0
+version: 0.1.1
 minimum-codefly-version: ">=0.3.32 <1.0.0"
 artifact-roots:
   - contracts
@@ -18,12 +18,12 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
-        digest: sha256:cc43f67ff06a775f7520f6426c85a57a8489f98d259c8996dbab924281327000
+        digest: sha256:9d6930b8a67b605f9517be9d08afaa6b0e5e3e99037e043c84f77cce532ba97b
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:cc43f67ff06a775f7520f6426c85a57a8489f98d259c8996dbab924281327000
+        digest: sha256:9d6930b8a67b605f9517be9d08afaa6b0e5e3e99037e043c84f77cce532ba97b
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:

@@ -32,7 +32,7 @@ func (s *Service) ConfigureSourceOperationReceipts(store receipts.Store) error {
 	if err != nil {
 		return err
 	}
-	for _, method := range []string{SourceOperationMethod, SourceReceiptRetentionMethod, ReconcileSourceMethod} {
+	for _, method := range []string{SourceOperationMethod, SourceReceiptRetentionMethod, ReconcileSourceMethod, DeliverAuditEventsMethod} {
 		if !guard.IsOperation(method) {
 			// Checked at configuration rather than on the first call: an
 			// operation whose marking is missing is a method the SDK will not

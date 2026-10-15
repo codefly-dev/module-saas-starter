@@ -4,9 +4,20 @@
   "module": "saas-starter",
   "operations": [
     {
+      "name": "accounts-connect-deliver-audit-events",
+      "version": "0.1.1",
+      "digest": "ea0c76890e886d8e418c0ac15468f9bad2fc7d7cfdb691e7b27c28d8204c5cc0",
+      "service": "accounts",
+      "endpoint": "connect",
+      "method": "/saas.accounts.v1.AuditService/DeliverAuditEvents",
+      "input_message": "saas.accounts.v1.DeliverAuditEventsRequest",
+      "output_message": "saas.accounts.v1.DeliverAuditEventsResponse",
+      "path": "contracts/runnables/accounts/connect/DeliverAuditEvents"
+    },
+    {
       "name": "accounts-connect-invoke-source-operation",
-      "version": "0.1.0",
-      "digest": "70e00061ad57c8ed7a868b9cad536b61b8562ee4eba7dfabf0fd97e1d3f6f52d",
+      "version": "0.1.1",
+      "digest": "522e186c5084dcb804e582857a32e523bcb8482d1ad02db33f141247882379ae",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
@@ -16,8 +27,8 @@
     },
     {
       "name": "accounts-connect-prune-source-operation-receipts",
-      "version": "0.1.0",
-      "digest": "8b2e2691848ec6e9ab3d9be8f5124390f3a7ca65abfb0c9413f220365a7c52a0",
+      "version": "0.1.1",
+      "digest": "39faaf6569b8723f187c0a3d1a1ddbcfa873a22d5d218f36cfa9535cc1417aa2",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
@@ -27,8 +38,8 @@
     },
     {
       "name": "accounts-connect-reconcile-source",
-      "version": "0.1.0",
-      "digest": "388950465185ec570fe4be8127715638c2cbbd4550d10969fb519af00813d6d7",
+      "version": "0.1.1",
+      "digest": "b8bf7e411329ca1632639f5f6cca07bc3a6e823e29dab2039bb03b70acb206d5",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/ReconcileSource",

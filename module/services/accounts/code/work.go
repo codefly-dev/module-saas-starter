@@ -5,6 +5,7 @@ import (
 	"accounts/pkg/abuse"
 	"accounts/pkg/adapters"
 	"accounts/pkg/analytics"
+	"accounts/pkg/auditstorage"
 	"accounts/pkg/auth"
 	devvalidator "accounts/pkg/auth/dev"
 	ed25519minter "accounts/pkg/auth/ed25519"
@@ -711,19 +712,33 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
-	var auditEmitterOpts []business.DurableAuditEmitterOption
-	if auditSinkMode == auditSinkBoth {
-		auditEmitterOpts = append(auditEmitterOpts, business.WithExternalTee())
-	}
 	// Every org-scoped audit record publishes its external domain event in the
 	// same transaction; that event is what the relay fans out to the endpoints
 	// subscribed to its type.
-	auditEmitterOpts = append(auditEmitterOpts, business.WithDomainEventTransport(eventTransport))
-	auditEmitter, err := business.NewDurableAuditEmitter(store, store, auditEmitterOpts...)
+	//
+	// Where the trail is kept is chosen here, once, from the `audit-storage`
+	// group: Postgres (audit_events, written in the caller's transaction) or the
+	// warehouse (journaled in the caller's transaction and appended afterwards).
+	auditStorageConfig, err := auditstorage.Load(ctx)
 	if err != nil {
 		return nil, err
 	}
-	service.SetAuditEmitter(auditEmitter)
+	auditBackend, warehouseAuditStorage, err := selectAuditStorage(auditStorageConfig, auditSinkMode, buildWarehouseAuditStorage)
+	if err != nil {
+		return nil, err
+	}
+	auditService, err := business.NewAuditService(business.AuditServiceConfig{
+		Backend:     auditBackend,
+		Store:       store,
+		Producer:    store,
+		Transport:   eventTransport,
+		ExternalTee: auditSinkMode == auditSinkBoth,
+		Warehouse:   warehouseAuditStorage,
+	})
+	if err != nil {
+		return nil, err
+	}
+	service.SetAuditService(auditService)
 	// Refuse to serve behind an emitter that cannot write on the caller's
 	// transaction: every security mutation commits its audit row and webhook
 	// fan-out inside its own transaction, and an emitter without EmitTx would let
@@ -1433,7 +1448,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("stopping retention goroutine")
 		retentionCancel()
 		sw.Info("closing audit emitter")
-		auditEmitter.Close()
+		auditService.Close()
 		sw.Info("audit emitter closed")
 		if closeCache != nil {
 			sw.Info("closing redis cache")

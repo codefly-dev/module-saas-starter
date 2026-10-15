@@ -28,6 +28,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
         "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
         "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
         "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
         "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
         "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
@@ -76,8 +77,10 @@
       "fullName": "saas.accounts.v1.AuditService",
       "procedures": [
         "/saas.accounts.v1.AuditService/AggregateAuditLog",
+        "/saas.accounts.v1.AuditService/DeliverAuditEvents",
         "/saas.accounts.v1.AuditService/ExportAuditLog",
         "/saas.accounts.v1.AuditService/ListAuditEventTypes",
+        "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents",
         "/saas.accounts.v1.AuditService/QueryAuditLog"
       ]
     },
@@ -293,6 +296,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
         "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
         "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
         "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
         "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
         "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",

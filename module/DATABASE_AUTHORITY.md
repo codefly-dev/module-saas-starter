@@ -538,10 +538,21 @@ a live database. Migration `65_role_permissions_rls` closes the former
 child-table gap: `role_permissions` reads follow parent-role visibility, while
 inserts may target only a custom role owned by the current tenant.
 
-Callable-source declarations, consumed OAuth states, operation attempts and
-effect receipts grant no table privileges to `app_control_plane`. Their reads,
-writes and retention use the tenant transaction. The live exact-grants test
-asserts this absence for all four tables as well as their forced tenant RLS.
+The published scope column describes the permissive policies that grant request
+traffic access. Every such predicate is checked separately: another permissive
+policy cannot grant unscoped access beside the scoped one. Restrictive policies
+are combined with those grants using AND and can only remove access; they need
+not repeat the tenant comparison. The live checks separately pin exact
+control-plane grants and the audit-retention filter's role, command, restrictive
+mode, audit type and 720-hour minimum age.
+
+Callable-source declarations, consumed OAuth states and operation attempts grant
+no table privileges to `app_control_plane`. Their reads, writes and retention use
+the tenant transaction. Effect receipts give the control plane SELECT only,
+with RLS exposing exactly `AuditService/DeliverAuditEvents` receipts for audit
+journal retention (migration 43). Other responses remain tenant-only; the
+control plane cannot insert, update or delete receipts. The live exact-grants
+test asserts these grants alongside forced tenant RLS.
 
 ## Partitions carry their parent's row security
 
@@ -1170,4 +1181,11 @@ existing encrypted envelope. No control-plane role can read either new relation.
 attempt markers under the request pool's RLS. Expired response bytes, a typed
 audit event and the cleanup operation's own receipt commit atomically. Compact
 markers are retained so expiry cannot authorize redispatch of a mutation.
-No control-plane grant or host retention timer is added.
+Audit delivery receipts are outside that cleanup's method filter, so the full
+committed range survives. `RunRetention` uses the existing control-plane role to
+verify audit receipt coverage and retire journal entries in warehouse mode only.
+Migration 43 adds a restrictive DELETE policy to `domain_events`: even a direct
+control-plane DELETE cannot remove another event type or an audit entry younger
+than 720 hours. SELECT, INSERT and UPDATE keep their existing policies. Receipt
+coverage remains an application check over the SDK's protobuf response and
+original request digest, exercised with real PostgreSQL transactions.

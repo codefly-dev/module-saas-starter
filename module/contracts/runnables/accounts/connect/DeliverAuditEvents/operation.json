@@ -1,0 +1,29 @@
+{
+  "method": "/saas.accounts.v1.AuditService/DeliverAuditEvents",
+  "attempt_timeout": "1m0s",
+  "total_timeout": "10m0s",
+  "max_attempts": 3,
+  "backoff": "5s",
+  "retryable_codes": [
+    "UNAVAILABLE",
+    "RESOURCE_EXHAUSTED",
+    "ABORTED"
+  ],
+  "audience": "saas-audit",
+  "invoke_scopes": [],
+  "lookup_scopes": [],
+  "lookup_method": "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents",
+  "max_input_bytes": 256,
+  "max_output_bytes": 1024,
+  "completion": "COMPLETION_CALL",
+  "required_scope_slots": [
+    {
+      "lookup": true,
+      "name": "audit_delivery",
+      "required_actions": [
+        "invoke",
+        "read"
+      ]
+    }
+  ]
+}

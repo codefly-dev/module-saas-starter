@@ -333,7 +333,7 @@ func writeCoreInput(t *testing.T, fixture *coreCompositionFixture) {
 		Schema:       "codefly/composition-input/v2",
 		Module:       fixture.descriptor.Name,
 		Package:      "codefly/saas-starter",
-		Version:      "0.1.0",
+		Version:      "0.1.1",
 		ConsumerRoot: fixture.consumerRoot,
 		Projection:   fixture.projection,
 		Contracts: map[string]string{

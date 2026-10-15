@@ -610,6 +610,21 @@ content and disables a plan CTA when the catalog says checkout is unavailable.
 
 `UserService`, `APIKeyService`, `AuditService`, `AuditExportService`, `InvitationService`, `WebhookService`, `BillingService`, `PlatformAdminService`, `UsageService`, `SSOAdminService`, `MFAService`, `ConsentService`, `NotificationService`, `OnboardingService`, `GDPRService`, `UserSettingsService`, `AuthService`, `IdentityService`.
 
+### Audit storage
+
+`AuditService` owns where the audit trail is kept, chosen once at startup from
+the `audit-storage` configuration group (`AUDIT_STORAGE_BACKEND = postgres |
+warehouse`, plus dataset and table names only). Under `postgres`, the default,
+every entry is written to `audit_events` in the caller's transaction. Under
+`warehouse`, the entry is published to the journal as the internal event
+`saas.audit.recorded.v1` in that transaction (see [EVENTS.md](./module/EVENTS.md))
+and appended to the warehouse by a later task; the activity list and aggregation
+read the warehouse, which refuses the percentile metric. A module's audit through
+`ModuleEmitAuditEvent` takes the same path. A "platform principal" in these
+documents is a module principal with a `cross_tenant` grant. The warehouse backend
+is refused at startup until its storage exists in the build. See
+[ADR 0009](./module/docs/adr/0009-audit-store-swap.md).
+
 ## Usage metering
 
 `UsageService.ConsumeUsage` is an internal-only protobuf API for trusted product
