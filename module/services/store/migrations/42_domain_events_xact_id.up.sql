@@ -18,7 +18,7 @@
 -- a column default, pg_current_xact_id(). A default, not a change to
 -- publish_domain_event: the only INSERT into this table is that function's, the
 -- default fires there with the function's body, guard, advisory lock and grants
--- exactly as migration 37 left them, and nothing is replaced. pg_current_xact_id()
+-- exactly as migration 41 left them, and nothing is replaced. pg_current_xact_id()
 -- returns the top-level id even inside a subtransaction, which is the one
 -- pg_snapshot_xmin compares against. The default is attached after the column is
 -- added, not in the same statement: a volatile default on ADD COLUMN rewrites the

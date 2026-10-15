@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests hold publish_domain_event's tenant guard to what migration 37
+// These tests hold publish_domain_event's tenant guard to what migration 41
 // leaves of it, against the real function and the real roles: the journal record
 // of an audit entry with no organization is admitted from a user-scoped
 // transaction for that user's own action, and nothing else tenant-less is.

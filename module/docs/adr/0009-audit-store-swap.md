@@ -48,8 +48,8 @@ tenant, and an `internal` type in it is never fanned out.
    every audit entry, including one with no organization, to the journal as the
    internal type `saas.audit.recorded.v1`, carrying the whole entry, in the
    caller's transaction through the existing transport. No table, relay or drain is
-   added to this module. Migration 37 admits user-scoped publication (item 2a),
-   and migration 38 records the writing transaction for the journal cursor. The type is
+   added to this module. Migration 41 admits user-scoped publication (item 2a),
+   and migration 42 records the writing transaction for the journal cursor. The type is
    code-owned and `internal`: the
    relay marks it published with no fan-out, a replay skips it, and no
    subscription may match it. The organization-scoped webhook event of an external
@@ -63,7 +63,7 @@ tenant, and an `internal` type in it is never fanned out.
    (the WebAuthn registration and the MFA enrolment, for example). That
    transaction runs as `app_tenant` and sets only `app.current_user_id`, and
    `publish_domain_event` refused every event with no tenant from `app_tenant`.
-   Migration 37 replaces the function with an identical body except that the
+   Migration 41 replaces the function with an identical body except that the
    `app_tenant` branch also admits one case: the tenant is NULL, the type is
    `saas.audit.recorded.v1`, `app.current_user_id` is set and non-empty, and the
    event's actor (`p_actor_principal_id`) is that same user. The record in `data`
@@ -84,7 +84,7 @@ tenant, and an `internal` type in it is never fanned out.
    grant, reads the journal through a cross-tenant read RPC on
    `ModuleCapabilitiesService` (`ReadJournal`) and hands this module one range of
    it at a time. The read serves rows in `(xact_id, seq)` order and only below the
-   oldest transaction still running (migration 38; [EVENTS.md](../../EVENTS.md)), so
+   oldest transaction still running (migration 42; [EVENTS.md](../../EVENTS.md)), so
    a cursor never passes a row that can still commit; its positions are opaque,
    and `"start"` is the position before the oldest retained entry. It marks the
    entries that are the reader's own delivery footprint (`delivery_machinery`), so
@@ -136,6 +136,25 @@ tenant, and an `internal` type in it is never fanned out.
 5. **Retention is the warehouse's.** `RunRetention` skips the `audit_events` policy
    under `warehouse` and logs why; how long an entry is kept is the warehouse
    table's own expiry. Rows written before the switch stay in `audit_events`.
+   Under `warehouse`, the same retention run removes journal entries of exactly
+   `saas.audit.recorded.v1` whose `created_at` is older than thirty 24-hour days
+   on the database clock and whose position lies in a committed delivery's
+   `(from, to]` interval. The committed response stores both positions; retention
+   verifies the response status, range effect identity and original request
+   digest before trusting an interval. Overlapping or touching intervals may be
+   combined, but gaps remain unproven. Legacy receipts without both positions,
+   malformed receipts and mismatched digests preserve the journal rows; the
+   `delivered` count never supplies missing coverage. Every warehouse retention
+   run logs `deleted`, `old_unproven` and `retention_days`, making old entries
+   without delivery proof visible. PostgreSQL mode and other journal types are
+   unchanged.
+
+   Source receipt cleanup names only the two datasource operation methods, so
+   the full audit delivery receipt, including its range, survives cleanup.
+   Migration 43 gives the existing control-plane role SELECT only on audit
+   delivery receipts and restricts its new journal DELETE grant by event type
+   and a database-enforced 720-hour minimum age. No receipt mutation, table,
+   relay, queue or identity is added.
 
 ## Options considered
 
@@ -149,15 +168,16 @@ tenant, and an `internal` type in it is never fanned out.
 
 - No state change commits without its journal event, and no entry is lost between
   the commit and the warehouse as long as the journal row is retained until
-  delivered. `domain_events` has no enforced retention today (EVENTS.md names 30
-  days; nothing enforces it), so until delivery exists and is monitored, the
-  journal row is the safeguard and an undelivered entry is recoverable from it.
+  delivered. Undelivered or otherwise unproven audit journal entries survive
+  indefinitely. Delivered audit entries expire from the journal only after
+  thirty days in warehouse mode; retention for the other `domain_events` types
+  remains unenforced.
 - A deployment cannot select `warehouse` until the warehouse `AuditStorage` and
   the delivery path exist in the build; startup refuses it by name until then.
 - Every no-organization entry is published on the transaction the caller already
   holds, including a user-scoped one: `publish_domain_event` admits a tenant-less
   `saas.audit.recorded.v1` from `app_tenant` when its actor is the transaction's
-  user (migration 37). A tenant-less event of any other type, or for any other
+  user (migration 41). A tenant-less event of any other type, or for any other
   actor, is still refused from `app_tenant`. The comparison is on the text of the
   actor id and of `app.current_user_id`, which are the canonical lowercase user id
   everywhere they are set; a non-canonical spelling of the same id is refused where
@@ -168,3 +188,4 @@ tenant, and an `internal` type in it is never fanned out.
 | Component | Searched and found | Decision |
 | --- | --- | --- |
 | Audit storage and journal delivery | This repository's existing journal, closed #1000's storage interfaces and parity suite, and the shared `core`, `sdk-go`, and `saas-sdk-go` implementations; existing receipts and module capability verification are implemented and tested. | Reuse the journal, storage shapes, SDK receipt guard, and live module authority checks. Extend the existing adapters; no parallel queue, identity provider, or receipt implementation. |
+| Audit journal retention | Read `RunRetention`, journal position SQL, `PruneSourceOperationReceipts`, SDK `receipts` protobuf/digest storage and PostgreSQL receipt tests; searched shared `core`/`sdk-go` implementations and used Go's standard sorting. Source cleanup already preserves audit receipts, but the old committed response omitted the interval end. | Extend the existing committed response with `from`/`to` and reuse its effect identity, request digest, receipt table and control-plane transaction. Preserve legacy coverage as unproven; add only the bounded role permissions needed to retire delivered rows. |

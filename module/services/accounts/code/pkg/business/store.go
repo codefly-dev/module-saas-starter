@@ -922,6 +922,10 @@ type Store interface {
 	// DatabaseNow reads the database's clock. Retention counts every cutoff
 	// from it rather than from this process's clock, which may run ahead.
 	DatabaseNow(ctx context.Context) (time.Time, error)
+	// DeleteDeliveredAuditJournal removes old audit journal rows only within
+	// committed delivery ranges. It requires a control-plane transaction and
+	// returns deleted rows and old rows whose delivery remains unproven.
+	DeleteDeliveredAuditJournal(ctx context.Context, before time.Time) (deleted, oldUnproven int64, err error)
 	DeleteOldSessions(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldNotifications(ctx context.Context, before time.Time) (int64, error)

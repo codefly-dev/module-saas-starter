@@ -6,7 +6,7 @@
     {
       "name": "accounts-connect-deliver-audit-events",
       "version": "0.1.1",
-      "digest": "c2d153f748a842fff4896d3a780602a152876bd456b3247c412d0c312cece35c",
+      "digest": "ea0c76890e886d8e418c0ac15468f9bad2fc7d7cfdb691e7b27c28d8204c5cc0",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.AuditService/DeliverAuditEvents",

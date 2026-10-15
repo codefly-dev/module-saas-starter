@@ -31,17 +31,17 @@ func readPublishDomainEvent(t *testing.T, db *sql.DB) publishDomainEventFacts {
 	return f
 }
 
-// Migration 37 replaces publish_domain_event to admit one tenant-less event from
+// Migration 41 replaces publish_domain_event to admit one tenant-less event from
 // a tenant-scoped caller. The function's owner, authority, pinned search_path and
 // grants must come through the replacement untouched, the owner must be left with
 // no CREATE on the schema it borrowed for it, and the down migration must put
 // back the body the function had before, byte for byte. Install the ledger below
-// 37, take the function's facts, apply 37, step back, and compare; then apply 37
+// 41, take the function's facts, apply 41, step back, and compare; then apply 41
 // again, because a down that leaves the ledger unable to go forward is no down.
 //
 // The URL must name a fresh, disposable PostgreSQL 16+ cluster, as for the
 // migration 26 replay.
-func TestMigration37PublishDomainEventDownRestoresTheBody(t *testing.T) {
+func TestMigration41PublishDomainEventDownRestoresTheBody(t *testing.T) {
 	raw := os.Getenv("ACCOUNTS_INSTALLER_TEST_DATABASE_URL")
 	if raw == "" {
 		t.Skip("ACCOUNTS_INSTALLER_TEST_DATABASE_URL is unset; PostgreSQL replay not run")
@@ -66,8 +66,8 @@ func TestMigration37PublishDomainEventDownRestoresTheBody(t *testing.T) {
 		t.Fatal("from-zero replay refuses a database containing application tables")
 	}
 
-	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 36), raw); err != nil {
-		t.Fatalf("apply the ledger below migration 37: %v", err)
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 40), raw); err != nil {
+		t.Fatalf("apply the ledger below migration 41: %v", err)
 	}
 	before := readPublishDomainEvent(t, db)
 
@@ -81,27 +81,27 @@ func TestMigration37PublishDomainEventDownRestoresTheBody(t *testing.T) {
 			t.Fatalf("%s: app_control_plane still holds CREATE on schema public", stage)
 		}
 	}
-	assertOwnerHoldsNoCreate("below migration 37")
+	assertOwnerHoldsNoCreate("below migration 41")
 
-	withUp := "file://" + ledgerUpTo(t, 37)
+	withUp := "file://" + ledgerUpTo(t, 41)
 	if err := migrateStoreFrom(withUp, raw); err != nil {
-		t.Fatalf("apply migration 37: %v", err)
+		t.Fatalf("apply migration 41: %v", err)
 	}
 	after := readPublishDomainEvent(t, db)
 	if after.body == before.body {
-		t.Fatal("migration 37 left the function body unchanged")
+		t.Fatal("migration 41 left the function body unchanged")
 	}
 	if !strings.Contains(after.body, "saas.audit.recorded.v1") {
-		t.Fatal("migration 37 does not name the audit journal type in the function body")
+		t.Fatal("migration 41 does not name the audit journal type in the function body")
 	}
 	if after.owner != before.owner || after.definer != before.definer || after.config != before.config || after.acl != before.acl {
-		t.Fatalf("migration 37 changed more than the body:\n before %+v\n after  %+v", before, after)
+		t.Fatalf("migration 41 changed more than the body:\n before %+v\n after  %+v", before, after)
 	}
 	if after.owner != "app_control_plane" || after.definer != "true" ||
 		after.config != `{"search_path=pg_catalog, public, pg_temp"}` {
 		t.Fatalf("the replacement lost the function's owner, authority or search_path: %+v", after)
 	}
-	assertOwnerHoldsNoCreate("after migration 37")
+	assertOwnerHoldsNoCreate("after migration 41")
 
 	runner, err := migrate.New(withUp, raw)
 	if err != nil {
@@ -110,7 +110,7 @@ func TestMigration37PublishDomainEventDownRestoresTheBody(t *testing.T) {
 	stepErr := runner.Steps(-1)
 	sourceErr, databaseErr := runner.Close()
 	if stepErr != nil || sourceErr != nil || databaseErr != nil {
-		t.Fatalf("revert migration 37: step %v, close source %v, close database %v", stepErr, sourceErr, databaseErr)
+		t.Fatalf("revert migration 41: step %v, close source %v, close database %v", stepErr, sourceErr, databaseErr)
 	}
 	if reverted := readPublishDomainEvent(t, db); reverted != before {
 		t.Fatalf("the down migration did not restore the function:\n got %+v\nwant %+v", reverted, before)
@@ -118,10 +118,10 @@ func TestMigration37PublishDomainEventDownRestoresTheBody(t *testing.T) {
 	assertOwnerHoldsNoCreate("after the down migration")
 
 	if err := migrateStoreFrom(withUp, raw); err != nil {
-		t.Fatalf("apply migration 37 again after its down: %v", err)
+		t.Fatalf("apply migration 41 again after its down: %v", err)
 	}
 	if again := readPublishDomainEvent(t, db); again != after {
-		t.Fatal("migration 37 applied a second time produced a different body")
+		t.Fatal("migration 41 applied a second time produced a different body")
 	}
-	t.Log("migration 37 replaced publish_domain_event keeping owner, definer authority, search_path and grants; its down restored the previous body exactly")
+	t.Log("migration 41 replaced publish_domain_event keeping owner, definer authority, search_path and grants; its down restored the previous body exactly")
 }

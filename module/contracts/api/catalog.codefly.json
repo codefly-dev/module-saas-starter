@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:1622ff4663797f75752c43ce2752b0a2d090c21f1454406d340821c72145dbea",
+      "digest": "sha256:9d6930b8a67b605f9517be9d08afaa6b0e5e3e99037e043c84f77cce532ba97b",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -66,7 +66,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:1622ff4663797f75752c43ce2752b0a2d090c21f1454406d340821c72145dbea",
+      "digest": "sha256:9d6930b8a67b605f9517be9d08afaa6b0e5e3e99037e043c84f77cce532ba97b",
       "services": [
         {
           "name": "APIKeyService",

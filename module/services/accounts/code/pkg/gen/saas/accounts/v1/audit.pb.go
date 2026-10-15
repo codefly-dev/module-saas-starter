@@ -1342,7 +1342,13 @@ type DeliverAuditEventsResponse struct {
 	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	// delivered is the number of audit records of the range appended to the
 	// storage; a range with none still commits a receipt.
-	Delivered     int32 `protobuf:"varint,3,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	Delivered int32 `protobuf:"varint,3,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	// The exact committed interval is (from, to]. Retention verifies these
+	// positions against the receipt's effect identity and request digest before
+	// retiring journal rows. Legacy receipts without both positions prove no
+	// coverage; delivered alone never proves an interval.
+	From          string `protobuf:"bytes,4,opt,name=from,proto3" json:"from,omitempty"`
+	To            string `protobuf:"bytes,5,opt,name=to,proto3" json:"to,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1396,6 +1402,20 @@ func (x *DeliverAuditEventsResponse) GetDelivered() int32 {
 		return x.Delivered
 	}
 	return 0
+}
+
+func (x *DeliverAuditEventsResponse) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *DeliverAuditEventsResponse) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
 }
 
 var File_saas_accounts_v1_audit_proto protoreflect.FileDescriptor
@@ -1540,11 +1560,13 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x05types\x18\x01 \x03(\v2 .saas.accounts.v1.AuditEventTypeR\x05types\"U\n" +
 	"\x19DeliverAuditEventsRequest\x12\x1d\n" +
 	"\x04from\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\x04from\x12\x19\n" +
-	"\x02to\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\x02to\"o\n" +
+	"\x02to\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\x02to\"\x93\x01\n" +
 	"\x1aDeliverAuditEventsResponse\x12\x1b\n" +
 	"\teffect_id\x18\x01 \x01(\tR\beffectId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1c\n" +
-	"\tdelivered\x18\x03 \x01(\x05R\tdelivered2\xe9\t\n" +
+	"\tdelivered\x18\x03 \x01(\x05R\tdelivered\x12\x12\n" +
+	"\x04from\x18\x04 \x01(\tR\x04from\x12\x0e\n" +
+	"\x02to\x18\x05 \x01(\tR\x02to2\xe9\t\n" +
 	"\fAuditService\x12\xb5\x01\n" +
 	"\rQueryAuditLog\x12&.saas.accounts.v1.QueryAuditLogRequest\x1a'.saas.accounts.v1.QueryAuditLogResponse\"S\xc2\xf3\x18:\b\x02\x10\x03\x1a\n" +
 	"audit:read\"\n" +

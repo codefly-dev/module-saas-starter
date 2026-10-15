@@ -133,6 +133,23 @@ func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 	if err != nil {
 		fail("data_retention_policies", RetentionStepLoad, err)
 	}
+	// Until a committed delivery proves otherwise the journal is the audit
+	// entry's only copy. This fixed window is independent of audit_events policy
+	// and applies only when the warehouse is the store of record.
+	if s.auditReads != nil && s.auditReads.Backend() == AuditBackendWarehouse {
+		var removed, oldUnproven int64
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			removed, oldUnproven, err = s.store.DeleteDeliveredAuditJournal(ctx, now.UTC().AddDate(0, 0, -30))
+			return err
+		}); err != nil {
+			fail("audit_journal", RetentionStepRemove, err)
+		} else {
+			deleted["audit_journal"] = removed
+			w.Info("retention: audit journal delivery coverage",
+				wool.Field("deleted", removed), wool.Field("old_unproven", oldUnproven), wool.Field("retention_days", 30))
+		}
+	}
 	for _, p := range policies {
 		before, anyOlder, windowErr := retentionCutoff(now, p.RetentionDays)
 		if windowErr != nil {

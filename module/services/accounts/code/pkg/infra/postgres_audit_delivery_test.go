@@ -6,6 +6,7 @@ import (
 	"context"
 	"sort"
 	"testing"
+	"time"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -16,6 +17,7 @@ import (
 	"github.com/codefly-dev/sdk-go/receipts/connecttransport"
 
 	"github.com/codefly-dev/sdk-go/receipts"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -101,7 +103,7 @@ func TestDeliverAuditEventsWritesOneReceiptPerRangeAndReplaysFromIt(t *testing.T
 				handlerRuns++
 				var out *gen.DeliverAuditEventsResponse
 				_, err := svc.DeliverAuditEvents(ctx, req.Msg.From, req.Msg.To, func(ctx context.Context, r business.AuditDeliveryResult) error {
-					out = &gen.DeliverAuditEventsResponse{EffectId: effectID, Status: "committed", Delivered: int32(r.Delivered)}
+					out = &gen.DeliverAuditEventsResponse{EffectId: effectID, Status: "committed", Delivered: int32(r.Delivered), From: req.Msg.From, To: req.Msg.To}
 					return svc.RecordSourceOperationReceipt(ctx, out)
 				})
 				if err != nil {
@@ -134,6 +136,8 @@ func TestDeliverAuditEventsWritesOneReceiptPerRangeAndReplaysFromIt(t *testing.T
 	first, err := handle(business.JournalStart, position(2))
 	require.NoError(t, err)
 	require.EqualValues(t, 3, first.Delivered)
+	require.Equal(t, business.JournalStart, first.From)
+	require.Equal(t, position(2), first.To)
 	require.Len(t, warehouse.appended, 3)
 	require.Equal(t, map[string]string{ids[0]: orgA, ids[1]: "", ids[2]: orgB}, entriesOf(),
 		"each record's organization is its row's, and the one with none has none")
@@ -190,4 +194,76 @@ func TestDeliverAuditEventsWritesOneReceiptPerRangeAndReplaysFromIt(t *testing.T
 	// this test published, but that record.
 	tail := drainJournal(t, svc, caller, position(2), business.AuditRecordedEventType)
 	require.Equal(t, []string{later.GetId()}, eventIDs(business.ModuleReadJournalResult{Entries: tail.entries}))
+
+	// Source cleanup can find a matching attempt and still must leave the full
+	// audit receipt intact: the audit method is outside its two-method filter.
+	source := uuid.NewString()
+	effect := business.AuditDeliveryEffectID(business.JournalStart)
+	cleanupCtx := receipts.WithEffect(testCtx, receipts.Effect{
+		ID: effect, Tenant: installation, Method: business.SourceOperationMethod, RequestDigest: []byte("source fixture"),
+	})
+	require.NoError(t, testStore.WithOrgTx(cleanupCtx, installation, func(ctx context.Context) error {
+		_, err := testStore.CreateSourceOperationAttempt(ctx, business.SourceOperationAttempt{
+			OrgID: installation, EffectID: effect, ActorID: caller.PrincipalID, SourceID: source,
+			Operation: "example", DeclarationDigest: "example", RequestDigest: []byte("source fixture"),
+		})
+		if err != nil {
+			return err
+		}
+		if err := svc.RecordSourceOperationReceipt(ctx, &gen.InvokeSourceOperationResponse{OutputJson: "{}"}); err != nil {
+			return err
+		}
+		removed, err := testStore.PruneSourceOperationReceipts(ctx, installation, source, time.Now().Add(time.Hour))
+		require.EqualValues(t, 1, removed, "the expired datasource receipt is removed")
+		return err
+	}))
+	saved, found, err := receiptStore.Lookup(testCtx, installation, effect, business.DeliverAuditEventsMethod)
+	require.NoError(t, err)
+	require.True(t, found)
+	var retained gen.DeliverAuditEventsResponse
+	require.NoError(t, proto.Unmarshal(saved.Response, &retained))
+	require.True(t, proto.Equal(first, &retained), "cleanup preserves coverage and the committed response")
+
+	// Backdate the delivered records and a later, undelivered record. Running
+	// real warehouse retention retires only the four records proven above.
+	undelivered := auditJournalEnvelopeOf(t, seedUser(t), orgB)
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return auditJournalTransport(t).Publish(ctx, storetx.Tx(ctx), undelivered)
+	}))
+	ids = append(ids, later.GetId(), undelivered.GetId())
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		_, err := storetx.Tx(ctx).Exec(ctx, `UPDATE domain_events SET created_at = clock_timestamp() - interval '960 hours' WHERE id::text = ANY($1::text[])`, ids)
+		return err
+	}))
+	postgres, err := business.NewService(testStore)
+	require.NoError(t, err)
+	postgresDeleted, err := postgres.RunRetention(testCtx)
+	require.NoError(t, err)
+	require.NotContains(t, postgresDeleted, "audit_journal")
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var remaining int
+		err := storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM domain_events WHERE id::text = ANY($1::text[])`, ids).Scan(&remaining)
+		require.Equal(t, 5, remaining, "Postgres mode leaves every journal entry in place")
+		return err
+	}))
+	deleted, err := svc.RunRetention(testCtx)
+	require.NoError(t, err)
+	require.EqualValues(t, 4, deleted["audit_journal"])
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var remaining []string
+		rows, err := storetx.Tx(ctx).Query(ctx, `SELECT id::text FROM domain_events WHERE id::text = ANY($1::text[])`, ids)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			remaining = append(remaining, id)
+		}
+		require.Equal(t, []string{undelivered.GetId()}, remaining)
+		return rows.Err()
+	}))
 }

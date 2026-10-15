@@ -103,7 +103,7 @@ func (h *auditConnectHandler) DeliverAuditEvents(ctx context.Context, req *conne
 	return connecttransport.WrapUnary(guard, business.DeliverAuditEventsMethod, func(ctx context.Context, r *connect.Request[gen.DeliverAuditEventsRequest]) (*connect.Response[gen.DeliverAuditEventsResponse], error) {
 		var out *gen.DeliverAuditEventsResponse
 		_, err := service.DeliverAuditEvents(ctx, r.Msg.From, r.Msg.To, func(ctx context.Context, result business.AuditDeliveryResult) error {
-			out = &gen.DeliverAuditEventsResponse{EffectId: effect, Status: "committed", Delivered: int32(result.Delivered)}
+			out = &gen.DeliverAuditEventsResponse{EffectId: effect, Status: "committed", Delivered: int32(result.Delivered), From: r.Msg.From, To: r.Msg.To}
 			return service.RecordSourceOperationReceipt(ctx, out)
 		})
 		if err != nil {

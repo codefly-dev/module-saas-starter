@@ -298,7 +298,7 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 // no organization whichever the caller holds. That is the control plane's when
 // Emit opens it, or the caller's own user-scoped transaction under EmitTx, where
 // publish_domain_event admits the event because its actor is that transaction's
-// user (migration 37). The event commits with the mutation or not at all; there
+// user (migration 41). The event commits with the mutation or not at all; there
 // is no second write to lose.
 func (e *DurableAuditEmitter) publishJournal(ctx context.Context, entry AuditEntry) error {
 	envelope, err := NewAuditJournalEnvelope(entry)

@@ -1,4 +1,4 @@
--- Reverts migration 37: publish_domain_event again refuses every NULL tenant from
+-- Reverts migration 41: publish_domain_event again refuses every NULL tenant from
 -- app_tenant, so a user-scoped transaction cannot publish the journal record of an
 -- audit entry that has no organization. The function is restored as migration 12
 -- left it: the baseline body, with pg_temp last in its search_path. The owner and

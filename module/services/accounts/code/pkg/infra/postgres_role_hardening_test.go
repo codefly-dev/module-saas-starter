@@ -371,12 +371,15 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "executable_artifact_approvals" {
 				want = relationPrivileges{}
 			}
-			// Callable-source declarations, OAuth state, attempts and receipts
-			// are tenant-only. The control plane must not read or mutate them.
+			// Callable-source declarations, OAuth state and attempts are tenant-only.
 			switch relation {
 			case "datasource_source_operations", "datasource_oauth_consumed_states",
-				"datasource_operation_attempts", "codefly_effect_receipts":
+				"datasource_operation_attempts":
 				want = relationPrivileges{}
+			}
+			if relation == "codefly_effect_receipts" {
+				// RLS exposes only committed audit delivery receipts to retention.
+				want = relationPrivileges{selectRows: true}
 			}
 			if relation == "feature_flags" {
 				want = relationPrivileges{selectRows: true}
@@ -467,11 +470,9 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "work_context_replay" {
 				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
 			}
-			// domain_events and event_subscriptions: the control plane publishes
-			// platform events and maintains subscriptions (materialize / subscribe /
-			// unsubscribe marks revoked_at), so it reads, inserts, and updates but
-			// never row-deletes — retention and revocation are soft.
-			if relation == "domain_events" || relation == "event_subscriptions" {
+			// Subscriptions are revoked softly. Journal DELETE is separately
+			// restricted by RLS to audit records older than thirty days.
+			if relation == "event_subscriptions" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// team_membership_quarantine records what migration 127 removed. Only

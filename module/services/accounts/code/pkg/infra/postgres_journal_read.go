@@ -20,7 +20,7 @@ import (
 // like a quiet journal.
 //
 // A row's key is (COALESCE(xact_id, '0'), seq): the transaction that wrote it
-// (migration 38; NULL on a row from before it, read as 0, before every real id),
+// (migration 42; NULL on a row from before it, read as 0, before every real id),
 // then seq. A row is served only while its transaction id is below
 // pg_snapshot_xmin(pg_current_snapshot()), the oldest transaction id still
 // running. Any transaction that can still commit has an id at or after that

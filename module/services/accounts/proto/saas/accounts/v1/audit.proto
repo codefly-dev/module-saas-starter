@@ -272,6 +272,12 @@ message DeliverAuditEventsResponse {
   // delivered is the number of audit records of the range appended to the
   // storage; a range with none still commits a receipt.
   int32 delivered = 3;
+  // The exact committed interval is (from, to]. Retention verifies these
+  // positions against the receipt's effect identity and request digest before
+  // retiring journal rows. Legacy receipts without both positions prove no
+  // coverage; delivered alone never proves an interval.
+  string from = 4;
+  string to = 5;
 }
 
 // AuditService — append-only audit event log

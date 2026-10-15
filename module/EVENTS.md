@@ -297,7 +297,7 @@ The writer may be a user-scoped transaction, which runs as `app_tenant` with onl
 `app.current_user_id` is set and non-empty, and the envelope's `actor_principal_id`
 (the entry's actor id, for a person their user id) is that same user. That is the
 rule the `audit_events_tenant` policy applies to the same entry's row, so the
-journal admits what `audit_events` admits and nothing wider (migration 37). Any
+journal admits what `audit_events` admits and nothing wider (migration 41). Any
 other tenant-less event from `app_tenant`, and any event whose tenant is not the
 transaction's signed scope, is refused as before.
 
@@ -323,12 +323,12 @@ leaving the filter out.
 a cursor on `seq` can pass a row whose transaction is still open and never return
 for it (the next section's re-read window exists for that). This read instead keys
 on `(xact_id, seq)`, where `domain_events.xact_id` is the id of the transaction
-that wrote the row (migration 38), and serves a row only while
+that wrote the row (migration 42), and serves a row only while
 `xact_id < pg_snapshot_xmin(pg_current_snapshot())`, the oldest transaction still
 running. Every transaction that can still commit took its id at or after that
 bound, so a row below it belongs to a finished transaction, no row that has not
 appeared yet can sort before one that has, and a cursor that stops at the last row
-served skips nothing. A row written before migration 38 has no `xact_id`, reads as
+served skips nothing. A row written before migration 42 has no `xact_id`, reads as
 transaction 0 and sorts first, in `seq` order.
 
 The position is an opaque string, `v1.<xact_id>.<seq>` in decimal. The literal
@@ -394,6 +394,15 @@ The properties a consumer may rely on:
 | Schema | additive changes are minor; breaking changes are a new major in `dataschema` (old major kept for at least one release) |
 | Size | `data` <= 960 KiB; larger payloads use a claim-check reference |
 | Latency | relay tick <= 1 s p50 on Postgres; not a hard real-time channel |
+
+`RunRetention` enforces the thirty-day journal window only for
+`saas.audit.recorded.v1` under the warehouse audit backend, and only where a
+committed `DeliverAuditEvents` receipt proves the row's position was delivered.
+Receipt responses retain the exact `(from, to]` interval; missing legacy coverage
+or an invalid receipt keeps the row. The cutoff uses `created_at` and the database
+clock, independently of the producer's timestamp. Each run logs the number of old
+audit entries with unproven delivery. PostgreSQL audit mode does not remove these
+journal rows, and retention for the other event types remains unenforced.
 
 ## The subscriptions stream
 
