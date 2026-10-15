@@ -797,9 +797,10 @@ func TestActivePoliciesDoNotTrustSessionBypassSettings(t *testing.T) {
 // Scope inventory and policy presence alone cannot support that claim: a
 // relation keeps forced RLS and a non-zero policy count when a migration adds a
 // permissive USING (true) policy beside the scoped one. So this checks EVERY
-// policy expression individually — each must compare the published scope column
-// or admit nothing — rather than asking whether the column appears somewhere in
-// the relation's policies.
+// permissive request policy individually — each must compare the published scope
+// column or admit nothing. PostgreSQL ORs permissive grants and ANDs restrictive
+// filters: a restrictive predicate cannot grant authority on its own. Bounded
+// control-plane grants and the audit-retention filter are checked exactly below.
 func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := storetx.Tx(ctx)
@@ -812,20 +813,44 @@ func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
 			require.NotEmpty(t, authority.PolicyShape, relation)
 
 			policies := livePolicies(ctx, t, tx, relation)
+			if relation == "domain_events" {
+				require.Contains(t, policies, livePolicy{
+					name: "audit_journal_retention_delete", permissive: false,
+					roles: []string{"app_control_plane"}, command: "d",
+					expressions: []string{"((type = 'saas.audit.recorded.v1'::text) AND (created_at < (statement_timestamp() - '720:00:00'::interval)))"},
+				}, "audit retention must remain a control-plane-only restrictive DELETE with the exact type and thirty-day minimum age")
+			}
+			if relation == "codefly_effect_receipts" {
+				require.Contains(t, policies, livePolicy{
+					name: "audit_delivery_retention_receipts", permissive: true,
+					roles: []string{"app_control_plane"}, command: "r",
+					expressions: []string{"((CURRENT_USER = 'app_control_plane'::name) AND (method = '/saas.accounts.v1.AuditService/DeliverAuditEvents'::text))"},
+				}, "retention may read only audit-delivery receipts as the exact active control-plane role")
+			}
 			// Explicit background policies replace BYPASSRLS only for the exact
-			// active SQL role. Keep checking every request-visible predicate.
+			// active SQL role. Keep checking every permissive request predicate.
 			requestPolicies := policies[:0]
 			for _, policy := range policies {
 				if policy.migrationOwner != "" {
+					require.True(t, policy.permissive, relation)
 					require.Equal(t, "webhook_subscriptions", relation)
 					require.Equal(t, "r", policy.command, relation)
 					require.Equal(t, []string{"(CURRENT_USER = '" + policy.migrationOwner + "'::name)"}, policy.expressions, relation)
 					continue
 				}
 				if policy.backgroundRole != "" {
+					require.True(t, policy.permissive, relation)
 					require.Equal(t, "*", policy.command, relation)
 					require.Equal(t, []string{"(CURRENT_USER = '" + policy.backgroundRole + "'::name)", "(CURRENT_USER = '" + policy.backgroundRole + "'::name)"}, policy.expressions, relation)
 					continue
+				}
+				if relation == "codefly_effect_receipts" && policy.name == "audit_delivery_retention_receipts" {
+					// The exact command, role and predicate were checked above;
+					// this policy grants no request connection any rows.
+					continue
+				}
+				if !policy.permissive {
+					continue // Restrictive policies can only narrow existing grants.
 				}
 				requestPolicies = append(requestPolicies, policy)
 			}
@@ -881,6 +906,9 @@ func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
 }
 
 type livePolicy struct {
+	name           string
+	permissive     bool
+	roles          []string
 	backgroundRole string
 	migrationOwner string
 	command        string
@@ -890,7 +918,10 @@ type livePolicy struct {
 func livePolicies(ctx context.Context, t *testing.T, tx pgx.Tx, relation string) []livePolicy {
 	t.Helper()
 	rows, err := tx.Query(ctx, `
-		SELECT policy.polcmd::text,
+		SELECT policy.polname, policy.polpermissive,
+		       ARRAY(SELECT CASE WHEN role_oid = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(role_oid)::text END
+		             FROM unnest(policy.polroles) AS role_oid ORDER BY 1),
+		       policy.polcmd::text,
 		       COALESCE(pg_get_expr(policy.polqual, policy.polrelid), ''),
 		       COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), ''),
  CASE WHEN cardinality(policy.polroles)=1 AND policy.polname=role.rolname || '_explicit_rows'
@@ -910,8 +941,9 @@ func livePolicies(ctx context.Context, t *testing.T, tx pgx.Tx, relation string)
 	var policies []livePolicy
 	for rows.Next() {
 		var command, using, check, backgroundRole, migrationOwner string
-		require.NoError(t, rows.Scan(&command, &using, &check, &backgroundRole, &migrationOwner), relation)
-		policy := livePolicy{command: command, backgroundRole: backgroundRole, migrationOwner: migrationOwner}
+		var policy livePolicy
+		require.NoError(t, rows.Scan(&policy.name, &policy.permissive, &policy.roles, &command, &using, &check, &backgroundRole, &migrationOwner), relation)
+		policy.command, policy.backgroundRole, policy.migrationOwner = command, backgroundRole, migrationOwner
 		for _, expression := range []string{using, check} {
 			if expression != "" {
 				policy.expressions = append(policy.expressions, expression)

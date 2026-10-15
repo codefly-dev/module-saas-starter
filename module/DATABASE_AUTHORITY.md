@@ -538,6 +538,14 @@ a live database. Migration `65_role_permissions_rls` closes the former
 child-table gap: `role_permissions` reads follow parent-role visibility, while
 inserts may target only a custom role owned by the current tenant.
 
+The published scope column describes the permissive policies that grant request
+traffic access. Every such predicate is checked separately: another permissive
+policy cannot grant unscoped access beside the scoped one. Restrictive policies
+are combined with those grants using AND and can only remove access; they need
+not repeat the tenant comparison. The live checks separately pin exact
+control-plane grants and the audit-retention filter's role, command, restrictive
+mode, audit type and 720-hour minimum age.
+
 Callable-source declarations, consumed OAuth states and operation attempts grant
 no table privileges to `app_control_plane`. Their reads, writes and retention use
 the tenant transaction. Effect receipts give the control plane SELECT only,
