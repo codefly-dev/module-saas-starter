@@ -446,6 +446,72 @@ func TestKeyCustodyIsRequiredOutsideLocal(t *testing.T) {
 	require.NoError(t, requireKeyCustody(keyservice.BackendVault, false))
 }
 
+// A WITHDRAWN GROUP IS NOT A MISSING VALUE. The module agent declares the
+// `vault` group while a Vault is selected and withdraws it with the selection,
+// so when the selection and the composition disagree every key in the group
+// reads empty at once. The refusal has to name the group and the selection that
+// requires it: before this check the first key read answered for the whole
+// group, and VAULT_KEY_CUSTODY's refusal sent the operator to put a seeding
+// command into a group that was not there.
+//
+// The mirror case is the point of the whole change: on the cloud key service
+// the same emptiness is correct — vault group not declared, key service backend
+// is kms — and nothing must refuse.
+func TestAWithdrawnVaultGroupIsRefusedByItsOwnReason(t *testing.T) {
+	clearVaultBinding(t)
+
+	vault := keyservice.Selected{Backend: keyservice.BackendVault, SigningBackend: keyservice.BackendVault}
+	err := requireVaultGroup(vault, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "`vault` configuration group carries no values")
+	require.Contains(t, err.Error(), "KEY_SERVICE_BACKEND")
+	require.Contains(t, err.Error(), "module.codefly.yaml")
+	require.NotContains(t, err.Error(), "VAULT_KEY_CUSTODY is required",
+		"the group's absence was reported as one missing key")
+
+	require.NoError(t, requireVaultGroup(vault, true), "a local run reaches the composed vault over loopback")
+
+	// Either family selecting Vault needs the binding: the envelope key is
+	// sealed through Transit, the signing key read from KV.
+	require.Error(t, requireVaultGroup(keyservice.Selected{
+		Backend: keyservice.BackendKMS, SigningBackend: keyservice.BackendVault}, false))
+	require.Error(t, requireVaultGroup(keyservice.Selected{
+		Backend: keyservice.BackendVault, SigningBackend: keyservice.BackendKMSWrapped}, false))
+
+	// The cloud key service everywhere: no Vault is reached, so the group's
+	// absence is the selection working rather than a deployment to refuse.
+	require.NoError(t, requireVaultGroup(keyservice.Selected{
+		Backend: keyservice.BackendKMS, SigningBackend: keyservice.BackendKMSWrapped}, false))
+
+	// A delivered group clears it on the shipped default alone, which is what a
+	// local composition carries and what every deployed one overrides.
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_AUTH_METHOD", "approle")
+	require.NoError(t, requireVaultGroup(vault, false))
+}
+
+// And through the real boot path, not the helper alone: a refusal nobody calls
+// is decorative. requireStartupConfiguration is what main runs, and the group's
+// absence has to answer there BEFORE the custody requirement, which is the
+// wrong subject for it.
+func TestStartupRefusesAHostedBootWithAWithdrawnVaultGroup(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
+	keyServiceBackend(t, "vault")
+	keyCustody(t, "platform-cli seed-identity example-cell")
+
+	err := requireStartupConfiguration(t.Context(), false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "`vault` configuration group carries no values")
+
+	// The positive control: the same boot with the group delivered gets past
+	// this check, so the assertion above is about the group and not about a
+	// hosted startup refusing for any reason at all.
+	vaultGroupDelivered(t)
+	if err := requireStartupConfiguration(t.Context(), false); err != nil {
+		require.NotContains(t, err.Error(), "`vault` configuration group carries no values")
+	}
+}
+
 // The cell's own seeding command reaches the operator through the `vault`
 // group, because this module names nothing above it. The value is operator free
 // text that lands in a log line, so it is collapsed to one line and bounded —
@@ -550,6 +616,18 @@ func keyServiceBackend(t *testing.T, backend string) {
 	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__KEY_SERVICE__KEY_SERVICE_BACKEND", backend)
 }
 
+// vaultGroupDelivered puts the `vault` group back on both carriers after
+// clearVaultBinding emptied it. A hosted boot on the vault backend now refuses
+// an EMPTY group before it looks at any single key in it
+// (requireVaultGroup/TestAWithdrawnVaultGroupIsRefusedByItsOwnReason), so a
+// test about one of those keys has to deliver the group or it passes on the
+// group's refusal instead of its own subject.
+func vaultGroupDelivered(t *testing.T) {
+	t.Helper()
+	t.Setenv("VAULT_AUTH_METHOD", "approle")
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_AUTH_METHOD", "approle")
+}
+
 // A hosted boot that names no key service refuses by name. The two backends have
 // opposite custody models — one runs a stateful secrets store the cell unseals
 // and credentials, the other uses non-exportable cloud keys and the workload's
@@ -605,6 +683,9 @@ func TestStartupRefusesAHostedBootWithNoCustodyCommand(t *testing.T) {
 	// backend is selected here: otherwise the earlier guard fires and this test
 	// passes without ever reaching the custody requirement it is about.
 	keyServiceBackend(t, "vault")
+	// Same reason, one guard later: an empty `vault` group is refused as a
+	// withdrawn group before any key in it is read.
+	vaultGroupDelivered(t)
 
 	_, err := doWork(context.Background())
 	require.Error(t, err)

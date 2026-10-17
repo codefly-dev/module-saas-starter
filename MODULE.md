@@ -741,6 +741,29 @@ expected omission, not a missing base file — module-level files are always
 enforced. So absent base files for a service you never composed are normal;
 missing base files for a service you DID compose are a real failure.
 
+**Composing no Vault** is the common case of this, because a cell whose keys
+live in its cloud key-management service reads none:
+`KEY_SERVICE_BACKEND=kms` with `KEY_SERVICE_SIGNING_BACKEND=kms-wrapped` opens
+no Vault connection at all. Leave `vault` out of `services:` and the service
+tree is not copied, accounts' `vault` service-dependency is pruned, no
+environment schedules one, and — because leaving it out is how a composition
+*selects* the cloud key service today — the **`vault` configuration group is
+withdrawn with the selection**, so nothing is left answering for the address and
+AppRole credential of a Vault that is not there. The group follows the backend
+selection rather than the service's presence: a cell whose Vault is the cell's
+own keeps the group though this module renders no Vault at all.
+
+A composition that wants the Vault in its local environment but not on its cell
+needs the finer grain, `key-service: vault | kms` per environment. That is
+implemented in the module agent and **not declarable yet**: the environment
+block's schema is the CLI's, parsed strictly with no extension seam. Neither
+route reaches a composition that **pins a published release** of this module,
+which is the shape a hosted cell actually deploys: both are declarations in the
+consumer's own manifest, and a pinned consumer still composes the `vault`
+service until it edits that manifest. See `module/deployment/README.md`,
+"Composing no Vault", for both routes, the refusals, what the CLI still owes,
+and what a pinned composition can and cannot do today.
+
 For the frontend product-plugin overlay specifically — package layout,
 generated projections, and gates — see
 [docs/frontend-plugin-installation.md](./module/docs/frontend-plugin-installation.md).

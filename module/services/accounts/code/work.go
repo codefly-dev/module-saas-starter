@@ -2694,6 +2694,11 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err != nil {
 		return err
 	}
+	// Before requireKeyCustody, so an absent GROUP is reported as itself rather
+	// than as the first key read out of it.
+	if err := requireVaultGroup(selection, isLocal); err != nil {
+		return err
+	}
 	if err := requireKeyCustody(selection.SigningBackend, isLocal); err != nil {
 		return err
 	}
@@ -2815,6 +2820,46 @@ func requireApplicationBaseURL(isLocal bool) error {
 			"what binds an OAuth redirect, the authenticator relying-party origin and every emailed link")
 	}
 	return nil
+}
+
+// requireVaultGroup refuses to start when the key service this deployment
+// selected is REACHED THROUGH the `vault` configuration group and that group
+// carries nothing.
+//
+// WHY IT IS A REFUSAL OF ITS OWN, AND FIRST. Whether the group is declared at
+// all is a fact about the composition rather than a missing value: the module
+// agent declares it while a Vault is selected and withdraws it with the
+// selection (gitops.go, regenerateServiceManifests), so when it is gone every
+// key in it reads empty at once. Without this check the first key anything
+// happens to read answers for the whole group — VAULT_KEY_CUSTODY below, whose
+// refusal tells an operator to put a seeding command into a group that is not
+// there — and the deployment is sent to fix the wrong thing. On the cloud key
+// service the same emptiness is correct, and its reason is the selection:
+// `vault group not declared: key service backend is kms`.
+//
+// Both families are asked, because either one selecting Vault needs the
+// binding: KEY_SERVICE_BACKEND=vault seals stored credentials through Transit,
+// and KEY_SERVICE_SIGNING_BACKEND=vault reads the signing key from KV.
+//
+// The tell is the group's own non-secret keys, not VAULT_ADDR alone:
+// VAULT_AUTH_METHOD has a shipped default (`token`), so a delivered group is
+// never entirely empty, while a withdrawn one has no key at all. A group that
+// is declared and carries nothing is the same refusal for the same reason,
+// which is why the message says "carries no values" rather than asserting
+// which of the two happened.
+func requireVaultGroup(selection keyservice.Selected, isLocal bool) error {
+	if isLocal {
+		return nil
+	}
+	if selection.Backend != keyservice.BackendVault && selection.SigningBackend != keyservice.BackendVault {
+		return nil
+	}
+	if strings.TrimSpace(workspaceEnv("vault", "VAULT_AUTH_METHOD")) != "" ||
+		strings.TrimSpace(workspaceEnv("vault", "VAULT_ADDR")) != "" {
+		return nil
+	}
+	return fmt.Errorf("vault: the `vault` configuration group carries no values, but the key service backend is %s/%s=vault: VAULT_ADDR, VAULT_AUTH_METHOD, VAULT_APPROLE_MOUNT and the AppRole credential in its secret half are how that backend is reached, and a composition declares the group only while a Vault is selected — so either select %s=kms with %s=kms-wrapped in the `key-service` configuration group, or compose the `vault` service in this composition's module.codefly.yaml `services:` (declaring it a managed service of kind cell-vault when the cell runs its own Vault) so the group is delivered with it",
+		keyservice.BackendKey, keyservice.SigningBackendKey, keyservice.BackendKey, keyservice.SigningBackendKey)
 }
 
 // requireKeyCustody refuses to start outside the local environment without the

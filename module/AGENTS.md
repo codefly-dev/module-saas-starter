@@ -191,3 +191,51 @@ accepts or a default that side can no longer boot on.
 Every **other** group still ships a working default that a deployed runtime will
 use: an unprovisioned optional group is not a denied one. Where that matters for a
 credential, the loader's own "is this required" check is the place to say so.
+
+**A key the group does not declare is inert, which is worse than absent.** A
+composition supplies values for declared keys; it cannot declare one. So a
+`workspaceEnv(group, KEY)` whose KEY no `configurations/local/<group>.env`
+assigns returns nothing on every deployment, while reading as wired — the
+operator sets the value, the platform carries none, and nothing errors.
+`security`/`TRUSTED_PROXY_CIDRS` was that for as long as accounts had per-IP
+rate limiting. Both halves are gated in
+`module/tools/workspace_configuration_dependencies_test.go`: every group a
+service reads is declared in its manifest, and every literal key it reads is
+declared in that group's default. [configurations/README.md](./configurations/README.md)
+carries the rule and the few pairs that knowingly stay inert.
+
+**A group is required by the BACKEND SELECTION, not by a workload's presence.**
+accounts declares the `vault` group to *reach* the vault key service — an
+address, an auth method, an AppRole mount, and the credential in its secret
+half. What makes that binding necessary is the backend the environment selected
+(`KEY_SERVICE_BACKEND` at runtime, `key-service:` on the environment at render
+time), so that is what the module agent asks before declaring it: a composition
+whose every environment selects the cell's cloud key service stops answering for
+`VAULT_AUTH_METHOD` and the AppRole pair of a Vault it does not use, and one
+where any environment selects the vault backend keeps the group.
+
+Keying it off the `vault` service's presence gave the same answer for this
+module — the only thing that service is for IS that backend — and the wrong one
+as soon as the two part: a cell whose Vault is the **cell's**, composed here as a
+managed `cell-vault`, renders no Vault of this module's and needs every key in
+the group. The selection is resolved once, in `gitops.go`'s `resolveKeyService`,
+and read by both the manifest edit and the overlay render, so the group a service
+declares and the workloads an environment schedules cannot disagree.
+
+The grain is the composition, not the environment: a group is declared in one
+service manifest for the whole composition, so it is withdrawn only when **no**
+environment selects the backend it reaches. A composition that runs this
+module's Vault locally and its cell's cloud key service in the cell therefore
+keeps the group — the local run needs it — and accounts answers for the mismatch
+at boot instead: with a vault backend selected and the group carrying nothing,
+it refuses naming the group and the selection rather than blaming the first key
+read out of it (`requireVaultGroup`).
+
+Whether a Vault is composed **per environment** is a declaration in the
+composing workspace's manifest rather than here — `key-service: vault | kms`,
+where `kms` composes no Vault at all. The module agent implements it; the CLI
+does not yet parse the field, so the live route for a composition with no Vault
+anywhere is the service inventory, which the agent reads as the same selection.
+Neither route reaches a composition that pins a published release of this
+module — see [deployment/README.md](./deployment/README.md), "Composing no
+Vault".

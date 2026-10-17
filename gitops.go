@@ -45,10 +45,17 @@ type workspaceManifest struct {
 }
 
 type environmentConfig struct {
-	Name            string                          `yaml:"name"`
-	Namespace       string                          `yaml:"namespace"`
-	Cluster         environmentCluster              `yaml:"cluster"`
-	Ingress         []environmentIngressRoute       `yaml:"ingress,omitempty"`
+	Name      string                    `yaml:"name"`
+	Namespace string                    `yaml:"namespace"`
+	Cluster   environmentCluster        `yaml:"cluster"`
+	Ingress   []environmentIngressRoute `yaml:"ingress,omitempty"`
+	// KeyService is which key service holds this environment's keys, in the
+	// same vocabulary the `key-service` configuration group's
+	// KEY_SERVICE_BACKEND uses. It decides whether this module composes a Vault
+	// here at all. Unstated means `vault`; resolveKeyService says why that is a
+	// default rather than a refusal, and what has to change for it to become
+	// one.
+	KeyService      string                          `yaml:"key-service,omitempty"`
 	ManagedServices map[string]managedServiceConfig `yaml:"managed-services,omitempty"`
 }
 
@@ -210,6 +217,15 @@ type environmentPlan struct {
 	ingress     []ingressRoutePlan
 	handoffs    []managedServiceHandoff
 	managed     map[string]managedServiceConfig
+	// keyService is the resolved `key-service` selection for this environment.
+	keyService string
+	// withdrawn holds the services this environment's key-service selection
+	// takes OUT of the composition: not an in-cluster workload, and not a
+	// managed dependency either — nothing reaches them, so every edge to one is
+	// dropped rather than needing a handoff. It is a third state beside
+	// in-cluster and managed, and it exists because "the keys are in the cell's
+	// cloud key service" names nothing for a handoff to point at.
+	withdrawn map[string]struct{}
 }
 
 type ingressRoutePlan struct {
@@ -678,13 +694,22 @@ func planEnvironment(
 		cluster:     cluster,
 		managed:     make(map[string]managedServiceConfig),
 	}
+	keyService, withdrawn, err := resolveKeyService(environment, services)
+	if err != nil {
+		return environmentPlan{}, err
+	}
+	plan.keyService, plan.withdrawn = keyService, withdrawn
 	if err := validateManagedServices(environment, services, topology, managedCapable, &plan); err != nil {
 		return environmentPlan{}, err
 	}
 	for _, service := range services {
-		if _, managed := plan.managed[service]; !managed {
-			plan.services = append(plan.services, service)
+		if _, managed := plan.managed[service]; managed {
+			continue
 		}
+		if _, gone := plan.withdrawn[service]; gone {
+			continue
+		}
+		plan.services = append(plan.services, service)
 	}
 	slices.Sort(plan.services)
 	if err := validateIngressRoutes(environment, topology, &plan); err != nil {
@@ -806,6 +831,16 @@ func validateManagedServices(
 		if !exists {
 			return fmt.Errorf("environment %q declares unexpected managed service %q", environment.Name, service)
 		}
+		// A withdrawn service is not an in-cluster workload AND not something a
+		// handoff can point at: the selection that withdrew it says the keys are
+		// in the cell's cloud key service, so there is no Vault to name an
+		// ExternalName for. Accepting both would render reach to an address
+		// nothing dials and leave the reader unable to say which declaration won.
+		if _, gone := plan.withdrawn[service]; gone {
+			return fmt.Errorf(
+				"environment %q declares both key-service: %s and a managed service %q: the selection means the keys are in the cell's cloud key-management service, so there is no Vault for a handoff to point at — declare key-service: %s with the %q handoff, or key-service: %s with neither",
+				environment.Name, plan.keyService, service, keyServiceVault, managedKindCellVault, keyServiceKMS)
+		}
 		switch config.Kind {
 		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible", "cloud-sql-postgres", managedKindCellVault:
 		default:
@@ -870,6 +905,179 @@ func validateManagedServices(
 		return strings.Compare(left.Service, right.Service)
 	})
 	return validateManagedDependencyCIDRs(environment.Name, topology, plan.managed)
+}
+
+// The key services an environment may select, spelled exactly as
+// KEY_SERVICE_BACKEND spells them in the `key-service` configuration group
+// (module/configurations/local/key-service.env), so one word means one thing on
+// both sides of the deployment.
+const (
+	keyServiceVault = "vault"
+	keyServiceKMS   = "kms"
+)
+
+// keyServiceVaultService is the service this module composes to BE the `vault`
+// key service. It is the only service a key-service selection withdraws, and it
+// is named here rather than discovered because the relationship runs the other
+// way: the service exists to serve that selection.
+const keyServiceVaultService = "vault"
+
+// keyServiceGroup is the workspace-configuration group the `vault` key service
+// is REACHED through: the address, the auth method, the AppRole mount and, in
+// its secret half, the credential that uses them.
+//
+// It is named beside the service rather than derived from it because the two
+// are different facts about the same selection, and only one of them governs
+// the group. A group is required by the BACKEND an environment selected — it is
+// how a process reaches that backend — not by whether a workload of the same
+// name happens to be in the inventory. The two coincide for this module, which
+// is exactly why keying the group off the service read as correct while being
+// the wrong owner: a cell that selects the cloud key service and still composes
+// a Vault for something else would have kept a binding nothing uses, and a cell
+// that selects the vault backend from a Vault the CELL runs — composed here as
+// a managed cell-vault — must keep the group though no Vault of this module's
+// is ever rendered.
+const keyServiceGroup = "vault"
+
+// resolveKeyService answers, for one environment, which key service holds its
+// keys — and therefore whether this module composes a Vault here.
+//
+// WHY THIS IS A MANIFEST FACT AND NOT A CONFIGURATION READ. accounts selects its
+// backend at runtime from the `key-service` group, and on
+// KEY_SERVICE_BACKEND=kms with KEY_SERVICE_SIGNING_BACKEND=kms-wrapped it opens
+// no Vault connection at all (services/accounts/code/pkg/keyservice/load.go:
+// the Vault binding is built only by the `vault` sealer, and the wrapped signing
+// key is unwrapped from configuration). The INVENTORY, though, is decided here,
+// before any process exists: what is rendered, scheduled and given a volume.
+// Those two planes had no declaration in common, so a cell whose keys live in
+// Cloud KMS still got a Vault StatefulSet — rendered, scheduled, refusing to
+// start without the auto-unseal seal it is forbidden to hold, and crash-looping
+// as a permanently degraded workload that nothing reads.
+//
+// The renderer could have read the group's .env instead. It must not: a group's
+// values are the configuration plane's to deliver per environment, the renderer
+// has never read one, and a file that may legitimately be absent would make the
+// render fall back to composing a Vault — which is exactly the failure. So the
+// selection is DECLARED on the environment, where the inventory is decided.
+//
+// AN UNSTATED SELECTION IS ANSWERED BY THE INVENTORY, which is the other
+// declaration a composition makes about this module's Vault and the only one it
+// can write today: composing the `vault` service selects the vault backend,
+// composing none selects the cell's cloud key service. That keeps the inventory
+// a SOURCE of the selection while the selection alone decides what follows from
+// it — which workloads are rendered, which edges exist, and which configuration
+// group is declared. On a deployed environment an unstated selection should be
+// refused outright, exactly as `keyservice.selectedBackend` refuses the same
+// unstated fact at boot. It is not refused yet, and the reason is a tooling gap
+// rather than a judgement:
+//
+// THE ENVIRONMENT BLOCK'S SCHEMA IS NOT THIS MODULE'S. `workspace.codefly.yaml`
+// is parsed by the CLI's own `pkg/environments.Environment`, strictly and
+// recursively, and that type has no extension seam — core's
+// `resources.Environment` has an inline `Extensions map[string]YAMLValue` for
+// host-owned keys, but the CLI does not use it here. So until the CLI accepts
+// `key-service`, a composition cannot write the line, and refusing an unstated
+// selection would refuse every composition instead of the one mistake it is
+// aimed at. Verified against codefly 0.1.181: the field is rejected with
+// "field key-service not found in type environments.Environment", and so are
+// the `auth-mode` and `egress-namespace` keys this module's own cell-vault
+// handoff already documents.
+//
+// Making it required is therefore one line here plus the CLI's field; issue
+// #1128 carries that. Everything else below is live now: a composition that
+// composes no `vault` service at all selects the cloud key service by saying
+// so in the inventory, which the CLI does parse, and the selection withdraws
+// the workload and the `vault` configuration group with it.
+//
+// A local environment composes this module's own Vault, which is what `codefly
+// run service --fixture dev-admin` reaches over loopback with a token, so the
+// default is right there in any case.
+func resolveKeyService(
+	environment *environmentConfig,
+	services []string,
+) (string, map[string]struct{}, error) {
+	// Whether this composition has a Vault AT ALL. A cell that runs its own
+	// declares `vault` as a managed service of kind cell-vault, which
+	// validateManagedServices requires to be in the inventory too, so one
+	// question answers both shapes.
+	composed := slices.Contains(services, keyServiceVaultService)
+	withdrawn := make(map[string]struct{})
+	switch stated := strings.TrimSpace(environment.KeyService); stated {
+	case "":
+		// UNSTATED: the inventory answers. A composition that composes a
+		// `vault` service has a Vault for this environment to use and no other
+		// key service named, which is the selection this module had before the
+		// field existed; one that composes none has said the keys are elsewhere
+		// — it is the only half of this selection a composition can write today
+		// — and there is nothing here to withdraw.
+		if composed {
+			return keyServiceVault, withdrawn, nil
+		}
+		return keyServiceKMS, withdrawn, nil
+	case keyServiceVault:
+		// STATED vault with no Vault to select is the contradiction an unstated
+		// selection cannot be read as: the environment names a key service this
+		// composition does not have, so accounts would be delivered the `vault`
+		// group's keys with nothing behind them.
+		if !composed {
+			return "", nil, fmt.Errorf(
+				"environment %q selects key-service: %s, but this composition composes no %q service: the %q configuration group is the vault backend's binding (VAULT_ADDR, VAULT_AUTH_METHOD, VAULT_APPROLE_MOUNT and the AppRole credential) and there would be nothing behind it — compose the %q service in module.codefly.yaml `services:`, declare it there as a managed service of kind %q when the cell runs its own, or select key-service: %s",
+				environment.Name, keyServiceVault, keyServiceVaultService, keyServiceGroup,
+				keyServiceVaultService, managedKindCellVault, keyServiceKMS)
+		}
+		return keyServiceVault, withdrawn, nil
+	case keyServiceKMS:
+		// Only a service this composition actually composes can be withdrawn: a
+		// consumer that already left `vault` out of its module.codefly.yaml has
+		// nothing here to take away.
+		if composed {
+			withdrawn[keyServiceVaultService] = struct{}{}
+		}
+		return keyServiceKMS, withdrawn, nil
+	default:
+		return "", nil, fmt.Errorf(
+			"environment %q key-service %q is not supported: it is %q or %q, the same two KEY_SERVICE_BACKEND takes in the `key-service` configuration group",
+			environment.Name, environment.KeyService, keyServiceVault, keyServiceKMS)
+	}
+}
+
+// compositionSelectsVault answers whether the vault key service is selected
+// ANYWHERE in this composition, which is the grain the `vault` configuration
+// group is declared at.
+//
+// WHY AN AGGREGATE. The selection is per environment; the group is declared
+// once, in a service manifest, for the whole composition. The two grains do not
+// match, so the only sound reduction is agreement: the group is withdrawn when
+// no environment selects the backend that needs it, and kept the moment one
+// does. A composition that runs this module's own Vault locally and the cell's
+// cloud key service in its cell therefore keeps the group — accounts needs
+// VAULT_ADDR and the token for the local run — and only a composition on the
+// cloud key service everywhere drops it. Making the drop per environment means
+// delivering a different set of groups per environment, which is the
+// configuration plane's to decide and not expressible in a manifest.
+func compositionSelectsVault(workspace *workspaceManifest, services []string) (bool, error) {
+	asked := false
+	for _, environment := range workspace.Environments {
+		if environment == nil {
+			// selectEnvironments refuses this when the bundle is rendered; here
+			// it is simply not an answer.
+			continue
+		}
+		asked = true
+		selection, _, err := resolveKeyService(environment, services)
+		if err != nil {
+			return false, err
+		}
+		if selection == keyServiceVault {
+			return true, nil
+		}
+	}
+	if !asked {
+		// Nothing to ask, so the unstated selection answers, exactly as it does
+		// for an environment that states none.
+		return slices.Contains(services, keyServiceVaultService), nil
+	}
+	return false, nil
 }
 
 // managedKindCellVault names a Vault the cell runs beside this module rather
@@ -2109,6 +2317,13 @@ func topologyNetworkPolicies(
 				dependencyIngressPolicy(namespace, labels, current.target, current.targetApp, current.caller, current.callerApp, current.ports),
 				dependencyEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.targetApp, current.ports),
 			)
+			continue
+		}
+		if _, gone := plan.withdrawn[current.target]; gone {
+			// The edge is withdrawn with its target, not left needing a handoff.
+			// Under key-service: kms the caller opens no connection at all — the
+			// `vault` sealer that builds one is never reached — so granting reach
+			// to anything would be authorizing a dial that does not happen.
 			continue
 		}
 		config, managed := plan.managed[current.target]
