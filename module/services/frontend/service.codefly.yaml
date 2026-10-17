@@ -15,6 +15,11 @@ service-dependencies:
         - name: rest
 workspace-configuration-dependencies:
     - abuse-protection
+    # APP_BASE_URL: this deployment's public origin. The frontend presents it to
+    # accounts as the verified origin that binds a sign-in redirect, and judges the
+    # solution proxy's same-origin requests against it. Undeclared, it is never
+    # delivered and a deployed build has no public origin at all.
+    - application
     - error-tracking
     - identity
     - internal-auth

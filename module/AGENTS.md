@@ -199,9 +199,12 @@ assigns returns nothing on every deployment, while reading as wired — the
 operator sets the value, the platform carries none, and nothing errors.
 `security`/`TRUSTED_PROXY_CIDRS` was that for as long as accounts had per-IP
 rate limiting. Both halves are gated in
-`module/tools/workspace_configuration_dependencies_test.go`: every group a
-service reads is declared in its manifest, and every literal key it reads is
-declared in that group's default. [configurations/README.md](./configurations/README.md)
+`module/tools/workspace_configuration_dependencies_test.go`, over every
+service's Go and TypeScript source: every group a service reads is declared in
+its manifest, and every literal key it reads is declared in that group's
+default. An undeclared GROUP is the same failure one level up — the frontend
+read `application`/`APP_BASE_URL` undeclared and presented its cluster-internal
+address to accounts as its public origin. [configurations/README.md](./configurations/README.md)
 carries the rule and the few pairs that knowingly stay inert.
 
 **A group is required by the BACKEND SELECTION, not by a workload's presence.**

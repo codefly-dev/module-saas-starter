@@ -24,9 +24,41 @@ outstanding credential verifying.
 
 `module/tools/workspace_configuration_dependencies_test.go` holds both halves:
 every group a service reads is declared in its manifest, and every literal key
-it reads is declared in that group's default here. Its
+it reads is declared in that group's default here. It walks every service's
+Go and TypeScript source, so a service cannot pass by not being listed. Its
 `keysNoGroupCanDeclare` list names the few that stay inert and why; the list
 shrinks and never grows.
+
+The gate sees a read whose group is a literal at the accessor
+(`workspaceEnv`, `WorkspaceValue`/`WorkspaceSecret`, sdk-js's
+`getWorkspaceConfiguration`/`getWorkspaceSecret`/`getWorkspaceValue`, and the
+frontend's `read(group, key)` reader). A group named through a constant or a
+group-bound helper (`applicationEnv("KEY")`) is outside its sight: keep such a
+read beside its declaration, and prefer the literal spelling.
+
+## A group a service reads but does not declare is undelivered
+
+The same failure one level up: a group is delivered only to the services that
+declare it. The frontend read `application`/`APP_BASE_URL` without declaring
+`application`, so on a cell it never had the configured origin and presented its
+own cluster-internal address to accounts instead, which refused every sign-in
+with "invalid trusted public origin". The gate above now covers the frontend.
+
+## application
+
+The deployment's own public facts. Not a credential group: its blast radius is
+the three services below, all of which need the origin.
+
+| Key | Read by | Empty means |
+| --- | --- | --- |
+| `APP_BASE_URL` | accounts (links it mints, the OAuth issuer, the origin it compares a forwarded one with), auth-gateway (a solution's MCP protected-resource metadata and token audience), frontend (the verified public origin it presents to accounts and judges the solution proxy against) | local only: the frontend uses its loopback own endpoint and accounts trusts the forwarded origin. Outside local, accounts refuses to start and a deployed frontend refuses sign-in, naming the key |
+| `BOOTSTRAP_ADMIN_EMAIL` | accounts | no one-time bootstrap administrator |
+| `ORGANIZATION_CREATION` | accounts | `open`; `platform_admin` or `disabled` restrict it, anything else refuses the boot |
+
+A deployed frontend never stands its own endpoint in for `APP_BASE_URL` when
+that endpoint is loopback, cluster-internal (`*.svc`, `*.cluster.local`, a
+single-label name) or plain http: it logs what it found and that it expected
+this key, and refuses rather than presenting an origin accounts will refuse.
 
 ## security
 

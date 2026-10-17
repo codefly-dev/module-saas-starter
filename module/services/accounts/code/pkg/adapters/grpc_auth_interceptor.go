@@ -317,6 +317,9 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		var err error
 		ctx, err = auth.WithVerifiedPublicOrigin(ctx, forwardedPublicOrigin)
 		if err != nil {
+			// The reason names the forwarded and configured origins; the caller
+			// keeps the generic answer.
+			wool.Get(ctx).In("grpcPolicyInterceptor").Warn("trusted public origin refused", wool.ErrField(err))
 			return ctx, status.Error(codes.PermissionDenied, "invalid trusted public origin")
 		}
 	}

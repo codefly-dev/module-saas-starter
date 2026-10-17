@@ -262,6 +262,9 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 		var err error
 		ctx, err = auth.WithVerifiedPublicOrigin(ctx, forwardedPublicOrigin)
 		if err != nil {
+			// The reason names the forwarded and configured origins; the caller
+			// keeps the generic answer.
+			wool.Get(ctx).In("connectPolicyInterceptor").Warn("trusted public origin refused", wool.ErrField(err))
 			return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("invalid trusted public origin"))
 		}
 	}

@@ -78,8 +78,10 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		if oauthCode == nil || oauthCode.Code == "" || oauthCode.RedirectUri == "" || oauthCode.State == "" || oauthCode.CodeVerifier == "" {
 			return nil, w.Wrapf(auth.ErrInvalidOAuthRequest, "oauth code flow: required credential missing")
 		}
-		if s.validateOAuthRequest(ctx, req.Provider, oauthCode.RedirectUri) != nil {
-			return nil, w.Wrapf(auth.ErrInvalidOAuthRequest, "oauth code flow: provider or redirect rejected")
+		if err := s.validateOAuthRequest(ctx, req.Provider, oauthCode.RedirectUri); err != nil {
+			// The reason (which check, which values) reaches the refuser's log through
+			// authenticateStatusError; the caller still sees the generic answer.
+			return nil, w.Wrapf(err, "oauth code flow: provider or redirect rejected")
 		}
 		if s.oauthState == nil {
 			return nil, w.Wrapf(auth.ErrInvalidOAuthState, "oauth state signer not configured")
@@ -440,18 +442,21 @@ func (s *Service) SwitchOrganization(
 // request that never crossed the trusted frontend boundary carries no verified
 // origin and stays restricted to the static allowlist, which is empty unless an
 // operator deliberately configures IDENTITY_ALLOWED_REDIRECT_URIS.
+//
+// Every refusal wraps auth.ErrInvalidOAuthRequest, which is all a caller-facing
+// answer is chosen on. The wrapped text says which check failed and with which
+// values, so the refuser's log can tell a provider mismatch from a redirect
+// mismatch, and a request bound to a verified origin from one that reached
+// accounts with none.
 func (s *Service) validateOAuthRequest(ctx context.Context, provider, redirectURI string) error {
 	if s.oauthPolicy == nil {
-		return auth.ErrInvalidOAuthRequest
+		return fmt.Errorf("%w: no OAuth request policy is wired", auth.ErrInvalidOAuthRequest)
 	}
 	if publicOrigin, ok := auth.VerifiedPublicOrigin(ctx); ok {
-		if s.oauthPolicy.ValidateForPublicOrigin(provider, redirectURI, publicOrigin) != nil {
-			return auth.ErrInvalidOAuthRequest
-		}
-		return nil
+		return s.oauthPolicy.ValidateForPublicOrigin(provider, redirectURI, publicOrigin)
 	}
-	if s.oauthPolicy.Validate(provider, redirectURI) != nil {
-		return auth.ErrInvalidOAuthRequest
+	if err := s.oauthPolicy.Validate(provider, redirectURI); err != nil {
+		return fmt.Errorf("no verified public origin reached accounts (no trusted X-Codefly-Public-Origin), so the static allowlist decides: %w", err)
 	}
 	return nil
 }
