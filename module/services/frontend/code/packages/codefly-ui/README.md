@@ -128,6 +128,11 @@ solution measured where it had to reach past the kit.
 - **`<Banner tone>`.** `neutral` (the default) is the product speaking and keeps
   the original look; the status tones add a glyph each. `danger` is
   `role="alert"`, the rest `role="status"`.
+- **`<Banner>` without a `title`** is a one-sentence status about the region
+  beside it: `children` becomes the primary text, at the title's weight, and the
+  tone keeps its glyph. It is still a live region, announced when it appears —
+  so a hint that only describes a control belongs in `Field`'s `description`,
+  and one that describes a page in muted text, not in a banner.
 - **`<EmptyState reference>`.** "The source card above says where this stands"
   is a pointer, not an explanation (`description`) and not something to press
   (`children`).
