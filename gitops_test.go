@@ -2703,15 +2703,32 @@ func TestKMSKeyServiceWithdrawsTheVaultEdgeRatherThanGrantingReach(t *testing.T)
 	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{"network-policy.yaml", "istio-mtls.yaml"} {
-		data, err := os.ReadFile(filepath.Join(
-			moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays/gke/base", file))
-		if err != nil {
-			t.Fatal(err)
+	// The WHOLE overlay, not two named files: a renderer that later emits reach
+	// in a file this test did not know about would otherwise pass.
+	overlay := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "gke")
+	var scanned int
+	if err := filepath.Walk(overlay, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
 		}
-		if strings.Contains(string(data), "vault") {
-			t.Errorf("overlays/gke/base/%s still names vault, so reach was granted for a dial that does not happen:\n%s", file, data)
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
 		}
+		scanned++
+		relative, _ := filepath.Rel(overlay, path)
+		for index, line := range strings.Split(string(data), "\n") {
+			if strings.Contains(strings.ToLower(line), "vault") {
+				t.Errorf("overlays/gke/%s:%d names vault, so reach was granted for a dial that does not happen: %s",
+					filepath.ToSlash(relative), index+1, strings.TrimSpace(line))
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if scanned == 0 {
+		t.Fatalf("no files under %s, so this scan asserted nothing", overlay)
 	}
 }
 
