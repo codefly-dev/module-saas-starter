@@ -91,6 +91,35 @@ Outside the local environment an unselected backend **refuses to start, by
 name**. The two shapes have opposite custody models, so inheriting either by
 default would mean reaching a key service nobody chose.
 
+### The same selection decides what is deployed
+
+The group above is what the **process** reads. What is **deployed** is decided
+earlier, by the environment's own `key-service` declaration in the composing
+workspace's manifest (`module/deployment/README.md`, "The environment's key
+service"). Both halves use the same two words:
+
+| `key-service` on the environment | What this module composes | What the `key-service` group then selects |
+| --- | --- | --- |
+| `vault` | the `vault` service, or the cell's own through `managed-services.vault: {kind: cell-vault}` | `KEY_SERVICE_BACKEND=vault` |
+| `kms` | **no Vault at all** | `KEY_SERVICE_BACKEND=kms` with `KEY_SERVICE_SIGNING_BACKEND=kms-wrapped` |
+
+They are two declarations because they answer in two planes — a configuration
+value is delivered to a running process, and an inventory is rendered before one
+exists — and a module manifest cannot make the second a function of the first.
+Until this existed they had nothing in common, and a cell whose keys were in
+Cloud KMS still got a `vault` StatefulSet it never read: scheduled, refusing to
+start without the auto-unseal seal such a cell is forbidden to hold, and
+crash-looping. A contradiction between the two spellings — `kms` beside a
+`cell-vault` handoff — is now refused by name rather than resolved by
+precedence.
+
+The `key-service` line itself is not writable yet (the environment block's
+schema is the CLI's, and it has no extension seam), so a composition with no
+Vault in any environment states that by leaving `vault` out of its `services:`
+list, which withdraws the `vault` configuration group with it. Both routes,
+and what the CLI still owes, are in `module/deployment/README.md`, "Composing no
+Vault".
+
 ### The signing key's three homes
 
 | `KEY_SERVICE_SIGNING_BACKEND` | Where the key is | Secrets store | Key material in process |
@@ -100,7 +129,9 @@ default would mean reaching a key service nobody chose.
 | `kms` | inside Cloud KMS; every signature is a request | **none** | **no** |
 
 `kms-wrapped` is what lets a hosted cell run with **no secrets store at all**
-today. The wrapped value is a ciphertext carried as a configuration value, inert
+today — which is why `key-service: kms` on the environment composes no Vault
+rather than keeping one for the signing key alone. The wrapped value is a
+ciphertext carried as a configuration value, inert
 without the Cloud KMS key named in `KEY_SERVICE_KMS_SIGNING_WRAP_KEY` and the
 workload identity that reaches it — so nothing stored is a credential on its own,
 and there is no store to operate. What it does not give you is non-exportability

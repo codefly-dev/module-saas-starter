@@ -191,3 +191,29 @@ accepts or a default that side can no longer boot on.
 Every **other** group still ships a working default that a deployed runtime will
 use: an unprovisioned optional group is not a denied one. Where that matters for a
 credential, the loader's own "is this required" check is the place to say so.
+
+**A key the group does not declare is inert, which is worse than absent.** A
+composition supplies values for declared keys; it cannot declare one. So a
+`workspaceEnv(group, KEY)` whose KEY no `configurations/local/<group>.env`
+assigns returns nothing on every deployment, while reading as wired — the
+operator sets the value, the platform carries none, and nothing errors.
+`security`/`TRUSTED_PROXY_CIDRS` was that for as long as accounts had per-IP
+rate limiting. Both halves are gated in
+`module/tools/workspace_configuration_dependencies_test.go`: every group a
+service reads is declared in its manifest, and every literal key it reads is
+declared in that group's default. [configurations/README.md](./configurations/README.md)
+carries the rule and the few pairs that knowingly stay inert.
+
+**A service a composition does not compose takes its binding group with it.** The
+module agent already drops a `service-dependencies` entry naming an uncomposed
+service; it drops the `workspace-configuration-dependencies` entry of the same
+name with it, because that group *was* the binding. A composition with no `vault`
+service no longer answers for `VAULT_AUTH_METHOD` and the AppRole credential of
+a Vault that is not there.
+
+Whether a Vault is composed **per environment** is a different declaration, in
+the composing workspace's manifest rather than here —
+`key-service: vault | kms`, where `kms` composes no Vault at all. The module
+agent implements it; the CLI does not yet parse the field, so the live route for
+a composition with no Vault anywhere is the service inventory above. See
+[deployment/README.md](./deployment/README.md), "Composing no Vault".

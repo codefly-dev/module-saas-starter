@@ -741,6 +741,22 @@ expected omission, not a missing base file — module-level files are always
 enforced. So absent base files for a service you never composed are normal;
 missing base files for a service you DID compose are a real failure.
 
+**Composing no Vault** is the common case of this, because a cell whose keys
+live in its cloud key-management service reads none:
+`KEY_SERVICE_BACKEND=kms` with `KEY_SERVICE_SIGNING_BACKEND=kms-wrapped` opens
+no Vault connection at all. Leave `vault` out of `services:` and the service
+tree is not copied, accounts' `vault` service-dependency is pruned, no
+environment schedules one, and the **`vault` configuration group is withdrawn
+with the binding** — so nothing is left answering for the address and AppRole
+credential of a Vault that is not there.
+
+A composition that wants the Vault in its local environment but not on its cell
+needs the finer grain, `key-service: vault | kms` per environment. That is
+implemented in the module agent and **not declarable yet**: the environment
+block's schema is the CLI's, parsed strictly with no extension seam. See
+`module/deployment/README.md`, "Composing no Vault", for both routes, the
+refusals, and what the CLI still owes.
+
 For the frontend product-plugin overlay specifically — package layout,
 generated projections, and gates — see
 [docs/frontend-plugin-installation.md](./module/docs/frontend-plugin-installation.md).

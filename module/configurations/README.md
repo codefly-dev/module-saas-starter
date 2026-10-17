@@ -4,6 +4,41 @@ Each environment declares values in `<group>.env` and secrets in
 `<group>.secret.env`. Codefly delivers these to services declaring the group;
 consuming workspaces override a group rather than editing module-owned files.
 
+## A key a group does not declare is inert
+
+A composition can supply a value for a **declared** key. It cannot declare one.
+So a key a service reads and no group declares never reaches the process on any
+deployment — and the read returns nothing while the feature reads as wired.
+
+That failure is invisible exactly where it matters. Locally the value is usually
+absent anyway, or a stray process variable satisfies the fallback, so the service
+behaves. In a cell the operator sets the value, the platform carries nothing, the
+service keeps its default, and there is no error to find. `security`'s
+`TRUSTED_PROXY_CIDRS` was undeclared for as long as accounts had per-IP rate
+limiting, so every deployment attributed anonymous traffic to its proxy's own
+address and an operator could not change that. `internal-auth`'s
+`JWT_PREVIOUS_PUBLIC_KEYS` was undeclared while `../KEY_ROTATION.md` instructed
+operators to set it during a signing-key rotation — turning the one mechanism
+that makes such a rotation survivable into the thing that stops every
+outstanding credential verifying.
+
+`module/tools/workspace_configuration_dependencies_test.go` holds both halves:
+every group a service reads is declared in its manifest, and every literal key
+it reads is declared in that group's default here. Its
+`keysNoGroupCanDeclare` list names the few that stay inert and why; the list
+shrinks and never grows.
+
+## security
+
+Session, MFA and WebAuthn policy, plus three operator switches whose empty value
+is the shipped behaviour:
+
+| Key | Empty means | Set to |
+| --- | --- | --- |
+| `TRUSTED_PROXY_CIDRS` | no forwarding header is trusted, so every per-IP budget buckets on the peer — behind an ingress and a frontend hop, one bucket for the whole cell | the cell's ingress and frontend ranges, comma-separated exact IPs or CIDRs. A malformed entry fails the boot rather than trusting a spoofable header. Distinct from the identically named key in the `gateway` group, which is auth-gateway's own edge and which a deployed gateway refuses to start without |
+| `ACCOUNTS_REVOCATION_FAIL_OPEN` | a token whose revocation status cannot be read is denied — fail **closed** | `true`, only when fronting accounts directly with no auth-gateway, to keep the direct verify path serving through a revocation-store outage at the cost of a revoked token's remaining TTL |
+| `RBAC_CENTRAL_ENFORCEMENT` | `shadow`: request-time central RBAC admission classifies only | `enforce` to hard-deny. Any other value fails the boot, so a typo cannot leave enforcement off |
+
 ## datasource-oauth
 
 Accounts reads three JSON maps and one local-only list. This version supports

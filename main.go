@@ -408,9 +408,21 @@ type generatedServiceEndpointReference struct {
 
 // regenerateServiceManifests derives what a consumer composition changes about
 // a copied service manifest and nothing more: a dependency on a service the
-// consumer did not compose is dropped, and the frontend gains the cross-module
-// services its installed plugins reach. A manifest that needs neither stays
-// the authored bytes the base ships.
+// consumer did not compose is dropped — along with the workspace configuration
+// group that carried the binding to it — and the frontend gains the
+// cross-module services its installed plugins reach. A manifest that needs
+// neither stays the authored bytes the base ships.
+//
+// WHY THE GROUP GOES WITH THE DEPENDENCY. A service is delivered every group it
+// declares, whether it reads it or not, and a group's keys must be supplied for
+// the ones a composition does not want to leave empty. accounts declares the
+// `vault` group to reach the `vault` service: an address, an auth method, an
+// AppRole mount and a credential. A composition that composes no `vault`
+// service still had to answer for all of it — marking VAULT_AUTH_METHOD and
+// VAULT_APPROLE_* may-be-empty for a binding to a service that is not there.
+// The group carried the binding, so it is withdrawn with the binding, by the
+// one name both sides already share rather than by a list naming `vault`
+// anywhere in this file.
 func regenerateServiceManifests(moduleDir string, manifest moduleManifest) error {
 	declared := make(map[string]struct{}, len(manifest.Services))
 	for _, reference := range manifest.Services {
@@ -439,6 +451,7 @@ func regenerateServiceManifests(moduleDir string, manifest moduleManifest) error
 		root := document.Content[0]
 		changed := false
 		sources := "services/" + serviceDir + "/service.codefly.yaml"
+		dropped := map[string]struct{}{}
 		if dependencies := mappingValue(root, "service-dependencies"); dependencies != nil && dependencies.Kind == yaml.SequenceNode {
 			kept := dependencies.Content[:0]
 			for _, dependency := range dependencies.Content {
@@ -447,10 +460,25 @@ func regenerateServiceManifests(moduleDir string, manifest moduleManifest) error
 				external := module != nil && module.Value != "" && module.Value != manifest.Name
 				if external || name == nil || containsService(declared, name.Value) {
 					kept = append(kept, dependency)
+					continue
 				}
+				dropped[name.Value] = struct{}{}
 			}
 			if len(kept) != len(dependencies.Content) {
 				dependencies.Content = kept
+				changed = true
+			}
+		}
+		if groups := mappingValue(root, "workspace-configuration-dependencies"); len(dropped) > 0 &&
+			groups != nil && groups.Kind == yaml.SequenceNode {
+			kept := groups.Content[:0]
+			for _, group := range groups.Content {
+				if _, withdrawn := dropped[group.Value]; !withdrawn {
+					kept = append(kept, group)
+				}
+			}
+			if len(kept) != len(groups.Content) {
+				groups.Content = kept
 				changed = true
 			}
 		}

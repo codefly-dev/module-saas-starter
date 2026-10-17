@@ -112,6 +112,18 @@ composition admits through `internal-transport/mesh-protected=true`, and only
 for an in-cluster Service address. See
 [deployment/README.md](./deployment/README.md), "The cell's Vault".
 
+A dependency has a third possible answer, beside in-cluster and managed: it can
+be **withdrawn**, and then no policy is rendered for it in either direction. That
+is what an environment's `key-service: kms` does to `vault` — the keys are in the
+cell's cloud key-management service, accounts opens no Vault connection, and
+granting reach would authorize a dial that does not happen. It is a separate
+answer from a managed handoff because there is no address to name: a handoff
+renders an `ExternalName` Service, and a cell on cloud KMS has nothing to point
+it at. Until it existed, a dependency that was neither in-cluster nor managed
+failed generation outright, so the only renderable choice was to schedule a
+Vault — including on cells that read none. See
+[deployment/README.md](./deployment/README.md), "The environment's key service".
+
 ## Mesh security baseline
 
 Alongside the NetworkPolicy layer, every environment renders an Istio mesh
