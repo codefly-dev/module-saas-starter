@@ -111,6 +111,10 @@ func TestBeginOAuthRefusalNamesNoInternalDetail(t *testing.T) {
 	}
 	require.False(t, strings.Contains(message, "auth: "),
 		"the sentinel's own text is internal detail")
+	// The refusal's reason now names the failed check for the log; the caller's
+	// answer is unchanged and carries none of it.
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Equal(t, "provider or redirect_uri not allowed", message)
 }
 
 // A sign-out is acknowledged only when every revocation held. Reporting success

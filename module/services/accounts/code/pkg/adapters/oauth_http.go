@@ -101,6 +101,9 @@ func withTrustedPublicOrigin(r *http.Request) context.Context {
 	}
 	stamped, err := auth.WithVerifiedPublicOrigin(ctx, origin)
 	if err != nil {
+		// Proceeds unstamped, as an unverified request would; the refusal and
+		// both origins are logged so the operator can see why.
+		wool.Get(ctx).In("withTrustedPublicOrigin").Warn("trusted public origin refused", wool.ErrField(err))
 		return ctx
 	}
 	return stamped

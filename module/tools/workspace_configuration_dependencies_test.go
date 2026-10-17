@@ -27,14 +27,152 @@ import (
 // to learn whether the Vault hop is protected out of band, never declared it,
 // and refused to start in a cell whose operator had set the flag.
 
-// workspaceEnvRead matches the accessor accounts uses to read a group, e.g.
-// workspaceEnv("vault", "VAULT_ALLOW_INSECURE_HTTP").
-var workspaceEnvRead = regexp.MustCompile(`workspaceEnv\(\s*"([a-z0-9-]+)"`)
+// This is also the shape that cost the next one: the frontend read
+// `application`/APP_BASE_URL — the public origin it presents to accounts — and
+// never declared `application`, so on a cell it presented its own
+// cluster-internal address instead and every sign-in was refused. The gate then
+// covered accounts alone, so nothing saw it. It now discovers every service's
+// source tree, in each language a service here is written in, rather than
+// listing the services someone remembered to add.
 
-// servicesWithWorkspaceReads maps a service to the source tree searched for its
-// group reads. Add a service here when it starts reading groups by name.
-var servicesWithWorkspaceReads = map[string]string{
-	"accounts": "services/accounts/code",
+// readPatterns are the two spellings of a read in one source language: a read
+// whose GROUP is a literal, and the narrower read whose group AND key are both
+// literals.
+type readPatterns struct {
+	group *regexp.Regexp
+	key   *regexp.Regexp
+}
+
+// goReads matches the Go accessors: the services' workspaceEnv helper and the
+// SDK's WorkspaceValue / WorkspaceSecret / WorkspaceConfiguration, e.g.
+// workspaceEnv("vault", "VAULT_ALLOW_INSECURE_HTTP") or
+// codefly.For(ctx).WorkspaceValue("security", "ACCOUNTS_DATABASE_TRANSPORT").
+var goReadAccessor = `(?:workspaceEnv|\.Workspace(?:Value|Secret|Configuration))\(\s*"([a-z0-9-]+)"`
+
+var goReads = readPatterns{
+	group: regexp.MustCompile(goReadAccessor),
+	key:   regexp.MustCompile(goReadAccessor + `\s*,\s*"([A-Za-z0-9_]+)"\s*\)`),
+}
+
+// tsReads matches the TypeScript accessors: sdk-js's getWorkspaceConfiguration /
+// getWorkspaceSecret / getWorkspaceValue, the injectable runtime reader's
+// workspaceConfiguration / workspaceSecret, and the `read(group, key)`
+// WorkspaceReader the public runtime configuration is resolved through.
+var tsReadAccessor = `(?:getWorkspace(?:Configuration|Secret|Value)|workspace(?:Configuration|Secret|Value)|(?:^|[^.\w$])read)\(\s*"([a-z0-9-]+)"`
+
+var tsReads = readPatterns{
+	group: regexp.MustCompile(tsReadAccessor),
+	key:   regexp.MustCompile(tsReadAccessor + `\s*,\s*"([A-Za-z0-9_]+)"\s*\)`),
+}
+
+// sourcePatterns picks the patterns for a production source file, or nil for a
+// file that is not one (tests, stories, other languages).
+func sourcePatterns(path string) *readPatterns {
+	slashed := filepath.ToSlash(path)
+	switch {
+	case strings.HasSuffix(path, ".go"):
+		if strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		return &goReads
+	case strings.HasSuffix(path, ".ts"), strings.HasSuffix(path, ".tsx"),
+		strings.HasSuffix(path, ".mts"), strings.HasSuffix(path, ".mjs"):
+		for _, marker := range []string{".test.", ".spec.", ".stories.", "/__tests__/", "/test/", "/tests/", "/e2e/"} {
+			if strings.Contains(slashed, marker) {
+				return nil
+			}
+		}
+		if strings.HasSuffix(path, ".d.ts") {
+			return nil
+		}
+		return &tsReads
+	}
+	return nil
+}
+
+// skippedSourceDirs are trees no service authors: installed dependencies and
+// build output.
+var skippedSourceDirs = map[string]bool{
+	"node_modules": true, ".next": true, "dist": true, "build": true, "coverage": true, "out": true,
+}
+
+// servicesKnownToReadGroups are services whose literal reads this gate must find.
+// If one of them yields none, an accessor was renamed and the gate is proving
+// nothing for it. A service that reads its group through a named constant
+// (policy-log, telemetry) is outside what a literal match can see, and declares
+// its one group beside that constant.
+var servicesKnownToReadGroups = []string{"accounts", "auth-gateway", "frontend"}
+
+// workspaceReads is one service's literal reads: group -> key -> the files that
+// read it. A read whose key is computed is recorded under the empty key.
+type workspaceReads map[string]map[string][]string
+
+func (reads workspaceReads) add(group, key, file string) {
+	if reads[group] == nil {
+		reads[group] = map[string][]string{}
+	}
+	reads[group][key] = append(reads[group][key], file)
+}
+
+func (reads workspaceReads) filesReading(group string) []string {
+	seen := map[string]bool{}
+	var files []string
+	for _, sources := range reads[group] {
+		for _, file := range sources {
+			if !seen[file] {
+				seen[file] = true
+				files = append(files, file)
+			}
+		}
+	}
+	sort.Strings(files)
+	return files
+}
+
+// servicesWithManifests (credential_group_scope_test.go) lists every service.
+
+// workspaceReadsOf walks a service's whole directory and returns its literal
+// group reads.
+func workspaceReadsOf(t *testing.T, service string) workspaceReads {
+	t.Helper()
+	moduleDir := findModuleDir(t)
+	reads := workspaceReads{}
+	base := filepath.Join(moduleDir, "services", service)
+	err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if skippedSourceDirs[info.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		patterns := sourcePatterns(path)
+		if patterns == nil {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		relative, relErr := filepath.Rel(moduleDir, path)
+		if relErr != nil {
+			relative = path
+		}
+		relative = filepath.ToSlash(relative)
+		for _, match := range patterns.group.FindAllStringSubmatch(string(data), -1) {
+			reads.add(match[1], "", relative)
+		}
+		for _, match := range patterns.key.FindAllStringSubmatch(string(data), -1) {
+			reads.add(match[1], match[2], relative)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk services/%s: %v", service, err)
+	}
+	return reads
 }
 
 func declaredWorkspaceGroups(t *testing.T, service string) map[string]bool {
@@ -53,43 +191,15 @@ func declaredWorkspaceGroups(t *testing.T, service string) map[string]bool {
 	return declared
 }
 
-func groupsReadInTree(t *testing.T, root string) map[string][]string {
-	t.Helper()
-	read := map[string][]string{}
-	base := filepath.Join(findModuleDir(t), filepath.FromSlash(root))
-	err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		for _, match := range workspaceEnvRead.FindAllStringSubmatch(string(data), -1) {
-			relative, relErr := filepath.Rel(findModuleDir(t), path)
-			if relErr != nil {
-				relative = path
-			}
-			read[match[1]] = append(read[match[1]], filepath.ToSlash(relative))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk %s: %v", root, err)
-	}
-	return read
-}
-
 func TestEveryWorkspaceGroupReadIsDeclared(t *testing.T) {
-	for service, root := range servicesWithWorkspaceReads {
-		declared := declaredWorkspaceGroups(t, service)
-		read := groupsReadInTree(t, root)
-		if len(read) == 0 {
-			t.Fatalf("no workspaceEnv reads found under %s; the accessor was renamed and this gate now proves nothing", root)
+	for _, service := range servicesKnownToReadGroups {
+		if len(workspaceReadsOf(t, service)) == 0 {
+			t.Fatalf("no literal workspace configuration reads found under services/%s; an accessor was renamed and this gate now proves nothing for it", service)
 		}
+	}
+	for _, service := range servicesWithManifests(t) {
+		declared := declaredWorkspaceGroups(t, service)
+		read := workspaceReadsOf(t, service)
 		names := make([]string, 0, len(read))
 		for group := range read {
 			names = append(names, group)
@@ -97,10 +207,9 @@ func TestEveryWorkspaceGroupReadIsDeclared(t *testing.T) {
 		sort.Strings(names)
 		for _, group := range names {
 			if !declared[group] {
-				sort.Strings(read[group])
 				t.Errorf("%s reads workspace configuration group %q in %s but does not declare it in services/%s/service.codefly.yaml; "+
 					"an undeclared group is never injected, so the read returns nothing in every deployed cell",
-					service, group, strings.Join(read[group], ", "), service)
+					service, group, strings.Join(read.filesReading(group), ", "), service)
 			}
 		}
 	}
@@ -112,7 +221,7 @@ func TestEveryWorkspaceGroupReadIsDeclared(t *testing.T) {
 // those carry a .secret.env whose values a composer must supply.
 func TestEveryDeclaredWorkspaceGroupShipsADefault(t *testing.T) {
 	moduleDir := findModuleDir(t)
-	for service := range servicesWithWorkspaceReads {
+	for _, service := range servicesWithManifests(t) {
 		for group := range declaredWorkspaceGroups(t, service) {
 			// CLI owns this native-run value and refuses authored defaults.
 			// Unlike module configuration, its ROOT is the run's actual digest
@@ -160,11 +269,10 @@ func TestEveryDeclaredWorkspaceGroupShipsADefault(t *testing.T) {
 // A key a composition cannot supply is INERT, and inert reads as wired. That is
 // the whole bug, and the names are mechanical, so this catches them.
 
-// workspaceEnvKeyRead matches a read whose group AND key are both literals,
+// The key patterns above match a read whose group AND key are both literals,
 // e.g. workspaceEnv("security", "TRUSTED_PROXY_CIDRS"). A read whose key is
-// computed (workspaceEnv("datasource-keys", key)) names nothing to check, and
-// is the caller's to keep declared.
-var workspaceEnvKeyRead = regexp.MustCompile(`workspaceEnv\(\s*"([a-z0-9-]+)"\s*,\s*"([A-Za-z0-9_]+)"\s*\)`)
+// computed (workspaceEnv("datasource-keys", key)) names nothing to check, and is
+// the caller's to keep declared.
 
 // keysNoGroupCanDeclare are the (group, key) pairs this gate knowingly does not
 // hold, each because declaring it today would change behaviour rather than
@@ -218,42 +326,10 @@ func declaredGroupKeys(t *testing.T, moduleDir, group string) map[string]bool {
 
 func TestEveryWorkspaceGroupKeyReadIsDeclared(t *testing.T) {
 	moduleDir := findModuleDir(t)
-	for service, root := range servicesWithWorkspaceReads {
-		base := filepath.Join(moduleDir, filepath.FromSlash(root))
-		// (group, key) -> the files that read it.
-		read := map[string]map[string][]string{}
-		err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			relative, relErr := filepath.Rel(moduleDir, path)
-			if relErr != nil {
-				relative = path
-			}
-			for _, match := range workspaceEnvKeyRead.FindAllStringSubmatch(string(data), -1) {
-				group, key := match[1], match[2]
-				if read[group] == nil {
-					read[group] = map[string][]string{}
-				}
-				read[group][key] = append(read[group][key], filepath.ToSlash(relative))
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walk %s: %v", root, err)
-		}
-		if len(read) == 0 {
-			t.Fatalf("no literal workspaceEnv(group, key) reads found under %s; the accessor was renamed and this gate now proves nothing", root)
-		}
-
-		exempted := map[string]bool{}
+	exempted := map[string]bool{}
+	literalKeyReads := 0
+	for _, service := range servicesWithManifests(t) {
+		read := workspaceReadsOf(t, service)
 		groups := make([]string, 0, len(read))
 		for group := range read {
 			groups = append(groups, group)
@@ -263,10 +339,13 @@ func TestEveryWorkspaceGroupKeyReadIsDeclared(t *testing.T) {
 			declared := declaredGroupKeys(t, moduleDir, group)
 			keys := make([]string, 0, len(read[group]))
 			for key := range read[group] {
-				keys = append(keys, key)
+				if key != "" {
+					keys = append(keys, key)
+				}
 			}
 			sort.Strings(keys)
 			for _, key := range keys {
+				literalKeyReads++
 				if declared[key] {
 					continue
 				}
@@ -284,19 +363,17 @@ func TestEveryWorkspaceGroupKeyReadIsDeclared(t *testing.T) {
 					service, pair, strings.Join(sources, ", "), group, group, key)
 			}
 		}
+	}
+	if literalKeyReads == 0 {
+		t.Fatalf("no literal workspace configuration (group, key) reads found in any service; an accessor was renamed and this gate now proves nothing")
+	}
 
-		// The list shrinks and never grows: an entry for a pair that is no
-		// longer read, or that is now declared, is a licence nothing needs.
-		for pair, why := range keysNoGroupCanDeclare {
-			if exempted[pair] {
-				continue
-			}
-			group, key, _ := strings.Cut(pair, "/")
-			if read[group] != nil && read[group][key] != nil {
-				continue
-			}
-			t.Errorf("keysNoGroupCanDeclare still exempts %s (%q), which %s no longer reads undeclared; delete the line",
-				pair, why, service)
+	// The list shrinks and never grows: an entry for a pair that no service
+	// still reads undeclared is a licence nothing needs.
+	for pair, why := range keysNoGroupCanDeclare {
+		if !exempted[pair] {
+			t.Errorf("keysNoGroupCanDeclare still exempts %s (%q), which no service reads undeclared any more; delete the line",
+				pair, why)
 		}
 	}
 }

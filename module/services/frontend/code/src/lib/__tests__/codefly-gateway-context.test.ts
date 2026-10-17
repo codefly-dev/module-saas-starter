@@ -80,6 +80,76 @@ describe("Codefly frontend gateway context", () => {
 		});
 	});
 
+	// The defect a hosted cell met: the frontend did not declare the
+	// `application` group, so APP_BASE_URL was never delivered, and the SDK's own
+	// endpoint on a cell is the workload's cluster-internal address. It was
+	// presented as the verified public origin and accounts refused it with nothing
+	// but "invalid trusted public origin". A deployed build now refuses it here and
+	// says what it got and what it expected.
+	it("refuses, by name, a cluster-internal own endpoint on a deployed build", () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			for (const address of [
+				"http://frontend.acme-staging.svc.cluster.local:8080",
+				"https://frontend.acme-staging.svc.cluster.local",
+				"https://frontend.acme-staging.svc",
+				"http://frontend:8080",
+			]) {
+				error.mockClear();
+				expect(
+					resolveCodeflyGatewayContext(
+						runtime({
+							endpoints: () => [{ ...loopbackEndpoint, address }],
+						}),
+					),
+				).toBeUndefined();
+				expect(error).toHaveBeenCalledWith(
+					expect.stringMatching(
+						/application\/APP_BASE_URL is not set.*cluster-internal address/,
+					),
+				);
+			}
+		} finally {
+			error.mockRestore();
+		}
+	});
+
+	it("refuses a plain-http public own endpoint on a deployed build", () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			expect(
+				resolveCodeflyGatewayContext(
+					runtime({
+						endpoints: () => [
+							{ ...loopbackEndpoint, address: "http://app.cell.example" },
+						],
+					}),
+				),
+			).toBeUndefined();
+			expect(error).toHaveBeenCalledWith(
+				expect.stringContaining("is not https"),
+			);
+		} finally {
+			error.mockRestore();
+		}
+	});
+
+	it("still prefers a delivered APP_BASE_URL over a cluster-internal own endpoint", () => {
+		expect(
+			resolveCodeflyGatewayContext(
+				runtime({
+					...configured("https://app.cell.example"),
+					endpoints: () => [
+						{
+							...loopbackEndpoint,
+							address: "http://frontend.acme-staging.svc.cluster.local:8080",
+						},
+					],
+				}),
+			)?.publicOrigin,
+		).toBe("https://app.cell.example");
+	});
+
 	it("keeps the loopback endpoint in local development, where the browser reaches it", () => {
 		expect(
 			resolveCodeflyGatewayContext(runtime({ isDeployedBuild: () => false })),
