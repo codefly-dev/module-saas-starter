@@ -93,6 +93,10 @@ default would mean reaching a key service nobody chose.
 
 ### The same selection decides what is deployed
 
+[ADR 0009](./docs/adr/0009-which-plane-decides-whether-a-vault-is-composed.md)
+records why the inventory is decided in the manifest plane rather than read from
+this group.
+
 The group above is what the **process** reads. What is **deployed** is decided
 earlier, by the environment's own `key-service` declaration in the composing
 workspace's manifest (`module/deployment/README.md`, "The environment's key

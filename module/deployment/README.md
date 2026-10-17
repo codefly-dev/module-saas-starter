@@ -442,6 +442,9 @@ it needs no line in either case.
 
 ### Why it is declared here and not read from the group
 
+The decision, its two rejected alternatives and what the CLI owes are recorded
+in [ADR 0009](../docs/adr/0009-which-plane-decides-whether-a-vault-is-composed.md).
+
 accounts selects its backend at runtime from the `key-service` group, and on
 `KEY_SERVICE_BACKEND=kms` with `KEY_SERVICE_SIGNING_BACKEND=kms-wrapped` it
 opens no Vault connection at all: the signing key is a ciphertext in
