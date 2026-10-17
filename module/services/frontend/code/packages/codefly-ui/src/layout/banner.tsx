@@ -13,7 +13,13 @@ import { Button } from "./button.js";
 import { cn } from "./cn.js";
 
 export interface BannerProps {
-	title: ReactNode;
+	/**
+	 * Omit when the banner says one thing. `children` is then that thing, at the
+	 * title's weight: a title invented for a single sentence only makes the
+	 * banner say it twice, and a lone remark set muted reads as an aside to a
+	 * headline that is not there.
+	 */
+	title?: ReactNode;
 	children?: ReactNode;
 	actions?: ReactNode;
 	/**
@@ -77,6 +83,8 @@ export function Banner({
 			)}
 		>
 			<div className="flex min-w-0 items-start gap-3">
+				{/* A titleless banner keeps its glyph: the kind is told by shape
+				    whether the banner has one line or two. */}
 				{glyph && (
 					<span
 						aria-hidden
@@ -87,13 +95,21 @@ export function Banner({
 					</span>
 				)}
 				<div className="min-w-0">
-					<div
-						data-slot="banner-title"
-						className="type-banner-title text-foreground"
-					>
-						{title}
-					</div>
-					{children && <div className="text-muted-foreground">{children}</div>}
+					{title == null ? (
+						<div className="type-banner-title text-foreground">{children}</div>
+					) : (
+						<>
+							<div
+								data-slot="banner-title"
+								className="type-banner-title text-foreground"
+							>
+								{title}
+							</div>
+							{children && (
+								<div className="text-muted-foreground">{children}</div>
+							)}
+						</>
+					)}
 				</div>
 			</div>
 			{(actions || onDismiss) && (
