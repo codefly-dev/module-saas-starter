@@ -1970,7 +1970,7 @@ func TestRegenerateServiceManifestsIncludesFrontendPluginDependencies(t *testing
 		serviceManifestFixture("frontend", "http", "http", "internal", 3000, "", "", ""))
 	manifest := moduleManifest{Name: "users", Services: []serviceReference{{Name: "frontend"}}}
 
-	if err := regenerateServiceManifests(moduleDir, manifest); err != nil {
+	if err := regenerateServiceManifests(moduleDir, manifest, true); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(moduleDir, "services", "frontend", "service.codefly.yaml"))
@@ -2138,8 +2138,7 @@ environments:
     cluster:
       kind: eks
     namespace: ` + moduleName + `-aws
-    key-service: vault
-    ingress:
+` + fixtureKeyService(services) + `    ingress:
       - name: product
         service: ` + entry + `
         endpoint: http
@@ -2382,6 +2381,19 @@ func writeDeployJobs(t *testing.T, moduleDir, block string) {
 	writeTestFile(t, filepath.Join(moduleDir, filepath.FromSlash(deployJobsManifestPath)), "version: v1\n"+block)
 }
 
+// fixtureKeyService states the hosted environment's key service when the
+// fixture composes a Vault to be it, and states nothing when it does not. A
+// fixture that named the vault backend with no `vault` service would be the
+// contradiction resolveKeyService refuses, so every composition-shaped test
+// that happens not to compose one would fail on that refusal instead of its
+// own subject.
+func fixtureKeyService(services []string) string {
+	if slices.Contains(services, "vault") {
+		return "    key-service: vault\n"
+	}
+	return ""
+}
+
 func replaceInServiceManifest(t *testing.T, moduleDir, service, old, new string) {
 	t.Helper()
 	file := filepath.Join(moduleDir, "services", service, "service.codefly.yaml")
@@ -2433,7 +2445,8 @@ func cellVaultFixture(t *testing.T, name string, vault managedServiceConfig) (st
 	root, moduleDir := writeModuleFixture(t, name, "identity", []string{"accounts", "vault"})
 	replaceInServiceManifest(t, moduleDir, "accounts",
 		"endpoints:\n",
-		"service-dependencies:\n  - name: vault\n    endpoints:\n      - name: http\nendpoints:\n")
+		"service-dependencies:\n  - name: vault\n    endpoints:\n      - name: http\n"+
+			"workspace-configuration-dependencies:\n  - identity\n  - key-service\n  - security\n  - vault\nendpoints:\n")
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
@@ -2655,7 +2668,8 @@ func keyServiceFixture(t *testing.T, name, selection string) (string, *workspace
 	root, moduleDir := writeModuleFixture(t, name, "identity", []string{"accounts", "vault"})
 	replaceInServiceManifest(t, moduleDir, "accounts",
 		"endpoints:\n",
-		"service-dependencies:\n  - name: vault\n    endpoints:\n      - name: http\nendpoints:\n")
+		"service-dependencies:\n  - name: vault\n    endpoints:\n      - name: http\n"+
+			"workspace-configuration-dependencies:\n  - identity\n  - key-service\n  - security\n  - vault\nendpoints:\n")
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
@@ -2814,6 +2828,9 @@ func TestAWholeCompositionWithNoVaultRendersEveryEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if workspace.Environments[1].KeyService != "" {
+		t.Fatalf("fixture states a key-service with no vault composed, so this proves nothing")
+	}
 	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
 		t.Fatal(err)
 	}
@@ -2867,13 +2884,62 @@ func TestAnUnsupportedKeyServiceIsRefusedByName(t *testing.T) {
 	}
 }
 
+// The `vault` configuration group follows the KEY-SERVICE SELECTION, and this
+// is the test that pins the owner: the inventory is identical in both halves —
+// accounts declares the group, `vault` is a composed service, the dependency
+// edge is there — and only the selection moves. A composition whose every
+// environment selects the cell's cloud key service stops answering for the
+// group; one where any environment selects the vault backend keeps it.
+//
+// Keying it off the service's presence produced the same answer for this
+// module, because the only thing its `vault` service is for IS that backend,
+// and the wrong answer as soon as the two part: a cell whose Vault is the
+// CELL's renders no Vault of this module's and needs every key in the group.
+func TestTheVaultGroupFollowsTheSelectionAndNotTheVaultService(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		keepLocal bool
+		declared  bool
+	}{
+		{name: "cloud key service everywhere", keepLocal: false, declared: false},
+		{name: "a local run still on the vault backend", keepLocal: true, declared: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			moduleDir, workspace := keyServiceFixture(t, "group-owner-"+strings.ReplaceAll(test.name, " ", "-"), keyServiceKMS)
+			if !test.keepLocal {
+				// The local environment is the one that selects the vault
+				// backend by stating nothing; a composition that deploys only
+				// its cell has no such environment.
+				workspace.Environments = workspace.Environments[1:]
+			}
+			if err := normalizeDeploymentMetadata(moduleDir, workspace); err != nil {
+				t.Fatal(err)
+			}
+			groups := composedGroups(t, moduleDir, "accounts")
+			if slices.Contains(groups, keyServiceGroup) != test.declared {
+				t.Errorf("accounts declares %v; wanted the %q group declared=%v", groups, keyServiceGroup, test.declared)
+			}
+			// Nothing else moves with it. The rule is "the group the selected
+			// key service is reached through", not "any group".
+			for _, kept := range []string{"identity", "key-service", "security"} {
+				if !slices.Contains(groups, kept) {
+					t.Errorf("the %s group was withdrawn with the vault binding: %v", kept, groups)
+				}
+			}
+		})
+	}
+}
+
 // A composition that composes no `vault` service must not be left answering for
-// the `vault` configuration group. A declared group is delivered whether it is
-// read or not, and its keys have to be supplied or explicitly marked
-// may-be-empty — so leaving it declared made a composition with no Vault answer
-// for VAULT_AUTH_METHOD and the AppRole credential of a binding to a service
-// that is not there. The group carried the binding, so it goes with it.
-func TestComposingWithoutAServiceWithdrawsTheGroupThatBoundIt(t *testing.T) {
+// the group either. A declared group is delivered whether it is read or not, and
+// its keys have to be supplied or explicitly marked may-be-empty — so leaving it
+// declared made a composition with no Vault answer for VAULT_AUTH_METHOD and the
+// AppRole credential of a Vault that is not there. Here the selection says so
+// through the inventory, which is the only half of it a composition can write
+// today, and the group goes with the selection.
+func TestComposingWithoutAVaultSelectsTheCloudKeyServiceAndWithdrawsItsGroup(t *testing.T) {
 	t.Parallel()
 	moduleDir := t.TempDir()
 	writeTestFile(t, filepath.Join(moduleDir, "services", "accounts", "service.codefly.yaml"),
@@ -2886,7 +2952,16 @@ func TestComposingWithoutAServiceWithdrawsTheGroupThatBoundIt(t *testing.T) {
 		serviceManifestFixture("store", "tcp", "tcp", "private", 5432, "", "", ""))
 
 	manifest := moduleManifest{Name: "identity", Services: []serviceReference{{Name: "accounts"}, {Name: "store"}}}
-	if err := regenerateServiceManifests(moduleDir, manifest); err != nil {
+	selected, err := compositionSelectsVault(&workspaceManifest{
+		Environments: []*environmentConfig{{Name: "local"}, {Name: "gke"}},
+	}, []string{"accounts", "store"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected {
+		t.Fatal("a composition with no vault service was read as selecting the vault backend")
+	}
+	if err := regenerateServiceManifests(moduleDir, manifest, selected); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(moduleDir, "services", "accounts", "service.codefly.yaml"))
@@ -2911,12 +2986,54 @@ func TestComposingWithoutAServiceWithdrawsTheGroupThatBoundIt(t *testing.T) {
 	if slices.Contains(parsed.WorkspaceConfigurationDependencies, "vault") {
 		t.Errorf("the vault configuration group survived a composition with no vault service:\n%s", composed)
 	}
-	// Only the withdrawn binding's group goes. A group that is not a service of
-	// this module, or one whose service IS composed, is untouched — the rule is
-	// "the group that bound the dropped dependency", not "any group".
 	for _, kept := range []string{"identity", "key-service", "security"} {
 		if !slices.Contains(parsed.WorkspaceConfigurationDependencies, kept) {
 			t.Errorf("the %s group was withdrawn with the vault binding:\n%s", kept, composed)
 		}
 	}
+}
+
+// An environment that STATES the vault backend while the composition composes
+// no Vault is the one contradiction an unstated selection cannot be read as.
+// Leaving it to mean `vault` would deliver accounts the group's keys with
+// nothing behind them; reading it as `kms` would silently overrule what the
+// environment wrote. So it is refused, and the refusal names both halves.
+func TestAnExplicitVaultKeyServiceWithNoVaultComposedIsRefused(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "vault-selected-none-composed", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[1].KeyService = keyServiceVault
+	err = generateDeploymentBundle(moduleDir, workspace)
+	if err == nil {
+		t.Fatal("an environment selected the vault backend with no Vault composed")
+	}
+	for _, required := range []string{
+		"selects key-service: vault",
+		"composes no \"vault\" service",
+		"\"vault\" configuration group",
+	} {
+		if !strings.Contains(err.Error(), required) {
+			t.Fatalf("refusal does not say %q: %v", required, err)
+		}
+	}
+}
+
+// composedGroups reads back the workspace configuration groups a composed
+// service manifest declares.
+func composedGroups(t *testing.T, moduleDir, service string) []string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(moduleDir, "services", service, "service.codefly.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		WorkspaceConfigurationDependencies []string `yaml:"workspace-configuration-dependencies"`
+	}
+	if err := yaml.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("parse composed %s manifest: %v\n%s", service, err, raw)
+	}
+	return parsed.WorkspaceConfigurationDependencies
 }

@@ -128,7 +128,7 @@ func Create(ctx context.Context, dir, name string) error {
 			return w.Wrapf(err, "cannot refresh module interface")
 		}
 	}
-	if err := normalizeDeploymentMetadata(stage); err != nil {
+	if err := normalizeDeploymentMetadata(stage, workspace); err != nil {
 		return w.Wrapf(err, "cannot normalize module deployment metadata")
 	}
 	if err := generateDeploymentBundle(stage, workspace); err != nil {
@@ -259,14 +259,16 @@ func copyModuleSource(
 	})
 }
 
-func normalizeDeploymentMetadata(moduleDir string) error {
+func normalizeDeploymentMetadata(moduleDir string, workspace *workspaceManifest) error {
 	manifest, err := loadModuleManifest(moduleDir)
 	if err != nil {
 		return err
 	}
 	declared := make(map[string]struct{}, len(manifest.Services))
+	composed := make([]string, 0, len(manifest.Services))
 	for _, service := range manifest.Services {
 		declared[service.Name] = struct{}{}
+		composed = append(composed, service.Name)
 	}
 	if err := pruneModuleInterface(moduleDir, declared); err != nil {
 		return err
@@ -274,7 +276,16 @@ func normalizeDeploymentMetadata(moduleDir string) error {
 	if manifest.ServiceEntry != "" && !containsService(declared, manifest.ServiceEntry) {
 		return fmt.Errorf("service entry %q is not declared by module %q", manifest.ServiceEntry, manifest.Name)
 	}
-	if err := regenerateServiceManifests(moduleDir, manifest); err != nil {
+	// The same selection generateDeploymentBundle resolves per environment,
+	// reduced to the grain a service manifest is written at. Both read
+	// resolveKeyService, so the group a service declares and the workloads the
+	// overlays render cannot disagree about which key service this composition
+	// uses.
+	vaultSelected, err := compositionSelectsVault(workspace, composed)
+	if err != nil {
+		return err
+	}
+	if err := regenerateServiceManifests(moduleDir, manifest, vaultSelected); err != nil {
 		return err
 	}
 	services, err := validateServiceInventory(moduleDir, manifest.Services)
@@ -408,22 +419,28 @@ type generatedServiceEndpointReference struct {
 
 // regenerateServiceManifests derives what a consumer composition changes about
 // a copied service manifest and nothing more: a dependency on a service the
-// consumer did not compose is dropped — along with the workspace configuration
-// group that carried the binding to it — and the frontend gains the
-// cross-module services its installed plugins reach. A manifest that needs
-// neither stays the authored bytes the base ships.
+// consumer did not compose is dropped, the `vault` configuration group goes
+// when no environment selects the key service that is reached through it, and
+// the frontend gains the cross-module services its installed plugins reach. A
+// manifest that needs none of those stays the authored bytes the base ships.
 //
-// WHY THE GROUP GOES WITH THE DEPENDENCY. A service is delivered every group it
-// declares, whether it reads it or not, and a group's keys must be supplied for
-// the ones a composition does not want to leave empty. accounts declares the
-// `vault` group to reach the `vault` service: an address, an auth method, an
-// AppRole mount and a credential. A composition that composes no `vault`
-// service still had to answer for all of it — marking VAULT_AUTH_METHOD and
-// VAULT_APPROLE_* may-be-empty for a binding to a service that is not there.
-// The group carried the binding, so it is withdrawn with the binding, by the
-// one name both sides already share rather than by a list naming `vault`
-// anywhere in this file.
-func regenerateServiceManifests(moduleDir string, manifest moduleManifest) error {
+// WHY THE GROUP FOLLOWS THE SELECTION AND NOT THE SERVICE. A service is
+// delivered every group it declares, whether it reads it or not, and a group's
+// keys must be supplied for the ones a composition does not want to leave
+// empty. accounts declares the `vault` group to REACH the vault key service: an
+// address, an auth method, an AppRole mount and a credential. What makes that
+// binding necessary is the backend the environment selected — KEY_SERVICE_BACKEND
+// in the `key-service` group at runtime, `key-service:` on the environment at
+// render time — never the presence of a workload. The two coincide for this
+// module, so dropping the group with the dependency produced the right answer
+// for the wrong reason, and the wrong one as soon as they part: a cell whose
+// Vault is the CELL's, composed here as a managed cell-vault, renders no Vault
+// of this module's and still needs every key in the group.
+//
+// So the question asked here is the selection's (compositionSelectsVault), and
+// a composition that selects the cloud key service everywhere no longer answers
+// for VAULT_AUTH_METHOD or the AppRole pair of a Vault it does not use.
+func regenerateServiceManifests(moduleDir string, manifest moduleManifest, vaultSelected bool) error {
 	declared := make(map[string]struct{}, len(manifest.Services))
 	for _, reference := range manifest.Services {
 		declared[reference.Name] = struct{}{}
@@ -451,7 +468,6 @@ func regenerateServiceManifests(moduleDir string, manifest moduleManifest) error
 		root := document.Content[0]
 		changed := false
 		sources := "services/" + serviceDir + "/service.codefly.yaml"
-		dropped := map[string]struct{}{}
 		if dependencies := mappingValue(root, "service-dependencies"); dependencies != nil && dependencies.Kind == yaml.SequenceNode {
 			kept := dependencies.Content[:0]
 			for _, dependency := range dependencies.Content {
@@ -460,20 +476,18 @@ func regenerateServiceManifests(moduleDir string, manifest moduleManifest) error
 				external := module != nil && module.Value != "" && module.Value != manifest.Name
 				if external || name == nil || containsService(declared, name.Value) {
 					kept = append(kept, dependency)
-					continue
 				}
-				dropped[name.Value] = struct{}{}
 			}
 			if len(kept) != len(dependencies.Content) {
 				dependencies.Content = kept
 				changed = true
 			}
 		}
-		if groups := mappingValue(root, "workspace-configuration-dependencies"); len(dropped) > 0 &&
+		if groups := mappingValue(root, "workspace-configuration-dependencies"); !vaultSelected &&
 			groups != nil && groups.Kind == yaml.SequenceNode {
 			kept := groups.Content[:0]
 			for _, group := range groups.Content {
-				if _, withdrawn := dropped[group.Value]; !withdrawn {
+				if group.Value != keyServiceGroup {
 					kept = append(kept, group)
 				}
 			}

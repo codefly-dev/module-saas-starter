@@ -393,10 +393,16 @@ services:
 ```
 
 The service tree is not copied, accounts' `vault` service-dependency is pruned,
-no environment schedules one, and — this is the part that was missing — the
-`vault` **configuration group** is withdrawn with the binding, so nothing is
-left answering for `VAULT_AUTH_METHOD` and the AppRole credential of a Vault
-that is not there.
+and no environment schedules one. Leaving the service out is also how a
+composition **selects** the cloud key service today — it is the only half of the
+selection the CLI parses — so the `vault` **configuration group** goes with the
+selection, and nothing is left answering for `VAULT_AUTH_METHOD` and the AppRole
+credential of a Vault that is not there.
+
+The group follows the **selection**, not the service: a cell whose Vault is the
+cell's own (the `cell-vault` handoff above) renders no Vault of this module's and
+keeps every key in the group, because that is how it reaches the Vault it
+selected.
 
 ### Per environment: `key-service`
 
@@ -440,6 +446,30 @@ environments:
 A local environment runs this module's own Vault over loopback with a token, so
 it needs no line in either case.
 
+### Neither route reaches a composition that pins a release
+
+Both routes are declarations in the **consumer's own** files: the `services:`
+list of its `module.codefly.yaml`, or the `key-service:` line on an environment
+in its `workspace.codefly.yaml`. A composition that pins a published release of
+this module gets the fixed module package and keeps whatever its own composition
+file says — and that file still composes `vault` until somebody edits it. So
+upgrading the pin alone changes nothing about the Vault: the first route needs
+one edit in the consumer, and the second needs the CLI field above before it can
+be written at all.
+
+What this means in practice for a cell on the cloud key service:
+
+| | |
+| --- | --- |
+| Available by editing the composition | drop `vault` from `services:` — the group, the StatefulSet, the PVC, the seal and the egress all go |
+| Available only after the CLI field lands | keeping the Vault locally while the cell composes none, i.e. `key-service:` per environment |
+| Not available by moving the pin | anything: a pinned consumer's composition file is its own, and the module cannot edit it |
+
+Until the composition is edited, a pinned cell on `KEY_SERVICE_BACKEND=kms`
+still renders the `vault` workload, and accounts still reads nothing from it.
+That is the remaining half of issue #1128, and it is the consumer's edit (or the
+CLI's field) rather than this module's.
+
 ### Why it is declared here and not read from the group
 
 The decision, its two rejected alternatives and what the CLI owes are recorded
@@ -482,16 +512,26 @@ selection says there is no Vault and the handoff says there is one.
 - a `vault` managed service is refused, because nothing remains for a handoff to
   point at.
 
-What it does **not** change is the `vault` configuration group, which accounts
-declares in its own manifest. A composition that composes no `vault` service at
-all loses the group with the binding (the module agent withdraws it alongside the
-service-dependency it already prunes). A composition that keeps the service for
-its local environment keeps the group everywhere, and its `kms` environments
+What it does **not** change on its own is the `vault` configuration group, and
+the reason is a difference in grain. The group is declared in one service
+manifest for the whole composition, while the selection is per environment, so
+the module agent withdraws the group only when **no** environment selects the
+backend it reaches (`compositionSelectsVault`). A composition that selects the
+cloud key service everywhere loses the group; one that keeps this module's Vault
+for its local environment keeps the group everywhere, and its `kms` environments
 supply nothing into it: accounts reads no key of it on that selection —
 `VAULT_KEY_CUSTODY` is gated on the signing backend being `vault`, and the
 address, auth method and AppRole credential are read only by the Vault
 connection, which is never opened. Expressing "this group only in these
 environments" is not something a module manifest can say today.
+
+The one case that matters is the mismatch, and accounts refuses it at boot
+rather than letting it surface as a missing value: a hosted boot that selects the
+vault backend for either family while the group carries nothing is refused by
+name, saying that the group is not declared and that the selection requires it
+(`requireVaultGroup`). Before that check the first key read answered for the
+whole group — `VAULT_KEY_CUSTODY`'s refusal told an operator to put a seeding
+command into a group that was not there.
 
 The installed Starter topology includes an independently deployable marketing
 service. Local hosts and production domains belong to the consumer's

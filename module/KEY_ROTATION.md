@@ -120,7 +120,13 @@ precedence.
 The `key-service` line itself is not writable yet (the environment block's
 schema is the CLI's, and it has no extension seam), so a composition with no
 Vault in any environment states that by leaving `vault` out of its `services:`
-list, which withdraws the `vault` configuration group with it. Both routes,
+list — which the module agent reads as the same selection, and withdraws the
+`vault` configuration group because of it: the group is how the vault backend is
+reached, so it follows the backend an environment selected rather than the
+presence of a workload. A cell whose Vault is the cell's own keeps the group
+while this module renders no Vault at all. Neither route reaches a composition
+that pins a published release of this module without an edit to that
+composition's own files. Both routes,
 and what the CLI still owes, are in `module/deployment/README.md`, "Composing no
 Vault".
 

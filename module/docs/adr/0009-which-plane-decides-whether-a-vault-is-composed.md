@@ -39,7 +39,7 @@ never reached.
   `module.codefly.yaml` declares (`copyModuleSource`, `preserveInventory`).
 - `regenerateServiceManifests` already pruned a `service-dependencies` entry
   naming a service the consumer did not compose. It did **not** prune the
-  configuration group that bound it.
+  configuration group through which that service's key service is reached.
 - `managed-services.vault: {kind: cell-vault}` already dropped the module's own
   Vault from an environment and bound the cell's instead
   ([deployment/README.md](../../deployment/README.md)). It answers "the Vault is
@@ -68,11 +68,28 @@ service this module exists to ship.
 **Shape 3, at two grains, and the second grain is blocked on the CLI.**
 
 **Per composition — the service inventory.** A composition with no Vault in any
-environment leaves `vault` out of its `services:`, and the `vault`
-**configuration group is withdrawn with the binding**. The rule is keyed on the
-dropped dependency's own name — "the group that bound a dependency this
-composition did not compose" — not on a list naming `vault` in the module
-agent. This grain is live.
+environment leaves `vault` out of its `services:`. That is read as the
+*selection* — the only half of it the CLI parses — and the `vault`
+**configuration group is withdrawn by the selection**, not by the service's
+absence. This grain is live.
+
+The distinction is the one thing in this decision that is easy to get wrong, so
+it is worth stating twice: a configuration group is required by the **backend an
+environment selected**, because a group is how a process *reaches* that backend.
+It is not required by a workload being in the inventory. The two coincide for
+this module, since the only purpose of its `vault` service is to be that
+backend — which is why keying the group off the service produced the right
+answer for the wrong reason. They part immediately in the shape that already
+exists: a cell whose Vault is the **cell's own**, bound through the `cell-vault`
+handoff, renders no Vault of this module's and needs every key in the group.
+
+Because a group is declared once per composition and a selection is per
+environment, the reduction is agreement: the group is withdrawn only when **no**
+environment selects the vault backend (`compositionSelectsVault`). Both the
+manifest edit and the overlay render read the same `resolveKeyService`, so they
+cannot disagree about which key service a composition uses. An environment that
+*states* `key-service: vault` while the composition composes no Vault is refused
+by name — the one contradiction an unstated selection cannot be read as.
 
 **Per environment — `key-service: vault | kms`.** `kms` withdraws the service
 from that environment's inventory, withdraws **every dependency edge** to it,
@@ -163,10 +180,30 @@ workspace can declare either — which is why `workspace.codefly.yaml` keeps its
 the whole answer.** A composition that wants the Vault locally and not on its
 cell has no declaration available, and must choose per composition.
 
-**A composition on `kms` stops declaring the `vault` groups.** Dropping `vault`
-from `services:` withdraws `VAULT_ADDR`, `VAULT_AUTH_METHOD`,
+**Neither grain reaches a composition that pins a release.** Both are
+declarations in the consumer's own files — its `module.codefly.yaml` services
+list, or `key-service:` on an environment of its `workspace.codefly.yaml`. A
+composition that pins a published release of this module receives the fixed
+module package and keeps whatever its own composition file says, and that file
+still composes `vault` until somebody edits it. So moving a pin changes nothing
+here: the per-composition route needs one edit in the consumer, and the
+per-environment route needs the CLI field first. A pinned cell on
+`KEY_SERVICE_BACKEND=kms` therefore still renders the `vault` workload, and
+accounts still reads nothing from it, until that edit happens. The module cannot
+close that half from here — it would have to write a consumer's composition
+file, which it never does.
+
+**A composition on `kms` stops declaring the `vault` groups.** Selecting the
+cloud key service everywhere withdraws `VAULT_ADDR`, `VAULT_AUTH_METHOD`,
 `VAULT_APPROLE_MOUNT`, `VAULT_KEY_CUSTODY` and the `vault.secret.env` AppRole
 pair, and needs no `may-be-empty` marker for any of them.
+
+**The mismatch is refused at boot, by its own reason.** A hosted accounts that
+selects the vault backend for either family while the `vault` group carries
+nothing refuses to start, naming the group and the selection that requires it
+(`requireVaultGroup`). Without it the first key read answered for the whole
+group: `VAULT_KEY_CUSTODY`'s refusal told an operator to set a seeding command
+in a group that had been withdrawn.
 
 **Per-environment group delivery remains inexpressible.** A composition that
 keeps the `vault` service for its local environment keeps the group in every
