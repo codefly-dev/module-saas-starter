@@ -68,6 +68,7 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 		"/admin/platform/events",
 		"/admin/platform/feature-flags",
 		"/admin/platform/jobs",
+		"/admin/platform/module-authority",
 		"/admin/platform/organizations",
 		"/admin/platform/plugin-transport",
 		"/admin/platform/unattended-work",
@@ -125,6 +126,7 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/jobs"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/events"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/catalogue"].GetAccess())
+	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/module-authority"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/organizations"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteMatch_FRONTEND_ROUTE_MATCH_CATCH_ALL, byPath["/admin/{*slug}"].GetMatch())
 

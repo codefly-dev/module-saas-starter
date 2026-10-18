@@ -335,6 +335,30 @@ when the manifest asks for it on the envelope's audience with an `invoke`
 operation, every operation's scopes intersected with what the manifest asks.
 A principal whose entry fails validation is **omitted by name, never widened**.
 
+**No envelope is said by name, every pass.** A pass that finds no envelope
+(none written, or no envelope store) publishes an empty registry and, while any
+applied manifest asks for authority, returns `ErrModuleEnvelopeMissing` naming
+each principal, binding and generation — logged by the reconcile loop as
+`solution host binding reconcile pass failed`, beside the omitted-principal
+reasons. The mint's refusal of a prefix the registry does not hold logs
+`module identity refused` with the prefix and why (the registry is empty and
+derived from no envelope, empty, or holds no entry for it), as a refused
+execution does; the caller still hears only the denial.
+
+**The administrator writes it at `/admin/platform/module-authority`.**
+`GetModuleEnvelope` answers, beside the current revision (`revision`,
+`written_by`, `written_at`), what the applied manifests ask for
+(`requested`: principal, binding, generation, alias, the manifest's
+`authority` as JSON) and whether the returned revision declares a ceiling for
+each principal (`allowed`) — `AppliedAuthorityRequests`, the pass's own reading
+of the applied state, so the page and the log name the same principals. It is a
+request, not a grant: a carrier the pass no longer verifies is listed and still
+grants nothing. The page writes the next revision through `PutModuleEnvelope`,
+fenced on the revision the draft was started from, and names each refusal (a
+missing recent step-up, a revision written meanwhile, a document the parser
+refuses). There is no in-session step-up: an administrator whose second factor
+is not recent signs in again.
+
 **The registry is fenced by the committed envelope revision.** Every module
 authority decision — `AuthorizeModuleCapability`, the work-context and
 headless operation-context mints, the source-delegation mint, and the

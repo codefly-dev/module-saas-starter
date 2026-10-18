@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 
 	modulecontract "github.com/codefly-dev/core/contracts/module"
@@ -53,6 +54,11 @@ var (
 	// ErrModulePrincipalBindingOmitted reports an operation binding a manifest
 	// asks for that the envelope does not allow, or allows nothing of.
 	ErrModulePrincipalBindingOmitted = errors.New("module operation audience omitted from the registry")
+
+	// ErrModuleEnvelopeMissing reports applied manifests that ask for
+	// authority on a host with no module envelope: the registry is empty, so
+	// every one of them is denied until a platform super_admin writes one.
+	ErrModuleEnvelopeMissing = errors.New("applied module manifests ask for authority and there is no module envelope")
 )
 
 // ModulePrincipalReconciler derives the module registry each pass.
@@ -112,15 +118,71 @@ func (r *ModulePrincipalReconciler) readInputs(ctx context.Context) (*modulePrin
 	return inputs, err
 }
 
+// currentEnvelope is the ceiling this pass derives inside. Nil with
+// ErrModuleEnvelopeUnavailable is a host with no envelope store; nil with no
+// error is a store no envelope has been written to. Both grant nothing.
 func (r *ModulePrincipalReconciler) currentEnvelope(ctx context.Context) (*ModuleEnvelope, error) {
-	if r.envelopes == nil {
-		return nil, nil
+	return r.envelopes.CurrentModuleEnvelope(ctx)
+}
+
+// envelopeMissing names, on every pass, the applied manifests that ask for
+// authority while there is no envelope to derive it inside. The registry such
+// a pass publishes is empty, so each of their mints is refused; without this
+// the refusal has no reason anywhere on the host.
+func envelopeMissing(applied []*SolutionHostBindingRecord, storeUnavailable bool) error {
+	asking := AppliedAuthorityRequests(applied)
+	if len(asking) == 0 {
+		return nil
 	}
-	envelope, err := r.envelopes.CurrentModuleEnvelope(ctx)
-	if errors.Is(err, ErrModuleEnvelopeUnavailable) {
-		return nil, nil
+	named := make([]string, 0, len(asking))
+	for _, request := range asking {
+		named = append(named, fmt.Sprintf("%q (binding %q generation %d)", request.Principal, request.Binding, request.Generation))
 	}
-	return envelope, err
+	why := "no module envelope has been written"
+	if storeUnavailable {
+		why = "this host has no module envelope store"
+	}
+	return fmt.Errorf("%w: %d applied manifests ask for authority (%s) and %s; every module is denied until a platform super_admin writes one (PlatformAdminService.PutModuleEnvelope)",
+		ErrModuleEnvelopeMissing, len(asking), strings.Join(named, ", "), why)
+}
+
+// ModuleAuthorityRequest is the authority one applied, live module manifest
+// asks for: the principal it asks under and the binding whose manifest asks.
+type ModuleAuthorityRequest struct {
+	Principal  string
+	Binding    string
+	Alias      string
+	Generation uint64
+	Authority  *solutionhost.Authority
+}
+
+// AppliedAuthorityRequests is every applied, live manifest that asks for
+// authority, ordered by principal then binding. It reads only what was applied
+// — the reconcile pass alone re-verifies a carrier before granting — so it
+// answers what is asked for, never what is held. A manifest that cannot be
+// read asks for nothing here; the pass names it.
+func AppliedAuthorityRequests(applied []*SolutionHostBindingRecord) []ModuleAuthorityRequest {
+	var requests []ModuleAuthorityRequest
+	for _, record := range applied {
+		if record.Applied == nil || record.Applied.Removed {
+			continue
+		}
+		manifest, err := record.AppliedManifest()
+		if err != nil || manifest == nil || manifest.Authority == nil {
+			continue
+		}
+		requests = append(requests, ModuleAuthorityRequest{
+			Principal: manifest.Authority.Principal, Binding: manifest.Binding,
+			Alias: manifest.Alias, Generation: manifest.Generation, Authority: manifest.Authority,
+		})
+	}
+	slices.SortFunc(requests, func(a, b ModuleAuthorityRequest) int {
+		if c := strings.Compare(a.Principal, b.Principal); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Binding, b.Binding)
+	})
+	return requests
 }
 
 // degraded keeps the entries of the last registry whose manifest is still the
@@ -158,14 +220,23 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}, revision: r.lastRevision()})
 		return fmt.Errorf("%w: %w", ErrModulePrincipalInputsUnreadable, inputsErr)
 	}
+	if r.envelopes == nil {
+		// Built with no ceiling source at all: a reconciler that derives no
+		// module authority by construction, so there is no ceiling to miss.
+		// Production always wires one (the service), whose store being absent
+		// is reported below.
+		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}, delivered: inputs.delivered})
+		return nil
+	}
 	envelope, err := r.currentEnvelope(ctx)
-	if err != nil {
+	storeUnavailable := errors.Is(err, ErrModuleEnvelopeUnavailable)
+	if err != nil && !storeUnavailable {
 		r.publish(r.degraded(inputs.applied))
 		return fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, err)
 	}
 	if envelope == nil {
 		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}, delivered: inputs.delivered})
-		return nil
+		return envelopeMissing(inputs.applied, storeUnavailable)
 	}
 
 	manifests, refusals := r.appliedManifestsVerified(ctx, inputs.applied)

@@ -168,7 +168,8 @@ type PlatformAdminServiceClient interface {
 	// it declares, what runs, and which organizations have it installed.
 	ListPlatformCatalogue(context.Context, *connect.Request[v1.ListPlatformCatalogueRequest]) (*connect.Response[v1.ListPlatformCatalogueResponse], error)
 	// GetModuleEnvelope reads the current module envelope: the authority ceiling
-	// every module principal on this host is derived inside.
+	// every module principal on this host is derived inside, beside what the
+	// applied module manifests ask for of it.
 	GetModuleEnvelope(context.Context, *connect.Request[v1.GetModuleEnvelopeRequest]) (*connect.Response[v1.GetModuleEnvelopeResponse], error)
 	// PutModuleEnvelope writes the next revision of the module envelope. It takes
 	// effect at the next check with no restart: the module registry is derived
@@ -551,7 +552,8 @@ type PlatformAdminServiceHandler interface {
 	// it declares, what runs, and which organizations have it installed.
 	ListPlatformCatalogue(context.Context, *connect.Request[v1.ListPlatformCatalogueRequest]) (*connect.Response[v1.ListPlatformCatalogueResponse], error)
 	// GetModuleEnvelope reads the current module envelope: the authority ceiling
-	// every module principal on this host is derived inside.
+	// every module principal on this host is derived inside, beside what the
+	// applied module manifests ask for of it.
 	GetModuleEnvelope(context.Context, *connect.Request[v1.GetModuleEnvelopeRequest]) (*connect.Response[v1.GetModuleEnvelopeResponse], error)
 	// PutModuleEnvelope writes the next revision of the module envelope. It takes
 	// effect at the next check with no restart: the module registry is derived
