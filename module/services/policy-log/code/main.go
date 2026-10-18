@@ -1,7 +1,9 @@
 // policy-log is the independent signed witness for authority changes. This
 // binary wires the delivered signing-key secret, the object store, the warehouse
 // mirror and the transport-independent service onto the gRPC endpoint Codefly
-// allocated, and refuses to start if any one of them is not provisioned.
+// allocated, and refuses to start if the key or the store is not provisioned.
+// The mirror is the one optional part: with neither of its settings delivered
+// the witness runs without one and says so at boot (owner decision 2026-10-18).
 //
 // Nothing here may start a listener it cannot witness with, so every
 // construction happens BEFORE net.Listen and any failure is fatal. A witness
@@ -50,6 +52,10 @@ var settingKeys = struct{ bucket, warehouseEndpoint, warehouseToken string }{
 
 type settings struct{ bucket, warehouseEndpoint, warehouseToken string }
 
+// mirrored reports whether a warehouse mirror was configured. resolveSettings
+// guarantees the endpoint and token are delivered together or not at all.
+func (s settings) mirrored() bool { return s.warehouseEndpoint != "" }
+
 // resolveSettings reads the whole configuration from the delivered group and
 // from nowhere else.
 //
@@ -59,32 +65,71 @@ type settings struct{ bucket, warehouseEndpoint, warehouseToken string }
 // successfully, which is the one failure mode this service cannot have. Every
 // missing key is named at once, so a half-provisioned group takes one restart
 // to diagnose rather than three.
+//
+// The bucket is the witness's authority and is always required. The warehouse
+// mirror is a best-effort projection of what the bucket already committed
+// (README, "Warehouse mirror"), so it is optional — but only WHOLE: its endpoint
+// and its token are delivered together or not at all. One without the other is
+// a half-provisioned mirror, and it is refused rather than read as "no mirror",
+// because that would silently drop a projection someone meant to configure.
 func resolveSettings(value func(group, key string) (string, error)) (settings, error) {
-	var resolved settings
-	var missing []string
-	for _, field := range []struct {
-		key  string
-		into *string
-	}{
-		{settingKeys.bucket, &resolved.bucket},
-		{settingKeys.warehouseEndpoint, &resolved.warehouseEndpoint},
-		{settingKeys.warehouseToken, &resolved.warehouseToken},
-	} {
-		// A group that is absent and a key that is empty are the same thing to
-		// this service: nothing was provisioned. Neither value is reported back,
-		// because one of the three is a credential.
-		got, err := value(policyLogConfiguration, field.key)
-		if err != nil || got == "" {
-			missing = append(missing, field.key)
-			continue
+	// A group that is absent and a key that is empty are the same thing to this
+	// service: nothing was provisioned. No value is ever reported back, because
+	// one of them is a credential.
+	read := func(key string) string {
+		got, err := value(policyLogConfiguration, key)
+		if err != nil {
+			return ""
 		}
-		*field.into = got
+		return got
+	}
+	resolved := settings{
+		bucket:            read(settingKeys.bucket),
+		warehouseEndpoint: read(settingKeys.warehouseEndpoint),
+		warehouseToken:    read(settingKeys.warehouseToken),
+	}
+	var missing []string
+	if resolved.bucket == "" {
+		missing = append(missing, settingKeys.bucket)
+	}
+	switch {
+	case resolved.warehouseEndpoint != "" && resolved.warehouseToken == "":
+		missing = append(missing, settingKeys.warehouseToken)
+	case resolved.warehouseEndpoint == "" && resolved.warehouseToken != "":
+		missing = append(missing, settingKeys.warehouseEndpoint)
 	}
 	if len(missing) > 0 {
-		return settings{}, fmt.Errorf("configuration group %q delivered no %s: composition must provision the whole group before this service can witness",
+		return settings{}, fmt.Errorf("configuration group %q delivered no %s: composition must provision the bucket, and the warehouse mirror whole or not at all, before this service can witness",
 			policyLogConfiguration, strings.Join(missing, ", "))
 	}
 	return resolved, nil
+}
+
+// noMirrorWarning is the boot line a witness with no warehouse mirror prints,
+// so a reader of the pod log learns what the deployment chose rather than
+// inferring it from a warehouse that stays empty.
+const noMirrorWarning = "policy-log: no warehouse mirror is configured: this witness WITNESSES normally — " +
+	"the object store is the authority and every receipt is signed, chained and committed there — " +
+	"but committed entries are not projected to the warehouse until POLICY_LOG_WAREHOUSE_ENDPOINT and " +
+	"POLICY_LOG_WAREHOUSE_TOKEN are delivered together; Read is the source to backfill it from"
+
+// startMirror builds the warehouse projection the settings ask for: the
+// bounded best-effort worker when one is configured, or mirror.None, stated at
+// boot, when none is.
+func startMirror(ctx context.Context, resolved settings, warn func(string)) (service.Mirror, error) {
+	if !resolved.mirrored() {
+		warn(noMirrorWarning)
+		return mirror.None{}, nil
+	}
+	warehouse, err := mirror.NewWriter(resolved.warehouseEndpoint, resolved.warehouseToken)
+	if err != nil {
+		return nil, err
+	}
+	// A dropped or failed mirror is reported and repairable from Read. It never
+	// changes an append's outcome, so it is logged, not fatal.
+	return mirror.Start(ctx, warehouse, func(err error) {
+		log.Printf("policy-log: warehouse mirror: %v", err)
+	})
 }
 
 // resolveSigningKey reads only the declared secret group. The public pin is
@@ -125,15 +170,7 @@ func run(ctx context.Context, stop func()) error {
 		return err
 	}
 	defer func() { _ = store.Close() }()
-	warehouse, err := mirror.NewWriter(resolved.warehouseEndpoint, resolved.warehouseToken)
-	if err != nil {
-		return err
-	}
-	// A dropped or failed mirror is reported and repairable from Read. It never
-	// changes an append's outcome, so it is logged, not fatal.
-	worker, err := mirror.Start(ctx, warehouse, func(err error) {
-		log.Printf("policy-log: warehouse mirror: %v", err)
-	})
+	worker, err := startMirror(ctx, resolved, func(line string) { log.Print(line) })
 	if err != nil {
 		return err
 	}

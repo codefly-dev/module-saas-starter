@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/base64"
@@ -9,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"policy-log/mirror"
 
 	"gopkg.in/yaml.v3"
 )
@@ -21,16 +24,94 @@ func TestResolveSettingsNamesEveryMissingKeyAtOnce(t *testing.T) {
 	if err == nil {
 		t.Fatal("resolveSettings accepted a group that delivered nothing")
 	}
-	for _, key := range []string{settingKeys.bucket, settingKeys.warehouseEndpoint, settingKeys.warehouseToken} {
+	if !strings.Contains(err.Error(), settingKeys.bucket) {
+		t.Errorf("the refusal does not name the missing %s: %v", settingKeys.bucket, err)
+	}
+	// No bucket and a token with no endpoint: both defects in one refusal.
+	_, err = resolveSettings(func(_, key string) (string, error) {
+		if key == settingKeys.warehouseToken {
+			return "example-warehouse-token", nil
+		}
+		return "", nil
+	})
+	if err == nil {
+		t.Fatal("resolveSettings accepted a group with no bucket and half a mirror")
+	}
+	for _, key := range []string{settingKeys.bucket, settingKeys.warehouseEndpoint} {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("the refusal does not name the missing %s: %v", key, err)
 		}
 	}
 }
 
+// TestABucketWithNoMirrorIsAStartableWitness: the owner's 2026-10-18 decision.
+// The object store is the authority and the warehouse only mirrors it, so a
+// group delivering the bucket and NEITHER mirror setting resolves, with no
+// mirror — it is not read as a half-provisioned group.
+func TestABucketWithNoMirrorIsAStartableWitness(t *testing.T) {
+	resolved, err := resolveSettings(func(_, key string) (string, error) {
+		if key == settingKeys.bucket {
+			return "example-witness-bucket", nil
+		}
+		return "", errors.New("not delivered")
+	})
+	if err != nil {
+		t.Fatalf("a bucket with no mirror was refused: %v", err)
+	}
+	if resolved.bucket != "example-witness-bucket" || resolved.mirrored() {
+		t.Fatalf("resolved %+v, want the bucket and no mirror", resolved)
+	}
+}
+
+// TestNoMirrorIsStatedByNameAtBoot: a witness with no mirror wires mirror.None
+// — a named value, never a nil a check could absorb — and says so in one line
+// that names both settings it would need, so the pod log answers "why is the
+// warehouse empty" without a code read.
+func TestNoMirrorIsStatedByNameAtBoot(t *testing.T) {
+	var said []string
+	worker, err := startMirror(context.Background(), settings{bucket: "example-witness-bucket"},
+		func(line string) { said = append(said, line) })
+	if err != nil {
+		t.Fatalf("startMirror with no mirror: %v", err)
+	}
+	if _, ok := worker.(mirror.None); !ok {
+		t.Fatalf("startMirror wired %T, want mirror.None", worker)
+	}
+	if len(said) != 1 {
+		t.Fatalf("startMirror said %d lines, want exactly one: %q", len(said), said)
+	}
+	for _, want := range []string{"no warehouse mirror is configured", "object store is the authority",
+		settingKeys.warehouseEndpoint, settingKeys.warehouseToken} {
+		if !strings.Contains(said[0], want) {
+			t.Errorf("the boot line does not say %q: %s", want, said[0])
+		}
+	}
+}
+
+// TestAConfiguredMirrorIsBuiltAndStaysSilent: the other branch. A whole mirror
+// starts the bounded worker and prints no no-mirror line; a mirror the writer
+// refuses (not https) still refuses the boot, as before the decision.
+func TestAConfiguredMirrorIsBuiltAndStaysSilent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	silent := func(line string) { t.Fatalf("a configured mirror printed %q", line) }
+	worker, err := startMirror(ctx, settings{bucket: "b", warehouseEndpoint: "https://warehouse.example.com/ingest",
+		warehouseToken: "example-warehouse-token"}, silent)
+	if err != nil {
+		t.Fatalf("startMirror with a whole mirror: %v", err)
+	}
+	if _, ok := worker.(*mirror.Worker); !ok {
+		t.Fatalf("startMirror wired %T, want *mirror.Worker", worker)
+	}
+	if _, err := startMirror(ctx, settings{bucket: "b", warehouseEndpoint: "http://warehouse.example.com/ingest",
+		warehouseToken: "example-warehouse-token"}, silent); err == nil {
+		t.Fatal("startMirror accepted a mirror the writer refuses")
+	}
+}
+
 // TestResolveSettingsRefusesEachMissingKeyIndividually proves no single setting
-// has a default. A bucket without a warehouse credential, or a warehouse
-// without a bucket, is not a startable configuration.
+// has a default. A bucket with half a mirror, or a mirror without a bucket, is
+// not a startable configuration.
 func TestResolveSettingsRefusesEachMissingKeyIndividually(t *testing.T) {
 	delivered := map[string]string{
 		settingKeys.bucket:            "example-witness-bucket",

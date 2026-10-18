@@ -59,6 +59,15 @@ func (w *Writer) Write(ctx context.Context, record witness.Record) error {
 	return nil
 }
 
+// None is the mirror of a witness deployed with no warehouse configured. It
+// projects nothing: the committed receipt in the object store is the evidence,
+// and Read is where a warehouse added later backfills from. It is a named value
+// rather than a nil Mirror so that "no mirror" is a decision the wiring states,
+// never an accident a nil check absorbs.
+type None struct{}
+
+func (None) Offer(witness.Record) {}
+
 type Sink interface {
 	Write(context.Context, witness.Record) error
 }

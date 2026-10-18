@@ -201,8 +201,9 @@ and the detail goes to this service's own failure reporter instead.
 [code/main.go](code/main.go) is the binary. Every construction happens **before**
 `net.Listen`, in this order, and any failure is fatal: resolve the whole
 configuration group, read the Codefly-allocated port, parse the delivered signing-key
-secret, open the bucket, build the warehouse writer, start the mirror
-worker, then `witness.Open`, which verifies the entire committed chain under
+secret, open the bucket, build the warehouse writer and start the mirror
+worker (or wire `mirror.None` and say so, when no mirror is configured), then
+`witness.Open`, which verifies the entire committed chain under
 that key. A witness that accepted an append it could not sign, store, or verify
 the history of would be worse than one that is down, because the caller would
 commit against it.
@@ -212,7 +213,11 @@ commit against it.
 from nowhere else. There is no process-environment fallback, no default bucket
 and no development bypass, so an ambient value cannot make this service witness
 somewhere nobody provisioned — and the refusal names the missing keys, never the
-delivered values, because one of the three is a credential. The native composition cannot yet start this service with its empty group.
+delivered values, because one of the three is a credential. The bucket is always
+required. The two warehouse settings are optional, but only together: both
+delivered starts the mirror, neither starts the witness with no mirror, and one
+without the other is refused as a half-provisioned group. The native composition
+cannot yet start this service with its empty group.
 Local execution must use the same signing and verification protocol with durable
 custody independent of Accounts; missing native storage and bootstrap are owner
 tooling gaps, not a reason to create a host-private log or fake receipts.
@@ -291,6 +296,15 @@ stronger remote cancellation guarantee. That distinction needs real-GCS
 qualification before the transport can claim the full deadline requirement.
 
 ## Warehouse mirror
+
+**The mirror is optional** (owner decision 2026-10-18, reversing the 2026-10-17
+call that the witness stays down until a warehouse front exists). The object
+store is the authority — every receipt is signed, chained and committed there
+before it is returned — so a witness deployed with no warehouse configured
+witnesses fully; what it lacks is the projection. It wires `mirror.None`, a
+named value rather than a nil, and prints one line at boot naming
+`POLICY_LOG_WAREHOUSE_ENDPOINT` and `POLICY_LOG_WAREHOUSE_TOKEN`, so the pod log
+says why the warehouse is empty. A warehouse added later backfills from `Read`.
 
 The [warehouse writer](code/mirror/warehouse.go) follows the repository's JSON
 POST ingestion convention with a dedicated credential. The service offers an
