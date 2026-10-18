@@ -22,19 +22,19 @@ const session = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-const WIKI_TARGET = "aaaaaaaa-0000-4000-8000-000000000011";
+const SUITE_TARGET = "aaaaaaaa-0000-4000-8000-000000000011";
 const DOCS_TARGET = "aaaaaaaa-0000-4000-8000-000000000012";
-const WIKI_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000011";
+const SUITE_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000011";
 const DOCS_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000012";
 const USE_ROLE = "cccccccc-0000-4000-8000-000000000011";
 const SUPPORT_TEAM = "eeeeeeee-0000-4000-8000-000000000011";
 
-const wikiTarget = {
-	targetId: WIKI_TARGET,
-	bindingId: "binding-wiki",
-	routeAlias: "wiki",
+const suiteTarget = {
+	targetId: SUITE_TARGET,
+	bindingId: "binding-suite",
+	routeAlias: "suite",
 	releasePublisher: "acme",
-	releaseName: "wiki",
+	releaseName: "suite",
 	releaseVersion: "2.0.0",
 	openedGeneration: "4",
 	appliedGeneration: "4",
@@ -43,7 +43,7 @@ const wikiTarget = {
 };
 
 const docsTarget = {
-	...wikiTarget,
+	...suiteTarget,
 	targetId: DOCS_TARGET,
 	bindingId: "binding-documents",
 	routeAlias: "documents",
@@ -54,14 +54,14 @@ const docsTarget = {
 function installation(overrides: Record<string, unknown> = {}) {
 	return {
 		installation: {
-			id: WIKI_INSTALLATION,
+			id: SUITE_INSTALLATION,
 			orgId: "org-1",
-			targetId: WIKI_TARGET,
+			targetId: SUITE_TARGET,
 			status: "INSTALLATION_STATUS_ACTIVE",
 			createdAt: "2026-10-01T00:00:00Z",
 		},
 		health: "INSTALLATION_HEALTH_HEALTHY",
-		target: wikiTarget,
+		target: suiteTarget,
 		rootScopePath: "root_wiki",
 		grantedTeams: [],
 		inheritedTeams: [],
@@ -125,7 +125,7 @@ function serve(installationsBody: JsonBodyType) {
 // renders, as every other admin detail page's tests do.
 function render() {
 	return renderInApp(
-		<InstallationSetupPage installationId={WIKI_INSTALLATION} />,
+		<InstallationSetupPage installationId={SUITE_INSTALLATION} />,
 	);
 }
 
@@ -263,7 +263,7 @@ it("grants once, and says plainly that the modules this reaches are not carried"
 	expect(grants).toEqual([
 		{
 			orgId: "org-1",
-			installationId: WIKI_INSTALLATION,
+			installationId: SUITE_INSTALLATION,
 			teamId: SUPPORT_TEAM,
 			roleId: USE_ROLE,
 		},
