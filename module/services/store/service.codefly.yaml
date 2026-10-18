@@ -7,7 +7,10 @@ agent:
     # also declares each runtime login's password as a required secret, without
     # which a deployment render fails on the missing control-plane key.
     # 0.0.144 also carries the explicit test verdict required by CLI 0.1.185.
-    version: 0.0.144
+    # 0.0.146 fetches the migrate archive with the base's own wget, so the
+    # bootstrap image's exact apk lock no longer pins curl — Alpine replaced
+    # curl 8.14.1-r2 with -r3 and every build pinned to -r2 stopped resolving.
+    version: 0.0.146
     publisher: codefly.dev
 endpoints:
     - name: tcp
