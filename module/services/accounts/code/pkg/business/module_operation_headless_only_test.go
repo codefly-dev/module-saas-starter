@@ -184,3 +184,49 @@ func TestAHeadlessOnlyBindingMintsHeadlessAndIsNeverRedeemedForAPerson(t *testin
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 	require.ErrorContains(t, err, `"evidence" is headless-only`)
 }
+
+// An installer cannot consent its way to person-invocable authority on a
+// headless-only binding: consent naming invoke, lookup or delegation scopes
+// there exceeds the grant.
+func TestConsentCannotAddPersonScopesToAHeadlessOnlyBinding(t *testing.T) {
+	grant := ModulePrincipalGrant{Prefix: "example", OperationAudiences: map[string]ModuleOperationAudience{
+		"evidence": {Audience: "tracing", HeadlessScopes: headlessEvidence},
+	}}
+	require.NoError(t, validateInstallationScope(FullInstallationScope(grant), grant))
+	for name, widen := range map[string]func(*ModuleOperationAudience){
+		"invoke": func(b *ModuleOperationAudience) { b.InvokeScopes = headlessEvidence },
+		"lookup": func(b *ModuleOperationAudience) {
+			b.LookupScopes = []ModuleOperationScope{{ResourceKind: "evidence", Actions: []string{"read"}}}
+		},
+		"source delegation": func(b *ModuleOperationAudience) { b.SourceDelegationScopes = headlessEvidence },
+	} {
+		t.Run(name, func(t *testing.T) {
+			consent := FullInstallationScope(grant)
+			binding := consent.OperationAudiences["evidence"]
+			widen(&binding)
+			consent.OperationAudiences["evidence"] = binding
+			require.Error(t, validateInstallationScope(consent, grant))
+		})
+	}
+}
+
+// Where invoke survives the envelope, headless must still fit within it: a
+// manifest asking invoke A and headless B is omitted, by name, rather than
+// granted either half alone.
+func TestHeadlessBesideAGrantedInvokeStillFitsWithinIt(t *testing.T) {
+	wire := testEnvelopeDocument()
+	ceiling := wire["principals"].(map[string]any)[testModulePrefix].(map[string]any)["grant"].(map[string]any)
+	ceiling["operation_audiences"] = map[string]any{"run": map[string]any{
+		"audience":        testProducerAudience,
+		"invoke_scopes":   []any{map[string]any{"resource_kind": "profiles", "actions": []any{"read", "write"}}},
+		"headless_scopes": []any{map[string]any{"resource_kind": "profiles", "actions": []any{"write"}}},
+	}}
+	envelope, err := ParseModuleEnvelope(encodeEnvelope(t, wire))
+	require.NoError(t, err)
+	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix],
+		testManifest(t, map[string][]string{"invoke": {"profiles:read"}, "headless": {"profiles:write"}}), []ModuleWorkload{testWorkload})
+	require.NoError(t, err)
+	require.Empty(t, grant.OperationAudiences)
+	require.Len(t, omitted, 1)
+	require.ErrorContains(t, omitted[0], "headless scopes")
+}

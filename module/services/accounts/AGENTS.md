@@ -644,15 +644,17 @@ request adds a
   the exchanged-operation ceiling) with the idempotent replay policy.
 - A binding without `headless_scopes` is refused (`PermissionDenied`); the invoke
   scopes are never reused implicitly. An unproven module is `Unauthenticated`.
+  A binding addressed to `module-capabilities` is refused at signing.
 - A **headless-only** binding — `headless_scopes` and no invoke — is minted here
   and nowhere else: `business.ModuleOperationAudience`,
   `ModuleOperationAudienceForDelegation` and the delegation-reference arm refuse
   it by name (`errOperationAudienceHeadlessOnly`), so it never acts on a
-  person's behalf. The reconciler grants it when the manifest asks only
-  `headless` operations for the binding, intersected with the envelope's
-  `headless_scopes`; installation consent keeps it on its headless scopes and
-  never turns an invoke binding whose invoke it withholds into one.
-  A binding addressed to `module-capabilities` is refused at signing.
+  person's behalf. The reconciler derives one whenever the binding's headless
+  scopes survive the envelope and none of its invoke does: the manifest asks
+  only `headless` operations, or asks invoke the envelope does not allow, or the
+  envelope's audience is itself headless-only. Installation consent keeps it on
+  its headless scopes and never turns an invoke binding whose invoke it
+  withholds into one.
 - Unlike a module Work Context the scopes **are** sealed: the audience is another
   service that decides from the token alone. Removing a binding's
   `headless_scopes` stops the next mint; an issued child outlives it by at most

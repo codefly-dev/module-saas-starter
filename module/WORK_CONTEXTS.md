@@ -513,10 +513,14 @@ person-delegated exchange (`ExchangeDelegatedOperationAudience` with a parent
 token, a delegation-bearing parent, or a delegation reference) refuses it by
 name with `PermissionDenied` ("… is headless-only …"), and a confined
 credential's ceiling never counts it as declared. Only this mint uses it. The
-envelope ceiling may grant an audience headless-only in the same shape; a
-manifest that asks only `headless` operations for a binding is then granted its
-headless scopes intersected with the envelope's, and the reconciler logs the
-omitted reason when nothing is left. An organization installed before the
+envelope ceiling may grant an audience headless-only in the same shape. The
+reconciler derives a headless-only binding whenever the manifest's headless
+scopes survive the envelope and none of its invoke scopes do — it asks only
+`headless` operations, or asks invoke the envelope does not allow, or the
+envelope's audience is headless-only — and logs the omitted reason when nothing
+is left. Where invoke does survive, headless must still fit within it, so a
+manifest asking invoke `A` and headless `B` is omitted rather than granted
+headless alone. An organization installed before the
 binding was granted consented to no such binding: like any binding declared
 after an install, it reaches that organization when it installs again.
 

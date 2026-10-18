@@ -181,7 +181,10 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 		// bounded by an invoke grant this binding does not have. An empty invoke
 		// list stays a misconfiguration rather than a second spelling of absent.
 		if binding.InvokeScopes == nil {
-			if !binding.headlessOnly() || !validOperationScopes(binding.HeadlessScopes, false) ||
+			if binding.HeadlessScopes == nil {
+				return fmt.Errorf("invalid installed module operation audience binding: it grants neither invoke nor headless scopes")
+			}
+			if !validOperationScopes(binding.HeadlessScopes, false) ||
 				binding.LookupScopes != nil || binding.SourceDelegationScopes != nil {
 				return fmt.Errorf("invalid installed module operation audience binding: one with no invoke scopes is headless-only and declares only headless scopes")
 			}
