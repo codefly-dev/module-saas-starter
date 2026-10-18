@@ -139,7 +139,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
-	frontendSource, err := frontendpayload.ConfigureNative(ctx, codefly.For(ctx), codefly.IsLocal(), infra.InCluster())
+	frontendSource, err := frontendpayload.Configure(ctx, codefly.For(ctx), codefly.IsLocal(), infra.InCluster())
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,7 @@ go 1.27.2
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	github.com/codefly-dev/core v0.19.6-0.20261018051341-b81d92e6feda
-	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261014024718-5858903a66c8
+	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018173826-0d423cb8bd17
 	github.com/codefly-dev/sdk-go v0.4.1-0.20261018052022-70dc7a546458
 	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458
 	github.com/envoyproxy/go-control-plane/envoy v1.39.0
