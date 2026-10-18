@@ -119,17 +119,18 @@ func (e *Exchanger) Exchange(
 		// invalid_grant / authorization_code_expired, plus a message). Losing it
 		// leaves a bare status code and no way to tell a consumed code from a
 		// PKCE mismatch or bad credentials. Log it for operators; the returned
-		// error stays status-only because it reaches the browser, and provider
-		// internals are not the end user's business.
+		// error carries the status and the OAuth error code only, because it
+		// reaches the browser, and provider internals are not the end user's
+		// business.
 		wool.Get(ctx).Warn(
 			"workos authentication endpoint rejected the code exchange",
 			wool.Field("status", resp.StatusCode),
 			wool.Field("body", string(responseBody)),
 		)
-		return business.ExchangedTokens{}, fmt.Errorf(
-			"workos: authentication endpoint http %d",
-			resp.StatusCode,
-		)
+		return business.ExchangedTokens{}, fmt.Errorf("workos: authentication endpoint: %w", &auth.TokenEndpointError{
+			Status: resp.StatusCode,
+			Code:   auth.OAuthErrorCode(responseBody),
+		})
 	}
 	var result authenticateResponse
 	if err := json.Unmarshal(responseBody, &result); err != nil {
@@ -170,3 +171,16 @@ func (e *Exchanger) Exchange(
 }
 
 var _ business.CodeExchanger = (*Exchanger)(nil)
+
+// WithClientSecretFrom returns the same exchanger presenting derive(its own
+// secret) in place of it — the token-exchange diagnostic's negative control,
+// which must differ from the real exchange in nothing else.
+func (e *Exchanger) WithClientSecretFrom(derive func(configured string) (string, error)) (business.CodeExchanger, error) {
+	secret, err := derive(e.clientSecret)
+	if err != nil {
+		return nil, err
+	}
+	control := *e
+	control.clientSecret = secret
+	return &control, nil
+}

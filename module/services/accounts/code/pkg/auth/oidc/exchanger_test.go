@@ -9,7 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/auth/oidc"
+	"accounts/pkg/business"
 )
 
 // Fake OAuth token endpoint that mirrors the standard response shape.
@@ -109,4 +111,41 @@ func TestExchanger_NewExchanger_Validation(t *testing.T) {
 		ClientID: "id",
 	})
 	require.Error(t, err, "secret required")
+}
+
+func TestExchanger_RefusalCarriesStatusAndCodeNeverTheBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid_client","error_description":"client secret provider-detail-xyz is wrong"}`))
+	}))
+	defer server.Close()
+
+	ex, _ := oidc.NewExchanger(oidc.ExchangerConfig{TokenURL: server.URL, ClientID: "id", ClientSecret: "secret"})
+	_, err := ex.Exchange(context.Background(), "bad-code", "https://x", "")
+	var refused *auth.TokenEndpointError
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, auth.TokenEndpointError{Status: http.StatusUnauthorized, Code: "invalid_client"}, *refused)
+	require.NotContains(t, err.Error(), "provider-detail-xyz")
+}
+
+func TestExchanger_WithClientSecretChangesOnlyTheSecret(t *testing.T) {
+	var got []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		got = append(got, r.PostForm.Get("client_id")+"/"+r.PostForm.Get("client_secret")+"/"+r.PostForm.Get("code"))
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+	}))
+	defer server.Close()
+
+	ex, err := oidc.NewExchanger(oidc.ExchangerConfig{TokenURL: server.URL, ClientID: "id", ClientSecret: "real"})
+	require.NoError(t, err)
+	exchanger := oidc.AsBusinessExchanger(ex)
+	control, err := exchanger.(interface {
+		WithClientSecretFrom(func(string) (string, error)) (business.CodeExchanger, error)
+	}).WithClientSecretFrom(func(configured string) (string, error) { return configured + "-control", nil })
+	require.NoError(t, err)
+	_, _ = control.Exchange(context.Background(), "c", "https://x", "")
+	_, _ = exchanger.Exchange(context.Background(), "c", "https://x", "")
+	require.Equal(t, []string{"id/real-control/c", "id/real/c"}, got, "the control leaves the original untouched")
 }

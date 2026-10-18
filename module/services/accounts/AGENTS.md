@@ -25,6 +25,23 @@ Context exchanges below; no secret does.
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
 
+## The one diagnostic the binary answers
+
+`./app diagnose token-exchange` (`diagnose.go`, dispatched first thing in
+`doWork`) certifies the identity provider's client authentication: it builds the
+provider stack with `buildProviderStack`, exchanges `exchangeprobe.SentinelCode`
+through its exchanger — and, when the provider refuses only the code, again with
+a random secret of the real one's shape as a negative control
+(`WithClientSecretFrom` on both exchangers) —
+and prints one JSON line — verdicts, status, OAuth error code — with file
+descriptors 1 and 2 on the null device so nothing else reaches the caller.
+Callers detect the diagnostic by the sentinel string in the binary, so keep
+`SentinelCode`'s value. A check that execs into the pod uses it instead of an HTTP client in
+the image; [FEATURES.md](../../FEATURES.md#certifying-the-client-credential)
+lists the verdicts. Any `diagnose` argument exits without serving. The
+exchangers report a refusal as `auth.TokenEndpointError` (status and code,
+never the body), which is what the classification reads.
+
 ## Declared solution presence and the registry
 
 A module or solution is present because one signed **module manifest**
