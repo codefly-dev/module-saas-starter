@@ -3980,7 +3980,7 @@
     },
     "/v1/platform/module-envelope": {
       "get": {
-        "summary": "GetModuleEnvelope reads the current module envelope: the authority ceiling\nevery module principal on this host is derived inside.",
+        "summary": "GetModuleEnvelope reads the current module envelope: the authority ceiling\nevery module principal on this host is derived inside, beside what the\napplied module manifests ask for of it.",
         "operationId": "PlatformAdminService_GetModuleEnvelope",
         "responses": {
           "200": {
@@ -8619,6 +8619,14 @@
         "envelope": {
           "$ref": "#/definitions/v1ModuleEnvelope",
           "description": "The current revision. Absent when no envelope has been written, which\ngrants no module anything."
+        },
+        "requested": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ModuleAuthorityRequest"
+          },
+          "description": "What the applied module manifests ask for: one entry per applied, live\nmanifest that asks for authority, ordered by principal then binding."
         }
       }
     },
@@ -10084,6 +10092,37 @@
     "v1MarkAllNotificationsReadRequest": {
       "type": "object"
     },
+    "v1ModuleAuthorityRequest": {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "type": "string",
+          "description": "The module principal the manifest asks under: the key its ceiling is\nfiled under in the envelope's `principals`."
+        },
+        "binding": {
+          "type": "string",
+          "description": "The host binding whose applied manifest asks."
+        },
+        "generation": {
+          "type": "string",
+          "format": "int64",
+          "description": "The applied generation of that binding."
+        },
+        "alias": {
+          "type": "string",
+          "description": "The module's route alias."
+        },
+        "allowed": {
+          "type": "boolean",
+          "description": "Whether the returned envelope declares a ceiling for the principal. A\nprincipal it declares none for is denied every Work Context. A declared\nceiling can still leave out an operation binding the manifest asks for;\nthe reconcile pass names each one in the host's log."
+        },
+        "authority": {
+          "type": "string",
+          "description": "What the manifest asks for, as JSON: its `authority` block (principal,\nbindings, queues, namespaces, resource_kinds)."
+        }
+      },
+      "description": "ModuleAuthorityRequest is the authority one applied module manifest asks\nfor. It is a request, never a grant: a principal holds only what the\nenvelope allows of it, and only while its manifest's carrier still verifies."
+    },
     "v1ModuleEnvelope": {
       "type": "object",
       "properties": {
@@ -10094,7 +10133,7 @@
         },
         "document": {
           "type": "string",
-          "description": "The whole ceiling at this revision, as JSON: `revision`,\n`approved_builds`, and `principals` keyed by module prefix, each with the\nwhole authority units this host admits (`bindings`: id, revision, scope,\nqueue, namespace, binding_key, lookup_method), the workloads it may run as\n(`workload_identities`: spiffe_id, container), its `scope_ceilings` and its\n`grant` ceiling (tenant, cross_tenant, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences,\nartifact_policies)."
+          "description": "The whole ceiling at this revision, as JSON: `revision`, and `principals`\nkeyed by module principal, each holding only its `grant` ceiling (tenant,\ncross_tenant, queues, namespaces, external_namespaces, resources,\nread_audiences, operation_audiences, artifact_policies). It names no\nworkload and approves no build: which workloads a principal runs as is its\napplied module manifest's, and any other key is refused."
         },
         "writtenBy": {
           "type": "string",

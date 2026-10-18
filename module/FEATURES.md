@@ -147,6 +147,59 @@ Required Codefly `identity` configuration keys:
 Missing issuer, client id, or client secret fails startup with a precise error
 rather than at first login.
 
+### Certifying the client credential
+
+Startup proves the configuration is complete, not that the provider accepts
+it: a wrong client secret still boots, and `BeginOAuth` still answers, because
+neither touches the token endpoint. The accounts binary answers that question
+on demand, from inside its own container:
+
+```bash
+./app diagnose token-exchange    # in the accounts container, from its working directory
+```
+
+It builds the provider stack exactly as the service does — same configuration
+groups, same secret selection, same discovery — and exchanges a sentinel
+authorization code through that stack's own exchanger, so it exercises the
+endpoint, request shape and credential a real login uses. RFC 6749 orders
+client authentication before the grant but does not bind a provider to it, so a
+provider that refused only the code is certified against a **negative control**:
+the same exchange presenting a random secret of the real one's shape (its prefix,
+length and character classes) must be refused as a client. Each run is
+therefore one deliberately failed client authentication at the provider, which
+a provider that alerts on or rate-limits those will see. It prints one JSON
+line and exits without starting the service:
+
+```json
+{"check":"token-exchange","verdict":"client-accepted","provider":"workos","status":400,"error":"invalid_grant","control":"client-rejected"}
+```
+
+| `verdict`         | Meaning |
+|-------------------|---------|
+| `client-accepted` | The provider refused only the sentinel code (400 `invalid_grant`) and refused a random secret as a client (`control: client-rejected`): it accepts this client's credential. Client authentication only — not redirect registration, PKCE, or the validation of the token a real code returns. |
+| `client-rejected` | The provider refused the client (`invalid_client`, or 401): every login fails at the exchange. Fix the client secret. A 401 from a proxy in the path reads the same. |
+| `unproven`        | The provider refused only the code, but answered the random secret alike (`control` says how), so its answer does not show it authenticating the client. |
+| `unclassified`    | The provider answered with nothing that proves either; `status` and `error` say what it did answer. |
+| `no-answer`       | No HTTP answer: DNS, connect or timeout. |
+| `not-configured`  | The configuration does not build a provider stack (the service would refuse to start); nothing was sent. |
+| `no-code-flow`    | The configured provider performs no code exchange (fixture, `header-jwt`). |
+
+The output is the whole disclosure: the verdicts, the HTTP status and the OAuth
+`error` code, which is passed on only when it has a registered code's shape.
+Never the credential, never the provider's response body — from the moment the
+diagnostic takes over, the process's stdout and stderr point at the null
+device, so not even a log line the exchanger writes reaches the caller. (A line
+the generated entry point logs before that, such as an unresolved endpoint, can
+precede the result; a caller reads the result line, not the whole output.) It
+grants nothing a caller who can exec into the container does not already hold,
+and the image gains no HTTP client.
+
+A binary that predates the diagnostic ignores its arguments and would start a
+second service, so a caller that cannot know the image's version must not run
+it on a guess: the sentinel code, `token-exchange-probe-sentinel`, is a string
+constant in every binary that carries the diagnostic, and finding it in the
+binary (`grep -qF`) is how to tell without executing anything.
+
 ### Token lifecycle
 
 | Stage         | Mechanism                                                       |

@@ -3495,14 +3495,12 @@ type ModuleEnvelope struct {
 	// The revision, from 1. A delivered authority document names the revision
 	// it was rendered against and is inside this one only.
 	Revision int64 `protobuf:"varint,1,opt,name=revision,proto3" json:"revision,omitempty"`
-	// The whole ceiling at this revision, as JSON: `revision`,
-	// `approved_builds`, and `principals` keyed by module prefix, each with the
-	// whole authority units this host admits (`bindings`: id, revision, scope,
-	// queue, namespace, binding_key, lookup_method), the workloads it may run as
-	// (`workload_identities`: spiffe_id, container), its `scope_ceilings` and its
-	// `grant` ceiling (tenant, cross_tenant, queues, namespaces,
-	// external_namespaces, resources, read_audiences, operation_audiences,
-	// artifact_policies).
+	// The whole ceiling at this revision, as JSON: `revision`, and `principals`
+	// keyed by module principal, each holding only its `grant` ceiling (tenant,
+	// cross_tenant, queues, namespaces, external_namespaces, resources,
+	// read_audiences, operation_audiences, artifact_policies). It names no
+	// workload and approves no build: which workloads a principal runs as is its
+	// applied module manifest's, and any other key is refused.
 	Document string `protobuf:"bytes,2,opt,name=document,proto3" json:"document,omitempty"`
 	// The platform administrator who wrote this revision.
 	WrittenBy     string                 `protobuf:"bytes,3,opt,name=written_by,json=writtenBy,proto3" json:"written_by,omitempty"`
@@ -3609,7 +3607,10 @@ type GetModuleEnvelopeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The current revision. Absent when no envelope has been written, which
 	// grants no module anything.
-	Envelope      *ModuleEnvelope `protobuf:"bytes,1,opt,name=envelope,proto3,oneof" json:"envelope,omitempty"`
+	Envelope *ModuleEnvelope `protobuf:"bytes,1,opt,name=envelope,proto3,oneof" json:"envelope,omitempty"`
+	// What the applied module manifests ask for: one entry per applied, live
+	// manifest that asks for authority, ordered by principal then binding.
+	Requested     []*ModuleAuthorityRequest `protobuf:"bytes,2,rep,name=requested,proto3" json:"requested,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3651,6 +3652,111 @@ func (x *GetModuleEnvelopeResponse) GetEnvelope() *ModuleEnvelope {
 	return nil
 }
 
+func (x *GetModuleEnvelopeResponse) GetRequested() []*ModuleAuthorityRequest {
+	if x != nil {
+		return x.Requested
+	}
+	return nil
+}
+
+// ModuleAuthorityRequest is the authority one applied module manifest asks
+// for. It is a request, never a grant: a principal holds only what the
+// envelope allows of it, and only while its manifest's carrier still verifies.
+type ModuleAuthorityRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The module principal the manifest asks under: the key its ceiling is
+	// filed under in the envelope's `principals`.
+	Principal string `protobuf:"bytes,1,opt,name=principal,proto3" json:"principal,omitempty"`
+	// The host binding whose applied manifest asks.
+	Binding string `protobuf:"bytes,2,opt,name=binding,proto3" json:"binding,omitempty"`
+	// The applied generation of that binding.
+	Generation int64 `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`
+	// The module's route alias.
+	Alias string `protobuf:"bytes,4,opt,name=alias,proto3" json:"alias,omitempty"`
+	// Whether the returned envelope declares a ceiling for the principal. A
+	// principal it declares none for is denied every Work Context. A declared
+	// ceiling can still leave out an operation binding the manifest asks for;
+	// the reconcile pass names each one in the host's log.
+	Allowed bool `protobuf:"varint,5,opt,name=allowed,proto3" json:"allowed,omitempty"`
+	// What the manifest asks for, as JSON: its `authority` block (principal,
+	// bindings, queues, namespaces, resource_kinds).
+	Authority     string `protobuf:"bytes,6,opt,name=authority,proto3" json:"authority,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModuleAuthorityRequest) Reset() {
+	*x = ModuleAuthorityRequest{}
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModuleAuthorityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModuleAuthorityRequest) ProtoMessage() {}
+
+func (x *ModuleAuthorityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModuleAuthorityRequest.ProtoReflect.Descriptor instead.
+func (*ModuleAuthorityRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *ModuleAuthorityRequest) GetPrincipal() string {
+	if x != nil {
+		return x.Principal
+	}
+	return ""
+}
+
+func (x *ModuleAuthorityRequest) GetBinding() string {
+	if x != nil {
+		return x.Binding
+	}
+	return ""
+}
+
+func (x *ModuleAuthorityRequest) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *ModuleAuthorityRequest) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+func (x *ModuleAuthorityRequest) GetAllowed() bool {
+	if x != nil {
+		return x.Allowed
+	}
+	return false
+}
+
+func (x *ModuleAuthorityRequest) GetAuthority() string {
+	if x != nil {
+		return x.Authority
+	}
+	return ""
+}
+
 type PutModuleEnvelopeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The revision this write replaces: the one the caller read, 0 when none has
@@ -3665,7 +3771,7 @@ type PutModuleEnvelopeRequest struct {
 
 func (x *PutModuleEnvelopeRequest) Reset() {
 	*x = PutModuleEnvelopeRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[50]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3677,7 +3783,7 @@ func (x *PutModuleEnvelopeRequest) String() string {
 func (*PutModuleEnvelopeRequest) ProtoMessage() {}
 
 func (x *PutModuleEnvelopeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[50]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3690,7 +3796,7 @@ func (x *PutModuleEnvelopeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutModuleEnvelopeRequest.ProtoReflect.Descriptor instead.
 func (*PutModuleEnvelopeRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{50}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *PutModuleEnvelopeRequest) GetExpectedRevision() int64 {
@@ -3716,7 +3822,7 @@ type PutModuleEnvelopeResponse struct {
 
 func (x *PutModuleEnvelopeResponse) Reset() {
 	*x = PutModuleEnvelopeResponse{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[51]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3728,7 +3834,7 @@ func (x *PutModuleEnvelopeResponse) String() string {
 func (*PutModuleEnvelopeResponse) ProtoMessage() {}
 
 func (x *PutModuleEnvelopeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[51]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3741,7 +3847,7 @@ func (x *PutModuleEnvelopeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutModuleEnvelopeResponse.ProtoReflect.Descriptor instead.
 func (*PutModuleEnvelopeResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{51}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *PutModuleEnvelopeResponse) GetEnvelope() *ModuleEnvelope {
@@ -3985,10 +4091,20 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"written_by\x18\x03 \x01(\tR\twrittenBy\x129\n" +
 	"\n" +
 	"written_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\twrittenAt\"\x1a\n" +
-	"\x18GetModuleEnvelopeRequest\"k\n" +
+	"\x18GetModuleEnvelopeRequest\"\xb3\x01\n" +
 	"\x19GetModuleEnvelopeResponse\x12A\n" +
-	"\benvelope\x18\x01 \x01(\v2 .saas.accounts.v1.ModuleEnvelopeH\x00R\benvelope\x88\x01\x01B\v\n" +
-	"\t_envelope\"y\n" +
+	"\benvelope\x18\x01 \x01(\v2 .saas.accounts.v1.ModuleEnvelopeH\x00R\benvelope\x88\x01\x01\x12F\n" +
+	"\trequested\x18\x02 \x03(\v2(.saas.accounts.v1.ModuleAuthorityRequestR\trequestedB\v\n" +
+	"\t_envelope\"\xbe\x01\n" +
+	"\x16ModuleAuthorityRequest\x12\x1c\n" +
+	"\tprincipal\x18\x01 \x01(\tR\tprincipal\x12\x18\n" +
+	"\abinding\x18\x02 \x01(\tR\abinding\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x03 \x01(\x03R\n" +
+	"generation\x12\x14\n" +
+	"\x05alias\x18\x04 \x01(\tR\x05alias\x12\x18\n" +
+	"\aallowed\x18\x05 \x01(\bR\aallowed\x12\x1c\n" +
+	"\tauthority\x18\x06 \x01(\tR\tauthority\"y\n" +
 	"\x18PutModuleEnvelopeRequest\x124\n" +
 	"\x11expected_revision\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\x10expectedRevision\x12'\n" +
 	"\bdocument\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01(\x80\x80@R\bdocument\"Y\n" +
@@ -4061,7 +4177,7 @@ func file_saas_accounts_v1_platform_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_platform_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_saas_accounts_v1_platform_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
+var file_saas_accounts_v1_platform_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
 var file_saas_accounts_v1_platform_admin_proto_goTypes = []any{
 	(CatalogueEntryKind)(0),                    // 0: saas.accounts.v1.CatalogueEntryKind
 	(CatalogueGapReason)(0),                    // 1: saas.accounts.v1.CatalogueGapReason
@@ -4116,45 +4232,46 @@ var file_saas_accounts_v1_platform_admin_proto_goTypes = []any{
 	(*ModuleEnvelope)(nil),                     // 50: saas.accounts.v1.ModuleEnvelope
 	(*GetModuleEnvelopeRequest)(nil),           // 51: saas.accounts.v1.GetModuleEnvelopeRequest
 	(*GetModuleEnvelopeResponse)(nil),          // 52: saas.accounts.v1.GetModuleEnvelopeResponse
-	(*PutModuleEnvelopeRequest)(nil),           // 53: saas.accounts.v1.PutModuleEnvelopeRequest
-	(*PutModuleEnvelopeResponse)(nil),          // 54: saas.accounts.v1.PutModuleEnvelopeResponse
-	nil,                                        // 55: saas.accounts.v1.SessionInfo.DeviceInfoEntry
-	nil,                                        // 56: saas.accounts.v1.CatalogueObservedExecution.ContainerImageDigestsEntry
-	nil,                                        // 57: saas.accounts.v1.ListPlatformCatalogueResponse.ApprovedInventoriesEntry
-	(*User)(nil),                               // 58: saas.accounts.v1.User
-	(*Organization)(nil),                       // 59: saas.accounts.v1.Organization
-	(*OrgMembership)(nil),                      // 60: saas.accounts.v1.OrgMembership
-	(*timestamppb.Timestamp)(nil),              // 61: google.protobuf.Timestamp
-	(*Installation)(nil),                       // 62: saas.accounts.v1.Installation
-	(*CollectionReadGrant)(nil),                // 63: saas.accounts.v1.CollectionReadGrant
-	(*SolutionRegistration)(nil),               // 64: saas.accounts.v1.SolutionRegistration
-	(*v1.GetJobOperationsRequest)(nil),         // 65: saas.jobs.v1.GetJobOperationsRequest
-	(*v1.ListJobsRequest)(nil),                 // 66: saas.jobs.v1.ListJobsRequest
-	(*v1.GetJobRequest)(nil),                   // 67: saas.jobs.v1.GetJobRequest
-	(*v1.ReplayJobRequest)(nil),                // 68: saas.jobs.v1.ReplayJobRequest
-	(*v11.GetEventOperationsRequest)(nil),      // 69: saas.events.v1.GetEventOperationsRequest
-	(*v11.ListEventSubscriptionsRequest)(nil),  // 70: saas.events.v1.ListEventSubscriptionsRequest
-	(*emptypb.Empty)(nil),                      // 71: google.protobuf.Empty
-	(*v1.GetJobOperationsResponse)(nil),        // 72: saas.jobs.v1.GetJobOperationsResponse
-	(*v1.ListJobsResponse)(nil),                // 73: saas.jobs.v1.ListJobsResponse
-	(*v1.GetJobResponse)(nil),                  // 74: saas.jobs.v1.GetJobResponse
-	(*v1.ReplayJobResponse)(nil),               // 75: saas.jobs.v1.ReplayJobResponse
-	(*v11.GetEventOperationsResponse)(nil),     // 76: saas.events.v1.GetEventOperationsResponse
-	(*v11.ListEventSubscriptionsResponse)(nil), // 77: saas.events.v1.ListEventSubscriptionsResponse
+	(*ModuleAuthorityRequest)(nil),             // 53: saas.accounts.v1.ModuleAuthorityRequest
+	(*PutModuleEnvelopeRequest)(nil),           // 54: saas.accounts.v1.PutModuleEnvelopeRequest
+	(*PutModuleEnvelopeResponse)(nil),          // 55: saas.accounts.v1.PutModuleEnvelopeResponse
+	nil,                                        // 56: saas.accounts.v1.SessionInfo.DeviceInfoEntry
+	nil,                                        // 57: saas.accounts.v1.CatalogueObservedExecution.ContainerImageDigestsEntry
+	nil,                                        // 58: saas.accounts.v1.ListPlatformCatalogueResponse.ApprovedInventoriesEntry
+	(*User)(nil),                               // 59: saas.accounts.v1.User
+	(*Organization)(nil),                       // 60: saas.accounts.v1.Organization
+	(*OrgMembership)(nil),                      // 61: saas.accounts.v1.OrgMembership
+	(*timestamppb.Timestamp)(nil),              // 62: google.protobuf.Timestamp
+	(*Installation)(nil),                       // 63: saas.accounts.v1.Installation
+	(*CollectionReadGrant)(nil),                // 64: saas.accounts.v1.CollectionReadGrant
+	(*SolutionRegistration)(nil),               // 65: saas.accounts.v1.SolutionRegistration
+	(*v1.GetJobOperationsRequest)(nil),         // 66: saas.jobs.v1.GetJobOperationsRequest
+	(*v1.ListJobsRequest)(nil),                 // 67: saas.jobs.v1.ListJobsRequest
+	(*v1.GetJobRequest)(nil),                   // 68: saas.jobs.v1.GetJobRequest
+	(*v1.ReplayJobRequest)(nil),                // 69: saas.jobs.v1.ReplayJobRequest
+	(*v11.GetEventOperationsRequest)(nil),      // 70: saas.events.v1.GetEventOperationsRequest
+	(*v11.ListEventSubscriptionsRequest)(nil),  // 71: saas.events.v1.ListEventSubscriptionsRequest
+	(*emptypb.Empty)(nil),                      // 72: google.protobuf.Empty
+	(*v1.GetJobOperationsResponse)(nil),        // 73: saas.jobs.v1.GetJobOperationsResponse
+	(*v1.ListJobsResponse)(nil),                // 74: saas.jobs.v1.ListJobsResponse
+	(*v1.GetJobResponse)(nil),                  // 75: saas.jobs.v1.GetJobResponse
+	(*v1.ReplayJobResponse)(nil),               // 76: saas.jobs.v1.ReplayJobResponse
+	(*v11.GetEventOperationsResponse)(nil),     // 77: saas.events.v1.GetEventOperationsResponse
+	(*v11.ListEventSubscriptionsResponse)(nil), // 78: saas.events.v1.ListEventSubscriptionsResponse
 }
 var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
-	58, // 0: saas.accounts.v1.SearchUsersResponse.users:type_name -> saas.accounts.v1.User
-	59, // 1: saas.accounts.v1.PlatformOrganization.organization:type_name -> saas.accounts.v1.Organization
+	59, // 0: saas.accounts.v1.SearchUsersResponse.users:type_name -> saas.accounts.v1.User
+	60, // 1: saas.accounts.v1.PlatformOrganization.organization:type_name -> saas.accounts.v1.Organization
 	6,  // 2: saas.accounts.v1.ListAllOrganizationsResponse.organizations:type_name -> saas.accounts.v1.PlatformOrganization
-	60, // 3: saas.accounts.v1.GetOrganizationRosterResponse.members:type_name -> saas.accounts.v1.OrgMembership
-	55, // 4: saas.accounts.v1.SessionInfo.device_info:type_name -> saas.accounts.v1.SessionInfo.DeviceInfoEntry
-	61, // 5: saas.accounts.v1.SessionInfo.created_at:type_name -> google.protobuf.Timestamp
-	61, // 6: saas.accounts.v1.SessionInfo.last_active_at:type_name -> google.protobuf.Timestamp
-	61, // 7: saas.accounts.v1.SessionInfo.expires_at:type_name -> google.protobuf.Timestamp
-	61, // 8: saas.accounts.v1.SessionInfo.idle_expires_at:type_name -> google.protobuf.Timestamp
+	61, // 3: saas.accounts.v1.GetOrganizationRosterResponse.members:type_name -> saas.accounts.v1.OrgMembership
+	56, // 4: saas.accounts.v1.SessionInfo.device_info:type_name -> saas.accounts.v1.SessionInfo.DeviceInfoEntry
+	62, // 5: saas.accounts.v1.SessionInfo.created_at:type_name -> google.protobuf.Timestamp
+	62, // 6: saas.accounts.v1.SessionInfo.last_active_at:type_name -> google.protobuf.Timestamp
+	62, // 7: saas.accounts.v1.SessionInfo.expires_at:type_name -> google.protobuf.Timestamp
+	62, // 8: saas.accounts.v1.SessionInfo.idle_expires_at:type_name -> google.protobuf.Timestamp
 	17, // 9: saas.accounts.v1.ListActiveSessionsResponse.sessions:type_name -> saas.accounts.v1.SessionInfo
 	22, // 10: saas.accounts.v1.GetOrgEntitlementsResponse.entitlements:type_name -> saas.accounts.v1.EntitlementInfo
-	61, // 11: saas.accounts.v1.PlatformAdminEntry.granted_at:type_name -> google.protobuf.Timestamp
+	62, // 11: saas.accounts.v1.PlatformAdminEntry.granted_at:type_name -> google.protobuf.Timestamp
 	28, // 12: saas.accounts.v1.ListPlatformAdminsResponse.admins:type_name -> saas.accounts.v1.PlatformAdminEntry
 	31, // 13: saas.accounts.v1.ListFeatureFlagsResponse.flags:type_name -> saas.accounts.v1.FeatureFlagEntry
 	1,  // 14: saas.accounts.v1.CatalogueGap.reason:type_name -> saas.accounts.v1.CatalogueGapReason
@@ -4165,9 +4282,9 @@ var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
 	39, // 19: saas.accounts.v1.CatalogueAuthorized.not_authorized:type_name -> saas.accounts.v1.CatalogueNotAuthorized
 	35, // 20: saas.accounts.v1.CatalogueAuthorized.authorization_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 21: saas.accounts.v1.CatalogueApplied.applied_revision_gap:type_name -> saas.accounts.v1.CatalogueGap
-	56, // 22: saas.accounts.v1.CatalogueObservedExecution.container_image_digests:type_name -> saas.accounts.v1.CatalogueObservedExecution.ContainerImageDigestsEntry
+	57, // 22: saas.accounts.v1.CatalogueObservedExecution.container_image_digests:type_name -> saas.accounts.v1.CatalogueObservedExecution.ContainerImageDigestsEntry
 	35, // 23: saas.accounts.v1.CatalogueObserved.observed_revision_gap:type_name -> saas.accounts.v1.CatalogueGap
-	61, // 24: saas.accounts.v1.CatalogueObserved.observed_at:type_name -> google.protobuf.Timestamp
+	62, // 24: saas.accounts.v1.CatalogueObserved.observed_at:type_name -> google.protobuf.Timestamp
 	35, // 25: saas.accounts.v1.CatalogueObserved.observation_freshness_gap:type_name -> saas.accounts.v1.CatalogueGap
 	42, // 26: saas.accounts.v1.CatalogueObserved.observed_execution:type_name -> saas.accounts.v1.CatalogueObservedExecution
 	35, // 27: saas.accounts.v1.CatalogueObserved.observed_execution_gap:type_name -> saas.accounts.v1.CatalogueGap
@@ -4176,12 +4293,12 @@ var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
 	35, // 30: saas.accounts.v1.CatalogueWithdrawing.withdrawal_state_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 31: saas.accounts.v1.CatalogueWithdrawing.credential_revocation_state_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 32: saas.accounts.v1.CatalogueRetired.retirement_state_gap:type_name -> saas.accounts.v1.CatalogueGap
-	62, // 33: saas.accounts.v1.CatalogueInstallation.installation:type_name -> saas.accounts.v1.Installation
+	63, // 33: saas.accounts.v1.CatalogueInstallation.installation:type_name -> saas.accounts.v1.Installation
 	36, // 34: saas.accounts.v1.CatalogueInstallation.agent_release:type_name -> saas.accounts.v1.CatalogueRelease
 	35, // 35: saas.accounts.v1.CatalogueInstallation.agent_release_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 36: saas.accounts.v1.CatalogueInstallation.revision_gap:type_name -> saas.accounts.v1.CatalogueGap
-	63, // 37: saas.accounts.v1.CatalogueInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
-	63, // 38: saas.accounts.v1.CatalogueInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	64, // 37: saas.accounts.v1.CatalogueInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	64, // 38: saas.accounts.v1.CatalogueInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
 	0,  // 39: saas.accounts.v1.CatalogueEntry.kind:type_name -> saas.accounts.v1.CatalogueEntryKind
 	35, // 40: saas.accounts.v1.CatalogueEntry.publisher_gap:type_name -> saas.accounts.v1.CatalogueGap
 	37, // 41: saas.accounts.v1.CatalogueEntry.desired:type_name -> saas.accounts.v1.CatalogueDesired
@@ -4191,68 +4308,69 @@ var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
 	44, // 45: saas.accounts.v1.CatalogueEntry.withdrawing:type_name -> saas.accounts.v1.CatalogueWithdrawing
 	45, // 46: saas.accounts.v1.CatalogueEntry.retired:type_name -> saas.accounts.v1.CatalogueRetired
 	35, // 47: saas.accounts.v1.CatalogueEntry.build_size_gap:type_name -> saas.accounts.v1.CatalogueGap
-	64, // 48: saas.accounts.v1.CatalogueEntry.registration:type_name -> saas.accounts.v1.SolutionRegistration
+	65, // 48: saas.accounts.v1.CatalogueEntry.registration:type_name -> saas.accounts.v1.SolutionRegistration
 	46, // 49: saas.accounts.v1.CatalogueEntry.installations:type_name -> saas.accounts.v1.CatalogueInstallation
 	47, // 50: saas.accounts.v1.ListPlatformCatalogueResponse.entries:type_name -> saas.accounts.v1.CatalogueEntry
-	57, // 51: saas.accounts.v1.ListPlatformCatalogueResponse.approved_inventories:type_name -> saas.accounts.v1.ListPlatformCatalogueResponse.ApprovedInventoriesEntry
-	61, // 52: saas.accounts.v1.ModuleEnvelope.written_at:type_name -> google.protobuf.Timestamp
+	58, // 51: saas.accounts.v1.ListPlatformCatalogueResponse.approved_inventories:type_name -> saas.accounts.v1.ListPlatformCatalogueResponse.ApprovedInventoriesEntry
+	62, // 52: saas.accounts.v1.ModuleEnvelope.written_at:type_name -> google.protobuf.Timestamp
 	50, // 53: saas.accounts.v1.GetModuleEnvelopeResponse.envelope:type_name -> saas.accounts.v1.ModuleEnvelope
-	50, // 54: saas.accounts.v1.PutModuleEnvelopeResponse.envelope:type_name -> saas.accounts.v1.ModuleEnvelope
-	3,  // 55: saas.accounts.v1.PlatformAdminService.SearchUsers:input_type -> saas.accounts.v1.SearchUsersRequest
-	10, // 56: saas.accounts.v1.PlatformAdminService.SuspendUser:input_type -> saas.accounts.v1.SuspendUserRequest
-	11, // 57: saas.accounts.v1.PlatformAdminService.UnsuspendUser:input_type -> saas.accounts.v1.UnsuspendUserRequest
-	12, // 58: saas.accounts.v1.PlatformAdminService.ImpersonateUser:input_type -> saas.accounts.v1.ImpersonateUserRequest
-	14, // 59: saas.accounts.v1.PlatformAdminService.StopImpersonation:input_type -> saas.accounts.v1.StopImpersonationRequest
-	16, // 60: saas.accounts.v1.PlatformAdminService.ListActiveSessions:input_type -> saas.accounts.v1.ListActiveSessionsRequest
-	19, // 61: saas.accounts.v1.PlatformAdminService.RevokeSession:input_type -> saas.accounts.v1.RevokeSessionRequest
-	20, // 62: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:input_type -> saas.accounts.v1.GetOrgEntitlementsRequest
-	23, // 63: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:input_type -> saas.accounts.v1.OverrideEntitlementRequest
-	25, // 64: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:input_type -> saas.accounts.v1.GrantPlatformRoleRequest
-	26, // 65: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:input_type -> saas.accounts.v1.RevokePlatformRoleRequest
-	27, // 66: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:input_type -> saas.accounts.v1.ListPlatformAdminsRequest
-	5,  // 67: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:input_type -> saas.accounts.v1.ListAllOrganizationsRequest
-	8,  // 68: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:input_type -> saas.accounts.v1.GetOrganizationRosterRequest
-	30, // 69: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:input_type -> saas.accounts.v1.ListFeatureFlagsRequest
-	33, // 70: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:input_type -> saas.accounts.v1.UpsertFeatureFlagRequest
-	65, // 71: saas.accounts.v1.PlatformAdminService.GetJobOperations:input_type -> saas.jobs.v1.GetJobOperationsRequest
-	66, // 72: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
-	67, // 73: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
-	68, // 74: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
-	69, // 75: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
-	70, // 76: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
-	48, // 77: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:input_type -> saas.accounts.v1.ListPlatformCatalogueRequest
-	51, // 78: saas.accounts.v1.PlatformAdminService.GetModuleEnvelope:input_type -> saas.accounts.v1.GetModuleEnvelopeRequest
-	53, // 79: saas.accounts.v1.PlatformAdminService.PutModuleEnvelope:input_type -> saas.accounts.v1.PutModuleEnvelopeRequest
-	4,  // 80: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
-	71, // 81: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
-	71, // 82: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
-	13, // 83: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
-	15, // 84: saas.accounts.v1.PlatformAdminService.StopImpersonation:output_type -> saas.accounts.v1.StopImpersonationResponse
-	18, // 85: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
-	71, // 86: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
-	21, // 87: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
-	24, // 88: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
-	71, // 89: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
-	71, // 90: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
-	29, // 91: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
-	7,  // 92: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:output_type -> saas.accounts.v1.ListAllOrganizationsResponse
-	9,  // 93: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:output_type -> saas.accounts.v1.GetOrganizationRosterResponse
-	32, // 94: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
-	34, // 95: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
-	72, // 96: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
-	73, // 97: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
-	74, // 98: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
-	75, // 99: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
-	76, // 100: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
-	77, // 101: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
-	49, // 102: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:output_type -> saas.accounts.v1.ListPlatformCatalogueResponse
-	52, // 103: saas.accounts.v1.PlatformAdminService.GetModuleEnvelope:output_type -> saas.accounts.v1.GetModuleEnvelopeResponse
-	54, // 104: saas.accounts.v1.PlatformAdminService.PutModuleEnvelope:output_type -> saas.accounts.v1.PutModuleEnvelopeResponse
-	80, // [80:105] is the sub-list for method output_type
-	55, // [55:80] is the sub-list for method input_type
-	55, // [55:55] is the sub-list for extension type_name
-	55, // [55:55] is the sub-list for extension extendee
-	0,  // [0:55] is the sub-list for field type_name
+	53, // 54: saas.accounts.v1.GetModuleEnvelopeResponse.requested:type_name -> saas.accounts.v1.ModuleAuthorityRequest
+	50, // 55: saas.accounts.v1.PutModuleEnvelopeResponse.envelope:type_name -> saas.accounts.v1.ModuleEnvelope
+	3,  // 56: saas.accounts.v1.PlatformAdminService.SearchUsers:input_type -> saas.accounts.v1.SearchUsersRequest
+	10, // 57: saas.accounts.v1.PlatformAdminService.SuspendUser:input_type -> saas.accounts.v1.SuspendUserRequest
+	11, // 58: saas.accounts.v1.PlatformAdminService.UnsuspendUser:input_type -> saas.accounts.v1.UnsuspendUserRequest
+	12, // 59: saas.accounts.v1.PlatformAdminService.ImpersonateUser:input_type -> saas.accounts.v1.ImpersonateUserRequest
+	14, // 60: saas.accounts.v1.PlatformAdminService.StopImpersonation:input_type -> saas.accounts.v1.StopImpersonationRequest
+	16, // 61: saas.accounts.v1.PlatformAdminService.ListActiveSessions:input_type -> saas.accounts.v1.ListActiveSessionsRequest
+	19, // 62: saas.accounts.v1.PlatformAdminService.RevokeSession:input_type -> saas.accounts.v1.RevokeSessionRequest
+	20, // 63: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:input_type -> saas.accounts.v1.GetOrgEntitlementsRequest
+	23, // 64: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:input_type -> saas.accounts.v1.OverrideEntitlementRequest
+	25, // 65: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:input_type -> saas.accounts.v1.GrantPlatformRoleRequest
+	26, // 66: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:input_type -> saas.accounts.v1.RevokePlatformRoleRequest
+	27, // 67: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:input_type -> saas.accounts.v1.ListPlatformAdminsRequest
+	5,  // 68: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:input_type -> saas.accounts.v1.ListAllOrganizationsRequest
+	8,  // 69: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:input_type -> saas.accounts.v1.GetOrganizationRosterRequest
+	30, // 70: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:input_type -> saas.accounts.v1.ListFeatureFlagsRequest
+	33, // 71: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:input_type -> saas.accounts.v1.UpsertFeatureFlagRequest
+	66, // 72: saas.accounts.v1.PlatformAdminService.GetJobOperations:input_type -> saas.jobs.v1.GetJobOperationsRequest
+	67, // 73: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
+	68, // 74: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
+	69, // 75: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
+	70, // 76: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
+	71, // 77: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
+	48, // 78: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:input_type -> saas.accounts.v1.ListPlatformCatalogueRequest
+	51, // 79: saas.accounts.v1.PlatformAdminService.GetModuleEnvelope:input_type -> saas.accounts.v1.GetModuleEnvelopeRequest
+	54, // 80: saas.accounts.v1.PlatformAdminService.PutModuleEnvelope:input_type -> saas.accounts.v1.PutModuleEnvelopeRequest
+	4,  // 81: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
+	72, // 82: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
+	72, // 83: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
+	13, // 84: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
+	15, // 85: saas.accounts.v1.PlatformAdminService.StopImpersonation:output_type -> saas.accounts.v1.StopImpersonationResponse
+	18, // 86: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
+	72, // 87: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
+	21, // 88: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
+	24, // 89: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
+	72, // 90: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
+	72, // 91: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
+	29, // 92: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
+	7,  // 93: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:output_type -> saas.accounts.v1.ListAllOrganizationsResponse
+	9,  // 94: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:output_type -> saas.accounts.v1.GetOrganizationRosterResponse
+	32, // 95: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
+	34, // 96: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
+	73, // 97: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
+	74, // 98: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
+	75, // 99: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
+	76, // 100: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
+	77, // 101: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
+	78, // 102: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
+	49, // 103: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:output_type -> saas.accounts.v1.ListPlatformCatalogueResponse
+	52, // 104: saas.accounts.v1.PlatformAdminService.GetModuleEnvelope:output_type -> saas.accounts.v1.GetModuleEnvelopeResponse
+	55, // 105: saas.accounts.v1.PlatformAdminService.PutModuleEnvelope:output_type -> saas.accounts.v1.PutModuleEnvelopeResponse
+	81, // [81:106] is the sub-list for method output_type
+	56, // [56:81] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_platform_admin_proto_init() }
@@ -4313,7 +4431,7 @@ func file_saas_accounts_v1_platform_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_platform_admin_proto_rawDesc), len(file_saas_accounts_v1_platform_admin_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   55,
+			NumMessages:   56,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

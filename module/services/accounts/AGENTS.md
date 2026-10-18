@@ -25,6 +25,23 @@ Context exchanges below; no secret does.
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
 
+## The one diagnostic the binary answers
+
+`./app diagnose token-exchange` (`diagnose.go`, dispatched first thing in
+`doWork`) certifies the identity provider's client authentication: it builds the
+provider stack with `buildProviderStack`, exchanges `exchangeprobe.SentinelCode`
+through its exchanger — and, when the provider refuses only the code, again with
+a random secret of the real one's shape as a negative control
+(`WithClientSecretFrom` on both exchangers) —
+and prints one JSON line — verdicts, status, OAuth error code — with file
+descriptors 1 and 2 on the null device so nothing else reaches the caller.
+Callers detect the diagnostic by the sentinel string in the binary, so keep
+`SentinelCode`'s value. A check that execs into the pod uses it instead of an HTTP client in
+the image; [FEATURES.md](../../FEATURES.md#certifying-the-client-credential)
+lists the verdicts. Any `diagnose` argument exits without serving. The
+exchangers report a refusal as `auth.TokenEndpointError` (status and code,
+never the body), which is what the classification reads.
+
 ## Declared solution presence and the registry
 
 A module or solution is present because one signed **module manifest**
@@ -334,6 +351,30 @@ and resource kinds the manifest also asks for, and each operation binding only
 when the manifest asks for it on the envelope's audience with an `invoke`
 operation, every operation's scopes intersected with what the manifest asks.
 A principal whose entry fails validation is **omitted by name, never widened**.
+
+**No envelope is said by name, every pass.** A pass that finds no envelope
+(none written, or no envelope store) publishes an empty registry and, while any
+applied manifest asks for authority, returns `ErrModuleEnvelopeMissing` naming
+each principal, binding and generation — logged by the reconcile loop as
+`solution host binding reconcile pass failed`, beside the omitted-principal
+reasons. The mint's refusal of a prefix the registry does not hold logs
+`module identity refused` with the prefix and why (the registry is empty and
+derived from no envelope, empty, or holds no entry for it), as a refused
+execution does; the caller still hears only the denial.
+
+**The administrator writes it at `/admin/platform/module-authority`.**
+`GetModuleEnvelope` answers, beside the current revision (`revision`,
+`written_by`, `written_at`), what the applied manifests ask for
+(`requested`: principal, binding, generation, alias, the manifest's
+`authority` as JSON) and whether the returned revision declares a ceiling for
+each principal (`allowed`) — `AppliedAuthorityRequests`, the pass's own reading
+of the applied state, so the page and the log name the same principals. It is a
+request, not a grant: a carrier the pass no longer verifies is listed and still
+grants nothing. The page writes the next revision through `PutModuleEnvelope`,
+fenced on the revision the draft was started from, and names each refusal (a
+missing recent step-up, a revision written meanwhile, a document the parser
+refuses). There is no in-session step-up: an administrator whose second factor
+is not recent signs in again.
 
 **The registry is fenced by the committed envelope revision.** Every module
 authority decision — `AuthorizeModuleCapability`, the work-context and

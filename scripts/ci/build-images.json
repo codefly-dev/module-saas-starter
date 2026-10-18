@@ -27,7 +27,7 @@
   "postgres": {
     "source": "https://github.com/codefly-dev/service-postgres/blob/main/bootstrap-image.json",
     "images": [
-      "alpine:3.21.7@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d"
+      "alpine:3.21.8@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507"
     ],
     "watch": [
       "alpine:3.21",

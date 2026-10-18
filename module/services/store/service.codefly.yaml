@@ -7,7 +7,9 @@ agent:
     # also declares each runtime login's password as a required secret, without
     # which a deployment render fails on the missing control-plane key.
     # 0.0.144 also carries the explicit test verdict required by CLI 0.1.185.
-    version: 0.0.144
+    # 0.0.146: the bootstrap image fetches migrate with the base's wget and pins
+    # no curl, so an Alpine curl rebuild no longer reds the build (service-postgres#189).
+    version: 0.0.146
     publisher: codefly.dev
 endpoints:
     - name: tcp
