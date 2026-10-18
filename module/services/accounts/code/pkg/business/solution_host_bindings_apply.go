@@ -47,9 +47,18 @@ func (s *Service) ListSolutionHostBindings(ctx context.Context) ([]*SolutionHost
 // generation it had applied, which is the whole point of preparing before
 // activating: the last generation that passed every check goes on serving, and
 // what delivery wants plus the reason it was refused sit beside it.
+//
+// TWO KINDS OF REASON reach the row and they are not interchangeable.
+// withheldReason is this generation's ADMISSION verdict: it refused the
+// generation, so it is the pending state AND a refusal in the generation trail.
+// authorityReason is the module registry's: the generation was applied and the
+// envelope withheld a binding its manifest asked for, so it is the pending
+// state — the row an operator reads for this module's health — and never a
+// trail row, because the generation was not refused and a status word claims
+// one thing.
 func (s *Service) recordSolutionHostBindingDesired(
 	ctx context.Context, document *solutionhost.ModuleManifest,
-	withheldReason string, settled bool, now time.Time,
+	withheldReason, authorityReason string, settled bool, now time.Time,
 ) error {
 	digest, err := document.Digest()
 	if err != nil {
@@ -81,8 +90,12 @@ func (s *Service) recordSolutionHostBindingDesired(
 		// it first would reset pending_since on every pass — so a refusal stuck
 		// for a day would read as one that started seconds ago, which is the
 		// opposite of what this field is for.
-		if withheldReason != "" || settled {
-			applyPendingReason(record, withheldReason, now)
+		pending := withheldReason
+		if pending == "" {
+			pending = authorityReason
+		}
+		if pending != "" || settled {
+			applyPendingReason(record, pending, now)
 		}
 		record.UpdatedAt = now
 		if err := s.store.SaveSolutionHostBinding(ctx, record); err != nil {

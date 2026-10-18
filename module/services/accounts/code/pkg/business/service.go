@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -302,6 +303,13 @@ type installedModuleRegistry struct {
 	// from, nil when it was not derived from a counted read of it. See
 	// deliveredSince.
 	delivered *uint64
+	// withheld is every operation binding an applied manifest asked for that
+	// this registry does not hold. It travels with the registry through the
+	// same pointer because it is the other half of the same answer: the
+	// registry says what a module MAY do, and this says what the pass could
+	// not give it, which is the difference between "no module accepts a source
+	// delegation here" and "the one that does is missing".
+	withheld []ModuleBindingOmission
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
@@ -354,9 +362,37 @@ func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 // delivered is the size of the delivery inbox the registry was derived from,
 // read in the same snapshot as its inputs, or nil when it was not derived from
 // a counted read of the inbox. See deliveredSince.
-func (s *Service) InstallDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64) {
+//
+// withheld is every operation binding the pass could not grant. It is variadic
+// so that the common statement — a registry with nothing withheld — is spelled
+// by passing nothing, and so the one production caller publishes both halves
+// through the one pointer rather than through a second store a reader could
+// pair with a different pass.
+func (s *Service) InstallDerivedModulePrincipals(
+	registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64, withheld ...ModuleBindingOmission,
+) {
 	s.observeModuleEnvelopeRevision(envelopeRevision)
-	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision, delivered: delivered})
+	s.modulePrincipals.Store(&installedModuleRegistry{
+		registry: maps.Clone(registry), envelopeRevision: envelopeRevision,
+		delivered: delivered, withheld: slices.Clone(withheld),
+	})
+}
+
+// withheldModuleBindings is every operation binding an applied manifest asked
+// for that the pass which derived the current registry could not grant.
+//
+// Nil has one meaning and it is "nothing is known to be missing": a registry
+// stated directly rather than derived (a test, or a host before its first
+// pass) publishes no omissions, and a caller must not read that as a claim
+// that the envelope allowed everything. The one caller that acts on it —
+// recordSourceDelegationsTx — therefore fails closed on the registry's own
+// fence as well, which answers the pass that has not run yet.
+func (s *Service) withheldModuleBindings() []ModuleBindingOmission {
+	installed := s.modulePrincipals.Load()
+	if installed == nil {
+		return nil
+	}
+	return installed.withheld
 }
 
 // observeModuleEnvelopeRevision records that a revision is committed. It only
