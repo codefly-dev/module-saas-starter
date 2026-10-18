@@ -1,14 +1,14 @@
-FROM alpine@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+FROM alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507
 
 ARG TARGETARCH
 
 # Literals, not build arguments: a label is provenance only if it reports what
 # actually built the image, and a --build-arg must not be able to rewrite it.
-LABEL dev.codefly.bootstrap.lock-digest="sha256:743f17dc4861c943d5263912882996d9726eba3d24cce8113e9b5308d05aa8d5" \
-      dev.codefly.bootstrap.base="alpine@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d" \
-      dev.codefly.bootstrap.base-version="3.21.7" \
+LABEL dev.codefly.bootstrap.lock-digest="sha256:bdb282841e3149e4fadd1552a10f4f9eed27350254e9eb60dc8f9cffdde8ea49" \
+      dev.codefly.bootstrap.base="alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507" \
+      dev.codefly.bootstrap.base-version="3.21.8" \
       dev.codefly.bootstrap.apk-repositories="https://dl-cdn.alpinelinux.org/alpine/v3.21/main" \
-      dev.codefly.bootstrap.apk-packages="curl=8.14.1-r2 postgresql17-client=17.11-r0" \
+      dev.codefly.bootstrap.apk-packages="postgresql17-client=17.11-r0" \
       dev.codefly.bootstrap.migrate-version="v4.19.1" \
       dev.codefly.bootstrap.migrate-archives="amd64=2ac648fbd1b127b69ab5a7b33cf96212178f71e22379fc50573630c6f4c7ce18,arm64=2fea2455c0f3f07cc3f4b98471c951ad1a716059574b20b6416bd1e9058751c5"
 
@@ -19,10 +19,13 @@ WORKDIR /app
 # quietly installing different bytes. .github/scripts/update-bootstrap-lock.sh
 # moves the lock forward.
 RUN printf '%s\n' "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" >/etc/apk/repositories \
-    && apk add --no-cache curl=8.14.1-r2 postgresql17-client=17.11-r0
+    && apk add --no-cache postgresql17-client=17.11-r0
 
 # The archive is downloaded to a file and checksum-verified against the lock before
-# anything unpacks or runs it, so tampered release bytes never reach tar.
+# anything unpacks or runs it, so tampered release bytes never reach tar. The
+# base's busybox wget fetches it: the integrity is the lock's sha256, not the
+# transport, so no download tool is installed from the rolling package
+# repository just for this step.
 RUN set -eu; \
     architecture="${TARGETARCH:-$(apk --print-arch)}"; \
     case "${architecture}" in \
@@ -34,7 +37,7 @@ RUN set -eu; \
       arm64) checksum=2fea2455c0f3f07cc3f4b98471c951ad1a716059574b20b6416bd1e9058751c5 ;; \
       *) echo "unsupported target architecture: ${architecture}" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL -o /tmp/migrate.tar.gz "https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-${architecture}.tar.gz"; \
+    wget -q -O /tmp/migrate.tar.gz "https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-${architecture}.tar.gz"; \
     printf '%s  %s\n' "${checksum}" /tmp/migrate.tar.gz | sha256sum -c -; \
     tar -xzf /tmp/migrate.tar.gz -C /tmp migrate; \
     install -m 0755 /tmp/migrate /usr/local/bin/migrate; \
