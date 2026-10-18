@@ -1976,6 +1976,9 @@ func configuredSolutionHostBindingReconciler(
 		reviewer   business.ExecutionReviewer
 		namespaces business.ModuleNamespaceRule
 	)
+	// The module this host was composed as. Its namespace's `delivery`
+	// account carries the host's own module envelope, under either profile.
+	hostModule := strings.TrimSpace(os.Getenv(resources.ModulePrefix))
 	if nativeAttester != nil {
 		// The local profile is bound to THIS run's anchor, and until that is
 		// proven the verifier admits no carrier. A native run's namespace is its
@@ -2011,7 +2014,7 @@ func configuredSolutionHostBindingReconciler(
 		if err != nil {
 			return nil, err
 		}
-		if namespaces, err = business.NewModuleNamespaceRule(hostNamespace, strings.TrimSpace(os.Getenv(resources.ModulePrefix))); err != nil {
+		if namespaces, err = business.NewModuleNamespaceRule(hostNamespace, hostModule); err != nil {
 			return nil, err
 		}
 		carrier, reviewer = infra.NewSolutionDeliveryCarrierCheck(kubernetes), kubernetes
@@ -2023,6 +2026,7 @@ func configuredSolutionHostBindingReconciler(
 	service.SetModuleNamespaceRule(namespaces)
 	service.SetSolutionDelivery(keyVerifier, store, carrier)
 	service.SetSolutionDeliveryCoordinate(coordinate)
+	service.SetModuleEnvelopeDeliveryHost(hostModule)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
 	// the gateway because a solution runtime is an independently deployed

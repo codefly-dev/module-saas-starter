@@ -168,7 +168,11 @@ type Service struct {
 	// decided under.
 	deliveryCoordinate string
 	// moduleNamespaces spells the namespace a module's workloads run in.
-	moduleNamespaces       ModuleNamespaceRule
+	moduleNamespaces ModuleNamespaceRule
+	// hostModule is the module this host was composed as. A delivered module
+	// envelope is the host's own document, so its carrier is the delivery
+	// account of this module's namespace (module_envelope_delivery.go).
+	hostModule             string
 	frontendSource         frontendpayload.Source
 	frontendLazyLoadWindow time.Duration
 

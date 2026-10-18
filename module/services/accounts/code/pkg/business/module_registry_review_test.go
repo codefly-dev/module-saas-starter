@@ -158,3 +158,7 @@ func (*fakeEnvelopeStore) ModuleInstallations(context.Context) ([]ModuleInstalla
 func (f reviewLiveAuthority) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {
 	return ctx, func() {}, nil
 }
+
+func (*fakeEnvelopeStore) LatestDeliveredModuleEnvelopeRecord(context.Context) (*ModuleEnvelopeRecord, error) {
+	panic("not used")
+}

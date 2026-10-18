@@ -460,6 +460,53 @@ principals sharing a workload, are omitted. The envelope document is
 `{"revision": N, "principals": {"<principal>": {"grant": {…}}}}`; it names no
 workload and approves no build.
 
+### The delivered module envelope
+
+The envelope is written two ways, through one writer: interactively by a
+platform super_admin (`PlatformAdminService/PutModuleEnvelope`, fresh MFA), or
+**delivered** from the composition, which declares each environment's envelope
+and signs it at publish with the cell's release key. Without a delivered
+envelope a hosted cell applies every module's signed manifest and grants none
+of them.
+
+`POST /platform/_delivery/envelope` takes one carrier of core's
+`codefly/module-envelope/v1` (`{document, envelope}`, the same carrier shape,
+1 MiB bound and pinned keys as a manifest) and answers, in this order:
+
+1. **Parse** the carrier with `ParseSigned`.
+2. **Verify** it with `VerifyDeliveredEnvelope`: the one signature under a pinned
+   key, the canonical envelope, a signer pinned as a **release** key — a person
+   key is refused (403) by name — and pinned for the envelope's `host.domain`.
+3. **Authorise the carrier** as the `delivery` account of **this host's own**
+   namespace (the module it was composed as, `CODEFLY__MODULE`, by the namespace
+   rule): the envelope is the host's document, not any one module's.
+4. **Hold it to the host's rules.** A delivered envelope **names no
+   organization**: a grant with a non-empty `tenant` is refused (422). An
+   organization id is this host's own record; a delivered grant's tenancy
+   resolves through each organization's installation (the shared tenancy, or
+   `cross_tenant` as granted), and a pin to one organization is written
+   interactively at a higher revision. Every grant is then held to the rules the
+   interactive write applies (400, naming the rule).
+5. **Admit** the revision with core's `AdmitEnvelope` against the latest
+   delivered one: an exact replay answers `replayed` and writes nothing; a lower
+   revision, a rewritten one, another host (422) or another ownership domain
+   than the first delivered envelope's (403) is refused. Then the host's own
+   rule: the revision must be above the committed one **whatever wrote it** — at
+   or below a revision a platform administrator wrote interactively it is
+   refused (409) naming that revision, and the composition must state the change
+   and deliver above it. Revisions need not be contiguous.
+6. **Write** it through the writer the interactive path uses: a narrowing is
+   witnessed in the policy log (refused, writing nothing, on a host with none),
+   installations the new ceiling no longer allows are revoked, the row and its
+   `saas.platform.module_envelope_delivered` audit event (actor `system`;
+   revision, previous revision, principals, signer, ownership domain, digest)
+   commit together, and a registry pass is requested.
+
+A `200` answers `{"disposition":"accepted"|"replayed","revision","digest","signer"}`;
+refusals use the manifest's codes. The row records the signer, the ownership
+domain, the canonical payload and the DSSE envelope, and no user; an
+interactive row records its user and no delivery (one `CHECK`).
+
 A platform super_admin reads and writes it at `/admin/platform/module-authority`:
 the current revision, who wrote it and when, and every principal the applied
 manifests ask for that it does not allow. With no envelope every module is
@@ -582,6 +629,7 @@ document, and every registrant hardcodes those paths today.
 | --- | --- | --- |
 | `POST /platform/_credential` | **Settled, NOT YET LIVE** | the module/solution credential mint. On the **gateway**, which forwards `Authorization` verbatim; accounts performs the `TokenReview` on the pod's own token. |
 | `POST /platform/_delivery/manifest` | Implemented; deployment qualification pending | one signed module manifest, `{document, envelope}` (§7) |
+| `POST /platform/_delivery/envelope` | Implemented; deployment qualification pending | the host's module envelope, release-signed, `{document, envelope}` (§7) |
 | `GET /platform/_delivery/applied/{binding}` | Implemented; deployment qualification pending | the binding's committed APPLIED manifest, readable only by the protected applied-state observer |
 
 **The delivery path is served by accounts**, which performs the `TokenReview`

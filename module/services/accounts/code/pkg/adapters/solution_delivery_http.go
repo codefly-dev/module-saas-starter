@@ -15,7 +15,9 @@ import (
 )
 
 // The delivery endpoint: `POST /platform/_delivery/manifest`, one signed module
-// manifest carrier per request, and `GET /platform/_delivery/applied/<binding>`.
+// manifest carrier per request, `POST /platform/_delivery/envelope`, one
+// release-signed module envelope carrier, and
+// `GET /platform/_delivery/applied/<binding>`.
 //
 // Mounted on ACCOUNTS rather than brokered through the gateway, and the
 // asymmetry with the credential mint is deliberate. `POST
@@ -38,6 +40,11 @@ const SolutionDeliveryPrefix = "/platform/_delivery/"
 // SolutionDeliveryManifestPath is the one delivery write: a module manifest.
 const SolutionDeliveryManifestPath = SolutionDeliveryPrefix + "manifest"
 
+// SolutionDeliveryEnvelopePath is the other delivery write: the host's module
+// envelope, signed by a release key and carried by the host's own delivery
+// account.
+const SolutionDeliveryEnvelopePath = SolutionDeliveryPrefix + "envelope"
+
 // solutionDeliveryMaxBytes bounds a carrier body.
 //
 // A DSSE envelope carries the document again alongside its signature; 1 MiB is
@@ -52,6 +59,7 @@ type solutionDeliveryService interface {
 		ctx context.Context, raw []byte, credential string,
 	) (business.SolutionDeliveryDisposition, *business.SolutionDeliveryRecord, error)
 	ReadSolutionDeliveryApplied(context.Context, string, string) (*business.SolutionDeliveryApplied, error)
+	ReceiveModuleEnvelopeDelivery(ctx context.Context, raw []byte, credential string) (*business.ModuleEnvelopeDeliveryReceipt, error)
 }
 
 // SolutionDeliveryHTTPHandler serves the signed delivery paths.
@@ -72,6 +80,7 @@ type solutionDeliveryReceipt struct {
 	Disposition string `json:"disposition,omitempty"`
 	Binding     string `json:"binding,omitempty"`
 	Generation  uint64 `json:"generation,omitempty"`
+	Revision    uint64 `json:"revision,omitempty"`
 	Digest      string `json:"digest,omitempty"`
 	Signer      string `json:"signer,omitempty"`
 	Error       string `json:"error,omitempty"`
@@ -83,7 +92,7 @@ func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 		return
 	}
 	// An unknown path under the reserved namespace is 404, never a fall-through.
-	if r.URL.Path != SolutionDeliveryManifestPath {
+	if r.URL.Path != SolutionDeliveryManifestPath && r.URL.Path != SolutionDeliveryEnvelopePath {
 		writeSolutionDeliveryError(w, http.StatusNotFound, "no such delivery endpoint")
 		return
 	}
@@ -101,6 +110,10 @@ func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if r.URL.Path == SolutionDeliveryEnvelopePath {
+		h.serveEnvelope(w, r, body)
+		return
+	}
 	disposition, record, err := h.service.ReceiveSolutionDelivery(r.Context(), body, r.Header.Get("Authorization"))
 	if err != nil {
 		status, message := solutionDeliveryStatus(err)
@@ -120,6 +133,28 @@ func (h *SolutionDeliveryHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 		Generation:  record.Generation,
 		Digest:      record.ContentHash,
 		Signer:      record.SignerIdentity,
+	})
+}
+
+// serveEnvelope answers one delivered module envelope with the manifest's
+// receipt shape and status taxonomy; the receipt names the revision.
+func (h *SolutionDeliveryHTTPHandler) serveEnvelope(w http.ResponseWriter, r *http.Request, body []byte) {
+	receipt, err := h.service.ReceiveModuleEnvelopeDelivery(r.Context(), body, r.Header.Get("Authorization"))
+	if err != nil {
+		status, message := solutionDeliveryStatus(err)
+		wool.Get(r.Context()).In("solution_delivery").Warn("module envelope delivery refused",
+			wool.Field("status", status), wool.Field("reason", message))
+		writeSolutionDeliveryError(w, status, message)
+		return
+	}
+	wool.Get(r.Context()).In("solution_delivery").Info("module envelope delivered",
+		wool.Field("disposition", string(receipt.Disposition)), wool.Field("revision", receipt.Revision),
+		wool.Field("signer", receipt.Signer))
+	writeSolutionDeliveryJSON(w, http.StatusOK, solutionDeliveryReceipt{
+		Disposition: string(receipt.Disposition),
+		Revision:    receipt.Revision,
+		Digest:      receipt.Digest,
+		Signer:      receipt.Signer,
 	})
 }
 
@@ -160,6 +195,8 @@ func (h *SolutionDeliveryHTTPHandler) serveApplied(w http.ResponseWriter, r *htt
 // would change**:
 //
 //	400 malformed            terminal — the bytes are not a canonical manifest
+//	                         or envelope, or an envelope grant the host's
+//	                         rules refuse (named)
 //	401 unattested           terminal — no key this host pins signed it
 //	401 carrier refused      terminal — the token is kubelet-projected and
 //	                         re-read per request, so a refusal is a
@@ -167,13 +204,20 @@ func (h *SolutionDeliveryHTTPHandler) serveApplied(w http.ResponseWriter, r *htt
 //	403 not the carrier      terminal — wrong account or namespace
 //	403 domain not granted   terminal — the signer or the binding speaks for
 //	                         another ownership domain
+//	403 not a release key    terminal — an envelope signed by a person key
 //	409 conflict             terminal — a stale, rewritten or withdrawn
-//	                         generation
+//	                         generation; a stale or rewritten envelope
+//	                         revision, or one at or below a revision an
+//	                         administrator wrote interactively (named)
 //	422 refused              terminal — another host's manifest, or a reserved
-//	                         or held route alias
+//	                         or held route alias; an envelope for another
+//	                         host, or one that names an organization
 //	503 host state           RETRYABLE — this host's applied record is unusable
 //	503 cannot verify        RETRYABLE — the host could not reach the API
 //	                         server, so nothing was checked
+//	503 not completed        RETRYABLE — e.g. the committed envelope moved
+//	                         during admission, or a delivered narrowing found
+//	                         no policy log to witness it (named)
 func solutionDeliveryStatus(err error) (int, string) {
 	switch {
 	case errors.Is(err, business.ErrSolutionDeliveryMalformed):
@@ -184,7 +228,8 @@ func solutionDeliveryStatus(err error) (int, string) {
 		return http.StatusUnauthorized, err.Error()
 	case errors.Is(err, infra.ErrCarrierNotAuthorized):
 		return http.StatusForbidden, err.Error()
-	case errors.Is(err, business.ErrSolutionDeliveryDomainNotGranted):
+	case errors.Is(err, business.ErrSolutionDeliveryDomainNotGranted),
+		errors.Is(err, business.ErrSolutionDeliverySignerNotRelease):
 		return http.StatusForbidden, err.Error()
 	case errors.Is(err, business.ErrSolutionDeliveryConflict):
 		return http.StatusConflict, err.Error()

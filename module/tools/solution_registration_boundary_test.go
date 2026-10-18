@@ -243,6 +243,12 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// consumer silently.
 		"`POST /platform/_credential`",
 		"`POST /platform/_delivery/manifest`",
+		"`POST /platform/_delivery/envelope`",
+		// The delivered envelope's two host rules a composition is written
+		// against: it names no organization, and it lands above whatever an
+		// administrator wrote interactively.
+		"A delivered envelope **names no",
+		"or below a revision a platform administrator wrote interactively it is",
 		// The rule that makes hardcoding the path correct and hardcoding the
 		// origin wrong. Without it the table reads as an invitation to pin
 		// everything.

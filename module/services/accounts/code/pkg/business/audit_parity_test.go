@@ -17,6 +17,9 @@ var eventsEmittedOutsideRPC = []EventType{
 	// The declared-presence reconcile pass emits this: delivery declares a
 	// generation and the host applies it, with no request behind it (#952).
 	EventSolutionHostBindingApplied,
+	// The delivery endpoint emits this for a release-signed module envelope:
+	// an HTTP delivery, not an RPC, with no person behind it.
+	EventModuleEnvelopeDelivered,
 	// The reconciler tombstones declared presence outside an RPC.
 	EventSolutionRegistrationDeleted,
 	// saas.approval.approved, .denied and .decision_recorded are declared by
