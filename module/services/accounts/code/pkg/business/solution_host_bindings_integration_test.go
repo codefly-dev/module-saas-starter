@@ -83,7 +83,7 @@ func declaredBinding(t *testing.T, solutionID string, generation uint64) *soluti
 		Host:       solutionhost.HostTarget{Coordinate: testHostCoordinate, Domain: testOwnershipDomain},
 		Release:    solutionhost.Release{Publisher: "acme", Name: solutionID, Version: "1.4.0"},
 		Workloads:  []solutionhost.Workload{{Service: "api", Container: "api"}},
-		Endpoints:  []solutionhost.Endpoint{{Name: "rest", Service: "api", API: "rest", Address: "http://api." + solutionID + ":8080"}},
+		Endpoints:  []solutionhost.Endpoint{{Name: "rest", Service: "api", API: "rest", Address: "http://api." + solutionID + ".svc.cluster.local:8080"}},
 	}
 	if err := document.Validate(); err != nil {
 		t.Fatalf("test document is not a valid manifest: %v", err)
@@ -537,6 +537,7 @@ func TestSolutionHostBinding_ABindingRefusedAtItsFirstGenerationIsStillVisible(t
 	solutionID := testDeclaredSolutionID(t)
 	unaddressable := declaredBinding(t, solutionID, 1)
 	unaddressable.Alias = solutionID + ".internal"
+	unaddressable.Endpoints[0].Address = "http://api." + unaddressable.Alias + ".svc.cluster.local:8080"
 	mount := &deliveredSet{}
 	mount.put(t, unaddressable)
 
@@ -573,6 +574,7 @@ func TestSolutionHostBinding_AStandingRefusalKeepsWhenItStarted(t *testing.T) {
 	solutionID := testDeclaredSolutionID(t)
 	unaddressable := declaredBinding(t, solutionID, 1)
 	unaddressable.Alias = solutionID + ".internal"
+	unaddressable.Endpoints[0].Address = "http://api." + unaddressable.Alias + ".svc.cluster.local:8080"
 	mount := &deliveredSet{}
 	mount.put(t, unaddressable)
 	reconciler := newTestReconciler(t, mount)
@@ -728,6 +730,9 @@ func TestSolutionTarget_ARenameKeepsTheIdentityAndMovesTheAlias(t *testing.T) {
 
 	renamed := declaredBinding(t, first, 2)
 	renamed.Alias = second
+	// The module's namespace is its alias by the rule, so a rename moves its
+	// endpoints' Service with it.
+	renamed.Endpoints[0].Address = "http://api." + second + ".svc.cluster.local:8080"
 	mount.put(t, renamed)
 	if err := reconciler.RunOnce(testCtx); err != nil {
 		t.Fatalf("apply the rename: %v", err)

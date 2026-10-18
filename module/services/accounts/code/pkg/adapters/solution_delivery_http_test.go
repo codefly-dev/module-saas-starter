@@ -140,7 +140,7 @@ func testModuleManifest(t *testing.T, generation uint64) *solutionhost.ModuleMan
 		Host:      solutionhost.HostTarget{Coordinate: deliveryTestCoordinate, Domain: deliveryTestDomain},
 		Release:   solutionhost.Release{Publisher: "acme", Name: "reports", Version: "1.0.0"},
 		Workloads: []solutionhost.Workload{{Service: "reports", Container: "reports"}},
-		Endpoints: []solutionhost.Endpoint{{Name: "rest", Service: "reports", API: "rest", Address: "http://reports:8080"}},
+		Endpoints: []solutionhost.Endpoint{{Name: "rest", Service: "reports", API: "rest", Address: "http://reports.platform-acme-staging-reports.svc.cluster.local:8080"}},
 	}
 	require.NoError(t, manifest.Validate())
 	return manifest

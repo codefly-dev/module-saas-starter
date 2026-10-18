@@ -1,6 +1,8 @@
 package business
 
 import (
+	"slices"
+
 	"github.com/codefly-dev/core/solutionhost"
 )
 
@@ -45,7 +47,7 @@ type solutionHostBindingAdmission struct {
 // which judges what is applied; the second apply meets the registry's durable
 // backstop (ErrSolutionHostBindingRouteHeld) and is recorded as refused.
 func admitSolutionHostBindings(
-	coordinate string, records []*SolutionHostBindingRecord, delivered []deliveredSolutionHostBinding,
+	coordinate string, rule ModuleNamespaceRule, records []*SolutionHostBindingRecord, delivered []deliveredSolutionHostBinding,
 ) solutionHostBindingAdmission {
 	result := solutionHostBindingAdmission{Withheld: map[string]string{}}
 	byBinding := make(map[string]*SolutionHostBindingRecord, len(records))
@@ -73,12 +75,27 @@ func admitSolutionHostBindings(
 		refused = false
 		holders := aliasHolders(applied, acceptedDocuments(result.Accepted))
 		kept := result.Accepted[:0]
+		// The host's own rules are judged against every binding as it stands
+		// once this pass applies, where a binding nothing has applied yet holds
+		// only once an earlier candidate of this pass has been kept: of two new
+		// claimants, the first in delivery order keeps the claim.
+		replacements := acceptedDocuments(result.Accepted)
+		for binding := range replacements {
+			if !appliedBinding(applied, binding) {
+				delete(replacements, binding)
+			}
+		}
 		for _, accepted := range result.Accepted {
-			if err := solutionhost.CheckAlias(reserved, holders, accepted.Document); err != nil {
+			err := solutionhost.CheckAlias(reserved, holders, accepted.Document)
+			if err == nil {
+				err = rule.checkManifestAgainstHost(accepted.Document, standingManifests(applied, replacements))
+			}
+			if err != nil {
 				result.Withheld[accepted.Document.Binding] = err.Error()
 				refused = true
 				continue
 			}
+			replacements[accepted.Document.Binding] = accepted.Document
 			kept = append(kept, accepted)
 		}
 		result.Accepted = kept
@@ -106,4 +123,8 @@ func acceptedDocuments(accepted []SolutionHostBindingDecision) map[string]*solut
 		documents[one.Document.Binding] = one.Document
 	}
 	return documents
+}
+
+func appliedBinding(applied []*solutionhost.ModuleManifest, binding string) bool {
+	return slices.ContainsFunc(applied, func(manifest *solutionhost.ModuleManifest) bool { return manifest.Binding == binding })
 }

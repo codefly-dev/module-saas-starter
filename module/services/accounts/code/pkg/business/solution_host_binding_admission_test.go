@@ -17,7 +17,7 @@ import (
 
 func admit(t *testing.T, records []*SolutionHostBindingRecord, manifests ...*solutionhost.ModuleManifest) solutionHostBindingAdmission {
 	t.Helper()
-	return admitSolutionHostBindings(testDeliveryCoordinate, records, delivered(t, manifests...))
+	return admitSolutionHostBindings(testDeliveryCoordinate, testModuleNamespaceRule, records, delivered(t, manifests...))
 }
 
 func TestANewBindingAndAHigherGenerationAreAccepted(t *testing.T) {

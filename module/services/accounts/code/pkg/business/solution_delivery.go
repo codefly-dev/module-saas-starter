@@ -152,7 +152,10 @@ type SolutionDeliveryCarrierAuthorizer interface {
 //  4. admit the generation against the binding's applied manifest (core's
 //     Admit: stale, rewritten, withdrawn, another host or domain) and its
 //     route alias against every applied manifest (core's CheckAlias);
-//  5. persist.
+//  5. hold it to this host's own rules — one workload, one manifest; a
+//     principal and a publisher stay with their domain; an endpoint is its
+//     workload's in-cluster Service (checkManifestAgainstHost);
+//  6. persist.
 //
 // Verification comes before carrier authorisation so an unauthenticated
 // caller's malformed bytes are refused for being malformed, and a captured
@@ -217,6 +220,13 @@ func (s *Service) ReceiveSolutionDelivery(
 	holders := aliasHolders(appliedManifests(records), newest)
 	if err := solutionhost.CheckAlias([]string{SolutionHostReservedRouteNamespace}, holders, manifest); err != nil {
 		return "", nil, classifySolutionDeliveryAdmission(err)
+	}
+	// The workloads, principal, publisher and endpoint addresses are held to
+	// this host's rules against every other binding as it stands once its
+	// newest delivered generation applies — so a second claim is refused here,
+	// naming the binding that holds it, rather than found by a pass.
+	if err := s.moduleNamespaces.checkManifestAgainstHost(manifest, standingManifests(appliedManifests(records), newest)); err != nil {
+		return "", nil, err
 	}
 
 	digest, err := manifest.Digest()

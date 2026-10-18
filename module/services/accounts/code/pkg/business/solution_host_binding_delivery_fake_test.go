@@ -18,6 +18,10 @@ const (
 	testDeliveryCoordinate = "acme-test"
 )
 
+// testModuleNamespaceRule is core's bare rule: a module's namespace is its
+// name.
+var testModuleNamespaceRule = ModuleNamespaceRule{}
+
 func fixtureSigner(t *testing.T) *solutionhost.Verifier {
 	return deliverytest.Verifier(t, map[string][]string{testDeliveryKey: {testDeliveryDomain}})
 }

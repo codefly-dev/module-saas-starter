@@ -28,8 +28,13 @@ import (
 // not, so a manifest that cannot actually be delivered, applied and withdrawn
 // through the API fails here.
 
-// productionPathSigner is the pinned key these tests sign with.
-const productionPathSigner = "example-release"
+// productionPathSigner is the pinned key these tests sign with, and
+// productionPathForeignSigner a key pinned for another ownership domain.
+const (
+	productionPathSigner        = "example-release"
+	productionPathForeignSigner = "globex-release"
+	productionPathForeignDomain = "globex"
+)
 
 // productionPathDomain is the ownership domain this file's manifests are
 // delivered under, and productionPathCoordinate the host they target.
@@ -286,7 +291,7 @@ func productionPathManifest(t *testing.T, alias string, generation uint64) *solu
 		Host:      solutionhost.HostTarget{Coordinate: productionPathCoordinate, Domain: productionPathDomain},
 		Release:   solutionhost.Release{Publisher: "acme", Name: alias, Version: "1.4.0"},
 		Workloads: []solutionhost.Workload{{Service: "api", Container: "api"}},
-		Endpoints: []solutionhost.Endpoint{{Name: "rest", Service: "api", API: "rest", Address: "http://api." + alias + ":8080"}},
+		Endpoints: []solutionhost.Endpoint{{Name: "rest", Service: "api", API: "rest", Address: "http://api." + productionPathNamespace(alias) + ".svc.cluster.local:8080"}},
 	}
 	require.NoError(t, manifest.Validate(), "the fixture must be a valid manifest")
 	return manifest
@@ -361,5 +366,47 @@ func wireNarrowingPolicyLog(service *business.Service) *business.Service {
 
 func productionVerifier(t *testing.T) *solutionhost.Verifier {
 	t.Helper()
-	return deliverytest.Verifier(t, map[string][]string{productionPathSigner: {productionPathDomain}})
+	return deliverytest.Verifier(t, map[string][]string{
+		productionPathSigner:        {productionPathDomain},
+		productionPathForeignSigner: {productionPathForeignDomain},
+	})
+}
+
+// THE HOST'S OWN RULES ARE ENFORCED AT DELIVERY, through the real endpoint:
+// a second manifest for a workload a delivered binding holds is a 409 naming
+// that binding, a foreign domain's claim on a held principal is a 403, and an
+// endpoint that is not its workload's in-cluster Service is a 422. Nothing
+// refused reaches the inbox.
+func TestTheHostsRulesAreEnforcedAtDelivery(t *testing.T) {
+	d := newProductionPathDelivery(t)
+
+	holder := productionPathManifest(t, "ruleheld", 1)
+	holder.Authority = &solutionhost.Authority{Principal: "ruleheld"}
+	requireDelivered(t, d.deliver(t, holder))
+
+	second := productionPathManifest(t, "ruleheld", 1)
+	second.Binding = "acme.test.ruleheld-second"
+	recorder := d.deliver(t, second)
+	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
+	require.Contains(t, recorder.Body.String(), `held by binding \"acme.test.ruleheld\"`)
+
+	foreign := productionPathManifest(t, "ruleforeign", 1)
+	foreign.Binding, foreign.Host.Domain, foreign.Release.Publisher = "globex.test.ruleforeign", productionPathForeignDomain, "globex"
+	foreign.Authority = &solutionhost.Authority{Principal: "ruleheld"}
+	payload, err := solutionhost.SignedPayload(foreign)
+	require.NoError(t, err)
+	d.callerNamespace, d.callerAccount = productionPathNamespace(foreign.Alias), "delivery"
+	recorder = d.post(t, deliverytest.Carrier(t, payload, productionPathForeignSigner))
+	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	require.Contains(t, recorder.Body.String(), `principal \"ruleheld\" is held by binding \"acme.test.ruleheld\"`)
+
+	for _, address := range []string{
+		"http://169.254.169.254:80",
+		"http://api." + productionPathNamespace("another") + ".svc.cluster.local:8080",
+	} {
+		escaping := productionPathManifest(t, "ruleaddress", 1)
+		escaping.Endpoints[0].Address = address
+		recorder = d.deliver(t, escaping)
+		require.Equal(t, http.StatusUnprocessableEntity, recorder.Code, address+": "+recorder.Body.String())
+	}
 }

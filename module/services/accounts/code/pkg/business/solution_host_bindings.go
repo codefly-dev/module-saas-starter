@@ -298,7 +298,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	admission := admitSolutionHostBindings(r.coordinate, records, verified)
+	admission := admitSolutionHostBindings(r.coordinate, r.service.moduleNamespaces, records, verified)
 
 	// Desired state is recorded for every delivered document before anything is
 	// applied, so an operator sees what delivery is showing even when none of it
