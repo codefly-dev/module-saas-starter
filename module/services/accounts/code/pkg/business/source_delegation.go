@@ -660,6 +660,11 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		if !installed || validateOperationAudiences(grant.Prefix, map[string]ModuleOperationAudience{bindingID: binding}) != nil {
 			return ErrSourceDelegationInvalid
 		}
+		// A person delegated this work, and a headless-only binding was granted
+		// nothing it may do as a person: refused by name, before any scope is read.
+		if binding.headlessOnly() {
+			return errOperationAudienceHeadlessOnly(bindingID)
+		}
 		// What this call may do: the caller's own binding, for invoking or for
 		// recovering a receipt, and never more than the person delegated.
 		reach := binding.InvokeScopes

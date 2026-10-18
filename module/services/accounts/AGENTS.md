@@ -408,7 +408,7 @@ credentials sealed for the old one at the next check. The grant ceiling's keys:
 | `namespaces` | event publish |
 | `resources` | the permission resource types its own content is governed by, bounding both the content reads this host authorizes for it and the records it may place at a scope node |
 | `read_audiences` | installed read-only bindings from a retained parent to a fixed audience and canonical scopes |
-| `operation_audiences` | installed operation bindings with fixed audience, canonical invoke scopes, a read-only lookup subset, optional `headless_scopes` (a subset of the invoke scopes) that alone may be minted with no person present, and optional `source_delegation_scopes` (a subset of the invoke scopes, on at most one binding) that a person's connect of a datasource source delegates |
+| `operation_audiences` | installed operation bindings with fixed audience, canonical invoke scopes, a read-only lookup subset, optional `headless_scopes` (a subset of the invoke scopes) that alone may be minted with no person present, and optional `source_delegation_scopes` (a subset of the invoke scopes, on at most one binding) that a person's connect of a datasource source delegates. A binding with no invoke scopes is **headless-only**: `headless_scopes` alone, no lookup or delegation scopes, minted only headless and refused by name on every person-delegated exchange (#1156) |
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
@@ -686,6 +686,16 @@ request adds a
 - A binding without `headless_scopes` is refused (`PermissionDenied`); the invoke
   scopes are never reused implicitly. An unproven module is `Unauthenticated`.
   A binding addressed to `module-capabilities` is refused at signing.
+- A **headless-only** binding — `headless_scopes` and no invoke — is minted here
+  and nowhere else: `business.ModuleOperationAudience`,
+  `ModuleOperationAudienceForDelegation` and the delegation-reference arm refuse
+  it by name (`errOperationAudienceHeadlessOnly`), so it never acts on a
+  person's behalf. The reconciler derives one whenever the binding's headless
+  scopes survive the envelope and none of its invoke does: the manifest asks
+  only `headless` operations, or asks invoke the envelope does not allow, or the
+  envelope's audience is itself headless-only. Installation consent keeps it on
+  its headless scopes and never turns an invoke binding whose invoke it
+  withholds into one.
 - Unlike a module Work Context the scopes **are** sealed: the audience is another
   service that decides from the token alone. Removing a binding's
   `headless_scopes` stops the next mint; an issued child outlives it by at most
