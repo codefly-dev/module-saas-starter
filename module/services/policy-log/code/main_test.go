@@ -20,7 +20,7 @@ import (
 // cost one restart to diagnose, not one per key, and it must fail rather than
 // start a listener that cannot witness.
 func TestResolveSettingsNamesEveryMissingKeyAtOnce(t *testing.T) {
-	_, err := resolveSettings(func(string, string) (string, error) { return "", nil })
+	_, err := resolveSettings(lookup(func(string, string) (string, error) { return "", nil }))
 	if err == nil {
 		t.Fatal("resolveSettings accepted a group that delivered nothing")
 	}
@@ -28,12 +28,12 @@ func TestResolveSettingsNamesEveryMissingKeyAtOnce(t *testing.T) {
 		t.Errorf("the refusal does not name the missing %s: %v", settingKeys.bucket, err)
 	}
 	// No bucket and a token with no endpoint: both defects in one refusal.
-	_, err = resolveSettings(func(_, key string) (string, error) {
+	_, err = resolveSettings(lookup(func(_, key string) (string, error) {
 		if key == settingKeys.warehouseToken {
 			return "example-warehouse-token", nil
 		}
 		return "", nil
-	})
+	}))
 	if err == nil {
 		t.Fatal("resolveSettings accepted a group with no bucket and half a mirror")
 	}
@@ -49,12 +49,12 @@ func TestResolveSettingsNamesEveryMissingKeyAtOnce(t *testing.T) {
 // group delivering the bucket and NEITHER mirror setting resolves, with no
 // mirror — it is not read as a half-provisioned group.
 func TestABucketWithNoMirrorIsAStartableWitness(t *testing.T) {
-	resolved, err := resolveSettings(func(_, key string) (string, error) {
+	resolved, err := resolveSettings(lookup(func(_, key string) (string, error) {
 		if key == settingKeys.bucket {
 			return "example-witness-bucket", nil
 		}
 		return "", errors.New("not delivered")
-	})
+	}))
 	if err != nil {
 		t.Fatalf("a bucket with no mirror was refused: %v", err)
 	}
@@ -119,12 +119,12 @@ func TestResolveSettingsRefusesEachMissingKeyIndividually(t *testing.T) {
 		settingKeys.warehouseToken:    "example-warehouse-token",
 	}
 	for withheld := range delivered {
-		_, err := resolveSettings(func(_, key string) (string, error) {
+		_, err := resolveSettings(lookup(func(_, key string) (string, error) {
 			if key == withheld {
 				return "", nil
 			}
 			return delivered[key], nil
-		})
+		}))
 		if err == nil {
 			t.Errorf("resolveSettings started with %s missing", withheld)
 			continue
@@ -144,9 +144,9 @@ func TestResolveSettingsNeverFallsBackToTheProcessEnvironment(t *testing.T) {
 	t.Setenv(settingKeys.warehouseEndpoint, "https://ambient.example.com/ingest")
 	t.Setenv(settingKeys.warehouseToken, "ambient-token")
 	// The group is absent, exactly as it is on a workstation.
-	resolved, err := resolveSettings(func(string, string) (string, error) {
+	resolved, err := resolveSettings(lookup(func(string, string) (string, error) {
 		return "", errors.New("no configuration found for policy-log")
-	})
+	}))
 	if err == nil {
 		t.Fatalf("resolveSettings fell back to the process environment and resolved %+v", resolved)
 	}
@@ -162,7 +162,7 @@ func TestResolveSettingsNeverFallsBackToTheProcessEnvironment(t *testing.T) {
 // has. The refusal names keys, never values.
 func TestResolveSettingsNeverEchoesADeliveredValue(t *testing.T) {
 	const credential = "s3cr3t-warehouse-token"
-	_, err := resolveSettings(func(_, key string) (string, error) {
+	_, err := resolveSettings(lookup(func(_, key string) (string, error) {
 		switch key {
 		case settingKeys.warehouseToken:
 			return credential, nil
@@ -170,7 +170,7 @@ func TestResolveSettingsNeverEchoesADeliveredValue(t *testing.T) {
 			return "example-witness-bucket", nil
 		}
 		return "", nil
-	})
+	}))
 	if err == nil {
 		t.Fatal("resolveSettings accepted a group with no warehouse endpoint")
 	}
@@ -185,7 +185,7 @@ func TestResolveSettingsNeverEchoesADeliveredValue(t *testing.T) {
 // group resolves, and each value lands in its own field rather than being
 // transposed.
 func TestResolveSettingsAcceptsAWholeGroup(t *testing.T) {
-	resolved, err := resolveSettings(func(group, key string) (string, error) {
+	resolved, err := resolveSettings(lookup(func(group, key string) (string, error) {
 		if group != policyLogConfiguration {
 			t.Fatalf("resolveSettings read group %q, want %q", group, policyLogConfiguration)
 		}
@@ -199,7 +199,7 @@ func TestResolveSettingsAcceptsAWholeGroup(t *testing.T) {
 		}
 		t.Fatalf("resolveSettings read an undeclared key %q", key)
 		return "", nil
-	})
+	}))
 	if err != nil {
 		t.Fatalf("resolveSettings: %v", err)
 	}
@@ -320,6 +320,45 @@ func TestInvalidDeliveredSigningSecretNamesItsSetting(t *testing.T) {
 		}
 		if value != "" && strings.Contains(err.Error(), value) {
 			t.Fatal("refusal exposed secret")
+		}
+	}
+}
+
+// lookup adapts a (value, error) answer to WorkspaceValueIfSet's three-way
+// one: an error is "nothing carries this key" unless it is errUnreadable,
+// which stands for a delivered value the carrier could not read.
+func lookup(value func(group, key string) (string, error)) func(group, key string) (string, bool, error) {
+	return func(group, key string) (string, bool, error) {
+		got, err := value(group, key)
+		if errors.Is(err, errUnreadable) {
+			return "", false, err
+		}
+		if err != nil || got == "" {
+			return "", false, nil
+		}
+		return got, true, nil
+	}
+}
+
+var errUnreadable = errors.New("delivered but unreadable")
+
+// TestAnUnreadableMirrorIsRefusedNotReadAsAbsent: both mirror settings
+// delivered and neither readable (a broken file carrier) must refuse the boot
+// by name. Read as absent, the witness would start claiming no mirror was
+// configured — a provisioned projection gone dark with the wrong cause logged.
+func TestAnUnreadableMirrorIsRefusedNotReadAsAbsent(t *testing.T) {
+	_, err := resolveSettings(lookup(func(_, key string) (string, error) {
+		if key == settingKeys.bucket {
+			return "example-witness-bucket", nil
+		}
+		return "", errUnreadable
+	}))
+	if err == nil {
+		t.Fatal("resolveSettings started a witness whose mirror settings could not be read")
+	}
+	for _, key := range []string{settingKeys.warehouseEndpoint, settingKeys.warehouseToken} {
+		if !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "could not be read") {
+			t.Errorf("the refusal does not name the unreadable %s: %v", key, err)
 		}
 	}
 }

@@ -72,13 +72,20 @@ func (s settings) mirrored() bool { return s.warehouseEndpoint != "" }
 // and its token are delivered together or not at all. One without the other is
 // a half-provisioned mirror, and it is refused rather than read as "no mirror",
 // because that would silently drop a projection someone meant to configure.
-func resolveSettings(value func(group, key string) (string, error)) (settings, error) {
-	// A group that is absent and a key that is empty are the same thing to this
-	// service: nothing was provisioned. No value is ever reported back, because
-	// one of them is a credential.
+func resolveSettings(value func(group, key string) (string, bool, error)) (settings, error) {
+	// A value no namespace carries and an empty value are the same thing to this
+	// service: nothing was provisioned. A value that is there and could not be
+	// READ is not: it is refused by name, never read as absent — otherwise a
+	// broken delivery of both mirror settings would boot claiming no mirror was
+	// configured. No value is ever reported back, because one is a credential.
+	var unreadable []string
 	read := func(key string) string {
-		got, err := value(policyLogConfiguration, key)
+		got, set, err := value(policyLogConfiguration, key)
 		if err != nil {
+			unreadable = append(unreadable, key)
+			return ""
+		}
+		if !set {
 			return ""
 		}
 		return got
@@ -87,6 +94,10 @@ func resolveSettings(value func(group, key string) (string, error)) (settings, e
 		bucket:            read(settingKeys.bucket),
 		warehouseEndpoint: read(settingKeys.warehouseEndpoint),
 		warehouseToken:    read(settingKeys.warehouseToken),
+	}
+	if len(unreadable) > 0 {
+		return settings{}, fmt.Errorf("configuration group %q delivered %s but it could not be read: this service refuses rather than guess what was provisioned",
+			policyLogConfiguration, strings.Join(unreadable, ", "))
 	}
 	var missing []string
 	if resolved.bucket == "" {
@@ -147,9 +158,7 @@ func resolveSigningKey(secret func(string, string) (string, error)) (ed25519.Pri
 }
 
 func run(ctx context.Context, stop func()) error {
-	resolved, err := resolveSettings(func(group, key string) (string, error) {
-		return codefly.For(ctx).WorkspaceValue(group, key)
-	})
+	resolved, err := resolveSettings(codefly.For(ctx).WorkspaceValueIfSet)
 	if err != nil {
 		return err
 	}

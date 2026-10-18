@@ -30,8 +30,9 @@ database restore must not restore the witness. Accounts must have no object
 write, signing-key read, warehouse writer, or witness administration capability.
 The witness holds no accounts database credential or dependency.
 
-Delivery must provision a dedicated bucket, workload identity, private signing
-key, and warehouse ingestion credential. Bucket IAM must confine the workload
+Delivery must provision a dedicated bucket, workload identity and private
+signing key, and — only where a warehouse mirror is configured — the warehouse
+ingestion credential. Bucket IAM must confine the workload
 to that bucket and forbid deleting or replacing `entries/` objects; enforce the
 immutable prefix with retention and IAM, in addition to application checks.
 The head's write authority is scoped to `head.json`. Bucket lifecycle deletion,
@@ -41,8 +42,8 @@ versioning and deletion protection outside the workload's administrative reach.
 
 The runtime exposes no delete, reset, unconditional overwrite, ambient signing-key
 source, insecure warehouse transport, or emulator option. The GCS constructor
-refuses a storage emulator setting. The warehouse uses its own mandatory bearer
-credential over HTTPS and refuses redirects.
+refuses a storage emulator setting. A configured warehouse mirror uses its own
+bearer credential, mandatory with its endpoint, over HTTPS and refuses redirects.
 
 The listener is private and must stay private. Composition must admit only the
 host's declared client through workload-authenticated mesh policy, resolve its
