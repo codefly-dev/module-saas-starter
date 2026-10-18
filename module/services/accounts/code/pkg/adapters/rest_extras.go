@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 )
 
 // refreshTokenCookieName is the httpOnly cookie that carries the long-lived
@@ -258,6 +260,26 @@ func clearRefreshCookie(w http.ResponseWriter) {
 // refreshCookie is the one shape the refresh credential is ever handed to a
 // browser in: scoped to the auth routes, not script-readable, same-site, and
 // transport-protected outside local development.
+// restOutgoingHeaderMatcher maps the Connect handler's response headers onto
+// the REST response. The transcoder speaks gRPC to the Connect surface, so every
+// header a handler sets arrives as header metadata; grpc-gateway's default writes
+// each one back as Grpc-Metadata-<key>.
+//
+// Set-Cookie is the one that must keep its own name. The authentication
+// completions lift the refresh token into the cookie on the Connect side
+// (cookieTheRefreshToken) and clear it from the body, so the REST middleware has
+// no body token left to lift. Prefixed, the cookie was never stored — every
+// browser sign-in through REST lost its session on the next page load — and the
+// refresh credential travelled in a header page script CAN read, which is
+// exactly what the HttpOnly cookie exists to prevent. Every other header keeps
+// grpc-gateway's default spelling.
+func restOutgoingHeaderMatcher(key string) (string, bool) {
+	if strings.EqualFold(key, "set-cookie") {
+		return "Set-Cookie", true
+	}
+	return runtime.MetadataHeaderPrefix + key, true
+}
+
 func refreshCookie(token string, maxAge int) *http.Cookie {
 	return &http.Cookie{
 		Name:     refreshTokenCookieName,
