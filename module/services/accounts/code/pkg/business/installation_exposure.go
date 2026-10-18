@@ -40,6 +40,13 @@ type OrganizationInstallation struct {
 	// Target is the catalogue row of the installed target, nil when this host no
 	// longer offers it.
 	Target *AvailableSolutionTarget
+	// Readiness is whether this installation will work, resolved live beside the
+	// health that only answers whether its record exists
+	// (installation_readiness.go).
+	Readiness InstallationReadiness
+	// ReachedModules is what this target declares it reaches on the asking
+	// person's own session, resolved to this organisation's installation of each.
+	ReachedModules []ReachedModule
 }
 
 // ErrRoleDoesNotExposeSolution refuses an exposure grant whose role does not
@@ -73,6 +80,7 @@ func (s *Service) ListOrganizationInstallations(
 	var (
 		summaries []*gen.InstallationSummary
 		exposure  map[string]*InstallationExposure
+		facts     *readinessFacts
 	)
 	if err := s.installationStore().WithOrgReadSnapshot(ctx, orgID, func(ctx context.Context) error {
 		var e error
@@ -85,7 +93,13 @@ func (s *Service) ListOrganizationInstallations(
 		for _, summary := range summaries {
 			ids = append(ids, summary.GetInstallation().GetId())
 		}
-		exposure, e = s.installationStore().ListInstallationExposure(ctx, orgID, ids)
+		if exposure, e = s.installationStore().ListInstallationExposure(ctx, orgID, ids); e != nil {
+			return e
+		}
+		// The organisation half of readiness, on the same snapshot: a source is
+		// never reported undelegated against a delegation list read at another
+		// moment.
+		facts, e = s.readReadinessFacts(ctx, orgID)
 		return e
 	}); err != nil {
 		return nil, "", w.Wrapf(err, "cannot list organization installations")
@@ -112,9 +126,38 @@ func (s *Service) ListOrganizationInstallations(
 			for _, target := range available {
 				targets[target.TargetID] = target
 			}
-			return err
+			if err != nil {
+				return err
+			}
+			// What each applied manifest asks for is control-plane state too,
+			// read here beside the catalogue rows rather than once per row.
+			applied, err := s.store.ListSolutionHostBindings(ctx)
+			if err != nil {
+				return err
+			}
+			facts.withAppliedManifests(applied)
+			return nil
 		}); err != nil {
 			return nil, "", w.Wrapf(err, "cannot read the installed targets")
+		}
+	}
+
+	// Which module principal this organisation holds an active installation of,
+	// so a declared audience resolves to the installation a team grant is
+	// written at. Built from the rows of this very listing: a reached module is
+	// offered only where the organisation actually installed it.
+	installedByPrincipal := map[string]*gen.Installation{}
+	for _, summary := range summaries {
+		installation := summary.GetInstallation()
+		if installation.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+			continue
+		}
+		target := targets[installation.GetTargetId()]
+		if target == nil {
+			continue
+		}
+		if asked, ok := facts.askedByBinding[target.BindingID]; ok && asked.Authority != nil {
+			installedByPrincipal[asked.Authority.Principal] = installation
 		}
 	}
 
@@ -128,6 +171,15 @@ func (s *Service) ListOrganizationInstallations(
 			Summary:  summary,
 			Exposure: exposure[installation.GetId()],
 			Target:   targets[installation.GetTargetId()],
+		}
+		row.Readiness, row.ReachedModules = facts.readinessFor(
+			installation, summary.GetHealth(), row.Target, installedByPrincipal)
+		for i := range row.ReachedModules {
+			if id := row.ReachedModules[i].InstallationID; id != "" {
+				if reachedTarget := targets[installedTargetID(summaries, id)]; reachedTarget != nil {
+					row.ReachedModules[i].RouteAlias = reachedTarget.RouteAlias
+				}
+			}
 		}
 		if row.Exposure == nil && installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
 			// Both reads share one snapshot and an active installation always has
@@ -235,4 +287,17 @@ func (s *Service) RevokeInstallationFromTeam(
 		return w.Wrapf(err, "cannot revoke installation from team")
 	}
 	return nil
+}
+
+// installedTargetID is the target one of this page's installations records, so a
+// reached module can be named by the alias its own catalogue row carries rather
+// than by the audience string. Linear over a page of at most 500 rows, and
+// reached only for a module this organisation installed.
+func installedTargetID(summaries []*gen.InstallationSummary, installationID string) string {
+	for _, summary := range summaries {
+		if summary.GetInstallation().GetId() == installationID {
+			return summary.GetInstallation().GetTargetId()
+		}
+	}
+	return ""
 }

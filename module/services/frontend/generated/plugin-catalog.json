@@ -180,6 +180,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
+      "path": "/admin/solutions/{installationId}",
+      "source_path": "src/app/admin/solutions/[installationId]/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
       "path": "/admin/sso",
       "source_path": "src/app/admin/sso/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",

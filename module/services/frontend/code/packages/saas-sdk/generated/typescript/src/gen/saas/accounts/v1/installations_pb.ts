@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/installations.proto.
  */
 export const file_saas_accounts_v1_installations: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2luc3RhbGxhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEi+QMKDEluc3RhbGxhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAIgASgJQgi6SAVyA7ABARIkChJhZ2VudF9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEiQKEm93bmVyX3ByaW5jaXBhbF9pZBgFIAEoCUIIukgFcgOwAQESHgoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgGIAMoCRIkChJyb290X3Njb3BlX25vZGVfaWQYByABKAlCCLpIBXIDsAEBEjQKBnN0YXR1cxgIIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uU3RhdHVzEi4KCmNyZWF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKCnJldm9rZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSACIAQESHgoJdGFyZ2V0X2lkGAsgASgJQgu6SAjYAQFyA7ABARIgCg5yZXZva2VkX3JlYXNvbhgMIAEoCUIIukgFcgMYgAQSIAoOZmFpbHVyZV9yZWFzb24YDSABKAlCCLpIBXIDGIAEQg0KC19yZXZva2VkX2F0SgQIBBAFUhNzb2x1dGlvbl9pZGVudGlmaWVyIuADChZJbnN0YWxsU29sdXRpb25SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESJAoQYWdlbnRfaWRlbnRpZmllchgCIAEoCUIKukgHcgUQARiABBIeCgxkaXNwbGF5X25hbWUYBCABKAlCCLpIBXIDGIAEEiIKEHJvb3Rfc2NvcGVfbGFiZWwYBiABKAlCCLpIBXIDGIAEEhkKB3JvbGVfaWQYByABKAlCCLpIBXIDsAEBEicKEm93bmVyX3ByaW5jaXBhbF9pZBgIIAEoCUILukgI2AEBcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgJIAMoCUIPukgMkgEJECAiBXIDsAEBEioKEWFsbG93ZWRfYXVkaWVuY2VzGAogAygJQg+6SAySAQkQQCIFcgMYgAQSJwoOYWxsb3dlZF9zY29wZXMYCyADKAlCD7pIDJIBCRBAIgVyAxiAARIbCgl0YXJnZXRfaWQYDCABKAlCCLpIBXIDsAEBEh8KBXNjb3BlGA0gASgJQgu6SAhyBhACKICAQEgAiAEBQggKBl9zY29wZUoECAMQBEoECAUQBlITc29sdXRpb25faWRlbnRpZmllclIPcm9vdF9zY29wZV9wYXRoInQKGU5hcnJvd0luc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEhoKBXNjb3BlGAMgASgJQgu6SAhyBhACKICAQCJXChhSZXRyeUluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIlcKGFVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQEivgEKJFRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESKAoWbmV3X293bmVyX3ByaW5jaXBhbF9pZBgDIAEoCUIIukgFcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgEIAMoCUIPukgMkgEJECAiBXIDsAEBIlUKFkdldEluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIoUBChdHZXRJbnN0YWxsYXRpb25SZXNwb25zZRI0CgxpbnN0YWxsYXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbhI0CgZoZWFsdGgYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbkhlYWx0aCKdAQoYTGlzdEluc3RhbGxhdGlvbnNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkigQEKE0luc3RhbGxhdGlvblN1bW1hcnkSNAoMaW5zdGFsbGF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24SNAoGaGVhbHRoGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25IZWFsdGgicgoZTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZRI8Cg1pbnN0YWxsYXRpb25zGAEgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdW1tYXJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJzCiRMaXN0T3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIdCglwYWdlX3NpemUYAiABKAVCCrpIBxoFGPQDKAASEgoKcGFnZV90b2tlbhgDIAEoCSLSAgoYT3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uEjQKDGluc3RhbGxhdGlvbhgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uEjQKBmhlYWx0aBgCIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uSGVhbHRoEjMKBnRhcmdldBgDIAEoCzIjLnNhYXMuYWNjb3VudHMudjEuQXZhaWxhYmxlU29sdXRpb24SFwoPcm9vdF9zY29wZV9wYXRoGAQgASgJEjwKDWdyYW50ZWRfdGVhbXMYBSADKAsyJS5zYWFzLmFjY291bnRzLnYxLkNvbGxlY3Rpb25SZWFkR3JhbnQSPgoPaW5oZXJpdGVkX3RlYW1zGAYgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5Db2xsZWN0aW9uUmVhZEdyYW50IoMBCiVMaXN0T3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uc1Jlc3BvbnNlEkEKDWluc3RhbGxhdGlvbnMYASADKAsyKi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvbkluc3RhbGxhdGlvbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkikwEKHkdyYW50SW5zdGFsbGF0aW9uVG9UZWFtUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESGQoHdGVhbV9pZBgDIAEoCUIIukgFcgOwAQESGQoHcm9sZV9pZBgEIAEoCUIIukgFcgOwAQEiTgofR3JhbnRJbnN0YWxsYXRpb25Ub1RlYW1SZXNwb25zZRIrCgVncmFudBgBIAEoCzIcLnNhYXMuYWNjb3VudHMudjEuU2NvcGVHcmFudCKWAQohUmV2b2tlSW5zdGFsbGF0aW9uRnJvbVRlYW1SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESIQoPaW5zdGFsbGF0aW9uX2lkGAIgASgJQgi6SAVyA7ABARIZCgd0ZWFtX2lkGAMgASgJQgi6SAVyA7ABARIZCgdyb2xlX2lkGAQgASgJQgi6SAVyA7ABASLtAQoRQXZhaWxhYmxlU29sdXRpb24SGwoJdGFyZ2V0X2lkGAEgASgJQgi6SAVyA7ABARISCgpiaW5kaW5nX2lkGAIgASgJEhMKC3JvdXRlX2FsaWFzGAMgASgJEhkKEXJlbGVhc2VfcHVibGlzaGVyGAQgASgJEhQKDHJlbGVhc2VfbmFtZRgFIAEoCRIXCg9yZWxlYXNlX3ZlcnNpb24YBiABKAkSGQoRb3BlbmVkX2dlbmVyYXRpb24YByABKAQSGgoSYXBwbGllZF9nZW5lcmF0aW9uGAggASgEEhEKCWluc3RhbGxlZBgJIAEoCCJsCh1MaXN0QXZhaWxhYmxlU29sdXRpb25zUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEh0KCXBhZ2Vfc2l6ZRgCIAEoBUIKukgHGgUY9AMoABISCgpwYWdlX3Rva2VuGAMgASgJInEKHkxpc3RBdmFpbGFibGVTb2x1dGlvbnNSZXNwb25zZRI2Cglzb2x1dGlvbnMYASADKAsyIy5zYWFzLmFjY291bnRzLnYxLkF2YWlsYWJsZVNvbHV0aW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSq7AQoSSW5zdGFsbGF0aW9uU3RhdHVzEiMKH0lOU1RBTExBVElPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIeChpJTlNUQUxMQVRJT05fU1RBVFVTX0FDVElWRRABEh8KG0lOU1RBTExBVElPTl9TVEFUVVNfUkVWT0tFRBACEh8KG0lOU1RBTExBVElPTl9TVEFUVVNfUEVORElORxADEh4KGklOU1RBTExBVElPTl9TVEFUVVNfRkFJTEVEEAQqhAIKEkluc3RhbGxhdGlvbkhlYWx0aBIjCh9JTlNUQUxMQVRJT05fSEVBTFRIX1VOU1BFQ0lGSUVEEAASHwobSU5TVEFMTEFUSU9OX0hFQUxUSF9IRUFMVEhZEAESKQolSU5TVEFMTEFUSU9OX0hFQUxUSF9OT19FTElHSUJMRV9PV05FUhACEiUKIUlOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfUkVWT0tFRBADEiYKIklOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfRElTQUJMRUQQBBIuCipJTlNUQUxMQVRJT05fSEVBTFRIX1NUQU5ESU5HX0dSQU5UX01JU1NJTkcQBTKqEgoTSW5zdGFsbGF0aW9uU2VydmljZRK6AQoPSW5zdGFsbFNvbHV0aW9uEiguc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsU29sdXRpb25SZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24iXcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlzYWFzLmluc3RhbGxhdGlvbi5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIWOgEqIhEvdjEvaW5zdGFsbGF0aW9ucxLSAQoRVW5pbnN0YWxsU29sdXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJ5wvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGXNhYXMuaW5zdGFsbGF0aW9uLnJldm9rZWQQAkABSARQA1gDYAGC0+STAjI6ASoiLS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9OnVuaW5zdGFsbBLSAQoSTmFycm93SW5zdGFsbGF0aW9uEisuc2Fhcy5hY2NvdW50cy52MS5OYXJyb3dJbnN0YWxsYXRpb25SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5InfC8xg+CAIQBCoMCgZvcmdfaWQQAhgBMAE6Hgoac2Fhcy5pbnN0YWxsYXRpb24ubmFycm93ZWQQAkABSARQA1gDYAGC0+STAi86ASoiKi92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9Om5hcnJvdxLWAQoRUmV0cnlJbnN0YWxsYXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlJldHJ5SW5zdGFsbGF0aW9uUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uInXC8xg9CAIQBCoMCgZvcmdfaWQQAhgBMAE6HQoZc2Fhcy5pbnN0YWxsYXRpb24ucmV0cmllZBACQAFIBFADWANgAYLT5JMCLjoBKiIpL3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06cmV0cnkSiQIKHVRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwEjYuc2Fhcy5hY2NvdW50cy52MS5UcmFuc2Zlckluc3RhbGxhdGlvbk93bmVyc2hpcFJlcXVlc3QaHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbiKPAcLzGEsIAhAEKgwKBm9yZ19pZBACGAEwATorCidzYWFzLmluc3RhbGxhdGlvbi5vd25lcnNoaXBfdHJhbnNmZXJyZWQQAkABSARQA1gDYAGC0+STAjo6ASoiNS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9OnRyYW5zZmVyT3duZXJzaGlwErkBCg9HZXRJbnN0YWxsYXRpb24SKC5zYWFzLmFjY291bnRzLnYxLkdldEluc3RhbGxhdGlvblJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkdldEluc3RhbGxhdGlvblJlc3BvbnNlIlHC8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCJRIjL3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH0ShgEKEUxpc3RJbnN0YWxsYXRpb25zEiouc2Fhcy5hY2NvdW50cy52MS5MaXN0SW5zdGFsbGF0aW9uc1JlcXVlc3QaKy5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnN0YWxsYXRpb25zUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARLKAQoWTGlzdEF2YWlsYWJsZVNvbHV0aW9ucxIvLnNhYXMuYWNjb3VudHMudjEuTGlzdEF2YWlsYWJsZVNvbHV0aW9uc1JlcXVlc3QaMC5zYWFzLmFjY291bnRzLnYxLkxpc3RBdmFpbGFibGVTb2x1dGlvbnNSZXNwb25zZSJNwvMYIggCEAQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAiESHy92MS9pbnN0YWxsYXRpb25zOmxpc3RBdmFpbGFibGUS0QEKHUxpc3RPcmdhbml6YXRpb25JbnN0YWxsYXRpb25zEjYuc2Fhcy5hY2NvdW50cy52MS5MaXN0T3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uc1JlcXVlc3QaNy5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdhbml6YXRpb25JbnN0YWxsYXRpb25zUmVzcG9uc2UiP8LzGCIIAhAEKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwITEhEvdjEvaW5zdGFsbGF0aW9ucxLwAQoXR3JhbnRJbnN0YWxsYXRpb25Ub1RlYW0SMC5zYWFzLmFjY291bnRzLnYxLkdyYW50SW5zdGFsbGF0aW9uVG9UZWFtUmVxdWVzdBoxLnNhYXMuYWNjb3VudHMudjEuR3JhbnRJbnN0YWxsYXRpb25Ub1RlYW1SZXNwb25zZSJwwvMYOAgCEAQqDAoGb3JnX2lkEAIYATABOhYKEnNhYXMuc2NvcGUuZ3JhbnRlZBACQAFIBFADWANgAXgCgtPkkwIuOgEqIikvdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfS90ZWFtcxLtAQoaUmV2b2tlSW5zdGFsbGF0aW9uRnJvbVRlYW0SMy5zYWFzLmFjY291bnRzLnYxLlJldm9rZUluc3RhbGxhdGlvbkZyb21UZWFtUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSKBAcLzGDgIAhAEKgwKBm9yZ19pZBACGAEwAToWChJzYWFzLnNjb3BlLnJldm9rZWQQAkABSARQA1gDYAF4AoLT5JMCPzoBKiI6L3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH0vdGVhbXMve3RlYW1faWR9OnJldm9rZWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_authorization, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2luc3RhbGxhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEi+QMKDEluc3RhbGxhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAIgASgJQgi6SAVyA7ABARIkChJhZ2VudF9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEiQKEm93bmVyX3ByaW5jaXBhbF9pZBgFIAEoCUIIukgFcgOwAQESHgoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgGIAMoCRIkChJyb290X3Njb3BlX25vZGVfaWQYByABKAlCCLpIBXIDsAEBEjQKBnN0YXR1cxgIIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uU3RhdHVzEi4KCmNyZWF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKCnJldm9rZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSACIAQESHgoJdGFyZ2V0X2lkGAsgASgJQgu6SAjYAQFyA7ABARIgCg5yZXZva2VkX3JlYXNvbhgMIAEoCUIIukgFcgMYgAQSIAoOZmFpbHVyZV9yZWFzb24YDSABKAlCCLpIBXIDGIAEQg0KC19yZXZva2VkX2F0SgQIBBAFUhNzb2x1dGlvbl9pZGVudGlmaWVyIuADChZJbnN0YWxsU29sdXRpb25SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESJAoQYWdlbnRfaWRlbnRpZmllchgCIAEoCUIKukgHcgUQARiABBIeCgxkaXNwbGF5X25hbWUYBCABKAlCCLpIBXIDGIAEEiIKEHJvb3Rfc2NvcGVfbGFiZWwYBiABKAlCCLpIBXIDGIAEEhkKB3JvbGVfaWQYByABKAlCCLpIBXIDsAEBEicKEm93bmVyX3ByaW5jaXBhbF9pZBgIIAEoCUILukgI2AEBcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgJIAMoCUIPukgMkgEJECAiBXIDsAEBEioKEWFsbG93ZWRfYXVkaWVuY2VzGAogAygJQg+6SAySAQkQQCIFcgMYgAQSJwoOYWxsb3dlZF9zY29wZXMYCyADKAlCD7pIDJIBCRBAIgVyAxiAARIbCgl0YXJnZXRfaWQYDCABKAlCCLpIBXIDsAEBEh8KBXNjb3BlGA0gASgJQgu6SAhyBhACKICAQEgAiAEBQggKBl9zY29wZUoECAMQBEoECAUQBlITc29sdXRpb25faWRlbnRpZmllclIPcm9vdF9zY29wZV9wYXRoInQKGU5hcnJvd0luc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEhoKBXNjb3BlGAMgASgJQgu6SAhyBhACKICAQCJXChhSZXRyeUluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIlcKGFVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQEivgEKJFRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESKAoWbmV3X293bmVyX3ByaW5jaXBhbF9pZBgDIAEoCUIIukgFcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgEIAMoCUIPukgMkgEJECAiBXIDsAEBIlUKFkdldEluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIoUBChdHZXRJbnN0YWxsYXRpb25SZXNwb25zZRI0CgxpbnN0YWxsYXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbhI0CgZoZWFsdGgYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbkhlYWx0aCKdAQoYTGlzdEluc3RhbGxhdGlvbnNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkigQEKE0luc3RhbGxhdGlvblN1bW1hcnkSNAoMaW5zdGFsbGF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24SNAoGaGVhbHRoGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25IZWFsdGgicgoZTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZRI8Cg1pbnN0YWxsYXRpb25zGAEgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdW1tYXJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJzCiRMaXN0T3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIdCglwYWdlX3NpemUYAiABKAVCCrpIBxoFGPQDKAASEgoKcGFnZV90b2tlbhgDIAEoCSLIAwoYT3JnYW5pemF0aW9uSW5zdGFsbGF0aW9uEjQKDGluc3RhbGxhdGlvbhgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uEjQKBmhlYWx0aBgCIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uSGVhbHRoEjMKBnRhcmdldBgDIAEoCzIjLnNhYXMuYWNjb3VudHMudjEuQXZhaWxhYmxlU29sdXRpb24SFwoPcm9vdF9zY29wZV9wYXRoGAQgASgJEjwKDWdyYW50ZWRfdGVhbXMYBSADKAsyJS5zYWFzLmFjY291bnRzLnYxLkNvbGxlY3Rpb25SZWFkR3JhbnQSPgoPaW5oZXJpdGVkX3RlYW1zGAYgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5Db2xsZWN0aW9uUmVhZEdyYW50EjoKCXJlYWRpbmVzcxgHIAEoCzInLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uUmVhZGluZXNzEjgKD3JlYWNoZWRfbW9kdWxlcxgIIAMoCzIfLnNhYXMuYWNjb3VudHMudjEuUmVhY2hlZE1vZHVsZSLtAQoSUmVhZGluZXNzQ29uZGl0aW9uEjYKBGtpbmQYASABKA4yKC5zYWFzLmFjY291bnRzLnYxLlJlYWRpbmVzc0NvbmRpdGlvbktpbmQSDwoHc3ViamVjdBgCIAEoCRIOCgZkZXRhaWwYAyABKAkSOAoKY2xlYXJlZF9ieRgEIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuUmVhZGluZXNzQ2xlYXJlZEJ5EjEKBmFjdGlvbhgFIAEoDjIhLnNhYXMuYWNjb3VudHMudjEuUmVhZGluZXNzQWN0aW9uEhEKCXNvdXJjZV9pZBgGIAEoCSJbChVJbnN0YWxsYXRpb25SZWFkaW5lc3MSDQoFcmVhZHkYASABKAgSMwoFdW5tZXQYAiADKAsyJC5zYWFzLmFjY291bnRzLnYxLlJlYWRpbmVzc0NvbmRpdGlvbiJPCg1SZWFjaGVkTW9kdWxlEhAKCGF1ZGllbmNlGAEgASgJEhcKD2luc3RhbGxhdGlvbl9pZBgCIAEoCRITCgtyb3V0ZV9hbGlhcxgDIAEoCSKDAQolTGlzdE9yZ2FuaXphdGlvbkluc3RhbGxhdGlvbnNSZXNwb25zZRJBCg1pbnN0YWxsYXRpb25zGAEgAygLMiouc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb25JbnN0YWxsYXRpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIpMBCh5HcmFudEluc3RhbGxhdGlvblRvVGVhbVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEhkKB3RlYW1faWQYAyABKAlCCLpIBXIDsAEBEhkKB3JvbGVfaWQYBCABKAlCCLpIBXIDsAEBIk4KH0dyYW50SW5zdGFsbGF0aW9uVG9UZWFtUmVzcG9uc2USKwoFZ3JhbnQYASABKAsyHC5zYWFzLmFjY291bnRzLnYxLlNjb3BlR3JhbnQilgEKIVJldm9rZUluc3RhbGxhdGlvbkZyb21UZWFtUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESGQoHdGVhbV9pZBgDIAEoCUIIukgFcgOwAQESGQoHcm9sZV9pZBgEIAEoCUIIukgFcgOwAQEihAIKEUF2YWlsYWJsZVNvbHV0aW9uEhsKCXRhcmdldF9pZBgBIAEoCUIIukgFcgOwAQESEgoKYmluZGluZ19pZBgCIAEoCRITCgtyb3V0ZV9hbGlhcxgDIAEoCRIZChFyZWxlYXNlX3B1Ymxpc2hlchgEIAEoCRIUCgxyZWxlYXNlX25hbWUYBSABKAkSFwoPcmVsZWFzZV92ZXJzaW9uGAYgASgJEhkKEW9wZW5lZF9nZW5lcmF0aW9uGAcgASgEEhoKEmFwcGxpZWRfZ2VuZXJhdGlvbhgIIAEoBBIRCglpbnN0YWxsZWQYCSABKAgSFQoEa2luZBgKIAEoCUIHukgEcgIYICJsCh1MaXN0QXZhaWxhYmxlU29sdXRpb25zUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEh0KCXBhZ2Vfc2l6ZRgCIAEoBUIKukgHGgUY9AMoABISCgpwYWdlX3Rva2VuGAMgASgJInEKHkxpc3RBdmFpbGFibGVTb2x1dGlvbnNSZXNwb25zZRI2Cglzb2x1dGlvbnMYASADKAsyIy5zYWFzLmFjY291bnRzLnYxLkF2YWlsYWJsZVNvbHV0aW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSq7AQoSSW5zdGFsbGF0aW9uU3RhdHVzEiMKH0lOU1RBTExBVElPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIeChpJTlNUQUxMQVRJT05fU1RBVFVTX0FDVElWRRABEh8KG0lOU1RBTExBVElPTl9TVEFUVVNfUkVWT0tFRBACEh8KG0lOU1RBTExBVElPTl9TVEFUVVNfUEVORElORxADEh4KGklOU1RBTExBVElPTl9TVEFUVVNfRkFJTEVEEAQqhAIKEkluc3RhbGxhdGlvbkhlYWx0aBIjCh9JTlNUQUxMQVRJT05fSEVBTFRIX1VOU1BFQ0lGSUVEEAASHwobSU5TVEFMTEFUSU9OX0hFQUxUSF9IRUFMVEhZEAESKQolSU5TVEFMTEFUSU9OX0hFQUxUSF9OT19FTElHSUJMRV9PV05FUhACEiUKIUlOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfUkVWT0tFRBADEiYKIklOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfRElTQUJMRUQQBBIuCipJTlNUQUxMQVRJT05fSEVBTFRIX1NUQU5ESU5HX0dSQU5UX01JU1NJTkcQBSqzAwoWUmVhZGluZXNzQ29uZGl0aW9uS2luZBIoCiRSRUFESU5FU1NfQ09ORElUSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIxCi1SRUFESU5FU1NfQ09ORElUSU9OX0tJTkRfSU5TVEFMTF9TVEVQX1BFTkRJTkcQARIwCixSRUFESU5FU1NfQ09ORElUSU9OX0tJTkRfSU5TVEFMTF9TVEVQX0ZBSUxFRBACEi0KKVJFQURJTkVTU19DT05ESVRJT05fS0lORF9SRUNPUkRfVU5IRUFMVEhZEAMSNQoxUkVBRElORVNTX0NPTkRJVElPTl9LSU5EX01PRFVMRV9QUklOQ0lQQUxfT01JVFRFRBAEEjYKMlJFQURJTkVTU19DT05ESVRJT05fS0lORF9PUEVSQVRJT05fQklORElOR19PTUlUVEVEEAUSMQotUkVBRElORVNTX0NPTkRJVElPTl9LSU5EX1NPVVJDRV9OT1RfREVMRUdBVEVEEAYSOQo1UkVBRElORVNTX0NPTkRJVElPTl9LSU5EX1JFQUNIRURfTU9EVUxFX05PVF9JTlNUQUxMRUQQByrVAQoSUmVhZGluZXNzQ2xlYXJlZEJ5EiQKIFJFQURJTkVTU19DTEVBUkVEX0JZX1VOU1BFQ0lGSUVEEAASHwobUkVBRElORVNTX0NMRUFSRURfQllfVklFV0VSEAESKwonUkVBRElORVNTX0NMRUFSRURfQllfT1JHQU5JWkFUSU9OX0FETUlOEAISKgomUkVBRElORVNTX0NMRUFSRURfQllfUExBVEZPUk1fT1BFUkFUT1IQAxIfChtSRUFESU5FU1NfQ0xFQVJFRF9CWV9OT0JPRFkQBCqfAgoPUmVhZGluZXNzQWN0aW9uEiAKHFJFQURJTkVTU19BQ1RJT05fVU5TUEVDSUZJRUQQABIpCiVSRUFESU5FU1NfQUNUSU9OX05PTkVfQVRfVEhJU19TVVJGQUNFEAESJwojUkVBRElORVNTX0FDVElPTl9SRVRSWV9JTlNUQUxMX1NURVAQAhIlCiFSRUFESU5FU1NfQUNUSU9OX1JFQ09OTkVDVF9TT1VSQ0UQAxInCiNSRUFESU5FU1NfQUNUSU9OX1RSQU5TRkVSX09XTkVSU0hJUBAEEisKJ1JFQURJTkVTU19BQ1RJT05fSU5TVEFMTF9SRUFDSEVEX01PRFVMRRAFEhkKFVJFQURJTkVTU19BQ1RJT05fV0FJVBAGMqoSChNJbnN0YWxsYXRpb25TZXJ2aWNlEroBCg9JbnN0YWxsU29sdXRpb24SKC5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxTb2x1dGlvblJlcXVlc3QaHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbiJdwvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGXNhYXMuaW5zdGFsbGF0aW9uLmNyZWF0ZWQQAkABSARQA1gDYAGC0+STAhY6ASoiES92MS9pbnN0YWxsYXRpb25zEtIBChFVbmluc3RhbGxTb2x1dGlvbhIqLnNhYXMuYWNjb3VudHMudjEuVW5pbnN0YWxsU29sdXRpb25SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5InnC8xg9CAIQBCoMCgZvcmdfaWQQAhgBMAE6HQoZc2Fhcy5pbnN0YWxsYXRpb24ucmV2b2tlZBACQAFIBFADWANgAYLT5JMCMjoBKiItL3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06dW5pbnN0YWxsEtIBChJOYXJyb3dJbnN0YWxsYXRpb24SKy5zYWFzLmFjY291bnRzLnYxLk5hcnJvd0luc3RhbGxhdGlvblJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkid8LzGD4IAhAEKgwKBm9yZ19pZBACGAEwAToeChpzYWFzLmluc3RhbGxhdGlvbi5uYXJyb3dlZBACQAFIBFADWANgAYLT5JMCLzoBKiIqL3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06bmFycm93EtYBChFSZXRyeUluc3RhbGxhdGlvbhIqLnNhYXMuYWNjb3VudHMudjEuUmV0cnlJbnN0YWxsYXRpb25SZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24idcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlzYWFzLmluc3RhbGxhdGlvbi5yZXRyaWVkEAJAAUgEUANYA2ABgtPkkwIuOgEqIikvdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfTpyZXRyeRKJAgodVHJhbnNmZXJJbnN0YWxsYXRpb25Pd25lcnNoaXASNi5zYWFzLmFjY291bnRzLnYxLlRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uIo8BwvMYSwgCEAQqDAoGb3JnX2lkEAIYATABOisKJ3NhYXMuaW5zdGFsbGF0aW9uLm93bmVyc2hpcF90cmFuc2ZlcnJlZBACQAFIBFADWANgAYLT5JMCOjoBKiI1L3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06dHJhbnNmZXJPd25lcnNoaXASuQEKD0dldEluc3RhbGxhdGlvbhIoLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVzcG9uc2UiUcLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIlEiMvdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfRKGAQoRTGlzdEluc3RhbGxhdGlvbnMSKi5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnN0YWxsYXRpb25zUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEsoBChZMaXN0QXZhaWxhYmxlU29sdXRpb25zEi8uc2Fhcy5hY2NvdW50cy52MS5MaXN0QXZhaWxhYmxlU29sdXRpb25zUmVxdWVzdBowLnNhYXMuYWNjb3VudHMudjEuTGlzdEF2YWlsYWJsZVNvbHV0aW9uc1Jlc3BvbnNlIk3C8xgiCAIQBCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCIRIfL3YxL2luc3RhbGxhdGlvbnM6bGlzdEF2YWlsYWJsZRLRAQodTGlzdE9yZ2FuaXphdGlvbkluc3RhbGxhdGlvbnMSNi5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdhbml6YXRpb25JbnN0YWxsYXRpb25zUmVxdWVzdBo3LnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ2FuaXphdGlvbkluc3RhbGxhdGlvbnNSZXNwb25zZSI/wvMYIggCEAQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhMSES92MS9pbnN0YWxsYXRpb25zEvABChdHcmFudEluc3RhbGxhdGlvblRvVGVhbRIwLnNhYXMuYWNjb3VudHMudjEuR3JhbnRJbnN0YWxsYXRpb25Ub1RlYW1SZXF1ZXN0GjEuc2Fhcy5hY2NvdW50cy52MS5HcmFudEluc3RhbGxhdGlvblRvVGVhbVJlc3BvbnNlInDC8xg4CAIQBCoMCgZvcmdfaWQQAhgBMAE6FgoSc2Fhcy5zY29wZS5ncmFudGVkEAJAAUgEUANYA2ABeAKC0+STAi46ASoiKS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9L3RlYW1zEu0BChpSZXZva2VJbnN0YWxsYXRpb25Gcm9tVGVhbRIzLnNhYXMuYWNjb3VudHMudjEuUmV2b2tlSW5zdGFsbGF0aW9uRnJvbVRlYW1SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IoEBwvMYOAgCEAQqDAoGb3JnX2lkEAIYATABOhYKEnNhYXMuc2NvcGUucmV2b2tlZBACQAFIBFADWANgAXgCgtPkkwI/OgEqIjovdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfS90ZWFtcy97dGVhbV9pZH06cmV2b2tlYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_authorization, file_saas_policy_v1_options]);
 
 /**
  * Installation is one solution's bound identity in an org. Server-assigned ids;
@@ -570,6 +570,24 @@ export type OrganizationInstallation = Message<"saas.accounts.v1.OrganizationIns
    * @generated from field: repeated saas.accounts.v1.CollectionReadGrant inherited_teams = 6;
    */
   inheritedTeams: CollectionReadGrant[];
+
+  /**
+   * Whether this installation will actually work, and what is unmet if it will
+   * not. Resolved live from the same facts health is resolved from plus the
+   * module registry and this organisation's sources; never stored.
+   *
+   * @generated from field: saas.accounts.v1.InstallationReadiness readiness = 7;
+   */
+  readiness?: InstallationReadiness;
+
+  /**
+   * The modules this installed target declares it reaches, and this
+   * organisation's installation of each. Empty for a target whose applied
+   * manifest declares no operation binding it redeems on a person's behalf.
+   *
+   * @generated from field: repeated saas.accounts.v1.ReachedModule reached_modules = 8;
+   */
+  reachedModules: ReachedModule[];
 };
 
 /**
@@ -578,6 +596,139 @@ export type OrganizationInstallation = Message<"saas.accounts.v1.OrganizationIns
  */
 export const OrganizationInstallationSchema: GenMessage<OrganizationInstallation> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_installations, 12);
+
+/**
+ * ReadinessCondition is one thing that is unmet, in the words of whoever owns
+ * it, with who can clear it and what clears it.
+ *
+ * @generated from message saas.accounts.v1.ReadinessCondition
+ */
+export type ReadinessCondition = Message<"saas.accounts.v1.ReadinessCondition"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ReadinessConditionKind kind = 1;
+   */
+  kind: ReadinessConditionKind;
+
+  /**
+   * What the condition is about: the binding, the source, the module. Empty when
+   * the condition is about the installation as a whole.
+   *
+   * @generated from field: string subject = 2;
+   */
+  subject: string;
+
+  /**
+   * Why it is unmet, as the part of the host that owns the fact words it. Never
+   * a generic "not ready": the reason is the whole value of the condition.
+   *
+   * @generated from field: string detail = 3;
+   */
+  detail: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.ReadinessClearedBy cleared_by = 4;
+   */
+  clearedBy: ReadinessClearedBy;
+
+  /**
+   * @generated from field: saas.accounts.v1.ReadinessAction action = 5;
+   */
+  action: ReadinessAction;
+
+  /**
+   * The source the action addresses, for RECONNECT_SOURCE. Empty otherwise.
+   *
+   * @generated from field: string source_id = 6;
+   */
+  sourceId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ReadinessCondition.
+ * Use `create(ReadinessConditionSchema)` to create a new message.
+ */
+export const ReadinessConditionSchema: GenMessage<ReadinessCondition> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 13);
+
+/**
+ * InstallationReadiness is whether the installation will work, which is NOT
+ * whether its record exists. InstallationHealth answers about the record — it
+ * is active, its owner is an admin, its standing grant is there — and on
+ * a validation cell it reported HEALTHY for ten installations while four declared
+ * operation bindings had derived nothing. Readiness is the other question, and
+ * it is false while any condition below is unmet.
+ *
+ * @generated from message saas.accounts.v1.InstallationReadiness
+ */
+export type InstallationReadiness = Message<"saas.accounts.v1.InstallationReadiness"> & {
+  /**
+   * True only when `unmet` is empty.
+   *
+   * @generated from field: bool ready = 1;
+   */
+  ready: boolean;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.ReadinessCondition unmet = 2;
+   */
+  unmet: ReadinessCondition[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.InstallationReadiness.
+ * Use `create(InstallationReadinessSchema)` to create a new message.
+ */
+export const InstallationReadinessSchema: GenMessage<InstallationReadiness> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 14);
+
+/**
+ * ReachedModule is one module an installed target declares it reaches on the
+ * asking person's own session, and this organisation's installation of that
+ * module.
+ *
+ * A solution granted to a team is refused by every module it reaches that the
+ * same team was not granted — four separate refusals on a validation cell, each
+ * a bare Forbidden. The set is the applied manifest's own declaration, which is
+ * what a grant on the solution must CARRY: derived from that declaration,
+ * traceable to it, and revoked with it. Carrying it is not yet implemented, so
+ * this field is a read, and a surface states the set rather than leaving a
+ * person to find it by being refused. It is never a per-module grant step a
+ * person performs — that is the trail this exists to end.
+ *
+ * @generated from message saas.accounts.v1.ReachedModule
+ */
+export type ReachedModule = Message<"saas.accounts.v1.ReachedModule"> & {
+  /**
+   * The audience the manifest names: the module reached.
+   *
+   * @generated from field: string audience = 1;
+   */
+  audience: string;
+
+  /**
+   * This organisation's ACTIVE installation of that module, which is where the
+   * team grant is written. Empty when it has not installed it — then the
+   * readiness condition says so and no grant is offered.
+   *
+   * @generated from field: string installation_id = 2;
+   */
+  installationId: string;
+
+  /**
+   * The route alias of the installed module, for the reader. Empty with
+   * installation_id.
+   *
+   * @generated from field: string route_alias = 3;
+   */
+  routeAlias: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ReachedModule.
+ * Use `create(ReachedModuleSchema)` to create a new message.
+ */
+export const ReachedModuleSchema: GenMessage<ReachedModule> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 15);
 
 /**
  * @generated from message saas.accounts.v1.ListOrganizationInstallationsResponse
@@ -601,7 +752,7 @@ export type ListOrganizationInstallationsResponse = Message<"saas.accounts.v1.Li
  * Use `create(ListOrganizationInstallationsResponseSchema)` to create a new message.
  */
 export const ListOrganizationInstallationsResponseSchema: GenMessage<ListOrganizationInstallationsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 13);
+  messageDesc(file_saas_accounts_v1_installations, 16);
 
 /**
  * @generated from message saas.accounts.v1.GrantInstallationToTeamRequest
@@ -638,7 +789,7 @@ export type GrantInstallationToTeamRequest = Message<"saas.accounts.v1.GrantInst
  * Use `create(GrantInstallationToTeamRequestSchema)` to create a new message.
  */
 export const GrantInstallationToTeamRequestSchema: GenMessage<GrantInstallationToTeamRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 14);
+  messageDesc(file_saas_accounts_v1_installations, 17);
 
 /**
  * @generated from message saas.accounts.v1.GrantInstallationToTeamResponse
@@ -655,7 +806,7 @@ export type GrantInstallationToTeamResponse = Message<"saas.accounts.v1.GrantIns
  * Use `create(GrantInstallationToTeamResponseSchema)` to create a new message.
  */
 export const GrantInstallationToTeamResponseSchema: GenMessage<GrantInstallationToTeamResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 15);
+  messageDesc(file_saas_accounts_v1_installations, 18);
 
 /**
  * @generated from message saas.accounts.v1.RevokeInstallationFromTeamRequest
@@ -690,7 +841,7 @@ export type RevokeInstallationFromTeamRequest = Message<"saas.accounts.v1.Revoke
  * Use `create(RevokeInstallationFromTeamRequestSchema)` to create a new message.
  */
 export const RevokeInstallationFromTeamRequestSchema: GenMessage<RevokeInstallationFromTeamRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 16);
+  messageDesc(file_saas_accounts_v1_installations, 19);
 
 /**
  * AvailableSolution is one installable solution target: its immutable identity,
@@ -762,6 +913,17 @@ export type AvailableSolution = Message<"saas.accounts.v1.AvailableSolution"> & 
    * @generated from field: bool installed = 9;
    */
   installed: boolean;
+
+  /**
+   * What this target is, as its registration declared it: `module` or
+   * `solution`. Read from the registration in the same statement as the rest of
+   * the row; a reader is told rather than inferring it from the alias, because a
+   * module and a solution are set up differently and the page says which it is.
+   * Empty when the registration declared neither.
+   *
+   * @generated from field: string kind = 10;
+   */
+  kind: string;
 };
 
 /**
@@ -769,7 +931,7 @@ export type AvailableSolution = Message<"saas.accounts.v1.AvailableSolution"> & 
  * Use `create(AvailableSolutionSchema)` to create a new message.
  */
 export const AvailableSolutionSchema: GenMessage<AvailableSolution> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 17);
+  messageDesc(file_saas_accounts_v1_installations, 20);
 
 /**
  * @generated from message saas.accounts.v1.ListAvailableSolutionsRequest
@@ -799,7 +961,7 @@ export type ListAvailableSolutionsRequest = Message<"saas.accounts.v1.ListAvaila
  * Use `create(ListAvailableSolutionsRequestSchema)` to create a new message.
  */
 export const ListAvailableSolutionsRequestSchema: GenMessage<ListAvailableSolutionsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 18);
+  messageDesc(file_saas_accounts_v1_installations, 21);
 
 /**
  * @generated from message saas.accounts.v1.ListAvailableSolutionsResponse
@@ -821,7 +983,7 @@ export type ListAvailableSolutionsResponse = Message<"saas.accounts.v1.ListAvail
  * Use `create(ListAvailableSolutionsResponseSchema)` to create a new message.
  */
 export const ListAvailableSolutionsResponseSchema: GenMessage<ListAvailableSolutionsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_installations, 19);
+  messageDesc(file_saas_accounts_v1_installations, 22);
 
 /**
  * InstallationStatus is the lifecycle of an installation row. An uninstall is a
@@ -916,6 +1078,181 @@ export enum InstallationHealth {
  */
 export const InstallationHealthSchema: GenEnum<InstallationHealth> = /*@__PURE__*/
   enumDesc(file_saas_accounts_v1_installations, 1);
+
+/**
+ * ReadinessConditionKind is what kind of thing is unmet. A reader acts on the
+ * words in `detail`; the kind is for the surface to choose an action and for a
+ * consumer to count one kind without parsing prose.
+ *
+ * @generated from enum saas.accounts.v1.ReadinessConditionKind
+ */
+export enum ReadinessConditionKind {
+  /**
+   * @generated from enum value: READINESS_CONDITION_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The solution has not acknowledged its standard install step yet.
+   *
+   * @generated from enum value: READINESS_CONDITION_KIND_INSTALL_STEP_PENDING = 1;
+   */
+  INSTALL_STEP_PENDING = 1,
+
+  /**
+   * It refused the install step, or never answered within the attempt budget.
+   *
+   * @generated from enum value: READINESS_CONDITION_KIND_INSTALL_STEP_FAILED = 2;
+   */
+  INSTALL_STEP_FAILED = 2,
+
+  /**
+   * The installation record itself is not healthy: the InstallationHealth
+   * value, restated as a condition so one list holds every reason it will not
+   * work rather than two places a reader has to join.
+   *
+   * @generated from enum value: READINESS_CONDITION_KIND_RECORD_UNHEALTHY = 3;
+   */
+  RECORD_UNHEALTHY = 3,
+
+  /**
+   * The module registry holds no principal for this target's module at all, so
+   * every Work Context it asks for is denied.
+   *
+   * @generated from enum value: READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED = 4;
+   */
+  MODULE_PRINCIPAL_OMITTED = 4,
+
+  /**
+   * An operation binding the applied manifest asks for derived nothing: the
+   * envelope allows no such binding, or allows nothing of it. This is the
+   * condition that reported HEALTHY on a validation cell while four bindings were
+   * dropped.
+   *
+   * @generated from enum value: READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED = 5;
+   */
+  OPERATION_BINDING_OMITTED = 5,
+
+  /**
+   * A source this organisation has connected holds no active delegation to a
+   * module that accepts them, so that module cannot read it on anyone's behalf.
+   *
+   * @generated from enum value: READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED = 6;
+   */
+  SOURCE_NOT_DELEGATED = 6,
+
+  /**
+   * A module this target declares it reaches is not installed in this
+   * organisation, so every call it makes there is refused.
+   *
+   * @generated from enum value: READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED = 7;
+   */
+  REACHED_MODULE_NOT_INSTALLED = 7,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.ReadinessConditionKind.
+ */
+export const ReadinessConditionKindSchema: GenEnum<ReadinessConditionKind> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_installations, 2);
+
+/**
+ * ReadinessClearedBy is who can clear a condition. It is stated rather than
+ * implied by the action, because "nobody at this surface can" is itself the
+ * answer a reader needs — an envelope that withholds a binding is the platform
+ * operator's, and offering an administrator a button would be a lie.
+ *
+ * @generated from enum saas.accounts.v1.ReadinessClearedBy
+ */
+export enum ReadinessClearedBy {
+  /**
+   * @generated from enum value: READINESS_CLEARED_BY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The person reading the page, acting as themselves: their own delegation.
+   *
+   * @generated from enum value: READINESS_CLEARED_BY_VIEWER = 1;
+   */
+  VIEWER = 1,
+
+  /**
+   * @generated from enum value: READINESS_CLEARED_BY_ORGANIZATION_ADMIN = 2;
+   */
+  ORGANIZATION_ADMIN = 2,
+
+  /**
+   * @generated from enum value: READINESS_CLEARED_BY_PLATFORM_OPERATOR = 3;
+   */
+  PLATFORM_OPERATOR = 3,
+
+  /**
+   * Nobody: the host is waiting for the solution itself to answer.
+   *
+   * @generated from enum value: READINESS_CLEARED_BY_NOBODY = 4;
+   */
+  NOBODY = 4,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.ReadinessClearedBy.
+ */
+export const ReadinessClearedBySchema: GenEnum<ReadinessClearedBy> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_installations, 3);
+
+/**
+ * ReadinessAction is what clears the condition, named as the act rather than as
+ * a control, so a surface that cannot offer one still reports the same fact.
+ *
+ * @generated from enum saas.accounts.v1.ReadinessAction
+ */
+export enum ReadinessAction {
+  /**
+   * @generated from enum value: READINESS_ACTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * No act at this surface clears it. The condition says where it is cleared.
+   *
+   * @generated from enum value: READINESS_ACTION_NONE_AT_THIS_SURFACE = 1;
+   */
+  NONE_AT_THIS_SURFACE = 1,
+
+  /**
+   * @generated from enum value: READINESS_ACTION_RETRY_INSTALL_STEP = 2;
+   */
+  RETRY_INSTALL_STEP = 2,
+
+  /**
+   * @generated from enum value: READINESS_ACTION_RECONNECT_SOURCE = 3;
+   */
+  RECONNECT_SOURCE = 3,
+
+  /**
+   * @generated from enum value: READINESS_ACTION_TRANSFER_OWNERSHIP = 4;
+   */
+  TRANSFER_OWNERSHIP = 4,
+
+  /**
+   * @generated from enum value: READINESS_ACTION_INSTALL_REACHED_MODULE = 5;
+   */
+  INSTALL_REACHED_MODULE = 5,
+
+  /**
+   * Wait: the host is expecting an answer and no act brings it forward.
+   *
+   * @generated from enum value: READINESS_ACTION_WAIT = 6;
+   */
+  WAIT = 6,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.ReadinessAction.
+ */
+export const ReadinessActionSchema: GenEnum<ReadinessAction> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_installations, 4);
 
 /**
  * InstallationService composes and administers installations. The headless mint

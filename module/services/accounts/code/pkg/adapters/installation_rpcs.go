@@ -191,7 +191,27 @@ func availableSolutionProto(entry *business.AvailableSolutionTarget) *gen.Availa
 		OpenedGeneration:  entry.OpenedGeneration,
 		AppliedGeneration: entry.AppliedGeneration,
 		Installed:         entry.Installed,
+		Kind:              entry.Kind,
 	}
+}
+
+// readinessProto carries the verdict and its conditions as the host worded them.
+// Nothing is rephrased here: a condition's detail is the owning part of the
+// host's own sentence, and a surface that shortened it would be inventing a
+// reason.
+func readinessProto(readiness business.InstallationReadiness) *gen.InstallationReadiness {
+	unmet := make([]*gen.ReadinessCondition, 0, len(readiness.Unmet))
+	for _, condition := range readiness.Unmet {
+		unmet = append(unmet, &gen.ReadinessCondition{
+			Kind:      condition.Kind,
+			Subject:   condition.Subject,
+			Detail:    condition.Detail,
+			ClearedBy: condition.ClearedBy,
+			Action:    condition.Action,
+			SourceId:  condition.SourceID,
+		})
+	}
+	return &gen.InstallationReadiness{Ready: readiness.Ready, Unmet: unmet}
 }
 
 // ListOrganizationInstallations serves an organization administrator's view of
@@ -231,6 +251,14 @@ func (s *InstallationServer) ListOrganizationInstallations(
 		}
 		if row.Target != nil {
 			item.Target = availableSolutionProto(row.Target)
+		}
+		item.Readiness = readinessProto(row.Readiness)
+		for _, reached := range row.ReachedModules {
+			item.ReachedModules = append(item.ReachedModules, &gen.ReachedModule{
+				Audience:       reached.Audience,
+				InstallationId: reached.InstallationID,
+				RouteAlias:     reached.RouteAlias,
+			})
 		}
 		out = append(out, item)
 	}

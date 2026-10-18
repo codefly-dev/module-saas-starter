@@ -1,6 +1,7 @@
 "use client";
 
 import { Layers, RefreshCw, X } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
@@ -29,6 +30,7 @@ import {
 	Badge,
 	Banner,
 	Button,
+	buttonVariants,
 	Card,
 	CardContent,
 	CardDescription,
@@ -51,6 +53,7 @@ import {
 	installedRows,
 	type TeamGrantRow,
 } from "../model/installations";
+import { readinessSummary } from "../model/readiness";
 import {
 	useGrantInstallationToTeam,
 	useInstallSolution,
@@ -65,8 +68,12 @@ import { InstallSolutionDialog } from "./install-solution-dialog";
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
  * hover, so "this host does not know" is never mistaken for a value.
+ *
+ * Exported for the setup page, which states the same facts about one
+ * installation: a second renderer would be a second answer to "is this a value
+ * or a gap", and the two would drift.
  */
-function Fact({ view }: { view: FactView }) {
+export function Fact({ view }: { view: FactView }) {
 	if (view.kind === "gap") {
 		return (
 			<span
@@ -409,6 +416,7 @@ function InstalledSection({
 									<TableHead>Module or solution</TableHead>
 									<TableHead>Revision</TableHead>
 									<TableHead>Status</TableHead>
+									<TableHead>Ready</TableHead>
 									<TableHead>Health</TableHead>
 									<TableHead>Teams</TableHead>
 									<TableHead>Installed</TableHead>
@@ -431,6 +439,9 @@ function InstalledSection({
 													{row.failureReason}
 												</p>
 											)}
+										</TableCell>
+										<TableCell>
+											<Readiness row={row} />
 										</TableCell>
 										<TableCell>
 											{row.status === InstallationStatus.ACTIVE ? (
@@ -475,6 +486,16 @@ function InstalledSection({
 													Retry
 												</Button>
 											)}
+											<Link
+												href={`/admin/solutions/${row.installationId}`}
+												aria-label={`Set up ${name(row)}`}
+												className={buttonVariants({
+													variant: "outline",
+													size: "sm",
+												})}
+											>
+												Set up
+											</Link>
 											<Button
 												variant="outline"
 												size="sm"
@@ -544,6 +565,33 @@ function InstalledSection({
 				/>
 			)}
 		</Card>
+	);
+}
+
+/**
+ * Whether the host says this row will work. It sits beside Health deliberately:
+ * health answers about the installation RECORD, and on a validation cell ten
+ * read healthy while four declared bindings had derived nothing. The link goes
+ * to the one place that lists why, because a row cannot carry the conditions.
+ */
+function Readiness({ row }: { row: InstalledRow }) {
+	const summary = readinessSummary(row.readiness);
+	if (summary.ready) {
+		return (
+			<Badge tone="success" dot>
+				Ready
+			</Badge>
+		);
+	}
+	return (
+		<Link
+			href={`/admin/solutions/${row.installationId}`}
+			className="hover:underline"
+		>
+			<Badge tone={summary.tone} dot>
+				{summary.text}
+			</Badge>
+		</Link>
 	);
 }
 

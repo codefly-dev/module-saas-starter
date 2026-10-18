@@ -2572,6 +2572,20 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/admin/solutions/[installationId]/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/solution-installations",
+        "@/gen/saas/accounts/v1/frontend_catalog"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/admin/solutions/page.tsx",
       "imports": [
         "@/features/solution-installations"
@@ -4868,6 +4882,31 @@
         "../model/installations",
         "../model/schemas",
         "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the solution-installations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/installation-setup-page.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "react",
+        "sonner",
+        "@/components/empty-state",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/installations",
+        "../model/readiness",
+        "../service/mutations",
+        "../service/queries",
+        "./grant-team-dialog",
+        "./solution-installations-page"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",

@@ -7382,6 +7382,10 @@
         "installed": {
           "type": "boolean",
           "description": "True when this organization already has an ACTIVE installation of this\ntarget. A catalogue shows it as installed rather than offering it twice; the\nunique index over (org_id, target_id) would refuse the second install anyway,\nand an administrator should not have to discover that by being refused."
+        },
+        "kind": {
+          "type": "string",
+          "description": "What this target is, as its registration declared it: `module` or\n`solution`. Read from the registration in the same statement as the rest of\nthe row; a reader is told rather than inferring it from the alias, because a\nmodule and a solution are set up differently and the page says which it is.\nEmpty when the registration declared neither."
         }
       },
       "description": "AvailableSolution is one installable solution target: its immutable identity,\nthe release the host currently has applied for it, and where it is routed."
@@ -8965,6 +8969,23 @@
       "default": "INSTALLATION_HEALTH_UNSPECIFIED",
       "description": "InstallationHealth is resolved live from current authority facts, never\nstored. It is the observable form of the fail-closed mint rule: a\nStartInstallationTask fails exactly when health is not HEALTHY, and transfer\nor re-enable restores it. NO_ELIGIBLE_OWNER means neither the owner of record\nnor any co-owner is currently an org admin (the Zapier-class \"connection owner\nleft the org\" failure), surfaced rather than silently reassigned."
     },
+    "v1InstallationReadiness": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean",
+          "description": "True only when `unmet` is empty."
+        },
+        "unmet": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ReadinessCondition"
+          }
+        }
+      },
+      "description": "InstallationReadiness is whether the installation will work, which is NOT\nwhether its record exists. InstallationHealth answers about the record — it\nis active, its owner is an admin, its standing grant is there — and on\na validation cell it reported HEALTHY for ten installations while four declared\noperation bindings had derived nothing. Readiness is the other question, and\nit is false while any condition below is unmet."
+    },
     "v1InstallationStatus": {
       "type": "string",
       "enum": [
@@ -10494,6 +10515,18 @@
             "type": "object",
             "$ref": "#/definitions/v1CollectionReadGrant"
           }
+        },
+        "readiness": {
+          "$ref": "#/definitions/v1InstallationReadiness",
+          "description": "Whether this installation will actually work, and what is unmet if it will\nnot. Resolved live from the same facts health is resolved from plus the\nmodule registry and this organisation's sources; never stored."
+        },
+        "reachedModules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ReachedModule"
+          },
+          "description": "The modules this installed target declares it reaches, and this\norganisation's installation of each. Empty for a target whose applied\nmanifest declares no operation binding it redeems on a person's behalf."
         }
       },
       "description": "OrganizationInstallation is one active installation as its organisation's\nadministrator manages it."
@@ -10842,6 +10875,92 @@
         }
       },
       "description": "RPCInfo — one entry per gRPC RPC this service exposes."
+    },
+    "v1ReachedModule": {
+      "type": "object",
+      "properties": {
+        "audience": {
+          "type": "string",
+          "description": "The audience the manifest names: the module reached."
+        },
+        "installationId": {
+          "type": "string",
+          "description": "This organisation's ACTIVE installation of that module, which is where the\nteam grant is written. Empty when it has not installed it — then the\nreadiness condition says so and no grant is offered."
+        },
+        "routeAlias": {
+          "type": "string",
+          "description": "The route alias of the installed module, for the reader. Empty with\ninstallation_id."
+        }
+      },
+      "description": "ReachedModule is one module an installed target declares it reaches on the\nasking person's own session, and this organisation's installation of that\nmodule.\n\nA solution granted to a team is refused by every module it reaches that the\nsame team was not granted — four separate refusals on a validation cell, each\na bare Forbidden. The set is the applied manifest's own declaration, which is\nwhat a grant on the solution must CARRY: derived from that declaration,\ntraceable to it, and revoked with it. Carrying it is not yet implemented, so\nthis field is a read, and a surface states the set rather than leaving a\nperson to find it by being refused. It is never a per-module grant step a\nperson performs — that is the trail this exists to end."
+    },
+    "v1ReadinessAction": {
+      "type": "string",
+      "enum": [
+        "READINESS_ACTION_UNSPECIFIED",
+        "READINESS_ACTION_NONE_AT_THIS_SURFACE",
+        "READINESS_ACTION_RETRY_INSTALL_STEP",
+        "READINESS_ACTION_RECONNECT_SOURCE",
+        "READINESS_ACTION_TRANSFER_OWNERSHIP",
+        "READINESS_ACTION_INSTALL_REACHED_MODULE",
+        "READINESS_ACTION_WAIT"
+      ],
+      "default": "READINESS_ACTION_UNSPECIFIED",
+      "description": "ReadinessAction is what clears the condition, named as the act rather than as\na control, so a surface that cannot offer one still reports the same fact.\n\n - READINESS_ACTION_NONE_AT_THIS_SURFACE: No act at this surface clears it. The condition says where it is cleared.\n - READINESS_ACTION_WAIT: Wait: the host is expecting an answer and no act brings it forward."
+    },
+    "v1ReadinessClearedBy": {
+      "type": "string",
+      "enum": [
+        "READINESS_CLEARED_BY_UNSPECIFIED",
+        "READINESS_CLEARED_BY_VIEWER",
+        "READINESS_CLEARED_BY_ORGANIZATION_ADMIN",
+        "READINESS_CLEARED_BY_PLATFORM_OPERATOR",
+        "READINESS_CLEARED_BY_NOBODY"
+      ],
+      "default": "READINESS_CLEARED_BY_UNSPECIFIED",
+      "description": "ReadinessClearedBy is who can clear a condition. It is stated rather than\nimplied by the action, because \"nobody at this surface can\" is itself the\nanswer a reader needs — an envelope that withholds a binding is the platform\noperator's, and offering an administrator a button would be a lie.\n\n - READINESS_CLEARED_BY_VIEWER: The person reading the page, acting as themselves: their own delegation.\n - READINESS_CLEARED_BY_NOBODY: Nobody: the host is waiting for the solution itself to answer."
+    },
+    "v1ReadinessCondition": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/v1ReadinessConditionKind"
+        },
+        "subject": {
+          "type": "string",
+          "description": "What the condition is about: the binding, the source, the module. Empty when\nthe condition is about the installation as a whole."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Why it is unmet, as the part of the host that owns the fact words it. Never\na generic \"not ready\": the reason is the whole value of the condition."
+        },
+        "clearedBy": {
+          "$ref": "#/definitions/v1ReadinessClearedBy"
+        },
+        "action": {
+          "$ref": "#/definitions/v1ReadinessAction"
+        },
+        "sourceId": {
+          "type": "string",
+          "description": "The source the action addresses, for RECONNECT_SOURCE. Empty otherwise."
+        }
+      },
+      "description": "ReadinessCondition is one thing that is unmet, in the words of whoever owns\nit, with who can clear it and what clears it."
+    },
+    "v1ReadinessConditionKind": {
+      "type": "string",
+      "enum": [
+        "READINESS_CONDITION_KIND_UNSPECIFIED",
+        "READINESS_CONDITION_KIND_INSTALL_STEP_PENDING",
+        "READINESS_CONDITION_KIND_INSTALL_STEP_FAILED",
+        "READINESS_CONDITION_KIND_RECORD_UNHEALTHY",
+        "READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED",
+        "READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED",
+        "READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED",
+        "READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED"
+      ],
+      "default": "READINESS_CONDITION_KIND_UNSPECIFIED",
+      "description": "ReadinessConditionKind is what kind of thing is unmet. A reader acts on the\nwords in `detail`; the kind is for the surface to choose an action and for a\nconsumer to count one kind without parsing prose.\n\n - READINESS_CONDITION_KIND_INSTALL_STEP_PENDING: The solution has not acknowledged its standard install step yet.\n - READINESS_CONDITION_KIND_INSTALL_STEP_FAILED: It refused the install step, or never answered within the attempt budget.\n - READINESS_CONDITION_KIND_RECORD_UNHEALTHY: The installation record itself is not healthy: the InstallationHealth\nvalue, restated as a condition so one list holds every reason it will not\nwork rather than two places a reader has to join.\n - READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED: The module registry holds no principal for this target's module at all, so\nevery Work Context it asks for is denied.\n - READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED: An operation binding the applied manifest asks for derived nothing: the\nenvelope allows no such binding, or allows nothing of it. This is the\ncondition that reported HEALTHY on a validation cell while four bindings were\ndropped.\n - READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED: A source this organisation has connected holds no active delegation to a\nmodule that accepts them, so that module cannot read it on anyone's behalf.\n - READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED: A module this target declares it reaches is not installed in this\norganisation, so every call it makes there is refused."
     },
     "v1RecordShare": {
       "type": "object",

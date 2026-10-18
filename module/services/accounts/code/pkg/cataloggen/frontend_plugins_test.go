@@ -77,6 +77,7 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 		"/admin/roles/{roleId}",
 		"/admin/sessions",
 		"/admin/solutions",
+		"/admin/solutions/{installationId}",
 		"/admin/sso",
 		"/admin/teams",
 		"/admin/teams/{teamId}",

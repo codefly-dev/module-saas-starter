@@ -416,3 +416,53 @@ The TypeScript SDK includes this contract starting with package version
 `0.3.17`. Artifact decision events are also part of the declared module
 generator chain: regenerate the complete package projections when changing
 these authority contracts, including the event catalog and communication docs.
+
+## Readiness: whether an installation will work
+
+`InstallationHealth` answers about the installation RECORD — it is active, its
+owner of record is still an organisation administrator, its standing grant at the
+authority root is there. It does not answer whether the module will do its job,
+and conflating the two is how a deployment reports ten healthy installations over
+a host that had silently dropped four operation bindings
+(codefly-dev/module-saas-starter#1167).
+
+`ListOrganizationInstallations` therefore carries an `InstallationReadiness`
+beside the health: `ready`, and one `ReadinessCondition` per unmet condition.
+Each condition says what is unmet in the words of the part of the host that owns
+the fact, who can clear it (`cleared_by`: the viewer, an organisation
+administrator, a platform operator, or nobody) and what clears it (`action`,
+including `NONE_AT_THIS_SURFACE` — an envelope that withholds a binding is a
+platform operator's, and a surface offering a control that cannot work is the
+failure this exists to end).
+
+Readiness is COMPUTED, never stored, from facts this host already holds and
+already reads for the same page:
+
+| Condition | Read from |
+| --- | --- |
+| `INSTALL_STEP_PENDING`, `INSTALL_STEP_FAILED` | the installation's own status and `failure_reason` |
+| `RECORD_UNHEALTHY` | the live `InstallationHealth`, restated as one condition in the same list |
+| `MODULE_PRINCIPAL_OMITTED` | the derived module registry holds no principal for the target's module |
+| `OPERATION_BINDING_OMITTED` | the applied manifest's `authority.bindings` compared against the derived grant's operation audiences |
+| `SOURCE_NOT_DELEGATED` | this organisation's sources, against the active `source_delegations` of a module that declares a source-delegation binding |
+| `REACHED_MODULE_NOT_INSTALLED` | an audience the applied manifest invokes, with no active installation of that module in this organisation |
+
+Nothing is asked of a module. That is the boundary: if readiness required a
+module to answer, it would be a protocol change on every module rather than a
+surface over the host's facts, and would have to be argued as one.
+
+An omitted operation binding is reported by COMPARING the two published facts —
+what the manifest asks and what the registry holds — not by re-running the
+derivation. `module_principal_reconcile.go` owns the derivation and names each
+omission in its own log; `installation_readiness.go` owns the comparison, so the
+page states what is missing even when nobody was reading the boot log.
+
+`OrganizationInstallation.reached_modules` is the other half: the modules the
+applied manifest declares it invokes on the asking person's own session, each
+resolved to this organisation's installation of that module. A team granted a
+solution is refused by every module it reaches that the same team was not granted
+— on a validation cell that was four separate refusals, each a bare
+`Forbidden`. The set is the manifest's own declaration, so the grant step offers
+those grants together instead of leaving a person to find them by being refused.
+A headless-only binding is not in the set: it acts for no person, so no person's
+grant is needed.
