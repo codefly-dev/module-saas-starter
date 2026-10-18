@@ -2,9 +2,11 @@ package adapters
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -65,14 +67,33 @@ func forwardThroughTranscoder(t *testing.T, option runtime.ServeMuxOption, heade
 }
 
 // rest_gen.go is generated; its CUSTOM lines survive regeneration only by
-// being preserved. A regeneration that drops the matcher would silently bring
-// the prefixed cookie back, so the wiring itself is held here.
+// being preserved. Parsed, not string-matched (as the incoming matcher's
+// lockstep test does), so a commented-out or renamed option fails here and the
+// prefixed cookie cannot come back silently.
 func TestTheRESTMuxIsBuiltWithTheOutgoingHeaderMatcher(t *testing.T) {
-	source, err := os.ReadFile("rest_gen.go")
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "rest_gen.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), "runtime.WithOutgoingHeaderMatcher(restOutgoingHeaderMatcher)") {
-		t.Fatal("rest_gen.go no longer builds the REST mux with restOutgoingHeaderMatcher: the refresh cookie would leave as Grpc-Metadata-Set-Cookie")
+	wired := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, isCall := n.(*ast.CallExpr)
+		if !isCall || !isSelector(call.Fun, "runtime", "NewServeMux") {
+			return true
+		}
+		for _, arg := range call.Args {
+			option, isCall := arg.(*ast.CallExpr)
+			if !isCall || !isSelector(option.Fun, "runtime", "WithOutgoingHeaderMatcher") || len(option.Args) != 1 {
+				continue
+			}
+			if name, isIdent := option.Args[0].(*ast.Ident); isIdent && name.Name == "restOutgoingHeaderMatcher" {
+				wired = true
+			}
+		}
+		return true
+	})
+	if !wired {
+		t.Fatal("rest_gen.go must pass runtime.WithOutgoingHeaderMatcher(restOutgoingHeaderMatcher) to runtime.NewServeMux: without it the refresh cookie leaves as Grpc-Metadata-Set-Cookie")
 	}
 }

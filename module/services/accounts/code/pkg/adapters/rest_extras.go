@@ -260,6 +260,18 @@ func clearRefreshCookie(w http.ResponseWriter) {
 // refreshCookie is the one shape the refresh credential is ever handed to a
 // browser in: scoped to the auth routes, not script-readable, same-site, and
 // transport-protected outside local development.
+func refreshCookie(token string, maxAge int) *http.Cookie {
+	return &http.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    token,
+		Path:     "/v1/auth",
+		HttpOnly: true,
+		Secure:   secureRefreshCookie(),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   maxAge,
+	}
+}
+
 // restOutgoingHeaderMatcher maps the Connect handler's response headers onto
 // the REST response. The transcoder speaks gRPC to the Connect surface, so every
 // header a handler sets arrives as header metadata; grpc-gateway's default writes
@@ -278,18 +290,6 @@ func restOutgoingHeaderMatcher(key string) (string, bool) {
 		return "Set-Cookie", true
 	}
 	return runtime.MetadataHeaderPrefix + key, true
-}
-
-func refreshCookie(token string, maxAge int) *http.Cookie {
-	return &http.Cookie{
-		Name:     refreshTokenCookieName,
-		Value:    token,
-		Path:     "/v1/auth",
-		HttpOnly: true,
-		Secure:   secureRefreshCookie(),
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   maxAge,
-	}
 }
 
 var (
