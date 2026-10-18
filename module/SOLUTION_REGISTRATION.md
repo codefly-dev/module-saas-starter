@@ -460,6 +460,12 @@ principals sharing a workload, are omitted. The envelope document is
 `{"revision": N, "principals": {"<principal>": {"grant": {…}}}}`; it names no
 workload and approves no build.
 
+A platform super_admin reads and writes it at `/admin/platform/module-authority`:
+the current revision, who wrote it and when, and every principal the applied
+manifests ask for that it does not allow. With no envelope every module is
+denied, and each reconcile pass says so by name in the accounts log
+(`ErrModuleEnvelopeMissing`).
+
 ### Configuration
 
 Every key is in the `federation` group.

@@ -55,6 +55,10 @@ func init() {
 }
 
 func doWork(ctx context.Context) (Clean, error) {
+	// `app diagnose …` answers and exits; it never starts the service.
+	if code, ran := runRequestedDiagnostic(os.Args[1:]); ran {
+		os.Exit(code)
+	}
 	// Configuration this process cannot run without is checked before any
 	// dependency is touched. It used to be checked deep in the startup, after
 	// the database and Vault were already up, which meant a missing value cost
