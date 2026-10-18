@@ -287,6 +287,21 @@ func (s *Service) GetModuleEnvelope(ctx context.Context, actorID string) (*Modul
 	return record, nil
 }
 
+// ModuleAuthorityRequests is what the applied module manifests ask for, for a
+// platform super_admin deciding the next revision of the ceiling. It is the
+// reconcile pass's own reading of the applied state (AppliedAuthorityRequests):
+// what is asked for, never what is held.
+func (s *Service) ModuleAuthorityRequests(ctx context.Context, actorID string) ([]ModuleAuthorityRequest, error) {
+	if err := s.requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, NewStoreError(err, ErrTypePermission)
+	}
+	records, err := s.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return nil, wool.Get(ctx).In("ModuleAuthorityRequests").Wrapf(err, "cannot read the applied module manifests")
+	}
+	return AppliedAuthorityRequests(records), nil
+}
+
 // PutModuleEnvelope writes the next revision of the ceiling, as a platform
 // super_admin, never through an impersonated session (requirePlatformRole).
 //
